@@ -59,7 +59,7 @@ glIntroduction = [[
          { name = 'browser', kind = 'flag', default = true, comment = 'Show or hide the file browser panel.' },
          { name = 'animate', kind = 'flag', default = true, comment = 'Enables automated animation.' },
          { name = 'help', kind = 'flag', hidden = true,
-            exec = function(Parser:table)
+            exec = function(Parser:table!)
                print(Parser.getHelp())
                raise ERR_Terminate
             end
@@ -123,7 +123,7 @@ glIntroduction = [[
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function configureScrollbar(View:obj, Page:obj)
+function configureScrollbar(View:obj!, Page:obj!)
    if glScrollbar then
       glScrollbar.changeViewport(View, Page)
    else
@@ -138,7 +138,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function displayInlineDoc(Content:str, Parameters:table)
+function displayInlineDoc(Content:str!, Parameters:table!)
    msg('displayInlineDoc()')
 
    doc = glViewArea.new('document', { })
@@ -156,14 +156,14 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function displayError(Message:str)
+function displayError(Message:str!)
    page = glBody .. [[<page name="Index">]] .. Message .. [[</page>]]
    displayInlineDoc(page, { })
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function displaySVG(Path:str)
+function displaySVG(Path:str!)
    vp = glViewArea.new('VectorViewport', { x=0, y=0, xOffset=0, yOffset=0, overflow='hidden' })
    -- The ENFORCE_TRACKING flag ensures that registered defs are deallocated with the svg object.
    svg = vp.new('svg', { target=vp, path=Path, flags=SVF_ENFORCE_TRACKING })
@@ -179,7 +179,7 @@ function displaySVG(Path:str)
    end
 end
 
-function displayDoc(Path:str)
+function displayDoc(Path:str!)
    msg(f'displayDoc() {Path}')
 
    doc = glViewArea.new('document', { path = Path .. '#Index' })
@@ -191,7 +191,7 @@ function displayDoc(Path:str)
    end
 end
 
-function displayImage(Path:str)
+function displayImage(Path:str!)
    msg(f'displayImage() {Path}')
 
    try
@@ -211,7 +211,7 @@ function displayImage(Path:str)
          img.free()
       end
 
-      glSaveRoutine = function(Path:str)
+      glSaveRoutine = function(Path:str!)
          pic.acSaveImage(obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE }))
       end
 
@@ -295,7 +295,7 @@ end
          displayPath = true,
          path        = glArgs.path,
          filterList = glOpenFilter,
-         fileSelected = function(FileView:table)
+         fileSelected = function(FileView:table!)
             displayFile(FileView.selectionPath())
             title = FileView.selectionFile()
             if glStats.width and glStats.height then
@@ -334,7 +334,7 @@ end
                   popOver     = glWindow.surface,
                   warnExists  = true,
                   allowNew    = true,
-                  feedback = function(Dialog, Path:str, Files)
+                  feedback = function(Dialog, Path:str!, Files)
                      Files ?! return
 
                      target_file = Path .. Files[0].filename

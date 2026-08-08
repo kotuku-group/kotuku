@@ -1101,10 +1101,10 @@ static bool fixed_return_contract_is_proved(
          .array_element = State.return_array_elements[i],
          .boundary = ContractBoundary::Result,
          .position = uint8_t(i + 1),
-         .nullable = true,
-         .required = false
+         .nullable = not State.return_required[i],
+         .required = State.return_required[i]
       };
-      if (contract.type IS TiriType::Unknown or contract.type IS TiriType::Any) continue;
+      if ((contract.type IS TiriType::Unknown or contract.type IS TiriType::Any) and not contract.required) continue;
       StaticValueDescriptor value = return_value_descriptor(Context, Payload, i, dynamic);
       if (dynamic or not static_value_satisfies_contract(value, contract)) return false;
    }
@@ -1134,7 +1134,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    if (this->func_state.return_contract_explicit) {
       for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
          TiriType type = this->func_state.return_types[i];
-         if (type != TiriType::Unknown and type != TiriType::Any) {
+         if ((type != TiriType::Unknown and type != TiriType::Any) or
+             this->func_state.return_required[i]) {
             has_return_contract = true;
             break;
          }
@@ -1287,8 +1288,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    if (this->func_state.flags & PROTO_CHILD) bcemit_AJ(&this->func_state, BC_UCLO, 0, 0);
    if (preserve_multres) bcemit_AD(&this->func_state, BC_MRRESTORE, multres_slot, 0);
 
-   if (has_return_contract and not return_contract_elided and not return_contract_forwarded and
-       bc_op(ins) != BC_RET0) {
+   if (has_return_contract and not return_contract_elided and not return_contract_forwarded) {
       std::array<RuntimeContract, MAX_RETURN_TYPES> contracts;
       for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
          contracts[i] = RuntimeContract{
@@ -1298,8 +1298,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             .label = nullptr,
             .boundary = ContractBoundary::Result,
             .position = uint8_t(i + 1),
-            .nullable = true,
-            .required = false
+            .nullable = not this->func_state.return_required[i],
+            .required = this->func_state.return_required[i]
          };
       }
 

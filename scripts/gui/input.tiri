@@ -6,7 +6,7 @@ Documentation is available in the Kotuku Wiki.
 
    namespace 'gui'
 
-function reportActivate(self:table, State:str, Force:bool)
+function reportActivate(self:table!, State:str!, Force:bool!)
    self.events.activate ?! return
    text = self.text.string
    hash = text ? string.hash(text) :> 0
@@ -74,7 +74,7 @@ gui.input = function(Options)
       end
    end
 
-   self.setText = function(self, Text:str)
+   self.setText = function(self, Text:str!)
       if self.text then self.text.string = Text end
       checkShadowLabel(self)
       self.viewport.acDraw()
@@ -205,7 +205,7 @@ gui.input = function(Options)
 
    if Options.selected then self.text.mtSelectArea(0, 20000) end
 
-   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj, Event)
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event)
       if Event is FM_LOST_FOCUS then
          if not Options.flushEdges then
             self.bkgd.stroke = theme.input.stroke
@@ -231,7 +231,7 @@ gui.input = function(Options)
       Viewport.acDraw()
    end)
 
-   self._textClip.mtSubscribeKeyboard(function(Viewport:obj, Qualifiers, Value, Unicode)
+   self._textClip.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers, Value, Unicode)
       if not (Qualifiers has KQ_PRESSED) then return end
 
       if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
@@ -245,7 +245,7 @@ gui.input = function(Options)
    end)
 
    if self.events.cursorEntry or self.events.cursorExit then
-      self.inputViewport.mtSubscribeInput(JTYPE_CROSSING, function(Viewport:obj, Msg)
+      self.inputViewport.mtSubscribeInput(JTYPE_CROSSING, function(Viewport:obj!, Msg)
          repeat
             choose Msg.type from
                JET_CROSSED_IN -> self.events?.cursorEntry(self)

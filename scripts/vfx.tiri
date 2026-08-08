@@ -13,43 +13,43 @@ vfx.ease = { }
 
 ----------------------------------------------------------------------------------------------------------------------
 
-vfx.ease.linear = function(Value:num)
+vfx.ease.linear = function(Value:num!)
    return Value
 end
 
-vfx.ease.inQuad = function(Value:num)
+vfx.ease.inQuad = function(Value:num!)
    return Value * Value
 end
 
-vfx.ease.outQuad = function(Value:num)
+vfx.ease.outQuad = function(Value:num!)
    inverse = 1.0 - Value
    return 1.0 - (inverse * inverse)
 end
 
-vfx.ease.inOutQuad = function(Value:num)
+vfx.ease.inOutQuad = function(Value:num!)
    if Value < 0.5 then return 2.0 * Value * Value end
 
    inverse = -2.0 * Value + 2.0
    return 1.0 - ((inverse * inverse) * 0.5)
 end
 
-vfx.ease.inCubic = function(Value:num)
+vfx.ease.inCubic = function(Value:num!)
    return Value * Value * Value
 end
 
-vfx.ease.outCubic = function(Value:num)
+vfx.ease.outCubic = function(Value:num!)
    inverse = 1.0 - Value
    return 1.0 - (inverse * inverse * inverse)
 end
 
-vfx.ease.inOutCubic = function(Value:num)
+vfx.ease.inOutCubic = function(Value:num!)
    if Value < 0.5 then return 4.0 * Value * Value * Value end
 
    inverse = -2.0 * Value + 2.0
    return 1.0 - ((inverse * inverse * inverse) * 0.5)
 end
 
-vfx.apply_easing = function(Value:num, Easing):num
+vfx.apply_easing = function(Value:num!, Easing):num
    progress = math.clamp(Value, 0.0, 1.0)
 
    if not Easing then return progress end
@@ -137,7 +137,7 @@ end
 -- Options.delay: Delays the initial start of the effect, measured in seconds.
 -- Options.style: 'shutter', 'simple', 'radial', 'spiral', 'clock'
 
-vfx.wipe = function(Viewport:obj, Options:table)
+vfx.wipe = function(Viewport:obj!, Options:table)
    Options ?= { }
    assert(type(Options) is 'table', 'VFX wipe options must be supplied as a table')
 
@@ -178,11 +178,11 @@ end
 -- Move the viewport to its indicated (x,y) position within the allotted time.  By default the move will commence from
 -- an out-of-bounds position on the left.  The client can override this with a custom FromX, FromY position.
 
-vfx.moveIn = function(Viewport:obj, Options:table)
+vfx.moveIn = function(Viewport:obj!, Options:table!)
 
 end
 
-vfx.moveOut = function(Viewport:obj, Options:table)
+vfx.moveOut = function(Viewport:obj!, Options:table!)
 
 end
 
@@ -192,7 +192,7 @@ end
 -- Options.seconds: Specifies the maximum number of seconds for the effect to complete.
 -- Options.delay:   Delays the initial start of the effect, measured in seconds.
 
-vfx.fadeIn = function(Viewport:obj, Options:table)
+vfx.fadeIn = function(Viewport:obj!, Options:table!)
    config = vfx.effect_config(Options)
    state = {
       name = 'fadeIn', seconds = config.seconds, delay = config.delay,
@@ -231,7 +231,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Scale the viewport from nothing to full-size within the allotted time.
 
-vfx.zoomIn = function(Viewport:obj, Options:table)
+vfx.zoomIn = function(Viewport:obj!, Options:table!)
    config = vfx.effect_config(Options)
    state = {
       name = 'zoomIn', seconds = config.seconds, delay = config.delay,
@@ -280,7 +280,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Scale the viewport from full-size to nothing within the allotted time.
 
-vfx.zoomOut = function(Viewport:obj, Options:table)
+vfx.zoomOut = function(Viewport:obj!, Options:table!)
    config = vfx.effect_config(Options)
    state = {
       name = 'zoomOut', seconds = config.seconds, delay = config.delay,
@@ -330,7 +330,7 @@ end
 -- 'Shake' a vector by applying an alternating rotation around its center.  Intensity is between 0.1 and 2.0 and
 -- affects the number of shakes and maximum angle of rotation.
 
-vfx.shake = function(Viewport:obj, Options:table)
+vfx.shake = function(Viewport:obj!, Options:table)
    Options ?= { }
    assert(type(Options) is 'table', 'VFX shake options must be supplied as a table')
 
@@ -402,7 +402,7 @@ end
 -- Rotate the viewport 360 degrees within the allotted time.  This feature is typically chained for use with other
 -- effects.
 
-vfx.rotate = function(Viewport:obj, Options:table)
+vfx.rotate = function(Viewport:obj!, Options:table!)
    config = vfx.effect_config(Options)
    state = {
       name = 'rotate', seconds = config.seconds, delay = config.delay,

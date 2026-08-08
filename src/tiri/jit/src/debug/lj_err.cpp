@@ -1365,6 +1365,17 @@ LJ_NOINLINE void lj_err_callermsg(lua_State *L, CSTRING msg)
          else pframe = frame_prevd(frame);
       }
    }
+
+   // Native callbacks have no Tiri caller frame.  In that case, report the current callback location and use a zero
+   // column to make it explicit that runtime bytecode does not retain column information.
+
+   DebugLocation location;
+   if (not lj_debug_getloc(L, pframe, frame, &location) and lj_debug_getloc(L, frame, nullptr, &location)) {
+      err_record_pending_exception(L, msg, frame, nullptr);
+      lj_strfmt_pushf(L, "[%s:%d:0] %s", strdata(L->pending_exception_source), location.line, msg);
+      lj_err_run(L);
+   }
+
    err_record_pending_exception(L, msg, pframe, frame);
    lj_debug_addloc(L, msg, pframe, frame);
    lj_err_run(L);

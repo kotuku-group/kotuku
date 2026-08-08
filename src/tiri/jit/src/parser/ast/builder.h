@@ -191,7 +191,7 @@ private:
 
    ParserResult<ParameterListResult> parse_parameter_list(bool);
    ParserResult<Token> parse_type_annotation(
-      TiriType &Type, struct_record *&StructDef, ArrayElementDescriptor &ArrayElement);
+      TiriType &Type, struct_record *&StructDef, ArrayElementDescriptor &ArrayElement, bool &Required);
    ParserResult<std::vector<TableField>> parse_table_fields(bool *);
    ParserResult<ExprNodeList> parse_call_arguments(bool *);
 

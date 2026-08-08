@@ -52,7 +52,7 @@ Examples:
 ----------------------------------------------------------------------------------------------------------------------
 -- Render vector paths directly, bypassing the scene graph.
 
-function drawDirectVector(Surface:obj, Bitmap:obj)
+function drawDirectVector(Surface:obj!, Bitmap:obj!)
    glWinWidth, glWinHeight = Surface.width, Surface.height
 
    start = mSys.PreciseTime()
@@ -66,7 +66,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Render plain rectangles
 
-function drawPrimitive(Surface:obj, Bitmap:obj)
+function drawPrimitive(Surface:obj!, Bitmap:obj!)
    glWinWidth, glWinHeight = Surface.width, Surface.height
 
    local start
@@ -84,7 +84,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function makeStarSequence(CentreX:num, CentreY:num, Radius:num)
+function makeStarSequence(CentreX:num!, CentreY:num!, Radius:num!)
    local inner_radius = Radius * 0.38196601125
    local sequence = ''
 
@@ -101,7 +101,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function moveVectorParticle(Particle:table, X:num, Y:num, MoveFlags:num)
+function moveVectorParticle(Particle:table!, X:num!, Y:num!, MoveFlags:num!)
    Particle.vector.acMoveToPoint(X + Particle.center, Y + Particle.center, 0, MoveFlags)
 end
 

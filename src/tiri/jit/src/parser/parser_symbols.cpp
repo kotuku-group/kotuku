@@ -381,6 +381,7 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
       if (param.type != TiriType::Any and param.type != TiriType::Unknown) {
          signature += ": ";
          signature += annotation_type_to_string(param.type, param.struct_def, param.array_element);
+         if (param.required) signature += "!";
       }
    }
 
@@ -395,6 +396,7 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
       signature += ":";
       signature += annotation_type_to_string(Function.return_types.types[0], Function.return_types.struct_defs[0],
          Function.return_types.array_elements[0]);
+      if (Function.return_types.required[0]) signature += "!";
    }
    else if (Function.return_types.count > 1) {
       signature += ":<";
@@ -402,6 +404,7 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
          if (i > 0) signature += ", ";
          signature += annotation_type_to_string(Function.return_types.types[i], Function.return_types.struct_defs[i],
             Function.return_types.array_elements[i]);
+         if (Function.return_types.required[i]) signature += "!";
       }
       if (Function.return_types.is_variadic) signature += ", ...";
       signature += ">";
@@ -443,6 +446,7 @@ static void add_params(ParserSymbolMetadata &Symbol, const FunctionExprPayload &
       ParserDocParamMetadata meta;
       meta.name = identifier_to_string(param.name);
       meta.type = annotation_type_to_string(param.type, param.struct_def, param.array_element);
+      if (param.required) meta.type += "!";
 
       bool found = false;
       if (Doc) meta.doc = find_param_doc(*Doc, meta.name, param_index, found);
@@ -609,6 +613,7 @@ static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload 
       else if (i < result_count) {
          meta.type = annotation_type_to_string(Function.return_types.types[i], Function.return_types.struct_defs[i],
             Function.return_types.array_elements[i]);
+         if (Function.return_types.required[i]) meta.type += "!";
          meta.inferred = i >= explicit_count;
       }
 

@@ -451,7 +451,7 @@ private:
          if (Function.return_types.array_elements[i].known) {
             value.array_element = Function.return_types.array_elements[i];
          }
-         value.nullable = true;
+         value.nullable = not Function.return_types.required[i];
          if (Function.return_types.is_explicit and value.primary != TiriType::Any and
              value.primary != TiriType::Unknown) {
             value.proof = StaticProof::Checked;
@@ -1373,6 +1373,7 @@ private:
          else {
             value = this->declared_descriptor(parameter.type, parameter.struct_def, parameter.array_element,
                parameter.type IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked);
+            value.nullable = not parameter.required;
          }
          auto &binding = this->catalogue_.binding(parameter.name.binding_id);
          binding.value = this->add_value(value);
@@ -1399,7 +1400,7 @@ private:
                if (Function.return_types.array_elements[i].known) {
                   value.array_element = Function.return_types.array_elements[i];
                }
-               value.nullable = true;
+               value.nullable = not Function.return_types.required[i];
                value.proof = Function.return_types.is_explicit ?
                   (value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked) :
                   StaticProof::Closed;

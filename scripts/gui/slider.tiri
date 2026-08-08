@@ -18,7 +18,7 @@ local lStyle = thunk():str
    end
 end
 
-gui.slider = function(Options:table)
+gui.slider = function(Options:table!)
    self = { -- Public variables
       min    = Options.min ?? 0,
       max    = Options.max ?? 1,
@@ -34,7 +34,7 @@ gui.slider = function(Options:table)
       self.viewport.scene.surface.mtScheduleRedraw()
    end
 
-   self.setRange = function(Min:num, Max:num)
+   self.setRange = function(Min:num!, Max:num!)
       assert(Max > Min, 'The min/max values are invalid.')
       self.min = Min
       self.max = Max
@@ -60,7 +60,7 @@ gui.slider = function(Options:table)
 
       self._sliderVP = self._sliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
 
-      self._sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
+      self._sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
          max_size = self._sliderHostVP.height - BOX_SIZE
          Y = math.clamp(Y, 0, max_size)
          if Viewport.y is Y then return end
@@ -96,7 +96,7 @@ gui.slider = function(Options:table)
 
       self._sliderVP = self._sliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
 
-      self._sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
+      self._sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
          max_size  = self._sliderHostVP.width - BOX_SIZE
          X = math.clamp(X, 0, max_size)
          if Viewport.x is X then return end
@@ -111,7 +111,7 @@ gui.slider = function(Options:table)
    lStyle.slider(self, self._sliderVP, self._theme)
 
    self._sliderHostVP.mtSubscribeInput(JTYPE_BUTTON,
-      function(Viewport:obj, Msg)
+      function(Viewport:obj!, Msg)
          repeat
             if (Msg.type is JET_LMB) and (Msg.value > 0) then
                if self.orientation is 'V' then

@@ -60,7 +60,7 @@ return {
             else
                mVec.drawPath(Bitmap, path, 0, nil, lGradientB)
             end
-            mVec.freePath(path)
+            mSys.freeResource(path)
          end
          for y in {1 into Surface.height by 2} do
             err, colShade = Bitmap.mtGetColour(0, 0, 0, 40)

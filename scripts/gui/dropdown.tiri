@@ -49,7 +49,7 @@ gui.dropdown = function(Options)
       self.viewport.new('VectorRectangle', { -- Background
          fill = theme.dropdown.bkgd,
          x = 1.5, y = 1.5, roundX = 3, roundY = 3, width = 1, height = 1,
-         resizeEvent = function(Viewport:obj, Vector:obj, X:num, Y:num, Width:num, Height:num)
+         resizeEvent = function(Viewport:obj!, Vector:obj!, X:num!, Y:num!, Width:num!, Height:num!)
             Vector.width  = Width - (Vector.x * 2)
             Vector.height = Height - (Vector.y * 2)
          end

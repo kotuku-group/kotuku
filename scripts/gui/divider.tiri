@@ -14,7 +14,7 @@ HALF_GAP <const> = gui.sizing.widget.gap / 2
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function arrangeAll(self:table, Middle:num)
+function arrangeAll(self:table!, Middle:num)
    local a_len
 
    if Middle then
@@ -116,7 +116,7 @@ gui.divider = function(Options:table)
       check self._vp.scene.mtAddDef(div_name, self._pattern)
    end
 
-   self._vp.subscribe('free', function(Viewport:obj)
+   self._vp.subscribe('free', function(Viewport:obj!)
       if self._anchored then mGfx.unlockCursor(self._vp) end
    end)
 
@@ -142,7 +142,7 @@ gui.divider = function(Options:table)
 
    self._pct = (self._div[self._anchor] + HALF_GAP) / self._vp[self._length]
 
-   self._vp.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj, Event)
+   self._vp.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj!, Event)
       if self._proportional then
          if self._orientation is 'h' then
             arrangeAll(self, self._pct * Viewport.width)
@@ -156,7 +156,7 @@ gui.divider = function(Options:table)
       Viewport.acDraw()
    end)
 
-   check self._dividerVP.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, function(Viewport:obj, Events)
+   check self._dividerVP.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, function(Viewport:obj!, Events)
       ev = Events
       while ev do
          if ev.type is JET_ABS_XY then

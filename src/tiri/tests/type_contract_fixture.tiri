@@ -1,3 +1,7 @@
 global function imported_typed(Value:num):num
    return Value
 end
+
+global function imported_required(Value:str!):str!
+   return Value
+end

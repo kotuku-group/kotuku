@@ -932,7 +932,8 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
             cached_contract_text(Descriptor, cached.constraint_offset) : std::string_view{},
          .label = cached_contract_text(Descriptor, cached.label_offset)
       };
-      if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
+      if ((entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) and
+          (entry.flags & contract_flag(ContractEntryFlag::Required)) IS 0) continue;
 
       Base = restorestack(L, base_offset);
       TValue *value = Base + i;
@@ -1108,7 +1109,8 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
    for (uint32_t i = 0; i < value_count; ++i) {
       const RuntimeContractEntry *entry = descriptor.entry_for(i);
       if (not entry) continue;
-      if (entry->type IS TiriType::Any or entry->type IS TiriType::Unknown) continue;
+      if ((entry->type IS TiriType::Any or entry->type IS TiriType::Unknown) and
+          (entry->flags & contract_flag(ContractEntryFlag::Required)) IS 0) continue;
 
       Base = restorestack(L, base_offset);
       TValue *value = Base + i;

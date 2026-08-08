@@ -81,7 +81,7 @@ gui.mtHSV = { -- HSV metatable
    __newindex = function(Self, Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
-   __eq = function(A:table, B:table):bool
+   __eq = function(A:table, B:table!):bool
       return A.h is B.h and A.s is B.s and A.v is B.v and A.a is B.a
    end,
    __tostring = function(Self):str -- Returns an SVG compliant colour string
@@ -103,7 +103,7 @@ gui.hsv = function(H:num, S:num, V:num, A:num):table -- HSV values
    return setmetatable({ h = H, s = S, v = V, a = A }, gui.mtHSV)
 end
 
-function gui.mtHSV:interpolate(New:table, Ratio:num):table
+function gui.mtHSV:interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
       a = self.a + ((New.a - self.a) * Ratio),
@@ -146,7 +146,7 @@ gui.mtRGB = { -- sRGB metatable
    __newindex = function(Self, Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
-   __eq = function(A:table, B:table):bool
+   __eq = function(A:table, B:table!):bool
       return A.r is B.r and A.g is B.g and A.b is B.b and A.a is B.a
    end,
    __tostring = function(Self):str -- Returns an SVG compliant colour string
@@ -174,7 +174,7 @@ gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
    return setmetatable(result, gui.mtRGB)
 end
 
-gui.nrgb = function(R:num, G:num, B:num, A:num, KV:table):table -- Normalised RGB values
+gui.nrgb = function(R:num!, G:num!, B:num!, A:num!, KV:table):table -- Normalised RGB values
    result = { r = R, g = G, b = B, a = A ? A :> 1 }
    if KV then
       for k, v in pairs(KV) do
@@ -184,7 +184,7 @@ gui.nrgb = function(R:num, G:num, B:num, A:num, KV:table):table -- Normalised RG
    return setmetatable(result, gui.mtRGB)
 end
 
-function gui.mtRGB:interpolate(New:table, Ratio:num):table
+function gui.mtRGB:interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
       a = self.a + ((New.a - self.a) * Ratio),
@@ -233,7 +233,7 @@ function gui.mtRGB:brightness():num
    return max
 end
 
-function gui.mtRGB:withAlpha(Alpha:num):table
+function gui.mtRGB:withAlpha(Alpha:num!):table
    return setmetatable({ r = self.r, g = self.g, b = self.b, a = self.a * Alpha }, gui.mtRGB)
 end
 
@@ -392,7 +392,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a colour string to an RGB table.
 
-gui.strToRGB = function(Value:str):table
+gui.strToRGB = function(Value:str!):table
    assert(Value, 'Empty value passed to strToRGB()')
 
    try<trace>
@@ -411,7 +411,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.rgbToIconTheme = function(Value:any):str
+gui.rgbToIconTheme = function(Value:any!):str
    if type(Value) is 'string' then
       Value = gui.strToRGB(Value)
    end
@@ -422,7 +422,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Call a client function for each vector in the tree
 
-gui.forVector = function(Vector:obj, Function)
+gui.forVector = function(Vector:obj!, Function)
    while Vector do
       Function(Vector)
       child = Vector.child
@@ -433,7 +433,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.applyFill = function(Vector:obj, Fill)
+gui.applyFill = function(Vector:obj!, Fill)
    while Vector do
       if Vector.fill != 'none' then
          Vector.fill = Fill
@@ -448,7 +448,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate a simple gradient fill for vectors.
 
-gui.simpleGradient = function(Scene:obj, Name:str, Colours:any, X1:num, Y1:num, X2:num, Y2:num, Units:str, IgnoreClashes:bool)
+gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:num!, X2:num!, Y2:num!, Units:str,
+   IgnoreClashes:bool)
    assert(Name, 'A name for the gradient is required.')
 
    local colours:any
@@ -503,7 +504,7 @@ end
 -- i.e. "url(#Path)".  Using it in a VectorRectangle is akin to a cached bitmap (fast), or apply to a VectorViewport
 -- for live rendering (higher quality transforms).
 
-gui.createIcon = function(Scene:obj, Path:str, Size:num, Theme:any, Name:str):table
+gui.createIcon = function(Scene:obj!, Path:str!, Size:num, Theme:any!, Name:str):table
    Size ??= 16
    assert(Path, 'No Path specified.')
    lGradient = gui.iconThemes.default
@@ -563,7 +564,7 @@ end
 -- Pos & MarginX can be numbers or proportional values, e.g. 100%
 -- Negative positions, including -0.0, are interpreted as offsets from the end
 
-gui.separator = function(Viewport:obj, Orientation:str, Pos:any, MarginA:any, MarginB:any):num
+gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any, MarginB:any):num
    local o = Orientation:sub(0, 1)
    local options = { fill=tostring(gui.getTheme(Viewport).window.stroke) }
 
@@ -631,7 +632,7 @@ end
 -- user preference that provides the 'accents' that colour chosen theme.  Although the light and dark themes rely
 -- on palette colours heavily, alternative themes may ignore them entirely.
 
-gui.setTheme = function(Object:obj, Theme:str):table
+gui.setTheme = function(Object:obj, Theme:str!):table
    msg(f'gui.setTheme({Object}, {Theme})')
 
    local state
@@ -669,7 +670,7 @@ gui.setTheme = function(Object:obj, Theme:str):table
    return gui.themes[Theme]
 end
 
-function modifyAlpha(Colour:str, Alpha:num):str
+function modifyAlpha(Colour:str!, Alpha:num!):str
    mVec.ReadPainter(nil, Colour, glPainter)
    nrgb = glPainter.Colour
    rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)

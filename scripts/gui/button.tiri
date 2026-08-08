@@ -137,7 +137,7 @@ gui.button = function(Options)
       end
    end
 
-   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport:obj, Event)
+   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport:obj!, Event)
       if Event is FM_LOST_FOCUS then
          self.bkgd.stroke = theme.widget.stroke
          self.events?.lostFocus(self)
@@ -153,7 +153,7 @@ gui.button = function(Options)
       Viewport.acDraw()
    end)
 
-   self.viewport.mtSubscribeKeyboard(function(Viewport:obj, Qualifiers:num, Value:num, Unicode)
+   self.viewport.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
       if not (Qualifiers has KQ_PRESSED) then return end
 
       if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
@@ -161,7 +161,7 @@ gui.button = function(Options)
       end
    end)
 
-   self.viewport.mtSubscribeInput(JTYPE_CROSSING|JTYPE_BUTTON|JTYPE_REPEATED, function(Viewport:obj, Msg)
+   self.viewport.mtSubscribeInput(JTYPE_CROSSING|JTYPE_BUTTON|JTYPE_REPEATED, function(Viewport:obj!, Msg)
       repeat
          if Msg.type is JET_CROSSED_IN then
             self.bkgd.fill = theme.button.highlight

@@ -106,6 +106,11 @@
             i + 1, type_name(actual.type), type_name(expected.type));
       }
 
+      if (expected.required != actual.required) {
+         return std::format("parameter {} required annotation differs (expected {}, got {})", i + 1,
+            expected.required ? "required" : "nullable", actual.required ? "required" : "nullable");
+      }
+
       if (expected.struct_def != actual.struct_def) {
          std::string_view expected_name = expected.struct_def ? expected.struct_def->Name : "struct";
          std::string_view actual_name = actual.struct_def ? actual.struct_def->Name : "struct";
@@ -142,6 +147,11 @@
       if (expected_results.types[i] != actual_results.types[i]) {
          return std::format("return {} has type '{}', expected '{}'",
             i + 1, type_name(actual_results.types[i]), type_name(expected_results.types[i]));
+      }
+      if (expected_results.required[i] != actual_results.required[i]) {
+         return std::format("return {} required annotation differs (expected {}, got {})", i + 1,
+            expected_results.required[i] ? "required" : "nullable",
+            actual_results.required[i] ? "required" : "nullable");
       }
 
       if (expected_results.struct_defs[i] != actual_results.struct_defs[i]) {
@@ -225,14 +235,14 @@ private:
    void analyse_function_stmt(const FunctionStmtPayload &);
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
    void analyse_expression(const ExprNode &);
-   void analyse_call_expr(const CallExprPayload &);
+   void analyse_call_expr(const CallExprPayload &, SourceSpan);
    [[nodiscard]] bool is_global_environment_reference(const ExprNode &) const;
    [[nodiscard]] GCstr * protected_global_store_key(const ExprNode &) const;
    void report_protected_global_override(GCstr *, SourceSpan);
    void report_dynamic_destination_required(GCstr *, SourceSpan, bool IsGlobal);
 
    // Argument type checking for function calls
-   void check_arguments(const FunctionExprPayload &, const CallExprPayload &);
+   void check_arguments(const FunctionExprPayload &, const CallExprPayload &, SourceSpan);
    void check_argument_type(const ExprNode &, const FunctionParameter &, size_t);
 
    // Type inference - determines types from expressions and context
@@ -817,7 +827,8 @@ void TypeAnalyser::lower_unanalysed_function(const FunctionExprPayload &Function
    this->unanalysed_depth_++;
    this->push_scope();
    for (const FunctionParameter &param : Function.parameters) {
-      this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
+      this->current_scope().declare_parameter(
+         param.name.symbol, param.type, param.struct_def, param.required, param.name.span);
    }
    if (Function.body) {
       for (auto &statement : Function.body->statements) {
@@ -2070,7 +2081,8 @@ void TypeAnalyser::analyse_function_payload(const FunctionExprPayload &Function,
    this->enter_function(Function, Name);
 
    for (const auto &param : Function.parameters) {
-      this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
+      this->current_scope().declare_parameter(
+         param.name.symbol, param.type, param.struct_def, param.required, param.name.span);
       if (param.type_is_explicit and param.type IS TiriType::Any and param.name.binding_id) {
          this->explicit_variant_bindings_.insert(param.name.binding_id);
       }
@@ -2187,7 +2199,7 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
       case AstNodeKind::CallExpr:
       case AstNodeKind::SafeCallExpr: {
          auto *payload = std::get_if<CallExprPayload>(&Expression.data);
-         if (payload) this->analyse_call_expr(*payload);
+         if (payload) this->analyse_call_expr(*payload, Expression.span);
          break;
       }
       case AstNodeKind::MemberExpr: {
@@ -2281,7 +2293,7 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
 // Call Expression Analysis: Analyses function calls including direct calls, method calls, and safe method calls.
 // Validates argument types against the function's parameter declarations if available.
 
-void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
+void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call, SourceSpan Location)
 {
    if ((Call.result_type IS TiriType::Struct or Call.result_type IS TiriType::Func) and
        not Call.struct_def and not Call.arguments.empty()) {
@@ -2346,18 +2358,61 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
          Call.object_class_id = target->return_types.object_class_ids[0];
          Call.struct_def = target->return_types.struct_defs[0];
       }
-      this->check_arguments(*target, Call);
+      this->check_arguments(*target, Call, Location);
    }
 }
 
 //********************************************************************************************************************
 // Validate each argument against the corresponding parameter type declaration.
 
-void TypeAnalyser::check_arguments(const FunctionExprPayload &Function, const CallExprPayload &Call)
+void TypeAnalyser::check_arguments(
+   const FunctionExprPayload &Function, const CallExprPayload &Call, SourceSpan Location)
 {
+   size_t effective_argument_count = Call.arguments.size();
+   bool dynamic_tail = false;
+   const ExprNode *tail_argument = Call.arguments.empty() ? nullptr : Call.arguments.back().get();
+   if (tail_argument and (tail_argument->kind IS AstNodeKind::CallExpr or
+       tail_argument->kind IS AstNodeKind::SafeCallExpr or tail_argument->kind IS AstNodeKind::VarArgExpr)) {
+      if (tail_argument->static_results) {
+         const StaticResultSet &results = this->ctx_.descriptors().results(tail_argument->static_results);
+         if (results.dynamic or results.variadic) dynamic_tail = true;
+         else effective_argument_count = Call.arguments.size() - 1 + results.declared_count;
+      }
+      else dynamic_tail = true;
+   }
+
    size_t param_index = 0;
    for (const auto &param : Function.parameters) {
-      if (param_index >= Call.arguments.size()) break;
+      if (param_index >= Call.arguments.size()) {
+         if (dynamic_tail) {
+            param_index += 1;
+            continue;
+         }
+         if (param_index < effective_argument_count and tail_argument) {
+            InferredType actual = this->infer_call_return_type(
+               *tail_argument, param_index - (Call.arguments.size() - 1));
+            if (param.required and actual.primary IS TiriType::Nil) {
+               TypeDiagnostic diag;
+               diag.location = tail_argument->span;
+               diag.expected = param.type;
+               diag.actual = actual.primary;
+               diag.code = ParserErrorCode::TypeMismatchArgument;
+               diag.message = std::format("required argument {} cannot be nil", param_index + 1);
+               this->record_diagnostic(std::move(diag));
+            }
+         }
+         else if (param.required) {
+            TypeDiagnostic diag;
+            diag.location = Location;
+            diag.expected = param.type;
+            diag.actual = TiriType::Nil;
+            diag.code = ParserErrorCode::TypeMismatchArgument;
+            diag.message = std::format("required argument {} is missing", param_index + 1);
+            this->record_diagnostic(std::move(diag));
+         }
+         param_index += 1;
+         continue;
+      }
       this->check_argument_type(*Call.arguments[param_index], param, param_index);
       param_index += 1;
    }
@@ -2370,9 +2425,19 @@ void TypeAnalyser::check_argument_type(
    const ExprNode& Argument, const FunctionParameter &Parameter, size_t Index)
 {
    TiriType Expected = Parameter.type;
-   if (Expected IS TiriType::Any) return;
-
    InferredType actual = this->infer_expression_type(Argument);
+
+   if (Parameter.required and actual.primary IS TiriType::Nil) {
+      TypeDiagnostic diag;
+      diag.location = Argument.span;
+      diag.expected = Expected;
+      diag.actual = actual.primary;
+      diag.code = ParserErrorCode::TypeMismatchArgument;
+      diag.message = std::format("required argument {} cannot be nil", Index + 1);
+      this->record_diagnostic(std::move(diag));
+      return;
+   }
+   if (Expected IS TiriType::Any) return;
 
    bool member_matches = Expected != TiriType::Array or actual.primary != TiriType::Array or
       not actual.array_element.known or array_element_matches(Parameter.array_element, actual.array_element);
@@ -2902,6 +2967,7 @@ bool TypeAnalyser::is_variant_expression(const ExprNode &Expr, size_t Position) 
       const size_t type_position = Position < target->return_types.count ?
          Position : size_t(target->return_types.count - 1);
       result.primary = type;
+      result.is_nullable = not target->return_types.required_at(Position);
       result.object_class_id = target->return_types.object_class_ids[type_position];
       result.struct_def = target->return_types.struct_defs[type_position];
       result.array_element = target->return_types.array_elements[type_position];
@@ -3230,7 +3296,7 @@ bool TypeAnalyser::is_global_const(GCstr *Name) const
 // - Type mismatch detection between returned values and declared types
 // - Declared-position validation without constraining result count
 // - First-wins inference rule for functions without explicit return type declarations
-// - Nil is always allowed as a valid return value for any type slot
+// - Nil remains valid for nullable slots and is rejected for required slots
 
 void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, SourceSpan Location)
 {
@@ -3241,7 +3307,7 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
    size_t fixed_count = return_count;
    const ExprNode *tail_expression = nullptr;
    const StaticResultSet *tail_results = nullptr;
-   if (not ctx->expected_returns.is_explicit and Return.forwards_call and not Return.values.empty()) {
+   if (Return.forwards_call and not Return.values.empty()) {
       tail_expression = Return.values.back().get();
       if (tail_expression->static_results) {
          const StaticResultSet &results = this->ctx_.descriptors().results(tail_expression->static_results);
@@ -3269,16 +3335,37 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
    if (ctx->expected_returns.is_explicit) {
       // Explicit declaration: validate against declared types
 
+      for (size_t i = return_count; i < ctx->expected_returns.count; ++i) {
+         if (not ctx->expected_returns.required_at(i)) continue;
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.expected = ctx->expected_returns.type_at(i);
+         diag.actual = TiriType::Nil;
+         diag.code = ParserErrorCode::ReturnTypeMismatch;
+         diag.message = std::format("required return value {} is missing", i + 1);
+         this->record_diagnostic(std::move(diag));
+      }
+
       // Validate type of each returned value
       for (size_t i = 0; i < return_count and i < MAX_RETURN_TYPES; ++i) {
          TiriType expected = ctx->expected_returns.type_at(i);
-         if (expected IS TiriType::Any or expected IS TiriType::Unknown) continue;
-
          const ExprNode &expression = expression_at(i);
-         InferredType actual = this->infer_expression_type(expression);
+         InferredType actual = tail_results and i > fixed_count ?
+            infer_position(i) : this->infer_expression_type(expression);
 
-         // Nil is always allowed as a "clear" or "no value" return
-         if (actual.primary IS TiriType::Nil) continue;
+         if (actual.primary IS TiriType::Nil) {
+            if (ctx->expected_returns.required_at(i)) {
+               TypeDiagnostic diag;
+               diag.location = expression.span;
+               diag.expected = expected;
+               diag.actual = actual.primary;
+               diag.code = ParserErrorCode::ReturnTypeMismatch;
+               diag.message = std::format("required return value {} cannot be nil", i + 1);
+               this->record_diagnostic(std::move(diag));
+            }
+            continue;
+         }
+         if (expected IS TiriType::Any or expected IS TiriType::Unknown) continue;
          // A concrete declaration supplies the destination type for runtime validation of dynamic values.
          if (actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) continue;
 

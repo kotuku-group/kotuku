@@ -31,7 +31,7 @@ Examples:
            comment = 'Required. Folder containing HTML pages and static files to serve.',
            description = 'Folder containing HTML pages and static files to serve; can also come from config.' },
          { name = 'port', type = 'int', default = 8080, group = 'Server', comment = 'Port number to listen on.',
-           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+           exec = function(Parser:table, ArgName:str, Value:any!, Param:table)
               if Value < 1 or Value > 65535 then
                  error("Parameter 'port' must be between 1 and 65535.")
               end
@@ -42,7 +42,7 @@ Examples:
          { name = 'verbose', kind = 'flag', default = false, group = 'Behaviour',
            comment = 'Enable verbose logging.' },
          { name = 'timeout', type = 'int', default = 30, group = 'Behaviour', comment = 'Request timeout in seconds.',
-           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+           exec = function(Parser:table, ArgName:str, Value:any!, Param:table)
               if Value < 1 or Value > 300 then
                  error("Parameter 'timeout' must be between 1 and 300 seconds.")
               end
@@ -52,7 +52,7 @@ Examples:
            comment = 'Enable automatic directory listing.' },
          { names = array<string> { 'rateLimit', 'ratelimit' }, type = 'int', group = 'Behaviour',
            comment = 'Maximum requests per rate-limit window; 0 disables rate limiting.',
-           exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+           exec = function(Parser:table, ArgName:str, Value:any!, Param:table)
               if Value < 0 or Value > 1000 then
                  error("Parameter 'ratelimit' must be between 0 and 1000.")
               end

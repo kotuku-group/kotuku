@@ -91,7 +91,7 @@ glExtensions = {
   torrent = { icon = 'filetypes/download' }
 }
 
-function extToIcon(Ext:str):str
+function extToIcon(Ext:str!):str
    if glExtensions[Ext] then
       return 'icons:' .. glExtensions[Ext].icon
    else
@@ -101,11 +101,11 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function sortNum(Value:num):str
+function sortNum(Value:num!):str
    return string.format('%014.0f', Value)
 end
 
-function getFileIcon(Path:str):str
+function getFileIcon(Path:str!):str
    try
       icon = obj.new('file', { path=Path }).icon
       if icon is 'icons:filetypes/empty' then
@@ -165,7 +165,7 @@ function convertPermissions(Permissions)
    return out
 end
 
-function file_to_info(Path:str):table
+function file_to_info(Path:str!):table
    try
       local fl = obj.new('file', { path=Path })
 
@@ -197,7 +197,7 @@ function file_to_info(Path:str):table
    end
 end
 
-function updateFileAttributes(Item:table, Info)
+function updateFileAttributes(Item:table!, Info)
    if Item.date then
       if Item.type is 'folder' then
          Item.date.sort = 'D' .. sortNum(Info.timestamp)
@@ -261,7 +261,7 @@ function getFilters(self):array<string>
    return self._filters
 end
 
-function selectedFilters(self:table)
+function selectedFilters(self:table!)
    local count = 0
    for filter in values(self.filterList) do
       if filter.selected then count++ end
@@ -271,7 +271,7 @@ end
 
 -- Returns true if Filename should be visible
 
-function filterCheck(self:table, Filename:str)
+function filterCheck(self:table!, Filename:str!)
    Filename = Filename:lower()
    filters = getFilters(self)
    if #filters is 0 then return true end
@@ -413,7 +413,7 @@ lBkgdTasks = { }
 
 -- Paste from a list of files to a destination folder.
 
-function copyFromList(self, Folder:str, List, Move:bool)
+function copyFromList(self, Folder:str!, List, Move:bool)
    assert(io.isFolder(Folder), 'Invalid folder target of ' .. Folder)
 
    try
@@ -449,7 +449,7 @@ end
 
 -- Paste from a clipboard to a folder using a new thread
 
-function pasteFromClipboard(self, Folder:str)
+function pasteFromClipboard(self, Folder:str!)
    assert(io.isFolder(Folder), 'Invalid folder target of ' .. Folder)
 
    paste_script = obj.new('tiri', { statement = [[
@@ -779,7 +779,7 @@ gui.fileview = function(Options)
       if sort then self.view.sort() end
    end
 
-   function pathWatch(MonitoredFile, Path:str, Flags:num)
+   function pathWatch(MonitoredFile, Path:str, Flags:num!)
       if self.inRefresh then return end
 
       if Flags is 0 then -- No flags means a change has occurred but the host is unable to tell us what happened.
@@ -870,7 +870,7 @@ gui.fileview = function(Options)
    -- Execute a command with a given Mode.  All files listed in the Items argument will be passed to the object as
    -- a mass execution operation.
 
-   function openFiles(Items:array<table>, Mode:str)
+   function openFiles(Items:array<table>, Mode:str!)
       Items ?! return
       self.path ?! return
 
@@ -885,6 +885,8 @@ gui.fileview = function(Options)
    -- Check if there is a document tag associated with the current path.
 
    function checkDocView()
+      --[[
+      GetDocView() no longer exists
       if self.showDocs then
          docfile = mSys.GetDocView(self.path ?? ':')
          if docfile then
@@ -905,6 +907,7 @@ gui.fileview = function(Options)
       else
          self.view.document = nil
       end
+      --]]
    end
 
    function responseRename(Dialog, Response, State)
@@ -1361,7 +1364,7 @@ gui.fileview = function(Options)
       end
    end
 
-   function activateFile(self:table, Item:table)
+   function activateFile(self:table!, Item:table)
       if lOptions.autoMode and Item then
          choose lOptions.autoMode from
             'open' -> openFiles(array<table> { Item }, 'Open')

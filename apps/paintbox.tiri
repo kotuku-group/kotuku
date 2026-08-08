@@ -236,7 +236,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function outputPalette(Palette, Scheme:str, Preview:bool)
+function outputPalette(Palette, Scheme:str!, Preview:bool!)
    print('')
    print(f'Palette ({Scheme}):')
    idx = 0

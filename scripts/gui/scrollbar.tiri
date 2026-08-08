@@ -23,7 +23,7 @@ gui.scrollbar = function(Options)
    lMinWidth = 0
    lTheme    = gui.getTheme(Options.target)
 
-   function calcSlider(ViewLength:num, PageLength:num, HostLength:num, Position:num)
+   function calcSlider(ViewLength:num!, PageLength:num!, HostLength:num!, Position:num!)
       slider_size = HostLength * (ViewLength / PageLength)
 
       if (PageLength <= ViewLength) then -- Hide the scrollbar if the page is smaller than the view
@@ -116,7 +116,7 @@ gui.scrollbar = function(Options)
       lTarget.acDraw()
    end
 
-   function createScrollbar(Direction:str)
+   function createScrollbar(Direction:str!)
       local bar:table
 
       if Direction is 'V' then
@@ -134,7 +134,7 @@ gui.scrollbar = function(Options)
          -- Respond to the user dragging the slider.  Moving the page is all that is necessary; this
          -- will result in downstream callbacks making the necessary updates.
 
-         bar.sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
+         bar.sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
             slider_height = Viewport.height
             host_height   = self.vbar.sliderHostVP.height
             Y = math.clamp(Y, 0, host_height - slider_height)
@@ -159,7 +159,7 @@ gui.scrollbar = function(Options)
          bar.sliderHostVP = vp.new('VectorViewport', { name='HSliderHostVP', x = 0, height = '100%', xOffset = 0, overflow = VOF_HIDDEN })
          bar.sliderVP = bar.sliderHostVP.new('VectorViewport', { name='HSliderVP', width = bar.sliderHostVP.height, height = lBreadth, overflow = VOF_HIDDEN })
 
-         bar.sliderVP.dragCallback = function(Viewport:obj, X:num, Y:num)
+         bar.sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
             slider_width = Viewport.width
             host_width   = self.hbar.sliderHostVP.width
             X = math.clamp(X, 0, host_width - slider_width)
@@ -178,7 +178,7 @@ gui.scrollbar = function(Options)
       -- Capture user interactivity within the bar area.
 
       bar.sliderHostVP.mtSubscribeInput(JTYPE_BUTTON|JTYPE_REPEATED,
-         function(Viewport:obj, Msg)
+         function(Viewport:obj!, Msg)
             repeat
                if (Msg.type is JET_LMB) and (Msg.value > 0) then
                   if bar.direction is 'V' then
@@ -204,7 +204,7 @@ gui.scrollbar = function(Options)
    function doSubscriptions()
       -- The slider and possibly the page need to be repositioned whenever the view is resized.
 
-      lView.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj, Event)
+      lView.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj!, Event)
          px = lPage.x
          py = lPage.y
          pw = lPage.width
@@ -239,11 +239,11 @@ gui.scrollbar = function(Options)
          recalcSlidersFromView()
       end)
 
-      lPage.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj, Event)
+      lPage.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj!, Event)
          recalcSlidersFromView()
       end)
 
-      lPage.mtSubscribeInput(JTYPE_EXT_MOVEMENT, function(Viewport:obj, Events)
+      lPage.mtSubscribeInput(JTYPE_EXT_MOVEMENT, function(Viewport:obj!, Events)
          ev = Events
          while ev do
             if ev.type is JET_WHEEL then
@@ -258,7 +258,7 @@ gui.scrollbar = function(Options)
       end)
    end
 
-   self.scrollPage = function(DeltaX:num, DeltaY:num)
+   self.scrollPage = function(DeltaX:num!, DeltaY:num!)
       current_x = lPage.x
       current_y = lPage.y
       x = current_x + DeltaX
@@ -285,13 +285,13 @@ gui.scrollbar = function(Options)
 
    -- NB: As a client you can set the page height and width directly if no mode change is required.
 
-   self.setFixedPageSize = function(Width:num, Height:num)
+   self.setFixedPageSize = function(Width:num!, Height:num!)
       lPageMode = 'fixed'
       if Width != lPage.width then lPage.width = Width end
       if Height != lPage.height then lPage.height = Height end
    end
 
-   self.setDynamicPageSize = function(NominalWidth:num, MinWidth:num, Height:num)
+   self.setDynamicPageSize = function(NominalWidth:num!, MinWidth:num, Height:num!)
       lPageMode = 'dynamic'
       lMinWidth = MinWidth ?? 0
 

@@ -169,7 +169,7 @@ gui.dialog.file = function(Options)
          flushEdges  = true,
          text        = target_file,
          events = {
-            activate = function(Widget:table, Event:table)
+            activate = function(Widget:table!, Event:table!)
                if Event.state is 'activated' then
                   processFeedback()
                end
@@ -225,7 +225,7 @@ gui.dialog.file = function(Options)
       style         = 'column', -- column, list, tree
       toolBar       = { clipboard=true, settings=true },
       viewOptions   = { },
-      pathChanged = function(FileView:table, Path:str)
+      pathChanged = function(FileView:table!, Path:str!)
          self.currentPath = Path
          self.pathbox.text.string = self.currentPath
       end
