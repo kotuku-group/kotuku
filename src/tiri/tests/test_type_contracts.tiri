@@ -464,6 +464,10 @@ end
 end
 
 @Test function RequiredVariadicReturnSuffix()
+   function dynamic_variadic_empty():<any, ...> return end
+   function required_variadic_empty():<num!, ...> return dynamic_variadic_empty() end
+   expect_contract_failure(required_variadic_empty, 'missing required variadic result')
+
    function dynamic_variadic_nil():<any, any, any> return 1, 2, nil end
    function required_variadic():<num!, ...> return dynamic_variadic_nil() end
    expect_contract_failure(required_variadic, 'required variadic result')

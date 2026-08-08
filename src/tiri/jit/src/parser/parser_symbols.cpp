@@ -378,7 +378,7 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
       first = false;
 
       signature += identifier_to_string(param.name);
-      if (param.type != TiriType::Any and param.type != TiriType::Unknown) {
+      if ((param.type != TiriType::Any or param.required) and param.type != TiriType::Unknown) {
          signature += ": ";
          signature += annotation_type_to_string(param.type, param.struct_def, param.array_element);
          if (param.required) signature += "!";

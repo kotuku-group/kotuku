@@ -909,8 +909,10 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
    const CachedRuntimeContractRecord &Record, const CachedRuntimeContractEntry *Entries)
 {
    L->top = curr_topL(L);
-   uint32_t value_count = (Record.flags & contract_flag(ContractDescriptorFlag::DynamicCount)) ?
+   uint32_t available_value_count = (Record.flags & contract_flag(ContractDescriptorFlag::DynamicCount)) ?
       DynamicCount + Record.static_value_count : Record.static_value_count;
+   uint32_t value_count = available_value_count > Record.contract_count ?
+      available_value_count : Record.contract_count;
    bool variadic = (Record.flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
    ptrdiff_t base_offset = savestack(L, Base);
 
@@ -936,7 +938,7 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
           (entry.flags & contract_flag(ContractEntryFlag::Required)) IS 0) continue;
 
       Base = restorestack(L, base_offset);
-      TValue *value = Base + i;
+      TValue *value = i < available_value_count ? Base + i : niltv(L);
       if (lj_is_thunk(value)) {
          TValue *resolved = lj_thunk_resolve(L, udataV(value));
          Base = restorestack(L, base_offset);
@@ -1102,8 +1104,10 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
       }
    }
 
-   uint32_t value_count = descriptor.dynamic_count() ?
+   uint32_t available_value_count = descriptor.dynamic_count() ?
       DynamicCount + descriptor.static_value_count : descriptor.static_value_count;
+   uint32_t value_count = available_value_count > descriptor.contract_count ?
+      available_value_count : descriptor.contract_count;
    ptrdiff_t base_offset = savestack(L, Base);
 
    for (uint32_t i = 0; i < value_count; ++i) {
@@ -1113,7 +1117,7 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
           (entry->flags & contract_flag(ContractEntryFlag::Required)) IS 0) continue;
 
       Base = restorestack(L, base_offset);
-      TValue *value = Base + i;
+      TValue *value = i < available_value_count ? Base + i : niltv(L);
       if (lj_is_thunk(value)) {
          TValue *resolved = lj_thunk_resolve(L, udataV(value));
          Base = restorestack(L, base_offset);

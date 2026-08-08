@@ -174,7 +174,7 @@ gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
    return setmetatable(result, gui.mtRGB)
 end
 
-gui.nrgb = function(R:num!, G:num!, B:num!, A:num!, KV:table):table -- Normalised RGB values
+gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table -- Normalised RGB values
    result = { r = R, g = G, b = B, a = A ? A :> 1 }
    if KV then
       for k, v in pairs(KV) do

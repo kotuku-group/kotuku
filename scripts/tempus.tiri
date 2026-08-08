@@ -73,7 +73,7 @@ function require_type_name(TypeName:str!)
    raise ERR_InvalidValue, f"Unknown tempus value type '{TypeName}'."
 end
 
-function tempus._typeOf(Value:any!):any
+function tempus._typeOf(Value:any):any
    if type(Value) != 'table' then return nil end
 
    local state = value_storage[Value]
@@ -81,7 +81,7 @@ function tempus._typeOf(Value:any!):any
    return state.type_name
 end
 
-function tempus._isValue(Value:any!, TypeName:str!):bool
+function tempus._isValue(Value:any, TypeName:str!):bool
    return tempus._typeOf(Value) is TypeName
 end
 
@@ -2981,88 +2981,88 @@ end
 @input Value to test
 @result True for Instant values
 ]])
-tempus.isInstant = function(Value:any!):bool return tempus._isValue(Value, 'Instant') end
+tempus.isInstant = function(Value:any):bool return tempus._isValue(Value, 'Instant') end
 
 @Doc(text=[[
 @desc Check if a value is a Duration
 @input Value to test
 @result True for Duration values
 ]])
-tempus.isDuration = function(Value:any!):bool return tempus._isValue(Value, 'Duration') end
+tempus.isDuration = function(Value:any):bool return tempus._isValue(Value, 'Duration') end
 
 @Doc(text=[[
 @desc Check if a value is an Offset
 @input Value to test
 @result True for Offset values
 ]])
-tempus.isOffset = function(Value:any!):bool return tempus._isValue(Value, 'Offset') end
+tempus.isOffset = function(Value:any):bool return tempus._isValue(Value, 'Offset') end
 
 @Doc(text=[[
 @desc Check if a value is a LocalDate
 @input Value to test
 @result True for LocalDate values
 ]])
-tempus.isLocalDate = function(Value:any!):bool return tempus._isValue(Value, 'LocalDate') end
+tempus.isLocalDate = function(Value:any):bool return tempus._isValue(Value, 'LocalDate') end
 
 @Doc(text=[[
 @desc Check if a value is a LocalTime
 @input Value to test
 @result True for LocalTime values
 ]])
-tempus.isLocalTime = function(Value:any!):bool return tempus._isValue(Value, 'LocalTime') end
+tempus.isLocalTime = function(Value:any):bool return tempus._isValue(Value, 'LocalTime') end
 
 @Doc(text=[[
 @desc Check if a value is a LocalDateTime
 @input Value to test
 @result True for LocalDateTime values
 ]])
-tempus.isLocalDateTime = function(Value:any!):bool return tempus._isValue(Value, 'LocalDateTime') end
+tempus.isLocalDateTime = function(Value:any):bool return tempus._isValue(Value, 'LocalDateTime') end
 
 @Doc(text=[[
 @desc Check if a value is an OffsetDateTime
 @input Value to test
 @result True for OffsetDateTime values
 ]])
-tempus.isOffsetDateTime = function(Value:any!):bool return tempus._isValue(Value, 'OffsetDateTime') end
+tempus.isOffsetDateTime = function(Value:any):bool return tempus._isValue(Value, 'OffsetDateTime') end
 
 @Doc(text=[[
 @desc Check if a value is a Zone
 @input Value to test
 @result True for Zone values
 ]])
-tempus.isZone = function(Value:any!):bool return tempus._isValue(Value, 'Zone') end
+tempus.isZone = function(Value:any):bool return tempus._isValue(Value, 'Zone') end
 
 @Doc(text=[[
 @desc Check if a value is a ZonedDateTime
 @input Value to test
 @result True for ZonedDateTime values
 ]])
-tempus.isZonedDateTime = function(Value:any!):bool return tempus._isValue(Value, 'ZonedDateTime') end
+tempus.isZonedDateTime = function(Value:any):bool return tempus._isValue(Value, 'ZonedDateTime') end
 
 @Doc(text=[[
 @desc Check if a value is a Period
 @input Value to test
 @result True for Period values
 ]])
-tempus.isPeriod = function(Value:any!):bool return tempus._isValue(Value, 'Period') end
+tempus.isPeriod = function(Value:any):bool return tempus._isValue(Value, 'Period') end
 
 @Doc(text=[[
 @desc Check if a value is an Interval
 @input Value to test
 @result True for Interval values
 ]])
-tempus.isInterval = function(Value:any!):bool return tempus._isValue(Value, 'Interval') end
+tempus.isInterval = function(Value:any):bool return tempus._isValue(Value, 'Interval') end
 
 @Doc(text=[[
 @desc Check if a value is a Clock
 @input Value to test
 @result True for Clock values
 ]])
-tempus.isClock = function(Value:any!):bool return tempus._isValue(Value, 'Clock') end
+tempus.isClock = function(Value:any):bool return tempus._isValue(Value, 'Clock') end
 
 @Doc(text=[[
 @desc Check if a value is a Resolver
 @input Value to test
 @result True for Resolver values
 ]])
-tempus.isResolver = function(Value:any!):bool return tempus._isValue(Value, 'Resolver') end
+tempus.isResolver = function(Value:any):bool return tempus._isValue(Value, 'Resolver') end

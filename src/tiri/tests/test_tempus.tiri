@@ -70,6 +70,13 @@ end
    assert(tempus.isOffsetDateTime(offset_date_time), 'OffsetDateTime predicate should match OffsetDateTime values')
    assert(tempus.isZonedDateTime(zoned_date_time), 'ZonedDateTime predicate should match ZonedDateTime values')
    assert(not tempus.isInstant({}), 'Predicates should reject ordinary tables')
+   assert(tempus._typeOf(nil) is nil, 'Type probing nil should return nil')
+   assert(not tempus._isValue(nil, 'Instant'), 'Internal predicates should reject nil')
+   assert(not tempus.isInstant(nil) and not tempus.isDuration(nil) and not tempus.isOffset(nil) and
+      not tempus.isLocalDate(nil) and not tempus.isLocalTime(nil) and not tempus.isLocalDateTime(nil) and
+      not tempus.isOffsetDateTime(nil) and not tempus.isZone(nil) and not tempus.isZonedDateTime(nil) and
+      not tempus.isPeriod(nil) and not tempus.isInterval(nil) and not tempus.isClock(nil) and
+      not tempus.isResolver(nil), 'Public predicates should safely reject nil')
    assert(tempus.isResolver(tempus.resolve.reject), 'Resolver constants should be tempus values')
 end
 

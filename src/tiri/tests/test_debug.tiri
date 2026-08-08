@@ -492,13 +492,15 @@ end
 end
 
 @Test function ValidateSymbolsOption()
-   code = "function symbolOption(Value: str):str return Value end"
+   code = "function symbolOption(Value:any!):any! return Value end"
 
    result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid symbols option code should succeed")
    assert(result.symbols != nil, "symbols=true should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol with symbols=true")
    assert(result.symbols[0].name is "symbolOption", "Expected symbolOption symbol")
+   assert(result.symbols[0].signature is "symbolOption(Value: any!):any!",
+      "Required any parameters should retain their annotation in signatures")
 end
 
 @Test function ValidateSymbolsWithDocAnnotation()
