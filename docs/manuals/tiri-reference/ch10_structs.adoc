@@ -4,6 +4,7 @@
 // UPDATED: 2026-07-17 — Declarations are now 'end'-terminated blocks rather than brace-delimited (commit 56400bb).  Declarations no longer bind a constructor; instances are constructed only through the explicit struct<Name> { ... } form (commit 41b2c10).
 // CHANGED: 2026-07-31 — Replaced ambiguous pointer-safety guidance with a specific warning.
 // CHANGED: 2026-08-02 — Field writes validate value categories exactly; added sec-struct-numeric-conversion for truncation, width wrapping and non-finite rejection (commit 9f89c965).
+// CHANGED: 2026-08-07 — Module definitions are now registered by the 'module' declaration; 'mod.load()' no longer exists (commit 45b671b20).
 
 [[ch-structs]]
 == Structs
@@ -12,7 +13,7 @@ indexterm:[structs] indexterm:[structures] A struct is a first-class value that 
 Struct definitions originate from two sources:
 
 * The `struct` declaration statement, which defines a new layout directly in Tiri source (see <<sec-struct-declarations>>).
-* Kōtuku module IDL definitions, registered through an `include` directive or a `mod.load()` call (see <<ch-modules>>).  Many class and module functions use structs for returning condensed information.
+* Kōtuku module IDL definitions, registered through an `include` directive or a `module` declaration (see <<ch-modules>>).  Many class and module functions use structs for returning condensed information.
 
 Both sources produce identical struct values and share the `struct` namespace functions defined in <<sec-struct-namespace>>.
 
@@ -259,7 +260,7 @@ Annotating a value with its layout enables the compiler to resolve field offsets
 [.api]`instance = struct.new(StructName, [Fields])` +
 [.api]`instance = struct.new(StructName, Address)`
 
-Creates a new struct instance from a registered definition identified by `StructName`.  The definition must have been registered through an `include` directive, a `mod.load()` call, or a `struct` declaration (<<sec-struct-declarations>>).  Raises an exception if the definition is not found.  Returns a value whose `type()` is `"struct"`.
+Creates a new struct instance from a registered definition identified by `StructName`.  The definition must have been registered through an `include` directive, a `module` declaration (<<sec-module-declarations>>), or a `struct` declaration (<<sec-struct-declarations>>).  Raises an exception if the definition is not found.  Returns a value whose `type()` is `"struct"`.
 
 If `Fields` is a table, the key-value pairs are applied to the corresponding struct fields during creation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
 

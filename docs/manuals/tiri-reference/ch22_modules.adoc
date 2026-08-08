@@ -162,6 +162,41 @@ err, result = file.acRead(buffer)
 print(buffer)
 ----
 
+[[sec-namespace-restrictions]]
+=== Namespace Restrictions
+indexterm:[modules, namespace restrictions] A namespace is compiler metadata rather than a value, so the only expression it may form is a named member selection.  Every other use raises a parse error:
+
+[cols="2,3a",options="header"]
+|===
+|Rejected use |Example
+
+|Reference without a member selection
+|`print(mGfx)`
+
+|Assignment to a variable
+|`local gfx = mGfx`
+
+|Safe navigation
+|`mGfx?.getCursorPos()`
+
+|Indexed member selection
+|`mGfx['getCursorPos']()`
+
+|Assignment to a member
+|`mGfx.getCursorPos = nil`
+
+|Declaration as a variable
+|`local mGfx = 1`
+
+|Declaration as a function
+|`function mGfx() end`
+
+|Declaration as a function parameter
+|`function draw(mGfx) end`
+|===
+
+A namespace is never written to the global table, so `rawget(_G, 'mGfx')` yields `nil` for any namespace, including `mSys`.
+
 [[sec-the-include-directive]]
 === The include Directive
 [.api]`include 'ModuleName'[, 'ModuleName' pass:[...]]`

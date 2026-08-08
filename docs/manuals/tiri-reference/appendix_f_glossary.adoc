@@ -1,5 +1,6 @@
 // UPDATED: 2026-08-06 - Added the table classification terms (commit 26e122ab7)
 // UPDATED: 2026-08-07 - Added the Variant value entry (commit 58755ad6f)
+// UPDATED: 2026-08-07 - Added the Module namespace entry and distinguished it from a `namespace` declaration (commit 45b671b20)
 
 [[appendix-glossary]]
 [appendix]
@@ -132,10 +133,13 @@ Method::
 A class-specific operation on a Kōtuku object, prefixed with `mt`.  Object methods are invoked with dot notation on the object interface (`xml.mtFindTag(...)`) and return an `ERR` code as their first result.  This is distinct from the colon syntax used to declare and call methods on tables, strings, arrays and ranges, which supplies an implicit `self`.  See <<sec-actions-and-methods>> and <<sec-function-definitions>>.
 
 Module::
-A separately loadable component of the Kōtuku framework providing domain-specific functionality (e.g. network, vector, display).  Modules are loaded dynamically or linked statically depending on the build configuration.  See <<ch-modules>>.
+A separately loadable component of the Kōtuku framework providing domain-specific functionality (e.g. network, vector, display).  Modules are loaded dynamically or linked statically depending on the build configuration.  A script binds a module to a module namespace with the `module` declaration.  See <<ch-modules>>.
+
+Module namespace::
+A compile-time name bound to a Kōtuku module by a `module` declaration, through which the module's functions are selected.  A module namespace is compiler metadata rather than a value: it has no runtime representation, is absent from the global table, and can appear only as the subject of a named member selection.  See <<sec-module-declarations>>.
 
 Namespace::
-An organisational scope declared with the `namespace` keyword.  Groups related functions and variables under a named prefix.  See <<ch-script-management>>.
+An organisational scope declared with the `namespace` keyword.  Groups related functions and variables under a named prefix.  Distinct from a module namespace.  See <<ch-script-management>>.
 
 Native result type::
 The static type of a value returned by a call into native code, derived from the native signature and applied to the call's assignment targets.  See <<sec-native-result-types>>.

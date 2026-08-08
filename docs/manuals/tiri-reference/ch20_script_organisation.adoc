@@ -1,4 +1,5 @@
 // CHANGED: 2026-07-07 - Documented comma-separated import lists and their restrictions (#1618).
+// CHANGED: 2026-08-07 - An imported file is its own compilation unit for module namespaces (commit 45b671b20).
 // CHANGED: 2026-06-28 - Documented parent-relative ('../') import resolution.
 // VERIFIED: 2026-02-13
 // CHANGED: 2026-07-31 — Aligned the chapter title with the manual's organisation terminology.
@@ -54,6 +55,8 @@ The following restrictions apply to import lists:
 ==== Scope Rules
 
 `import` can only appear at the top-level scope of a script.  Attempting to use `import` inside a function or block raises a parse error.
+
+An imported file is its own compilation unit for the purposes of module namespaces (<<sec-module-declarations>>).  A namespace declared in an imported file is private to that file, and a namespace declared by the importing script is not visible to it.  Each file that calls a module function declares the module for itself.
 
 NOTE: The imported code executes in the calling script's context.  `global` variables and functions in the imported file are accessible to the caller post-import.  `local` variables in the imported file remain private and do not pollute the importing script's namespace.
 

@@ -1,5 +1,6 @@
 // UPDATED: 2026-07-06 -- Added the `extern` keyword.
 // UPDATED: 2026-04-03 -- Clarified `is not` as an inequality form using reserved words.
+// CHANGED: 2026-08-07 -- Documented the contextual keywords `module` and `struct`, and `as` in its module-declaration role (commit 45b671b20).
 [[appendix-reserved-words]]
 [appendix]
 == Reserved Words & Keywords
@@ -105,6 +106,18 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 |`with`      |Locks one or more Kōtuku objects for the duration of a block, releasing them on every exit path.  See <<sec-object-locking>>.
 |`namespace` |Declares a namespace for organising related definitions.  See <<ch-script-management>>.
 |`import`    |Inlines a Tiri library script at parse time.  See <<sec-the-import-directive>>.
-|`as`        |Provides a namespace alias in an `import` statement.  See <<sec-the-import-directive>>.
+|`as`        |Provides a namespace alias in an `import` statement, and binds a module namespace in a `module` declaration.  See <<sec-the-import-directive>> and <<sec-module-declarations>>.
 |`defer`     |Registers code to execute when the enclosing scope exits.  See <<ch-resource-management>>.
+|===
+
+=== Contextual Keywords
+
+indexterm:[contextual keywords] A contextual keyword introduces a declaration only in a specific syntactic position.  It is not reserved, so it remains available as an ordinary identifier everywhere else.
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`module` |Binds a Kōtuku module to a namespace when followed by an identifier, as `module Name as Namespace`.  See <<sec-module-declarations>>.
+|`struct` |Declares a struct layout when followed by an identifier.  See <<sec-struct-declarations>>.
 |===
