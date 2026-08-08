@@ -701,11 +701,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- TYPE ALIASES IN RETURN DECLARATIONS
 
-@Test function ReturnTypeAliasNumber()
-   function getNumber():number
+@Test function ReturnTypeNum()
+   function getNumber():num
       return 42
    end
-   assert(getNumber() is 42, "number alias in return type should work")
+   assert(getNumber() is 42, "num return type should work")
 end
 
 @Test function ReturnTypeString()

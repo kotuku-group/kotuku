@@ -90,7 +90,7 @@ end
    function compute()
       return 42
    end
-   x = <number{ compute() }>
+   x = <num{ compute() }>
    result = resolve(x)
    assert(type(result) is 'number', 'Expected number type')
    assert(result is 42, 'Expected 42')
@@ -181,7 +181,7 @@ end
    x = <str{ getValue() }>
    assert(type(x) is 'string', 'Expected type(x) to be "string" for explicitly typed deferred')
 
-   y = <number{ 42 }>
+   y = <num{ 42 }>
    assert(type(y) is 'number', 'Expected type(y) to be "number" for explicitly typed deferred')
 end
 

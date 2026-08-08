@@ -21,7 +21,7 @@ end
 struct DeclaredLayout
    Bool: bool, Char: char, Byte: byte, Int8: int8, UInt8: uint8,
    Int16: int16, UInt16: uint16, Int: int, UInt: uint,
-   Int32: int32, UInt32: uint32, Int64: int64, UInt64: uint64,
+   Int32: int, UInt32: uint, Int64: int64, UInt64: uint64,
    Float: float, Double: double, String: string, CStr: cstr,
    Pointer: ptr, IntPointer: ptr<int>, IntList: ptr<int[]>, Object: obj, Callback: func, Buffer: char[7],
    Fixed: int[3], Child: struct<DeclaredChild>, ChildPointer: ptr<DeclaredChild>
@@ -36,7 +36,7 @@ end
 struct DeclaredVectorFields
    Bool: array<bool>, Char: array<char>, Byte: array<byte>, Int8: array<int8>, UInt8: array<uint8>,
    Int16: array<int16>, UInt16: array<uint16>, Int: array<int>, UInt: array<uint>,
-   Int32: array<int32>, UInt32: array<uint32>, Int64: array<int64>, UInt64: array<uint64>,
+   Int32: array<int>, UInt32: array<uint>, Int64: array<int64>, UInt64: array<uint64>,
    Float: array<float>, Double: array<double>, String: array<string>,
    Points: array<struct<DeclaredVectorElement>>
 end
@@ -54,7 +54,7 @@ function declared_user_age(Value: struct<DeclaredUser>):num
 end
 
 function create_declared_user():struct<DeclaredUser>
-   return struct<DeclaredUser> { }
+   return struct<DeclaredUser>
 end
 
 function expect_struct_error(Action:func, ExpectedCode:num, Description:str)
@@ -79,7 +79,8 @@ end
    assert(user.Enabled is true, 'Boolean fields should be exposed as Tiri booleans')
    assert(user.Initial is 65 and user.Buffer is 'hello', 'Character fields and buffers should round-trip')
    assert(declared_user_age(user) is 37, 'struct<Name> annotations should resolve declared layouts')
-   assert(create_declared_user().Age is 0, 'struct<Name> return annotations should parse and retain the layout')
+   assert(create_declared_user().Age is 0,
+      'struct<Name> without an initialiser should parse in returns and retain the layout')
    local typed_user:struct<DeclaredUser> = user
    assert(typed_user.Name is 'Paul', 'struct<Name> local annotations should resolve declared layouts')
    local constructed_user:struct<DeclaredUser> = struct<DeclaredUser> { Age=42 }
@@ -170,10 +171,10 @@ end
    expect_struct_error(() => do value.Int16 = 32768 end, ERR_OutOfRange, 'int16 should reject overflow')
    expect_struct_error(() => do value.UInt16 = -1 end, ERR_OutOfRange, 'uint16 should reject underflow')
    expect_struct_error(() => do value.UInt16 = 65536 end, ERR_OutOfRange, 'uint16 should reject overflow')
-   expect_struct_error(() => do value.Int32 = -2147483649 end, ERR_OutOfRange, 'int32 should reject underflow')
-   expect_struct_error(() => do value.Int32 = 2147483648 end, ERR_OutOfRange, 'int32 should reject overflow')
-   expect_struct_error(() => do value.UInt32 = -1 end, ERR_OutOfRange, 'uint32 should reject underflow')
-   expect_struct_error(() => do value.UInt32 = 4294967296 end, ERR_OutOfRange, 'uint32 should reject overflow')
+   expect_struct_error(() => do value.Int32 = -2147483649 end, ERR_OutOfRange, 'int should reject underflow')
+   expect_struct_error(() => do value.Int32 = 2147483648 end, ERR_OutOfRange, 'int should reject overflow')
+   expect_struct_error(() => do value.UInt32 = -1 end, ERR_OutOfRange, 'uint should reject underflow')
+   expect_struct_error(() => do value.UInt32 = 4294967296 end, ERR_OutOfRange, 'uint should reject overflow')
    expect_struct_error(() => do value.Int64 = 9223372036854775808 end, ERR_OutOfRange, 'int64 should reject overflow')
    expect_struct_error(() => do value.UInt64 = -2048 end, ERR_OutOfRange, 'uint64 should reject underflow')
    expect_struct_error(() => do value.UInt64 = 18446744073709551616 end, ERR_OutOfRange,
@@ -286,14 +287,11 @@ local value = RetiredCallSyntax()
       error('Constructing an unknown struct name should fail to compile')
    end
 
-   try
-      exec([[
-struct MissingInitialiser Value: int end
-local value = struct<MissingInitialiser>
+   exec([[
+struct OmittedInitialiser Value: int end
+local value = struct<OmittedInitialiser>
+assert(value.Value is 0, 'struct<Name> without an initialiser table should be zero-initialised')
 ]])
-   success
-      error('struct<Name> without an initialiser table should fail to compile')
-   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -514,6 +512,42 @@ assert(value.Value is 12)
       exec([[struct BadUnknownType Value: mystery end]])
    success
       error('Unknown declaration field types should fail')
+   end
+
+   try
+      exec([[struct RetiredInt32 Value: int32 end]])
+   success
+      error('Struct declarations should reject the retired int32 alias')
+   end
+
+   try
+      exec([[struct RetiredUInt32 Value: uint32 end]])
+   success
+      error('Struct declarations should reject the retired uint32 alias')
+   end
+
+   try
+      exec([[struct RetiredInt32Array Values: array<int32> end]])
+   success
+      error('Struct array fields should reject the retired int32 alias')
+   end
+
+   try
+      exec([[struct RetiredUInt32Array Values: array<uint32> end]])
+   success
+      error('Struct array fields should reject the retired uint32 alias')
+   end
+
+   try
+      exec([[struct RetiredInt32Pointer Value: ptr<int32> end]])
+   success
+      error('Struct pointer fields should reject the retired int32 alias')
+   end
+
+   try
+      exec([[struct RetiredUInt32Pointer Value: ptr<uint32> end]])
+   success
+      error('Struct pointer fields should reject the retired uint32 alias')
    end
 
    try
