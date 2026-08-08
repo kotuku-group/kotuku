@@ -29,7 +29,7 @@ lColours = {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function columnText(Value:any, Type:str!):any
+function columnText(Value:any, Type:str):any
    if type(Value) is 'table' then
       Value = Value.value
    end
@@ -708,7 +708,7 @@ gui.columnView = function(Options):table
       end
    end
 
-   vw.sort = function(Attrib, Ascending:bool!)
+   vw.sort = function(Attrib, Ascending:bool)
       vw.sortItems(Attrib, Ascending)
       rearrangeItems(vw)
    end

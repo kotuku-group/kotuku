@@ -484,7 +484,7 @@ function createFileItem(self, Info)
       if Info.permissions has PERMIT_HIDDEN then return end
    end
 
-   msg('createFileItem() ' .. Info.name .. string.format(', $%.8x', Info.flags))
+   msg(f'createFileItem("{Info.name}", {string.format("$%.8x", Info.flags)})')
 
    local new_item
    if Info.flags has RDF_VOLUME then -- Get the icon to use for displaying the volume
