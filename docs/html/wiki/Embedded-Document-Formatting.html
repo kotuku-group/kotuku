@@ -422,18 +422,23 @@ An optional long description can be written here.
 <tbody>
 <tr>
 <td style="text-align: left;"><code>array(Type)</code></td>
-<td style="text-align: left;"><code>Type *</code></td>
-<td style="text-align: left;">Pointer to an unsized array of <code>Type</code>. Use <code>array(Type,Size)</code> for fixed-size arrays.</td>
+<td style="text-align: left;"><code>std::span&lt;const Type&gt;</code> or <code>Type *</code></td>
+<td style="text-align: left;">Read-only callable span, or legacy pointer storage when used as a field.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>buf(Type)</code></td>
-<td style="text-align: left;"><code>Type *</code></td>
-<td style="text-align: left;">Pointer to a buffer of <code>Type</code>. Follow with <code>bufsize</code> or <code>structsize</code>.</td>
+<td style="text-align: left;"><code>^array(Type)</code></td>
+<td style="text-align: left;"><code>std::span&lt;Type&gt;</code></td>
+<td style="text-align: left;">Writable, non-owning span used as a function, method or action parameter.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>bufsize</code></td>
-<td style="text-align: left;"><code>int</code></td>
-<td style="text-align: left;">Byte size of the preceding buffer.</td>
+<td style="text-align: left;"><code>array(Type,Size)</code></td>
+<td style="text-align: left;"><code>Type[Size]</code></td>
+<td style="text-align: left;">Fixed-size array embedded in a structure or class field. <code>Size</code> must be greater than zero.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>array(Type,0)</code></td>
+<td style="text-align: left;"><code>Type *</code></td>
+<td style="text-align: left;">Null-terminated pointer-array metadata for structure and class fields.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>char</code></td>
@@ -581,11 +586,6 @@ An optional long description can be written here.
 <td style="text-align: left;">Pointer to a named TDL struct.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>structsize</code></td>
-<td style="text-align: left;"><code>int</code></td>
-<td style="text-align: left;">Byte size of the preceding struct reference.</td>
-</tr>
-<tr>
 <td style="text-align: left;"><code>tags</code></td>
 <td style="text-align: left;"><code>...</code></td>
 <td style="text-align: left;">Tag-list parameter.</td>
@@ -611,6 +611,11 @@ An optional long description can be written here.
 <td style="text-align: left;">Variable argument list.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>vector(Type)</code></td>
+<td style="text-align: left;"><code>kt::vector&lt;Type&gt;</code></td>
+<td style="text-align: left;">Dynamically sized C++ array. Use this type for array parameters and results in function, method and action declarations.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>void</code></td>
 <td style="text-align: left;"><code>void</code></td>
 <td style="text-align: left;">No value.</td>
@@ -622,9 +627,16 @@ An optional long description can be written here.
 </tr>
 </tbody>
 </table>
+<p>Raw pointer-array forms remain available for stored field metadata. In callable declarations, unsized <code>array(Type)</code>
+uses <code>FDF_SPAN</code> (<code>FD_CPP|FD_ARRAY</code>) metadata and carries its pointer and element count in <code>std::span</code>. Byte buffers use
+<code>array(char)</code>; pointer elements use <code>array(ptr)</code>, and record spans use <code>array(struct(Name))</code>.</p>
+<p>Callable arrays support byte, integer, floating-point, pointer and named-structure elements. Fixed-extent callable
+arrays, string or object elements, span result parameters and allocated span results are not supported. Use
+<code>vector(Type)</code> for owned or returned collections.</p>
 <p>Prefix a type with <code>&amp;</code> when the parameter is a pointer that receives a result, for example <code>&amp;int</code> for <code>int *</code>. Prefix
 the type with <code>!</code> when the result is an allocated resource pointer that can be released with <code>FreeResource()</code>; this lets
-Tiri manage the resource safely. Prefix the type with <code>^</code> when a buffer is modified by the function.</p>
+Tiri manage the resource safely. Prefix <code>array(Type)</code> with <code>^</code> when the referenced elements may be modified by the
+function.</p>
 <h2 id="behaviour-tags">Behaviour Tags</h2>
 <p>Use <code>-TAGS-</code> to record behavioural information that is useful to documentation generators, language bindings and static
 analysis tools, but cannot be inferred reliably from the EDF type alone. Tags are supplied as a comma-separated value

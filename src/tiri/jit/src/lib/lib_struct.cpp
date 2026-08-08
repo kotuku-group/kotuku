@@ -35,8 +35,8 @@ static const char * scalar_type_name(NativeStructType Type)
       case NativeStructType::UInt8: return "uint8";
       case NativeStructType::Int16: return "int16";
       case NativeStructType::UInt16: return "uint16";
-      case NativeStructType::Int32: return "int32";
-      case NativeStructType::UInt32: return "uint32";
+      case NativeStructType::Int32: return "int";
+      case NativeStructType::UInt32: return "uint";
       case NativeStructType::Int64: return "int64";
       case NativeStructType::UInt64: return "uint64";
       case NativeStructType::Float: return "float";
