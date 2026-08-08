@@ -337,7 +337,7 @@ gui.toolbar = function(Options)
    -- icon can be displayed.  Set the Tip string for a user hint during hover events.  The icon string must be in the
    -- standard format of 'category/icon'.
 
-   self.addItem = function(ID:num, Name:str, Tip:str, Icon:str, Function:func)
+   self.addItem = function(ID:num!, Name:str!, Tip:str, Icon:str, Function:func!)
       item = newItem(TI_ICON, Name, ID)
       item.callback = Function
 

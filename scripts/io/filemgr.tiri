@@ -11,7 +11,7 @@ local progress_status, progress_dialog:table, progress_time
 
 -- copyFeedback() is called for every file that is copied, or multiple times for large files.
 
-function copyFeedback(Size:num, Position:num, Path:str, Dest:str, User, FeedbackID)
+function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, FeedbackID)
    msg(f'Copy feedback: {Path} TO {Dest}')
 
    if progress_status is 'cancel' then
@@ -69,7 +69,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-io.ui.paste = function(Dest:str)
+io.ui.paste = function(Dest:str!)
    local clipboard = obj.new('clipboard')
    defer clipboard.free() end
 
@@ -94,7 +94,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- NB: This call can block if it needs a response from the user.  It does not return until the copy is complete.
 
-io.ui.copy = function(Source:any, Dest:str, Move:bool)
+io.ui.copy = function(Source:any!, Dest:str!, Move:bool!)
    if type(Source) is 'string' then Source = { Source } end
    if type(Source) != 'table' then error('Provided Source is not a table') end
 

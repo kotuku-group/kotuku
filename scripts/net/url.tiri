@@ -429,7 +429,7 @@ end
 @input Component table
 @result Network location string, or nil when no host is present
 ]])
-url._buildNetloc = function(Components:table):str
+url._buildNetloc = function(Components:table!):str
    Components.host ?! return nil
    netloc = array<string>
    if Components.auth then netloc:push(Components.auth .. '@') end

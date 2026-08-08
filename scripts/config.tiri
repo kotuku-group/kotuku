@@ -16,24 +16,24 @@
 
 local rx_non_space = regex.new('[^ \\t]')
 
-function first_non_space(String:str):num
+function first_non_space(String:str!):num
    return rx_non_space.findFirst(String, 0)
 end
 
-function validate_text(Text:str, Description:str)
+function validate_text(Text:str!, Description:str!)
    if Text:find('\n', 0, true) or Text:find('\r', 0, true) then
       error(Description .. ' cannot contain line breaks.')
    end
 end
 
-function validate_name(Name:any, Description:str):str
+function validate_name(Name:any!, Description:str!):str
    if type(Name) != 'string' then error(Description .. ' must be a string.') end
    if Name is '' then error(Description .. ' cannot be empty.') end
    validate_text(Name, Description)
    return Name
 end
 
-function validate_group_name(Name:any):str
+function validate_group_name(Name:any!):str
    Name = validate_name(Name, 'Config group name')
    if Name:find('[', 0, true) or Name:find(']', 0, true) then
       error('Config group name cannot contain brackets.')
@@ -41,7 +41,7 @@ function validate_group_name(Name:any):str
    return Name
 end
 
-function validate_key_name(Name:any, GroupName:str):str
+function validate_key_name(Name:any!, GroupName:str!):str
    local description = f'Config key name in group "{GroupName}"'
    Name = validate_name(Name, description)
    if Name:trim() != Name then error(description .. ' cannot contain surrounding whitespace.') end
@@ -57,7 +57,7 @@ end
 @input Config text
 @result Table of groups and key-value tables
 ]])
-config.decode = function(String:str):table
+config.decode = function(String:str!):table
    local result:table = { }
    local current_group:table = nil
    local normalised = String:replace('\r\n', '\n'):replace('\r', '\n')
@@ -115,7 +115,7 @@ end
 @input Table of groups and key-value tables
 @result Config text
 ]])
-config.encode = function(Value:table):str
+config.encode = function(Value:table!):str
    local output = array<string>
    local group_count = 0
 

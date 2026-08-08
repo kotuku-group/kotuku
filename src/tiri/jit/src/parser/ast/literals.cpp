@@ -151,11 +151,25 @@ ParserResult<ExprNodeList> AstBuilder::parse_expression_list()
 // Parses comma-separated lists of identifiers with optional attributes (e.g., <close>).
 
 ParserResult<Token> AstBuilder::parse_type_annotation(
-   TiriType &Type, struct_record *&StructDef, ArrayElementDescriptor &ArrayElement)
+   TiriType &Type, struct_record *&StructDef, ArrayElementDescriptor &ArrayElement, bool &Required)
 {
    Token type_token = this->ctx.tokens().current();
    auto kind = type_token.kind();
    std::string_view type_view;
+   Required = false;
+
+   auto finish_annotation = [&]() -> ParserResult<Token> {
+      if (this->ctx.tokens().current().raw() IS '!') {
+         Token required_token = this->ctx.tokens().current();
+         this->ctx.tokens().advance();
+         if (Type IS TiriType::Nil) {
+            return this->fail<Token>(ParserErrorCode::UnexpectedToken, required_token,
+               "'nil!' is contradictory because a required value cannot be nil");
+         }
+         Required = true;
+      }
+      return ParserResult<Token>::success(type_token);
+   };
 
    if (kind IS TokenKind::ArrayTyped) {
       this->ctx.tokens().advance();
@@ -181,7 +195,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       }
       Type = TiriType::Array;
       ArrayElement = *element;
-      return ParserResult<Token>::success(type_token);
+      return finish_annotation();
    }
 
    if (kind IS TokenKind::StructTyped) {
@@ -196,7 +210,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       }
       Type = TiriType::Struct;
       StructDef = found;
-      return ParserResult<Token>::success(type_token);
+      return finish_annotation();
    }
 
    if (kind IS TokenKind::Identifier) {
@@ -258,7 +272,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
                std::format("Unknown array element type '{}'", element_storage));
          }
          ArrayElement = *element;
-         return ParserResult<Token>::success(type_token);
+         return finish_annotation();
       }
       return this->fail<Token>(ParserErrorCode::ExpectedTypeName, type_token,
          "Array annotations require an element type; use array<any> for a wildcard array contract");
@@ -279,7 +293,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
       if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
    }
-   return ParserResult<Token>::success(type_token);
+   return finish_annotation();
 }
 
 ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
@@ -300,9 +314,14 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       // Parse optional type annotation (:type)
       if (this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
+         bool required = false;
          auto parsed = this->parse_type_annotation(
-            identifier.type, identifier.struct_def, identifier.array_element);
+            identifier.type, identifier.struct_def, identifier.array_element, required);
          if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
+         if (required) {
+            return this->fail<Identifier>(ParserErrorCode::UnexpectedToken, parsed.value_ref(),
+               "Required annotations are only permitted on function parameters and return values");
+         }
       }
 
       // Check for attribute: either '<' (normal case) or 'const'/'close' followed by '<' (buffered case)
@@ -364,9 +383,14 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       // Parse optional type annotation (:type) after attribute (supports `name <const>:type` syntax)
       if (identifier.type IS TiriType::Unknown and this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
+         bool required = false;
          auto parsed = this->parse_type_annotation(
-            identifier.type, identifier.struct_def, identifier.array_element);
+            identifier.type, identifier.struct_def, identifier.array_element, required);
          if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
+         if (required) {
+            return this->fail<Identifier>(ParserErrorCode::UnexpectedToken, parsed.value_ref(),
+               "Required annotations are only permitted on function parameters and return values");
+         }
       }
 
       return ParserResult<Identifier>::success(std::move(identifier));
@@ -415,7 +439,8 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 
          if (this->ctx.check(TokenKind::Colon)) {
             this->ctx.tokens().advance();
-            auto parsed = this->parse_type_annotation(param.type, param.struct_def, param.array_element);
+            auto parsed = this->parse_type_annotation(
+               param.type, param.struct_def, param.array_element, param.required);
             if (not parsed.ok()) return ParserResult<ParameterListResult>::failure(parsed.error_ref());
             param.type_is_explicit = true;
          }
@@ -841,9 +866,17 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
          if (result.count >= MAX_RETURN_TYPES) {
             if (result.count IS MAX_RETURN_TYPES) {
                result.types[MAX_RETURN_TYPES - 1] = TiriType::Any;
+               result.required[MAX_RETURN_TYPES - 1] = false;
             }
-            // Skip remaining types until '>' or '...'
-            if (current.kind() IS TokenKind::Identifier) this->ctx.tokens().advance();
+            TiriType overflow_type = TiriType::Unknown;
+            struct_record *overflow_struct = nullptr;
+            ArrayElementDescriptor overflow_array;
+            bool overflow_required = false;
+            auto overflow_token = this->parse_type_annotation(
+               overflow_type, overflow_struct, overflow_array, overflow_required);
+            if (not overflow_token.ok()) {
+               return ParserResult<FunctionReturnTypes>::failure(overflow_token.error_ref());
+            }
             result.count++;
             continue;
          }
@@ -851,11 +884,13 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
          TiriType parsed = TiriType::Unknown;
          struct_record *struct_def = nullptr;
          ArrayElementDescriptor array_element;
-         auto type_token = this->parse_type_annotation(parsed, struct_def, array_element);
+         bool required = false;
+         auto type_token = this->parse_type_annotation(parsed, struct_def, array_element, required);
          if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
          result.types[result.count] = parsed;
          result.struct_defs[result.count] = struct_def;
-         result.array_elements[result.count++] = array_element;
+         result.array_elements[result.count] = array_element;
+         result.required[result.count++] = required;
 
       } while (this->ctx.match(TokenKind::Comma).ok());
 
@@ -866,7 +901,7 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
    }
    else {
       auto type_token = this->parse_type_annotation(
-         result.types[0], result.struct_defs[0], result.array_elements[0]);
+         result.types[0], result.struct_defs[0], result.array_elements[0], result.required[0]);
       if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
       result.count = 1;
    }

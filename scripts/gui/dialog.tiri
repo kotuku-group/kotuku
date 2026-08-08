@@ -291,7 +291,7 @@ gui.dialog.message = function(Options)
    return self
 end
 
-gui.dialog.error = function(Title:str, Message:str, Options:table):table
+gui.dialog.error = function(Title:str!, Message:str!, Options:table):table
    Options ?= { }
    Options.type = 'error'
    Options.title = Title

@@ -165,7 +165,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       child_state.signature_parameters.push_back(ProtoTypeEntry{
          .constraint = constraint,
          .type = parameter_type,
-         .flags = proto_type_flags(true, false, origin, strength),
+         .flags = proto_type_flags(not param.required, param.required, origin, strength),
          .reserved = parameter_type IS TiriType::Array ? proto_array_member(parameter_array.storage) : uint16_t(0)
       });
    }
@@ -212,7 +212,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    parameter_contracts.reserve(param_count.raw());
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
-      if (param.type IS TiriType::Unknown or param.type IS TiriType::Any) continue;
+      if ((param.type IS TiriType::Unknown or param.type IS TiriType::Any) and not param.required) continue;
 
       RuntimeContract contract{
          .type = param.type,
@@ -221,8 +221,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          .label = param.name.is_blank ? nullptr : param.name.symbol,
          .boundary = ContractBoundary::Parameter,
          .position = uint8_t(i.raw() + 1),
-         .nullable = true,
-         .required = false
+         .nullable = not param.required,
+         .required = param.required
       };
       parameter_contracts.push_back(RuntimeContractSlot{
          .register_index = BCREG(base.raw() + i.raw()),
@@ -252,6 +252,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          child_state.return_types[i] = Payload.return_types.types[i];
          child_state.return_struct_defs[i] = Payload.return_types.struct_defs[i];
          child_state.return_array_elements[i] = Payload.return_types.array_elements[i];
+         child_state.return_required[i] = Payload.return_types.required[i];
          auto type = Payload.return_types.types[i];
          auto struct_def = Payload.return_types.struct_defs[i];
          auto array_element = Payload.return_types.array_elements[i];
@@ -262,7 +263,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          child_state.signature_results[i] = ProtoTypeEntry{
             .constraint = constraint,
             .type = type,
-            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Declared,
+            .flags = proto_type_flags(not Payload.return_types.required[i], Payload.return_types.required[i],
+               ProtoTypeOrigin::Declared,
                (type IS TiriType::Any or type IS TiriType::Unknown) ?
                   ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked),
             .reserved = type IS TiriType::Array ? proto_array_member(array_element.storage) : uint16_t(0)

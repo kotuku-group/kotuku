@@ -803,6 +803,35 @@ static void fs_fixup_ret(FuncState *fs)
       execute_closes(fs, 0);
       execute_defers(fs, 0);
       if (has_flag(fs->bl->flags, FuncScopeFlag::Upvalue)) bcemit_AJ(fs, BC_UCLO, 0, 0);
+      bool has_required_result = false;
+      for (uint8_t i = 0; i < fs->return_contract_count; ++i) {
+         if (fs->return_required[i]) {
+            has_required_result = true;
+            break;
+         }
+      }
+      if (has_required_result) {
+         RegisterAllocator allocator(fs);
+         BCREG contract_base = fs->freereg;
+         allocator.reserve(BCReg(fs->return_contract_count));
+         for (uint8_t i = 0; i < fs->return_contract_count; ++i) {
+            bcemit_AD(fs, BC_KPRI, BCREG(contract_base + i), BCREG(ExpKind::Nil));
+         }
+         std::array<RuntimeContract, MAX_RETURN_TYPES> contracts;
+         for (uint8_t i = 0; i < fs->return_contract_count; ++i) {
+            contracts[i] = RuntimeContract{
+               .type = fs->return_types[i],
+               .struct_def = fs->return_struct_defs[i],
+               .array_element = fs->return_array_elements[i],
+               .boundary = ContractBoundary::Result,
+               .position = uint8_t(i + 1),
+               .nullable = not fs->return_required[i],
+               .required = fs->return_required[i]
+            };
+         }
+         bcemit_contract(fs, contract_base, std::span(contracts.data(), fs->return_contract_count),
+            BCREG(fs->return_contract_count), false, fs->return_contract_variadic);
+      }
       bcemit_AD(fs, BC_RET0, 0, 1);  // Need final return.
    }
 

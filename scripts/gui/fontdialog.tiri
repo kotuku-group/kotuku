@@ -192,7 +192,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    })
 
    self.viewport = lWindow:clientViewport({
-      resizeEvent = function(Window:table)
+      resizeEvent = function(Window:obj!)
          refreshGuidelines()
       end
    })
@@ -208,7 +208,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       yOffset = footer,
       icon    = 'items/cancel',
       events = {
-         activate = function(Button)
+         activate = function(Button:table!)
             sendFeedback(false)
          end
       }
@@ -221,7 +221,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       yOffset = footer,
       icon    = 'items/checkmark',
       events = {
-         activate = function(Button)
+         activate = function(Button:table!)
             sendFeedback(true)
          end
       }
@@ -266,7 +266,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       sensitive  = true,
       noIcons    = true,
       textAttrib = 'name',
-      itemSelected = function(View:table, Reason:str, Item:table)
+      itemSelected = function(View:table!, Reason:str!, Item:table!)
          selection = Item.name
          self.pointSize = math.clamp(selection, 4, 400)
          processing.collect()
@@ -287,7 +287,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       sensitive    = true,
       noIcons      = true,
       textAttrib   = 'name',
-      itemSelected = function(View:table, Reason:str, Item:table)
+      itemSelected = function(View:table!, Reason:str!, Item:table!)
          self.style = Item.name
          processing.collect()
          refreshExample()

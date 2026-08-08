@@ -10,13 +10,13 @@
 
    bmark = _LIB[_NS]
 
-bmark.save = function(Results:table, Path:str)
+bmark.save = function(Results:table!, Path:str!)
    local file = io.open(Path, 'w')
    file:write(json.encode(Results))
    file:close()
 end
 
-bmark.load = function(Path:str):table
+bmark.load = function(Path:str!):table
    local file = io.open(Path, 'r')
    local jsonStr = file:read('*a')
    file:close()
@@ -25,7 +25,7 @@ end
 
 -- Generate a text report from benchmark statistics
 
-bmark.textReport = function(Results:table):array<string>
+bmark.textReport = function(Results:table!):array<string>
    assert(Results, "Results are required")
    local msg = array<string>
    msg:push('=== BENCHMARK RESULTS ===')
@@ -61,7 +61,7 @@ end
 
 -- Benchmarks a provided Callback function and returns a table of the results
 
-bmark.run = function(Options:table, Feedback:func, Callback:func):table
+bmark.run = function(Options:table, Feedback:func, Callback:func!):table
    Options ?= { }
 
    Feedback ?= function() end
@@ -230,7 +230,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-bmark.stats = function(Values:any):table
+bmark.stats = function(Values:any!):table
    local n, mean, stddev, min_val, max_val, sample_n
    local sorted_sample  -- For percentile calculations
 
@@ -271,7 +271,7 @@ bmark.stats = function(Values:any):table
    stddev = math.sqrt(variance)
 
    -- Percentile calculation from sorted sample (inversed since the lower values are better)
-   function getPercentile(SortedValues:table, Percentile:num):num
+   function getPercentile(SortedValues:table!, Percentile:num!):num
       local sample_n = #SortedValues
       if sample_n is 0 then return 0 end
       local index = math.ceil(Percentile * sample_n / 100) - 1
@@ -312,7 +312,7 @@ end
 -- Calculate 95% confidence interval for an array of values.
 -- Returns table with lower, upper bounds and margin of error.
 
-bmark.confidenceInterval = function(Values:array<any>, Confidence:num):table
+bmark.confidenceInterval = function(Values:array<any>!, Confidence:num):table
    Confidence ??= 0.95
 
    local n = #Values
@@ -366,7 +366,7 @@ end
 -- are considered outliers.  Default multiplier k is 1.5 (standard), use 3.0 for extreme outliers only.  Returns
 -- table with filtered values and outlier information.
 
-bmark.removeOutliers = function(Values:array<double>, Multiplier:num):table
+bmark.removeOutliers = function(Values:array<double>!, Multiplier:num):table
    Multiplier ??= 1.5
 
    local n = #Values
@@ -391,7 +391,7 @@ bmark.removeOutliers = function(Values:array<double>, Multiplier:num):table
    table.sort(sorted)
 
    -- Calculate Q1 (25th percentile) and Q3 (75th percentile)
-   local function getQuartile(SortedValues:table, Quartile:num):num
+   local function getQuartile(SortedValues:table!, Quartile:num!):num
       local n = #SortedValues
       local index = (Quartile / 4) * (n + 1) - 1 -- Convert to 0-based
       local lower_idx = math.floor(index)
@@ -445,7 +445,7 @@ end
 -- Generate a histogram from an array of values.
 -- Returns table with bins, counts, and distribution information.
 
-bmark.histogram = function(Values:array<double>, BinCount:num):table
+bmark.histogram = function(Values:array<double>!, BinCount:num):table
    BinCount ??= 10
 
    local n = #Values
@@ -531,7 +531,7 @@ end
 
 -- Generate an ASCII histogram representation for console output.
 
-bmark.histogramText = function(Histogram:table, Width:num):array<string>
+bmark.histogramText = function(Histogram:table!, Width:num):array<string>
    Width ??= 40
 
    local msg = array<string>
@@ -568,8 +568,8 @@ end
 -- Positive percentages indicate Current is slower/worse than Baseline.
 -- Negative percentages indicate Current is faster/better than Baseline.
 
-bmark.compare = function(Baseline:table, Current:table):table
-   local function pctChange(Baseline:num, Current:num):num
+bmark.compare = function(Baseline:table!, Current:table!):table
+   local function pctChange(Baseline:num!, Current:num!):num
       if Baseline is 0 then return 0 end
       return ((Current - Baseline) / Baseline) * 100
    end
@@ -650,7 +650,7 @@ end
 -- Returns comparison table with additional regression detection fields.
 -- Threshold is the percentage change that triggers a regression (default 5%).
 
-bmark.compareToBaseline = function(Current:table, BaselinePath:str, Threshold:num):table
+bmark.compareToBaseline = function(Current:table!, BaselinePath:str!, Threshold:num):table
    Threshold ??= 5.0
 
    local baseline = bmark.load(BaselinePath)
@@ -711,17 +711,17 @@ end
 -- Check if results indicate a regression compared to baseline.
 -- Simple boolean check useful for CI/CD pipelines.
 
-bmark.hasRegression = function(Current:table, BaselinePath:str, Threshold:num):bool
+bmark.hasRegression = function(Current:table!, BaselinePath:str!, Threshold:num!):bool
    local comparison = bmark.compareToBaseline(Current, BaselinePath, Threshold)
    return not comparison.passed
 end
 
 -- Generate a text report from a comparison result
 
-bmark.comparisonReport = function(Comparison:table):array<string>
+bmark.comparisonReport = function(Comparison:table!):array<string>
    local msg = array<string>
 
-   local function formatChange(Change:num, Improved:bool):string
+   local function formatChange(Change:num!, Improved:bool):string
       local sign = Change >= 0 and '+' or ''
       local indicator = Improved and '✓' or (math.abs(Change) > 5 and '✗' or '~')
       return string.format('%s%.1f%% %s', sign, Change, indicator)

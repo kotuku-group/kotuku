@@ -299,7 +299,10 @@ StaticValueDescriptor describe_length_result(const StaticValueDescriptor &Operan
 bool static_value_satisfies_contract(
    const StaticValueDescriptor &Value, const RuntimeContract &Contract)
 {
-   if (Contract.type IS TiriType::Unknown or Contract.type IS TiriType::Any) return true;
+   if (Contract.type IS TiriType::Unknown or Contract.type IS TiriType::Any) {
+      if (not Contract.required) return true;
+      return Value.proved() and Value.primary != TiriType::Nil and not Value.nullable;
+   }
    if (not Value.proved()) return false;
 
    if (Value.primary IS TiriType::Nil) return Contract.nullable and not Contract.required;

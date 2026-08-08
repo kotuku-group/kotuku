@@ -14,7 +14,7 @@
 local num_regex = regex.new([[^-?[0-9]+\.?[0-9]*[eE]?[+\-]?[0-9]*]])
 local rx_whitespace = regex.new("[^ \\t\\n\\r\\f\\v]")
 
-function escape_str(String:str):str
+function escape_str(String:str!):str
    for i, c in in_char do
       String = String:replace(c, '\\' .. out_char[i])
    end
@@ -26,7 +26,7 @@ end
 -- 2. Delimiter not found: pos = pos after leading space;     did_find = false.
 -- This throws an error if ThrowIfMissing is true and the delim is not found.
 
-function skip_delim(String:str, Pos:num, Delimiter:str, ThrowIfMissing:bool):<num, bool>
+function skip_delim(String:str!, Pos:num, Delimiter:str!, ThrowIfMissing:bool):<num, bool>
    Pos = rx_whitespace.findFirst(String, Pos)  -- Skip whitespace
    Pos ?= #String
    if String:sub(Pos, Pos+1) != Delimiter then
@@ -41,7 +41,7 @@ end
 -- Expects the given pos to be the first character after the opening quote.
 -- Returns val, pos; the returned pos is after the closing quote character.
 
-function decode_str_val(String:str, pos:num, val:str):<any, num>
+function decode_str_val(String:str!, pos:num!, val:str):<any, num>
    val = val or ''
    early_end_error = 'End of input found while parsing string.'
    assert(pos < #String, early_end_error)
@@ -57,7 +57,7 @@ end
 
 -- Returns val, pos; the returned pos is after the number's final character.
 
-function decode_num_val(String:str, pos:num):<any, num>
+function decode_num_val(String:str!, pos:num!):<any, num>
    -- Search from position pos by using substring
    local substr = String:sub(pos)
    local matches = num_regex.search(substr)
@@ -161,7 +161,7 @@ EndToken: Optional character that indicates the end of the current object or arr
 any: Decoded value
 num: position after the final parsed character
 ]])
-json.decode = function(String:str, Pos:num, EndToken:str):<any, num>
+json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
    Pos ?= 0
    if Pos >= #String then error('Reached unexpected end of input.') end
    Pos = rx_whitespace.findFirst(String, Pos)  -- Skip whitespace

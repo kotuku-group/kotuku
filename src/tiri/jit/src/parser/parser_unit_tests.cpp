@@ -1290,9 +1290,9 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
       "struct SignatureLayout\n"
       "   Value: int\n"
       "end\n"
-      "local function outer(Value:num, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
+      "local function outer(Value:num!, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
       "Object:obj, Numbers:array<int>, Records:array<struct<SignatureLayout>>, ...):func\n"
-      "   local function inner(Text:str):<str, num, ...>\n"
+      "   local function inner(Text:str!):<str!, num, ...>\n"
       "      return Text, Value, Value\n"
       "   end\n"
       "   return inner\n"
@@ -1323,6 +1323,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
 
    const ProtoTypeEntry *outer_params = proto_parameter_types(outer);
    if (outer_params[0].type != TiriType::Num or
+       proto_type_nullable(outer_params[0]) or not proto_type_required(outer_params[0]) or
        proto_type_origin(outer_params[0]) != ProtoTypeOrigin::Declared or
        proto_type_strength(outer_params[0]) != ProtoTypeStrength::Checked or
        outer_params[1].type != TiriType::Any or
@@ -1357,6 +1358,14 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
        inner_signature->result_entry_count != 2 or
        not (inner_signature->flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic))) {
       Log.error("inner prototype result signature is incomplete");
+      return false;
+   }
+   const ProtoTypeEntry *inner_params = proto_parameter_types(inner);
+   const ProtoTypeEntry *inner_results = proto_result_types(inner);
+   if (proto_type_nullable(inner_params[0]) or not proto_type_required(inner_params[0]) or
+       proto_type_nullable(inner_results[0]) or not proto_type_required(inner_results[0]) or
+       not proto_type_nullable(inner_results[1]) or proto_type_required(inner_results[1])) {
+      Log.error("required source annotations did not reach parameter and result prototype metadata");
       return false;
    }
 
@@ -1886,6 +1895,7 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       "extern obj\n"
       "extern array\n"
       "function dynamic(Value:any):any return Value end\n"
+      "function required(Value:num!):num! return Value end\n"
       "local value = obj.new('time')\n"
       "value = dynamic(value)\n"
       "local numbers:array<int> = dynamic(array<int> {})\n";
@@ -1953,9 +1963,27 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       return false;
    };
    bool array_survived = has_int_array_contract(has_int_array_contract, restored_proto);
+   auto has_required_contract = [](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             (descriptor.entries[0].flags & contract_flag(ContractEntryFlag::Required)) != 0 and
+             (descriptor.entries[0].flags & contract_flag(ContractEntryFlag::Nullable)) IS 0) return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool required_survived = has_required_contract(has_required_contract, restored_proto);
    lua_pop(L, 1);
-   if (not class_survived or not array_survived) {
-      Log.error("reloaded bytecode lost an object or array member constraint in BC_CONTRACT");
+   if (not class_survived or not array_survived or not required_survived) {
+      Log.error("reloaded bytecode lost an object, array member or required constraint in BC_CONTRACT");
       return false;
    }
    return true;
@@ -5939,6 +5967,25 @@ static bool test_type_guided_emission(kt::Log &Log)
    snapshot = compile_snapshot(L, member_inference, true, error);
    if (not snapshot or count_opcode_tree(*snapshot, BC_STGETF) < 4) {
       Log.error("static member descriptors did not reach semantic expression inference: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view annotated_array_element_inference =
+      "extern array\n"
+      "local values:array<double> = array<double, 3> { 1, 2, 3 }\n"
+      "local value = values[0]\n"
+      "value = value + 1\n"
+      "local function increment(Values:array<double>):num\n"
+      "   local safe_value = Values?[0]\n"
+      "   safe_value = safe_value + 1\n"
+      "   return safe_value\n"
+      "end\n"
+      "return value, increment(values)\n";
+   error.clear();
+   snapshot = compile_snapshot(L, annotated_array_element_inference, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_AGETB) IS 0 or
+       count_opcode_tree(*snapshot, BC_ASGETB) IS 0) {
+      Log.error("annotated arrays lost indexed element inference: %s", error.c_str());
       return false;
    }
 

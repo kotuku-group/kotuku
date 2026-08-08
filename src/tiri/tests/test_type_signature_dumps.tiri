@@ -38,6 +38,22 @@ end
    end
 end
 
+@Test function RequiredParameterAndResultRoundTrips()
+   function factory():func
+      return function(Value:str!):str!
+         return Value
+      end
+   end
+
+   for stripped in values({ false, true }) do
+      local restored = reload_factory(factory, stripped)
+      assert(restored('kept') is 'kept', 'A reloaded required signature must preserve matching values')
+      local dynamic:any = restored
+      expect_contract_failure(function() dynamic(dynamic_value(nil)) end)
+      expect_contract_failure(function() dynamic() end)
+   end
+end
+
 @Test function FixedAndVariadicResults()
    function fixed_factory():func
       return function():<num, str>

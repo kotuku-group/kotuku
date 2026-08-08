@@ -8,7 +8,7 @@ Declarative command-line option parsing for Tiri scripts.  Refer to the Tiri-Opt
 
    local create_parser, get_error_instruction, apply_error_instruction, get_help
 
-   _LIB[_NS] = function(Config:table):table
+   _LIB[_NS] = function(Config:table!):table
       return create_parser(Config)
    end
    options = _LIB[_NS]
@@ -78,7 +78,7 @@ rx_css_colour <const> = regex.new(
 ----------------------------------------------------------------------------------------------------------------------
 -- Build the canonical name and alias list for a parameter definition.
 
-function normalise_names(Definition:table):array<string>
+function normalise_names(Definition:table!):array<string>
    names = array<string>
    seen = {}
 
@@ -112,7 +112,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Verify that a parameter name is usable as a command-line token name.
 
-function validate_name(Name:any)
+function validate_name(Name:any!)
    if type(Name) != 'string' or Name is '' then
       raise ERR_EmptyString, 'Parameter names must be non-empty strings.'
    end
@@ -125,7 +125,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Copy and normalise a caller-supplied parameter definition.
 
-function clone_definition(Definition:table):table
+function clone_definition(Definition:table!):table
    names = normalise_names(Definition)
    canonical = names[0]
 
@@ -164,7 +164,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Copy and normalise a caller-supplied command definition.
 
-function clone_command_definition(Parser:table, Definition:table):table
+function clone_command_definition(Parser:table!, Definition:table!):table
    names = normalise_names(Definition)
    canonical = names[0]
 
@@ -202,7 +202,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Split a command-line token into its name, value, and explicit-value marker.
 
-function split_token(Token:str):<str, any, bool>
+function split_token(Token:str!):<str, any, bool>
    eq = Token:find('=')
    if eq is nil then
       return Token, nil, false
@@ -214,14 +214,14 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return true when the parameter's converter consumes the complete repeated value list itself.
 
-function converts_repeated_values(Param:table):bool
+function converts_repeated_values(Param:table!):bool
    return Param.type is 'array'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert an existing array or table into an array of strings.
 
-function string_array(Value:any):array<string>
+function string_array(Value:any!):array<string>
    result = array<string>
 
    for item in values(Value) do
@@ -234,7 +234,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a comma-separated string into an array of trimmed strings.
 
-function convert_csv(Value:any, Param:table):array<string>
+function convert_csv(Value:any!, Param:table!):array<string>
    if type(Value) is 'array' or type(Value) is 'table' then
       return string_array(Value)
    end
@@ -254,7 +254,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a raw value into an array of strings.
 
-function convert_array(Value:any, Param:table):array<string>
+function convert_array(Value:any!, Param:table!):array<string>
    if type(Value) is 'array' or type(Value) is 'table' then
       return string_array(Value)
    end
@@ -274,7 +274,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Split a string into a number and trailing unit suffix.
 
-function split_number_unit(Value:any, Param:table, Description:str):<num, str>
+function split_number_unit(Value:any!, Param:table!, Description:str!):<num, str>
    if type(Value) != 'string' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
    end
@@ -306,7 +306,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a duration string into seconds.
 
-function convert_duration(Value:any, Param:table):num
+function convert_duration(Value:any!, Param:table!):num
    if type(Value) is 'number' then return Value end
 
    number, unit = split_number_unit(Value, Param, "a duration with an ms, s, m, h, or d suffix")
@@ -322,7 +322,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a size string into bytes.
 
-function convert_size(Value:any, Param:table):num
+function convert_size(Value:any!, Param:table!):num
    if type(Value) is 'number' then return Value end
 
    number, unit = split_number_unit(Value, Param, "a size with a b, kb, mb, gb, or tb suffix")
@@ -338,7 +338,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a percent value into a normalised fraction.
 
-function convert_percent(Value:any, Param:table):num
+function convert_percent(Value:any!, Param:table!):num
    if type(Value) is 'number' then return Value end
 
    text = tostring(Value):trim()
@@ -361,7 +361,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Compile a regular expression parameter.
 
-function convert_regex(Value:any, Param:table):any
+function convert_regex(Value:any!, Param:table!):any
    if type(Value) is 'userdata' then return Value end
    if type(Value) != 'string' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a regex pattern."
@@ -378,7 +378,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Decode a JSON parameter and reject trailing non-whitespace input.
 
-function convert_json(Value:any, Param:table):any
+function convert_json(Value:any, Param:table!):any
    if type(Value) != 'string' then return Value end
 
    local param_name = Param.name
@@ -397,7 +397,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate an ISO date string in YYYY-MM-DD form.
 
-function convert_date(Value:any, Param:table):str
+function convert_date(Value:any!, Param:table!):str
    if type(Value) != 'string' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
    end
@@ -413,7 +413,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate an ISO time string in HH:MM or HH:MM:SS form, with optional fractional seconds.
 
-function convert_time(Value:any, Param:table):str
+function convert_time(Value:any!, Param:table!):str
    if type(Value) != 'string' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO time value."
    end
@@ -429,7 +429,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate an ISO date-time string with an optional timezone offset.
 
-function convert_datetime(Value:any, Param:table):str
+function convert_datetime(Value:any!, Param:table!):str
    if type(Value) != 'string' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date-time value."
    end
@@ -445,7 +445,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate supported CSS colour function syntax.
 
-function convert_colour(Value:any, Param:table):str
+function convert_colour(Value:any!, Param:table!):str
    if type(Value) != 'string' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a supported CSS colour value."
    end
@@ -461,7 +461,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a raw parameter value with one of the built-in converters.
 
-function convert_builtin(TypeName:str, Value:any, Param:table):any
+function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
    if TypeName is 'str' or TypeName is 'string' or TypeName is 'enum' then
       if type(Value) is 'string' then return Value end
       return tostring(Value)
@@ -526,7 +526,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a raw value using either a custom converter or a built-in type name.
 
-function convert_value(Parser:table, Param:table, Value:any):any
+function convert_value(Parser:table!, Param:table!, Value:any!):any
    converter = Param.type
 
    if type(converter) is 'function' then
@@ -597,7 +597,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Store observed input.  Programmatic array input for a multiple parameter is treated as repeated values.
 
-function add_observed_result(Result:table, ArgNames:table, Presence:table, Param:table, ArgName:str, RawValue:any):table
+function add_observed_result(Result:table!, ArgNames:table!, Presence:table!, Param:table!, ArgName:str!,
+   RawValue:any!):table
    if Param.multiple and type(RawValue) is 'array' then
       for value in values(RawValue) do
          add_result_value(Result, ArgNames, Presence, Param, ArgName, value, true)
@@ -611,7 +612,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return the value to use when a named option appears without an explicit value.
 
-function get_implicit_option_value(Param:table):<bool, any>
+function get_implicit_option_value(Param:table!):<bool, any>
    if Param.implicit != nil then
       return true, Param.implicit
    end
@@ -664,7 +665,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply a false value to a recognised no- flag token.
 
-function parse_flag_negation(Parser:table, Result:table, ArgNames:table, Presence:table, Name:str):bool
+function parse_flag_negation(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Name:str):bool
 
    if not Name:startsWith('no-') then return false end
 
@@ -686,7 +687,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Assign an unnamed token to the next positional parameter.
 
-function parse_positional_value(Parser:table, Result:table, ArgNames:table, Presence:table, Token:str, PosIndex:num):num
+function parse_positional_value(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Token:str!,
+   PosIndex:num!):num
    if PosIndex >= #Parser._positionals then
       if Parser.strict then
          raise ERR_ParameterUnknown, f"Unknown parameter '{Token}'."
@@ -708,7 +710,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Check if a launcher option consumes the following argument.
 
-function launcher_option_needs_value(Token:str):bool
+function launcher_option_needs_value(Token:str!):bool
    name = Token:sub(2)
    eq = name:find('=')
    if eq then return false end
@@ -721,7 +723,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Remove launcher options and the script path from ordered task parameters.
 
-function get_script_arguments(Parameters:array<string>):array<string>
+function get_script_arguments(Parameters:array<string>!):array<string>
    result = array<string>
    index = 0
    script_seen = false
@@ -774,10 +776,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse ordered command-line tokens, preserving the order of named and positional input.
 
-function parse_ordered_input(Parser:table, Result:table, ArgNames:table, Presence:table, Input:array<string>)
+function parse_ordered_input(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Input:array<string>!)
    -- Parse one ordered command-line token and apply it to the result table.
 
-   function parse_ordered_token(Parser:table, Result:table, ArgNames:table, Presence:table, Token:str, PosIndex:num):num
+   function parse_ordered_token(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Token:str!,
+      PosIndex:num!):num
       local name, value, has_explicit_value = split_token(Token)
       local param = Parser._named_lookup[name]
 
@@ -816,7 +819,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a canonical parameter name to an environment variable suffix.
 
-function env_suffix(Name:str):str
+function env_suffix(Name:str!):str
    suffix = rx_env_camel.replace(Name, '$1_$2')
    suffix = rx_env_chars.replace(suffix, '_'):upper()
    while suffix:startsWith('_') do
@@ -831,7 +834,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Read a parameter value from the environment, if envPrefix is enabled.
 
-function get_environment_value(Parser:table, Param:table):<str, any>
+function get_environment_value(Parser:table, Param:table!):<str, any>
    if not Parser.envPrefix or Param.kind is 'positional' then
       return nil, nil
    end
@@ -855,7 +858,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert the final source values after precedence has selected the winning layer.
 
-function convert_result(Parser:table, RawResult:table, ArgNames:table, Presence:table):table
+function convert_result(Parser:table!, RawResult:table!, ArgNames:table!, Presence:table!):table
    local result = {}
 
    for param in values(Parser._params) do
@@ -893,7 +896,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Raise an error for any required parameter that remains unset after defaults.
 
-function check_required(Parser:table, Result:table)
+function check_required(Parser:table!, Result:table)
    -- If help is present, required parameters are irrelevant.
    if Parser.autoHelp and Result[Parser.helpArg] then return end
 
@@ -907,7 +910,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Check if an array or table contains a converted value.
 
-function contains_choice(Choices:any, Value:any):bool
+function contains_choice(Choices:any!, Value:any!):bool
    for choice in values(Choices) do
       if choice is Value then return true end
    end
@@ -918,7 +921,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return a readable comma-separated list of values.
 
-function value_list(Values:any):str
+function value_list(Values:any!):str
    text = ''
 
    for value in values(Values) do
@@ -932,7 +935,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Join prepared text lines into one help string.
 
-function append_help_line(Output:array<string>, Line:str)
+function append_help_line(Output:array<string>, Line:str!)
    if Line:trim() is '' then
       if #Output > 0 and Output[#Output - 1] != '' then
          Output:push('')
@@ -944,7 +947,7 @@ function append_help_line(Output:array<string>, Line:str)
    Output:push(Line:rtrim())
 end
 
-function line_list(Lines:array<string>):str
+function line_list(Lines:array<string>!):str
    output = array<string>
 
    for line in values(Lines) do
@@ -976,7 +979,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return the readable value label for a parameter.
 
-function param_metavar(Param:table):str
+function param_metavar(Param:table!):str
    if Param.metavar then return tostring(Param.metavar) end
    return Param.name:upper()
 end
@@ -984,7 +987,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return the parameter group label used by normal help.
 
-function param_group(Param:table):str
+function param_group(Param:table!):str
    if Param.group then return Param.group end
    if Param.kind is 'positional' then return 'Arguments' end
    return 'Options'
@@ -993,7 +996,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Format one parameter for the usage line.
 
-function usage_token(Param:table):str
+function usage_token(Param:table!):str
    metavar = param_metavar(Param)
    text = ''
 
@@ -1012,7 +1015,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Format one parameter's accepted command-line spelling for help.
 
-function param_invocation(Param:table):str
+function param_invocation(Param:table!):str
    text = ''
    metavar = param_metavar(Param)
 
@@ -1038,7 +1041,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Format a command's accepted names for help.
 
-function command_invocation(Command:table):str
+function command_invocation(Command:table!):str
    text = ''
 
    for name in values(Command.names) do
@@ -1052,7 +1055,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Format default and required annotations for normal help.
 
-function param_annotations(Param:table):str
+function param_annotations(Param:table!):str
    annotations = array<string>
 
    if Param.required then
@@ -1070,7 +1073,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Append parser metadata fields to help output.
 
-function append_metadata(Lines:array<string>, Parser:table)
+function append_metadata(Lines:array<string>!, Parser:table!)
    if Parser.epilog then
       Lines:push('')
       Lines:push(Parser.epilog)
@@ -1088,7 +1091,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate a compact usage line for the parser.
 
-function append_usage_positionals(Text:str, Parser:table):str
+function append_usage_positionals(Text:str!, Parser:table!):str
    for param in values(Parser._positionals) do
       if param.hidden then continue end
       Text ..= ' ' .. usage_token(param)
@@ -1100,7 +1103,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return true if the parser has visible named options.
 
-function has_visible_options(Parser:table):bool
+function has_visible_options(Parser:table!):bool
    for param in values(Parser._params) do
       if param.kind is 'positional' then continue end
       if param.hidden then continue end
@@ -1113,7 +1116,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Append command usage suffix when commands are registered.
 
-function append_command_usage(Text:str, Parser:table):str
+function append_command_usage(Text:str!, Parser:table!):str
    if #Parser._commands > 0 then
       Text ..= ' <command> [args]'
    end
@@ -1124,7 +1127,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate a compact usage line for the parser.
 
-function build_full_usage(Parser:table):str
+function build_full_usage(Parser:table!):str
    local text = f"Usage: {Parser.cmdName}"
    text = append_usage_positionals(text, Parser)
 
@@ -1140,7 +1143,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate a shortened usage line when listing every option would exceed the line-length guideline.
 
-function build_short_usage(Parser:table):str
+function build_short_usage(Parser:table!):str
    text = f"Usage: {Parser.cmdName}"
 
    text = append_usage_positionals(text, Parser)
@@ -1155,7 +1158,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate a usage line for the parser.
 
-function build_usage(Parser:table):str
+function build_usage(Parser:table!):str
    text = build_full_usage(Parser)
 
    if #text > 80 then
@@ -1168,7 +1171,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate normal parser help.
 
-function build_normal_help(Parser:table):str
+function build_normal_help(Parser:table!):str
    lines = array<string>
 
    lines:push(Parser.name)
@@ -1241,7 +1244,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate detailed help for one parameter.
 
-function build_param_help(Parser:table, Topic:str):str
+function build_param_help(Parser:table!, Topic:str!):str
    local param = Parser._lookup[Topic]
    if param is nil then
       raise ERR_ParameterUnknown, f"Unknown help topic '{Topic}'."
@@ -1296,7 +1299,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate detailed help for one command.
 
-function build_command_help(Parser:table, Topic:str):str
+function build_command_help(Parser:table!, Topic:str!):str
    command = Parser._command_lookup[Topic]
    if command is nil then
       raise ERR_ParameterUnknown, f"Unknown help topic '{Topic}'."
@@ -1361,7 +1364,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate parser help in a supported format.
 
-get_help = function(Parser:table, Format:any, Topic:any):str
+get_help = function(Parser:table!, Format:any, Topic:any):str
    check_help_format(Format)
 
    if Topic and Topic != 'true' then
@@ -1378,7 +1381,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert an onError() return value to a supported instruction.
 
-function normalise_error_instruction(Instruction:any):str
+function normalise_error_instruction(Instruction:any!):str
    if Instruction is 'ignore' or Instruction is 'skip' then return Instruction end
    return 'fail'
 end
@@ -1386,7 +1389,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Ask the parser's error callback how to handle a rejected parameter value.
 
-get_error_instruction = function(Parser:table, Error:table, Param:table, ArgName:str, RawValue:any):str
+get_error_instruction = function(Parser:table, Error:table!, Param:table!, ArgName:str!, RawValue:any!):str
    if not Parser.onError then return 'fail' end
 
    instruction = Parser.onError(Parser, Error, Param, ArgName, RawValue)
@@ -1396,7 +1399,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a parameter's own default value for the onError('ignore') path.
 
-function convert_param_default(Parser:table, Param:table):<bool, any>
+function convert_param_default(Parser:table!, Param:table!):<bool, any>
    if Param.default is nil then
       return false, nil
    end
@@ -1425,7 +1428,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return a parameter to its default-or-absent state after an onError instruction.
 
-apply_error_instruction = function(Parser:table, Result:table, Presence:table, Param:table, Instruction:str):bool
+apply_error_instruction = function(Parser:table!, Result:table!, Presence:table!, Param:table!, Instruction:str!):bool
    Result[Param.name] = nil
    Presence[Param.name] = nil
 
@@ -1447,7 +1450,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate that a path exists and, for file/folder types, has the requested kind.
 
-function validate_path_exists(Param:table, Value:any)
+function validate_path_exists(Param:table, Value:any!)
    if not Param.exists then return end
 
    text = tostring(Value)
@@ -1469,7 +1472,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate one converted scalar value against per-parameter validation fields.
 
-function validate_scalar_value(Param:table, Value:any)
+function validate_scalar_value(Param:table!, Value:any!)
    if Param.choices then
       assert(type(Param.choices) is 'array' or type(Param.choices) is 'table',
          f"Parameter '{Param.name}' choices must be an array or table.")
@@ -1503,7 +1506,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate the converted value for a parameter.
 
-function validate_param_value(Parser:table, Param:table, ArgName:str, Value:any)
+function validate_param_value(Parser:table!, Param:table!, ArgName:str!, Value:any!)
    if Param.multiple then
       assert(type(Value) is 'array', f"Parameter '{Param.name}' should contain an array of values.")
       for item in values(Value) do
@@ -1524,7 +1527,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Normalise a relationship field to an array of canonical parameter names.
 
-function relationship_names(Parser:table, Param:table, Field:str, Value:any):array<string>
+function relationship_names(Parser:table!, Param:table!, Field:str!, Value:any!):array<string>
    names = array<string>
 
    if type(Value) is 'string' then
@@ -1553,7 +1556,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate relationships between supplied parameters.
 
-function validate_relationships(Parser:table, Param:table, Result:table, Presence:table)
+function validate_relationships(Parser:table!, Param:table!, Result:table!, Presence:table)
    if not Presence[Param.name] then return end
 
    if Param.requires then
@@ -1592,7 +1595,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Run required checks, per-value validation, exec callbacks, and relationship validation.
 
-function validate_result(Parser:table, Result:table, ArgNames:table, Presence:table):table
+function validate_result(Parser:table!, Result:table!, ArgNames:table!, Presence:table!):table
    check_required(Parser, Result)
 
    for param in values(Parser._params) do
@@ -1629,7 +1632,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse a table of keyed values as explicit parameter input.
 
-function parse_table_input(Parser:table, Result:table, ArgNames:table, Presence:table, Input:table)
+function parse_table_input(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Input:table!)
    for name, value in pairs(Input) do
       local param = Parser._lookup[name]
       if param is nil then
@@ -1645,7 +1648,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Detect explicit help requests in keyed table input.
 
-function find_table_help(Parser:table, Input:table):<bool, str>
+function find_table_help(Parser:table!, Input:table!):<bool, str>
    -- Interpret a built-in help token value.
 
    function builtin_help_result(Value:any, HasExplicitValue:bool, TrueValueIsNormal:bool):<bool, str>
@@ -1659,7 +1662,7 @@ function find_table_help(Parser:table, Input:table):<bool, str>
 
    -- Return the caller-declared help parameter when it should override built-in help handling.
 
-   function declared_help_param(Parser:table, NamedOnly:bool):table
+   function declared_help_param(Parser:table!, NamedOnly:bool):table
       if Parser.autoHelp then return nil end
 
       if NamedOnly then
@@ -1671,7 +1674,7 @@ function find_table_help(Parser:table, Input:table):<bool, str>
 
    -- Interpret a caller-declared help parameter value.
 
-   function declared_help_result(Param:table, Value:any, HasExplicitValue:bool):<bool, str>
+   function declared_help_result(Param:table!, Value:any, HasExplicitValue:bool!):<bool, str>
       function is_true_help_value(Value:any):bool
          if Value is true then return true end
          if Value is nil then return false end
@@ -1709,7 +1712,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Build the structured tryProcess() result for a help request.
 
-function make_help_result(Parser:table, Topic:any):table
+function make_help_result(Parser:table!, Topic:any):table
    return {
       help        = true,
       topic       = Topic,
@@ -1721,7 +1724,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Load JSON defaults from a configured user config file when the selected file exists.
 
-function load_user_config_defaults(Parser:table, RawResult:table):table
+function load_user_config_defaults(Parser:table!, RawResult:table!):table
    Parser._user_config_defaults = nil
    Parser._user_config_loaded = nil
 
@@ -1772,14 +1775,14 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply precedence, conversion, and validation to an already parsed input layer.
 
-function resolve_input_result(Parser:table, InputResult:table, InputArgNames:table, InputPresence:table):table
+function resolve_input_result(Parser:table!, InputResult:table!, InputArgNames:table!, InputPresence:table!):table
    raw_result = {}
    arg_names = {}
    presence = {}
 
    -- Apply a table of programmatic defaults as a precedence layer.
 
-   function apply_default_table(Parser:table, Result:table, ArgNames:table, Defaults:table):table
+   function apply_default_table(Parser:table!, Result:table!, ArgNames:table!, Defaults:table):table
       if Defaults is nil then return nil end
 
       assert(type(Defaults) is 'table', 'Parser defaults must be a table.')
@@ -1799,7 +1802,7 @@ function resolve_input_result(Parser:table, InputResult:table, InputArgNames:tab
 
    -- Fill in parameter-level default values.
 
-   function apply_param_defaults(Parser:table, Result:table, ArgNames:table):table
+   function apply_param_defaults(Parser:table!, Result:table!, ArgNames:table!):table
       for param in values(Parser._params) do
          if param.default != nil then
             set_source_result(Result, ArgNames, nil, param, param.name, param.default, false)
@@ -1811,7 +1814,7 @@ function resolve_input_result(Parser:table, InputResult:table, InputArgNames:tab
 
    -- Apply environment variable values as a precedence layer.
 
-   function apply_environment(Parser:table, Result:table, ArgNames:table, Presence:table):table
+   function apply_environment(Parser:table, Result:table!, ArgNames:table!, Presence:table!):table
       if not Parser.envPrefix then return nil end
 
       for param in values(Parser._params) do
@@ -1869,7 +1872,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse a non-command parser context from explicit ordered input.
 
-function parse_context_ordered_input(Parser:table, Input:array<string>):table
+function parse_context_ordered_input(Parser:table!, Input:array<string>!):table
    input_result = {}
    input_arg_names = {}
    input_presence = {}
@@ -1881,7 +1884,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse a non-command parser context from explicit table input.
 
-function parse_context_table_input(Parser:table, Input:table):table
+function parse_context_table_input(Parser:table!, Input:table!):table
    input_result = {}
    input_arg_names = {}
    input_presence = {}
@@ -1893,7 +1896,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Allow a launched script with no command-line arguments to run from a valid user config instead of showing help.
 
-function parse_empty_task_input_from_user_config(Parser:table):table
+function parse_empty_task_input_from_user_config(Parser:table!):table
    local result:table
 
    if #Parser._commands > 0 then return nil end
@@ -1929,7 +1932,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse ordered input for a parser that defines subcommands.
 
-function parse_command_ordered_input(Parser:table, Input:array<string>):table
+function parse_command_ordered_input(Parser:table, Input:array<string>!):table
    global_input = array<string>
    command_input = array<string>
    command = nil
@@ -1977,7 +1980,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse table input for a parser that defines subcommands.
 
-function parse_command_table_input(Parser:table, Input:table):table
+function parse_command_table_input(Parser:table!, Input:table!):table
    command_name = Input.command
    if command_name is nil then
       raise ERR_ParameterRequired, 'Command is required.'
@@ -2004,7 +2007,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse the selected input source into a typed argument table.  Setting Input should be reserved for tests only.
 
-function parse_input(Parser:table, Input:any, Options:table):table
+function parse_input(Parser:table!, Input:any, Options:table):table
    input_result = {}
    input_arg_names = {}
    input_presence = {}
@@ -2041,7 +2044,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Reject global named parameters that would hide an existing command token.
 
-function reject_param_command_collision(Parser:table, Param:table)
+function reject_param_command_collision(Parser:table!, Param:table!)
    if Param.kind is 'positional' or Parser._command_lookup is nil then
       return
    end
@@ -2061,7 +2064,7 @@ end
 
 -- Reject command names that cannot be reached by ordered command dispatch.
 
-function reject_command_dispatch_collision(Parser:table, Name:str)
+function reject_command_dispatch_collision(Parser:table, Name:str!)
    if Name is Parser.helpArg then
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with the reserved help token."
    end
@@ -2078,7 +2081,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate, normalise, and register a parameter definition with a parser.
 
-function add_param(Parser:table, Definition:table):table
+function add_param(Parser:table!, Definition:table!):table
    assert(type(Definition) is 'table', 'Parameter definition must be a table.')
 
    local param = clone_definition(Definition)
@@ -2117,7 +2120,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Validate, normalise, and register a command definition with a parser.
 
-function add_command(Parser:table, Definition:table):table
+function add_command(Parser:table!, Definition:table!):table
    assert(type(Definition) is 'table', 'Command definition must be a table.')
 
    command = clone_command_definition(Parser, Definition)
@@ -2130,11 +2133,11 @@ function add_command(Parser:table, Definition:table):table
       reject_command_dispatch_collision(Parser, name)
    end
 
-   command.addParam = function(ParamDefinition:table):table
+   command.addParam = function(ParamDefinition:table!):table
       return add_param(command, ParamDefinition)
    end
 
-   command.getParam = function(Name:str):table
+   command.getParam = function(Name:str!):table
       return command._lookup[Name]
    end
 
@@ -2158,7 +2161,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return true if a caller-supplied parameter definition includes a name or alias.
 
-function definition_has_name(Definition:table, Name:str):bool
+function definition_has_name(Definition:table!, Name:str!):bool
    if Definition.name is Name then return true end
 
    if Definition.names then
@@ -2173,7 +2176,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Return true if any caller-supplied parameter definition includes a name or alias.
 
-function definitions_have_name(Definitions:any, Name:str):bool
+function definitions_have_name(Definitions:any, Name:str!):bool
    if Definitions is nil then return false end
 
    for definition in values(Definitions) do
@@ -2245,7 +2248,7 @@ create_parser = function(Config:table):table
    -RESULT-
    table: Normalised parameter definition registered with the parser.
    ]])
-   parser.addParam = function(Definition:table):table
+   parser.addParam = function(Definition:table!):table
       return add_param(parser, Definition)
    end
 
@@ -2261,7 +2264,7 @@ create_parser = function(Config:table):table
    -RESULT-
    table: Registered parameter definition, or `nil` when the name is unknown.
    ]])
-   parser.getParam = function(Name:str):table
+   parser.getParam = function(Name:str!):table
       return parser._lookup[Name]
    end
 
@@ -2280,7 +2283,7 @@ create_parser = function(Config:table):table
    -RESULT-
    table: Normalised command definition registered with the parser.
    ]])
-   parser.addCommand = function(Definition:table):table
+   parser.addCommand = function(Definition:table!):table
       return add_command(parser, Definition)
    end
 
@@ -2296,7 +2299,7 @@ create_parser = function(Config:table):table
    -RESULT-
    table: Registered command definition, or `nil` when the name is unknown.
    ]])
-   parser.getCommand = function(Name:str):table
+   parser.getCommand = function(Name:str!):table
       return parser._command_lookup[Name]
    end
 
@@ -2336,7 +2339,7 @@ create_parser = function(Config:table):table
    -RESULT-
    table: Converted and validated argument table.
    ]])
-   parser.validate = function(Args:table):table
+   parser.validate = function(Args:table!):table
       assert(type(Args) is 'table', 'validate() expects an argument table.')
 
       raw_result = {}
@@ -2503,7 +2506,7 @@ create_parser = function(Config:table):table
 
       add_param(parser, {
          name = parser.helpArg, type = 'str', hidden = true, implicit = true,
-         exec = function(Parser:table, ArgName:str, Value:any, Param:table)
+         exec = function(Parser:table!, ArgName:str!, Value:any!, Param:table!)
             topic = (Value is true or Value is 'true') ? nil :> Value
             if Parser._try_process_active then
                Parser._help_result = make_help_result(Parser, topic)
