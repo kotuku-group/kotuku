@@ -703,6 +703,11 @@ static void bcemit_value_contract(
    }
 
    BCREG source = expr_toanyreg(fs, Value);
+   if (Contract.type IS TiriType::Int and not fs->is_temp_register(BCReg(source))) {
+      // Integer contracts coerce in place.  Preserve a caller-owned local by narrowing a disposable copy instead.
+      expr_tonextreg(fs, Value);
+      source = Value->u.s.info;
+   }
    bcemit_contract(fs, source, std::span(&Contract, 1), 1);
    Value->k = ExpKind::NonReloc;
    Value->u.s.info = source;

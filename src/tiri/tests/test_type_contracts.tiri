@@ -144,6 +144,18 @@ end
    assert(accept_int(8.9) is 8, 'A direct numeric argument should truncate at an integer parameter boundary')
    assert(accept_num(positive) is 5, 'An integer value should widen to num without changing its value')
 
+   local local_source:num = 8.9
+   local local_destination:int = 0
+   local_destination = local_source
+   assert(local_destination is 8, 'An integer local assignment should truncate its destination')
+   assert(local_source is 8.9, 'An integer local assignment must not narrow its numeric source')
+
+   local global_source:num = -8.9
+   global glIntegerSourcePreservation:int = 0
+   glIntegerSourcePreservation = global_source
+   assert(glIntegerSourcePreservation is -8, 'An integer global assignment should truncate its destination')
+   assert(global_source is -8.9, 'An integer global assignment must not narrow its numeric source')
+
    local alias:any = dynamic_value(accept_int)
    assert(alias(7.8) is 7, 'An unresolved callable should truncate at the callee boundary')
    local holder:any = { callback=dynamic_value(accept_int) }
@@ -176,8 +188,13 @@ end
 @Test function HotIntegerContracts()
    function hot_int(Value:int):int return Value end
    local alias:any = dynamic_value(hot_int)
+   local source:num = 6.75
+   local destination:int = 0
    for i in {0 to 300} do
       assert(alias(i + 0.75) is i, 'A hot integer boundary should truncate consistently under the JIT')
+      destination = source
+      assert(destination is 6, 'A hot integer assignment should truncate its destination')
+      assert(source is 6.75, 'A hot integer assignment must preserve its numeric source')
    end
    expect_int_contract_failure(function() alias(dynamic_value('wrong')) end, 'hot parameter')
 
