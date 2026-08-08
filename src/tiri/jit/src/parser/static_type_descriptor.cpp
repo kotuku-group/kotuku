@@ -230,6 +230,11 @@ StaticValueDescriptor join_static_descriptors(
          result.proof = weaker_proof(Left.proof, Right.proof);
          return result;
       }
+      if (tiri_types_numeric_compatible(Left.primary, Right.primary)) {
+         result.primary = TiriType::Num;
+         result.proof = weaker_proof(Left.proof, Right.proof);
+         return result;
+      }
       result.primary = TiriType::Any;
       result.proof = StaticProof::Advisory;
       return result;
@@ -259,7 +264,9 @@ StaticValueDescriptor describe_arithmetic_result(
    const StaticValueDescriptor &Left, const StaticValueDescriptor &Right)
 {
    StaticValueDescriptor result;
-   if (Left.primary IS TiriType::Num and Right.primary IS TiriType::Num and Left.proved() and Right.proved() and
+   bool left_numeric = Left.primary IS TiriType::Num or Left.primary IS TiriType::Int;
+   bool right_numeric = Right.primary IS TiriType::Num or Right.primary IS TiriType::Int;
+   if (left_numeric and right_numeric and Left.proved() and Right.proved() and
        not Left.nullable and not Right.nullable) {
       result.primary = TiriType::Num;
       result.proof = StaticProof::Closed;
@@ -276,7 +283,8 @@ StaticValueDescriptor describe_unary_numeric_result(const StaticValueDescriptor 
 {
    StaticValueDescriptor result;
    result.primary = TiriType::Num;
-   if (Operand.primary IS TiriType::Num and Operand.proved() and not Operand.nullable) {
+   if ((Operand.primary IS TiriType::Num or Operand.primary IS TiriType::Int) and Operand.proved() and
+       not Operand.nullable) {
       result.proof = StaticProof::Closed;
    }
    else {
@@ -307,7 +315,8 @@ bool static_value_satisfies_contract(
 
    if (Value.primary IS TiriType::Nil) return Contract.nullable and not Contract.required;
    if (Value.nullable and (Contract.required or not Contract.nullable)) return false;
-   if (Value.primary != Contract.type) return false;
+   bool widening_match = Contract.type IS TiriType::Num and Value.primary IS TiriType::Int;
+   if (Value.primary != Contract.type and not widening_match) return false;
 
    switch (Contract.type) {
       case TiriType::Object:

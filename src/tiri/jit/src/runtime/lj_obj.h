@@ -137,8 +137,20 @@ enum class TiriType : uint8_t {
    Object,       // Kotuku object (LT_TOBJECT)
    Range,        // Range expression (runtime: LJ_TUDATA)
    Userdata,     // Ordinary full or light userdata
-   Unknown
+   Unknown,      // Sentinel retained at its original serialised value
+   Int           // Integer representation of Tiri's dual-number model
 };
+
+[[nodiscard]] constexpr bool tiri_type_byte_is_valid(uint8_t Type) noexcept
+{
+   return Type <= uint8_t(TiriType::Unknown) or Type IS uint8_t(TiriType::Int);
+}
+
+[[nodiscard]] constexpr bool tiri_types_numeric_compatible(TiriType Expected, TiriType Actual) noexcept
+{
+   return (Expected IS TiriType::Num and Actual IS TiriType::Int) or
+      (Expected IS TiriType::Int and Actual IS TiriType::Num);
+}
 
 // Maximum number of explicitly typed return values per function
 constexpr size_t MAX_RETURN_TYPES = 8;

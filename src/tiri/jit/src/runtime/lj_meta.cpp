@@ -703,7 +703,7 @@ namespace {
    return definition and Array->structdef IS definition;
 }
 
-[[nodiscard]] static bool contract_matches(lua_State *L, cTValue *Value, const RuntimeContractEntry &Entry)
+[[nodiscard]] static bool contract_matches(lua_State *L, TValue *Value, const RuntimeContractEntry &Entry)
 {
    bool nullable = (Entry.flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
    bool required = (Entry.flags & contract_flag(ContractEntryFlag::Required)) != 0;
@@ -715,6 +715,13 @@ namespace {
       case TiriType::Nil:     return false;
       case TiriType::Bool:    return tvisbool(Value);
       case TiriType::Num:     return tvisnumber(Value);
+      case TiriType::Int:
+         if (tvisint(Value)) return true;
+         if (tvisnum(Value)) {
+            setintV(Value, lj_num2int(numV(Value)));
+            return true;
+         }
+         return false;
       case TiriType::Str:     return tvisstr(Value);
       case TiriType::Table:   return tvistab(Value);
       case TiriType::Array:
@@ -801,6 +808,7 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
       case TiriType::Nil:     name = "nil"; break;
       case TiriType::Bool:    name = "bool"; break;
       case TiriType::Num:     name = "num"; break;
+      case TiriType::Int:     name = "int"; break;
       case TiriType::Str:     name = "str"; break;
       case TiriType::Table:   name = "table"; break;
       case TiriType::Array:   name = "array"; break;
@@ -1166,7 +1174,7 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 // Value must reference a rooted Lua stack slot and L->top must be valid.  The recorder materialises JIT values in
 // their corresponding Lua stack slot before emitting this call.
 
-static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
+static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value,
    GCstr *DeclarationOverride)
 {
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
@@ -1210,7 +1218,7 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
          const_global_error(L, Name);
       }
       if (entry->type != TiriType::Any and entry->type != TiriType::Unknown) {
-         cTValue *checked = Value;
+         TValue *checked = Value;
          TValue resolved_value;
          if (lj_is_thunk(Value)) {
             // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
@@ -1226,12 +1234,12 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
    }
 }
 
-extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
+extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value)
 {
    env_check_contract(L, Environment, Name, Value, nullptr);
 }
 
-extern "C" void lj_env_check_override(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
+extern "C" void lj_env_check_override(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value,
    GCstr *DeclarationOverride)
 {
    env_check_contract(L, Environment, Name, Value, DeclarationOverride);
@@ -1241,7 +1249,7 @@ extern "C" void lj_env_check_override(lua_State *L, GCtab *Environment, GCstr *N
 // Checked raw environment store.  Value must reference a Lua stack slot so it can be recovered after policy checks
 // and table allocation resize the stack.  Non-raw paths call lj_env_check() and then resume normal metamethod dispatch.
 
-extern "C" void lj_env_store(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
+extern "C" void lj_env_store(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value)
 {
    ptrdiff_t value_offset = savestack(L, Value);
    lj_env_check(L, Environment, Name, Value);

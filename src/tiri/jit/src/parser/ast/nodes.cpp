@@ -12,6 +12,7 @@ TiriType parse_type_name(std::string_view Name)
       { "nil",       TiriType::Nil },
       { "bool",      TiriType::Bool },
       { "num",       TiriType::Num },
+      { "int",       TiriType::Int },
       { "str",       TiriType::Str },
       { "table",     TiriType::Table },
       { "array",     TiriType::Array },
@@ -33,6 +34,7 @@ std::string_view type_name(TiriType Type)
       case TiriType::Nil:      return "nil";
       case TiriType::Bool:     return "bool";
       case TiriType::Num:      return "num";
+      case TiriType::Int:      return "int";
       case TiriType::Str:      return "str";
       case TiriType::Table:    return "table";
       case TiriType::Array:    return "array";
@@ -66,6 +68,7 @@ uint8_t tiri_type_to_lj_tag(TiriType Type)
       case TiriType::Range:  return 12;  // ~12 = LJ_TUDATA (ranges are userdata at runtime)
       case TiriType::Array:  return 13;  // ~13 = LJ_TARRAY
       case TiriType::Num:    return 14;  // ~14 = LJ_TNUMX
+      case TiriType::Int:    return 14;  // Numeric family; representation is narrowed by the contract.
       case TiriType::Userdata:
       case TiriType::Any:
       case TiriType::Unknown:

@@ -395,7 +395,7 @@ static void bcread_signature_entry(LexState *State, const uint8_t *&Cursor, cons
 
    constexpr uint8_t known_flags = PROTO_TYPE_NULLABLE | PROTO_TYPE_REQUIRED | PROTO_TYPE_ORIGIN_MASK |
       PROTO_TYPE_STRENGTH_MASK;
-   if (type > uint8_t(TiriType::Unknown) or (flags & ~known_flags) or
+   if (not tiri_type_byte_is_valid(type) or (flags & ~known_flags) or
        uint8_t((flags & PROTO_TYPE_ORIGIN_MASK) >> PROTO_TYPE_ORIGIN_SHIFT) >
           uint8_t(ProtoTypeOrigin::Inferred) or
        uint8_t((flags & PROTO_TYPE_STRENGTH_MASK) >> PROTO_TYPE_STRENGTH_SHIFT) >

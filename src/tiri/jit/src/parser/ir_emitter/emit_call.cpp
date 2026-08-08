@@ -423,6 +423,38 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    }
    else {
       if (not (args.k IS ExpKind::Void)) this->materialise_to_next_reg(args, "call arguments");
+
+      // Immutable Tiri callables have a proof-backed parameter signature.  Narrow statically numeric arguments for
+      // int parameters at the caller boundary so the callee normally observes an integer slot immediately.  The
+      // callee contract remains authoritative for aliases, callbacks, dynamic tails and other unresolved calls.
+      if (Payload.callable) {
+         const StaticCallableDescriptor &callable = this->ctx.descriptors().callable(Payload.callable);
+         if (callable.immutable and callable.function) {
+            const auto &parameters = callable.function->parameters;
+            std::vector<RuntimeContractSlot> int_contracts;
+            size_t count = std::min(Payload.arguments.size(), parameters.size());
+            int_contracts.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+               const FunctionParameter &parameter = parameters[i];
+               const ExprNode &argument = *Payload.arguments[i];
+               if (parameter.type != TiriType::Int or not argument.static_value) continue;
+               const StaticValueDescriptor &value = this->ctx.descriptors().value(argument.static_value);
+               if (value.primary != TiriType::Num or not value.proved()) continue;
+               int_contracts.push_back(RuntimeContractSlot{
+                  .register_index = BCREG(base.raw() + 1 + LJ_FR2 + i),
+                  .contract = RuntimeContract{
+                     .type = TiriType::Int,
+                     .label = parameter.name.is_blank ? nullptr : parameter.name.symbol,
+                     .boundary = ContractBoundary::Parameter,
+                     .position = uint8_t(i + 1),
+                     .nullable = not parameter.required,
+                     .required = parameter.required
+                  }
+               });
+            }
+            bcemit_contracts(&this->func_state, int_contracts);
+         }
+      }
       ins = BCINS_ABC(BC_CALL, base, 2, this->func_state.freereg - base  - 1);
    }
 

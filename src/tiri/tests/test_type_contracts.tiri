@@ -118,6 +118,77 @@ end
    expect_contract_failure(function() wildcard = dynamic_value({}) end, 'local')
 end
 
+function expect_int_contract_failure(Callback:func, Boundary:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find('expected int') != nil,
+         'The message should identify the integer contract: ' .. e.message)
+   end
+   assert(failed, 'Expected a catchable ' .. Boundary .. ' integer contract failure')
+end
+
+@Test function IntegerRepresentationContracts()
+   function accept_int(Value:int):int return Value end
+   function accept_num(Value:num):num return Value end
+
+   local positive:int = 5.7
+   local negative:int = -5.7
+   local quotient:int = 10 / 2
+   assert(positive is 5, 'A positive floating value should truncate toward zero')
+   assert(negative is -5, 'A negative floating value should truncate toward zero')
+   assert(quotient is 5, 'A floating arithmetic result should truncate at an integer local boundary')
+   assert(accept_int(9) is 9, 'An integer-represented argument should remain unchanged')
+   assert(accept_int(8.9) is 8, 'A direct numeric argument should truncate at an integer parameter boundary')
+   assert(accept_num(positive) is 5, 'An integer value should widen to num without changing its value')
+
+   local alias:any = dynamic_value(accept_int)
+   assert(alias(7.8) is 7, 'An unresolved callable should truncate at the callee boundary')
+   local holder:any = { callback=dynamic_value(accept_int) }
+   assert(holder.callback(-7.8) is -7, 'A table-held callback should truncate at the callee boundary')
+
+   expect_int_contract_failure(function() alias(dynamic_value('wrong')) end, 'parameter')
+   expect_int_contract_failure(function() alias(dynamic_value({})) end, 'parameter')
+
+   function truncate_result():int return 6.9 end
+   assert(truncate_result() is 6, 'An integer result contract should truncate a floating return value')
+
+   local out_of_range_failed = false
+   try
+      local ignored:int = dynamic_value(1e20)
+   except e
+      out_of_range_failed = true
+   end
+   assert(not out_of_range_failed, 'An out-of-range numeric conversion should remain lax')
+end
+
+@Test function RequiredIntegerContracts()
+   function required_int(Value:int!):int! return Value end
+   local alias:any = dynamic_value(required_int)
+
+   assert(alias(4.8) is 4, 'A present floating value should satisfy int! after truncation')
+   expect_int_contract_failure(function() alias(dynamic_value(nil)) end, 'required nil parameter')
+   expect_int_contract_failure(function() alias() end, 'missing required parameter')
+end
+
+@Test function HotIntegerContracts()
+   function hot_int(Value:int):int return Value end
+   local alias:any = dynamic_value(hot_int)
+   for i in {0 to 300} do
+      assert(alias(i + 0.75) is i, 'A hot integer boundary should truncate consistently under the JIT')
+   end
+   expect_int_contract_failure(function() alias(dynamic_value('wrong')) end, 'hot parameter')
+
+   global glHotIntegerContract:int = 0
+   local environment:any = _G
+   for i in {0 to 300} do
+      environment.glHotIntegerContract = dynamic_value(i + 0.75)
+      assert(glHotIntegerContract is i, 'A hot environment store should retain the coerced integer representation')
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Parameter matrix and exact, non-coercing predicates.
 

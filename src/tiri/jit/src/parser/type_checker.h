@@ -31,6 +31,7 @@ struct InferredType {
       if (Expected IS TiriType::Func and this->primary IS TiriType::Table) {
          return true;  // Runtime func contracts accept tables whose metatable provides __call.
       }
+      if (tiri_types_numeric_compatible(Expected, this->primary)) return true;
       return this->primary IS Expected;
    }
 };

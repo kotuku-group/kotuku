@@ -652,7 +652,8 @@ static ControlFlowEdge emit_falsey_jumps(
    if (Options.include_empty_array) mask |= ISFALSEY_EMPTY_COLL;
 
    switch (ResultType) {
-      case TiriType::Num:    mask &= ISFALSEY_ZERO; break;
+      case TiriType::Num:
+      case TiriType::Int:    mask &= ISFALSEY_ZERO; break;
       case TiriType::Str:    mask &= ISFALSEY_EMPTY_STR; break;
       case TiriType::Bool:   mask &= ISFALSEY_FALSE; break;
       case TiriType::Array:

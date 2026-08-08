@@ -2,6 +2,59 @@
 ----------------------------------------------------------------------------------------------------------------------
 -- MATHEMATICAL OPERATIONS
 ----------------------------------------------------------------------------------------------------------------------
+-- Integer-representation annotations: matched workloads differing only in num/int contracts.  Alternating integral
+-- values between integer and floating representations through an any callback leaves the callee boundary responsible
+-- for normalisation, while array indexing keeps the observable result identical.
+
+@Test function MathNumAnnotation()
+   local values = array<int, 256>
+   for i in {0 to 256} do
+      values[i] = i * 3
+   end
+
+   local function integerWork(Index:num):num
+      return values[Index]
+   end
+
+   local callback:any = integerWork
+   local checksum = 0
+   for i in {0 to 1000000} do
+      local index:any
+      if i & 1 is 0 then
+         index = i & 255
+      else
+         index = (i & 255) + 0.0
+      end
+      checksum += callback(index)
+   end
+   return checksum
+end
+
+@Test function MathIntAnnotation()
+   local values = array<int, 256>
+   for i in {0 to 256} do
+      values[i] = i * 3
+   end
+
+   local function integerWork(Index:int):int
+      return values[Index]
+   end
+
+   local callback:any = integerWork
+   local checksum = 0
+   for i in {0 to 1000000} do
+      local index:any
+      if i & 1 is 0 then
+         index = i & 255
+      else
+         index = (i & 255) + 0.0
+      end
+      checksum += callback(index)
+   end
+   return checksum
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Integer Arithmetic: add, sub, mul, div, mod with integer operands
 
 @Test function MathIntegerArithmetic()

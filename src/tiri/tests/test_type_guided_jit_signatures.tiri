@@ -3,6 +3,9 @@
 local ir_fload <const> = 69
 local ir_eq <const> = 8
 local ir_ne <const> = 9
+local ir_loop <const> = 17
+local ir_conv <const> = 91
+local irconv_int_num_any <const> = 4751
 
 local irfl_tab_meta <const> = 5
 local irfl_udata_meta <const> = 11
@@ -35,7 +38,10 @@ end
 
 function trace_metrics():table
    jit.off()
-   local result = { traces=0, fieldLoads=0, guards=0, snapshots=0 }
+   local result = {
+      traces=0, fieldLoads=0, guards=0, snapshots=0, conversions=0,
+      integerConversions=0, maxIntegerConversions=0, maxBodyIntegerConversions=0
+   }
 
    for trace_no in {1 into 100} do
       local info = jit.util.traceInfo(trace_no)
@@ -43,11 +49,29 @@ function trace_metrics():table
 
       result.traces++
       result.snapshots += info.nexit
+      local trace_integer_conversions = 0
+      local body_integer_conversions = 0
+      local in_loop_body = false
       for instruction in {1 into info.nins} do
-         local _, ir_ot = jit.util.traceIR(trace_no, instruction)
+         local _, ir_ot, _, ir_op2 = jit.util.traceIR(trace_no, instruction)
          if ir_ot is nil then continue end
          if (ir_ot & 0x80) != 0 then result.guards++ end
          if (ir_ot >> 8) is ir_fload then result.fieldLoads++ end
+         if (ir_ot >> 8) is ir_loop then in_loop_body = true end
+         if (ir_ot >> 8) is ir_conv then
+            result.conversions++
+            if ir_op2 is irconv_int_num_any then
+               result.integerConversions++
+               trace_integer_conversions++
+               if in_loop_body then body_integer_conversions++ end
+            end
+         end
+      end
+      if trace_integer_conversions > result.maxIntegerConversions then
+         result.maxIntegerConversions = trace_integer_conversions
+      end
+      if body_integer_conversions > result.maxBodyIntegerConversions then
+         result.maxBodyIntegerConversions = body_integer_conversions
       end
    end
    jit.on()
@@ -91,6 +115,25 @@ function reset_contract_jit()
    jit.on()
    jit.flush()
    jit.opt.start()
+end
+
+@Test function IntegerContractConvertsOnTrace()
+   function accept_int(Value:int):int
+      return Value
+   end
+
+   local callback:any = accept_int
+   prepare_contract_trace()
+   local total = 0
+   for i in {0 to 120} do total += callback(i + 0.75) end
+
+   local metrics = trace_metrics()
+   assert(total is 7140, 'A traced floating caller should be truncated onto the integer path')
+   assert(metrics.traces > 0 and metrics.integerConversions > 0,
+      'An integer contract should emit a number-to-integer conversion on a compiled trace')
+   assert(metrics.maxBodyIntegerConversions <= 1,
+      'Integer narrowing should remain a boundary cost rather than accumulating conversions in the trace body')
+   expect_jit_contract_failure(function() callback(dynamic_contract_value('wrong')) end, 'int')
 end
 
 @Test function NamedStructureContractTracesAndRejectsAfterCompilation()

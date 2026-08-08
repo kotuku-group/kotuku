@@ -670,7 +670,8 @@ static void bcemit_contracts(FuncState *Fs, std::span<const RuntimeContractSlot>
    else if (Value->k IS ExpKind::Num) actual = TiriType::Num;
    else return false;
 
-   if (actual IS Expected) return true;
+   if (actual IS Expected or (Expected IS TiriType::Num and actual IS TiriType::Int)) return true;
+   if (Expected IS TiriType::Int and actual IS TiriType::Num) return false;
    err_type_mismatch(fs, actual, Expected);
    return false;
 }

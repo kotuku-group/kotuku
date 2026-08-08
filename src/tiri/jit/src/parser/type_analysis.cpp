@@ -1533,7 +1533,8 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                if (existing->primary IS TiriType::Str and value_type.primary IS TiriType::Num) continue;
             }
 
-            if (value_type.primary != TiriType::Any and value_type.primary != existing->primary) {
+            if (value_type.primary != TiriType::Any and value_type.primary != existing->primary and
+                not tiri_types_numeric_compatible(existing->primary, value_type.primary)) {
                // Implicit globals were never declared by the user, so a conflicting assignment is legal;
                // degrade the tracked type to 'any' rather than raising a diagnostic.
                if (is_global and this->is_implicit_global(name)) {
@@ -1691,7 +1692,8 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
             // Nil is always allowed as initial value for typed variables
             if (value_type.primary != TiriType::Nil and
                 value_type.primary != TiriType::Any and
-                value_type.primary != name.type) {
+                value_type.primary != name.type and
+                not tiri_types_numeric_compatible(name.type, value_type.primary)) {
                TypeDiagnostic diag;
                if (value_index > 0 and value_index - 1 < Payload.values.size()) {
                   diag.location = Payload.values[value_index - 1]->span;
@@ -2154,8 +2156,9 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
                auto check_operand = [&](const std::unique_ptr<ExprNode> &operand, const char *Side) {
                   if (not operand) return;
                   auto inferred = this->infer_expression_type(*operand);
-                  if (inferred.primary != TiriType::Any and inferred.primary != TiriType::Unknown
-                      and inferred.primary != TiriType::Num and inferred.primary != TiriType::Nil) {
+                  if (inferred.primary != TiriType::Any and inferred.primary != TiriType::Unknown and
+                      inferred.primary != TiriType::Num and inferred.primary != TiriType::Int and
+                      inferred.primary != TiriType::Nil) {
                      TypeDiagnostic diag;
                      diag.location = operand->span;
                      diag.expected = TiriType::Num;
@@ -2722,6 +2725,10 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                       (left_type.primary != TiriType::Unknown)) {
                      return left_type;
                   }
+                  if (tiri_types_numeric_compatible(left_type.primary, right_type.primary)) {
+                     result.primary = TiriType::Num;
+                     return result;
+                  }
 
                   // For `or`, the right operand is the fallback, so prefer its type if known
 
@@ -2800,11 +2807,13 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   if (left_type.primary IS TiriType::Nil) return right_type;
                   if (left_type.primary IS TiriType::Any or left_type.primary IS TiriType::Unknown or
                       right_type.primary IS TiriType::Any or right_type.primary IS TiriType::Unknown or
-                      left_type.primary != right_type.primary or
+                      (left_type.primary != right_type.primary and
+                       not tiri_types_numeric_compatible(left_type.primary, right_type.primary)) or
                       (left_type.primary IS TiriType::Object and
                          left_type.object_class_id != right_type.object_class_id) or
                       (left_type.primary IS TiriType::Struct and left_type.struct_def != right_type.struct_def)) {
-                     result.primary = TiriType::Any;
+                     result.primary = tiri_types_numeric_compatible(left_type.primary, right_type.primary) ?
+                        TiriType::Num : TiriType::Any;
                      return result;
                   }
 
@@ -3374,7 +3383,8 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
          const bool array_matches = expected != TiriType::Array or actual.primary != TiriType::Array or
             not actual.array_element.known or
             array_element_matches(ctx->expected_returns.array_elements[i], actual.array_element);
-         if (actual.primary != expected or not struct_matches or not array_matches) {
+         if ((actual.primary != expected and not tiri_types_numeric_compatible(expected, actual.primary)) or
+             not struct_matches or not array_matches) {
             TypeDiagnostic diag;
             diag.location = expression.span;
             diag.expected = expected;
@@ -3428,6 +3438,10 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
             continue;
          }
 
+         if (tiri_types_numeric_compatible(position.concrete.primary, actual.primary)) {
+            position.concrete.primary = TiriType::Num;
+            continue;
+         }
          const bool type_matches = actual.primary IS position.concrete.primary;
          const bool class_matches = position.concrete.primary != TiriType::Object or
             position.concrete.object_class_id IS CLASSID::NIL or

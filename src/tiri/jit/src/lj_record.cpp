@@ -538,6 +538,15 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
          case TiriType::Num:
             if (not tvisnumber(value)) result = RecordedContract::Mismatch;
             break;
+         case TiriType::Int:
+            if (tref_isint(value_ref)) {
+               J->base[Base + i] = value_ref;
+            }
+            else if (tvisnum(value)) {
+               J->base[Base + i] = emitir(IRTI(IR_CONV), value_ref, IRCONV_INT_NUM | IRCONV_ANY);
+            }
+            else if (not tvisint(value)) result = RecordedContract::Mismatch;
+            break;
          case TiriType::Str:
             if (not tvisstr(value)) result = RecordedContract::Mismatch;
             break;
@@ -2063,6 +2072,19 @@ handlemm:
          irb.guard_ne(marker, irb.knull(IRT_TAB), IRT_TAB);
          if (not tref_isk(ix->key)) lj_trace_err(J, LJ_TRERR_NYIENVKEY);
          if (ix->val_slot < 0) lj_trace_err(J, LJ_TRERR_NYIBC);
+
+         // The helper coerces an int policy's materialised stack slot in place.  Mirror that coercion in SSA so the
+         // recorded table store writes the same integer representation rather than retaining the pre-check number.
+         GCstr *policy = ix->declaration_override ? ix->declaration_override :
+            lj_tab_get_global_contract(tabV(&ix->tabv), strV(&ix->keyv));
+         RuntimeContractDescriptor policy_descriptor;
+         if (policy and decode_runtime_contract(policy, policy_descriptor) and
+             policy_descriptor.contract_count > 0 and
+             policy_descriptor.entries[0].type IS TiriType::Int and tvisnum(&ix->valv) and
+             not tref_isint(ix->val)) {
+            ix->val = emitir(IRTI(IR_CONV), ix->val, IRCONV_INT_NUM | IRCONV_ANY);
+         }
+
          TRef value_slot = rec_stack_slot_addr(J, irb, int32_t(J->baseslot) + ix->val_slot);
          rec_emit_tvalue_store(J, value_slot, ix->val);
          emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);

@@ -303,7 +303,7 @@ private:
       uint8_t allowed_entry_flags = contract_flag(ContractEntryFlag::Nullable) |
          contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
          contract_flag(ContractEntryFlag::Initialising) | contract_flag(ContractEntryFlag::GlobalHint);
-      if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
+      if (not reader.read_byte(type) or not tiri_type_byte_is_valid(type) or
           not reader.read_byte(entry.flags) or
           (entry.flags & ~allowed_entry_flags) != 0 or
           not reader.read_byte(entry.position) or entry.position IS 0 or

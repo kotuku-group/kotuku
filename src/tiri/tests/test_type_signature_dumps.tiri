@@ -38,6 +38,21 @@ end
    end
 end
 
+@Test function IntegerParameterAndResultRoundTrips()
+   function factory():func
+      return function(Value:int):int
+         return Value
+      end
+   end
+
+   for stripped in values({ false, true }) do
+      local restored = reload_factory(factory, stripped)
+      assert(restored(12.9) is 12, 'A reloaded integer signature must retain truncating contracts')
+      local dynamic:any = restored
+      expect_contract_failure(function() dynamic('wrong') end)
+   end
+end
+
 @Test function RequiredParameterAndResultRoundTrips()
    function factory():func
       return function(Value:str!):str!

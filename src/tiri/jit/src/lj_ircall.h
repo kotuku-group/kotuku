@@ -275,6 +275,6 @@ extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t 
 extern "C" void lj_try_leave(lua_State *L);
 
 // Environment mutation boundary (see lj_meta.cpp).
-extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value);
+extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value);
 extern "C" void lj_env_check_override(
-   lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value, GCstr *DeclarationOverride);
+   lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value, GCstr *DeclarationOverride);

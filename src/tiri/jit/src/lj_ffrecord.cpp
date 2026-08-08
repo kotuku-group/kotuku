@@ -248,6 +248,7 @@ static uint32_t recff_type_name_index(TiriType Type)
       case TiriType::Table:    return 11;
       case TiriType::Array:    return 13;
       case TiriType::Num:      return 14;
+      case TiriType::Int:      return 14;
       case TiriType::Range:    return TYPE_NAME_RANGE;
       case TiriType::Userdata: return TYPE_NAME_USERDATA;
       case TiriType::Any:

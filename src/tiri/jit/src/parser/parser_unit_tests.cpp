@@ -1290,7 +1290,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
       "struct SignatureLayout\n"
       "   Value: int\n"
       "end\n"
-      "local function outer(Value:num!, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
+      "local function outer(Value:int!, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
       "Object:obj, Numbers:array<int>, Records:array<struct<SignatureLayout>>, ...):func\n"
       "   local function inner(Text:str!):<str!, num, ...>\n"
       "      return Text, Value, Value\n"
@@ -1322,7 +1322,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
    }
 
    const ProtoTypeEntry *outer_params = proto_parameter_types(outer);
-   if (outer_params[0].type != TiriType::Num or
+   if (outer_params[0].type != TiriType::Int or
        proto_type_nullable(outer_params[0]) or not proto_type_required(outer_params[0]) or
        proto_type_origin(outer_params[0]) != ProtoTypeOrigin::Declared or
        proto_type_strength(outer_params[0]) != ProtoTypeStrength::Checked or
@@ -2118,6 +2118,8 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    invalid_boundary[0] = char(0xff);
    std::string invalid_entry_flags = encoded;
    invalid_entry_flags[5] = char(0x80);
+   std::string invalid_entry_type = encoded;
+   invalid_entry_type[4] = char(0xff);
    std::string invalid_initialising_flag = encoded;
    invalid_initialising_flag[0] = char(uint8_t(ContractBoundary::Local));
    invalid_initialising_flag[5] = char(contract_flag(ContractEntryFlag::Initialising));
@@ -2147,7 +2149,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    std::string truncated = encoded.substr(0, encoded.size() - 1);
 
    if (not rejected(invalid_descriptor_flags) or not rejected(invalid_boundary) or
-       not rejected(invalid_entry_flags) or
+       not rejected(invalid_entry_flags) or not rejected(invalid_entry_type) or
        not rejected(invalid_initialising_flag) or
        not rejected(invalid_local_global_hint) or not rejected(invalid_const_global_hint) or
        not rejected(invalid_unlabelled_global_hint) or
@@ -2519,8 +2521,16 @@ static bool test_userdata_type_annotations(kt::Log &Log)
       Log.error("userdata type name does not round-trip");
       return false;
    }
+   if (parse_type_name("int") != TiriType::Int or type_name(TiriType::Int) != "int") {
+      Log.error("int type name does not round-trip");
+      return false;
+   }
    if (uint8_t(TiriType::Range) != 10 or uint8_t(TiriType::Userdata) != 11) {
       Log.error("userdata changed an existing concrete contract type identifier");
+      return false;
+   }
+   if (uint8_t(TiriType::Unknown) != 12 or uint8_t(TiriType::Int) != 13) {
+      Log.error("int did not preserve existing serialised type identifiers");
       return false;
    }
 
@@ -2528,7 +2538,8 @@ static bool test_userdata_type_annotations(kt::Log &Log)
       "function identity(Value:userdata):userdata\n"
       "   local result:userdata = Value\n"
       "   return result\n"
-      "end";
+      "end\n"
+      "function integer(Value:int):int return Value end";
    auto result = build_ast_from_source(source);
    if (not result.chunk.ok()) {
       Log.error("failed to parse userdata annotations");
