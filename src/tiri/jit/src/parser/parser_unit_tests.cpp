@@ -2507,6 +2507,10 @@ static bool test_parser_diagnostics_reset_per_load(kt::Log &Log)
 
 static bool test_userdata_type_annotations(kt::Log &Log)
 {
+   if (parse_type_name("str") != TiriType::Str or parse_type_name("string") != TiriType::Unknown) {
+      Log.error("str must be the exclusive string type annotation name");
+      return false;
+   }
    if (parse_type_name("userdata") != TiriType::Userdata or type_name(TiriType::Userdata) != "userdata") {
       Log.error("userdata type name does not round-trip");
       return false;

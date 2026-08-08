@@ -80,7 +80,7 @@ end
    function getValue()
       return 'computed'
    end
-   x = <string{ getValue() }>
+   x = <str{ getValue() }>
    result = resolve(x)
    assert(type(result) is 'string', 'Expected string type')
    assert(result is 'computed', 'Expected "computed"')
@@ -178,7 +178,7 @@ end
       return 'computed'
    end
 
-   x = <string{ getValue() }>
+   x = <str{ getValue() }>
    assert(type(x) is 'string', 'Expected type(x) to be "string" for explicitly typed deferred')
 
    y = <number{ 42 }>
@@ -190,7 +190,7 @@ end
 
 @Test function DeferredNested()
    inner = <{ 'inner' }>
-   outer = <string{ inner }>
+   outer = <str{ inner }>
    -- Resolving outer returns the inner deferred, which then needs resolving
    result = resolve(resolve(outer))
    assert(result is 'inner', 'Expected nested deferred to resolve to "inner"')
@@ -237,7 +237,7 @@ end
 
    -- Test that deferred message is NOT evaluated when assert succeeds
    evaluated = false
-   assert(true, <string{ makeMessage() }>)
+   assert(true, <str{ makeMessage() }>)
    assert(evaluated is false, 'Deferred message should NOT be evaluated when assert succeeds')
 end
 
@@ -246,7 +246,7 @@ end
    value = 42
 
    try
-      assert(false, <string{ 'Error in ' .. context .. ': value = ' .. tostring(value) }>)
+      assert(false, <str{ 'Error in ' .. context .. ': value = ' .. tostring(value) }>)
    except e
       assert(e.message != nil, 'Error message should not be nil')
       -- Verify the error message contains expected content

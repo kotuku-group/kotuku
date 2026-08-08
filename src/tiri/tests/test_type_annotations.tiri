@@ -55,7 +55,6 @@ end
    assert_compiles("N:num")
    assert_compiles("Number:number")
    assert_compiles("S:str")
-   assert_compiles("String:string")
    assert_compiles("B:bool")
    assert_compiles("T:table")
    assert_compiles("F:func")
@@ -64,6 +63,16 @@ end
    assert_compiles("NilVal:nil")
    assert_compiles("StructVal:struct")
    assert_compiles("ObjVal:obj")
+end
+
+@Test function RemovedStringTypeRejected()
+   try
+      exec("local value:string = 'text'")
+   success
+      error("Expected string type name to be rejected")
+   end
+
+   assert(type('text') is 'string', "type() must continue to return the string runtime name")
 end
 
 @Test function ObjectTypeAliasRejected()
