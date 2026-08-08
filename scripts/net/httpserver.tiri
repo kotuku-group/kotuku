@@ -115,7 +115,7 @@ function timestamp():str
    return tempus.now():toZonedDateTime(tempus.zone.local()):format('yyyy-MM-dd HH:mm:ss')
 end
 
-function logMessage(self:table, message:str)
+function logMessage(self:table!, message:str!)
    if self.logMessage then
       self.logMessage(f'[{timestamp()}] {message}')
    end
@@ -123,7 +123,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function validatePort(port:num):bool
+function validatePort(port:num!):bool
    port_num = port
    if not port_num or port_num < 1 or port_num > 65535 then
       return false
@@ -201,7 +201,7 @@ Process chunked request body incrementally
 -RESULT-
 bool: Returns true when chunking is complete, false if still reading
 ]])
-function processChunkedBody(State:table, Server:table):bool
+function processChunkedBody(State:table!, Server:table!):bool
    while #State.buffer > 0 do
       if State.chunk_state is 'SIZE' then
          -- Look for chunk size line ending with \r\n
@@ -293,7 +293,7 @@ str: Body
 str: Error message
 bool: Connection status
 ]])
-function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<str, str, bool>
+function readChunkedRequestBody(Client:obj!, MaxSize:num!, TimeoutSeconds:num!):<str, str, bool>
    body = ''
    totalSize = 0
    startTime = mSys.PreciseTime()
@@ -498,14 +498,14 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse form-encoded body (application/x-www-form-urlencoded)
 
-function parseFormBody(Body:str):table
+function parseFormBody(Body:str!):table
    return parseQueryString(Body) -- Same parsing logic as query strings
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Remove the CRLF that precedes the next multipart boundary.
 
-function trimMultipartPartValue(Value:str):str
+function trimMultipartPartValue(Value:str!):str
    if Value:endsWith('\r\n') then
       return Value:sub(0, #Value - 2)
    elseif Value:endsWith('\n') then
@@ -843,7 +843,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function createErrorPage(statusCode:num, statusText:str, message:str, details:str)
+function createErrorPage(statusCode:num!, statusText:str!, message:str!, details:str!)
    html = [[<!DOCTYPE html>
 <html>
 <head>
@@ -876,7 +876,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function parseByteRange(Header:str, FileSize:num):table
+function parseByteRange(Header:str, FileSize:num!):table
    Header ?! return nil
 
    captures = rxByteRange.match(Header:trim())
@@ -923,7 +923,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function streamFileBody(self:table, ClientSocket:obj, File:obj, Length:num):bool
+function streamFileBody(self:table!, ClientSocket:obj!, File:obj, Length:num!):bool
    buffer = string.alloc(self.fileChunkSize)
    total_sent = 0
 
@@ -959,7 +959,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function serveFile(self:table, ClientSocket:obj, FilePath:str, Request:table)
+function serveFile(self:table!, ClientSocket:obj!, FilePath:str!, Request:table!)
    local file
    try
       file = obj.new('file', { path = FilePath, flags = 'READ' })
@@ -1246,7 +1246,7 @@ end
 
 -- Built-in request logging middleware
 
-function loggingMiddleware(request:table, response:table, next:func)
+function loggingMiddleware(request:table!, response:table!, next:func!)
    startTime = mSys.PreciseTime()
 
    logMessage(response._self, request.method .. ' ' .. request.path .. ' from ' .. (request.ip or 'unknown'))
@@ -1289,7 +1289,7 @@ function authMiddleware(options:table)
    tokenHeader = options.header or 'authorization'
    tokenPrefix = options.prefix or 'Bearer '
 
-   return function(request:table, response:table, next:func)
+   return function(request:table!, response:table!, next:func!)
       authHeader = request.headers[tokenHeader:lower()]
 
       if not authHeader then
@@ -1360,7 +1360,7 @@ function addRoute(self:table, route:table)
 end
 
 @Doc(text="Extract parameters from a matched path using route pattern and regex match results")
-function extractParams(pattern:str, matchResults):table
+function extractParams(pattern:str!, matchResults):table
    params = {}
 
    -- Extract parameter names from the original pattern
@@ -1460,7 +1460,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Check rate limiting for client IP
 
-function checkRateLimit(self:table, IP:str):bool
+function checkRateLimit(self:table, IP:str!):bool
    if not self.rateLimit or self.rateLimit <= 0 then
       return true -- Rate limiting disabled
    end

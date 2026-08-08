@@ -9,6 +9,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
+#include "lj_gc.h"
 #include "lj_str.h"
 #include "lj_struct.h"
 #include "lj_tab.h"
@@ -20,7 +21,6 @@
 #include <utility>
 #include <unordered_map>
 #include <algorithm>
-#include <set>
 #include <mutex>
 #include <new>
 #include <limits>
@@ -31,17 +31,72 @@ struct static_module_function_signature {
    std::vector<FunctionField> Fields;
 };
 
+// Immutable per-module signature.  This is the sole owner of the canonical function names and copied FunctionField
+// metadata: compile-time queries and the runtime ModuleCallable records both read these copies rather than the loaded
+// module's original Function list, so a name or field descriptor has one representation with one lifetime.
+//
+// The function-name index removes the linear scan that compile-time queries previously performed; it maps a
+// case-insensitive hash to every ordinal sharing that hash, so the canonical name is always revalidated after the
+// lookup and a collision cannot resolve to the wrong function.  Because Functions is built in the module's export
+// order and ModuleBinding::Callables is built from it, one ordinal addresses both representations.
+
+constexpr uint32_t NO_FUNCTION_ORDINAL = std::numeric_limits<uint32_t>::max();
+
 struct static_module_signature {
    std::string Name;
    std::vector<static_module_function_signature> Functions;
+   ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> FunctionIndex;
+
+   [[nodiscard]] uint32_t find_ordinal(std::string_view Name) const noexcept {
+      if (auto it = FunctionIndex.find(strihash(Name)); it != FunctionIndex.end()) {
+         for (auto slot : it->second) {
+            if (kt::iequals(Functions[slot].Name, Name)) return slot;
+         }
+      }
+      return NO_FUNCTION_ORDINAL;
+   }
+
+   [[nodiscard]] const static_module_function_signature * find(std::string_view Name) const noexcept {
+      auto ordinal = find_ordinal(Name);
+      return (ordinal IS NO_FUNCTION_ORDINAL) ? nullptr : &Functions[ordinal];
+   }
 };
+
+// The native argument limit.  A signature is rejected during preparation if it declares more than this many native
+// parameters, so every bounded store in the call bridge can be sized from it and can never overflow at call time.
+//
+// Script callers supply at most MAX_MODULE_ARGS values as well: argument i of the signature reads script index i, so
+// the two limits are one contract rather than two.  Result and span arguments consume a signature slot without
+// consuming a script value, which makes the script side of the contract an upper bound rather than an exact count.
 
 constexpr int MAX_MODULE_ARGS = 16;
 constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
-struct module;
+struct ModuleBinding;
+
+// Precomputed counts of the bridge-owned temporaries one signature can require.  Deriving these once per callable lets
+// the call bridge construct only the elements a signature actually uses, and lets preparation reject a signature whose
+// demands would exceed a bounded store instead of discovering the overflow mid-call.
+//
+// Counts are upper bounds.  A conditional temporary, such as the structure conversion performed only when a script
+// passes a table, is counted for every argument that could require it.
+
+struct marshalling_profile {
+   uint8_t Strings = 0;         // Mutable std::string temporaries (FD_STR|FD_CPP with FD_MUTABLE or FD_RESULT)
+   uint8_t StringViews = 0;     // std::string_view temporaries (FD_STR|FD_CPP, read-only)
+   uint8_t MutableStrings = 0;  // Copy-back records for mutable std::string arguments
+   uint8_t Structs = 0;         // Table-to-structure conversions
+   uint8_t Arrays = 0;          // kt::vector<> results
+   uint8_t Spans = 0;           // std::span wrappers
+
+   // True when the signature needs no bridge-owned temporary at all.  Scalar-only and read-only C-string calls take
+   // this path and perform no heap allocation of their own.
+   [[nodiscard]] bool trivial_storage() const noexcept {
+      return not (Strings or StringViews or MutableStrings or Structs or Arrays or Spans);
+   }
+};
 
 // One process-wide callable record per exported module function.  Records are allocated individually so that their
 // addresses remain stable from publication until expunge_modules(), which is required because Tiri closures retain a
@@ -50,10 +105,12 @@ struct module;
 // Every field is written once during preparation and is immutable afterwards, so concurrent calls from independent
 // Tiri states can share one record without synchronisation.
 
-struct module_callable {
-   CSTRING Name = nullptr;               // Canonical name, owned by the module's Function list
+struct ModuleCallable {
+   CSTRING Name = nullptr;               // Canonical name, owned by the binding's immutable signature
    APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
-   const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
+   const FunctionField *Fields = nullptr; // Argument metadata, owned by the binding's immutable signature
+
+   marshalling_profile Profile;          // Upper bounds on the bridge-owned temporaries this signature can require
 
    ffi_cif Cif = { };
    ffi_type *ArgTypes[MAX_MODULE_ARGS] = { };
@@ -67,20 +124,122 @@ struct module_callable {
    inline void invalidate() { Address = nullptr; }
 };
 
-struct module {
+// Address-stable bounded storage for the call bridge's temporaries.
+//
+// Elements live in raw aligned storage and are constructed only as they are used, so a signature that needs none pays
+// nothing beyond the (stack-resident) storage itself.  Because the capacity is fixed and validated during preparation,
+// an element's address never changes once it has been handed to libffi -- the property the previous reserve(8) vectors
+// only provided by accident.
+//
+// emplace() returns null when the store is full.  Preparation rejects any signature that could reach that point, so a
+// null return indicates a profile/marshaller disagreement rather than an expected condition.
+
+template <class T, size_t Capacity> class bounded_store {
+   alignas(T) uint8_t Storage[Capacity * sizeof(T)];
+   size_t Count = 0;
+
+   [[nodiscard]] T * slot(size_t Index) noexcept { return (T *)(Storage + (Index * sizeof(T))); }
+
+   public:
+   bounded_store() = default;
+   bounded_store(const bounded_store &) = delete;
+   bounded_store & operator=(const bounded_store &) = delete;
+
+   ~bounded_store() {
+      while (Count) slot(--Count)->~T();
+   }
+
+   template <class... Args> [[nodiscard]] T * emplace(Args &&...Arguments) {
+      if (Count >= Capacity) return nullptr;
+      auto element = new (slot(Count)) T(std::forward<Args>(Arguments)...);
+      Count++;
+      return element;
+   }
+
+   [[nodiscard]] size_t size() const noexcept { return Count; }
+
+   T & operator[](size_t Index) noexcept { return *slot(Index); }
+};
+
+// Records how far the module's IDL definitions (constants and structures) have progressed.  The state belongs to the
+// module binding rather than a separate name set, so that a module and the definitions it published cannot disagree.
+
+enum class def_state : uint8_t {
+   Unloaded = 0, // No definition processing has been attempted
+   Loaded,       // Definitions were published in full
+   Failed        // Definition processing failed; the batch was rolled back
+};
+
+// Callables is parallel to Signature->Functions: element i describes the module's i'th export in both. Runtime name
+// lookup therefore uses the signature's index to obtain an ordinal and then addresses Callables directly, so the
+// compiler and the call bridge share one collision-safe, case-insensitive mapping.
+
+struct ModuleBinding {
    std::string Name;
    objModule *Module = nullptr;
    std::unique_ptr<const static_module_signature> Signature;
-   ankerl::unordered_dense::map<uint32_t, std::vector<module_callable *>> FunctionMap;
-   std::vector<std::unique_ptr<module_callable>> Callables;
+   std::vector<std::unique_ptr<ModuleCallable>> Callables;
 
-   ~module() {
+   // Definition-loading state is guarded by glConstantMutex rather than the registry mutex.  DefError retains the
+   // failure so that a repeated request reports the original cause instead of silently succeeding.
+   def_state DefState = def_state::Unloaded;
+   ERR DefError = ERR::Okay;
+
+   ~ModuleBinding() {
       if (Module) FreeResource(Module);
    }
 };
 
-static std::mutex glModuleMutex;
-static std::vector<std::unique_ptr<module>> glModules;
+// One index entry.  The spelling under which the binding was registered is stored alongside it, because an alias is
+// reachable under a name that differs from the binding's canonical name.  Retaining the spelling lets the lookup
+// revalidate it after hashing, so a hash collision can never resolve to the wrong module.
+
+struct ModuleIndexEntry {
+   std::string Name;
+   ModuleBinding *Binding = nullptr;
+};
+
+// The process-wide module registry.  See MODULE_REGISTRY.md for its lifecycle and lock contract.  Ownership and lookup
+// are deliberately separate: Bindings owns every binding exactly once, while Index maps a case-insensitive name hash
+// to non-owning entries.  Because bindings are allocated individually, growth of either container never moves a
+// published binding, its signature or its callables.  That stability is required, as Tiri closures and compiler
+// symbols retain raw pointers until expunge_modules().
+//
+// Separating the two also lets one binding be reached through several spellings (the requested name and the module's
+// canonical name) without any shared-ownership scheme.
+
+struct ModuleRegistry {
+   std::mutex Mutex;
+   std::vector<std::unique_ptr<ModuleBinding>> Bindings;
+   ankerl::unordered_dense::map<uint32_t, std::vector<ModuleIndexEntry>> Index;
+   bool Expunging = false;
+};
+
+static ModuleRegistry glModuleRegistry;
+
+// Locate a published binding.  The caller must hold glModuleRegistry.Mutex.
+
+static ModuleBinding * find_module_binding(std::string_view Name)
+{
+   if (auto it = glModuleRegistry.Index.find(strihash(Name)); it != glModuleRegistry.Index.end()) {
+      for (const auto &entry : it->second) {
+         if (kt::iequals(entry.Name, Name)) return entry.Binding;
+      }
+   }
+   return nullptr;
+}
+
+// Make Binding reachable under Name.  The caller must hold glModuleRegistry.Mutex.  Registering the requested
+// spelling in addition to the canonical one lets a later lookup for either spelling hit the index directly.
+
+static void publish_module_alias(std::string_view Name, ModuleBinding *Binding)
+{
+   auto &bucket = glModuleRegistry.Index[strihash(Name)];
+   for (const auto &entry : bucket) {
+      if (kt::iequals(entry.Name, Name)) return; // Already reachable under this spelling
+   }
+   bucket.push_back({ std::string(Name), Binding });
+}
 
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
@@ -129,21 +288,28 @@ static ERR module_span_element_metadata(lua_State *Lua, const FunctionField &Fie
    return ERR::Okay;
 }
 
-struct CaseInsensitiveCompare {
-   using is_transparent = void;
+// One constant parsed from a module's IDL, retained with its full canonical name.
+//
+// The registry is keyed by hash alone, so the name is preserved here to make a collision or a conflicting redefinition
+// diagnosable: without it, two different constants that hash alike would silently reduce to one value with no way to
+// report which module supplied either.
 
-   bool operator()(std::string_view A, std::string_view B) const {
-      return std::lexicographical_compare(
-         A.begin(), A.end(), B.begin(), B.end(),
-         [](char CharA, char CharB) { return std::tolower((unsigned char)CharA) < std::tolower((unsigned char)CharB); }
-      );
-   }
+struct staged_constant {
+   std::string Name;
+   TiriConstant Value;
 };
 
-static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Stores the names of modules that have loaded constants (system wide)
+// A module's definitions, parsed but not yet published.  Staging the whole module before committing keeps publication
+// atomic, so a malformed definition cannot leave half of a module's constants and structures visible.
 
-[[nodiscard]] static ERR load_include_struct(extTiri *, CSTRING, std::string_view, CSTRING *);
-[[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view);
+struct definition_batch {
+   std::string Source;                       // Module supplying the definitions, retained for diagnostics
+   std::vector<staged_constant> Constants;
+   std::vector<std::pair<std::string, std::string>> Structs; // Name, definition sequence
+};
+
+[[nodiscard]] static ERR load_include_struct(CSTRING, std::string_view, CSTRING *, definition_batch &);
+[[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view, definition_batch &);
 
 static int module_call(lua_State *);
 static ERR module_call_inner(lua_State *, std::string &, int &);
@@ -164,6 +330,7 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
    for (size_t i = 0; i < function_count; ++i) {
       auto &entry = signature->Functions.emplace_back();
       entry.Name = Functions[i].Name;
+      signature->FunctionIndex[strihash(entry.Name)].push_back(uint32_t(i));
 
       if (const FunctionField *fields = Functions[i].Args) {
          size_t field_count = 0;
@@ -184,21 +351,18 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
 
 StaticModuleHandle static_module_by_name(std::string_view Name) noexcept
 {
-   std::lock_guard lock(glModuleMutex);
-   for (const auto &entry : glModules) {
-      if (kt::iequals(entry->Name, Name)) return entry->Signature.get();
-   }
-   return nullptr;
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (glModuleRegistry.Expunging) return nullptr;
+   auto binding = find_module_binding(Name);
+   return binding ? binding->Signature.get() : nullptr;
 }
 
 const FunctionField * static_module_function(
    StaticModuleHandle Module, std::string_view Name) noexcept
 {
    if (not Module) return nullptr;
-   for (const auto &function : Module->Functions) {
-      if (kt::iequals(function.Name, Name)) return function.Fields.data();
-   }
-   return nullptr;
+   auto function = Module->find(Name);
+   return function ? function->Fields.data() : nullptr;
 }
 
 std::string_view static_module_name(StaticModuleHandle Module) noexcept
@@ -209,10 +373,8 @@ std::string_view static_module_name(StaticModuleHandle Module) noexcept
 std::string_view static_module_function_name(StaticModuleHandle Module, std::string_view Name) noexcept
 {
    if (not Module) return {};
-   for (const auto &function : Module->Functions) {
-      if (kt::iequals(function.Name, Name)) return function.Name;
-   }
-   return {};
+   auto function = Module->find(Name);
+   return function ? std::string_view(function->Name) : std::string_view();
 }
 
 //********************************************************************************************************************
@@ -275,6 +437,43 @@ static ERR callable_arg_type(const FunctionField &Field, ffi_type *&Type, std::s
 }
 
 //********************************************************************************************************************
+// Accumulate the bridge-owned temporaries one argument can require.  The classification must agree with the
+// marshalling loop in module_call_inner(); a temporary counted here but not used is merely wasteful, whereas one used
+// but not counted would overflow a bounded store.
+
+static void profile_arg(const FunctionField &Field, marshalling_profile &Profile)
+{
+   const int argtype = Field.Type;
+
+   if ((argtype & FDF_SPAN) IS FDF_SPAN) { Profile.Spans++; return; }
+
+   if (argtype & FD_RESULT) {
+      if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) Profile.Arrays++;
+      else if ((argtype & FD_STR) and (argtype & FD_CPP)) {
+         // A mutable result is backed by a std::string the bridge owns; a read-only one by a std::string_view.
+         if (argtype & FD_MUTABLE) Profile.Strings++;
+         else Profile.StringViews++;
+      }
+      return;
+   }
+
+   if (argtype & FD_FUNCTION) return; // The single FUNCTION reserve lives in the frame, not a store
+
+   if (argtype & FD_STR) {
+      if (argtype & FD_CPP) {
+         if (argtype & FD_MUTABLE) { Profile.Strings++; Profile.MutableStrings++; }
+         else Profile.StringViews++;
+      }
+      return;
+   }
+
+   // A pointer argument allocates a structure only when the script passes a table, which cannot be known until the
+   // call.  Counting it unconditionally keeps the bound safe for every input the argument accepts.
+
+   if ((argtype & FD_PTR) and (argtype & FD_STRUCT)) Profile.Structs++;
+}
+
+//********************************************************************************************************************
 // Determine the libffi return type from the function's result descriptor, which is stored in element zero of the
 // argument list.
 
@@ -293,43 +492,50 @@ static ffi_type * callable_return_type(int ResultType)
 
 //********************************************************************************************************************
 // Build the process-wide callable records for a module.  Called once, while the module is being resolved and before
-// it is published to glModules, so no other thread can observe a partially prepared record.
+// it is published to the registry, so no other thread can observe a partially prepared record.
+//
+// The binding's signature must already be built, because it owns the canonical names and copied FunctionField
+// metadata that the callables refer to.  The loaded Function list is consulted only for the native addresses, which
+// the signature deliberately does not retain.  One callable is emitted per signature entry, in signature order, so
+// that an ordinal from the signature's index addresses the matching callable.
 //
 // A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
 // signature must not prevent the rest of the module from being used.
 
-static void prepare_module_callables(module *Module, const Function *Functions)
+static void prepare_module_callables(ModuleBinding *Module, const Function *Functions)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Functions) return;
+   if ((not Functions) or (not Module->Signature)) return;
 
-   size_t function_count = 0;
-   while (Functions[function_count].Name) function_count++;
-   Module->Callables.reserve(function_count);
+   const auto &signatures = Module->Signature->Functions;
+   Module->Callables.reserve(signatures.size());
 
-   for (size_t index = 0; index < function_count; ++index) {
+   for (size_t index = 0; index < signatures.size(); ++index) {
       const auto &function = Functions[index];
-      auto callable = std::make_unique<module_callable>();
+      const auto &signature = signatures[index];
+      auto callable = std::make_unique<ModuleCallable>();
 
-      callable->Name    = function.Name;
+      callable->Name    = signature.Name.c_str();
       callable->Address = function.Address;
-      callable->Fields  = function.Args;
+      callable->Fields  = function.Args ? signature.Fields.data() : nullptr;
 
       if (not function.Args) {
          // A function with no argument list takes no parameters and returns nothing, so libffi is unnecessary.
-         // The callable is still exported, so it must be registered for name lookup like any other.
-         Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
          Module->Callables.push_back(std::move(callable));
          continue;
       }
 
-      const FunctionField *args = function.Args;
+      const FunctionField *args = callable->Fields;
       int total = 0;
+      marshalling_profile profile;
+      size_t front_bytes = 0; // Argument slots, allocated from the start of the call buffer
+      size_t back_bytes = 0;  // Result storage, allocated from the end of the call buffer
+
       for (int arg = 1; args[arg].Name; ++arg) {
          if (total >= MAX_MODULE_ARGS) {
             callable->invalidate();
-            log.msg("Function '%s' exceeds the %d argument limit.", function.Name, MAX_MODULE_ARGS);
+            log.msg("Function '%s' exceeds the %d argument limit.", callable->Name, MAX_MODULE_ARGS);
             break;
          }
 
@@ -337,22 +543,63 @@ static void prepare_module_callables(module *Module, const Function *Functions)
          std::string message;
          if (auto error = callable_arg_type(args[arg], type, message); error != ERR::Okay) {
             callable->invalidate();
-            log.msg("Function '%s': %s", function.Name, message.c_str());
+            log.msg("Function '%s': %s", callable->Name, message.c_str());
             break;
          }
          callable->ArgTypes[total++] = type;
+         profile_arg(args[arg], profile);
+
+         // Mirror the call buffer's two-ended allocation so that an overlap is rejected here rather than corrupting
+         // an argument slot at call time.  The front slot is sized as the marshaller sizes it; the back allocation
+         // applies only to the result kinds that write into buffer-tail storage.
+
+         const int argtype = args[arg].Type;
+         if ((argtype & FDF_SPAN) IS FDF_SPAN) front_bytes += sizeof(APTR);
+         else if (argtype & FD_RESULT) {
+            front_bytes += sizeof(APTR);
+            if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) { }
+            else if ((argtype & FD_STR) and (argtype & FD_CPP)) { }
+            else if (argtype & (FD_STR|FD_PTR)) back_bytes += sizeof(APTR);
+            else if (argtype & FD_INT) back_bytes += sizeof(int);
+            else if (argtype & (FD_DOUBLE|FD_INT64)) back_bytes += sizeof(int64_t);
+         }
+         else if (argtype & FD_FUNCTION) front_bytes += sizeof(FUNCTION *);
+         else if (argtype & FD_STR) front_bytes += sizeof(APTR);
+         else if (argtype & FD_PTR) front_bytes += sizeof(APTR);
+         else if (argtype & FD_INT) front_bytes += sizeof(int);
+         else if (argtype & FD_DOUBLE) front_bytes += sizeof(double);
+         else if (argtype & FD_INT64) front_bytes += sizeof(int64_t);
+      }
+
+      if (callable->valid() and (front_bytes + back_bytes > BUFFER_SIZE)) {
+         callable->invalidate();
+         log.msg("Function '%s' requires %zu call buffer bytes, exceeding the %zu byte limit.",
+            callable->Name, front_bytes + back_bytes, BUFFER_SIZE);
+      }
+
+      // Every bounded store is sized at MAX_MODULE_ARGS, and each temporary is required by a distinct argument, so a
+      // signature within the argument limit cannot exhaust one.  The check is retained because it is the contract the
+      // marshaller relies on to treat a full store as unreachable.
+
+      if (callable->valid()) {
+         if ((profile.Strings > MAX_MODULE_ARGS) or (profile.StringViews > MAX_MODULE_ARGS) or
+             (profile.MutableStrings > MAX_MODULE_ARGS) or (profile.Structs > MAX_MODULE_ARGS) or
+             (profile.Arrays > MAX_MODULE_ARGS) or (profile.Spans > MAX_MODULE_ARGS)) {
+            callable->invalidate();
+            log.msg("Function '%s' exceeds the bounded temporary storage limit.", callable->Name);
+         }
       }
 
       if (callable->valid()) {
+         callable->Profile = profile;
          ffi_type *return_type = callable_return_type(args->Type);
 
          if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, return_type, callable->ArgTypes) != FFI_OK) {
             callable->invalidate();
-            log.msg("Failed to prepare the call interface for '%s'.", function.Name);
+            log.msg("Failed to prepare the call interface for '%s'.", callable->Name);
          }
       }
 
-      Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
       Module->Callables.push_back(std::move(callable));
    }
 }
@@ -360,20 +607,25 @@ static void prepare_module_callables(module *Module, const Function *Functions)
 //********************************************************************************************************************
 // Resolve one process-wide module instance.  Entries remain stable until the Tiri module is expunged.
 
-static ERR resolve_module(std::string_view Name, module *&Result)
+static ERR resolve_module(std::string_view Name, ModuleBinding *&Result)
 {
-   std::lock_guard lock(glModuleMutex);
-   for (const auto &entry : glModules) {
-      if (kt::iequals(entry->Name, Name)) {
-         Result = entry.get();
+   {
+      std::lock_guard lock(glModuleRegistry.Mutex);
+      if (glModuleRegistry.Expunging) return ERR::InvalidState;
+      if (auto binding = find_module_binding(Name)) {
+         Result = binding;
          return ERR::Okay;
       }
    }
 
+   // Module creation runs external initialisation code that can re-enter the registry, so it is performed without
+   // holding the index lock.  Two threads racing on the same name may therefore both construct a module; the loser's
+   // instance is discarded below so that exactly one binding is ever published.
+
    auto loaded_module = objModule::create::global(fl::Name(Name));
    if (not loaded_module) return ERR::CreateObject;
 
-   auto entry = std::make_unique<module>();
+   auto entry = std::make_unique<ModuleBinding>();
    entry->Module = loaded_module;
    const Function *functions = nullptr;
    loaded_module->getFunctionList(functions);
@@ -384,20 +636,42 @@ static ERR resolve_module(std::string_view Name, module *&Result)
    entry->Signature = make_module_signature(entry->Name, functions);
    prepare_module_callables(entry.get(), functions);
 
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (glModuleRegistry.Expunging) return ERR::InvalidState;
+
+   // Re-check under the lock; another thread may have published this module while it was being prepared.
+   if (auto binding = find_module_binding(Name)) {
+      Result = binding;
+      return ERR::Okay;
+   }
+   if (auto binding = find_module_binding(entry->Name)) { // Requested an alias of an already published module
+      publish_module_alias(Name, binding);
+      Result = binding;
+      return ERR::Okay;
+   }
+
    Result = entry.get();
-   glModules.push_back(std::move(entry));
+   glModuleRegistry.Bindings.push_back(std::move(entry));
+   publish_module_alias(Result->Name, Result);
+   publish_module_alias(Name, Result);
    return ERR::Okay;
 }
 
+// Destroy every registered module.  All Tiri states must be unable to execute before this runs, because published
+// ModuleCallable addresses are retained by closures and compiler symbols for the lifetime of the registry.
+//
+// The index holds only non-owning pointers, so it is discarded before the bindings it refers to.  Binding destruction
+// runs after releasing the registry mutex because FreeResource() executes external module teardown code that must be
+// free to re-enter registry-facing code without deadlocking.
+
 void expunge_modules()
 {
+   std::vector<std::unique_ptr<ModuleBinding>> bindings;
    {
-      std::lock_guard lock(glModuleMutex);
-      glModules.clear();
-   }
-   {
-      std::unique_lock lock(glConstantMutex);
-      glLoadedConstants.clear();
+      std::lock_guard lock(glModuleRegistry.Mutex);
+      glModuleRegistry.Expunging = true;
+      glModuleRegistry.Index.clear();
+      bindings.swap(glModuleRegistry.Bindings);
    }
 }
 
@@ -532,12 +806,15 @@ static bool push_cpp_array_result(lua_State *Lua, int Type, std::string_view Nam
 }
 
 //********************************************************************************************************************
-// Update the constant registry.
-// A lock on glConstantMutex must be held before calling this function.
+// Parse one constant group into the staging batch.
+//
+// Nothing is written to the process-wide registry here.  Definitions are staged so that a malformed entry later in the
+// module's IDL cannot leave a partially populated registry behind; publish_definition_batch() commits the batch only
+// once the whole module has parsed successfully.
 
-static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
+static CSTRING load_include_constant(CSTRING Line, std::string_view Source, definition_batch &Batch)
 {
-   kt::Log log("load_include");
+   kt::Log log("load_module_defs");
 
    int i;
    for (i=0; (unsigned(Line[i]) > 0x20) and (Line[i] != ':'); i++);
@@ -583,7 +860,7 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
          else if (dt IS 'h') constant = TiriConstant(int64_t(strtoull(value.c_str(), nullptr, 0)));
          else log.warning("Unsupported constant value: %s", value.c_str());
 
-         glConstantRegistry.emplace(kt::strhash(name), constant);
+         Batch.Constants.push_back({ name, constant });
       }
 
       if (*Line IS ',') Line++;
@@ -593,51 +870,125 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 }
 
 //********************************************************************************************************************
+// Parse a module's IDL into a staging batch.  No global state is modified.
 
-static ERR process_module_defs(extTiri *Script, objModule *module, std::string_view Name)
+static ERR stage_module_defs(objModule *Module, std::string_view Name, definition_batch &Batch)
 {
-   if (auto root = (OBJECTPTR)module->Root) {
-      struct ModHeader *header;
-      if (auto error = root->get(strhash("header"), header); error != ERR::Okay) return error;
-      if (not header) return ERR::NoData;
+   auto root = (OBJECTPTR)Module->Root;
+   if (not root) return ERR::FieldNotSet;
 
-      if (auto idl = header->Definitions) {
-         while ((idl) and (*idl)) {
-            if ((idl[0] IS 's') and (idl[1] IS '.')) {
-               if (auto error = load_include_struct(Script, idl+2, Name, &idl); error != ERR::Okay) return error;
-            }
-            else if ((idl[0] IS 'c') and (idl[1] IS '.')) idl = load_include_constant(idl+2, Name);
-            else idl = next_line(idl);
+   struct ModHeader *header;
+   if (auto error = root->get(strhash("header"), header); error != ERR::Okay) return error;
+   if (not header) return ERR::NoData;
+
+   Batch.Source = Name;
+
+   if (auto idl = header->Definitions) {
+      while ((idl) and (*idl)) {
+         if ((idl[0] IS 's') and (idl[1] IS '.')) {
+            if (auto error = load_include_struct(idl+2, Name, &idl, Batch); error != ERR::Okay) return error;
          }
+         else if ((idl[0] IS 'c') and (idl[1] IS '.')) idl = load_include_constant(idl+2, Name, Batch);
+         else idl = next_line(idl);
       }
-      return ERR::Okay;
    }
-   else return ERR::FieldNotSet;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// Process a process-wide module's definitions once.
+// Commit a staged batch to the process-wide registries, rolling back completely on failure.
+//
+// A lock on glConstantMutex must be held before calling this function.  glStructMutex remains locked across structure
+// publication and rollback so that readers cannot observe definitions that a later failure withdraws.  Structures are
+// registered with a null state so that a state-local declaration cannot influence the published global layout.
 
-static ERR ensure_module_defs(extTiri *Script, module *Module)
+static ERR publish_definition_batch(const definition_batch &Batch)
+{
+   kt::Log log(__FUNCTION__);
+   const std::lock_guard struct_lock(glStructMutex);
+
+   std::vector<uint32_t> published_constants;
+   std::vector<std::string> published_structs;
+   published_constants.reserve(Batch.Constants.size());
+   published_structs.reserve(Batch.Structs.size());
+
+   auto rollback = [&]() {
+      for (auto key : published_constants) glConstantRegistry.erase(key);
+      for (const auto &name : published_structs) remove_struct(name);
+   };
+
+   for (const auto &constant : Batch.Constants) {
+      const auto key = kt::strhash(constant.Name);
+
+      // A repeated definition of the same constant is normal, because several modules may publish the same IDL.  A
+      // differing value for the same key is not: it indicates either a genuine conflict or a hash collision, and
+      // either way silently keeping the first value would hide the problem.
+
+      if (auto existing = glConstantRegistry.find(key); existing != glConstantRegistry.end()) {
+         if (not (existing->second IS constant.Value)) {
+            log.warning("Constant '%s' from module '%s' conflicts with an existing definition.",
+               constant.Name.c_str(), Batch.Source.c_str());
+            rollback();
+            return ERR::Exists;
+         }
+         continue;
+      }
+
+      glConstantRegistry.emplace(key, constant.Value);
+      published_constants.push_back(key);
+   }
+
+   for (const auto &[name, sequence] : Batch.Structs) {
+      auto error = make_struct(nullptr, name, sequence.c_str());
+
+      // ERR::Exists means the structure is already registered, which is expected when modules share definitions.
+      if (error IS ERR::Exists) continue;
+
+      if (error != ERR::Okay) {
+         log.warning("Failed to register structure '%s' from module '%s': %s",
+            name.c_str(), Batch.Source.c_str(), GetErrorMsg(error));
+         rollback();
+         return error;
+      }
+      published_structs.push_back(name);
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Process a module's definitions once, independently of any Lua state.
+//
+// The definitions a module publishes are process-wide, so neither the parsing nor the publication may depend on which
+// state requested them first.  The result is recorded on the binding itself, which keeps a module and the definitions
+// it published from disagreeing.
+
+static ERR ensure_module_defs(ModuleBinding *Module)
 {
    std::unique_lock lock(glConstantMutex);
-   if (glLoadedConstants.contains(Module->Name)) return ERR::Okay;
 
-   ERR error = process_module_defs(Script, Module->Module, Module->Name);
-   if (error IS ERR::Okay) glLoadedConstants.emplace(Module->Name);
+   if (Module->DefState IS def_state::Loaded) return ERR::Okay;
+   if (Module->DefState IS def_state::Failed) return Module->DefError;
+
+   definition_batch batch;
+   ERR error = stage_module_defs(Module->Module, Module->Name, batch);
+   if (error IS ERR::Okay) error = publish_definition_batch(batch);
+
+   Module->DefState = (error IS ERR::Okay) ? def_state::Loaded : def_state::Failed;
+   Module->DefError = error;
    return error;
 }
 
 //********************************************************************************************************************
-// For the 'include' statement.  Resolves the process-wide module and makes its definitions available to the parser.
+// For the 'include' statement.  Resolves the process-wide module and publishes its definitions.
 
-[[nodiscard]] ERR load_include(extTiri *Script, std::string_view Module)
+[[nodiscard]] ERR load_module_defs(std::string_view Module)
 {
-   module *resolved_module = nullptr;
+   ModuleBinding *resolved_module = nullptr;
    if (auto error = resolve_module(Module, resolved_module); error != ERR::Okay) return error;
 
    AdjustLogLevel(1);
-   ERR error = ensure_module_defs(Script, resolved_module);
+   ERR error = ensure_module_defs(resolved_module);
    AdjustLogLevel(-1);
    return error;
 }
@@ -646,7 +997,8 @@ static ERR ensure_module_defs(extTiri *Script, module *Module)
 // Format: s.Name:typeField,...
 // TODO: This parses the struct definitions in advance - ideally we'd record the definition string and parse on first-use.
 
-[[nodiscard]] static ERR load_include_struct(extTiri *Script, CSTRING Line, std::string_view Source, CSTRING *NextLine)
+[[nodiscard]] static ERR load_include_struct(CSTRING Line, std::string_view Source, CSTRING *NextLine,
+   definition_batch &Batch)
 {
    if (not NextLine) return ERR::NullArgs;
    *NextLine = next_line(Line);
@@ -661,16 +1013,14 @@ static ERR ensure_module_defs(extTiri *Script, module *Module)
       int j;
       for (j=0; (Line[j] != '\n') and (Line[j] != '\r') and (Line[j]); j++);
 
+      std::string sequence(Line, j);
       if ((Line[j] IS '\n') or (Line[j] IS '\r')) {
-         std::string linebuf(Line, j);
          while ((Line[j] IS '\n') or (Line[j] IS '\r')) j++;
-         *NextLine = Line + j;
-         return make_struct(Script, name, linebuf.c_str());
       }
-      else {
-         *NextLine = Line + j;
-         return make_struct(Script, name, Line);
-      }
+      *NextLine = Line + j;
+
+      Batch.Structs.emplace_back(std::move(name), std::move(sequence));
+      return ERR::Okay;
    }
    else {
       kt::Log(__FUNCTION__).warning("Malformed struct name in %.*s.", int(Source.size()), Source.data());
@@ -686,7 +1036,7 @@ static int module_test(lua_State *Lua)
 {
    CSTRING module_name = luaL_checkstring(Lua, 1);
 
-   module *mod = nullptr;
+   ModuleBinding *mod = nullptr;
    if (auto error = resolve_module(module_name, mod); error != ERR::Okay) {
       luaL_error(Lua, error, "Failed to load the %s module.", module_name);
    }
@@ -703,66 +1053,153 @@ static int module_test(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution.
+// Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution
+// because it is literally the same index: the signature resolves the name to an ordinal, and Callables is parallel to
+// the signature's function list.  A module whose signature failed to build exports nothing resolvable.
 
-static module_callable * find_module_callable(module *Module, std::string_view Name)
+static ModuleCallable * find_module_callable(ModuleBinding *Module, std::string_view Name)
 {
-   auto hash = strihash(Name);
-   if (auto it = Module->FunctionMap.find(hash); it != Module->FunctionMap.end()) {
-      for (auto callable : it->second) {
-         if (kt::iequals(callable->Name, Name)) return callable;
-      }
-   }
-   return nullptr;
+   if (not Module->Signature) return nullptr;
+   auto ordinal = Module->Signature->find_ordinal(Name);
+   if (ordinal IS NO_FUNCTION_ORDINAL) return nullptr;
+   if (ordinal >= Module->Callables.size()) return nullptr;
+   return Module->Callables[ordinal].get();
 }
 
 //********************************************************************************************************************
-// Activate a compiler-declared module dependency.
-//
-// Usage: binding1, binding2, ... = mod.<dependency>(ModuleName, FunctionName1, FunctionName2, ...)
-//
-// The compiler passes the canonical module name followed by the canonical names of the functions its compilation unit
-// actually references, and receives one closure per name in matching order.  Only names are persisted in bytecode, so
-// a chunk loaded in a fresh process resolves against the module's current function list.
-//
-// No module table, metatable, environment cache or per-function name lookup table is created.  A declaration that
-// references no function still resolves its module and returns one sentinel value, so that the generated local
-// declaration remains well-formed and the dependency is retained.
+// Ensure that a prototype has state-owned storage for resolved callables and per-descriptor activation state.
 
-static int module_dependency(lua_State *Lua)
+static void ensure_proto_dependency_sidecar(lua_State *Lua, GCproto *Proto, const ProtoDependencyTable *Table)
 {
-   auto modname = luaL_checkstring(Lua, 1);
-   if (not modname) luaL_argerror(Lua, 1, "String expected for module name.");
-
-   module *mod = nullptr;
-   if (auto error = resolve_module(modname, mod); error != ERR::Okay) {
-      luaL_error(Lua, error, "Failed to load the %s module.", modname);
+   if (not Proto->resolved_dependencies) {
+      Proto->resolved_count = Table->function_count ? Table->function_count : 1;
+      Proto->resolved_dependencies = (void **)lj_mem_new(Lua, Proto->resolved_count * sizeof(void *));
+      memset(Proto->resolved_dependencies, 0, Proto->resolved_count * sizeof(void *));
    }
-   if (auto error = ensure_module_defs(Lua->script, mod); error != ERR::Okay) {
-      luaL_error(Lua, error, "Failed to process definitions for the %s module.", modname);
+   if (not Proto->resolved_dependency_states) {
+      Proto->resolved_dependency_count = Table->dependency_count;
+      Proto->resolved_dependency_states = (uint8_t *)lj_mem_new(Lua, Table->dependency_count * sizeof(uint8_t));
+      memset(Proto->resolved_dependency_states, 0, Table->dependency_count * sizeof(uint8_t));
+   }
+}
+
+//********************************************************************************************************************
+// Resolve one portable dependency descriptor into the prototype's state-owned sidecar.
+//
+// The descriptors persist canonical names only, so every load resolves them afresh against the registry's current
+// contents.  That is what makes a serialised chunk portable: the module's export list may have been reordered or
+// extended since the chunk was written, and a stored index would then select the wrong function.
+//
+// The sidecar holds non-owning pointers.  Registry records are stable until expunge_modules(), which runs only once
+// no Tiri state can execute, so a resolved pointer cannot outlive its record.
+//
+// Resolution is idempotent and descriptor-local.  A later declaration is not resolved by an earlier BC_MODACT, so a
+// missing module or function is reported at that declaration's execution position.
+
+static ERR resolve_proto_dependency(lua_State *Lua, GCproto *Proto, uint32_t Dependency, std::string &ErrorMsg)
+{
+   auto table = proto_dependencies(Proto);
+   if (not table) return ERR::Okay;
+   if (Dependency >= table->dependency_count) return ERR::InvalidData;
+
+   ensure_proto_dependency_sidecar(Lua, Proto, table);
+   if (Proto->resolved_dependency_states[Dependency]) return ERR::Okay;
+
+   auto dependencies = proto_dependency_list(table);
+   auto functions = proto_dependency_functions(table);
+   const ProtoDependency &dependency = dependencies[Dependency];
+
+   GCstr *module_name = gco_to_string(gcref(dependency.name));
+   std::string_view name(strdata(module_name), module_name->len);
+
+   ModuleBinding *binding = nullptr;
+   if (auto error = resolve_module(name, binding); error != ERR::Okay) {
+      ErrorMsg = std::format("Failed to load the {} module.", name);
+      return error;
+   }
+   if (auto error = ensure_module_defs(binding); error != ERR::Okay) {
+      ErrorMsg = std::format("Failed to process definitions for the {} module.", name);
+      return error;
    }
 
-   int requested = lua_gettop(Lua) - 1;
-   if (requested <= 0) { // Dependency-only activation; the module is now resolved and retained.
-      lua_pushboolean(Lua, 1);
-      return 1;
-   }
+   // Resolve into temporary storage first, so failure cannot mark this descriptor as activated or expose a partial
+   // callable range.
 
-   for (int arg = 2; arg <= requested + 1; ++arg) {
-      auto function_name = lua_tostringview(Lua, arg);
-      if (function_name.empty()) luaL_argerror(Lua, arg, "String expected for module function name.");
+   std::vector<void *> resolved(dependency.function_count, nullptr);
+   for (uint32_t f = 0; f < dependency.function_count; ++f) {
+      uint32_t slot = dependency.first_function + f;
+      GCstr *function_name = gco_to_string(gcref(functions[slot].name));
+      std::string_view function(strdata(function_name), function_name->len);
 
-      auto callable = find_module_callable(mod, function_name);
+      // The name is revalidated here even though the reader accepted the descriptor.  Structural validity says
+      // nothing about whether the module still exports the function under that name.
+
+      auto callable = find_module_callable(binding, function);
       if (not callable) {
-         luaL_error(Lua, ERR::Search, "Function %.*s() is not exported by the %s module.",
-            int(function_name.size()), function_name.data(), modname);
+         ErrorMsg = std::format("Function {}() is not exported by the {} module.", function, name);
+         return ERR::Search;
       }
+      resolved[f] = callable;
+   }
 
+   if (not resolved.empty()) {
+      memcpy(Proto->resolved_dependencies + dependency.first_function, resolved.data(),
+         resolved.size() * sizeof(void *));
+   }
+   Proto->resolved_dependency_states[Dependency] = 1;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Return the callable resolved for one descriptor slot, or null if the prototype has not been activated or the slot
+// is out of range.  Callers must treat the result as non-owning.
+
+APTR proto_dependency_callable(GCproto *Proto, uint32_t Slot)
+{
+   if (not Proto->resolved_dependencies or Slot >= Proto->resolved_count) return nullptr;
+   return Proto->resolved_dependencies[Slot];
+}
+
+//********************************************************************************************************************
+// Activate one compiler-declared module dependency from BC_MODACT.
+//
+// The VM positions Lua->top at the opcode's destination register before entering this helper.  Descriptor names are
+// resolved once into the prototype-owned sidecar, then the state-owned closures required by ordinary local-call
+// bytecode are materialised directly into consecutive stack slots.  A dependency-only declaration resolves its
+// module but creates no artificial value.
+
+extern "C" void tiri_module_activate(lua_State *Lua, uint32_t Dependency)
+{
+   if (not curr_funcisL(Lua)) {
+      luaL_error(Lua, ERR::InvalidState, "Module activation requires a Lua prototype.");
+   }
+
+   GCproto *proto = curr_proto(Lua);
+   auto table = proto_dependencies(proto);
+   if (not table or Dependency >= table->dependency_count) {
+      luaL_error(Lua, ERR::InvalidData, "Invalid module dependency descriptor %u.", Dependency);
+   }
+
+   auto dependencies = proto_dependency_list(table);
+   const ProtoDependency &dependency = dependencies[Dependency];
+   ptrdiff_t destination = Lua->top - Lua->base;
+   if (destination < 0 or destination + dependency.function_count > proto->framesize) {
+      luaL_error(Lua, ERR::InvalidData, "Module dependency %u exceeds the prototype register frame.", Dependency);
+   }
+
+   std::string error_msg;
+   if (auto error = resolve_proto_dependency(Lua, proto, Dependency, error_msg); error != ERR::Okay) {
+      luaL_error(Lua, error, std::move(error_msg));
+   }
+
+   for (uint32_t slot = 0; slot < dependency.function_count; ++slot) {
+      auto callable = proto_dependency_callable(proto, dependency.first_function + slot);
+      if (not callable) {
+         luaL_error(Lua, ERR::InvalidData, "Module dependency %u has an unresolved callable slot.", Dependency);
+      }
       lua_pushlightuserdata(Lua, callable);
       lua_pushcclosure(Lua, module_call, 1);
    }
-
-   return requested;
 }
 
 //********************************************************************************************************************
@@ -881,20 +1318,26 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       std::string *Source;
       GCstr *Target;
       int Arg;
+
+      mutable_cpp_string_ref(std::string *InitSource, GCstr *InitTarget, int InitArg):
+         Source(InitSource), Target(InitTarget), Arg(InitArg) { }
    };
 
-   std::vector<std::string> strings;
-   std::vector<std::string_view> string_views;
-   std::vector<allocated_struct_ref> allocated_structs;
-   std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
-   std::vector<cpp_array_result> cpp_arrays;
+   // Bridge-owned temporaries.  Each store has a fixed capacity that preparation has already proved sufficient for
+   // this signature, so an element's address stays valid once written into arg_values, and a signature that needs no
+   // temporaries constructs nothing.
+
+   bounded_store<std::string, MAX_MODULE_ARGS> strings;
+   bounded_store<std::string_view, MAX_MODULE_ARGS> string_views;
+   bounded_store<allocated_struct_ref, MAX_MODULE_ARGS> allocated_structs;
+   bounded_store<mutable_cpp_string_ref, MAX_MODULE_ARGS> mutable_cpp_strings;
+   bounded_store<cpp_array_result, MAX_MODULE_ARGS> cpp_arrays;
    std::array<module_span_arg, MAX_MODULE_ARGS> span_args;
    size_t span_count = 0;
-   strings.reserve(8); // Keep the collection stable
-   string_views.reserve(8);
 
    auto copy_mutable_cpp_strings = [&]() {
-      for (auto &entry : mutable_cpp_strings) {
+      for (size_t entry_index = 0; entry_index < mutable_cpp_strings.size(); ++entry_index) {
+         auto &entry = mutable_cpp_strings[entry_index];
          auto capacity = size_t(entry.Target->len);
          auto length = entry.Source->size();
          if (length > capacity) ErrorMsg = "Mutable buffer too small.";
@@ -917,7 +1360,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    // One light-userdata upvalue holds the process-wide callable record, which carries the native address, the argument
    // metadata and the libffi call interface that was prepared when the module was resolved.
 
-   auto callable = (module_callable *)lua_touserdata(Lua, lua_upvalueindex(1));
+   auto callable = (ModuleCallable *)lua_touserdata(Lua, lua_upvalueindex(1));
    if (not callable) {
       ErrorMsg = "module_call() expected a callable record in its upvalue.";
       return ERR::Args;
@@ -930,10 +1373,15 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       return ERR::NoSupport;
    }
 
+   // The script and native argument limits are one contract: the marshaller reads script index i for signature
+   // argument i, so a value beyond MAX_MODULE_ARGS could never be marshalled.  Previously this clamped a local that
+   // nothing else consumed, which silently discarded the diagnostic; the surplus is now rejected outright.
+
    int nargs = lua_gettop(Lua);
-   if (nargs > MAX_MODULE_ARGS-1) {
-      log.warning("Limit of %d args exceeded.", MAX_MODULE_ARGS - 1);
-      nargs = MAX_MODULE_ARGS-1;
+   if (nargs > MAX_MODULE_ARGS) {
+      ErrorMsg = std::format("Function '{}' received {} arguments, exceeding the limit of {}.",
+         callable->Name, nargs, MAX_MODULE_ARGS);
+      return ERR::Args;
    }
 
    uint8_t *end = buffer + sizeof(buffer);
@@ -1099,7 +1547,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
             else if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
-               cpp_arrays.push_back(std::move(result_ref));
+               if (not cpp_arrays.emplace(std::move(result_ref))) {
+                  ErrorMsg = std::format("Function '{}' exceeded its C++ array result storage.", callable->Name);
+                  return ERR::BufferOverflow;
+               }
                arg_values[in]  = buffer + j;
                in++;
                j += sizeof(APTR);
@@ -1115,16 +1566,24 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   // Use of MUTABLE enables support for std::string buffering.  We provide our own std::string that will be used as
                   // the buffer, it gets converted to a Tiri string when the function returns.
 
-                  strings.emplace_back();
-                  ((std::string **)(buffer + j))[0] = &strings.back();
+                  auto slot = strings.emplace();
+                  if (not slot) {
+                     ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
+                  ((std::string **)(buffer + j))[0] = slot;
                   arg_values[in]  = buffer + j;
                   in++;
                   j += sizeof(APTR);
                }
                else {
                   // Non-mutable string reference, supported as a std::string_view
-                  string_views.emplace_back();
-                  ((std::string_view **)(buffer + j))[0] = &string_views.back();
+                  auto slot = string_views.emplace();
+                  if (not slot) {
+                     ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
+                  ((std::string_view **)(buffer + j))[0] = slot;
                   arg_values[in]  = buffer + j;
                   in++;
                   j += sizeof(APTR);
@@ -1226,20 +1685,29 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
             if (argtype & FD_CPP) { // Function expects a pointer to std::string that it can mutate
                size_t len;
-               if (auto str = lua_tolstring(Lua, i, &len)) strings.emplace_back(str, len);
-               else strings.emplace_back();
-
-               auto cppstr = &strings.back();
-               mutable_cpp_strings.push_back({ cppstr, string, i });
+               auto str = lua_tolstring(Lua, i, &len);
+               auto cppstr = str ? strings.emplace(str, len) : strings.emplace();
+               if (not cppstr) {
+                  ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
+                  return ERR::BufferOverflow;
+               }
+               if (not mutable_cpp_strings.emplace(cppstr, string, i)) {
+                  ErrorMsg = std::format("Function '{}' exceeded its mutable string storage.", callable->Name);
+                  return ERR::BufferOverflow;
+               }
                ((std::string **)(buffer + j))[0] = cppstr;
             }
             else ((CSTRING *)(buffer + j))[0] = strdatawr(string);
          }
          else if (argtype & FD_CPP) { // Read-only std::string_view (enforced, cannot be nullptr)
             size_t len;
-            if (auto str = lua_tolstring(Lua, i, &len)) string_views.emplace_back(str, len);
-            else string_views.emplace_back();
-            ((std::string_view **)(buffer + j))[0] = &string_views.back();
+            auto str = lua_tolstring(Lua, i, &len);
+            auto view = str ? string_views.emplace(str, len) : string_views.emplace();
+            if (not view) {
+               ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
+               return ERR::BufferOverflow;
+            }
+            ((std::string_view **)(buffer + j))[0] = view;
          }
          else if ((type IS LUA_TSTRING) or (type IS LUA_TNUMBER) or (type IS LUA_TBOOLEAN)) {
             ((CSTRING *)(buffer + j))[0] = lua_tostring(Lua, i);
@@ -1331,8 +1799,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                if (!table_to_struct(Lua, args[i].Name, struct_data)) {
                   auto struct_address = struct_data.get();
                   auto def = find_struct(Lua, args[i].Name);
-                  if (def) allocated_structs.emplace_back(std::move(struct_data), def, Lua);
-                  else allocated_structs.emplace_back(std::move(struct_data), nullptr, Lua);
+                  if (not allocated_structs.emplace(std::move(struct_data), def, Lua)) {
+                     ErrorMsg = std::format("Function '{}' exceeded its structure storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
                   ((APTR *)(buffer + j))[0] = struct_address;
                   arg_values[in] = buffer + j;
                   in++;
@@ -1395,6 +1865,15 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    int restype = args->Type;
    int result = (callable->Cif.rtype IS &ffi_type_void) ? 0 : 1;
+
+   // The buffer is allocated from both ends: argument slots grow forwards from 'buffer' and result storage grows
+   // backwards from 'end'.  Preparation proves the two cannot meet for an accepted signature, so this check confirms
+   // the marshaller honoured the sizes preparation measured rather than guarding an expected condition.
+
+   if (buffer + j > end) {
+      ErrorMsg = std::format("Function '{}' overran its call buffer.", callable->Name);
+      return ERR::BufferOverflow;
+   }
 
    if (in != int(callable->Cif.nargs)) {
       ErrorMsg = std::format("Function '{}' marshalled {} args but its call interface expects {}.",
@@ -1600,6 +2079,119 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
    return results;
 }
 
+#ifdef UNIT_TESTS
+//********************************************************************************************************************
+// Test-only support for driving a synthetic string-view signature through the real module call bridge.
+
+namespace {
+
+struct synthetic_callable {
+   std::vector<FunctionField> Fields;
+   std::vector<std::string> Names;
+   ModuleCallable Callable;
+};
+
+static bool build_synthetic_view_callable(int Count, APTR Address, synthetic_callable &Result)
+{
+   Result.Names.reserve(Count + 1);
+   Result.Names.emplace_back("Result");
+   for (int arg = 0; arg < Count; ++arg) Result.Names.emplace_back(std::format("Arg{}", arg));
+
+   Result.Fields.reserve(Count + 2);
+   Result.Fields.push_back({ Result.Names[0].c_str(), FD_VOID });
+   for (int arg = 0; arg < Count; ++arg) {
+      Result.Fields.push_back({ Result.Names[arg + 1].c_str(), FD_STR|FD_CPP });
+   }
+   Result.Fields.push_back({ nullptr, 0 });
+
+   Result.Callable.Name    = "SyntheticViews";
+   Result.Callable.Address = Address;
+   Result.Callable.Fields  = Result.Fields.data();
+
+   marshalling_profile profile;
+   for (int arg = 1; arg <= Count; ++arg) {
+      std::string message;
+      ffi_type *type = nullptr;
+      if (callable_arg_type(Result.Fields[arg], type, message) != ERR::Okay) return false;
+      Result.Callable.ArgTypes[arg - 1] = type;
+      profile_arg(Result.Fields[arg], profile);
+   }
+
+   Result.Callable.Profile = profile;
+   ffi_type *return_type = callable_return_type(Result.Fields[0].Type);
+   return ffi_prep_cif(&Result.Callable.Cif, FFI_DEFAULT_ABI, Count, return_type, Result.Callable.ArgTypes) IS FFI_OK;
+}
+
+} // namespace
+
+std::string test_module_string_view_call(lua_State *Lua, APTR Address, std::span<const std::string> Inputs)
+{
+   int count = int(Inputs.size());
+   if ((count < 1) or (count > MAX_MODULE_ARGS)) return std::format("Unsupported synthetic arity {}.", count);
+   if (not Address) return "The synthetic entry point is null.";
+
+   auto synthetic = std::make_unique<synthetic_callable>();
+   if (not build_synthetic_view_callable(count, Address, *synthetic)) {
+      return std::format("Failed to prepare the synthetic callable for arity {}.", count);
+   }
+
+   if (synthetic->Callable.Profile.StringViews != count) {
+      return std::format("Profile counted {} string views for arity {}.",
+         int(synthetic->Callable.Profile.StringViews), count);
+   }
+
+   int base = lua_gettop(Lua);
+   lua_pushlightuserdata(Lua, &synthetic->Callable);
+   lua_pushcclosure(Lua, module_call, 1);
+   for (const auto &input : Inputs) lua_pushstring(Lua, input);
+
+   if (lua_pcall(Lua, count, LUA_MULTRET, 0) != 0) {
+      std::string message = lua_tostring(Lua, -1) ? lua_tostring(Lua, -1) : "unknown error";
+      lua_settop(Lua, base);
+      return std::format("Synthetic call of arity {} failed: {}", count, message);
+   }
+   lua_settop(Lua, base);
+   return { };
+}
+
+// Report what the compiler's signature index and the runtime's callable lookup each resolved for one function name.
+// Both paths run through static_module_signature::find_ordinal(), so the test can assert that they agree on the
+// ordinal and that the names and field descriptors they expose are the signature's single owned copy.
+
+test_module_resolution test_module_resolve(std::string_view Module, std::string_view Function)
+{
+   test_module_resolution result;
+
+   ModuleBinding *binding = nullptr;
+   if (resolve_module(Module, binding) != ERR::Okay) return result;
+
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (not binding->Signature) return result;
+
+   if (auto ordinal = binding->Signature->find_ordinal(Function); ordinal != NO_FUNCTION_ORDINAL) {
+      const auto &signature = binding->Signature->Functions[ordinal];
+      result.Found = true;
+      result.Ordinal = ordinal;
+      result.SignatureName = signature.Name.c_str();
+      result.SignatureFields = signature.Fields.data();
+   }
+
+   if (auto callable = find_module_callable(binding, Function)) {
+      result.CallableFound = true;
+      result.CallableName = callable->Name;
+      result.CallableFields = callable->Fields;
+      for (size_t index = 0; index < binding->Callables.size(); ++index) {
+         if (binding->Callables[index].get() IS callable) {
+            result.CallableOrdinal = uint32_t(index);
+            break;
+         }
+      }
+   }
+
+   return result;
+}
+#endif
+
 //********************************************************************************************************************
 // Register the module interface.
 
@@ -1608,7 +2200,6 @@ void register_module_class(lua_State *Lua)
    kt::Log log;
 
    static const struct luaL_Reg modlib_functions[] = {
-      { "\x1f" "dependency", module_dependency },
       { "test", module_test },
       { nullptr, nullptr}
    };
@@ -1617,6 +2208,5 @@ void register_module_class(lua_State *Lua)
    lua_pop(Lua, 1); // Drop the mod library table
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "\x1f" "dependency", { TiriType::Table }, { TiriType::Str });
    reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str });
 }

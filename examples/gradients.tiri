@@ -38,7 +38,7 @@ gouraudColours = array<array<double>> {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function createGradient(ClassName:str, Options:table):obj
+function createGradient(ClassName:str!, Options:table!):obj
    global glRegisteredGradients ?= { }
 
    local gradient = glRegisteredGradients[ClassName]
@@ -66,7 +66,7 @@ end
 -- The mesh is rebuilt from fresh struct values each time rather than read-modify-written, which keeps the nested
 -- FRGB colours marshalling cleanly back into the gradient.
 
-function gouraudVertex(X:num, Y:num, Col:array<double>):any
+function gouraudVertex(X:num!, Y:num!, Col:array<double>!):any
    v = struct.new('GouraudVertex')
    v.x = X
    v.y = Y
@@ -102,7 +102,7 @@ function selectGradient(Text):obj
    distalShape?.visibility = 'hidden'
    focalEllipse?.visibility = 'hidden'
    rect.visibility = 'visible'
-   radiusChanged = function(Radius:num) end
+   radiusChanged = function(Radius:num!) end
 
    if Text is 'Radial' then
       gradient = createGradient('GradientRadial', {
@@ -110,12 +110,12 @@ function selectGradient(Text):obj
          cx = '50%', cy = '50%', fx = '50%', fy = '50%', focalRadius = glRadius, radius = glRadius
       })
 
-      uiEvent = function(ev:table)
+      uiEvent = function(ev:table!)
          gradient.fX = (ev.x / gradientVP.width * 100) .. '%'
          gradient.fY = (ev.y / gradientVP.height * 100) .. '%'
       end
 
-      radiusChanged = function(Radius:num)
+      radiusChanged = function(Radius:num!)
          gradient?.radius = Radius
          gradient?.focalRadius = Radius
          focalEllipse?.radius = Radius
@@ -129,12 +129,12 @@ function selectGradient(Text):obj
          spreadMethod = glSpreadMethod, cx = '50%', cy = '50%'
       })
 
-      uiEvent = function(ev:table)
+      uiEvent = function(ev:table!)
          gradient.cX = (ev.x / gradientVP.width * 100) .. '%'
          gradient.cY = (ev.y / gradientVP.height * 100) .. '%'
       end
 
-      radiusChanged = function(Radius:num)
+      radiusChanged = function(Radius:num!)
          gradient?.span = Radius / MAX_RADIUS
       end
    elseif (Text is 'Diamond') then
@@ -143,12 +143,12 @@ function selectGradient(Text):obj
          spreadMethod = glSpreadMethod, cx = '50%', cy = '50%'
       })
 
-      uiEvent = function(ev:table)
+      uiEvent = function(ev:table!)
          gradient.cX = (ev.x / gradientVP.width * 100) .. '%'
          gradient.cY = (ev.y / gradientVP.height * 100) .. '%'
       end
 
-      radiusChanged = function(Radius:num)
+      radiusChanged = function(Radius:num!)
          gradient?.radius = Radius
       end
    elseif Text is 'Contour' then
@@ -215,7 +215,7 @@ function selectGradient(Text):obj
          gradient.radius = dist * 200
       end
 
-      radiusChanged = function(Radius:num)
+      radiusChanged = function(Radius:num!)
          distalShape?.radius = Radius
       end
    elseif Text is 'Voronoi' then
@@ -244,7 +244,7 @@ function selectGradient(Text):obj
          gradient.multiplier = multiplier
       end
 
-      radiusChanged = function(Radius:num)
+      radiusChanged = function(Radius:num!)
          gradient?.pointCount = math.floor(Radius / 4) + 1
       end
    elseif Text is 'Linear' then
@@ -372,7 +372,7 @@ function buildScene()
          { item='In' }, { item='In Out' }, { item='Linear' }, { item='Out' }
       },
       events = {
-         activate = function(Widget:table, Text:str)
+         activate = function(Widget:table, Text:str!)
             glEasing = choose Text from
                'Cubic In'     -> GEZ_CUBIC_IN
                'Cubic In Out' -> GEZ_CUBIC_IN_OUT
@@ -415,7 +415,7 @@ function buildScene()
       x      = slResolution.viewport.x + slResolution.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget:table, Value:num)
+         activate = function(Widget:table, Value:num!)
             glRadius = Value
             radiusChanged(Value)
             gradientVP.scene.surface.mtScheduleRedraw()
@@ -432,7 +432,7 @@ function buildScene()
       x      = slRadius.viewport.x + slRadius.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget:table, Value:num)
+         activate = function(Widget:table, Value:num!)
             glGamma = Value
             glActiveGradient.gamma = glGamma
             gradientVP.scene.surface.mtScheduleRedraw()

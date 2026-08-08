@@ -6,7 +6,7 @@
 
 -- Helper: Parse a size string like +10K, -1M, 500 into min_size, max_size
 
-function parseSize(SizeStr:str):<any, any>
+function parseSize(SizeStr:str!):<any, any>
    min_size = nil
    max_size = nil
 
@@ -47,7 +47,7 @@ function parseSize(SizeStr:str):<any, any>
    return min_size, max_size
 end
 
-function parseSizeOption(Value:any, Param:table):table
+function parseSizeOption(Value:any!, Param:table):table
    min_size, max_size = parseSize(tostring(Value))
    return {
       source = tostring(Value),
@@ -59,7 +59,7 @@ end
 -- Helper: Parse a modification time string like +7d, -24h into DateTime structs for minDate/maxDate.
 -- Uses the time object to get the current time, then subtracts the offset to produce a target DateTime.
 
-function parseModified(ModStr:str):<any, any>
+function parseModified(ModStr:str!):<any, any>
    min_date = nil
    max_date = nil
 
@@ -112,7 +112,7 @@ function parseModified(ModStr:str):<any, any>
    return min_date, max_date
 end
 
-function parseModifiedOption(Value:any, Param:table):table
+function parseModifiedOption(Value:any!, Param:table):table
    min_date, max_date = parseModified(tostring(Value))
    return {
       source = tostring(Value),
@@ -123,7 +123,7 @@ end
 
 -- Helper: Count depth of Path relative to BasePath
 
-function countDepth(Path:str, BasePath:str):num
+function countDepth(Path:str!, BasePath:str!):num
    relative = Path
    if Path:sub(0, BasePath:len()) is BasePath then
       relative = Path:sub(BasePath:len())
@@ -135,7 +135,7 @@ function countDepth(Path:str, BasePath:str):num
    return depth
 end
 
-function normaliseSearchPath(Path:str):str
+function normaliseSearchPath(Path:str!):str
    if Path:endsWith('/') or Path:endsWith('\\') then return Path end
    return Path .. '/'
 end

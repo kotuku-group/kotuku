@@ -1,12 +1,13 @@
 #include "parser/type_checker.h"
 
-void TypeCheckScope::declare_parameter(GCstr *Name, TiriType Type, struct_record *StructDef, SourceSpan Location)
+void TypeCheckScope::declare_parameter(
+   GCstr *Name, TiriType Type, struct_record *StructDef, bool Required, SourceSpan Location)
 {
    VariableInfo info;
    info.name = Name;
    info.type.primary = Type;
    info.type.is_constant = false;
-   info.type.is_nullable = false;
+   info.type.is_nullable = not Required;
    info.type.struct_def = StructDef;
    info.location = Location;
    info.is_parameter = true;

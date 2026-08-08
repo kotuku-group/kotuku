@@ -3,18 +3,18 @@ The FileSearch interface simplifies the process of searching for files and folde
 Refer to the Tiri I/O Wiki page for documentation.
 --]]
 
-io.search = function(Path:str, Options:table)
+io.search = function(Path:str!, Options:table!)
    lOptions      = Options
    ADJUST_LOG    = 0
    lStop         = false
    isRegexFilter = false
 
-   function normaliseFolderPath(Path:str):str
+   function normaliseFolderPath(Path:str!):str
       if Path:endsWith('/') or Path:endsWith('\\') then return Path end
       return Path .. '/'
    end
 
-   function contentMatch(Path:str):bool
+   function contentMatch(Path:str!):bool
       lOptions.contentFilter ?! return true
 
       try
@@ -173,7 +173,7 @@ io.search = function(Path:str, Options:table)
       processing.collect()
    end
 
-   function processPath(Path:str)
+   function processPath(Path:str!)
       msg(f'Path: {Path}, Filter: {Options.nameFilter}, Regex: {isRegexFilter}, Content: {Options.contentFilter}')
 
       if io.isFolder(Path) then

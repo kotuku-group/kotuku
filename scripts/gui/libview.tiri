@@ -18,7 +18,8 @@ function checkCursorImage(View:table)
    end
 end
 
-function highlightItem(View:table, Item:table)  -- Simplifies the process of highlighting an item.  Item can be nil for deselection.
+-- Simplifies the process of highlighting an item.  Item can be nil for deselection.
+function highlightItem(View:table!, Item:table)
    if Item is View.hItem then return end
 
    if Item != View.hItem then
@@ -52,7 +53,7 @@ function deselectAll(View)
    end
 end
 
-function deselectItem(View:table, Item)
+function deselectItem(View:table!, Item)
    if View.sItem is Item then View.sItem = nil end
 
    Item._selected = false
@@ -83,26 +84,26 @@ end
 --   user:      Selected by user interaction (click or keypress)
 --   manual:    Item was manually selected (by the application, not the user).
 
-function reportItemSelected(View:table, Reason, Item)
+function reportItemSelected(View:table!, Reason, Item)
    View?.itemSelected(View, Reason, Item)
 end
 
-function reportItemDeselected(View:table, Reason, Item)
+function reportItemDeselected(View:table!, Reason, Item)
    View?.itemDeselected(View, Reason, Item)
 end
 
-function reportItemActivated(View:table, Reason, Item)
+function reportItemActivated(View:table!, Reason, Item)
    if Item.activity then Item.activity(Item) end
    View?.itemActivated(View, Reason, Item)
 end
 
-function reportActiveChange(View:table, Reason, Item)
+function reportActiveChange(View:table!, Reason, Item)
    View?.activeChange(View, Reason, Item)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function simpleSelect(View:table, Item)
+function simpleSelect(View:table!, Item)
    if View.sItem then
       deselectItem(View, View.sItem)
       reportItemDeselected(View, 'user', View.sItem)
@@ -160,7 +161,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.initView = function(Options:table, BuildUI, NewItems)
+gui.initView = function(Options:table!, BuildUI, NewItems)
    vw = {
       lookup     = { }, -- Lookup items by ID
       activeZone = nil,
@@ -518,7 +519,7 @@ gui.initView = function(Options:table, BuildUI, NewItems)
 
    -- Changes the underlying attributes of any item in the view by setting provided key-values.
 
-   vw.setItem = function(Item:table, KV:table)
+   vw.setItem = function(Item:table!, KV:table!)
       for k, v in pairs(KV) do
          Item[k] = v
       end

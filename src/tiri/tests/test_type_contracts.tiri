@@ -193,6 +193,118 @@ end
    assert(optional(4, 'ignored') is 4, 'Extra arguments should remain unchanged and ignored')
 end
 
+@Test function RequiredParameters()
+   function required(Value:str!):str! return Value end
+   local alias:any = dynamic_value(required)
+
+   assert(required('present') is 'present', 'A present matching argument should satisfy a required contract')
+   expect_contract_failure(function() alias(dynamic_value(nil)) end, 'required nil parameter')
+   expect_contract_failure(function() alias() end, 'missing required parameter')
+
+   local holder:any = { callback=dynamic_value(required) }
+   expect_contract_failure(function() holder.callback(dynamic_value(nil)) end, 'table-held required parameter')
+   expect_contract_failure(function() imported_required(dynamic_value(nil)) end, 'imported required parameter')
+
+   function required_variant(Value:any!):any! return Value end
+   local variant_alias:any = dynamic_value(required_variant)
+   assert(variant_alias(false) is false, 'any! should accept every present non-nil value')
+   expect_contract_failure(function() variant_alias(dynamic_value(nil)) end, 'required any parameter')
+
+   function argument_pair():<str, str> return 'first', 'second' end
+   function accept_pair(First:str!, Second:str!):str! return First .. Second end
+   assert(accept_pair(argument_pair()) is 'firstsecond',
+      'A forwarded argument list should satisfy every required parameter position')
+end
+
+@Test function NativeCallbackContractLocation()
+   local script = obj.new('tiri', { statement = [[local target = obj.new('config')
+target.subscribe('refresh', function(Window:table!, Args:table!) end)
+target.acRefresh()
+]] })
+
+   check script.acActivate()
+   assert(script.error != ERR_Okay, 'The native callback parameter contract should fail')
+   assert(script.errorMessage:startsWith("[script:2:0] type contract failed for parameter 1 ('Window')"),
+      'A native callback contract failure should report its Tiri source and line with an unavailable column: ' ..
+      script.errorMessage)
+end
+
+@Test function ImportedNativeCallbackContractLocation()
+   local launcher_path
+   local sources = debug.fileSources()
+   for i in {0 to #sources} do
+      if sources[i].filename is 'test_type_contracts.tiri' then
+         launcher_path = sources[i].path:replace(
+            'test_type_contracts.tiri', 'type_contract_callback_launcher.tiri')
+         break
+      end
+   end
+
+   assert(launcher_path != nil, 'The type-contract test source should be present in debug.fileSources()')
+   local script = obj.new('tiri', { path = launcher_path })
+
+   check script.acActivate()
+   assert(script.error != ERR_Okay, 'The imported native callback parameter contract should fail')
+   assert(script.errorMessage:startsWith(
+      "[type_contract_callback_fixture.tiri:3:0] type contract failed for parameter 1 ('Window')"),
+      'An imported native callback contract failure should report the imported source file: ' .. script.errorMessage)
+end
+
+@Test function RequiredResults()
+   function dynamic_nil():any return nil end
+   function dynamic_missing():any return end
+   function required_nil():str! return dynamic_nil() end
+   function required_missing():str! return dynamic_missing() end
+   function required_any_nil():any! return dynamic_nil() end
+   function required_fallthrough():str!
+      local marker = true
+      assert(marker)
+   end
+   function required_valid():str! return 'present' end
+   function dynamic_pair():<any, any> return 'first', 'second' end
+   function required_pair():<str!, str!> return dynamic_pair() end
+
+   assert(required_valid() is 'present', 'A present matching result should satisfy a required contract')
+   local first, second = required_pair()
+   assert(first is 'first' and second is 'second', 'A forwarded result list should satisfy required positions')
+   expect_contract_failure(required_nil, 'required nil result')
+   expect_contract_failure(required_missing, 'missing required result')
+   expect_contract_failure(required_any_nil, 'required any result')
+   expect_contract_failure(required_fallthrough, 'implicit missing required result')
+end
+
+@Test function RequiredViolationsRemainCatchableWhenHot()
+   function required_hot(Value:num!):num! return Value + 1 end
+   local alias:any = required_hot
+   for i in {0 to 250} do
+      assert(alias(i) is i + 1, 'A required contract should remain stable while its function becomes hot')
+   end
+   expect_contract_failure(function() alias(dynamic_value(nil)) end, 'hot required parameter')
+end
+
+@Test function RequiredSyntaxDiagnostics()
+   function assert_rejected(Source:str, Message:str)
+      try
+         exec(Source)
+      except e
+         assert(e.message:find(Message) != nil, 'Unexpected required-annotation diagnostic: ' .. e.message)
+      success
+         error('Expected required annotation syntax to be rejected')
+      end
+   end
+
+   assert_rejected('function invalid(Value:nil!) end', 'contradictory')
+   assert_rejected('function invalid(Value:!) end', 'Expected type name')
+   assert_rejected('local value:str! = [[text]]', 'only permitted on function parameters and return values')
+   assert_rejected('global glRequiredValue:str! = [[text]]',
+      'only permitted on function parameters and return values')
+   assert_rejected('function invalid(Value:str!) return Value end invalid(nil)',
+      'required argument 1 cannot be nil')
+   assert_rejected('function invalid(Value:str!) return Value end invalid()', 'required argument 1 is missing')
+   assert_rejected('function invalid():str! return nil end', 'required return value 1 cannot be nil')
+   assert_rejected('function invalid():str! return end', 'required return value 1 is missing')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Every call route must enter the same callee-side guard.
 
@@ -349,6 +461,21 @@ end
    local first, second, third = valid_variadic()
    assert(first is 1 and second is 2 and third is 3,
       'A variadic return declaration must preserve and validate additional results')
+end
+
+@Test function RequiredVariadicReturnSuffix()
+   function dynamic_variadic_empty():<any, ...> return end
+   function required_variadic_empty():<num!, ...> return dynamic_variadic_empty() end
+   expect_contract_failure(required_variadic_empty, 'missing required variadic result')
+
+   function dynamic_variadic_nil():<any, any, any> return 1, 2, nil end
+   function required_variadic():<num!, ...> return dynamic_variadic_nil() end
+   expect_contract_failure(required_variadic, 'required variadic result')
+
+   function valid_required_variadic():<num!, ...> return 1, 2, 3 end
+   local first, second, third = valid_required_variadic()
+   assert(first is 1 and second is 2 and third is 3,
+      'A required variadic suffix should accept every present matching result')
 end
 
 @Test function ReturnContractAfterTryAndDefer()

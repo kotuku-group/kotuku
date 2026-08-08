@@ -37,7 +37,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.listView = function(Options:table):table
+gui.listView = function(Options:table!):table
    lTextAttrib = Options.textAttrib ?? 'name'
    lCompact    = Options.compact ?? 0
 
@@ -47,7 +47,7 @@ gui.listView = function(Options:table):table
 
    -- When an item is hovered, create a highlight for it.
 
-   function highlightItem(View, Item:table, Highlighted:bool)
+   function highlightItem(View, Item:table, Highlighted:bool!)
       Item._vectors.viewport ?! return
 
       if not Item._vectors.highlight then

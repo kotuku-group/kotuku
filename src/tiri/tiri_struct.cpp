@@ -649,7 +649,7 @@ int MAKESTRUCT(lua_State *Lua)
    CSTRING sequence, name;
    if (not (name = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Structure name required.");
    else if (not (sequence = lua_tostring(Lua, 2))) luaL_argerror(Lua, 2, "Structure definition required.");
-   else if (make_struct(Lua->script, name, sequence) != ERR::Okay) {
+   else if (make_struct(Lua, name, sequence) != ERR::Okay) {
       luaL_error(Lua, "Failed to register structure '%s'.", name);
    }
    return 0;
@@ -748,7 +748,7 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
 //********************************************************************************************************************
 // The TypeName is optional and usually refers to the name of a struct.  The list is sorted by name for fast lookups.
 
-[[nodiscard]] static ERR generate_structdef(extTiri *Self, const std::string_view StructName, const std::string Sequence,
+[[nodiscard]] static ERR generate_structdef(lua_State *Lua, const std::string_view StructName, const std::string Sequence,
    struct_record &Record, int *StructSize)
 {
    kt::Log log(__FUNCTION__);
@@ -893,7 +893,7 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
             (not (field.Type & FD_PTR)) and field.StructDefinition) {
          field.ElementStride = field.StructDefinition->Size;
          std::string offending;
-         field.TrivialElements = struct_is_trivial(Self->Lua, *field.StructDefinition, offending);
+         field.TrivialElements = struct_is_trivial(Lua, *field.StructDefinition, offending);
       }
    }
 
@@ -903,8 +903,13 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
 
 //********************************************************************************************************************
 // Parse a struct definition and permanently store it in the glStructs dictionary.
+//
+// Lua may be null, and is null for module-definition parsing.  A null state confines embedded-structure resolution to
+// the global dictionary, which is required because a process-wide definition must not be shaped by whichever state
+// happened to request it first: a state-local `struct ... end` declaration shadowing the same name would otherwise
+// change the published global layout for every other state.
 
-[[nodiscard]] ERR make_struct(extTiri *Self, std::string_view StructName, CSTRING Sequence)
+[[nodiscard]] ERR make_struct(lua_State *Lua, std::string_view StructName, CSTRING Sequence)
 {
    kt::Log log(__FUNCTION__);
    const std::lock_guard lock(glStructMutex);
@@ -929,7 +934,7 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
    log.traceBranch("%s, %.50s", StructName.data(), Sequence);
 
    int computed_size = 0;
-   if (auto error = generate_structdef(Self, StructName, Sequence, it->second, &computed_size); error != ERR::Okay) {
+   if (auto error = generate_structdef(Lua, StructName, Sequence, it->second, &computed_size); error != ERR::Okay) {
       if (error IS ERR::BufferOverflow) log.warning("String too long - buffer overflow");
       else if (error IS ERR::Syntax) log.warning("Unsupported struct character in definition: %s", Sequence);
       else log.warning("Failed to make struct for %s, error: %s", StructName.data(), GetErrorMsg(error));
@@ -941,6 +946,19 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
    else it->second.Size = computed_size;
 
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Withdraw a structure that was registered by make_struct().
+//
+// This exists to roll back a partially published module-definition batch.  It must only be used for structures whose
+// publication is being undone within the same operation that registered them, because a structure that any script has
+// already resolved cannot be withdrawn safely.
+
+void remove_struct(std::string_view StructName)
+{
+   const std::lock_guard lock(glStructMutex);
+   glStructs.erase(struct_key(StructName));
 }
 
 //********************************************************************************************************************

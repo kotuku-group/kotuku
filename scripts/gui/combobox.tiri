@@ -13,7 +13,7 @@ FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
 BOX_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
 MARGIN     <const> = math.floor(FONT_HEIGHT * 0.5) + 1
 
-function iconTheme(Widget:table):str
+function iconTheme(Widget:table!):str
    if gui.strToRGB(Widget.theme.page.text):brightness() > 0.5 then
       return 'pearl'
    else
@@ -21,7 +21,7 @@ function iconTheme(Widget:table):str
    end
 end
 
-function reportFeedback(self:table)
+function reportFeedback(self:table!)
    self.events.activate ?! return
    text = self.text.string
    hash = text ? string.hash(text) :> 0

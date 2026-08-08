@@ -133,7 +133,7 @@ function reportProxyError(self, Code:str, Message:str, State:table, Cause:any):t
    return error_info
 end
 
-function invokeProxyHook(self, HookName:str, State:table, Callback:func, ...):any
+function invokeProxyHook(self, HookName:str!, State:table, Callback:func, ...):any
    if not Callback then return nil end
 
    local result:any = nil
@@ -163,7 +163,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- HTTP Request/Response Parsing
 
-function parseHttpRequest(Data:str):table
+function parseHttpRequest(Data:str!):table
    lines = {}
    for _, _, cap in rxLineIterator.findAll(Data) do
       line = cap[0]
@@ -198,7 +198,7 @@ function parseHttpRequest(Data:str):table
    }
 end
 
-function parseHttpResponse(Data:str):table
+function parseHttpResponse(Data:str!):table
    lines = {}
    for _, _, cap in rxLineIterator.findAll(Data) do
       line = cap[0]
@@ -275,7 +275,7 @@ function createFlowManager(self)
       end
    end
 
-   manager.copyHeaders = function(Headers:table):table
+   manager.copyHeaders = function(Headers:table!):table
       local headers = {}
       if type(Headers) != 'table' then return headers end
 
@@ -289,7 +289,7 @@ function createFlowManager(self)
       return headers
    end
 
-   manager.copyMessage = function(Message:table):any
+   manager.copyMessage = function(Message:table!):any
       if type(Message) != 'table' then return nil end
 
       local copy = {
@@ -310,7 +310,7 @@ function createFlowManager(self)
       return copy
    end
 
-   manager.copyFlow = function(Flow:table):table
+   manager.copyFlow = function(Flow:table!):table
       return {
          id = Flow.id,
          timestamp = Flow.timestamp,
@@ -323,7 +323,7 @@ function createFlowManager(self)
       }
    end
 
-   manager.normaliseFlow = function(Flow:table, Key:any):any
+   manager.normaliseFlow = function(Flow:table, Key:any!):any
       if type(Flow) != 'table' then return nil end
 
       local id = tonumber(Flow.id) or tonumber(Key)
@@ -468,7 +468,7 @@ function createFlowManager(self)
       return true
    end
 
-   manager.importTable = function(Flows:table):bool
+   manager.importTable = function(Flows:table!):bool
       if type(Flows) != 'table' and type(Flows) != 'array' then return false end
 
       local imported_flows = {}
@@ -634,7 +634,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Core Proxy Server Implementation
 
-function getClientIP(ClientSocket:obj):str
+function getClientIP(ClientSocket:obj!):str
    local ipaddr:struct = ClientSocket.client?.ip
    if ipaddr then
       local err, ip = mNet.AddressToStr(ipaddr)
@@ -644,7 +644,7 @@ function getClientIP(ClientSocket:obj):str
    return 'unknown'
 end
 
-function clientConnectionKey(ClientSocket:obj):str
+function clientConnectionKey(ClientSocket:obj!):str
    return getClientIP(ClientSocket) .. ':' .. tostring(ClientSocket)
 end
 
@@ -652,7 +652,7 @@ function touchProxyConnection(State:table)
    if State then State.lastActivity = mSys.PreciseTime() end
 end
 
-function createProxyConnectionState(self, ClientSocket:obj):table
+function createProxyConnectionState(self, ClientSocket:obj!):table
    local connection_key = clientConnectionKey(ClientSocket)
    local state:table = self._connections[connection_key]
    if state then return state end
@@ -706,7 +706,7 @@ function cleanupProxyConnection(self, State:table, CloseClient:bool)
    end
 end
 
-function sendClientError(self, State:table, Status:num, Body:str)
+function sendClientError(self, State:table!, Status:num!, Body:str)
    status_text = glStatusTexts[Status] or 'Error'
    body = Body ?? status_text
    response = f'HTTP/1.1 {Status} {status_text}\r\n' ..
@@ -719,7 +719,7 @@ function sendClientError(self, State:table, Status:num, Body:str)
    cleanupProxyConnection(self, State, true)
 end
 
-function proxyTimeoutInterval(Timeout:any):num
+function proxyTimeoutInterval(Timeout:any!):num
    local timeout = tonumber(Timeout) or 30
    if timeout <= 0 then return 0 end
    return math.clamp(timeout / 2, 0.1, 1.0)
@@ -780,14 +780,14 @@ function startProxyTimeoutTimer(self)
    return true
 end
 
-function splitHttpHeaders(Data:str):<str, str>
+function splitHttpHeaders(Data:str!):<str, str>
    header_end = Data:find('\r\n\r\n')
    header_end ?! return nil, Data
 
    return Data:sub(0, header_end + 4), Data:sub(header_end + 4)
 end
 
-function resolveTarget(Request:table):<str, num, bool>
+function resolveTarget(Request:table!):<str, num, bool>
    protocol, host, port_text = rxUrlParts.extract(Request.url)
    port = 80
 
@@ -814,7 +814,7 @@ function resolveTarget(Request:table):<str, num, bool>
    return host, port, false
 end
 
-function originFormUrl(Url:str):str
+function originFormUrl(Url:str!):str
    scheme_pos = Url:find('://')
    if scheme_pos is nil then return Url end
 
@@ -825,17 +825,17 @@ function originFormUrl(Url:str):str
    return after_scheme:sub(path_start)
 end
 
-function hostHeaderValue(Host:str, Port:num):str
+function hostHeaderValue(Host:str!, Port:num!):str
    if Port is 80 then return Host end
    return Host .. ':' .. Port
 end
 
-function absoluteFormUrl(State:table, Url:str):str
+function absoluteFormUrl(State:table!, Url:str!):str
    if Url:startsWith('http://') or Url:startsWith('https://') then return Url end
    return 'http://' .. hostHeaderValue(State.targetHost, State.targetPort) .. originFormUrl(Url)
 end
 
-function resolveConnectTarget(Request:table):<str, num>
+function resolveConnectTarget(Request:table!):<str, num>
    host, port_text = rxHostPort.extract(Request.url)
    if not host or not port_text then return nil, 0 end
    if host .. ':' .. port_text != Request.url then return nil, 0 end
@@ -846,7 +846,7 @@ function resolveConnectTarget(Request:table):<str, num>
    return host, port
 end
 
-function buildHttpRequest(self, State:table, BodyPrefix:str):str
+function buildHttpRequest(self, State:table!, BodyPrefix:str!):str
    request, was_modified = self._interceptor.interceptRequest(State.request, State.flow)
    if was_modified then logMessage(self, 'DEBUG', 'Request headers were modified by an interceptor') end
 
@@ -867,7 +867,7 @@ function buildHttpRequest(self, State:table, BodyPrefix:str):str
    return request_data
 end
 
-function buildHttpResponseHeaders(Response:table):str
+function buildHttpResponseHeaders(Response:table!):str
    response_data = Response.version .. ' ' .. Response.status .. ' ' .. Response.statusText .. '\r\n'
 
    for name, value in pairs(Response.headers) do
@@ -922,7 +922,7 @@ function writeTunnelClientData(self, State:table, Data:str):bool
    return true
 end
 
-function markConnectEstablished(self, State:table)
+function markConnectEstablished(self, State:table!)
    response = {
       version = 'HTTP/1.1',
       status = 200,
@@ -939,7 +939,7 @@ function markConnectEstablished(self, State:table)
    invokeProxyHook(self, 'onResponse', State, self.onResponse, response, State.flow)
 end
 
-function establishTunnel(self, State:table):bool
+function establishTunnel(self, State:table!):bool
    if State.phase is 'tunnelling' then return true end
 
    response = 'HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n'
@@ -962,7 +962,7 @@ function establishTunnel(self, State:table):bool
    return writeTunnelClientData(self, State, buffered)
 end
 
-function upstreamTunnelIncoming(self, State:table, UpstreamSocket:obj)
+function upstreamTunnelIncoming(self, State:table!, UpstreamSocket:obj!)
    while true do
       buffer = string.alloc(16384)
       err, bytes_read = UpstreamSocket.acRead(buffer)
@@ -996,7 +996,7 @@ function upstreamTunnelIncoming(self, State:table, UpstreamSocket:obj)
    end
 end
 
-function flushPendingRequest(self, State:table):bool
+function flushPendingRequest(self, State:table!):bool
    if State.requestSent then return true end
 
    request_data = State.pendingRequest .. State.pendingClientData
@@ -1016,7 +1016,7 @@ function flushPendingRequest(self, State:table):bool
    return true
 end
 
-function forwardResponseData(self, State:table, Data:str):bool
+function forwardResponseData(self, State:table!, Data:str!):bool
    if Data is '' then return true end
 
    offset = 0
@@ -1039,7 +1039,7 @@ function forwardResponseData(self, State:table, Data:str):bool
    return true
 end
 
-function handleResponseHeaderBlock(self, State:table, Data:str):bool
+function handleResponseHeaderBlock(self, State:table!, Data:str!):bool
    State.responseBuffer ..= Data
 
    header_block, body_prefix = splitHttpHeaders(State.responseBuffer)
@@ -1074,7 +1074,7 @@ function handleResponseHeaderBlock(self, State:table, Data:str):bool
    return forwardResponseData(self, State, header_block .. body_prefix)
 end
 
-function upstreamIncoming(self, State:table, UpstreamSocket:obj)
+function upstreamIncoming(self, State:table!, UpstreamSocket:obj!)
    while true do
       buffer = string.alloc(16384)
       err, bytes_read = UpstreamSocket.acRead(buffer)
@@ -1100,14 +1100,14 @@ function upstreamIncoming(self, State:table, UpstreamSocket:obj)
    end
 end
 
-function buildUpstreamProxyConnectRequest(State:table):str
+function buildUpstreamProxyConnectRequest(State:table!):str
    local target = State.targetHost .. ':' .. State.targetPort
    return 'CONNECT ' .. target .. ' HTTP/1.1\r\n' ..
       'Host: ' .. target .. '\r\n' ..
       'Connection: close\r\n\r\n'
 end
 
-function sendUpstreamProxyConnect(self, State:table):bool
+function sendUpstreamProxyConnect(self, State:table!):bool
    if State.upstreamProxyConnectSent then return true end
 
    local request_data = buildUpstreamProxyConnectRequest(State)
@@ -1127,7 +1127,7 @@ function sendUpstreamProxyConnect(self, State:table):bool
    return true
 end
 
-function handleUpstreamProxyConnectHeaderBlock(self, State:table, Data:str):bool
+function handleUpstreamProxyConnectHeaderBlock(self, State:table!, Data:str!):bool
    State.responseBuffer ..= Data
 
    local header_block, tunnel_prefix = splitHttpHeaders(State.responseBuffer)
@@ -1160,7 +1160,7 @@ function handleUpstreamProxyConnectHeaderBlock(self, State:table, Data:str):bool
    return true
 end
 
-function upstreamProxyConnectIncoming(self, State:table, UpstreamSocket:obj)
+function upstreamProxyConnectIncoming(self, State:table!, UpstreamSocket:obj!)
    while true do
       local buffer = string.alloc(16384)
       local err, bytes_read = UpstreamSocket.acRead(buffer)
@@ -1248,7 +1248,7 @@ function connectUpstream(self, State:table):bool
    return true
 end
 
-function startConnectTunnel(self, State:table, BodyPrefix:str):bool
+function startConnectTunnel(self, State:table!, BodyPrefix:str):bool
    target_host, target_port = resolveConnectTarget(State.request)
    if not target_host then
       reportProxyError(self, 'malformed_connect_target', 'Malformed CONNECT target', State, nil)
@@ -1272,7 +1272,7 @@ function startConnectTunnel(self, State:table, BodyPrefix:str):bool
    return true
 end
 
-function processRequestHeaders(self, State:table):bool
+function processRequestHeaders(self, State:table!):bool
    header_block, body_prefix = splitHttpHeaders(State.clientBuffer)
    if not header_block then
       if #State.clientBuffer > self.maxHeaderSize then
@@ -1337,7 +1337,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Main Proxy Server Incoming Connection Handler
 
-function proxyIncoming(self, ClientSocket:obj)
+function proxyIncoming(self, ClientSocket:obj!)
    state = createProxyConnectionState(self, ClientSocket)
 
    buffer = string.alloc(8192)
@@ -1372,7 +1372,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Main Proxy Server Start Function
 
-proxylib.start = function(Options:table)
+proxylib.start = function(Options:table!)
    self = {
       port = 8080,
       bind = nil,

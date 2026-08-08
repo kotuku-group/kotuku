@@ -71,6 +71,7 @@ struct FuncState {
    }();
    std::array<struct_record *, MAX_RETURN_TYPES> return_struct_defs{};
    std::array<ArrayElementDescriptor, MAX_RETURN_TYPES> return_array_elements{};
+   std::array<bool, MAX_RETURN_TYPES> return_required{};
    uint8_t return_declared_count = 0;
    uint8_t return_contract_count = 0;
    bool return_contract_variadic = false;
@@ -91,6 +92,15 @@ struct FuncState {
    std::vector<TryHandlerDesc> try_handlers;  // Handler descriptors
    uint8_t try_depth = 0;  // Current try nesting depth for break/continue cleanup
    bool is_root = false;   // True if this is the top-level (root) function
+
+   // Portable module dependency descriptors, appended by the root and imported AST builders and copied to the
+   // prototype during fs_finish. Names are canonical and interned, so they are also anchored as GC constants.
+   struct DependencyDescriptor {
+      GCstr *name = nullptr;                 // Canonical module name
+      std::vector<GCstr *> functions;        // Canonical names of the functions this unit references
+   };
+
+   std::vector<DependencyDescriptor> module_descriptors;
 
    // Default constructor - initialises all fields to safe defaults.
    FuncState() = default;

@@ -451,7 +451,7 @@ private:
          if (Function.return_types.array_elements[i].known) {
             value.array_element = Function.return_types.array_elements[i];
          }
-         value.nullable = true;
+         value.nullable = not Function.return_types.required[i];
          if (Function.return_types.is_explicit and value.primary != TiriType::Any and
              value.primary != TiriType::Unknown) {
             value.proof = StaticProof::Checked;
@@ -1177,12 +1177,9 @@ private:
             if (base) {
                StaticValueDescriptor base_value = this->descriptor_of(*base);
                if (base_value.primary IS TiriType::Array and base_value.array_element.known and
-                   base_value.proved() and not base_value.nullable) {
-                  value.primary = base_value.array_element.logical_type;
-                  value.object_class_id = base_value.array_element.object_class_id;
-                  value.struct_def = base_value.array_element.struct_def;
-                  value.proof = StaticProof::Trusted;
-                  value.nullable = safe;
+                   base_value.proved()) {
+                  value = this->array_element_value(base_value.array_element);
+                  value.nullable = value.nullable or safe;
                }
             }
             break;
@@ -1373,6 +1370,7 @@ private:
          else {
             value = this->declared_descriptor(parameter.type, parameter.struct_def, parameter.array_element,
                parameter.type IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked);
+            value.nullable = not parameter.required;
          }
          auto &binding = this->catalogue_.binding(parameter.name.binding_id);
          binding.value = this->add_value(value);
@@ -1399,7 +1397,7 @@ private:
                if (Function.return_types.array_elements[i].known) {
                   value.array_element = Function.return_types.array_elements[i];
                }
-               value.nullable = true;
+               value.nullable = not Function.return_types.required[i];
                value.proof = Function.return_types.is_explicit ?
                   (value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked) :
                   StaticProof::Closed;

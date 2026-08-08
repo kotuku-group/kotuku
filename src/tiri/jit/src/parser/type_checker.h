@@ -93,7 +93,8 @@ struct UnusedVariableInfo {
 
 class TypeCheckScope {
 public:
-   void declare_parameter(GCstr *, TiriType Type, struct_record *StructDef, SourceSpan Location = {});
+   void declare_parameter(
+      GCstr *, TiriType Type, struct_record *StructDef, bool Required, SourceSpan Location = {});
    void declare_local(GCstr *, const InferredType &, SourceSpan Location = {}, bool IsConst = false);
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
    void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,

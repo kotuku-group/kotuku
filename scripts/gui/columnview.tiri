@@ -91,7 +91,7 @@ function setListTextFill(Item:table, Fill)
    end
 end
 
-function highlightItem(View:table, Item:table, Highlighted:bool)
+function highlightItem(View:table!, Item:table, Highlighted:bool)
    if not Item._vectors.highlight and (Highlighted or Item._selected) then
       Item._vectors.highlight = Item._vectors.viewport.new('VectorRectangle', {
          name = 'item_highlight',
@@ -158,7 +158,7 @@ function highlightItem(View:table, Item:table, Highlighted:bool)
    end
 end
 
-function arrangeColumns(View:table)
+function arrangeColumns(View:table!)
    View.banner.lines.acClear()
 
    pc = struct.new('PathCommand')
@@ -322,7 +322,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.columnView = function(Options):table
-   function setColumns(View:table, Columns)
+   function setColumns(View:table!, Columns)
       if #Columns is 0 then return end
 
       c = 0
@@ -510,7 +510,7 @@ gui.columnView = function(Options):table
 
    -- Process new items that have been added to the view
 
-   function newItems(View:table, Items)
+   function newItems(View:table!, Items)
       View.columns ?! return
       Items ?! return
 
@@ -670,7 +670,7 @@ gui.columnView = function(Options):table
    -- Sorts the view by column (named or index).
    -- NB: Attrib values that evaluate to nil are not permitted/supported.
 
-   vw.sortColumn = function(View:table, Column:any, Ascending:bool)
+   vw.sortColumn = function(View:table!, Column:any!, Ascending:bool!)
       if type(Column) is 'string' then
          for col in values(View.columns) do
             if col['attrib'] is Column then

@@ -212,7 +212,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    std::string_view module_name;
    // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires regeneration
    if (auto error = MetaClass->get(strhash("module"), module_name); !error) {
-      if (auto error = load_include(Lua->script, module_name); error != ERR::Okay) {
+      if (auto error = load_module_defs(module_name); error != ERR::Okay) {
          luaL_error(Lua, error,
             std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
       }
@@ -360,6 +360,7 @@ extern void array_unit_tests(int &, int &);
 extern void allocator_unit_tests(int &, int &);
 extern void bulk_unit_tests(int &, int &);
 extern void gc_unit_tests(int &, int &);
+extern void module_marshalling_unit_tests(int &, int &);
 extern void set_variable_unit_tests(int &, int &);
 #endif
 
@@ -370,6 +371,11 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
       kt::Log log("TiriTests");
       log.branch("Running SetVariable unit tests...");
       set_variable_unit_tests(*Passed, *Total);
+   }
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running module marshalling unit tests...");
+      module_marshalling_unit_tests(*Passed, *Total);
    }
    {
       kt::Log log("TiriTests");

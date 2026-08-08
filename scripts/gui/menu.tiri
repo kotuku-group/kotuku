@@ -394,23 +394,23 @@ gui.menu = function(Options)
    self.scene = obj.new('VectorScene', { flags=VPF_RESIZE, surface=self.surface })
    self.viewport = self.scene.new('VectorViewport', { })
 
-   self.surface.subscribe('free', function(Surface:obj, Args:table)
+   self.surface.subscribe('free', function(Surface:obj!, Args:table!)
       if self.tipTimer then mSys.UpdateTimer(self.tipTimer, 0) end
       self.surface = nil
    end)
 
    if self.popup then
-      self.surface.subscribe('lostfocus', function(Surface:obj, Args:table)
+      self.surface.subscribe('lostfocus', function(Surface:obj!, Args:table!)
          self.surface.acHide()
       end)
    end
 
-   self.surface.subscribe('hide', function(Surface:obj, Args:table)
+   self.surface.subscribe('hide', function(Surface:obj!, Args:table!)
       self.visible = false
       self.timeHide = mSys.preciseTime()
    end)
 
-   self.surface.subscribe('show', function(Surface:obj, Args:table)
+   self.surface.subscribe('show', function(Surface:obj!, Args:table!)
       if self.popup then
          self.surface.acFocus()
       end
@@ -420,7 +420,7 @@ gui.menu = function(Options)
       -- Keyboard support requires a client reference to grab input from.
 
       if self.client and (not self._subscribedKb) then
-         if self.client.mtSubscribeKeyboard(function(Viewport:obj, Qualifiers:num, Value:num, Unicode:num)
+         if self.client.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode:num!)
             if not self.visible then
                self._subscribedKb = false
                check ERR_Terminate
@@ -441,7 +441,7 @@ gui.menu = function(Options)
       end
    end)
 
-   self.viewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport:obj, Events)
+   self.viewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport:obj!, Events)
       ev = Events
       while ev do
          if ev.type is JET_BUTTON_1 then

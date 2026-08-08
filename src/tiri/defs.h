@@ -129,6 +129,14 @@ struct TiriConstant {
    [[nodiscard]] constexpr lua_Number to_number() const {
       return (type IS Type::Int64) ? lua_Number(value.i64) : value.f64;
    }
+
+   // Compares the active union member so that a repeated definition of the same constant can be distinguished from a
+   // conflicting one.  Two constants of differing type never compare equal, even when their numeric values agree.
+
+   [[nodiscard]] constexpr bool operator==(const TiriConstant &Other) const {
+      if (type != Other.type) return false;
+      return (type IS Type::Int64) ? (value.i64 IS Other.value.i64) : (value.f64 IS Other.value.f64);
+   }
 };
 
 // Global constant registry - case-sensitive, owns string keys.
@@ -409,15 +417,39 @@ ERR create_tiri(void);
 void get_line(extTiri *, int, STRING, int);
 APTR get_meta(lua_State *Lua, int Arg, CSTRING);
 [[maybe_unused]] void hook_debug(lua_State *, lua_Debug *);
-ERR load_include(extTiri *, std::string_view);
+// Resolves a module and publishes its process-wide constant and structure definitions.  Deliberately takes no state:
+// the definitions are global, so the state that happens to request them first must not influence their layout.
+ERR load_module_defs(std::string_view);
 [[nodiscard]] StaticModuleHandle static_module_by_name(std::string_view) noexcept;
 [[nodiscard]] const FunctionField * static_module_function(StaticModuleHandle, std::string_view) noexcept;
 [[nodiscard]] std::string_view static_module_name(StaticModuleHandle) noexcept;
 [[nodiscard]] std::string_view static_module_function_name(StaticModuleHandle, std::string_view) noexcept;
+[[nodiscard]] APTR proto_dependency_callable(struct GCproto *, uint32_t);
+#ifdef UNIT_TESTS
+[[nodiscard]] std::string test_module_string_view_call(lua_State *, APTR,
+   std::span<const std::string> Inputs);
+
+// What the registry resolved for one module function, from both the compiler's and the runtime's entry point.  The
+// two now share one ordinal mapping and one metadata owner, so a test can assert that agreement directly.
+
+struct test_module_resolution {
+   bool Found = false;              // The name resolved through the compiler's signature index
+   bool CallableFound = false;      // The name resolved through the runtime callable lookup
+   uint32_t Ordinal = 0;            // Compiler ordinal for the canonical function
+   uint32_t CallableOrdinal = 0;    // Position of the resolved callable within the binding's callable list
+   CSTRING SignatureName = nullptr; // Canonical name owned by the immutable signature
+   CSTRING CallableName = nullptr;  // Canonical name held by the runtime callable
+   const FunctionField *SignatureFields = nullptr;
+   const FunctionField *CallableFields = nullptr;
+};
+
+[[nodiscard]] test_module_resolution test_module_resolve(std::string_view Module, std::string_view Function);
+#endif
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
-[[maybe_unused]] ERR make_struct(extTiri *, std::string_view, CSTRING);
+[[maybe_unused]] ERR make_struct(lua_State *, std::string_view, CSTRING);
+void remove_struct(std::string_view);
 [[nodiscard]] struct_record * find_struct(lua_State *Lua, uint32_t Key);
 [[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name);
 [[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key);

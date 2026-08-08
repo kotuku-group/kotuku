@@ -4584,6 +4584,19 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_MODACT:
+    |  ins_AD
+    |  str BASE, L->base
+    |  mov CARG2w, RCw
+    |  add TMP0, BASE, RA, lsl #3
+    |  str TMP0, L->top
+    |  mov CARG1, L
+    |  str PC, SAVE_PC
+    |  bl extern tiri_module_activate
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

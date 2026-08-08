@@ -64,6 +64,7 @@ struct FunctionReturnTypes {
    std::array<struct_record *, MAX_RETURN_TYPES> struct_defs{}; // Resolved layouts for struct<Name> results
    std::array<ArrayElementDescriptor, MAX_RETURN_TYPES> array_elements{};
    std::array<StaticValueHandle, MAX_RETURN_TYPES> descriptors{};
+   std::array<bool, MAX_RETURN_TYPES> required{};
    uint8_t count = 0;           // Number of stored result types (0 = none)
    bool is_variadic = false;    // True if declaration ends with ... (last type repeats)
    bool is_explicit = false;    // True if explicitly declared, false if inferred
@@ -75,6 +76,10 @@ struct FunctionReturnTypes {
    [[nodiscard]] TiriType type_at(size_t Index) const {
       if (Index >= count) return is_variadic ? types[count - 1] : TiriType::Unknown;
       return types[Index];
+   }
+   [[nodiscard]] bool required_at(size_t Index) const {
+      if (Index >= count) return is_variadic and count > 0 ? required[count - 1] : false;
+      return required[Index];
    }
    [[nodiscard]] TiriType thunk_type() const {
       if (count IS 0 or (not is_explicit and not has_thunk_type)) return TiriType::Unknown;
@@ -299,6 +304,7 @@ struct FunctionParameter {
    struct_record *struct_def = nullptr;
    ArrayElementDescriptor array_element{};
    bool type_is_explicit = false;
+   bool required = false;
    bool is_self = false;
 };
 
@@ -454,7 +460,7 @@ struct MemberExprPayload {
 // Selection of a module function through a compiler-managed namespace, e.g. mCore.PreciseTime.
 //
 // This is a leaf node: it carries no base expression, because a module namespace is compiler metadata rather than a
-// script value.  The emitter resolves `binding` to the hidden local that the dependency initialiser produced, so no
+// script value.  The emitter resolves `binding` to the hidden local that dependency activation produced, so no
 // table member lookup is involved.  Retaining a dedicated node keeps generic member emission from restoring table
 // semantics to a namespace, and gives static analysis the module signature without a value descriptor.
 
@@ -694,6 +700,7 @@ struct LocalDeclStmtPayload {
    AssignmentOperator op = AssignmentOperator::Plain;  // Supports ??= conditional assignment
    std::vector<Identifier> names;
    ExprNodeList values;
+   uint32_t module_dependency = UINT32_MAX; // Descriptor ordinal for compiler-generated module activation
    ~LocalDeclStmtPayload();
 };
 

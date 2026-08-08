@@ -30,7 +30,7 @@ MAX_AMPLITUDE <const> = 500
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function selectWave(Text:str):obj
+function selectWave(Text:str!):obj
    glWave.type = choose Text from
       'Sine'     -> WVT_SINE
       'Sawtooth' -> WVT_SAWTOOTH
@@ -66,7 +66,7 @@ function buildScene()
          { item = 'Square' }
       },
       events = {
-         activate = function(Widget:table, Text:str)
+         activate = function(Widget:table, Text:str!)
             selectWave(Text)
          end
       }
@@ -85,7 +85,7 @@ function buildScene()
          { item = 'Exponential' }
       },
       events = {
-         activate = function(Widget:table, Text:str)
+         activate = function(Widget:table, Text:str!)
             glWave.envelope = choose Text from
                'Linear'      -> WVE_LINEAR
                'Quadratic'   -> WVE_QUADRATIC
@@ -106,7 +106,7 @@ function buildScene()
       x      = cmbEnvelope.viewport.x + cmbEnvelope.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget:table, Value:num)
+         activate = function(Widget:table, Value:num!)
             glAmplitude = Value
             glWave.amplitude = glAmplitude
             glWaveVP.scene.surface.mtScheduleRedraw()
@@ -123,7 +123,7 @@ function buildScene()
       x      = slAmplitude.viewport.x + slAmplitude.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget:table, Value:num)
+         activate = function(Widget:table, Value:num!)
             glFrequency = Value
             glWave.frequency = glFrequency
             glWaveVP.scene.surface.mtScheduleRedraw()
@@ -140,7 +140,7 @@ function buildScene()
       x      = slFrequency.viewport.x + slFrequency.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget:table, Value:num)
+         activate = function(Widget:table, Value:num!)
             glDecay = Value
             glWave.decay = glDecay
             glWaveVP.scene.surface.mtScheduleRedraw()
@@ -157,7 +157,7 @@ function buildScene()
       x      = slDecay.viewport.x + slDecay.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget:table, Value:num)
+         activate = function(Widget:table, Value:num!)
             glNoise = Value
             glWave.noise = glNoise
             glWaveVP.scene.surface.mtScheduleRedraw()

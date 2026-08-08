@@ -143,7 +143,10 @@ void process_error(extTiri *Self, CSTRING Procedure)
    Self->setErrorMessage(str);
 
    auto error_msg = str.empty() ? "" : str.data();
-   if (not Self->Path.empty()) {
+   if (Self->Lua->pending_exception_valid and Self->Lua->pending_exception_source) {
+      log.msg(flags, "%.*s", int(str.size()), error_msg);
+   }
+   else if (not Self->Path.empty()) {
       auto file = std::string_view(Self->Path);
       auto i = file.find_last_of("/\\");
       if (i != std::string_view::npos) file.remove_prefix(i + 1);
@@ -989,7 +992,7 @@ static ERR register_interfaces(extTiri *Self)
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Userdata });
    reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str });
 
-   if (auto error = load_include(Self, "core"); error != ERR::Okay) {
+   if (auto error = load_module_defs("core"); error != ERR::Okay) {
       log.error("Failed to process the core includes.");
       return error;
    }
