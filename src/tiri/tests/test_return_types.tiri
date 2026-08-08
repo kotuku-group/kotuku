@@ -708,11 +708,11 @@ end
    assert(getNumber() is 42, "number alias in return type should work")
 end
 
-@Test function ReturnTypeAliasString()
-   function getString():string
+@Test function ReturnTypeString()
+   function getString():str
       return "hello"
    end
-   assert(getString() is "hello", "string alias in return type should work")
+   assert(getString() is "hello", "str return type should work")
 end
 
 @Test function ReturnTypeAliasFunction()

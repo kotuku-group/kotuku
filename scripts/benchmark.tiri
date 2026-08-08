@@ -721,7 +721,7 @@ end
 bmark.comparisonReport = function(Comparison:table!):array<string>
    local msg = array<string>
 
-   local function formatChange(Change:num!, Improved:bool):string
+   local function formatChange(Change:num!, Improved:bool):str
       local sign = Change >= 0 and '+' or ''
       local indicator = Improved and '✓' or (math.abs(Change) > 5 and '✗' or '~')
       return string.format('%s%.1f%% %s', sign, Change, indicator)

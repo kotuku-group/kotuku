@@ -14,7 +14,6 @@ TiriType parse_type_name(std::string_view Name)
       { "num",       TiriType::Num },
       { "number",    TiriType::Num },
       { "str",       TiriType::Str },
-      { "string",    TiriType::Str },
       { "table",     TiriType::Table },
       { "array",     TiriType::Array },
       { "func",      TiriType::Func },
