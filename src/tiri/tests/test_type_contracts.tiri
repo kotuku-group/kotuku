@@ -1016,6 +1016,19 @@ end
    glContractAny = 'allowed'
    assert(glContractAny is 'allowed', 'Explicit any remains the global contract opt-out')
 
+   local thunk_evaluations = 0
+   thunk fractional_global_value():num
+      thunk_evaluations++
+      return 4.8
+   end
+   local deferred_value = fractional_global_value()
+   global glContractThunkInteger:int = 0
+   _G.glContractThunkInteger = deferred_value
+   assert(rawget(_G, 'glContractThunkInteger') is deferred_value,
+      'An indirect integer-global store should preserve the original thunk container')
+   assert(glContractThunkInteger is 4, 'An indirect integer-global store should cache its coerced result')
+   assert(thunk_evaluations is 1, 'Reading a contracted thunk should reuse the result resolved during validation')
+
    global glContractRedeclared:num = 1
    exec("global glContractRedeclared:any = 'variant'")
    exec("glContractRedeclared = {}")

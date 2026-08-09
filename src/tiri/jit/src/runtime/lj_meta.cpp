@@ -1220,15 +1220,22 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, TV
       if (entry->type != TiriType::Any and entry->type != TiriType::Unknown) {
          TValue *checked = Value;
          TValue resolved_value;
+         GCudata *resolved_thunk = nullptr;
          if (lj_is_thunk(Value)) {
-            // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
+            // Validate the resolved value, but retain the original thunk so reads continue to use its cached result.
             VMHelperGuard guard(L);
-            cTValue *resolved = lj_thunk_resolve(L, udataV(Value));
+            resolved_thunk = udataV(Value);
+            cTValue *resolved = lj_thunk_resolve(L, resolved_thunk);
             copyTV(L, &resolved_value, resolved);
             checked = &resolved_value;
          }
          if (not contract_matches(L, checked, *entry)) {
             contract_error(L, checked, ContractBoundary::Global, *entry, entry->position);
+         }
+         if (resolved_thunk) {
+            ThunkPayload *payload = thunk_payload(resolved_thunk);
+            copyTV(L, &payload->cached_value, checked);
+            if (tvisgcv(checked)) lj_gc_objbarrier(L, obj2gco(resolved_thunk), gcval(checked));
          }
       }
    }
