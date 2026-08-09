@@ -137,9 +137,13 @@ end
    local positive:int = 5.7
    local negative:int = -5.7
    local quotient:int = 10 / 2
+   local postfix_boundary:int = 2147483647
+   postfix_boundary++
    assert(positive is 5, 'A positive floating value should truncate toward zero')
    assert(negative is -5, 'A negative floating value should truncate toward zero')
    assert(quotient is 5, 'A floating arithmetic result should truncate at an integer local boundary')
+   assert(postfix_boundary is -2147483648,
+      'A postfix integer update should preserve the destination representation across overflow')
    assert(accept_int(9) is 9, 'An integer-represented argument should remain unchanged')
    assert(accept_int(8.9) is 8, 'A direct numeric argument should truncate at an integer parameter boundary')
    assert(accept_num(positive) is 5, 'An integer value should widen to num without changing its value')

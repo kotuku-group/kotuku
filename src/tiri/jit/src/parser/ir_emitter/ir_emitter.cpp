@@ -2887,6 +2887,11 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
 
    // Use OperatorEmitter for arithmetic operation (operand +/- 1)
    this->operator_emitter.emit_binary_arith(op, ExprValue(&infix), delta);
+   // The target descriptor cannot prove the computed representation; let the typed store validate the new value.
+   infix.static_value = 0;
+   infix.static_results = 0;
+   infix.object_class_id = CLASSID::NIL;
+   infix.struct_def = nullptr;
 
    bcemit_store(&this->func_state, &target, &infix);
    release_indexed_original(this->func_state, target);
