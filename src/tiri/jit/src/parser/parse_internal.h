@@ -127,6 +127,20 @@ static inline BCPOS bcemit_AJ(FuncState *fs, Op o, BCREG a, BCPOS j) {
    return bcemit_INS(fs, BCINS_AJ(o, a, j));
 }
 
+// Emit a validated canonical native callable directly into a requested register.  The dependent dot-method lowering
+// uses the returned function-typed expression without publishing compiler-private global names.
+
+[[nodiscard]] static inline ExpDesc bcemit_builtin_callable(
+   FuncState *State, BuiltinCallableID Id, BCREG Destination)
+{
+   fs_check_assert(State, builtin_callable_valid(Id) and lj_builtin_callable(State->L, Id),
+      "unregistered built-in callable ID");
+   bcemit_AD(State, BC_BFUNC, Destination, BCREG(builtin_callable_index(Id)));
+   ExpDesc result(ExpKind::NonReloc, Destination);
+   result.result_type = TiriType::Func;
+   return result;
+}
+
 // Emit BC_TGETS with overflow protection. When the string constant index exceeds 255 (the 8-bit C field limit),
 // falls back to BC_KSTR + BC_TGETV to avoid bytecode corruption.
 

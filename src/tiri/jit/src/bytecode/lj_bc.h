@@ -274,7 +274,10 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(RANGEVAL,  base, ___, ___, ___) \
   \
   /* Compiler-managed module dependency activation. */ \
-  _(MODACT,    base, ___, lit, ___)
+  _(MODACT,    base, ___, lit, ___) \
+  \
+  /* Immutable state-local built-in callable load. Appended to preserve existing opcode numbers. */ \
+  _(BFUNC,     dst,  ___, lit, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -433,8 +436,9 @@ typedef enum {
    BC_RANGEPREP = 118,
    BC_RANGEVAL = 119,
    BC_MODACT = 120,
+   BC_BFUNC = 121,
 
-   BC__MAX   = 121
+   BC__MAX   = 122
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

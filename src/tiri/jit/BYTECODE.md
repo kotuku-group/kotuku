@@ -1,14 +1,20 @@
 # Bytecode Semantics Reference
 
 ## 1. Introduction and Scope
-Kōtuku integrates a heavily modified LuaJIT 2.1 VM. This note captures the control-flow semantics of its bytecode so parser and emitter changes do not regress short-circuiting or extended-falsey behaviour. It answers questions such as "when does `BC_ISEQP` skip the next instruction?" and "how do `??` and `?` wire their jumps?" and is aimed at maintainers working on `IrEmitter`/`OperatorEmitter` or debugging logical and ternary operators.
+
+Kōtuku integrates a heavily modified LuaJIT 2.1 VM.  This note captures the control-flow and specialised runtime
+semantics of its bytecode so parser, emitter and VM changes remain aligned.  It answers questions such as "when does
+`BC_ISEQP` skip the next instruction?", "how do `??` and `?` wire their jumps?" and "how does `BC_BFUNC` load a
+canonical built-in callable?"  It is aimed at maintainers working on the parser, interpreter, JIT or bytecode tooling.
 
 ## 2. Notation, Conventions, and Versioning
+
 - Registers are shown as `R0`, `R1`, etc. Fields A/B/C/D follow LuaJIT encoding: `A` is usually a destination or base, `B`/`C` are sources, `D` is a constant or split field. `base` is the current stack frame start.
 - Conditions are expressed as "condition true → skip next instruction; condition false → execute next instruction (normally a `JMP`)." "Next instruction" means the sequential `BCIns`; a taken `JMP` applies its offset from the following instruction.
 - Version: LuaJIT 2.1 with extensive changes, assuming the `LJ_FR2` two-slot frame layout used by all supported platforms.
-- Serialised bytecode format: `0x87`.  Earlier formats are rejected; there is no compatibility shim for the removed
-  compiler-private module dependency binder.
+- Serialised bytecode format: `0x88`.  This version adds `BFUNC` and makes the generated fast-function ID order part
+  of the private bytecode ABI.  Earlier formats are rejected; there is no compatibility shim for either `BFUNC` or
+  the removed compiler-private module dependency binder.
 - **64-bit bytecode**: `BCIns` is now `uint64_t` (was `uint32_t`). Instructions occupy 8 bytes each. New extended formats (ABCP, ADP, AP) enable native 64-bit pointer storage for inline caching. See section 3.1 for format details.
 - Keep this file aligned with changes in `src/tiri/jit/src/parser/*`, whenever bytecode emission patterns change.
 
@@ -128,6 +134,28 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `USETP` | A D | upvalue(A) = pri(D) |
 | `UCLO` | A D | Close upvalues for R >= A; JMP to D |
 | `FNEW` | A D | R(A) = new closure from proto(D) |
+| `BFUNC` | A D | R(A) = canonical built-in callable(D) |
+
+##### Built-in Callable Loads (`BFUNC`)
+
+`BFUNC` loads a canonical native closure from the current Tiri state's built-in callable registry.  Operand `A` is
+the destination register and `D` is a `BuiltinCallableID`, generated from the fast-function definition order.  The
+registry contains the exact closures published during library initialisation, including their environments and
+upvalues, and the garbage collector roots every populated slot independently of the public module tables.
+
+The instruction is a pure, non-allocating load.  It performs no global or table lookup, invokes no metamethod or user
+code, and does not recreate a closure.  Rebinding a public entry such as `table.insert` therefore does not change the
+callable loaded by an existing `BFUNC`.  The resulting value is an ordinary function and is invoked by the normal
+`CALL`, `CALLM`, `CALLT` or `CALLMT` instructions.
+
+The bytecode reader rejects an ID outside the generated range and rejects a missing or non-function registry slot.
+It never installs `nil` as a fallback.  Interpreter backends load the state-local slot directly, while the JIT records
+the same closure as a stable function constant without a runtime equality guard.
+
+Dumps serialise only the numeric `BuiltinCallableID`; they never contain a closure or process-local address.  The
+generated fast-function order is therefore a private bytecode ABI.  Adding, removing or reordering an entry requires
+both a dump-version bump and an update to the generated-order fingerprint in `lj_ff.h`.  Debug disassembly resolves
+the ID to its canonical `interface.function` name.
 
 #### Table Ops
 | Opcode | Format | Description |
@@ -710,6 +738,7 @@ The process-wide ownership, publication and lock contract is documented in
 [MODULE_REGISTRY.md](../MODULE_REGISTRY.md).
 
 ## 11. Testing, Debugging, and Tooling
+
 ### 11.1 Using Flute and Tiri Tests
 - Run the Tiri regression tests under `src/tiri/tests/` (e.g. `test_if_empty.tiri`, `test_presence.tiri`, logical/ternary suites) to validate control-flow changes.
 - When adding coverage, use side effects (counters, print hooks) on RHS expressions to prove short-circuiting, and capture varargs with `{...}` to detect leaked registers.
@@ -718,12 +747,20 @@ The process-wide ownership, publication and lock contract is documented in
 - Obtain bytecode via `mtDebugLog('disasm')` on a `tiri` object or run scripts with `--jit-options dump-bytecode,diagnose`.
 - Map disassembly back to source by matching instruction order to expression evaluation order, then locate emission sites in `ir_emitter.cpp` or `operator_emitter.cpp`.
 - Treat disassembly as the source of truth for branch direction when debugging control flow.
+- For `BFUNC`, confirm that disassembly shows the canonical built-in name rather than only its numeric ID.
+- Until source-level lowering emits `BFUNC`, use the focused parser unit tests to cover execution, dump round trips,
+  malformed IDs, mutable public bindings, closure lifetime and JIT recording.
 
 ## 12. Maintenance Guidelines
+
 - When touching conditional emission or short-circuit logic, update the opcode matrix and the relevant sections here.
 - Add or adjust regression tests in `src/tiri/tests/` to cover new control-flow behaviours; rerun tests after installing a fresh build.
 - Re-generate disassembly for representative snippets (logical ops, ternary, `??`, `?`) to verify register collapse and branch wiring.
 - Reviewers should confirm emitted patterns match the documented skip/execute semantics and that test coverage exercises both true and false paths.
+- Treat `BuiltinCallableID` values as serialised ABI values.  Any generated fast-function insertion, removal or
+  reorder must update `BCDUMP_VERSION` and the fingerprint in `lj_ff.h`.
+- Keep the state-local built-in callable registry immutable after library initialisation and retain its independent GC
+  roots.  `BFUNC` must remain a direct load rather than a public table lookup.
 
 ## 13. Glossary and Quick Reference
 
@@ -732,6 +769,7 @@ The process-wide ownership, publication and lock contract is documented in
 - `BCOp`: Opcode enum, always in bits 0-7 of the instruction.
 - `BCPOS`: Bytecode position index within a prototype's instruction array.
 - `BCREG`: Register number (8-bit, field A/B/C).
+- `BuiltinCallableID`: Stable-for-one-bytecode-version numeric ID generated from the fast-function definition order.
 
 ### Field Extraction Macros (defined in `lj_bc.h`)
 - `bc_op(i)`: Extract opcode (bits 0-7).
@@ -799,8 +837,9 @@ The process-wide ownership, publication and lock contract is documented in
 - Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
   callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
   guards.
-- The private bytecode dump version is `0x87`. It includes a length-delimited, schema-versioned signature and a
+- `BFUNC A, D`: loads the canonical built-in callable identified by `BuiltinCallableID(D)` into `R(A)`.
+- The private bytecode dump version is `0x88`.  It includes a length-delimited, schema-versioned signature and a
   length-delimited module dependency block before each prototype's bytecode, and preserves constant-table
-  classification flags. Version `0x87` replaces the compiler-private `mod['\31dependency']` call emitted by `0x86`
-  with `MODACT`; all older versions are rejected at the header rather than retaining a binder compatibility shim.
-  Discard old dumps and rebuild them from source.
+  classification flags.  Version `0x87` replaced the compiler-private `mod['\31dependency']` call emitted by `0x86`
+  with `MODACT`; version `0x88` adds `BFUNC` and its generated-ID ABI.  All older versions are rejected at the header
+  rather than retaining compatibility shims.  Discard old dumps and rebuild them from source.

@@ -15,6 +15,8 @@
 #include "runtime/lj_meta.h"
 #include "runtime/lj_str.h"
 #include "runtime/lj_tab.h"
+#include "debug/dump_bytecode.h"
+#include "debug/lj_debug.h"
 
 #include <array>
 #include <thread>
@@ -6010,11 +6012,242 @@ static bool test_type_guided_emission(kt::Log &Log)
    return true;
 }
 
+static bool test_builtin_callable_bytecode(kt::Log &Log)
+{
+   LuaStateHolder first_state;
+   LuaStateHolder second_state;
+   lua_State *first = first_state.get();
+   lua_State *second = second_state.get();
+   if (not first or not second) {
+      Log.error("failed to create states for built-in callable bytecode testing");
+      return false;
+   }
+   luaL_openlibs(first);
+   luaL_openlibs(second);
+
+   constexpr std::array<FastFunc, 3> representative_ids = {
+      FastFunc::table_insert, FastFunc::array_push, FastFunc::string_upper
+   };
+   for (FastFunc fast_id : representative_ids) {
+      BuiltinCallableID id = builtin_callable_id(fast_id);
+      GCfunc *first_callable = lj_builtin_callable(first, id);
+      GCfunc *second_callable = lj_builtin_callable(second, id);
+      if (not first_callable or not second_callable or first_callable IS second_callable or
+          first_callable->c.ffid != builtin_callable_index(id) or
+          second_callable->c.ffid != builtin_callable_index(id)) {
+         Log.error("built-in callable ID %u is missing, mismatched or shared across states",
+            builtin_callable_index(id));
+         return false;
+      }
+   }
+
+   BuiltinCallableID insert_id = builtin_callable_id(FastFunc::table_insert);
+   GCfunc *canonical_insert = lj_builtin_callable(first, insert_id);
+   lua_getglobal(first, "table");
+   lua_getfield(first, -1, "insert");
+   bool public_identity_matches = tvisfunc(first->top - 1) and funcV(first->top - 1) IS canonical_insert;
+   lua_pop(first, 2);
+   if (not public_identity_matches) {
+      Log.error("table.insert does not expose the registered canonical closure");
+      return false;
+   }
+
+   constexpr std::string_view source =
+      "local before = 17\n"
+      "local callable = table.insert\n"
+      "local after = 23\n"
+      "return before, callable, after\n";
+   if (lua_load(first, source, "builtin-callable-bytecode")) {
+      Log.error("failed to compile built-in callable fixture: %s", lua_tostring(first, -1));
+      return false;
+   }
+
+   GCproto *prototype = funcproto(funcV(first->top - 1));
+   BCIns *bytecode = proto_bc(prototype);
+   MSize load_position = 0;
+   for (MSize i = 1; i < prototype->sizebc; ++i) {
+      if (bc_op(bytecode[i]) IS BC_TGETS) {
+         load_position = i;
+         bytecode[i] = BCINS_AD(BC_BFUNC, bc_a(bytecode[i]), builtin_callable_index(insert_id));
+         break;
+      }
+   }
+   if (load_position IS 0) {
+      Log.error("built-in callable fixture did not contain the expected table field load");
+      return false;
+   }
+
+   std::string disassembly;
+   trace_proto_bytecode(first, prototype,
+      [](std::string_view Line, void *Context) {
+         auto *text = (std::string *)Context;
+         text->append(Line);
+         text->push_back('\n');
+      }, &disassembly, true);
+   if (disassembly.find("BFUNC") IS std::string::npos or
+       disassembly.find("table.insert") IS std::string::npos) {
+      Log.error("BC_BFUNC disassembly omitted its opcode or canonical name");
+      return false;
+   }
+
+   if (lua_load(first, "return table.insert", "builtin-callable-debug-name")) {
+      Log.error("failed to compile BC_BFUNC debug-name fixture: %s", lua_tostring(first, -1));
+      return false;
+   }
+   GCproto *debug_prototype = funcproto(funcV(first->top - 1));
+   BCIns *debug_bytecode = proto_bc(debug_prototype);
+   MSize debug_position = 0;
+   for (MSize i = 1; i < debug_prototype->sizebc; ++i) {
+      if (bc_op(debug_bytecode[i]) IS BC_TGETS) {
+         debug_position = i;
+         debug_bytecode[i] = BCINS_AD(BC_BFUNC, bc_a(debug_bytecode[i]), builtin_callable_index(insert_id));
+         break;
+      }
+   }
+   const char *slot_name = nullptr;
+   const char *slot_kind = debug_position ? lj_debug_slotname(debug_prototype,
+      &debug_bytecode[debug_position + 1], bc_a(debug_bytecode[debug_position]), &slot_name) : nullptr;
+   lua_pop(first, 1);
+   if (not slot_kind or std::string_view(slot_kind) != "builtin" or not slot_name or
+       std::string_view(slot_name) != "table.insert") {
+      Log.error("BC_BFUNC debug naming did not resolve table.insert");
+      return false;
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      if (lj_bcwrite(first, prototype, bytecode_writer, &dump, strip) != 0 or
+          lua_load(first, std::string_view(dump.data(), dump.size()), "builtin-callable-roundtrip")) {
+         Log.error("failed to round-trip %s BC_BFUNC bytecode: %s", strip ? "stripped" : "unstripped",
+            lua_tostring(first, -1));
+         return false;
+      }
+      GCproto *restored = funcproto(funcV(first->top - 1));
+      BCIns restored_load = proto_bc(restored)[load_position];
+      lua_pop(first, 1);
+      if (bc_op(restored_load) != BC_BFUNC or bc_d(restored_load) != builtin_callable_index(insert_id)) {
+         Log.error("%s bytecode round-trip changed the BC_BFUNC operand",
+            strip ? "stripped" : "unstripped");
+         return false;
+      }
+   }
+
+   auto run_patched_call = [&](std::string_view Source, BuiltinCallableID Id, int Results,
+      BCOp RequiredCall, bool RequireTrace = false) -> bool {
+      if (lua_load(first, Source, "builtin-callable-invocation")) {
+         Log.error("failed to compile BC_BFUNC invocation fixture: %s", lua_tostring(first, -1));
+         return false;
+      }
+      GCproto *call_prototype = funcproto(funcV(first->top - 1));
+      BCIns *call_bytecode = proto_bc(call_prototype);
+      bool patched = false;
+      bool found_call = false;
+      for (MSize i = 1; i < call_prototype->sizebc; ++i) {
+         BCOp op = bc_op(call_bytecode[i]);
+         if (op IS BC_TGETS and not patched) {
+            call_bytecode[i] = BCINS_AD(BC_BFUNC, bc_a(call_bytecode[i]), builtin_callable_index(Id));
+            patched = true;
+         }
+         if (op IS RequiredCall) found_call = true;
+      }
+      if (not patched or not found_call) {
+         Log.error("BC_BFUNC invocation fixture lacked its field load or required call form");
+         lua_pop(first, 1);
+         return false;
+      }
+      if (lua_pcall(first, 0, Results, 0)) {
+         Log.error("BC_BFUNC invocation failed: %s", lua_tostring(first, -1));
+         return false;
+      }
+      if (RequireTrace and call_prototype->trace IS 0) {
+         Log.error("hot BC_BFUNC invocation did not compile a JIT trace");
+         lua_pop(first, Results);
+         return false;
+      }
+      return true;
+   };
+
+   if (not run_patched_call(
+       "local f = table.insert\nlocal values = {}\nf(values, 42)\nreturn values[0]\n",
+       insert_id, 1, BC_CALL) or lua_tointeger(first, -1) != 42) {
+      Log.error("BC_BFUNC fixed call did not invoke table.insert");
+      return false;
+   }
+   lua_pop(first, 1);
+
+   BuiltinCallableID byte_id = builtin_callable_id(FastFunc::string_byte);
+   if (not run_patched_call(
+       "local f = string.byte\nlocal first, second = f('AB', 0, 1)\nreturn first, second\n",
+       byte_id, 2, BC_CALL) or lua_tointeger(first, -2) != 65 or lua_tointeger(first, -1) != 66) {
+      Log.error("BC_BFUNC multi-result call did not preserve string.byte results");
+      return false;
+   }
+   lua_pop(first, 2);
+
+   BuiltinCallableID upper_id = builtin_callable_id(FastFunc::string_upper);
+   if (not run_patched_call("local f = string.upper\nreturn f('abc')\n", upper_id, 1, BC_CALLT) or
+       std::string_view(lua_tostring(first, -1)) != "ABC") {
+      Log.error("BC_BFUNC tail call did not invoke string.upper");
+      return false;
+   }
+   lua_pop(first, 1);
+
+   if (not run_patched_call(
+       "local f = table.insert\nlocal values = {}\n"
+       "for i in {0 to 200} do f(values, i) end\nreturn #values\n",
+       insert_id, 1, BC_CALL, true) or lua_tointeger(first, -1) != 200) {
+      Log.error("hot BC_BFUNC calls did not preserve table.insert behaviour");
+      return false;
+   }
+   lua_pop(first, 1);
+
+   BCIns valid_load = bytecode[load_position];
+   bytecode[load_position] = BCINS_AD(BC_BFUNC, bc_a(valid_load), FF__MAX);
+   std::string malformed_dump;
+   bool wrote_malformed = lj_bcwrite(first, prototype, bytecode_writer, &malformed_dump, 1) IS 0;
+   bytecode[load_position] = valid_load;
+   if (not wrote_malformed) {
+      Log.error("failed to write malformed BC_BFUNC validation fixture");
+      return false;
+   }
+   if (not lua_load(first, std::string_view(malformed_dump.data(), malformed_dump.size()),
+       "malformed-builtin-callable")) {
+      Log.error("bytecode reader accepted an invalid BC_BFUNC identity");
+      lua_pop(first, 1);
+      return false;
+   }
+   lua_pop(first, 1);
+
+   lua_getglobal(first, "table");
+   lua_pushnil(first);
+   lua_setfield(first, -2, "insert");
+   lua_pop(first, 1);
+   lua_gc(first, LUA_GCCOLLECT, 0);
+   if (lj_builtin_callable(first, insert_id) != canonical_insert) {
+      Log.error("canonical table.insert closure was not rooted independently of its public field");
+      return false;
+   }
+
+   if (lua_pcall(first, 0, 3, 0)) {
+      Log.error("BC_BFUNC fixture failed at runtime: %s", lua_tostring(first, -1));
+      return false;
+   }
+   bool adjacent_slots_preserved = lua_tointeger(first, -3) IS 17 and lua_tointeger(first, -1) IS 23;
+   bool loaded_canonical = tvisfunc(first->top - 2) and funcV(first->top - 2) IS canonical_insert;
+   lua_pop(first, 3);
+   if (not adjacent_slots_preserved or not loaded_canonical) {
+      Log.error("BC_BFUNC changed adjacent slots or loaded a non-canonical function");
+      return false;
+   }
+
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 54> tests = { {
+   constexpr std::array<TestCase, 55> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -6068,7 +6301,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "compile_time_signed_range_for_emission", test_compile_time_signed_range_for_emission },
       { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "safe_index_bytecode_selection", test_safe_index_bytecode_selection },
-      { "type_guided_emission", test_type_guided_emission }
+      { "type_guided_emission", test_type_guided_emission },
+      { "builtin_callable_bytecode", test_builtin_callable_bytecode }
    } };
 
    // A dummy object is required to manage state.

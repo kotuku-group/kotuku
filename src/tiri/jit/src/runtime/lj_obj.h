@@ -10,6 +10,7 @@
 #include "lua.h"
 #include "lj_def.h"
 #include "lj_arch.h"
+#include "lj_ff.h"
 #include <array>
 #include <format>
 #include <vector>
@@ -1035,9 +1036,6 @@ typedef union GCfunc {
    GCfuncL l;
 } GCfunc;
 
-inline constexpr uint8_t FF_LUA = 0;
-inline constexpr uint8_t FF_C   = 1;
-
 [[nodiscard]] inline bool isluafunc(const GCfunc* fn) noexcept { return fn->c.ffid IS FF_LUA; }
 [[nodiscard]] inline bool iscfunc(const GCfunc* fn) noexcept { return fn->c.ffid IS FF_C; }
 [[nodiscard]] inline bool isffunc(const GCfunc* fn) noexcept { return fn->c.ffid > FF_C; }
@@ -1525,8 +1523,11 @@ typedef struct global_State {
    MRef      ctype_state;    // Pointer to C type state.
    PRNGState prng;           // Global PRNG state.
    void     *funcnames;      // Map of GCproto* to function names (std::unordered_map<>*).
+   GCRef     builtin_callables[FF__MAX]; // Immutable state-local canonical native closures, indexed by FastFunc.
    GCRef     gcroot[GCROOT_MAX];  //  GC roots.
 } global_State;
+
+static_assert(sizeof(((global_State *)nullptr)->builtin_callables) / sizeof(GCRef) IS FF__MAX);
 
 // Forward declarations - defined after GCobj is complete
 

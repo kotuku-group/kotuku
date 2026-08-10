@@ -2993,6 +2993,16 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next_
     break;
 
+  case BC_BFUNC:
+    |  // RA = dst, RC = immutable built-in callable ID
+    |  add TMP0, GL, #offsetof(global_State, builtin_callables)
+    |  ldr LFUNC:TMP0, [TMP0, RC, lsl #3]
+    |  movn TMP1, #~LJ_TFUNC
+    |  add TMP0, TMP0, TMP1, lsl #47
+    |  str TMP0, [BASE, RA, lsl #3]
+    |  ins_next
+    break;
+
   //  -- Upvalue and function ops ------------------------------------------
 
   case BC_UGET:

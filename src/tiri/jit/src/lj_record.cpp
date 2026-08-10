@@ -4191,6 +4191,17 @@ void lj_record_ins(jit_State *J)
    case BC_KSTR: case BC_KNUM: case BC_KPRI:
       break;
 
+   case BC_BFUNC: {
+      BuiltinCallableID id = BuiltinCallableID(rc);
+      GCfunc *callable = lj_builtin_callable(J->L, id);
+      if (not callable) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      rc = lj_ir_kfunc(J, callable);
+      break;
+   }
+
    case BC_KSHORT:
       rc = lj_ir_kint(J, (int32_t)(int16_t)rc);
       break;

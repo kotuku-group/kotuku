@@ -304,6 +304,13 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
    }
    for (MSize i = 1; i < sizebc; ++i) {
       BCOp op = bc_op(bc[i]);
+      if (op >= BC__MAX) bcread_error(State, ErrMsg::BCBAD);
+      if (op IS BC_BFUNC) {
+         BuiltinCallableID id = BuiltinCallableID(bc_d(bc[i]));
+         if (not builtin_callable_valid(id) or not lj_builtin_callable(State->L, id)) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
+      }
       if (op IS BC_MRSAVE or op IS BC_MRRESTORE) {
          pt->flags |= PROTO_NOJIT;
       }

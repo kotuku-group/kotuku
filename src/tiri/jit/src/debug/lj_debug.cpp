@@ -295,6 +295,9 @@ restart:
          case BC_UGET:
             *name = lj_debug_uvname(pt, bc_d(ins));
             return "upvalue";
+         case BC_BFUNC:
+            *name = builtin_callable_name(BuiltinCallableID(bc_d(ins)));
+            return *name ? "builtin" : nullptr;
          default:
             return nullptr;
          }

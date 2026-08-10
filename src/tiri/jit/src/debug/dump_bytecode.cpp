@@ -459,7 +459,13 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
       if (info.mode_a != BCMnone) append_operand(operands, "A", describe_operand_value(Proto, nullptr, info.mode_a, info.value_a, pc));
 
       if (bcmode_hasd(info.op)) {
-         if (info.mode_d != BCMnone) append_operand(operands, "D", describe_operand_value(Proto, nullptr, info.mode_d, info.value_d, pc));
+         if (info.op IS BC_BFUNC) {
+            const char *name = builtin_callable_name(BuiltinCallableID(info.value_d));
+            append_operand(operands, "D", name ? name : std::format("#{}<invalid>", info.value_d));
+         }
+         else if (info.mode_d != BCMnone) {
+            append_operand(operands, "D", describe_operand_value(Proto, nullptr, info.mode_d, info.value_d, pc));
+         }
       }
       else {
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(Proto, nullptr, info.mode_b, info.value_b, pc));
@@ -515,7 +521,13 @@ extern void dump_bytecode(FuncState &fs)
       if (info.mode_a != BCMnone) append_operand(operands, "A", describe_operand_value(nullptr, &fs, info.mode_a, info.value_a, pc));
 
       if (bcmode_hasd(info.op)) {
-         if (info.mode_d != BCMnone) append_operand(operands, "D", describe_operand_value(nullptr, &fs, info.mode_d, info.value_d, pc));
+         if (info.op IS BC_BFUNC) {
+            const char *name = builtin_callable_name(BuiltinCallableID(info.value_d));
+            append_operand(operands, "D", name ? name : std::format("#{}<invalid>", info.value_d));
+         }
+         else if (info.mode_d != BCMnone) {
+            append_operand(operands, "D", describe_operand_value(nullptr, &fs, info.mode_d, info.value_d, pc));
+         }
       }
       else {
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(nullptr, &fs, info.mode_b, info.value_b, pc));

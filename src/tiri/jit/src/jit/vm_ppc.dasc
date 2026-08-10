@@ -4469,6 +4469,16 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next_
     break;
 
+  case BC_BFUNC:
+    |  // RA = dst*8, RD = immutable built-in callable ID*8
+    |  la TMP1, DISPATCH_GL(builtin_callables)(DISPATCH)
+    |  lpx TMP0, TMP1, RD
+    |  li TMP1, LJ_TFUNC
+    |  stwux TMP1, RA, BASE
+    |  stw TMP0, 4(RA)
+    |  ins_next
+    break;
+
   //  -- Upvalue and function ops ------------------------------------------
 
   case BC_UGET:

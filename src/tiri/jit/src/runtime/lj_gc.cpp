@@ -304,6 +304,9 @@ static void gc_mark(global_State *g, GCobj* o)
 static void gc_mark_gcroot(global_State *g)
 {
    ptrdiff_t i;
+   for (i = 0; i < FF__MAX; i++) {
+      if (gcref(g->builtin_callables[i]) != nullptr) gc_markobj(g, gcref(g->builtin_callables[i]));
+   }
    for (i = 0; i < GCROOT_MAX; i++) {
       if (gcref(g->gcroot[i]) != nullptr) gc_markobj(g, gcref(g->gcroot[i]));
    }
