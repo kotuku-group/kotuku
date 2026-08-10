@@ -4787,7 +4787,7 @@ static bool test_builtin_method_registry(kt::Log &Log)
        table_insert->builtin_callable_id != builtin_callable_id(FastFunc::table_insert) or
        array_push->builtin_callable_id != builtin_callable_id(FastFunc::array_push) or
        string_upper->builtin_callable_id != builtin_callable_id(FastFunc::string_upper)) {
-      Log.error("vertical-slice methods did not retain their canonical callable identities");
+      Log.error("representative built-in methods did not retain their canonical callable identities");
       return false;
    }
    if (not table_insert->is_method() or table_insert->receiver_type != TiriType::Table or
@@ -4976,7 +4976,7 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
        upper_call->builtin_method->callable != builtin_callable_id(FastFunc::string_upper) or
        not push_call->builtin_method or
        push_call->builtin_method->callable != builtin_callable_id(FastFunc::array_push)) {
-      Log.error("proved dot calls did not resolve the vertical-slice methods");
+      Log.error("proved dot calls did not resolve the representative built-in methods");
       return false;
    }
    if (not safe_call->builtin_method or not safe_call->builtin_method->safe or

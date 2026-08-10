@@ -265,6 +265,20 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
 
    ProtoKey prototype_key{ kt::strhash(Interface), kt::strhash(Method) };
    MethodKey method_key{ ReceiverType, kt::strhash(Method) };
+
+   { // Repeated state initialisation only needs shared access after its state-local callable validation.
+      std::shared_lock read_lock(glRegistryMutex);
+      auto existing_prototype = glRegistry.find(prototype_key);
+      if (existing_prototype != glRegistry.end()) {
+         if (not prototype_matches(existing_prototype->second, ResultTypes, ParamTypes, Flags, ReceiverType,
+               Callable)) return ERR::Mismatch;
+         auto existing_method = glMethodRegistry.find(method_key);
+         return existing_method != glMethodRegistry.end() and
+            existing_method->second IS existing_prototype->second ? ERR::Exists : ERR::Mismatch;
+      }
+      if (glMethodRegistry.contains(method_key)) return ERR::Mismatch;
+   }
+
    std::unique_lock lock(glRegistryMutex);
 
    auto existing_prototype = glRegistry.find(prototype_key);

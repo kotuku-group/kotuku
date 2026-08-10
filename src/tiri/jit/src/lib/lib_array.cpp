@@ -2673,8 +2673,8 @@ static int array_eq_meta(lua_State *L)
 // Registers the array library and sets up the base metatable for arrays.
 // Unlike the Lua table, arrays are created via conventional means, i.e. array.new().
 //
-// The array library table itself serves as the base metatable, allowing direct method
-// lookup (arr:concat(), arr:sort(), etc.) via lj_tab_get in the VM array helpers.
+// The array library table itself serves as the base metatable for ordinary field extraction and computed access.
+// Immediate named dot calls are resolved independently to canonical callables by the compiler.
 
 #include "lj_libdef.h"
 #include "lj_proto_registry.h"
