@@ -5073,6 +5073,28 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    }
 
    error.clear();
+   lua_pushcfunction(L, fcmd_arg);
+   lua_setglobal(L, "arg");
+   lua_protect_globals(L);
+   ERR arg_prototype = reg_func_prototype("arg", { TiriType::Str }, { TiriType::Str, TiriType::Str });
+   if (arg_prototype != ERR::Okay and arg_prototype != ERR::Exists) {
+      Log.error("failed to register the arg prototype for nullable native result coverage");
+      return false;
+   }
+   auto nullable_native_result = compile_snapshot(L,
+      "local filter_arg = arg('test', '')\n"
+      "local parts = filter_arg.split(',')\n"
+      "return #parts\n",
+      true, error);
+   if (not nullable_native_result or count_opcode_tree(*nullable_native_result, BC_BFUNC) != 1 or
+       count_opcode_tree(*nullable_native_result, BC_TGETS) != 0) {
+      Log.error("a typed nullable native result did not resolve its registered method call: bfunc=%zu tgets=%zu %s",
+         nullable_native_result ? count_opcode_tree(*nullable_native_result, BC_BFUNC) : 0,
+         nullable_native_result ? count_opcode_tree(*nullable_native_result, BC_TGETS) : 0, error.c_str());
+      return false;
+   }
+
+   error.clear();
    auto forwarded = compile_snapshot(L,
       "local function item():num return 2 end\nlocal values = {}\nvalues.insert(item())\nreturn #values\n",
       true, error);

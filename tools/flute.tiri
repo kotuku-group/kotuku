@@ -19,10 +19,10 @@ Example usage:
    label_filter_arg = arg('labels', '')
 
    glFile    = arg('file')
-   glTest    = test_filter_arg?? ? string.split(test_filter_arg, ',') :> { }
+   glTest    = test_filter_arg?? ? test_filter_arg.split(',') :> { }
    glHotPath = arg('hotPath') -- Force hot-path execution for all tests.
    glSelf    = obj.find('self')
-   glLabels  = label_filter_arg?? ? string.split(label_filter_arg, ',') :> { }
+   glLabels  = label_filter_arg?? ? label_filter_arg.split(',') :> { }
 
    jit.opt.start("hotloop=3") -- Lower threshold to trigger JIT sooner, simplifies debugging
 

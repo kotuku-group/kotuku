@@ -838,9 +838,7 @@ private:
          if (generated_type != TiriType::Unknown and generated_type != TiriType::Any) receiver_type = generated_type;
       }
       if ((not descriptor.proved() and Call.argument_syntax != CallArgumentSyntax::Synthetic) or
-          receiver_type IS TiriType::Any or receiver_type IS TiriType::Unknown or
-          (descriptor.nullable and not safe and descriptor.proof != StaticProof::Checked and
-           Call.argument_syntax != CallArgumentSyntax::Synthetic)) {
+          receiver_type IS TiriType::Any or receiver_type IS TiriType::Unknown) {
          Call.builtin_method.reset();
          return;
       }
