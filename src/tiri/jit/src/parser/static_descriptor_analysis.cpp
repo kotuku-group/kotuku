@@ -1392,21 +1392,26 @@ private:
       if (not Name.binding_id) return;
       auto &binding = this->catalogue_.binding(Name.binding_id);
       StaticValueDescriptor value;
+      StaticValueDescriptor initial_value;
+      if (Initialiser) {
+         if (ResultPosition > 0 and Initialiser->static_results) {
+            initial_value = this->catalogue_.results(Initialiser->static_results).value_at(ResultPosition);
+         }
+         else initial_value = this->descriptor_of(*Initialiser);
+      }
 
       if (Name.type != TiriType::Unknown and Name.type != TiriType::Any) {
          value = this->declared_descriptor(
             Name.type, Name.struct_def, Name.array_element, StaticProof::Checked);
+         if (initial_value.primary IS Name.type and initial_value.proved()) {
+            value.nullable = initial_value.nullable;
+         }
       }
       else if (binding.function) {
          value.primary = TiriType::Func;
          value.proof = StaticProof::Closed;
       }
-      else if (Initialiser) {
-         if (ResultPosition > 0 and Initialiser->static_results) {
-            value = this->catalogue_.results(Initialiser->static_results).value_at(ResultPosition);
-         }
-         else value = this->descriptor_of(*Initialiser);
-      }
+      else if (Initialiser) value = initial_value;
 
       if (value.module and not binding.immutable) value.module = nullptr;
       if (not binding.immutable) binding.callable = 0;

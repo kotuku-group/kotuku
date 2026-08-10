@@ -541,9 +541,10 @@ inline constexpr size_t PROTO_MAX_RETURN_TYPES = 8;
 // Prototype flags for function metadata
 
 enum class FProtoFlags : uint8_t {
-   None     = 0x00,
-   Variadic = 0x01,  // Function accepts variable arguments beyond listed params
-   NoNil    = 0x02   // All declared parameters are required (no nil values permitted)
+   None         = 0x00,
+   Variadic     = 0x01,  // Function accepts variable arguments beyond listed params
+   NoNil        = 0x02,  // All declared parameters are required (no nil values permitted)
+   NoNilResults = 0x04   // All declared results are guaranteed to be non-nil
 };
 
 inline constexpr FProtoFlags operator|(FProtoFlags a, FProtoFlags b) {

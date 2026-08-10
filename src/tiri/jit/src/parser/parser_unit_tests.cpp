@@ -4663,6 +4663,13 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
    prototype.result_types[1] = TiriType::Any;
    prototype.result_types[2] = TiriType::Str;
 
+   StaticResultSet nullable_results = describe_native_prototype_results(&prototype);
+   if (not nullable_results.value_at(0).nullable) {
+      Log.error("native prototype results lost their conservative default nullability");
+      return false;
+   }
+
+   prototype.flags = FProtoFlags::NoNilResults;
    StaticResultSet results = describe_native_prototype_results(&prototype);
    if (results.declared_count != 3 or results.stored_count != 3 or results.dynamic or results.variadic) {
       Log.error("native prototype did not produce a closed result tuple");
@@ -4670,11 +4677,11 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
    }
    if (results.value_at(0).primary != TiriType::Num or
        results.value_at(0).proof != StaticProof::Trusted or
-       not results.value_at(0).nullable or
+       results.value_at(0).nullable or
        results.value_at(1).primary != TiriType::Any or
        results.value_at(1).proof != StaticProof::Advisory or
        results.value_at(2).primary != TiriType::Str or
-       results.value_at(2).proof != StaticProof::Trusted) {
+       results.value_at(2).proof != StaticProof::Trusted or results.value_at(2).nullable) {
       Log.error("native prototype result types, proof or nullability were not preserved");
       return false;
    }
@@ -5045,6 +5052,23 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
        bc_a(fixed->instructions[load_position - 1]) != bc_a(*fixed_load) + 1 + LJ_FR2 or
        bc_op(fixed->instructions[load_position + 1]) != BC_KSHORT) {
       Log.error("built-in method receiver was not inserted before written arguments");
+      return false;
+   }
+
+   error.clear();
+   auto annotated_local = compile_snapshot(L,
+      "local helpers = {}\n"
+      "helpers.trim = function(Path:str!):str\n"
+      "   local path:str = Path.replace('\\\\', '/')\n"
+      "   while #path > 1 and path.endsWith('/') do path = path.sub(0, #path - 1) end\n"
+      "   return path\n"
+      "end\n"
+      "return helpers.trim('/tmp/')\n",
+      true, error);
+   if (not annotated_local or count_opcode_tree(*annotated_local, BC_BFUNC) != 3 or
+       count_opcode_tree(*annotated_local, BC_TGETS) != 1) {
+      Log.error("a concrete nullable local did not resolve registered method calls: %s",
+         error.c_str());
       return false;
    }
 

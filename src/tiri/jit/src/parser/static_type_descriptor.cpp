@@ -362,7 +362,7 @@ StaticResultSet describe_native_prototype_results(const fprototype *Prototype)
    for (size_t i = 0; i < result.stored_count; ++i) {
       StaticValueDescriptor &value = result.values[i];
       value.primary = Prototype->result_types[i];
-      value.nullable = true;
+      value.nullable = (Prototype->flags & FProtoFlags::NoNilResults) IS FProtoFlags::None;
       if (value.primary IS TiriType::Unknown) value.primary = TiriType::Any;
       value.proof = value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Trusted;
    }

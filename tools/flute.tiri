@@ -224,7 +224,7 @@ function runTests()
          end
 
          if not disabled and is_test then
-            body.tests.insert({
+            table.insert(body.tests, {
                func     = func,
                name     = test_name ?? tostring(func),
                timeout  = test_timeout,

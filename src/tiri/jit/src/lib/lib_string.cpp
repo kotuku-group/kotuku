@@ -900,7 +900,8 @@ extern int luaopen_string(lua_State *L)
    reg_iface_method(L, "string", "rep", TiriType::Str, builtin_callable_id(FastFunc::string_rep),
       { TiriType::Str }, { TiriType::Str, TiriType::Num });
    reg_iface_method(L, "string", "replace", TiriType::Str, builtin_callable_id(FastFunc::string_replace),
-      { TiriType::Str, TiriType::Num }, { TiriType::Str, TiriType::Str, TiriType::Str, TiriType::Num });
+      { TiriType::Str, TiriType::Num }, { TiriType::Str, TiriType::Str, TiriType::Str, TiriType::Num },
+      FProtoFlags::NoNilResults);
    reg_iface_method(L, "string", "reverse", TiriType::Str, builtin_callable_id(FastFunc::string_reverse),
       { TiriType::Str }, { TiriType::Str });
    reg_iface_method(L, "string", "rtrim", TiriType::Str, builtin_callable_id(FastFunc::string_rtrim),
