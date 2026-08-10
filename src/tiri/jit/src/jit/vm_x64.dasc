@@ -829,7 +829,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  // TValue * (finished) or NULL (metamethod) returned in eax (RC).
   |  mov BASE, L:RB->base
   |  test RC, RC
-  |  jz >3
+  |  jz ->vmeta_tget_call
   |  jmp ->cont_ra
   |->cont_len:          // BASE = base, RC = result
   |  mov L:RB, SAVE_L
@@ -845,7 +845,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov [BASE+RA*8], RB
   |  ins_next
   |
-  |3:  // Call __index metamethod.
+  |->vmeta_tget_call:  // Call __index metamethod.
   |  // BASE = base, L->top = new base, stack = cont/func/t/k
   |  mov RA, L:RB->top
   |  mov [RA-24], PC       // [cont|PC]
@@ -3682,6 +3682,51 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov LFUNC:RD, [DISPATCH+RD*8+GG_DISP2BUILTIN]
     |  settp LFUNC:RD, LJ_TFUNC
     |  mov [BASE+RA*8], LFUNC:RD
+    |  ins_next
+    break;
+
+  case BC_BMETH:
+    |  // RA = call base, RD = field-fallback jump, P32 = member string constant
+    |  mov L:CARG1, SAVE_L
+    |  mov L:CARG1->base, BASE
+    |  lea CARG2, [BASE+RA*8+(1+LJ_FR2)*8]
+    |  ins_getp32 CARG3d
+    |  not CARG3
+    |  mov STR:CARG3, [KBASE+CARG3*8]
+    |  mov L:RB, L:CARG1
+    |  mov SAVE_PC, PC
+    |  call extern lj_bmeth_lookup  // (lua_State *L, cTValue *receiver, GCstr *method)
+    |  mov BASE, L:RB->base
+    |  test RCd, RCd
+    |  js >1
+    |  movzx RAd, PC_RA
+    |  mov LFUNC:RC, [DISPATCH+RC*8+GG_DISP2BUILTIN]
+    |  settp LFUNC:RC, LJ_TFUNC
+    |  mov [BASE+RA*8], LFUNC:RC
+    |  ins_next
+    |
+    |1:  // No built-in: resolve the ordinary member, including __index, then enter the field-call block.
+    |  movzx RAd, PC_RA
+    |  ins_getp32 RCd
+    |  not RC
+    |  mov STR:RC, [KBASE+RC*8]
+    |  settp STR:RC, LJ_TSTR
+    |  mov [DISPATCH+DISPATCH_GL(tmptv)], STR:RC
+    |  movzx RDd, PC_RD
+    |  branchPC RD
+    |  mov L:CARG1, SAVE_L
+    |  mov L:CARG1->base, BASE
+    |  lea CARG2, [BASE+RA*8+(1+LJ_FR2)*8]
+    |  lea CARG3, [DISPATCH+DISPATCH_GL(tmptv)]
+    |  mov L:RB, L:CARG1
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_tget
+    |  mov BASE, L:RB->base
+    |  test RC, RC
+    |  jz ->vmeta_tget_call
+    |  movzx RAd, PC_RA
+    |  mov RB, [RC]
+    |  mov [BASE+RA*8], RB
     |  ins_next
     break;
 

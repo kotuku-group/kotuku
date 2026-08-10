@@ -685,12 +685,12 @@ static void build_subroutines(BuildCtx *ctx)
   |   str PC, SAVE_PC
   |  bl extern lj_meta_tget		// (lua_State *L, TValue *o, TValue *k)
   |  // Returns TValue * (finished) or NULL (metamethod).
-  |  cbz CRET1, >3
+  |  cbz CRET1, ->vmeta_tget_call
   |  ldr TMP0, [CRET1]
   |  str TMP0, [BASE, RA, lsl #3]
   |  ins_next
   |
-  |3:  // Call __index metamethod.
+  |->vmeta_tget_call:  // Call __index metamethod.
   |  // BASE = base, L->top = new base, stack = cont/func/t/k
   |   sub TMP1, BASE, #FRAME_CONT
   |  ldr BASE, L->top
@@ -2999,6 +2999,52 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ldr LFUNC:TMP0, [TMP0, RC, lsl #3]
     |  movn TMP1, #~LJ_TFUNC
     |  add TMP0, TMP0, TMP1, lsl #47
+    |  str TMP0, [BASE, RA, lsl #3]
+    |  ins_next
+    break;
+
+  case BC_BMETH:
+    |  // RA = call base, D = field-fallback jump, P32 = member string constant
+    |  mov CARG1, L
+    |   add CARG2, BASE, RA, lsl #3
+    |  str BASE, L->base
+    |   add CARG2, CARG2, #(1+LJ_FR2)*8
+    |  ins_getp32 CARG3
+    |  mvn CARG3, CARG3
+    |  ldr STR:CARG3, [KBASE, CARG3, lsl #3]
+    |  str PC, SAVE_PC
+    |  bl extern lj_bmeth_lookup
+    |  ldr BASE, L->base
+    |  tbnz CRET1, #63, >1
+    |  add TMP0, GL, #GG_G2BUILTIN
+    |  ldr LFUNC:TMP0, [TMP0, CRET1, lsl #3]
+    |  movn TMP1, #~LJ_TFUNC
+    |  add TMP0, TMP0, TMP1, lsl #47
+    |  str TMP0, [BASE, RA, lsl #3]
+    |  ins_next
+    |
+    |1:  // No built-in: resolve the ordinary member, including __index, then enter the field-call block.
+    |  ins_getp32 TMP0
+    |  mvn TMP0, TMP0
+    |  ldr STR:TMP0, [KBASE, TMP0, lsl #3]
+    |  movn TMP1, #~LJ_TSTR
+    |  add TMP0, TMP0, TMP1, lsl #47
+    |  str TMP0, GL->tmptv
+    |  ldr INS, [PC, #-8]
+    |  decode_RD RC, INS
+    |  mov TMP0, #BCBIAS_J
+    |  sub RC, RC, TMP0
+    |  add PC, PC, RC, lsl #3
+    |  mov CARG1, L
+    |   add CARG2, BASE, RA, lsl #3
+    |  str BASE, L->base
+    |   add CARG2, CARG2, #(1+LJ_FR2)*8
+    |   add CARG3, GL, #offsetof(global_State, tmptv)
+    |  str PC, SAVE_PC
+    |  bl extern lj_meta_tget
+    |  ldr BASE, L->base
+    |  cbz CRET1, ->vmeta_tget_call
+    |  ldr TMP0, [CRET1]
     |  str TMP0, [BASE, RA, lsl #3]
     |  ins_next
     break;

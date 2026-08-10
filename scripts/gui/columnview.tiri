@@ -708,7 +708,7 @@ gui.columnView = function(Options):table
       end
    end
 
-   vw.sort = function(Attrib, Ascending:bool)
+   vw.sortView = function(Attrib, Ascending:bool)
       vw.sortItems(Attrib, Ascending)
       rearrangeItems(vw)
    end

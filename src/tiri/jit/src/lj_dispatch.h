@@ -23,7 +23,7 @@ constexpr int HOTCOUNT_CALL = 1;
 constexpr int GG_NUM_ASMFF = 54;
 
 constexpr int GG_LEN_DDISP = (BC__MAX + GG_NUM_ASMFF);
-constexpr int GG_LEN_SDISP = BC_FUNCF;
+constexpr int GG_LEN_SDISP = BC__MAX;
 constexpr int GG_LEN_DISP = (GG_LEN_DDISP + GG_LEN_SDISP);
 
 // Global state, main thread and extra fields are allocated together.

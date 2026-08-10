@@ -632,7 +632,7 @@ gui.fileview = function(Options)
          info = file_to_info(Info.name .. ':')
          if (info) and not (info.permissions has PERMIT_HIDDEN) then
             addFileItem(self, info)
-            self.view.sort()
+            self.view.sortView()
          end
       end
    end
@@ -776,7 +776,7 @@ gui.fileview = function(Options)
          end
       end
 
-      if sort then self.view.sort() end
+      if sort then self.view.sortView() end
    end
 
    function pathWatch(MonitoredFile, Path:str, Flags:num!)
@@ -819,7 +819,7 @@ gui.fileview = function(Options)
       if Flags has MFF_CREATE then
          if info_err is ERR_Okay then
             addFileItem(self, info)
-            self.view.sort()
+            self.view.sortView()
          end
       elseif Flags has MFF_DELETE then
          deleteItem(Path)
@@ -830,7 +830,7 @@ gui.fileview = function(Options)
 
             if findItem(Path) then deleteItem(Path) end
             addFileItem(self, info)
-            self.view.sort()
+            self.view.sortView()
          else
             deleteItem(Path)
          end
@@ -842,7 +842,7 @@ gui.fileview = function(Options)
             else
                addFileItem(self, info)
             end
-            self.view.sort()
+            self.view.sortView()
          else
             msg(f'Attrib change for "{Path}" misreported, error {mSys.GetErrorMsg(info_err)}')
             deleteItem(Path)
@@ -963,7 +963,7 @@ gui.fileview = function(Options)
                         item.filename   = new_name
                      end
 
-                     self.view.sort()
+                     self.view.sortView()
                   end
                end
             except ex
@@ -1121,7 +1121,7 @@ gui.fileview = function(Options)
                         info = file_to_info(path)
                         if info then
                            addFileItem(self, info)
-                           self.view.sort()
+                           self.view.sortView()
                         end
                      end
                   else
@@ -1588,7 +1588,7 @@ gui.fileview = function(Options)
 
          self.inRefresh = true
 
-         self.view.clear()
+         self.view.clearView()
 
          if self.view.setColumns then
             self.view.setColumns(defineViewColumns(self.path))
@@ -1615,7 +1615,7 @@ gui.fileview = function(Options)
                check ERR_Terminate
             end)
          else
-            self.view.sort()
+            self.view.sortView()
          end
       except ex
          msg(ex.message)

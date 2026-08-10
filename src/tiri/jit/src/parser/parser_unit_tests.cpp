@@ -4993,6 +4993,13 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
          shorthand_call->builtin_method.has_value(), dynamic_call->builtin_method.has_value());
       return false;
    }
+   if (not dynamic_call->runtime_builtin_method or
+       dynamic_call->runtime_builtin_method->member->hash != kt::strhash("insert") or
+       grouped_call->runtime_builtin_method or computed_call->runtime_builtin_method or
+       shorthand_call->runtime_builtin_method) {
+      Log.error("unproved direct dot call did not acquire the exclusive runtime-method annotation");
+      return false;
+   }
 
    const auto &read = std::get<LocalDeclStmtPayload>(chunk.value_ref()->statements[2]->data);
    const auto *read_member = read.values.empty() ? nullptr :
@@ -5077,6 +5084,53 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    }
 
    error.clear();
+   auto dynamic = compile_snapshot(L,
+      "local body = { values={} }\nbody.values.insert(1)\nreturn body.values[0]\n", true, error);
+   const BCIns *dynamic_dispatch = dynamic ? find_opcode(*dynamic, BC_BMETH) : nullptr;
+   if (not dynamic or not dynamic_dispatch or count_opcode(*dynamic, BC_BMETH) != 1 or
+       count_opcode(*dynamic, BC_CALL) != 2 or count_opcode(*dynamic, BC_JMP) != 1 or
+       count_opcode(*dynamic, BC_BFUNC) != 0 or bc_j(*dynamic_dispatch) <= 0) {
+      Log.error("unproved dot call did not emit the two-branch runtime method shape: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_tail = compile_snapshot(L,
+      "local Values:any = {}\nreturn Values.insert(1)\n", true, error);
+   if (not dynamic_tail or count_opcode_tree(*dynamic_tail, BC_BMETH) != 1 or
+       count_opcode_tree(*dynamic_tail, BC_CALLT) != 2) {
+      Log.error("runtime built-in method tail branches did not both use CALLT: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_forwarded = compile_snapshot(L,
+      "local function item():num return 2 end\nlocal Values:any = {}\nValues.insert(item())\n", true, error);
+   if (not dynamic_forwarded or count_opcode(*dynamic_forwarded, BC_BMETH) != 1 or
+       count_opcode(*dynamic_forwarded, BC_CALLM) != 2) {
+      Log.error("runtime built-in method argument forwarding lost either CALLM branch: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_safe = compile_snapshot(L,
+      "local maybe:any = nil\nmaybe?.insert(1)\nreturn maybe\n", true, error);
+   if (not dynamic_safe or count_opcode(*dynamic_safe, BC_BMETH) != 1 or
+       count_opcode(*dynamic_safe, BC_ISEQP) != 1 or count_opcode(*dynamic_safe, BC_CALL) != 2) {
+      Log.error("unproved safe dot call lost runtime dispatch or nil short-circuiting: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_pipe = compile_snapshot(L,
+      "local body = { values={} }\n1 |> body.values.insert()\nreturn body.values[0]\n", true, error);
+   if (not dynamic_pipe or count_opcode(*dynamic_pipe, BC_BMETH) != 1 or
+       count_opcode(*dynamic_pipe, BC_CALL) != 2) {
+      Log.error("unproved piped dot call did not emit both runtime call frames: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
    auto piped = compile_snapshot(L, "local values = {}\n1 |> values.insert()\nreturn #values\n", true, error);
    if (not piped or count_opcode(*piped, BC_BFUNC) != 1 or count_opcode(*piped, BC_CALL) != 1 or
        count_opcode(*piped, BC_TGETS) != 0 or count_opcode(*piped, BC_TGETV) != 0) {
@@ -5126,7 +5180,8 @@ static bool test_builtin_method_runtime(kt::Log &Log)
       "items.push(2)\n"
       "local text = 'abc'\n"
       "local upper = text.upper()\n"
-      "for i in {0 to 200} do values.insert(i) end\n"
+      "local dynamic:any = values\n"
+      "for i in {0 to 200} do dynamic.insert(i) end\n"
       "return order, #values, values[0], values[1], #maybe, maybe[0], items[1], upper\n";
 
    if (lua_load(L, source, "builtin-method-runtime")) {

@@ -376,13 +376,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       // Handle call results - adjust for multi-return
       if (tail.k IS ExpKind::Call) {
          if (bc_op(*ir_bcptr(&this->func_state, &tail)) IS BC_VARG) {
-            setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
+            set_call_result_count(&this->func_state, tail, nvars.raw() + 1);
             this->func_state.freereg--;
             allocator.reserve(BCReg(nvars.raw() - 1));
          }
          else {
             // Fixup call result count
-            setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
+            set_call_result_count(&this->func_state, tail, nvars.raw() + 1);
             if (nvars > BCReg(1)) {
                allocator.reserve(BCReg(nvars.raw() - 1));
             }

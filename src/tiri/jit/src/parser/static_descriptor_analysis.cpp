@@ -19,6 +19,24 @@ struct BindingScope {
    std::vector<std::pair<GCstr *, StaticBindingID>> entries;
 };
 
+static bool is_builtin_interface_namespace(uint32_t Hash)
+{
+   switch (Hash) {
+      case kt::strhash("obj"):
+      case kt::strhash("string"):
+      case kt::strhash("math"):
+      case kt::strhash("table"):
+      case kt::strhash("bit"):
+      case kt::strhash("jit"):
+      case kt::strhash("debug"):
+      case kt::strhash("array"):
+      case kt::strhash("range"):
+         return true;
+      default:
+         return false;
+   }
+}
+
 class StaticDescriptorAnalyser {
 public:
    explicit StaticDescriptorAnalyser(ParserContext &Context, bool NativeCallsOnly = false)
@@ -749,6 +767,28 @@ private:
       this->context_.diagnostics().report(diagnostic);
    }
 
+   void reject_builtin_method_shadow(ExprNode &Target, const StaticValueDescriptor &Assigned)
+   {
+      if (Target.kind != AstNodeKind::MemberExpr or Assigned.primary != TiriType::Func) return;
+      auto &member = std::get<MemberExprPayload>(Target.data);
+      if (member.builtin_shadow_reported or not member.table or not member.member.symbol) return;
+
+      StaticValueDescriptor receiver = this->descriptor_of(*member.table);
+      if (not receiver.proved() or receiver.primary IS TiriType::Any or receiver.primary IS TiriType::Unknown or
+          not get_method_prototype_by_hash(receiver.primary, member.member.symbol->hash)) return;
+
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::InvalidAssignment;
+      diagnostic.message = std::format(
+         "cannot assign a function to built-in method '{}'; use ['{}'] to create an explicit shadowing field",
+         std::string_view(strdata(member.member.symbol), member.member.symbol->len),
+         std::string_view(strdata(member.member.symbol), member.member.symbol->len));
+      diagnostic.token = Token::from_span(Target.span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
+      member.builtin_shadow_reported = true;
+   }
+
    void validate_builtin_method_arguments(CallExprPayload &Call)
    {
       if (not Call.builtin_method or Call.builtin_method->arguments_validated) return;
@@ -793,6 +833,7 @@ private:
 
    void resolve_builtin_method(CallExprPayload &Call)
    {
+      Call.runtime_builtin_method.reset();
       const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
       if (not direct or not direct->callable or
           (Call.argument_syntax != CallArgumentSyntax::Parenthesised and
@@ -826,8 +867,14 @@ private:
       }
       if (receiver->kind IS AstNodeKind::IdentifierExpr) {
          const auto &reference = std::get<NameRef>(receiver->data);
+         if (not reference.binding_id and reference.identifier.symbol and
+             is_builtin_interface_namespace(reference.identifier.symbol->hash)) {
+            Call.builtin_method.reset();
+            return;
+         }
          if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) {
             Call.builtin_method.reset();
+            Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
             return;
          }
       }
@@ -841,6 +888,9 @@ private:
           receiver_type IS TiriType::Any or receiver_type IS TiriType::Unknown or
           (descriptor.nullable and not safe and Call.argument_syntax != CallArgumentSyntax::Synthetic)) {
          Call.builtin_method.reset();
+         if (Call.argument_syntax IS CallArgumentSyntax::Parenthesised) {
+            Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
+         }
          return;
       }
 
@@ -1596,6 +1646,12 @@ private:
             auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->propagate_expression(*value);
             for (auto &target : payload.targets) if (target) this->propagate_expression(*target);
+            for (size_t i = 0; i < payload.targets.size() and not payload.values.empty(); ++i) {
+               if (not payload.targets[i]) continue;
+               size_t source = std::min(i, payload.values.size() - 1);
+               this->reject_builtin_method_shadow(
+                  *payload.targets[i], this->descriptor_of(*payload.values[source]));
+            }
             if (payload.op IS AssignmentOperator::Plain or payload.op IS AssignmentOperator::IfEmpty or
                 payload.op IS AssignmentOperator::IfNil) {
                for (size_t i = 0; i < payload.targets.size(); ++i) {
@@ -1740,6 +1796,14 @@ private:
             }
             else payload.target = GenericForTarget::IteratorProtocol;
             if (payload.body) this->propagate_block(*payload.body);
+            break;
+         }
+         case AstNodeKind::DeferStmt: {
+            auto &payload = std::get<DeferStmtPayload>(Statement.data);
+            for (auto &argument : payload.arguments) {
+               if (argument) this->propagate_expression(*argument);
+            }
+            if (payload.callable) this->propagate_function(*payload.callable);
             break;
          }
          default:
@@ -1920,6 +1984,11 @@ private:
          else if (statement->kind IS AstNodeKind::FunctionStmt) {
             auto &p = std::get<FunctionStmtPayload>(statement->data);
             if (p.function and p.function->body) this->walk_block_expressions(*p.function->body, Visit);
+         }
+         else if (statement->kind IS AstNodeKind::DeferStmt) {
+            auto &p = std::get<DeferStmtPayload>(statement->data);
+            for (auto &argument : p.arguments) if (argument) Visit(*argument);
+            if (p.callable and p.callable->body) this->walk_block_expressions(*p.callable->body, Visit);
          }
          else {
             this->walk_statement_expressions(*statement, Visit);

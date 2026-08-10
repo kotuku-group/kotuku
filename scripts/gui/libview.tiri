@@ -290,7 +290,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
 
    -- Clears a view of all internal content and updates the display.
 
-   vw.clear = function()
+   vw.clearView = function()
       activate = false
       if vw.sItem then
          reportItemDeselected(vw, 'clear', vw.sItem)
@@ -511,7 +511,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
    end
 
    vw.free = function()
-      vw.clear()
+      vw.clearView()
       vw.viewport.free()
       for k,v in pairs(vw) do vw[k] = nil end
       processing.collect()
@@ -570,7 +570,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
    -- Sort items by any named attribute (Attrib must appear in all items)
    -- Functionality must be defined by the host.
 
-   vw.sort = function(Attrib, Ascending)
+   vw.sortView = function(Attrib, Ascending)
       msg('The view implementation must override the sort() method.')
    end
 

@@ -19,13 +19,9 @@ Example usage:
 -- splitting an empty string returns a one-element array holding the separator, which would make every test look
 -- filtered out.
 --
--- TEMPORARY: string.split() is used rather than the `Filter.split(',')` dot-call because arg() returns a statically
--- unproved receiver, on which built-in method calls do not resolve.  Revert to the dot-call form once built-in
--- methods resolve on unproved receivers.
-
 function splitFilter(Filter):any
    if not Filter?? then return { } end
-   return string.split(Filter, ',') ?? { }
+   return Filter.split(',') ?? { }
 end
 
    glFile    = arg('file')
@@ -130,10 +126,7 @@ end
 function sortTests(Tests:table)
    if #Tests <= 1 then return end
 
-   -- TEMPORARY: a `:table` annotation on a parameter does not make the receiver statically proved, so this dot-call
-   -- does not resolve to the built-in.  Revert to `Tests.sort(...)` once built-in methods resolve on unproved
-   -- receivers.
-   table.sort(Tests, function(a:table, b:table):bool
+   Tests.sort(function(a:table, b:table):bool
       return (a.priority ?? 255) < (b.priority ?? 255)
    end)
 end
@@ -243,10 +236,7 @@ function runTests()
          end
 
          if not disabled and is_test then
-            -- TEMPORARY: `body.tests` is a table field read, so the receiver is statically unproved and the
-            -- `.insert()` dot-call does not resolve to the built-in.  Revert to `body.tests.insert(...)` once
-            -- built-in methods resolve on unproved receivers.
-            table.insert(body.tests, {
+            body.tests.insert({
                func     = func,
                name     = test_name ?? tostring(func),
                timeout  = test_timeout,

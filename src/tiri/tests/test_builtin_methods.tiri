@@ -49,11 +49,118 @@ end
 
 @Test function FieldCallEscapePaths()
    local values = {}
-   values.insert = function(Value)
+   values['insert'] = function(Value)
       return 'grouped:' .. Value
    end
    assert((values.insert)('one') is 'grouped:one', 'Grouped member calls should retain field-call semantics')
    assert(values['insert']('two') is 'grouped:two', 'Computed member calls should retain field-call semantics')
+end
+
+@Test function RuntimeFallbackShapes()
+   local body = { tests={} }
+   body.tests.insert({ name='chained' })
+   local tests = body.tests
+   tests.insert({ name='sticky' })
+
+   local function append(Values, Value)
+      Values.insert(Value)
+   end
+   append(tests, { name='parameter' })
+   assert(#tests is 3 and tests[2].name is 'parameter',
+      'Unproved chained, propagated and parameter receivers should resolve at runtime')
+
+   local holder = {
+      text='AB',
+      values=array<int> { 1 },
+      sequence={0 to 3},
+      record=struct<BuiltinMethodRecord> { Value=9 },
+      file=obj.new('file')
+   }
+   local first, second = holder.text.byte(0, 1)
+   holder.values.push(2)
+   local clone = holder.record.clone()
+   assert(first is 65 and second is 66 and holder.values[1] is 2 and holder.sequence.contains(2) and
+      clone.Value is 9 and holder.file.exists(),
+      'Runtime fallback should classify strings, arrays, ranges, structs and objects reached through table fields')
+   holder.file.free()
+end
+
+@Test function RuntimeBytecodePersistence()
+   local function factory():table
+      local body = { values={} }
+      body.values.insert(4)
+      return body.values
+   end
+   local restored = exec(string.dump(factory, true))
+   assert(#restored is 1 and restored[0] is 4,
+      'Runtime method dispatch should survive stripped bytecode serialisation')
+end
+
+@Test function RuntimePriorityAndEscapePaths()
+   local values = {}
+   values['insert'] = function(Value)
+      return 'field:' .. Value
+   end
+   local holder = { values=values }
+   holder.values.insert('built-in')
+   assert(values[0] is 'built-in', 'The runtime path should give the registered built-in priority')
+   assert((holder.values.insert)('grouped') is 'field:grouped',
+      'A grouped call should retain field-call semantics on an unproved receiver')
+   assert(holder.values['insert']('computed') is 'field:computed',
+      'A computed call should retain field-call semantics on an unproved receiver')
+end
+
+@Test function RuntimeFieldFallback()
+   local holder = {
+      value={
+         custom=function(Value)
+            return Value + 1
+         end
+      }
+   }
+   assert(holder.value.custom(6) is 7,
+      'An unregistered runtime method should fall back to an ordinary callable field')
+
+   local meta = {}
+   meta['__index'] = function(Self, Key)
+      if Key is 'custom' then return function(Value) return Value + 2 end end
+   end
+   holder.value = setmetatable({}, meta)
+   assert(holder.value.custom(5) is 7, 'Runtime field fallback should preserve __index lookup')
+end
+
+@Test function RuntimeSafePipeAndSingleEvaluation()
+   local holder = { values={} }
+   local calls = 0
+   local function receiver()
+      calls += 1
+      return holder.values
+   end
+   receiver().insert(1)
+   2 |> holder.values.insert()
+   assert(calls is 1 and #holder.values is 2 and holder.values[1] is 2,
+      'Runtime method receivers and pipe operands should execute once')
+
+   local maybe:any = nil
+   local argument_called = false
+   maybe?.insert(function() argument_called = true; return 3 end())
+   assert(not argument_called, 'A runtime safe call should skip its arguments for nil')
+end
+
+@Test function BuiltinShadowAssignmentRules()
+   local rejected = false
+   try
+      exec("local values = {}; values.insert = function(Value) end")
+   except Error
+      rejected = tostring(Error).contains('explicit shadowing field')
+   success
+      error('A direct function assignment colliding with table.insert should be rejected')
+   end
+   assert(rejected, 'The shadowing diagnostic should direct authors to computed-key syntax')
+
+   exec("local values = {}; values.insert = 1")
+   exec("local values = {}; values['insert'] = function(Value) end")
+   exec("local mt = {}; mt.push = function(Value) end")
 end
 
 @Test function RangeMethods()

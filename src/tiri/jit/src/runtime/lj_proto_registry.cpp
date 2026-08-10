@@ -8,6 +8,7 @@
 #include "lj_ff.h"
 #include "lj_str.h"
 #include "lj_tab.h"
+#include "../lib/lib_range.h"
 #include <kotuku/main.h>
 #include <ankerl/unordered_dense.h>
 #include <vector>
@@ -383,4 +384,41 @@ const fprototype * get_method_prototype_by_hash(TiriType ReceiverType, uint32_t 
    std::shared_lock lock(glRegistryMutex);
    auto it = glMethodRegistry.find(key);
    return it != glMethodRegistry.end() ? it->second : nullptr;
+}
+
+//********************************************************************************************************************
+
+bool is_range_userdata(lua_State *L, GCudata *Userdata)
+{
+   GCtab *metatable = tabref(Userdata->metatable);
+   if (not metatable) return false;
+
+   cTValue *registered = lj_tab_getstr(tabV(registry(L)), lj_str_newz(L, RANGE_METATABLE));
+   return registered and tvistab(registered) and tabV(registered) IS metatable;
+}
+
+//********************************************************************************************************************
+
+TiriType runtime_receiver_type(lua_State *L, cTValue *Receiver)
+{
+   if (tvistab(Receiver)) return TiriType::Table;
+   if (tvisstr(Receiver)) return TiriType::Str;
+   if (tvisarray(Receiver)) return TiriType::Array;
+   if (tvisobject(Receiver)) return TiriType::Object;
+   if (tvisstruct(Receiver)) return TiriType::Struct;
+   if (tvisudata(Receiver)) {
+      return is_range_userdata(L, udataV(Receiver)) ? TiriType::Range : TiriType::Userdata;
+   }
+   if (tvislightud(Receiver)) return TiriType::Userdata;
+   return TiriType::Unknown;
+}
+
+//********************************************************************************************************************
+
+extern "C" int32_t lj_bmeth_lookup(lua_State *L, cTValue *Receiver, GCstr *Method)
+{
+   if (not Receiver or not Method) return -1;
+   const fprototype *prototype = get_method_prototype_by_hash(runtime_receiver_type(L, Receiver), Method->hash);
+   if (not prototype or not builtin_callable_valid(prototype->builtin_callable_id)) return -1;
+   return int32_t(builtin_callable_index(prototype->builtin_callable_id));
 }

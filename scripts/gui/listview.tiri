@@ -245,7 +245,7 @@ gui.listView = function(Options:table!):table
 
    vw = gui.initView(Options, constructListView, newItems)
 
-   vw.sort = function(Attrib, Ascending)
+   vw.sortView = function(Attrib, Ascending)
       vw.sortItems(Attrib, Ascending)
       rearrangeItems(vw)
    end

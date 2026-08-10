@@ -146,6 +146,9 @@ void lj_dispatch_update(global_State* g)
                (mode & DISPMODE_REC) ? lj_vm_record : lj_vm_inshook;
             uint32_t i;
             for (i = 0; i < GG_LEN_SDISP; i++) disp[i] = f;
+            for (i = BC_FUNCF; i <= BC_FUNCCW; ++i) {
+               disp[i] = (mode & DISPMODE_CALL) ? lj_vm_callhook : makeasmfunc(lj_bc_ofs[i]);
+            }
          }
       }
       else if (!(mode & DISPMODE_INS)) {
@@ -174,11 +177,13 @@ void lj_dispatch_update(global_State* g)
 
       if ((oldmode ^ mode) & DISPMODE_CALL) {  // Update the whole table?
          uint32_t i;
-         if ((mode & DISPMODE_CALL) == 0) {  // No call hooks?
-            for (i = GG_LEN_SDISP; i < GG_LEN_DDISP; i++) disp[i] = makeasmfunc(lj_bc_ofs[i]);
+         if ((mode & DISPMODE_CALL) IS 0) {  // No call hooks?
+            for (i = BC_FUNCF; i <= BC_FUNCCW; ++i) disp[i] = makeasmfunc(lj_bc_ofs[i]);
+            for (i = BC__MAX; i < GG_LEN_DDISP; ++i) disp[i] = makeasmfunc(lj_bc_ofs[i]);
          }
          else {
-            for (i = GG_LEN_SDISP; i < GG_LEN_DDISP; i++) disp[i] = lj_vm_callhook;
+            for (i = BC_FUNCF; i <= BC_FUNCCW; ++i) disp[i] = lj_vm_callhook;
+            for (i = BC__MAX; i < GG_LEN_DDISP; ++i) disp[i] = lj_vm_callhook;
          }
       }
 

@@ -476,6 +476,9 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
          uint32_t field_index = bc_p32(instruction);
          append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
       }
+      else if (info.op IS BC_BMETH) {
+         append_operand(operands, "P", describe_operand_value(Proto, nullptr, BCMstr, bc_p32(instruction), pc));
+      }
 
       BCLine line = get_proto_line(Proto, pc);
 
@@ -537,6 +540,9 @@ extern void dump_bytecode(FuncState &fs)
       if (info.op IS BC_STGETF or info.op IS BC_STSETF) {
          uint32_t field_index = bc_p32(iline.ins);
          append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
+      }
+      else if (info.op IS BC_BMETH) {
+         append_operand(operands, "P", describe_operand_value(nullptr, &fs, BCMstr, bc_p32(iline.ins), pc));
       }
 
       format_bc_line(fs.L, iline.line, file_width, log_callback, "", pc, operands, nullptr, info, false, true);

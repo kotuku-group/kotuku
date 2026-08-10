@@ -356,6 +356,9 @@ void LexState::assign_adjust(BCREG nvars, BCREG nexps, ExpDesc *Expr)
       extra++;  // Compensate for the ExpKind::Call itself.
       if (extra < 0) extra = 0;
       setbc_b(bcptr(fs, Expr), extra + 1);  // Fixup call results.
+      if (Expr->alternate_call != NO_JMP) {
+         setbc_b(&fs->bcbase[Expr->alternate_call].ins, extra + 1);
+      }
       if (extra > 1) allocator.reserve(BCReg(BCREG(extra) - 1));
    }
    else {
@@ -631,6 +634,14 @@ static void release_indexed_original(FuncState &func_state, const ExpDesc &origi
 [[nodiscard]] static BCIns* ir_bcptr(FuncState* func_state, const ExpDesc* expression)
 {
    return &func_state->bcbase[expression->u.s.info].ins;
+}
+
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG Count)
+{
+   setbc_b(ir_bcptr(State, &Expression), Count);
+   if (Expression.alternate_call != NO_JMP) {
+      setbc_b(&State->bcbase[Expression.alternate_call].ins, Count);
+   }
 }
 
 struct FalseyJumpOptions {
@@ -1179,11 +1190,16 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             lj_assertX(last.u.s.info + 1 IS this->func_state.pc,
                "tail call is not the final expression instruction");
             this->func_state.pc--;
+            if (last.alternate_call != NO_JMP) {
+               BCIns *alternate = &this->func_state.bcbase[last.alternate_call].ins;
+               *alternate = BCINS_AD(
+                  bc_op(*alternate) - BC_CALL + BC_CALLT, bc_a(*alternate), bc_c(*alternate));
+            }
             ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
          }
          else if (truncate_return_results) {
             BCREG result_count = this->func_state.return_declared_count;
-            setbc_b(ip, result_count + 1);
+            set_call_result_count(&this->func_state, last, result_count + 1);
             ins = result_count > 0 ?
                BCINS_AD(BC_RET, last.u.s.aux, result_count + 1) :
                BCINS_AD(BC_RET0, 0, 1);
@@ -1194,33 +1210,33 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             // TRYLEAVE has popped the try frame - the exception escapes.  By using CALL + RET, the exception occurs
             // while still inside the try block. This must be checked before any tail-call optimisation paths.
 
-            setbc_b(ip, 0);  // Request all results (MULTRES)
+            set_call_result_count(&this->func_state, last, 0);  // Request all results (MULTRES)
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_return_contract) {
             // A return contract must observe dynamic results inside this function, so tail-call conversion is unsafe.
-            setbc_b(ip, 0);
+            set_call_result_count(&this->func_state, last, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_post_call_control_flow) {
             // Safe calls and other call expressions with post-call control flow cannot be converted to CALLT: the
             // conversion removes the final emitted instruction rather than the earlier CALL.  Such expressions
             // represent one consolidated value, so retain that result and return it normally.
-            setbc_b(ip, 2);
+            set_call_result_count(&this->func_state, last, 2);
             ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
          else if (call_op IS BC_VARG) {
             // Variadic return: return ...
-            setbc_b(ip, 0);
+            set_call_result_count(&this->func_state, last, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_user_cleanup) {
             // The callee must execute before user-visible cleanup.  Preserve all results and MULTRES across handlers.
-            setbc_b(ip, 0);
+            set_call_result_count(&this->func_state, last, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else {
-            setbc_b(ip, 0);
+            set_call_result_count(&this->func_state, last, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
       }
@@ -1238,13 +1254,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                BCREG result_count = this->func_state.return_declared_count;
                BCREG fixed_count = last.u.s.aux - return_base;
                BCREG call_count = result_count > fixed_count ? result_count - fixed_count : 0;
-               setbc_b(ir_bcptr(&this->func_state, &last), call_count + 1);
+               set_call_result_count(&this->func_state, last, call_count + 1);
                ins = result_count > 0 ?
                   BCINS_AD(BC_RET, return_base, result_count + 1) :
                   BCINS_AD(BC_RET0, 0, 1);
             }
             else {
-               setbc_b(ir_bcptr(&this->func_state, &last), 0);
+               set_call_result_count(&this->func_state, last, 0);
                ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
             }
          }
@@ -2211,7 +2227,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
       ExpDesc value = collection.value_ref();
       if (value.k IS ExpKind::Call) {
-         setbc_b(ir_bcptr(fs, &value), 0);
+         set_call_result_count(fs, value, 0);
          bcemit_INS(fs, BCINS_ABC(BC_CALLM, base - BCREG(3), 4,
             value.u.s.aux - (base - BCREG(3)) - BCREG(2)));
       }

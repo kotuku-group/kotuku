@@ -428,6 +428,11 @@ struct CallExprPayload {
       bool arguments_validated = false;
    };
    mutable std::optional<BuiltinMethodCall> builtin_method;
+   struct RuntimeBuiltinMethodCall {
+      GCstr *member = nullptr;
+      bool safe = false;
+   };
+   mutable std::optional<RuntimeBuiltinMethodCall> runtime_builtin_method;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
    mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
@@ -446,6 +451,7 @@ struct MemberExprPayload {
    Identifier member;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
+   mutable bool builtin_shadow_reported = false;
    ~MemberExprPayload();
 };
 

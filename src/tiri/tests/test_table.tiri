@@ -209,10 +209,10 @@ end
    assert(t[2] is 'c', "t[2] should be 'c'")
 end
 
-@Test function ComputedNativeMemberCall()
+@Test function DotNativeMemberCall()
    local t = {}
-   t['insert']('computed')
-   assert(t[0] is 'computed', 'A computed native table member call should use the original table context')
+   t.insert('dot')
+   assert(t[0] is 'dot', 'A dot native table member call should use the original table context')
 end
 
 @Test function InsertAtPosition()

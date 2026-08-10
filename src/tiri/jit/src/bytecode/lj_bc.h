@@ -80,6 +80,7 @@ constexpr uint8_t  NO_REG = BCMAX_A;
 
 // Compose ADP format instruction: AD in lower 32 bits, P in upper 32 bits
 #define BCINS_ADP(o,a,d,p32) (BCINS_AD(o,a,d) | ((BCIns)(uint32_t)(p32) << 32))
+#define BCINS_AJP(o,a,j,p32) (BCINS_AJ(o,a,j) | ((BCIns)(uint32_t)(p32) << 32))
 
 // === Format AP: 48-bit pointer + A register ===
 // Layout: [PTR(48-bit) | A(8-bit) | OP(8-bit)]
@@ -277,7 +278,9 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(MODACT,    base, ___, lit, ___) \
   \
   /* Immutable state-local built-in callable load. Appended to preserve existing opcode numbers. */ \
-  _(BFUNC,     dst,  ___, lit, ___)
+  _(BFUNC,     dst,  ___, lit, ___) \
+  /* Runtime built-in method resolution. P32 is the member string constant; D is the field fallback edge. */ \
+  _(BMETH,     dst,  ___, jump, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -437,8 +440,9 @@ typedef enum {
    BC_RANGEVAL = 119,
    BC_MODACT = 120,
    BC_BFUNC = 121,
+   BC_BMETH = 122,
 
-   BC__MAX   = 122
+   BC__MAX   = 123
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

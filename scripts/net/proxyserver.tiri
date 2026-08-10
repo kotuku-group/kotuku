@@ -384,7 +384,7 @@ function createFlowManager(self)
    end
 
    -- Clear all flows
-   manager.clear = function():nil
+   manager.clearFlows = function():nil
       manager._flows = {}
       manager._flowId = 0
    end
@@ -622,7 +622,7 @@ function createInterceptorEngine(self)
    end
 
    -- Clear all interceptors
-   engine.clear = function()
+   engine.clearInterceptors = function()
       engine._requestInterceptors = {}
       engine._responseInterceptors = {}
    end
@@ -1520,7 +1520,7 @@ proxylib.start = function(Options:table!)
    end
 
    self.clearFlows = function():nil
-      return self._flowManager.clear()
+      return self._flowManager.clearFlows()
    end
 
    self.exportFlows = function(filename):bool
@@ -1541,7 +1541,7 @@ proxylib.start = function(Options:table!)
    end
 
    self.clearInterceptors = function():nil
-      return self._interceptor.clear()
+      return self._interceptor.clearInterceptors()
    end
 
    logMessage(self, 'INFO', 'Proxy server started successfully')

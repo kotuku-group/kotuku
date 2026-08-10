@@ -312,8 +312,27 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
             bcread_error(State, ErrMsg::BCBAD);
          }
       }
+      if (op IS BC_BMETH) {
+         ptrdiff_t target = ptrdiff_t(i) + 1 + bc_j(bc[i]);
+         if (target <= 0 or target >= ptrdiff_t(sizebc)) bcread_error(State, ErrMsg::BCBAD);
+      }
       if (op IS BC_MRSAVE or op IS BC_MRRESTORE) {
          pt->flags |= PROTO_NOJIT;
+      }
+   }
+}
+
+//********************************************************************************************************************
+
+static void bcread_builtin_methods(LexState *State, GCproto *Prototype)
+{
+   for (MSize i = 1; i < Prototype->sizebc; ++i) {
+      BCIns instruction = proto_bc(Prototype)[i];
+      if (bc_op(instruction) != BC_BMETH) continue;
+      uint32_t constant = bc_p32(instruction);
+      if (constant >= Prototype->sizekgc or
+          proto_kgc(Prototype, ~(ptrdiff_t)constant)->gch.gct != ~LJ_TSTR) {
+         bcread_error(State, ErrMsg::BCBAD);
       }
    }
 }
@@ -775,6 +794,7 @@ GCproto *lj_bcread_proto(LexState *State)
    bcread_kgc(State, pt, sizekgc);
    pt->sizekgc = sizekgc;
    bcread_knum(State, pt, sizekn);
+   bcread_builtin_methods(State, pt);
 
    // Deferred until the constant array is complete, because interning the names can step the collector and the
    // prototype must be safe to traverse by then.
