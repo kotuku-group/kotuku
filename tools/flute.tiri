@@ -15,11 +15,14 @@ Example usage:
    origo flute.tiri file=[file]
 ]]
 
+   test_filter_arg = arg('test', '')
+   label_filter_arg = arg('labels', '')
+
    glFile    = arg('file')
-   glTest    = arg('test', '').split(',') ?? { }
+   glTest    = test_filter_arg?? ? string.split(test_filter_arg, ',') :> { }
    glHotPath = arg('hotPath') -- Force hot-path execution for all tests.
    glSelf    = obj.find('self')
-   glLabels  = arg('labels', '').split(',') ?? { }
+   glLabels  = label_filter_arg?? ? string.split(label_filter_arg, ',') :> { }
 
    jit.opt.start("hotloop=3") -- Lower threshold to trigger JIT sooner, simplifies debugging
 
