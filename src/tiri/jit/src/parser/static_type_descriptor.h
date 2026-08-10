@@ -100,6 +100,7 @@ struct StaticBindingDescriptor {
    bool immutable = true;
    bool is_const = false;
    bool is_parameter = false;
+   bool is_variant = false;
    bool captured = false;
    bool resolving = false;
 };

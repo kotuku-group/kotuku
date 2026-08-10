@@ -31,7 +31,15 @@
 
 LJLIB_CF(table_insert)      LJLIB_REC(.)
 {
-   GCtab* t = lj_lib_checksequence(L, 1, "insert");
+   // Immediate method syntax may coexist with a same-named string field.  String keys classify the table as
+   // associative, but they do not invalidate the non-negative integral prefix used by insertion.
+   GCtab* t = lj_lib_checktab(L, 1);
+   if (not lj_tab_is_sequence(t)) {
+      cTValue* method_field = lj_tab_getstr(t, lj_str_newlit(L, "insert"));
+      if (not method_field or tvisnil(method_field)) {
+         lj_err_callerv(L, ErrMsg::TABSEQ, "insert", lj_tab_kind(t));
+      }
+   }
    int32_t n, i = (int32_t)lj_tab_len(t);  // 0-based: next index = len
    int nargs = (int)((char*)L->top - (char*)L->base);
    if (nargs != 2 * sizeof(TValue)) {
@@ -620,19 +628,31 @@ extern int luaopen_table(lua_State *L)
    //lua_setfield(L, -2, "unpack");
 
    // Register table interface prototypes for compile-time type inference
-   reg_iface_prototype("table", "insert", {}, { TiriType::Table, TiriType::Any });
-   reg_iface_prototype("table", "remove", { TiriType::Any }, { TiriType::Table, TiriType::Num });
-   reg_iface_prototype("table", "move", { TiriType::Table }, { TiriType::Table, TiriType::Num, TiriType::Num, TiriType::Num, TiriType::Table });
-   reg_iface_prototype("table", "concat", { TiriType::Str }, { TiriType::Table, TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("table", "sort", {}, { TiriType::Table, TiriType::Func });
+   reg_iface_method(L, "table", "insert", TiriType::Table, builtin_callable_id(FastFunc::table_insert), {},
+      { TiriType::Table, TiriType::Any });
+   reg_iface_method(L, "table", "remove", TiriType::Table, builtin_callable_id(FastFunc::table_remove),
+      { TiriType::Any }, { TiriType::Table, TiriType::Num });
+   reg_iface_method(L, "table", "move", TiriType::Table, builtin_callable_id(FastFunc::table_move),
+      { TiriType::Table }, { TiriType::Table, TiriType::Num, TiriType::Num, TiriType::Num, TiriType::Table });
+   reg_iface_method(L, "table", "concat", TiriType::Table, builtin_callable_id(FastFunc::table_concat),
+      { TiriType::Str }, { TiriType::Table, TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "table", "sort", TiriType::Table, builtin_callable_id(FastFunc::table_sort), {},
+      { TiriType::Table, TiriType::Func });
    reg_iface_prototype("table", "new", { TiriType::Table }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("table", "empty", { TiriType::Bool }, { TiriType::Table });
-   reg_iface_prototype("table", "kind", { TiriType::Str }, { TiriType::Table });
-   reg_iface_prototype("table", "size", { TiriType::Num }, { TiriType::Table });
-   reg_iface_prototype("table", "clear", {}, { TiriType::Table });
-   reg_iface_prototype("table", "slice", { TiriType::Table }, { TiriType::Table, TiriType::Any });
-   reg_iface_prototype("table", "sortByKeys", { TiriType::Func }, { TiriType::Table, TiriType::Func });
-   reg_iface_prototype("table", "toXML", { TiriType::Str }, { TiriType::Table });
+   reg_iface_method(L, "table", "empty", TiriType::Table, builtin_callable_id(FastFunc::table_empty),
+      { TiriType::Bool }, { TiriType::Table });
+   reg_iface_method(L, "table", "kind", TiriType::Table, builtin_callable_id(FastFunc::table_kind),
+      { TiriType::Str }, { TiriType::Table });
+   reg_iface_method(L, "table", "size", TiriType::Table, builtin_callable_id(FastFunc::table_size),
+      { TiriType::Num }, { TiriType::Table });
+   reg_iface_method(L, "table", "clear", TiriType::Table, builtin_callable_id(FastFunc::table_clear), {},
+      { TiriType::Table });
+   reg_iface_method(L, "table", "slice", TiriType::Table, builtin_callable_id(FastFunc::table_slice),
+      { TiriType::Table }, { TiriType::Table, TiriType::Any });
+   reg_iface_method(L, "table", "sortByKeys", TiriType::Table, builtin_callable_id(FastFunc::table_sortByKeys),
+      { TiriType::Func }, { TiriType::Table, TiriType::Func });
+   reg_iface_method(L, "table", "toXML", TiriType::Table, builtin_callable_id(FastFunc::table_toXML),
+      { TiriType::Str }, { TiriType::Table });
 
    return 1;
 }

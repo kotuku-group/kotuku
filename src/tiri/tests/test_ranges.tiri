@@ -699,10 +699,10 @@ end
 @Test function StringMethodsStillWork()
    -- Ensure string methods still work after adding range support
    s = "hello"
-   assert(s.upper(s) is "HELLO", "string.upper should still work")
-   assert(s.sub(s, 0, 3) is "hel", "string.sub should still work")
-   assert(s.len(s) is 5, "string.len should still work")
-   assert(s.reverse(s) is "olleh", "string.reverse should still work")
+   assert(s.upper() is "HELLO", "string.upper should still work")
+   assert(s.sub(0, 3) is "hel", "string.sub should still work")
+   assert(s.len() is 5, "string.len should still work")
+   assert(s.reverse() is "olleh", "string.reverse should still work")
 end
 
 @Test function StringSliceMixedAccess()

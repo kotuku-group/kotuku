@@ -213,6 +213,13 @@ enum class CallDispatch : uint8_t {
    Method
 };
 
+enum class CallArgumentSyntax : uint8_t {
+   Synthetic,
+   Parenthesised,
+   TableConstructor,
+   StringLiteral
+};
+
 //********************************************************************************************************************
 
 struct Identifier {
@@ -434,7 +441,16 @@ struct CallExprPayload {
    CallExprPayload& operator=(CallExprPayload&&) noexcept = default;
    CallTarget target;
    ExprNodeList arguments;
+   CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic;
    bool forwards_multret = false;
+   struct BuiltinMethodCall {
+      const fprototype *prototype = nullptr;
+      BuiltinCallableID callable = BuiltinCallableID::Invalid;
+      TiriType receiver_type = TiriType::Unknown;
+      bool safe = false;
+      bool arguments_validated = false;
+   };
+   mutable std::optional<BuiltinMethodCall> builtin_method;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
    mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
@@ -1108,7 +1124,8 @@ ExprNodePtr make_ternary_expr(SourceSpan span, TernaryConditionMode mode, ExprNo
    ExprNodePtr if_false);
 ExprNodePtr make_presence_expr(SourceSpan span, ExprNodePtr value);
 ExprNodePtr make_pipe_expr(SourceSpan span, ExprNodePtr lhs, ExprNodePtr rhs_call, uint32_t limit);
-ExprNodePtr make_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret);
+ExprNodePtr make_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret,
+   CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic);
 ExprNodePtr make_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments, bool forwards_multret);
 ExprNodePtr make_safe_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
    bool forwards_multret);

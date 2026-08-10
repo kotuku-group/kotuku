@@ -5,6 +5,9 @@
 // Arena-style allocation for efficient memory management.
 
 #include "lj_proto_registry.h"
+#include "lj_ff.h"
+#include "lj_str.h"
+#include "lj_tab.h"
 #include <kotuku/main.h>
 #include <ankerl/unordered_dense.h>
 #include <vector>
@@ -53,6 +56,22 @@ private:
 
 static ProtoArena glArena;
 static ankerl::unordered_dense::map<ProtoKey, fprototype*, ProtoKeyHash> glRegistry;
+
+struct MethodKey {
+   TiriType receiver_type;
+   uint32_t member_hash;
+
+   [[nodiscard]] bool operator==(const MethodKey &) const = default;
+};
+
+struct MethodKeyHash {
+   [[nodiscard]] size_t operator()(const MethodKey &Key) const noexcept
+   {
+      return size_t(Key.member_hash) ^ (size_t(uint8_t(Key.receiver_type)) << 32);
+   }
+};
+
+static ankerl::unordered_dense::map<MethodKey, fprototype*, MethodKeyHash> glMethodRegistry;
 static std::shared_mutex glRegistryMutex;
 
 //********************************************************************************************************************
@@ -63,6 +82,7 @@ void init_proto_registry()
    std::call_once(flag, []() {
       glArena.clear();
       glRegistry.clear();
+      glMethodRegistry.clear();
    });
 }
 
@@ -70,7 +90,8 @@ void init_proto_registry()
 // Internal helper to allocate and initialise a prototype
 
 static fprototype * alloc_prototype(std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, TiriType ReceiverType = TiriType::Unknown,
+   BuiltinCallableID Callable = BuiltinCallableID::Invalid)
 {
    size_t struct_size = sizeof(fprototype) + ParamTypes.size() * sizeof(TiriType);
    auto *proto = (fprototype*)glArena.allocate(struct_size, alignof(fprototype));
@@ -78,7 +99,9 @@ static fprototype * alloc_prototype(std::initializer_list<TiriType> ResultTypes,
    proto->result_count = uint8_t(std::min(ResultTypes.size(), PROTO_MAX_RETURN_TYPES));
    proto->param_count = uint8_t(std::min(ParamTypes.size(), FPROTO_MAX_PARAMS));
    proto->flags = Flags;
-   proto->_pad = 0;
+   proto->receiver_type = ReceiverType;
+   proto->builtin_callable_id = Callable;
+   proto->reserved = 0;
 
    // Initialise result types
 
@@ -105,18 +128,94 @@ static fprototype * alloc_prototype(std::initializer_list<TiriType> ResultTypes,
 
 //********************************************************************************************************************
 
+static bool prototype_matches(const fprototype *Prototype, std::initializer_list<TiriType> ResultTypes,
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, TiriType ReceiverType,
+   BuiltinCallableID Callable)
+{
+   if (not Prototype or Prototype->result_count != ResultTypes.size() or
+       Prototype->param_count != ParamTypes.size() or Prototype->flags != Flags or
+       Prototype->receiver_type != ReceiverType or Prototype->builtin_callable_id != Callable) return false;
+
+   size_t index = 0;
+   for (TiriType type : ResultTypes) {
+      if (Prototype->result_types[index++] != type) return false;
+   }
+   index = 0;
+   for (TiriType type : ParamTypes) {
+      if (Prototype->param_types()[index++] != type) return false;
+   }
+   return true;
+}
+
+static ERR validate_prototype_limits(
+   std::initializer_list<TiriType> ResultTypes, std::initializer_list<TiriType> ParamTypes)
+{
+   if (ResultTypes.size() > PROTO_MAX_RETURN_TYPES or ParamTypes.size() > FPROTO_MAX_PARAMS) {
+      return ERR::BufferOverflow;
+   }
+   return ERR::Okay;
+}
+
+static cTValue * exported_interface_member(
+   lua_State *L, std::string_view Interface, std::string_view Method)
+{
+   GCtab *table = tabref(L->env);
+   size_t offset = 0;
+   while (offset < Interface.size()) {
+      size_t separator = Interface.find('.', offset);
+      size_t length = separator IS std::string_view::npos ? Interface.size() - offset : separator - offset;
+      GCstr *name = lj_str_new(L, Interface.data() + offset, length);
+      cTValue *value = lj_tab_getstr(table, name);
+      if (not value or not tvistab(value)) return nullptr;
+      table = tabV(value);
+      if (separator IS std::string_view::npos) break;
+      offset = separator + 1;
+   }
+   return lj_tab_getstr(table, lj_str_new(L, Method.data(), Method.size()));
+}
+
+static ERR validate_method_state(lua_State *L, std::string_view Interface, std::string_view Method,
+   BuiltinCallableID Callable)
+{
+   if (not L or not builtin_callable_valid(Callable)) return ERR::InvalidValue;
+   const char *canonical_name = builtin_callable_name(Callable);
+   if (not canonical_name) return ERR::InvalidValue;
+   std::string expected_name(Interface);
+   expected_name.push_back('.');
+   expected_name.append(Method);
+   if (expected_name != canonical_name) {
+      std::string object_alias("object.");
+      object_alias.append(Method);
+      if (Interface != "obj" or object_alias != canonical_name) return ERR::Mismatch;
+   }
+
+   GCfunc *canonical = lj_builtin_callable(L, Callable);
+   cTValue *exported = exported_interface_member(L, Interface, Method);
+   if (not canonical or not exported or not tvisfunc(exported) or funcV(exported) != canonical) return ERR::Mismatch;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 ERR reg_func_prototype(std::string_view Name, std::initializer_list<TiriType> ResultTypes,
    std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
 {
+   if (validate_prototype_limits(ResultTypes, ParamTypes) != ERR::Okay) return ERR::BufferOverflow;
    ProtoKey key{ 0, kt::strhash(Name) };
 
    { // Fast path: check under shared lock first (common case after first script init)
       std::shared_lock read_lock(glRegistryMutex);
-      if (glRegistry.contains(key)) return ERR::Exists;
+      if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
+         return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
+            BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+      }
    }
 
    std::unique_lock lock(glRegistryMutex);
-   if (glRegistry.contains(key)) return ERR::Exists; // Re-check after acquiring exclusive lock
+   if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
+      return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
+         BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+   }
 
    auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags);
    glRegistry[key] = proto;
@@ -128,18 +227,65 @@ ERR reg_func_prototype(std::string_view Name, std::initializer_list<TiriType> Re
 ERR reg_iface_prototype(std::string_view Interface, std::string_view Method, std::initializer_list<TiriType> ResultTypes,
    std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
 {
+   if (validate_prototype_limits(ResultTypes, ParamTypes) != ERR::Okay) return ERR::BufferOverflow;
    ProtoKey key{ kt::strhash(Interface), kt::strhash(Method) };
 
    {
       std::shared_lock read_lock(glRegistryMutex);
-      if (glRegistry.contains(key)) return ERR::Exists;
+      if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
+         return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
+            BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+      }
    }
 
    std::unique_lock lock(glRegistryMutex);
-   if (glRegistry.contains(key)) return ERR::Exists;
+   if (auto existing = glRegistry.find(key); existing != glRegistry.end()) {
+      return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
+         BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
+   }
 
    auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags);
    glRegistry[key] = proto;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
+   BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
+{
+   if (Interface.empty() or Method.empty() or ReceiverType IS TiriType::Any or
+       ReceiverType IS TiriType::Unknown or ReceiverType IS TiriType::Nil or
+       ParamTypes.size() IS 0 or *ParamTypes.begin() != ReceiverType) return ERR::InvalidValue;
+   ERR limits = validate_prototype_limits(ResultTypes, ParamTypes);
+   if (limits != ERR::Okay) return limits;
+   ERR state_validation = validate_method_state(L, Interface, Method, Callable);
+   if (state_validation != ERR::Okay) return state_validation;
+
+   ProtoKey prototype_key{ kt::strhash(Interface), kt::strhash(Method) };
+   MethodKey method_key{ ReceiverType, kt::strhash(Method) };
+   std::unique_lock lock(glRegistryMutex);
+
+   auto existing_prototype = glRegistry.find(prototype_key);
+   if (existing_prototype != glRegistry.end()) {
+      if (not prototype_matches(existing_prototype->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable)) {
+         return ERR::Mismatch;
+      }
+      auto existing_method = glMethodRegistry.find(method_key);
+      if (existing_method IS glMethodRegistry.end() or existing_method->second != existing_prototype->second) {
+         return ERR::Mismatch;
+      }
+      return ERR::Exists;
+   }
+
+   if (auto existing_method = glMethodRegistry.find(method_key); existing_method != glMethodRegistry.end()) {
+      return ERR::Mismatch;
+   }
+
+   auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable);
+   glRegistry[prototype_key] = prototype;
+   glMethodRegistry[method_key] = prototype;
    return ERR::Okay;
 }
 
@@ -155,6 +301,11 @@ const fprototype * get_func_prototype(std::string_view Name)
    return get_func_prototype_by_hash(kt::strhash(Name));
 }
 
+const fprototype * get_method_prototype(TiriType ReceiverType, std::string_view Method)
+{
+   return get_method_prototype_by_hash(ReceiverType, kt::strhash(Method));
+}
+
 //********************************************************************************************************************
 
 const fprototype * get_prototype_by_hash(uint32_t IfaceHash, uint32_t FuncHash)
@@ -168,4 +319,11 @@ const fprototype * get_prototype_by_hash(uint32_t IfaceHash, uint32_t FuncHash)
 const fprototype * get_func_prototype_by_hash(uint32_t FuncHash)
 {
    return get_prototype_by_hash(0, FuncHash);
+}
+
+const fprototype * get_method_prototype_by_hash(TiriType ReceiverType, uint32_t MethodHash)
+{
+   std::shared_lock lock(glRegistryMutex);
+   auto it = glMethodRegistry.find(MethodKey{ ReceiverType, MethodHash });
+   return it != glMethodRegistry.end() ? it->second : nullptr;
 }

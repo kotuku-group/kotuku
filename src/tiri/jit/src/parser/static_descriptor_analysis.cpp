@@ -67,6 +67,7 @@ private:
       binding.function_depth = this->function_depth_;
       binding.is_const = Name.has_const;
       binding.is_parameter = IsParameter;
+      binding.is_variant = Name.type IS TiriType::Any;
       StaticBindingID id = this->catalogue_.add_binding(binding);
       Name.binding_id = id;
       if (Name.symbol and not Name.is_blank) this->scopes_.back().entries.emplace_back(Name.symbol, id);
@@ -754,6 +755,129 @@ private:
       return 0;
    }
 
+   void report_method_argument(SourceSpan Span, std::string Message)
+   {
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::TypeMismatchArgument;
+      diagnostic.message = std::move(Message);
+      diagnostic.token = Token::from_span(Span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
+   }
+
+   void validate_builtin_method_arguments(CallExprPayload &Call)
+   {
+      if (not Call.builtin_method or Call.builtin_method->arguments_validated) return;
+      const fprototype *prototype = Call.builtin_method->prototype;
+      if (not prototype or prototype->param_count IS 0) return;
+
+      const TiriType *parameters = prototype->param_types();
+      bool validation_complete = true;
+      for (size_t index = 0; index < Call.arguments.size(); ++index) {
+         size_t native_index = index + 1;
+         if (native_index >= prototype->param_count) break;
+         if (Call.arguments[index]->kind IS AstNodeKind::IdentifierExpr) {
+            const auto &reference = std::get<NameRef>(Call.arguments[index]->data);
+            if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) continue;
+         }
+         const StaticValueDescriptor actual = this->descriptor_of(*Call.arguments[index]);
+         TiriType expected = parameters[native_index];
+         if (actual.primary IS TiriType::Nil) {
+            if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
+               this->report_method_argument(Call.arguments[index]->span,
+                  std::format("required argument {} cannot be nil", index + 1));
+            }
+         }
+         else if (expected != TiriType::Any and not actual.proved()) validation_complete = false;
+         else if (expected != TiriType::Any and actual.primary != TiriType::Unknown and
+             actual.primary != TiriType::Any and actual.primary != expected and
+             not (expected IS TiriType::Func and actual.primary IS TiriType::Table)) {
+            this->report_method_argument(Call.arguments[index]->span,
+               std::format("argument {} expects {}, got {}", index + 1,
+                  type_name(expected), type_name(actual.primary)));
+         }
+      }
+
+      if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None and
+          Call.arguments.size() + 1 < prototype->param_count and not Call.forwards_multret) {
+         this->report_method_argument(Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span,
+            std::format("required argument {} is missing", Call.arguments.size() + 1));
+      }
+      if (Call.forwards_multret) validation_complete = false;
+      Call.builtin_method->arguments_validated = validation_complete;
+   }
+
+   void resolve_builtin_method(CallExprPayload &Call)
+   {
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable or
+          (Call.argument_syntax != CallArgumentSyntax::Parenthesised and
+           Call.argument_syntax != CallArgumentSyntax::Synthetic) or direct->callable->is_grouped) {
+         Call.builtin_method.reset();
+         return;
+      }
+
+      ExprNode *receiver = nullptr;
+      GCstr *member = nullptr;
+      bool safe = false;
+      if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+         const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
+         receiver = payload.table.get();
+         member = payload.member.symbol;
+      }
+      else if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+         const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
+         receiver = payload.table.get();
+         member = payload.member.symbol;
+         safe = true;
+      }
+      else {
+         Call.builtin_method.reset();
+         return;
+      }
+
+      if (not receiver or not member) {
+         Call.builtin_method.reset();
+         return;
+      }
+      if (receiver->kind IS AstNodeKind::IdentifierExpr) {
+         const auto &reference = std::get<NameRef>(receiver->data);
+         if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) {
+            Call.builtin_method.reset();
+            return;
+         }
+      }
+      const StaticValueDescriptor descriptor = this->descriptor_of(*receiver);
+      TiriType receiver_type = descriptor.primary;
+      if (Call.argument_syntax IS CallArgumentSyntax::Synthetic and receiver->kind IS AstNodeKind::CallExpr) {
+         TiriType generated_type = std::get<CallExprPayload>(receiver->data).result_type;
+         if (generated_type != TiriType::Unknown and generated_type != TiriType::Any) receiver_type = generated_type;
+      }
+      if ((not descriptor.proved() and Call.argument_syntax != CallArgumentSyntax::Synthetic) or
+          receiver_type IS TiriType::Any or receiver_type IS TiriType::Unknown or
+          (descriptor.nullable and not safe and Call.argument_syntax != CallArgumentSyntax::Synthetic)) {
+         Call.builtin_method.reset();
+         return;
+      }
+
+      const fprototype *prototype = get_method_prototype_by_hash(receiver_type, member->hash);
+      if (not prototype) {
+         Call.builtin_method.reset();
+         return;
+      }
+
+      bool already_validated = Call.builtin_method and Call.builtin_method->prototype IS prototype and
+         Call.builtin_method->arguments_validated;
+      Call.builtin_method = CallExprPayload::BuiltinMethodCall{
+         .prototype = prototype,
+         .callable = prototype->builtin_callable_id,
+         .receiver_type = receiver_type,
+         .safe = safe,
+         .arguments_validated = already_validated
+      };
+      this->validate_builtin_method_arguments(Call);
+   }
+
    void annotate_callables_expression(ExprNode &Expression)
    {
       this->walk_expression_children(Expression, [this](ExprNode &Child) {
@@ -854,7 +978,13 @@ private:
 
    [[nodiscard]] StaticValueDescriptor call_descriptor(CallExprPayload &Call, bool Safe)
    {
-      if (this->native_calls_only_) {
+      this->resolve_builtin_method(Call);
+      if (Call.builtin_method) {
+         Call.results = this->catalogue_.add_results(
+            describe_native_prototype_results(Call.builtin_method->prototype));
+         Safe = Safe or Call.builtin_method->safe;
+      }
+      else if (this->native_calls_only_) {
          if (not Call.results) Call.results = this->native_call_results(Call);
       }
       else this->annotate_call(Call);
@@ -1123,6 +1253,10 @@ private:
          }
          case AstNodeKind::TableExpr:
             value.primary = TiriType::Table;
+            value.proof = StaticProof::Closed;
+            break;
+         case AstNodeKind::RangeExpr:
+            value.primary = TiriType::Range;
             value.proof = StaticProof::Closed;
             break;
          case AstNodeKind::FunctionExpr: {

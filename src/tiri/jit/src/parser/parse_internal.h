@@ -11,6 +11,7 @@
 
 #include <kotuku/strings.hpp>
 
+#include "lj_ff.h"
 #include "parse_concepts.h"  // Must be early for concept-constrained templates
 
 enum class TokenKind : uint16_t;

@@ -3679,7 +3679,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
 
   case BC_BFUNC:
     |  ins_AD  // RA = dst, RD = immutable built-in callable ID
-    |  mov LFUNC:RD, [DISPATCH+RD*8+DISPATCH_GL(builtin_callables)]
+    |  mov LFUNC:RD, [DISPATCH+RD*8+GG_DISP2BUILTIN]
     |  settp LFUNC:RD, LJ_TFUNC
     |  mov [BASE+RA*8], LFUNC:RD
     |  ins_next

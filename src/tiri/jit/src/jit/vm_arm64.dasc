@@ -2995,7 +2995,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
 
   case BC_BFUNC:
     |  // RA = dst, RC = immutable built-in callable ID
-    |  add TMP0, GL, #offsetof(global_State, builtin_callables)
+    |  add TMP0, GL, #GG_G2BUILTIN
     |  ldr LFUNC:TMP0, [TMP0, RC, lsl #3]
     |  movn TMP1, #~LJ_TFUNC
     |  add TMP0, TMP0, TMP1, lsl #47

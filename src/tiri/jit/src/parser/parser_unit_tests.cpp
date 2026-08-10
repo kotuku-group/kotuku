@@ -9,10 +9,12 @@
 #include "lualib.h"
 
 #include "lj_bc.h"
+#include "lj_ff.h"
 #include "lj_obj.h"
 #include "bytecode/lj_bcdump.h"
 #include "runtime/lj_contract.h"
 #include "runtime/lj_meta.h"
+#include "runtime/lj_proto_registry.h"
 #include "runtime/lj_str.h"
 #include "runtime/lj_tab.h"
 #include "debug/dump_bytecode.h"
@@ -39,7 +41,9 @@
 #include "parse_types.h"
 #include "token_stream.h"
 #include "token_types.h"
+#include "type_checker.h"
 #include "parser.h"
+#include "static_descriptor_analysis.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
@@ -4725,6 +4729,399 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
    return true;
 }
 
+static bool test_builtin_method_registry(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   const fprototype *table_insert = get_method_prototype(TiriType::Table, "insert");
+   const fprototype *array_push = get_method_prototype(TiriType::Array, "push");
+   const fprototype *string_upper = get_method_prototype(TiriType::Str, "upper");
+   if (not table_insert or not array_push or not string_upper or
+       table_insert->builtin_callable_id != builtin_callable_id(FastFunc::table_insert) or
+       array_push->builtin_callable_id != builtin_callable_id(FastFunc::array_push) or
+       string_upper->builtin_callable_id != builtin_callable_id(FastFunc::string_upper)) {
+      Log.error("vertical-slice methods did not retain their canonical callable identities");
+      return false;
+   }
+   if (not table_insert->is_method() or table_insert->receiver_type != TiriType::Table or
+       table_insert->param_count != 2 or table_insert->param_types()[0] != TiriType::Table) {
+      Log.error("table.insert method metadata did not retain its receiver ABI");
+      return false;
+   }
+   const fprototype *array_insert = get_method_prototype(TiriType::Array, "insert");
+   const fprototype *range_contains = get_method_prototype(TiriType::Range, "contains");
+   const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
+   const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
+   if (not array_insert or not range_contains or not struct_clone or not object_exists or
+       array_insert->builtin_callable_id != builtin_callable_id(FastFunc::array_insert) or
+       range_contains->builtin_callable_id != builtin_callable_id(FastFunc::range_contains) or
+       struct_clone->builtin_callable_id != builtin_callable_id(FastFunc::struct_clone) or
+       object_exists->builtin_callable_id != builtin_callable_id(FastFunc::object_exists) or
+       array_insert IS table_insert or get_method_prototype(TiriType::Table, "push") or
+       get_method_prototype(TiriType::Table, "new")) {
+      Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
+      return false;
+   }
+
+   constexpr std::array<std::string_view, 28> array_methods = {
+      "table", "concat", "contains", "first", "last", "clear", "resize", "push", "pop", "copy",
+      "getString", "setString", "type", "readOnly", "fill", "find", "reverse", "slice", "sort", "each",
+      "map", "filter", "reduce", "any", "all", "insert", "remove", "clone"
+   };
+   constexpr std::array<std::string_view, 23> string_methods = {
+      "byte", "cap", "contains", "count", "decap", "endsWith", "escXML", "find", "format", "hash", "len",
+      "lower", "pop", "rep", "replace", "reverse", "rtrim", "split", "startsWith", "sub", "trim",
+      "unescapeXML", "upper"
+   };
+   constexpr std::array<std::string_view, 12> table_methods = {
+      "insert", "remove", "move", "concat", "sort", "empty", "kind", "size", "clear", "slice", "sortByKeys",
+      "toXML"
+   };
+   constexpr std::array<std::string_view, 10> range_methods = {
+      "each", "filter", "reduce", "map", "take", "any", "all", "find", "contains", "toArray"
+   };
+   constexpr std::array<std::string_view, 3> struct_methods = { "structSize", "copy", "clone" };
+   constexpr std::array<std::string_view, 12> object_methods = {
+      "class", "init", "free", "children", "detach", "get", "set", "getKey", "setKey", "exists", "subscribe",
+      "unsubscribe"
+   };
+   auto verify_inventory = [&](TiriType ReceiverType, std::string_view Interface, const auto &Methods) {
+      for (std::string_view method : Methods) {
+         const fprototype *prototype = get_method_prototype(ReceiverType, method);
+         if (not prototype or not prototype->is_method() or prototype->receiver_type != ReceiverType or
+             prototype->param_count IS 0 or prototype->param_types()[0] != ReceiverType or
+             not builtin_callable_valid(prototype->builtin_callable_id)) return false;
+         std::string canonical(Interface IS "obj" ? "object" : Interface);
+         canonical.push_back('.');
+         canonical.append(method);
+         const char *registered_name = builtin_callable_name(prototype->builtin_callable_id);
+         if (not registered_name or canonical != registered_name or get_prototype(Interface, method) != prototype) {
+            return false;
+         }
+      }
+      return true;
+   };
+   if (not verify_inventory(TiriType::Array, "array", array_methods) or
+       not verify_inventory(TiriType::Str, "string", string_methods) or
+       not verify_inventory(TiriType::Table, "table", table_methods) or
+       not verify_inventory(TiriType::Range, "range", range_methods) or
+       not verify_inventory(TiriType::Struct, "struct", struct_methods) or
+       not verify_inventory(TiriType::Object, "obj", object_methods)) {
+      Log.error("complete method inventory lost registration, receiver ABI or canonical callable identity");
+      return false;
+   }
+
+   const fprototype *table_new = get_prototype("table", "new");
+   if (not table_new or table_new->is_method() or table_new->receiver_type != TiriType::Unknown or
+       table_new->builtin_callable_id != BuiltinCallableID::Invalid) {
+      Log.error("namespace-only prototype was classified as an instance method");
+      return false;
+   }
+
+   ERR duplicate = reg_iface_method(L, "table", "insert", TiriType::Table,
+      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any });
+   ERR conflicting = reg_iface_method(L, "table", "insert", TiriType::Table,
+      builtin_callable_id(FastFunc::table_insert), { TiriType::Num }, { TiriType::Table, TiriType::Any });
+   ERR invalid_receiver = reg_iface_method(L, "table", "insert", TiriType::Any,
+      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Any, TiriType::Any });
+   ERR wrong_callable = reg_iface_method(L, "table", "insert", TiriType::Table,
+      builtin_callable_id(FastFunc::string_upper), {}, { TiriType::Table, TiriType::Any });
+   lua_getglobal(L, "table");
+   lua_getfield(L, -1, "insert");
+   lua_pushnil(L);
+   lua_setfield(L, -3, "insert");
+   ERR wrong_export = reg_iface_method(L, "table", "insert", TiriType::Table,
+      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any });
+   lua_pushvalue(L, -1);
+   lua_setfield(L, -3, "insert");
+   lua_pop(L, 2);
+   if (duplicate != ERR::Exists or conflicting != ERR::Mismatch or invalid_receiver != ERR::InvalidValue or
+       wrong_callable != ERR::Mismatch or wrong_export != ERR::Mismatch) {
+      Log.error("method registration consistency checks returned unexpected errors");
+      return false;
+   }
+   return true;
+}
+
+static bool test_builtin_method_static_classification(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "local values = {}\n"
+      "values.insert(1);\n"
+      "local extracted = values.insert\n"
+      "values.insert = extracted;\n"
+      "(values.insert)(2);\n"
+      "values['insert'](3);\n"
+      "values.insert { 4 };\n"
+      "local dynamic:any = values\n"
+      "dynamic.insert(5);\n"
+      "local text = 'abc'\n"
+      "local upper = text.upper()\n"
+      "local items = array.of('int', 1)\n"
+      "items.push(2);\n"
+      "local maybe:table = nil\n"
+      "maybe?.insert(6);\n";
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(L, unit_reader, &reader, "builtin-method-classification", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserAllocator allocator = ParserAllocator::from(L);
+   ParserContext context = ParserContext::from(lex, fs, allocator);
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Log.error("built-in method classification fixture did not parse");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   run_type_analysis(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   if (context.diagnostics().has_errors()) {
+      Log.error("built-in method classification produced unexpected diagnostics");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+
+   auto expression_call = [&](size_t Index) -> const CallExprPayload * {
+      if (Index >= chunk.value_ref()->statements.size()) return nullptr;
+      const auto *statement = std::get_if<ExpressionStmtPayload>(&chunk.value_ref()->statements[Index]->data);
+      if (not statement or not statement->expression or
+          (statement->expression->kind != AstNodeKind::CallExpr and
+           statement->expression->kind != AstNodeKind::SafeCallExpr)) return nullptr;
+      return std::get_if<CallExprPayload>(&statement->expression->data);
+   };
+   auto local_call = [&](size_t Index) -> const CallExprPayload * {
+      if (Index >= chunk.value_ref()->statements.size()) return nullptr;
+      const auto *statement = std::get_if<LocalDeclStmtPayload>(&chunk.value_ref()->statements[Index]->data);
+      if (not statement or statement->values.empty()) return nullptr;
+      return std::get_if<CallExprPayload>(&statement->values.front()->data);
+   };
+
+   const CallExprPayload *table_call = expression_call(1);
+   const CallExprPayload *grouped_call = expression_call(4);
+   const CallExprPayload *computed_call = expression_call(5);
+   const CallExprPayload *shorthand_call = expression_call(6);
+   const CallExprPayload *dynamic_call = expression_call(8);
+   const CallExprPayload *upper_call = local_call(10);
+   const CallExprPayload *push_call = expression_call(12);
+   const CallExprPayload *safe_call = expression_call(14);
+   if (not table_call or not grouped_call or not computed_call or not shorthand_call or not dynamic_call or
+       not upper_call or not push_call or not safe_call) {
+      Log.error("built-in method fixture calls table=%d grouped=%d computed=%d shorthand=%d dynamic=%d upper=%d "
+         "push=%d safe=%d statements=%zu", bool(table_call), bool(grouped_call), bool(computed_call),
+         bool(shorthand_call), bool(dynamic_call), bool(upper_call), bool(push_call), bool(safe_call),
+         chunk.value_ref()->statements.size());
+      return false;
+   }
+   if (not table_call->builtin_method or
+       table_call->builtin_method->callable != builtin_callable_id(FastFunc::table_insert) or
+       not upper_call->builtin_method or
+       upper_call->builtin_method->callable != builtin_callable_id(FastFunc::string_upper) or
+       not push_call->builtin_method or
+       push_call->builtin_method->callable != builtin_callable_id(FastFunc::array_push)) {
+      Log.error("proved dot calls did not resolve the vertical-slice methods");
+      return false;
+   }
+   if (not safe_call->builtin_method or not safe_call->builtin_method->safe or
+       safe_call->builtin_method->receiver_type != TiriType::Table) {
+      Log.error("nullable safe receiver did not resolve table.insert");
+      return false;
+   }
+   if ((grouped_call and grouped_call->builtin_method) or
+       (computed_call and computed_call->builtin_method) or
+       (shorthand_call and shorthand_call->builtin_method) or
+       (dynamic_call and dynamic_call->builtin_method)) {
+      Log.error("ineligible annotations grouped=%d computed=%d shorthand=%d dynamic=%d",
+         grouped_call->builtin_method.has_value(), computed_call->builtin_method.has_value(),
+         shorthand_call->builtin_method.has_value(), dynamic_call->builtin_method.has_value());
+      return false;
+   }
+
+   const auto &read = std::get<LocalDeclStmtPayload>(chunk.value_ref()->statements[2]->data);
+   const auto *read_member = read.values.empty() ? nullptr :
+      std::get_if<MemberExprPayload>(&read.values.front()->data);
+   const auto &write = std::get<AssignmentStmtPayload>(chunk.value_ref()->statements[3]->data);
+   const auto *write_member = write.targets.empty() ? nullptr :
+      std::get_if<MemberExprPayload>(&write.targets.front()->data);
+   if (not read_member or not write_member or read_member->uses_method_dispatch or write_member->uses_method_dispatch or
+       read_member->is_call_target or write_member->is_call_target) {
+      Log.error("ordinary member reads or writes acquired method-call metadata");
+      return false;
+   }
+   if (not upper_call->results or
+       context.descriptors().results(upper_call->results).value_at(0).primary != TiriType::Str or
+       not safe_call->results or not context.descriptors().results(safe_call->results).value_at(0).nullable) {
+      Log.error("method result inference did not preserve registered result type or safe nullability");
+      return false;
+   }
+
+   return true;
+}
+
+static const BCIns * find_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   for (const BCIns &instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode) return &instruction;
+   }
+   return nullptr;
+}
+
+static bool test_builtin_method_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string error;
+
+   auto fixed = compile_snapshot(L, "local values = {}\nvalues.insert(1)\nreturn #values\n", true, error);
+   const BCIns *fixed_load = fixed ? find_opcode(*fixed, BC_BFUNC) : nullptr;
+   if (not fixed or not fixed_load or count_opcode(*fixed, BC_BFUNC) != 1 or count_opcode(*fixed, BC_MOV) != 1 or
+       count_opcode(*fixed, BC_CALL) != 1 or bc_d(*fixed_load) != builtin_callable_index(
+          builtin_callable_id(FastFunc::table_insert)) or
+       count_opcode(*fixed, BC_GGET) != 0 or count_opcode(*fixed, BC_TGETS) != 0 or
+       count_opcode(*fixed, BC_TGETV) != 0 or count_opcode(*fixed, BC_JMP) != 0) {
+      Log.error("fixed built-in method call did not use the canonical lookup-free shape: %s", error.c_str());
+      return false;
+   }
+   size_t load_position = size_t(fixed_load - fixed->instructions.data());
+   if (load_position IS 0 or load_position + 1 >= fixed->instructions.size() or
+       bc_op(fixed->instructions[load_position - 1]) != BC_MOV or
+       bc_a(fixed->instructions[load_position - 1]) != bc_a(*fixed_load) + 1 + LJ_FR2 or
+       bc_op(fixed->instructions[load_position + 1]) != BC_KSHORT) {
+      Log.error("built-in method receiver was not inserted before written arguments");
+      return false;
+   }
+
+   error.clear();
+   auto forwarded = compile_snapshot(L,
+      "local function item():num return 2 end\nlocal values = {}\nvalues.insert(item())\nreturn #values\n",
+      true, error);
+   if (not forwarded or count_opcode(*forwarded, BC_BFUNC) != 1 or count_opcode(*forwarded, BC_CALLM) != 1 or
+       count_opcode(*forwarded, BC_TGETS) != 0) {
+      Log.error("forwarded built-in method arguments lost CALLM lowering: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto tail = compile_snapshot(L, "local text = 'abc'\nreturn text.upper()\n", true, error);
+   if (not tail or count_opcode(*tail, BC_BFUNC) != 1 or count_opcode(*tail, BC_CALLT) != 1 or
+       count_opcode(*tail, BC_TGETS) != 0) {
+      Log.error("built-in method tail call did not retain CALLT lowering: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto safe = compile_snapshot(L,
+      "local maybe:table = nil\nmaybe?.insert(1)\nreturn maybe\n", true, error);
+   if (not safe or count_opcode(*safe, BC_BFUNC) != 1 or count_opcode(*safe, BC_ISEQP) != 1 or
+       count_opcode(*safe, BC_CALL) != 1 or count_opcode(*safe, BC_TGETS) != 0 or
+       count_opcode(*safe, BC_TGETV) != 0) {
+      Log.error("safe built-in method call lost canonical nil-short-circuit lowering: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto piped = compile_snapshot(L, "local values = {}\n1 |> values.insert()\nreturn #values\n", true, error);
+   if (not piped or count_opcode(*piped, BC_BFUNC) != 1 or count_opcode(*piped, BC_CALL) != 1 or
+       count_opcode(*piped, BC_TGETS) != 0 or count_opcode(*piped, BC_TGETV) != 0) {
+      Log.error("piped built-in method call did not use canonical emission: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto range_pipe = compile_snapshot(L,
+      "local total = 0\n{0 to 4} |> (Value => do total += Value end)\nreturn total\n", true, error);
+   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 1 or
+       count_opcode_tree(*range_pipe, BC_TGETS) != 0) {
+      Log.error("compiler-generated range iteration did not use canonical emission: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto append = compile_snapshot(L,
+      "local values = array<byte>\nvalues ..= 'x' .. 'y'\nreturn values\n", true, error);
+   const BCIns *append_load = append ? find_opcode(*append, BC_BFUNC) : nullptr;
+   if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 1 or
+       bc_d(*append_load) != builtin_callable_index(builtin_callable_id(FastFunc::array_append))) {
+      Log.error("compiler-only array append did not use canonical emission: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_builtin_method_runtime(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   constexpr std::string_view source =
+      "local values = {}\n"
+      "local order = ''\n"
+      "local function mark():bool order ..= 'r'; return true end\n"
+      "local function argument():num order ..= 'a'; return 7 end\n"
+      "(mark() ? values :> values).insert(argument())\n"
+      "local maybe:table = nil\n"
+      "maybe?.insert(argument())\n"
+      "maybe = {}\n"
+      "maybe?.insert(argument())\n"
+      "8 |> values.insert()\n"
+      "local items = array.of('int', 1)\n"
+      "items.push(2)\n"
+      "local text = 'abc'\n"
+      "local upper = text.upper()\n"
+      "for i in {0 to 200} do values.insert(i) end\n"
+      "return order, #values, values[0], values[1], #maybe, maybe[0], items[1], upper\n";
+
+   if (lua_load(L, source, "builtin-method-runtime")) {
+      Log.error("failed to compile built-in method runtime fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *prototype = funcproto(funcV(L->top - 1));
+   if (lua_pcall(L, 0, 8, 0)) {
+      Log.error("built-in method runtime fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (prototype->trace IS 0 or std::string_view(lua_tostring(L, -8)) != "raa" or
+       lua_tointeger(L, -7) != 202 or lua_tointeger(L, -6) != 7 or lua_tointeger(L, -5) != 8 or
+       lua_tointeger(L, -4) != 1 or lua_tointeger(L, -3) != 7 or lua_tointeger(L, -2) != 2 or
+       std::string_view(lua_tostring(L, -1)) != "ABC") {
+      Log.error("interpreter/JIT built-in methods changed evaluation order, dispatch priority or results");
+      lua_pop(L, 8);
+      return false;
+   }
+   lua_pop(L, 8);
+
+   constexpr std::string_view rebound_source =
+      "local values = {}\nvalues.insert(9)\nreturn values[0]\n";
+   if (lua_load(L, rebound_source, "builtin-method-rebinding")) {
+      Log.error("failed to compile built-in method rebinding fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_getglobal(L, "table");
+   lua_pushnil(L);
+   lua_setfield(L, -2, "insert");
+   lua_pop(L, 1);
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != 9) {
+      Log.error("public namespace rebinding redirected a canonical instance call");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
 static bool test_object_call_result_descriptors(kt::Log &Log)
 {
    if (classify_object_call_member("acGetKey") != ObjectCallMemberKind::Action or
@@ -6247,7 +6644,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 55> tests = { {
+   constexpr std::array<TestCase, 59> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -6295,6 +6692,10 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "static_result_set_model", test_static_result_set_model },
       { "environment_store_boundary", test_environment_store_boundary },
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
+      { "builtin_method_registry", test_builtin_method_registry },
+      { "builtin_method_static_classification", test_builtin_method_static_classification },
+      { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
+      { "builtin_method_runtime", test_builtin_method_runtime },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "module_call_result_descriptors", test_module_call_result_descriptors },
       { "module_namespace_declarations", test_module_namespace_declarations },

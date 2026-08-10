@@ -3,14 +3,10 @@
 
 #pragma once
 
+#include "lj_ffid.h"
 #include <array>
-#include <cstdint>
-#include <limits>
 
 // Fast function ID.
-
-inline constexpr uint8_t FF_LUA = 0;
-inline constexpr uint8_t FF_C   = 1;
 
 enum class FastFunc : unsigned int {
    LUA_ = FF_LUA,   //  Lua function (must be 0) - see lj_obj.h
@@ -27,18 +23,9 @@ inline constexpr unsigned int FF_C_ = unsigned(FastFunc::C_);
 #include "lj_ffdef.h"
 inline constexpr unsigned int FF__MAX = unsigned(FastFunc::_MAX);
 
-enum class BuiltinCallableID : uint16_t {
-   Invalid = std::numeric_limits<uint16_t>::max()
-};
-
 [[nodiscard]] inline constexpr BuiltinCallableID builtin_callable_id(FastFunc Value) noexcept
 {
    return BuiltinCallableID(unsigned(Value));
-}
-
-[[nodiscard]] inline constexpr unsigned int builtin_callable_index(BuiltinCallableID Value) noexcept
-{
-   return unsigned(Value);
 }
 
 [[nodiscard]] inline constexpr bool builtin_callable_valid(BuiltinCallableID Value) noexcept
@@ -85,11 +72,11 @@ inline constexpr std::array<const char *, FF__MAX> glBuiltinCallableNames = {
 }
 
 static_assert(FF__MAX > FF_C_ + 1);
-static_assert(FF__MAX - 1 <= std::numeric_limits<uint8_t>::max());
+static_assert(FF__MAX <= BUILTIN_CALLABLE_CAPACITY);
 static_assert(FF__MAX - 1 <= std::numeric_limits<uint16_t>::max());
 static_assert(builtin_callable_index(BuiltinCallableID::Invalid) >= FF__MAX);
 #ifdef FFDEF_BFUNC_ABI
-static_assert(builtin_callable_abi_fingerprint() IS 0x4d2ffdb25c3a0e87ull,
+static_assert(builtin_callable_abi_fingerprint() IS 0xf21b72756e7e6411ull,
    "fast-function ordering changed: bump BCDUMP_VERSION and update the BC_BFUNC ABI fingerprint");
 #endif
 

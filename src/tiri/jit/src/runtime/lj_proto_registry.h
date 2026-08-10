@@ -25,12 +25,21 @@ ERR reg_iface_prototype(std::string_view Interface, std::string_view Method,
    std::initializer_list<TiriType> ResultTypes, std::initializer_list<TiriType> ParamTypes,
    FProtoFlags Flags = FProtoFlags::None);
 
+// Register an instance-capable interface method.  The full native parameter list includes the receiver at position
+// zero.  The exported interface field and canonical built-in slot are validated in every Lua state.
+
+ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
+   BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None);
+
 // Lookup by string (computes hash internally)
 
 const fprototype* get_prototype(std::string_view Interface, std::string_view Method);
 const fprototype* get_func_prototype(std::string_view Name);
+const fprototype* get_method_prototype(TiriType ReceiverType, std::string_view Method);
 
 // Lookup by pre-computed hash (for parser integration where GCstr->hash is available)
 
 const fprototype* get_prototype_by_hash(uint32_t IfaceHash, uint32_t FuncHash);
 const fprototype* get_func_prototype_by_hash(uint32_t FuncHash);
+const fprototype* get_method_prototype_by_hash(TiriType ReceiverType, uint32_t MethodHash);

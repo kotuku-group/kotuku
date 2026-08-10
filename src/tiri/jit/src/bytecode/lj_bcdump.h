@@ -44,7 +44,7 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // mod['\31dependency'] activation call with BC_MODACT.  Version 0x88 adds BC_BFUNC and makes generated fast-function
 // ordering part of the private bytecode ABI.  Older chunks are rejected rather than retaining compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x88;
+constexpr uint8_t BCDUMP_VERSION = 0x89;
 
 // Compatibility flags.
 

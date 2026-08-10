@@ -7,6 +7,7 @@
 #include "lauxlib.h"
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_str.h"
@@ -33,7 +34,7 @@ void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function)
       lj_err_callermsg(L, "invalid built-in callable registration");
    }
 
-   GCRef &slot = G(L)->builtin_callables[builtin_callable_index(Id)];
+   GCRef &slot = L2GG(L)->builtin_callables[builtin_callable_index(Id)];
    GCobj *existing = gcref(slot);
    if (existing and existing != obj2gco(Function)) {
       lj_err_callermsg(L, "conflicting built-in callable registration");
@@ -46,7 +47,7 @@ void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function)
 GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept
 {
    if (not builtin_callable_valid(Id)) return nullptr;
-   GCobj *callable = gcref(G(L)->builtin_callables[builtin_callable_index(Id)]);
+   GCobj *callable = gcref(L2GG(L)->builtin_callables[builtin_callable_index(Id)]);
    return callable and callable->gch.gct IS uint8_t(~LJ_TFUNC) ? gco_to_function(callable) : nullptr;
 }
 

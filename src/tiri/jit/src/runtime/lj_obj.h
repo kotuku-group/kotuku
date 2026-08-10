@@ -10,7 +10,7 @@
 #include "lua.h"
 #include "lj_def.h"
 #include "lj_arch.h"
-#include "lj_ff.h"
+#include "lj_ffid.h"
 #include <array>
 #include <format>
 #include <vector>
@@ -562,7 +562,9 @@ struct fprototype {
    uint8_t result_count;     // Number of return values (0 to PROTO_MAX_RETURN_TYPES)
    uint8_t param_count;      // Number of parameters (0 to FPROTO_MAX_PARAMS)
    FProtoFlags flags;        // Optional flags
-   uint8_t _pad;             // Alignment padding
+   TiriType receiver_type;   // Concrete receiver for instance methods; Unknown for namespace functions
+   BuiltinCallableID builtin_callable_id; // Canonical callable identity for instance methods
+   uint16_t reserved;        // Reserved for future prototype metadata
    std::array<TiriType, PROTO_MAX_RETURN_TYPES> result_types;
 
    // Parameter types follow (accessed via param_types())
@@ -574,7 +576,15 @@ struct fprototype {
    inline TiriType first_result() const noexcept {
       return result_count > 0 ? result_types[0] : TiriType::Unknown;
    }
+
+   [[nodiscard]] inline bool is_method() const noexcept {
+      return receiver_type != TiriType::Unknown and builtin_callable_assigned(builtin_callable_id);
+   }
 };
+
+static_assert(FPROTO_MAX_PARAMS <= std::numeric_limits<uint8_t>::max());
+static_assert(PROTO_MAX_RETURN_TYPES <= std::numeric_limits<uint8_t>::max());
+static_assert(sizeof(fprototype) IS 16);
 
 // Lookup key for prototype registry (interface_hash=0 for globals)
 
@@ -1523,11 +1533,8 @@ typedef struct global_State {
    MRef      ctype_state;    // Pointer to C type state.
    PRNGState prng;           // Global PRNG state.
    void     *funcnames;      // Map of GCproto* to function names (std::unordered_map<>*).
-   GCRef     builtin_callables[FF__MAX]; // Immutable state-local canonical native closures, indexed by FastFunc.
    GCRef     gcroot[GCROOT_MAX];  //  GC roots.
 } global_State;
-
-static_assert(sizeof(((global_State *)nullptr)->builtin_callables) / sizeof(GCRef) IS FF__MAX);
 
 // Forward declarations - defined after GCobj is complete
 

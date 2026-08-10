@@ -751,7 +751,8 @@ static bool detect_constructor_call(const ExprNode &Callee, const ExprNodeList &
 
 //********************************************************************************************************************
 
-ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret)
+ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret,
+   CallArgumentSyntax ArgumentSyntax)
 {
    assert_node(ensure_operand(callee), "call expression requires callee");
    CallExprPayload payload;
@@ -772,6 +773,7 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
    target.callable = std::move(callee);
    payload.target = std::move(target);
    payload.arguments = std::move(arguments);
+   payload.argument_syntax = ArgumentSyntax;
    payload.forwards_multret = forwards_multret;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::CallExpr;

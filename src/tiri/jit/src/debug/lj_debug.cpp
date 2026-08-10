@@ -5,6 +5,7 @@
 #define LUA_CORE
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_err.h"
 #include "lj_debug.h"
 #include "filesource.h"

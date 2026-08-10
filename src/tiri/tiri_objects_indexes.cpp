@@ -443,14 +443,17 @@ static int object_get(lua_State *Lua)
 {
    kt::Log log("obj.get");
 
+   int field_argument = object_method_argument(Lua, 1);
+   int default_argument = object_method_argument(Lua, 2);
+
    std::string_view fieldname;
-   if (luaL_checkstring(Lua, 1, fieldname)) {
-      auto def = object_context(Lua);
+   if (luaL_checkstring(Lua, field_argument, fieldname)) {
+      auto def = object_method_receiver(Lua);
 
       OBJECTPTR obj;
       if (auto error = access_object(def, obj); error != ERR::Okay) {
          Lua->CaughtError = error;
-         lua_pushvalue(Lua, 2); // Push the client's default value
+         lua_pushvalue(Lua, default_argument); // Push the client's default value
          return 1;
       }
       Lua->CaughtError = ERR::Okay;
@@ -495,7 +498,7 @@ static int object_get(lua_State *Lua)
          }
 
          release_object(def);
-         if (not result) lua_pushvalue(Lua, 2); // An error occurred if no result.  Push the client's default value
+         if (not result) lua_pushvalue(Lua, default_argument); // Push the client's default value on failure.
          return 1;
       }
       else { // Revert to getKey() if the class supports it failed
@@ -506,7 +509,7 @@ static int object_get(lua_State *Lua)
          if ((error IS ERR::Okay) and (not buffer.empty())) {
             lua_pushstring(Lua, buffer);
          }
-         else lua_pushvalue(Lua, 2); // Push the client's default value
+         else lua_pushvalue(Lua, default_argument); // Push the client's default value
 
          release_object(def);
          return 1;
@@ -522,9 +525,11 @@ static int object_get(lua_State *Lua)
 
 static int object_getkey(lua_State *Lua)
 {
+   int field_argument = object_method_argument(Lua, 1);
+   int default_argument = object_method_argument(Lua, 2);
    std::string_view fieldname;
-   if (luaL_checkstring(Lua, 1, fieldname)) {
-      auto def = object_context(Lua);
+   if (luaL_checkstring(Lua, field_argument, fieldname)) {
+      auto def = object_method_receiver(Lua);
       OBJECTPTR obj;
       ERR error = access_object(def, obj);
       if (error IS ERR::Okay) {
@@ -536,7 +541,7 @@ static int object_getkey(lua_State *Lua)
       }
 
       if (error != ERR::Okay) {
-         if (lua_gettop(Lua) >= 2) lua_pushvalue(Lua, 2);
+         if (lua_gettop(Lua) >= default_argument) lua_pushvalue(Lua, default_argument);
          else lua_pushnil(Lua);
       }
 
@@ -550,24 +555,26 @@ static int object_getkey(lua_State *Lua)
 
 static int object_set(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
+   int field_argument = object_method_argument(Lua, 1);
+   int value_argument = object_method_argument(Lua, 2);
 
    std::string_view fieldname;
-   if (not luaL_checkstring(Lua, 1, fieldname)) return 0;
+   if (not luaL_checkstring(Lua, field_argument, fieldname)) return 0;
 
    OBJECTPTR obj;
    if (access_object(def, obj) IS ERR::Okay) {
-      int type = lua_type(Lua, 2);
+      int type = lua_type(Lua, value_argument);
 
       OBJECTPTR target;
       ERR error;
       if (auto field = FindField(obj, fieldhash(fieldname), &target)) { // NB: Using fieldhash() because camel-case is a valid input
          if (not field->writeable()) error = ERR::NoFieldAccess;
          else if ((field->Flags & FD_INIT) and target->initialised()) error = ERR::NoFieldAccess;
-         else if (type IS LUA_TNUMBER) error = target->set(field, luaL_checknumber(Lua, 2));
+         else if (type IS LUA_TNUMBER) error = target->set(field, luaL_checknumber(Lua, value_argument));
          else {
             size_t len;
-            auto str = luaL_optlstring(Lua, 2, nullptr, &len);
+            auto str = luaL_optlstring(Lua, value_argument, nullptr, &len);
             std::string_view sv(str ? str : "", len);
             error = target->set(field, sv);
          }
@@ -587,10 +594,12 @@ static int object_set(lua_State *Lua)
 
 static int object_setkey(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
+   int field_argument = object_method_argument(Lua, 1);
+   int value_argument = object_method_argument(Lua, 2);
    std::string_view fieldname;
-   if (luaL_checkstring(Lua, 1, fieldname)) {
-      auto value = luaL_optstring(Lua, 2, nullptr);
+   if (luaL_checkstring(Lua, field_argument, fieldname)) {
+      auto value = luaL_optstring(Lua, value_argument, nullptr);
       OBJECTPTR obj;
       if (access_object(def, obj) IS ERR::Okay) {
          ERR error = acSetKey(obj, fieldname, value);

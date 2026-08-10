@@ -14,6 +14,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_tab.h"
@@ -38,8 +39,6 @@
 #include "../../defs.h"
 
 #define LJLIB_MODULE_array
-
-static constexpr std::string_view glArrayAppendHelperKey("\x1f" "array.append", 13);
 
 constexpr auto HASH_INT     = kt::strhash("int");
 constexpr auto HASH_BYTE    = kt::strhash("byte");
@@ -2685,12 +2684,10 @@ extern "C" int luaopen_array(lua_State *L)
    LJ_LIB_REG(L, "array", array);
    // Stack: [..., array_lib_table]
 
-   // Compound concatenation lowers through this hidden key so rebinding the public array global cannot shadow it.
-   lua_getfield(L, -1, "append");
-   lua_pushlstring(L, glArrayAppendHelperKey.data(), glArrayAppendHelperKey.size());
-   lua_pushvalue(L, -2);
-   lua_rawset(L, LUA_GLOBALSINDEX);
-   lua_pop(L, 1);
+   // array.append is a compiler-only compound-concatenation helper.  Its canonical closure remains rooted for
+   // BC_BFUNC, but it is not part of the public array namespace.
+   lua_pushnil(L);
+   lua_setfield(L, -2, "append");
 
    // Use the library table directly as the base metatable for arrays.
    // This allows lj_arr_get to find methods like concat, sort, etc. via direct table lookup.
@@ -2718,39 +2715,63 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_prototype("array", "new", { TiriType::Array }, { TiriType::Num, TiriType::Str });
    reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str }, FProtoFlags::Variadic);
    // Methods
-   reg_iface_prototype("array", "table", { TiriType::Table }, { TiriType::Array });
-   reg_iface_prototype("array", "concat", { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "contains", { TiriType::Bool }, { TiriType::Array, TiriType::Any });
-   reg_iface_prototype("array", "first", { TiriType::Any }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "last", { TiriType::Any }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "clear", {}, { TiriType::Array });
-   reg_iface_prototype("array", "resize", {}, { TiriType::Array, TiriType::Num });
-   reg_iface_prototype("array", "push", {}, { TiriType::Array, TiriType::Any });
+   reg_iface_method(L, "array", "table", TiriType::Array, builtin_callable_id(FastFunc::array_table),
+      { TiriType::Table }, { TiriType::Array });
+   reg_iface_method(L, "array", "concat", TiriType::Array, builtin_callable_id(FastFunc::array_concat),
+      { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "array", "contains", TiriType::Array, builtin_callable_id(FastFunc::array_contains),
+      { TiriType::Bool }, { TiriType::Array, TiriType::Any });
+   reg_iface_method(L, "array", "first", TiriType::Array, builtin_callable_id(FastFunc::array_first),
+      { TiriType::Any }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "last", TiriType::Array, builtin_callable_id(FastFunc::array_last),
+      { TiriType::Any }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "clear", TiriType::Array, builtin_callable_id(FastFunc::array_clear), {},
+      { TiriType::Array });
+   reg_iface_method(L, "array", "resize", TiriType::Array, builtin_callable_id(FastFunc::array_resize), {},
+      { TiriType::Array, TiriType::Num });
+   reg_iface_method(L, "array", "push", TiriType::Array, builtin_callable_id(FastFunc::array_push), {},
+      { TiriType::Array, TiriType::Any });
 
-   // array.append() was created for concatenation of byte arrays, for this reason it is not documented for client use.
-   // Clients are expected to use array.push() for appending values to arrays of any type.
-   reg_iface_prototype("array", "append", { TiriType::Any }, { TiriType::Any, TiriType::Any });
-
-   reg_iface_prototype("array", "pop", { TiriType::Any }, { TiriType::Array });
-   reg_iface_prototype("array", "copy", {}, { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "getString", { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "setString", {}, { TiriType::Array, TiriType::Str, TiriType::Num });
-   reg_iface_prototype("array", "type", { TiriType::Str }, { TiriType::Array });
-   reg_iface_prototype("array", "readOnly", { TiriType::Bool }, { TiriType::Array });
-   reg_iface_prototype("array", "fill", {}, { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "find", { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("array", "reverse", { TiriType::Array }, { TiriType::Array });
-   reg_iface_prototype("array", "slice", { TiriType::Array }, { TiriType::Array, TiriType::Any });
-   reg_iface_prototype("array", "sort", { TiriType::Array }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "each", {}, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "map", { TiriType::Array }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "filter", { TiriType::Array }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "reduce", { TiriType::Any }, { TiriType::Array, TiriType::Func, TiriType::Any });
-   reg_iface_prototype("array", "any", { TiriType::Bool }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "all", { TiriType::Bool }, { TiriType::Array, TiriType::Func });
-   reg_iface_prototype("array", "insert", {}, { TiriType::Array, TiriType::Num, TiriType::Any });
-   reg_iface_prototype("array", "remove", { TiriType::Any }, { TiriType::Array, TiriType::Num });
-   reg_iface_prototype("array", "clone", { TiriType::Array }, { TiriType::Array });
+   reg_iface_method(L, "array", "pop", TiriType::Array, builtin_callable_id(FastFunc::array_pop),
+      { TiriType::Any }, { TiriType::Array });
+   reg_iface_method(L, "array", "copy", TiriType::Array, builtin_callable_id(FastFunc::array_copy), {},
+      { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "array", "getString", TiriType::Array, builtin_callable_id(FastFunc::array_getString),
+      { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "array", "setString", TiriType::Array, builtin_callable_id(FastFunc::array_setString), {},
+      { TiriType::Array, TiriType::Str, TiriType::Num });
+   reg_iface_method(L, "array", "type", TiriType::Array, builtin_callable_id(FastFunc::array_type),
+      { TiriType::Str }, { TiriType::Array });
+   reg_iface_method(L, "array", "readOnly", TiriType::Array, builtin_callable_id(FastFunc::array_readOnly),
+      { TiriType::Bool }, { TiriType::Array });
+   reg_iface_method(L, "array", "fill", TiriType::Array, builtin_callable_id(FastFunc::array_fill), {},
+      { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "array", "find", TiriType::Array, builtin_callable_id(FastFunc::array_find),
+      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "array", "reverse", TiriType::Array, builtin_callable_id(FastFunc::array_reverse),
+      { TiriType::Array }, { TiriType::Array });
+   reg_iface_method(L, "array", "slice", TiriType::Array, builtin_callable_id(FastFunc::array_slice),
+      { TiriType::Array }, { TiriType::Array, TiriType::Any });
+   reg_iface_method(L, "array", "sort", TiriType::Array, builtin_callable_id(FastFunc::array_sort),
+      { TiriType::Array }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "each", TiriType::Array, builtin_callable_id(FastFunc::array_each), {},
+      { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "map", TiriType::Array, builtin_callable_id(FastFunc::array_map),
+      { TiriType::Array }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "filter", TiriType::Array, builtin_callable_id(FastFunc::array_filter),
+      { TiriType::Array }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "reduce", TiriType::Array, builtin_callable_id(FastFunc::array_reduce),
+      { TiriType::Any }, { TiriType::Array, TiriType::Any, TiriType::Func });
+   reg_iface_method(L, "array", "any", TiriType::Array, builtin_callable_id(FastFunc::array_any),
+      { TiriType::Bool }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "all", TiriType::Array, builtin_callable_id(FastFunc::array_all),
+      { TiriType::Bool }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "insert", TiriType::Array, builtin_callable_id(FastFunc::array_insert), {},
+      { TiriType::Array, TiriType::Num, TiriType::Any });
+   reg_iface_method(L, "array", "remove", TiriType::Array, builtin_callable_id(FastFunc::array_remove),
+      { TiriType::Any }, { TiriType::Array, TiriType::Num });
+   reg_iface_method(L, "array", "clone", TiriType::Array, builtin_callable_id(FastFunc::array_clone),
+      { TiriType::Array }, { TiriType::Array });
 
    return 1;
 }

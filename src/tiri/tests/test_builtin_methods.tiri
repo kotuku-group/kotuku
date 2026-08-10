@@ -1,0 +1,133 @@
+-- Cross-interface coverage for canonical dot built-in method calls.
+
+struct BuiltinMethodRecord
+   Value: int
+end
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function ArrayMethods()
+   local values = array<int> { 1, 2 }
+   values.push(3)
+   assert(values.contains(2) and #values is 3, 'Array query and mutation methods should use dot calls')
+
+   local mapped = values.map(Value => num: Value * 2)
+   assert(mapped[0] is 2 and mapped[2] is 6, 'Array map should retain its array result')
+   assert(values.reduce(0, (Total, Value) => num: Total + Value) is 6,
+      'Array reduce should return the accumulator result')
+
+   local clone = values.clone()
+   assert(#clone is 3 and clone[2] is 3, 'Array clone should return a separate array')
+end
+
+@Test function StringMethods()
+   local text = 'Hello World'
+   assert(text.upper() is 'HELLO WORLD', 'String transformations should use dot calls')
+   assert(text.contains('World') and text.startsWith('Hello'), 'String query methods should use dot calls')
+
+   local first, second = 'AB'.byte(0, 1)
+   assert(first is 65 and second is 66, 'Variadic string methods should preserve multiple results')
+   local parts = 'a,b,c'.split(',')
+   assert(#parts is 3 and parts[1] is 'b', 'String array results should retain their inferred type')
+end
+
+@Test function TableMethodsAndFieldPriority()
+   local values = {}
+   values.insert = 'field value'
+   values.insert('method value')
+   assert(values.insert is 'field value', 'Immediate method calls must not replace the same-named field')
+   assert(values[0] is 'method value', 'Registered table methods should own immediate dot-call position')
+
+   values.clear()
+   assert(values.empty(), 'Table clear and empty should compose through dot calls')
+
+   local sequence = { 'first', 'second' }
+   assert(sequence.concat(',') is 'first,second', 'Table concat should receive the implicit table receiver')
+   assert(sequence.remove() is 'second', 'Optional table method arguments should remain optional')
+end
+
+@Test function FieldCallEscapePaths()
+   local values = {}
+   values.insert = function(Value)
+      return 'grouped:' .. Value
+   end
+   assert((values.insert)('one') is 'grouped:one', 'Grouped member calls should retain field-call semantics')
+   assert(values['insert']('two') is 'grouped:two', 'Computed member calls should retain field-call semantics')
+end
+
+@Test function RangeMethods()
+   local values = {0 to 5}
+   assert(values.contains(3), 'Range contains should use the canonical range callable')
+   assert(values.reduce(0, (Total, Value) => num: Total + Value) is 10,
+      'Range reduce should preserve its native argument order')
+
+   local mapped = values.map(Value => num: Value + 1)
+   local materialised = values.toArray()
+   assert(mapped[0] is 1 and mapped[4] is 5, 'Range map should return an array')
+   assert(#materialised is 5 and materialised[4] is 4, 'Range toArray should materialise every value')
+end
+
+@Test function IterationPipes()
+   local total = 0
+   {0 to 4} |> (Value => do total += Value end)
+   local values = array<int> { 1, 2, 3 }
+   values |> (Value => do total += Value end)
+   assert(total is 12, 'Compiler-generated range and array iteration should use canonical each methods')
+end
+
+@Test function StructMethods()
+   local source = struct<BuiltinMethodRecord> { Value=42 }
+   assert(source.structSize() > 0, 'Struct size should be available as a canonical method')
+
+   local clone = source.clone()
+   assert(clone.Value is 42, 'Struct clone should retain the payload')
+   local destination = struct<BuiltinMethodRecord> { Value=1 }
+   destination.copy(source)
+   assert(destination.Value is 42, 'Struct copy should use the destination as receiver')
+end
+
+@Test function ObjectMethods()
+   local file = obj.new('file')
+   assert(file.exists(), 'Object exists should use a canonical object method')
+   assert(file.set('path', 'temp:builtin-methods.txt') is ERR_Okay, 'Object set should return its error code')
+   assert(file.get('path') is 'temp:builtin-methods.txt', 'Object get should return the requested field')
+   file.free()
+end
+
+@Test function SafeMethods()
+   local values:table = nil
+   local called = false
+   local function argument():num
+      called = true
+      return 1
+   end
+   local result = values?.insert(argument())
+   assert(result is nil and not called, 'A nil safe receiver should skip written arguments')
+
+   values = {}
+   values?.insert(3)
+   assert(values[0] is 3, 'A non-nil safe receiver should invoke the canonical method')
+end
+
+@Test function MethodNameOverlap()
+   local array_values = array<int> { 1 }
+   local table_values = {}
+   array_values.insert(1, 2)
+   table_values.insert(3)
+   assert(array_values[1] is 2 and table_values[0] is 3,
+      'The insert method name should resolve independently for array and table receivers')
+
+   assert(array_values.contains(1), 'Array contains should resolve against the array interface')
+   assert('abc'.contains('b'), 'String contains should resolve against the string interface')
+   assert(({0 to 3}).contains(2), 'Range contains should resolve against the range interface')
+end
+
+@Test function NamespaceRebindingDoesNotRedirectMethods()
+   local original = table.insert
+   local values = {}
+   table.insert = nil
+   values.insert(7)
+   table.insert = original
+   assert(values[0] is 7, 'Compiled instance calls should ignore later public namespace rebinding')
+end

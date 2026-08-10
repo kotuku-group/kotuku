@@ -14,6 +14,7 @@
 
 #include <kotuku/main.h>
 
+#include "lj_ff.h"
 #include "lj_debug.h"
 #include "lj_tab.h"
 #include "lj_proto_registry.h"
