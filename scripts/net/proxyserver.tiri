@@ -51,8 +51,8 @@ glMimeTypes = {
 
 function timestamp():str
    local instant = tempus.now()
-   local zoned = instant.toZonedDateTime(instant, tempus.zone.local())
-   return zoned.format(zoned, 'yyyy-MM-dd HH:mm:ss.SSS')
+   local zoned = instant.toZonedDateTime(tempus.zone.local())
+   return zoned.format('yyyy-MM-dd HH:mm:ss.SSS')
 end
 
 function logMessage(self, level, message)

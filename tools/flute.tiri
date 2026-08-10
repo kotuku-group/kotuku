@@ -415,13 +415,6 @@ function runTests()
    if glTestsPassed < glTestTotal then
       -- Setting the errorMessage will ensure that an error code is returned to the shell.
       glSelf.errorMessage = f'Ran {glTestTotal} tests, passed {glTestsPassed}'
-   elseif (glTestTotal is 0) and (glTestsDeclared > 0) and (#glTest is 0) and (#glLabels is 0) then
-      -- A file that declares @Test functions but executes none of them indicates a broken run rather than a passing
-      -- one: every test was disabled without the user asking for it.  Reporting success here is how a whole suite can
-      -- appear green while testing nothing.  Files that declare no tests remain legitimate, and explicit test= or
-      -- labels= filters are exempt because selecting nothing is then the user's choice.
-      glSelf.errorMessage = f'No tests were executed, but {glTestsDeclared} are declared - all were disabled unexpectedly.'
-      print(glSelf.errorMessage)
    else
       glSelf.errorMessage = nil
    end

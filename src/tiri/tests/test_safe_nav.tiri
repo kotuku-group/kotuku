@@ -292,10 +292,18 @@ end
    v = service.data?.embedded_function(1, "2", { "3" })
    assert(v is 255, "Embedded function should return the correct value")
 
-   v = service.data?.not_embedded_function()
-   assert(not v, "Expected nil for function that doesn't exist")
+   missing_argument_called = false
+   function missing_argument()
+      missing_argument_called = true
+      return 1
+   end
 
-   assert(ef_called is 2, "Embedded function should have been called 3 times, was called " .. tostring(ef_called) .. " times")
+   v = service.data?.not_embedded_function(missing_argument())
+   assert(not v, "Expected nil for function that doesn't exist")
+   assert(not missing_argument_called, "Missing safe-call arguments should not be evaluated")
+
+   assert(ef_called is 2,
+      "Embedded function should have been called 2 times, was called " .. tostring(ef_called) .. " times")
 end
 
 ----------------------------------------------------------------------------------------------------------------------

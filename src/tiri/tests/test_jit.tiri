@@ -1153,6 +1153,10 @@ function build_try_materialisation_trace()
    error("Failed to create a try-entry materialisation trace for inspection")
 end
 
+-- Keep trace setup out of an enclosing Flute runner trace.  Flushing that trace while this helper is being recorded
+-- can abort the recording before the materialisation probe becomes hot.
+jit.off(build_try_materialisation_trace)
+
 @Test(hotpath=80) function JITTryMaterialisationTraceEmitsXStores()
    local trace_no, info = build_try_materialisation_trace()
    local xstore_count = count_trace_opcode(trace_no, info, ir_xstore)

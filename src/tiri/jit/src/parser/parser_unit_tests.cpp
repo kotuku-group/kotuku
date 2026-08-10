@@ -3773,11 +3773,11 @@ extern math
 
 local context = { base = 5 }
 
-function context:compute(delta):<any, ...>
-   return self.base + math.abs(-delta)
+function context.compute(Self, delta):<any, ...>
+   return Self.base + math.abs(-delta)
 end
 
-return context:compute(-3)
+return context.compute(context, -3)
 )";
 
    LuaStateHolder holder;
@@ -4698,7 +4698,7 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
       "end\n"
       "local function sliced_text()\n"
       "   local buffer = string.alloc(16)\n"
-      "   return buffer:sub(0, 1)\n"
+      "   return buffer.sub(0, 1)\n"
       "end\n"
       "text = allocated_text()\n"
       "text = sliced_text()\n"
@@ -5166,7 +5166,7 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_safe = compile_snapshot(L,
       "local maybe:any = nil\nmaybe?.insert(1)\nreturn maybe\n", true, error);
    if (not dynamic_safe or count_opcode(*dynamic_safe, BC_BMETH) != 1 or
-       count_opcode(*dynamic_safe, BC_ISEQP) != 1 or count_opcode(*dynamic_safe, BC_CALL) != 2) {
+       count_opcode(*dynamic_safe, BC_ISEQP) != 2 or count_opcode(*dynamic_safe, BC_CALL) != 2) {
       Log.error("unproved safe dot call lost runtime dispatch or nil short-circuiting: %s", error.c_str());
       return false;
    }
@@ -6347,7 +6347,7 @@ static bool test_type_guided_emission(kt::Log &Log)
       "extern array\n"
       "inner = array<int> { 1 }\n"
       "items = array<array> { inner }\n"
-      "filtered = items:filter(Value => Value[0] > 0)\n"
+      "filtered = array.filter(items, Value => Value[0] > 0)\n"
       "return filtered[0][0]\n";
    snapshot = compile_snapshot(L, implicit_filter, true, error);
    if (not snapshot or count_opcode_tree(*snapshot, BC_AGETB) < 3) {

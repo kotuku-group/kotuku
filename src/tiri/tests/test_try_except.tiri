@@ -1464,7 +1464,8 @@ end
       assert(e.message.startsWith(f'[{expected_line}:'), "check should prefix its line and column, got " .. e.message)
       assert(e.message.find(mSys.GetErrorMsg(ERR_Failed)), "check should include the error description")
       assert(e.message.find("stack traceback:"), "check should include a stack traceback")
-      assert(e.message.find("in function 'func'"), "check traceback should identify the Flute test function")
+      assert(e.message.find(f'test_try_except.tiri:{expected_line}:'),
+         f"check traceback should identify source line {expected_line}")
       return
    end
 

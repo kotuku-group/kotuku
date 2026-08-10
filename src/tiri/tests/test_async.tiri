@@ -138,7 +138,7 @@ end
 -- Verify that async.pool supports reading and writing scalar values (number, string, boolean).
 
 @Test(priority=5) function PoolScalarReadWrite()
-   async.pool.clear()
+   async.pool.reset()
 
    async.pool.count = 42
    async.pool.name  = 'hello'
@@ -155,14 +155,14 @@ end
    -- Non-existent key returns nil
    assert(async.pool.nonexistent is nil, 'Expected nil for missing key')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Verify that storing an object in the pool stores its ID and reads back as a live object.
 
 @Test(priority=6) function PoolObjectStorage()
-   async.pool.clear()
+   async.pool.reset()
 
    signal = obj.new('time', { })
    expected_id = signal.id
@@ -173,14 +173,14 @@ end
    assert(result != nil, 'Expected object, got nil')
    assert(result.id is expected_id, f'Expected object ID {expected_id}, got {result.id}')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Verify that assigning nil to a pool key deletes it.
 
 @Test(priority=7) function PoolNilDeletion()
-   async.pool.clear()
+   async.pool.reset()
 
    async.pool.temp = 99
    assert(async.pool.temp is 99, 'Expected 99')
@@ -188,31 +188,31 @@ end
    async.pool.temp = nil
    assert(async.pool.temp is nil, 'Expected nil after deletion')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Verify that async.pool.clear() removes all entries.
+-- Verify that async.pool.reset() removes all entries.
 
-@Test(priority=8) function PoolClear()
-   async.pool.clear()
+@Test(priority=8) function PoolReset()
+   async.pool.reset()
 
    async.pool.a = 1
    async.pool.b = 2
    async.pool.c = 3
 
-   async.pool.clear()
+   async.pool.reset()
 
-   assert(async.pool.a is nil, 'Expected nil after clear')
-   assert(async.pool.b is nil, 'Expected nil after clear')
-   assert(async.pool.c is nil, 'Expected nil after clear')
+   assert(async.pool.a is nil, 'Expected nil after reset')
+   assert(async.pool.b is nil, 'Expected nil after reset')
+   assert(async.pool.c is nil, 'Expected nil after reset')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Verify that a worker thread can read and write the pool, and the main thread sees the results.
 
 @Test(priority=9) function PoolCrossThread()
-   async.pool.clear()
+   async.pool.reset()
    async.pool.input = 'from main'
 
    script = obj.new('tiri', { statement=[[
@@ -230,14 +230,14 @@ end
    assert(async.pool.output is 'from thread: from main',
       f'Expected "from thread: from main", got "{async.pool.output}"')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 -- In this test the signals are sent from the threaded script rather than being managed by the main thread's callback.
 
 @Test(priority=10) function PoolBinaryValues()
-   async.pool.clear()
+   async.pool.reset()
 
    -- Store and retrieve a string value containing embedded NUL bytes
 
@@ -248,7 +248,7 @@ end
    assert(#result is #binary_val, f'Length mismatch: expected {#binary_val}, got {#result}')
    assert(result is binary_val, 'Binary value round-trip failed')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -256,7 +256,7 @@ end
 -- This guards against a failed write permanently locking the shared mutex.
 
 @Test(priority=11) function PoolErrorRecovery()
-   async.pool.clear()
+   async.pool.reset()
    async.pool.before = 'ok'
 
    -- Run a script that attempts an invalid pool write (function value), which should raise an error.
@@ -281,7 +281,7 @@ end
    async.pool.after = 'still works'
    assert(async.pool.after is 'still works', f'Expected "still works", got "{async.pool.after}"')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -381,7 +381,7 @@ end
 -- async.pool must reject unsupported value types (table, function) from the same thread.
 
 @Test(priority=18) function PoolRejectsUnsupportedTypes()
-   async.pool.clear()
+   async.pool.reset()
 
    for val in values({ { 1, 2, 3 }, function() end }) do
       rejected = false
@@ -397,14 +397,14 @@ end
    async.pool.ok = 'yes'
    assert(async.pool.ok is 'yes', 'Pool should still work after rejected writes')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
 -- Rapid overwrite of the same pool key from multiple threads to stress the locking.
 
 @Test(priority=19) function PoolConcurrentOverwrite()
-   async.pool.clear()
+   async.pool.reset()
 
    total = 20
    completed = 0
@@ -429,7 +429,7 @@ end
    assert(type(result) is 'number', f'Expected number, got {type(result)}')
    print(f'Concurrent overwrite completed. Final counter value: {result}')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -567,7 +567,7 @@ end
 -- async.cancel() must not leave stale cancellation state after the worker finishes but before its message is processed.
 
 @Test(priority=26) function CancelCompletedWorkerAllowsNextAction()
-   async.pool.clear()
+   async.pool.reset()
    async.pool.completed_cancel_race = 0
 
    script = obj.new('tiri', {
@@ -590,7 +590,7 @@ end
    assert(count is 2, f'Expected second action to run after stale cancellation window, got {count}')
    assert(pending is 0, f'Expected 0 pending after stale cancellation window, got {pending}')
 
-   async.pool.clear()
+   async.pool.reset()
 end
 
 -----------------------------------------------------------------------------------------------------------------------

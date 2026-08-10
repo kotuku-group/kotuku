@@ -162,10 +162,30 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
 
    bcemit_AD(state, BC_MOV, call_base.raw(), call_base.raw());
    this->control_flow.make_unconditional(dispatch_pc).patch_to(state->current_pc());
+
+   // BC_BMETH leaves the ordinary field value in call_base on its fallback path.  A safe destination must also
+   // short-circuit when that field is nil, not just when the receiver is nil.  Emit this check before emit_branch()
+   // so neither the pipe operand nor its written arguments are evaluated for a missing method.
+   ControlFlowEdge field_nil_jump;
+   if (Call.runtime_builtin_method->safe) {
+      ExpDesc nil_value(ExpKind::Nil);
+      bcemit_INS(state, BCINS_AD(BC_ISEQP, call_base, const_pri(&nil_value)));
+      field_nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+   }
+
    auto field_result = emit_branch(false);
    if (not field_result.ok()) return ParserResult<ExpDesc>::failure(field_result.error_ref());
    BCPos field_call = field_result.value_ref();
    skip_field.patch_here();
+
+   if (Call.runtime_builtin_method->safe) {
+      // Successful built-in and field calls converge above and must preserve their result.  Only field_nil_jump enters
+      // the synthetic nil-result block; skip_nil carries both successful paths around it to the common continuation.
+      ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+      field_nil_jump.patch_to(state->current_pc());
+      bcemit_nil(state, call_base.raw(), 1);
+      skip_nil.patch_here();
+   }
 
    ParserResult<ExpDesc> emitted = nil_guard ? nil_guard->complete_call(call_base, field_call) :
       ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Call, field_call.raw()));
@@ -544,10 +564,29 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
    bcemit_AD(state, BC_MOV, call_base.raw(), call_base.raw());
    BCPos field_path = state->current_pc();
    this->control_flow.make_unconditional(dispatch_pc).patch_to(field_path);
+
+   // BC_BMETH leaves the resolved ordinary callable in call_base on its fallback path.  Safe-call semantics require a
+   // missing field to produce nil without evaluating arguments, even when the receiver itself was non-nil.
+   ControlFlowEdge field_nil_jump;
+   if (Payload.runtime_builtin_method->safe) {
+      ExpDesc nil_value(ExpKind::Nil);
+      bcemit_INS(state, BCINS_AD(BC_ISEQP, call_base, const_pri(&nil_value)));
+      field_nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+   }
+
    auto field_call_result = emit_branch_call(false);
    if (not field_call_result.ok()) return ParserResult<ExpDesc>::failure(field_call_result.error_ref());
    BCPos field_call = field_call_result.value_ref();
    skip_field.patch_here();
+
+   if (Payload.runtime_builtin_method->safe) {
+      // Both successful call paths jump over the nil assignment.  The missing-field edge alone writes the safe result
+      // into call_base before all paths rejoin for the existing receiver nil guard and result metadata handling.
+      ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+      field_nil_jump.patch_to(state->current_pc());
+      bcemit_nil(state, call_base.raw(), 1);
+      skip_nil.patch_here();
+   }
 
    ParserResult<ExpDesc> emitted = nil_guard ? nil_guard->complete_call(call_base, field_call) :
       ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Call, field_call.raw()));
