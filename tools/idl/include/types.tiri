@@ -237,8 +237,8 @@ global function cType(Value:table, Origin:str):table
    assert(Value.type, f"Value definition incorrect, missing 'type' value for '{Origin}'")
 
    Value.defType = Value.type -- Save the original type name
-   if Origin:startsWith('Function:') then Value.isFunction = true end
-   if Origin:startsWith('Method:') then Value.isMethod = true end
+   if Origin.startsWith('Function:') then Value.isFunction = true end
+   if Origin.startsWith('Method:') then Value.isMethod = true end
 
    -- A ! symbol indicates that the value is a result that is allocated and can be removed with FreeResource()
    -- A & symbol indicates that the value is a pointer to a reserved area that will store a result value, e.g. INT *
@@ -248,13 +248,13 @@ global function cType(Value:table, Origin:str):table
    local result_value
    local special, rest_type = rx_special_type.extract(Value.type)
    if special then
-      if special:find('!') then
+      if special.find('!') then
          Value.allocated = true
          result_value = true
       end
-      if special:find('&') then result_value = true end
-      if special:find('^') then Value.mutable = true end
-      if special:find('~') then Value.virtual = true end
+      if special.find('&') then result_value = true end
+      if special.find('^') then Value.mutable = true end
+      if special.find('~') then Value.virtual = true end
       Value.type = rest_type
    end
 
@@ -268,7 +268,7 @@ global function cType(Value:table, Origin:str):table
 
          if Value.isReturn then
             -- Do nothing
-         elseif Value.type:endsWith('*') then
+         elseif Value.type.endsWith('*') then
             Value.type ..= '*'
          else
             Value.type ..= ' *'
@@ -285,17 +285,17 @@ global function cType(Value:table, Origin:str):table
          end
       end
 
-      if Value.mutable and not Value.fullType.fd:find('FD_MUTABLE') then
+      if Value.mutable and not Value.fullType.fd.find('FD_MUTABLE') then
          Value.fullType.fd = 'FD_MUTABLE|' .. Value.fullType.fd
       end
 
-      if Value.resultValue and not Value.fullType.fd:find('FD_RESULT') then
+      if Value.resultValue and not Value.fullType.fd.find('FD_RESULT') then
          Value.fullType.fd = 'FD_RESULT|' .. Value.fullType.fd
       end
 
       if Value.isFunction or Value.isMethod then
-         local count = #Value.type:split('*') - 1
-         local b_count = #Value.docType:split('*') - 1
+         local count = #Value.type.split('*') - 1
+         local b_count = #Value.docType.split('*') - 1
          if count > 0 and b_count is 0 then
             Value.docType = Value.docType .. ' ' .. string.rep('*', count)
          end
@@ -615,19 +615,19 @@ global function cType(Value:table, Origin:str):table
             assert(not result_value, f'Span result parameters are not supported for {Origin}.')
 
             local inner_fd = Value.fullType.fd
-            assert(not inner_fd:find('FD_STRING'), f'String element spans are not supported for {Origin}.')
-            assert(not inner_fd:find('FD_OBJECT'), f'Object element spans are not supported for {Origin}.')
-            assert(not inner_fd:find('FD_FUNCTION'), f'Function element spans are not supported for {Origin}.')
-            assert(not inner_fd:find('FD_UNIT'), f'Unit element spans are not supported for {Origin}.')
-            assert(not inner_fd:find('FD_ARRAY'), f'Nested array spans are not supported for {Origin}.')
-            assert(not inner_fd:find('FD_VECTOR'), f'Nested vector spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_STRING'), f'String element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_OBJECT'), f'Object element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_FUNCTION'), f'Function element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_UNIT'), f'Unit element spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_ARRAY'), f'Nested array spans are not supported for {Origin}.')
+            assert(not inner_fd.find('FD_VECTOR'), f'Nested vector spans are not supported for {Origin}.')
             assert(not (Value.struct and Value.isPointer), f'Pointer-qualified structure spans are not supported for {Origin}.')
 
             local element_type:str = Value.type
             if not Value.mutable then
-               if element_type:endsWith(' *') then
+               if element_type.endsWith(' *') then
                   element_type ..= ' const'
-               elseif not element_type:startsWith('const ') then
+               elseif not element_type.startsWith('const ') then
                   element_type = 'const ' .. element_type
                end
             end
@@ -651,8 +651,8 @@ global function cType(Value:table, Origin:str):table
 
          if Value.docType and not Value.isFunction and not Value.isMethod then
             Value.docType ..= '[]'
-            if Value.docType:startsWith('struct ') then
-               Value.docType = Value.docType:sub(7)
+            if Value.docType.startsWith('struct ') then
+               Value.docType = Value.docType.sub(7)
             end
          else
             Value.docType = Value.type
@@ -696,7 +696,7 @@ global function cType(Value:table, Origin:str):table
    do -- Direction C/C++ function reference; i.e. void (*my_function)(args...)
       local fptr_args = rx_fptr_type.extract(Value.type)
       if fptr_args then
-         local arglist = fptr_args:split(' ')
+         local arglist = fptr_args.split(' ')
 
          -- Process function result type
 

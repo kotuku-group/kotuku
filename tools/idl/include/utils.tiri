@@ -25,11 +25,11 @@ global function readTextFile(Path:str, Description:str):str
    local fl
    try
       fl = io.open(Path, 'r')
-      content = fl:read('*a') ?? ''
-      fl:close()
+      content = fl.read('*a') ?? ''
+      fl.close()
       return content
    except ex
-      fl?:close()
+      fl?.close()
       error(f'Failed to read "{Path}" for {Description}: {ex.message}')
    end
 end
@@ -42,7 +42,7 @@ global function saveIfModified(Path:str, Content:str, Description:str):bool
 
    if mSys.AnalysePath(Path) is ERR_Okay then
       target_content = readTextFile(Path, Description)
-      if target_content:hash(true) is Content:hash(true) then
+      if target_content.hash(true) is Content.hash(true) then
          verbose(f'No changes detected for "{Path}"')
          return false
       end
@@ -51,10 +51,10 @@ global function saveIfModified(Path:str, Content:str, Description:str):bool
    local fl
    try
       fl = io.open(Path, 'w')
-      fl:write(Content)
-      fl:close()
+      fl.write(Content)
+      fl.close()
    except ex
-      fl?:close()
+      fl?.close()
       error(f'Failed to write "{Path}" for {Description}: {ex.message}')
    end
 
@@ -66,13 +66,13 @@ end
 
 global function output(String:str)
    if String?? then
-      if String:sub(-1) is '\n' then
-         glOutput:push(String)
+      if String.sub(-1) is '\n' then
+         glOutput.push(String)
       else
-         glOutput:push(String:rtrim())
+         glOutput.push(String.rtrim())
       end
    else
-      glOutput:push('')
+      glOutput.push('')
    end
 end
 
@@ -86,13 +86,13 @@ global function priority(Input:any)
       glOutput = array<string>
       Input()
       for v in values(glOutput) do
-         glHeader:push(v)
+         glHeader.push(v)
       end
       glOutput = saveOutput
    elseif (type(Input) is 'string') and Input?? then
-      glHeader:push(Input:rtrim())
+      glHeader.push(Input.rtrim())
    else
-      glHeader:push('')
+      glHeader.push('')
    end
 end
 
@@ -101,7 +101,7 @@ end
 
 global function shortName(Name:str):str
    local result = ""
-   for n in values(Name:split("_")) do
+   for n in values(Name.split("_")) do
       if (n is "XY") or (n is "SSL") or (n is "HTML") or (n is "CDATA") or (n is "2D") or (n  is "3D") or (n is "DGA") or
          (n is "DPMS") or (n is "GTF") or (n is "SRGB") or (n is "RGB") or (n is "HSV") or (n is "CX") or (n is "CY") or
          (n is "FX") or (n is "FY") then
@@ -109,9 +109,9 @@ global function shortName(Name:str):str
       else
          local first, rest = rx_first_char.extract(n)
          if not first then
-            result ..= n:upper()
+            result ..= n.upper()
          else
-            result ..= first:upper() .. rest:lower()
+            result ..= first.upper() .. rest.lower()
          end
       end
    end
@@ -154,7 +154,7 @@ global function cleanXMLString(String:str):str
 
          _, clean_str = cxml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
          local extracted = rx_root_extract.extract(clean_str)
-         if extracted then String = extracted:trim() end
+         if extracted then String = extracted.trim() end
       except ex
          error(f'Failed to parse XML: {ex.message}\n' .. debug.traceback())
       end
@@ -169,8 +169,8 @@ end
 global function registerClass(Name:str):table
    assert(Name??, 'No Name provided to registerClass()')
    global glClasses ?= { }
-   glClasses[Name:lower()] ?= { name=Name:cap() }
-   return glClasses[Name:lower()]
+   glClasses[Name.lower()] ?= { name=Name.cap() }
+   return glClasses[Name.lower()]
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -252,13 +252,13 @@ global function resolveSDKPath(Path:str)
       search_path = 'CMakeLists.txt'
       limit = 5
       while (err != ERR_Okay) and (limit > 0) do
-         search_list:push(search_path)
+         search_list.push(search_path)
          err, sdk_path = mSys.ResolvePath(search_path)
          search_path = f'../{search_path}'
          limit -= 1
       end
    else
-      search_list:push(f'{Path}/CMakeLists.txt')
+      search_list.push(f'{Path}/CMakeLists.txt')
       err, sdk_path = mSys.ResolvePath(f'{Path}/CMakeLists.txt')
    end
 
@@ -295,9 +295,9 @@ global function parseIDL(ModuleName:str):table
       prefix = match_list[i][1]
       extract = match_list[i][2]
       constants[prefix] = { }
-      split_values = extract:split(',')
+      split_values = extract.split(',')
       for v in values(split_values) do
-         pair = v:split('=')
+         pair = v.split('=')
          constants[prefix][pair[0]] = tonumber(pair[1])
       end
    end

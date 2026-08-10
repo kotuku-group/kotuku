@@ -254,63 +254,63 @@ end
 -- Method call tests (critical for in_ternary flag implementation)
 @Test function MethodCallInTrueBranch()
    local obj = {
-      getValue = function(self)
+      getValue = function()
          return "method_result"
       end
    }
-   v = true ? obj:getValue() :> "other"
+   v = true ? obj.getValue() :> "other"
    assert(v is "method_result", "Failed method call in true branch: expected 'method_result', got " .. tostring(v))
 end
 
 @Test function MethodCallInFalseBranch()
    local obj = {
-      getValue = function(self)
+      getValue = function()
          return "method_result"
       end
    }
-   v = false ? "other" :> obj:getValue()
+   v = false ? "other" :> obj.getValue()
    assert(v is "method_result", "Failed method call in false branch: expected 'method_result', got " .. tostring(v))
 end
 
 @Test function NestedTernaryWithMethodCallInTrueBranch()
    local obj = {
-      getValue = function(self)
+      getValue = function()
          return "inner_method"
       end
    }
-   -- cond1 ? (cond2 ? obj:method() :> other) :> default
-   v = true ? (true ? obj:getValue() :> "other") :> "default"
+   -- cond1 ? (cond2 ? obj.method() :> other) :> default
+   v = true ? (true ? obj.getValue() :> "other") :> "default"
    assert(v is "inner_method", "Failed nested ternary with method call in true branch: expected 'inner_method', got " .. tostring(v))
 end
 
 @Test function NestedTernaryWithMethodCallInFalseBranch()
    local obj = {
-      getValue = function(self)
+      getValue = function()
          return "inner_method"
       end
    }
-   -- cond1 ? true_val :> (cond2 ? obj:method() :> other)
-   v = false ? "true_val" :> (true ? obj:getValue() :> "other")
+   -- cond1 ? true_val :> (cond2 ? obj.method() :> other)
+   v = false ? "true_val" :> (true ? obj.getValue() :> "other")
    assert(v is "inner_method", "Failed nested ternary with method call in false branch: expected 'inner_method', got " .. tostring(v))
 end
 
 @Test function MethodCallWithArgumentsInTernary()
    local obj = {
-      multiply = function(self, x, y)
+      multiply = function(x, y)
          return x * y
       end
    }
-   v = true ? obj:multiply(5, 6) :> 0
+   v = true ? obj.multiply(5, 6) :> 0
    assert(v is 30, "Failed method call with arguments: expected 30, got " .. tostring(v))
 end
 
 @Test function MethodCallInCondition()
    local obj = {
-      isActive = function(self)
+      isActive = function()
          return true
       end
    }
-   v = obj:isActive() ? "active" :> "inactive"
+   v = obj.isActive() ? "active" :> "inactive"
    assert(v is "active", "Failed method call in condition: expected 'active', got " .. tostring(v))
 end
 

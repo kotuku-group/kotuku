@@ -44,7 +44,7 @@ function rawProxyRequestOnPort(ProxyPort:num, Request:str, Timeout:num):str
          local buffer = string.alloc(32768)
          local err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            if read_len > 0 then response ..= buffer:sub(0, read_len) end
+            if read_len > 0 then response ..= string.sub(buffer, 0, read_len) end
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
@@ -92,15 +92,15 @@ function responseStatus(Response:str):num
 end
 
 function responseBody(Response:str):str
-   local header_end = Response:find('\r\n\r\n')
+   local header_end = string.find(Response, '\r\n\r\n')
    header_end ?! return ''
-   return Response:sub(header_end + 4)
+   return string.sub(Response, header_end + 4)
 end
 
 function findFlow(Method:str, UrlSuffix:str):table
    local flows = glProxy.getFlows()
    for _, flow in pairs(flows) do
-      if flow.request.method is Method and flow.request.url:endsWith(UrlSuffix) then return flow end
+      if flow.request.method is Method and string.endsWith(flow.request.url, UrlSuffix) then return flow end
    end
 
    return nil
@@ -161,7 +161,7 @@ function echoIncoming(Server:obj, Client:obj)
       local err, read_len = Client.acRead(buffer)
       if err is ERR_Okay then
          if read_len is 0 then return end
-         local chunk = buffer:sub(0, read_len)
+         local chunk = string.sub(buffer, 0, read_len)
          check Client.acWrite(chunk)
       elseif err is ERR_Disconnected then
          return
@@ -207,21 +207,21 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
       if err is ERR_Okay then
          if read_len is 0 then return end
 
-         local data = buffer:sub(0, read_len)
+         local data = string.sub(buffer, 0, read_len)
          if state.tunnelling then
             check Client.acWrite(data)
             continue
          end
 
          state.buffer ..= data
-         local header_end = state.buffer:find('\r\n\r\n')
+         local header_end = string.find(state.buffer, '\r\n\r\n')
          if not header_end then return end
 
-         local header_block = state.buffer:sub(0, header_end + 4)
-         local body_prefix = state.buffer:sub(header_end + 4)
+         local header_block = string.sub(state.buffer, 0, header_end + 4)
+         local body_prefix = string.sub(state.buffer, header_end + 4)
          glLastUpstreamProxyRequest = header_block
 
-         if header_block:startsWith('CONNECT ') then
+         if string.startsWith(header_block, 'CONNECT ') then
             if glUpstreamProxyRejectConnect then
                local response = 'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
                check Client.acWrite(response)
@@ -282,16 +282,16 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            local data = buffer:sub(0, read_len)
+            local data = string.sub(buffer, 0, read_len)
             if connected then
                tunnel_data ..= data
             else
                proxy_headers ..= data
-               local header_end = proxy_headers:find('\r\n\r\n')
+               local header_end = string.find(proxy_headers, '\r\n\r\n')
                if header_end then
                   connected = true
-                  tunnel_data ..= proxy_headers:sub(header_end + 4)
-                  proxy_headers = proxy_headers:sub(0, header_end + 4)
+                  tunnel_data ..= string.sub(proxy_headers, header_end + 4)
+                  proxy_headers = string.sub(proxy_headers, 0, header_end + 4)
 
                   if not sent_payload then
                      check Socket.acWrite(Payload)
@@ -357,7 +357,7 @@ end
             handler = function(Req, Res)
                glPostBody = Req.body ?? ''
                Res.json({
-                  receivedSize = glPostBody:len(),
+                  receivedSize = string.len(glPostBody),
                   body = glPostBody
                })
             end
@@ -445,7 +445,7 @@ end
 
    assert(responseStatus(response) is 200, 'Large response should return 200')
    assert(#body > 8192, 'Large response body should exceed one proxy read buffer, got ' .. #body)
-   assert(body:find('END_OF_LARGE_RESPONSE') != nil, 'Large response should include the final marker')
+   assert(string.find(body, 'END_OF_LARGE_RESPONSE') != nil, 'Large response should include the final marker')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -475,7 +475,7 @@ end
 
    assert(responseStatus(response) is 200, 'Chunked request should return 200')
    assert(glChunkedBody is 'hello world', 'Origin should receive decoded chunked body')
-   assert(body:find('hello world-chunked-response') != nil, 'Proxy should relay the response body')
+   assert(string.find(body, 'hello world-chunked-response') != nil, 'Proxy should relay the response body')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -556,11 +556,11 @@ end
    assert(responseStatus(response) is 200, 'Chained HTTP proxy request should return 200')
    assert(responseBody(response) is 'response-from-upstream-proxy',
       'Client should receive upstream proxy response body')
-   assert(glLastUpstreamProxyRequest:startsWith('GET http://example.test/proxy-path?x=1 HTTP/1.1\r\n'),
+   assert(string.startsWith(glLastUpstreamProxyRequest, 'GET http://example.test/proxy-path?x=1 HTTP/1.1\r\n'),
       'Upstream proxy should receive an absolute-form request line, got: ' .. glLastUpstreamProxyRequest)
-   assert(glLastUpstreamProxyRequest:find('connection: close') != nil,
+   assert(string.find(glLastUpstreamProxyRequest, 'connection: close') != nil,
       'Downstream proxy should force Connection: close when chaining')
-   assert(glLastUpstreamProxyRequest:find('proxy-connection') is nil,
+   assert(string.find(glLastUpstreamProxyRequest, 'proxy-connection') is nil,
       'Downstream proxy should remove Proxy-Connection before chaining')
 end
 
@@ -573,7 +573,7 @@ end
    local status, headers, echoed = chainedConnectRoundTrip(payload, false)
 
    assert(status is 200, 'Chained CONNECT should return 200, got headers: ' .. headers)
-   assert(glLastUpstreamProxyRequest:startsWith('CONNECT 127.0.0.1:' .. ECHO_PORT .. ' HTTP/1.1\r\n'),
+   assert(string.startsWith(glLastUpstreamProxyRequest, 'CONNECT 127.0.0.1:' .. ECHO_PORT .. ' HTTP/1.1\r\n'),
       'Upstream proxy should receive a CONNECT request for the target authority, got: ' .. glLastUpstreamProxyRequest)
    assert(echoed is payload, 'Chained CONNECT should relay raw tunnel bytes')
 end
@@ -707,7 +707,7 @@ function ConnectTunnelPassesSSLHandshake()
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            local received = buffer:sub(0, read_len)
+            local received = string.sub(buffer, 0, read_len)
             if received is ssl_payload then
                ssl_server_done = true
                local response = 'SSL_TUNNEL_ECHO:' .. received
@@ -746,10 +746,10 @@ function ConnectTunnelPassesSSLHandshake()
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            local data = buffer:sub(0, read_len)
+            local data = string.sub(buffer, 0, read_len)
             if not connect_established then
                proxy_headers ..= data
-               local header_end = proxy_headers:find('\r\n\r\n')
+               local header_end = string.find(proxy_headers, '\r\n\r\n')
                if header_end then
                   assert(responseStatus(proxy_headers) is 200, 'SSL CONNECT should return 200')
                   connect_established = true
@@ -759,7 +759,7 @@ function ConnectTunnelPassesSSLHandshake()
                end
             else
                ssl_echo ..= data
-               if ssl_echo:find('SSL_TUNNEL_ECHO:' .. ssl_payload) != nil then
+               if string.find(ssl_echo, 'SSL_TUNNEL_ECHO:' .. ssl_payload) != nil then
                   Socket.acSignal()
                   Socket.acDeactivate()
                end
@@ -779,7 +779,7 @@ function ConnectTunnelPassesSSLHandshake()
 
    assert(err is ERR_Okay, 'SSL CONNECT tunnel timed out or failed: ' .. mSys.GetErrorMsg(err))
    assert(ssl_server_done, 'SSL server should receive payload through CONNECT tunnel')
-   assert(ssl_echo:find('SSL_TUNNEL_ECHO:' .. ssl_payload) != nil, 'SSL tunnel should return echoed payload')
+   assert(string.find(ssl_echo, 'SSL_TUNNEL_ECHO:' .. ssl_payload) != nil, 'SSL tunnel should return echoed payload')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

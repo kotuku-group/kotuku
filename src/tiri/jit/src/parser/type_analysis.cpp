@@ -883,8 +883,6 @@ void TypeAnalyser::lower_unanalysed_expression(ExprNode &Expression)
       case AstNodeKind::SafeCallExpr: {
          auto &payload = std::get<CallExprPayload>(Expression.data);
          if (auto *direct = std::get_if<DirectCallTarget>(&payload.target)) lower(direct->callable);
-         else if (auto *method = std::get_if<MethodCallTarget>(&payload.target)) lower(method->receiver);
-         else if (auto *method = std::get_if<SafeMethodCallTarget>(&payload.target)) lower(method->receiver);
          for (auto &argument : payload.arguments) lower(argument);
          break;
       }
@@ -1982,11 +1980,6 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
          function_location = terminal.span;
       }
 
-      if (Payload.name.method) {
-         this->current_scope().declare_function(Payload.name.method->symbol, function, Payload.name.method->span);
-         function_name = Payload.name.method->symbol;
-         function_location = Payload.name.method->span;
-      }
    }
    else {
       // Track global function type for type checking on reassignment
@@ -1994,7 +1987,7 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
       if (not Payload.name.segments.empty()) {
          function_name = Payload.name.segments.back().symbol;
          function_location = Payload.name.segments.back().span;
-         bool is_direct_global_store = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
+         bool is_direct_global_store = Payload.name.segments.size() IS 1;
          if (is_direct_global_store and function_name and ((function_name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
             this->report_protected_global_override(function_name, function_location);
          }
@@ -2007,11 +2000,6 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
             this->record_diagnostic(std::move(diag));
          }
          else this->declare_global_function(function_name, function, function_location);
-      }
-      else if (Payload.name.method) {
-         function_name = Payload.name.method->symbol;
-         function_location = Payload.name.method->span;
-         this->declare_global_function(function_name, function, function_location);
       }
    }
 
@@ -2331,18 +2319,8 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call, SourceSpan Loc
    }
 
    // Analyse the callable to mark function names as used
-   if (std::holds_alternative<DirectCallTarget>(Call.target)) {
-      const auto &direct = std::get<DirectCallTarget>(Call.target);
-      if (direct.callable) this->analyse_expression(*direct.callable);
-   }
-   else if (std::holds_alternative<MethodCallTarget>(Call.target)) {
-      const auto &method = std::get<MethodCallTarget>(Call.target);
-      if (method.receiver) this->analyse_expression(*method.receiver);
-   }
-   else if (std::holds_alternative<SafeMethodCallTarget>(Call.target)) {
-      const auto &safe_method = std::get<SafeMethodCallTarget>(Call.target);
-      if (safe_method.receiver) this->analyse_expression(*safe_method.receiver);
-   }
+   const auto &direct = std::get<DirectCallTarget>(Call.target);
+   if (direct.callable) this->analyse_expression(*direct.callable);
 
    // Analyse arguments
    for (const auto &argument : Call.arguments) {

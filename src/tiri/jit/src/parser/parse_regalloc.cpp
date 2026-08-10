@@ -869,35 +869,6 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
 }
 
 //********************************************************************************************************************
-// Emit method lookup expression.
-
-static void bcemit_method(FuncState *fs, ExpDesc *e, ExpDesc *key)
-{
-   BCREG idx, func, obj = expr_toanyreg(fs, e);
-   expr_free(fs, e);
-   func = fs->freereg;
-   bcemit_AD(fs, BC_MOV, func + 1 + LJ_FR2, obj);  // Copy object to 1st argument.
-   fs_check_assert(fs, key->is_str_constant(), "bad usage");
-   idx = const_str(fs, key);
-   if (idx > BCMAX_D) {
-      err_limit(fs, BCMAX_D + 1, "constants");
-      return;
-   }
-   if (idx <= BCMAX_C) {
-      bcreg_reserve(fs, 2 + LJ_FR2);
-      bcemit_ABC(fs, BC_TGETS, func, obj, idx);
-   }
-   else {
-      bcreg_reserve(fs, 3 + LJ_FR2);
-      bcemit_AD(fs, BC_KSTR, func + 2 + LJ_FR2, idx);
-      bcemit_ABC(fs, BC_TGETV, func, obj, func + 2 + LJ_FR2);
-      fs->freereg--;
-   }
-   e->u.s.info = func;
-   e->k = ExpKind::NonReloc;
-}
-
-//********************************************************************************************************************
 // Emit unconditional branch.
 
 [[nodiscard]] BCPOS bcemit_jmp(FuncState *fs)

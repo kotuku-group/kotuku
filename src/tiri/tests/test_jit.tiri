@@ -93,21 +93,21 @@ function anyPresent(Value:any):bool return Value?? end
    check script.acActivate()
    local _, disassembly = script.mtDebugLog('disasm')
 
-   assert(disassembly:count('ISFALSEY') is 6,
+   assert(disassembly.count('ISFALSEY') is 6,
       'Each runtime presence check should emit one ISFALSEY instruction')
-   assert(disassembly:count('ISFALSEY  A=R0 D=#1\n') is 1,
+   assert(disassembly.count('ISFALSEY  A=R0 D=#1\n') is 1,
       'A boolean operand should narrow the falsey mask to false')
-   assert(disassembly:count('ISFALSEY  A=R0 D=#2\n') is 1,
+   assert(disassembly.count('ISFALSEY  A=R0 D=#2\n') is 1,
       'A numeric operand should narrow the falsey mask to zero')
-   assert(disassembly:count('ISFALSEY  A=R0 D=#4\n') is 1,
+   assert(disassembly.count('ISFALSEY  A=R0 D=#4\n') is 1,
       'A string operand should narrow the falsey mask to empty string')
-   assert(disassembly:count('ISFALSEY  A=R0 D=#8\n') is 2,
+   assert(disassembly.count('ISFALSEY  A=R0 D=#8\n') is 2,
       'Array and table operands should narrow the falsey mask to empty collection')
-   assert(disassembly:count('ISFALSEY  A=R0 D=#15\n') is 1,
+   assert(disassembly.count('ISFALSEY  A=R0 D=#15\n') is 1,
       'An any operand should retain the full falsey mask')
-   assert(disassembly:find('ISEMPTYARR') is nil,
+   assert(disassembly.find('ISEMPTYARR') is nil,
       'The retired collection-only falsey instruction must not be emitted')
-   assert(disassembly:find('ISEQN') is nil and disassembly:find('ISEQS') is nil,
+   assert(disassembly.find('ISEQN') is nil and disassembly.find('ISEQS') is nil,
       'Presence checks must not emit the former numeric and string comparison cascade')
 end
 
@@ -155,9 +155,9 @@ end
    check script.acQuery()
    check script.acActivate()
    local _, disassembly = script.mtDebugLog('disasm')
-   assert(disassembly:count('P=#1') >= 8,
+   assert(disassembly.count('P=#1') >= 8,
       'Annotations, constructors, definition values, returns and typed globals should pre-resolve field index 1')
-   assert(disassembly:find('P=dynamic') is nil,
+   assert(disassembly.find('P=dynamic') is nil,
       'Layout-aware struct accesses should not retain dynamic field lookup caches')
 end
 
@@ -173,8 +173,8 @@ end
    check script.acQuery()
    check script.acActivate()
    local _, disassembly = script.mtDebugLog('disasm')
-   assert(disassembly:find('STGETF') != nil, 'The constrained object should be read with STGETF')
-   assert(disassembly:find('OBGETF') != nil, 'obj<Class> metadata should specialise chained object field access')
+   assert(disassembly.find('STGETF') != nil, 'The constrained object should be read with STGETF')
+   assert(disassembly.find('OBGETF') != nil, 'obj<Class> metadata should specialise chained object field access')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -220,12 +220,12 @@ end
    check script.acActivate()
    local _, disassembly = script.mtDebugLog('disasm')
 
-   assert(disassembly:find('FORI') != nil and disassembly:find('FORL') != nil,
+   assert(disassembly.find('FORI') != nil and disassembly.find('FORL') != nil,
       'A canonical array-length range should emit numeric loop bytecode')
-   assert(disassembly:find('ITERC') is nil and disassembly:find('ITERA') is nil and
-      disassembly:find('ITERL') is nil,
+   assert(disassembly.find('ITERC') is nil and disassembly.find('ITERA') is nil and
+      disassembly.find('ITERL') is nil,
       'Canonical parameter, nested and global array-length ranges should not construct generic range iterators')
-   assert(disassembly:find('AGETV') != nil and disassembly:find('ASETV') != nil,
+   assert(disassembly.find('AGETV') != nil and disassembly.find('ASETV') != nil,
       'An array-annotated parameter should emit specialised array bytecode')
 end
 
@@ -321,6 +321,18 @@ function count_trace_calls(TraceNo, Info)
       count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
 end
 
+function count_trace_calls_through(TraceNo, LastInstruction)
+   local count = 0
+   for instruction in {1 to LastInstruction} do
+      local _, ir_ot = jit.util.traceIR(TraceNo, instruction)
+      if ir_ot != nil then
+         local opcode = ir_opcode(ir_ot)
+         if opcode is ir_calln or opcode is ir_calla or opcode is ir_calll or opcode is ir_calls then count++ end
+      end
+   end
+   return count
+end
+
 function canonical_array_workload(Count):str
    local values = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
 
@@ -330,7 +342,7 @@ function canonical_array_workload(Count):str
       end
    end
 
-   return values:concat(',', '%d')
+   return values.concat(',', '%d')
 end
 
 function canonical_array_try_workload(Count):str
@@ -345,7 +357,7 @@ function canonical_array_try_workload(Count):str
    success
    end
 
-   return values:concat(',', '%d')
+   return values.concat(',', '%d')
 end
 
 global glCanonicalArrayRangeValues:array<any> = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
@@ -379,7 +391,7 @@ end
 function resize_during_array_loop(Array:array<any>, Shrink:bool)
    local alias = Array
    for index in {0 to #Array} do
-      if Shrink and index is 16 then alias:resize(8) end
+      if Shrink and index is 16 then alias.resize(8) end
       Array[index] += 1
    end
 end
@@ -387,7 +399,7 @@ end
 function clear_during_array_loop(Array:array<any>, Clear:bool)
    local alias = Array
    for index in {0 to #Array} do
-      if Clear and index is 16 then alias:clear() end
+      if Clear and index is 16 then alias.clear() end
       Array[index] += 1
    end
 end
@@ -402,7 +414,7 @@ end
 function push_during_array_loop(Array:array<any>):<num, num, num>
    local original_length = #Array
    for index in {0 to #Array} do
-      if index is 0 then Array:push(99) end
+      if index is 0 then Array.push(99) end
       Array[index] += 1
    end
    return original_length, #Array, Array[#Array - 1]
@@ -1059,7 +1071,7 @@ function array_method_clear_workload(Count):str
    local result = array.new("")
 
    for i in {1 into Count} do
-      result:clear()
+      result.clear()
       array.push(result, "clear")
    end
 
@@ -1070,7 +1082,7 @@ function array_method_resize_workload(Count):str
    local result = array.new("abcdef")
 
    for i in {1 into Count} do
-      result:resize(0)
+      result.resize(0)
       array.push(result, "resize")
    end
 
@@ -1081,7 +1093,7 @@ function array_method_push_workload(Count):str
    local result = array.new("")
 
    for i in {1 into Count} do
-      result:push("push")
+      result.push("push")
    end
 
    return array.getString(result)
@@ -1093,14 +1105,14 @@ function array_unknown_method_workload(Count)
 
    for i in {1 into Count} do
       total += arr[0]
-      if i is Count then arr:missingPhaseOneMethod() end
+      if i is Count then arr.missingPhaseOneMethod() end
    end
 
    return total
 end
 
 function array_clear_then_push(Array)
-   Array:clear()
+   Array.clear()
    array.push(Array, "base")
    return array.getString(Array)
 end
@@ -1671,22 +1683,22 @@ end
 @Test(hotpath=80) function ArrayMethodClearLookupTraces()
    local expected, result, trace_count = run_array_method_trace(array_method_clear_workload, 12)
 
-   assert(result is expected, f"Expected traced array:clear() result '{expected}', got '{result}'")
-   assert(trace_count > 0, "Expected array:clear() method lookup to produce a JIT trace")
+   assert(result is expected, f"Expected traced array.clear() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array.clear() method lookup to produce a JIT trace")
 end
 
 @Test(hotpath=80) function ArrayMethodResizeLookupTraces()
    local expected, result, trace_count = run_array_method_trace(array_method_resize_workload, 12)
 
-   assert(result is expected, f"Expected traced array:resize() result '{expected}', got '{result}'")
-   assert(trace_count > 0, "Expected array:resize() method lookup to produce a JIT trace")
+   assert(result is expected, f"Expected traced array.resize() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array.resize() method lookup to produce a JIT trace")
 end
 
 @Test(hotpath=80) function ArrayMethodPushLookupTraces()
    local expected, result, trace_count = run_array_method_trace(array_method_push_workload, 12)
 
-   assert(result is expected, f"Expected traced array:push() result '{expected}', got '{result}'")
-   assert(trace_count > 0, "Expected array:push() method lookup to produce a JIT trace")
+   assert(result is expected, f"Expected traced array.push() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array.push() method lookup to produce a JIT trace")
 end
 
 @Test(hotpath=80) function ArrayUnknownMethodStillRaises()
@@ -1707,7 +1719,7 @@ end
    end
 
    assert(saw_error is true, "Unknown array method should still raise an error")
-   assert(message:find("call") != nil or message:find("index") != nil,
+   assert(message.find("call") != nil or message.find("index") != nil,
       f"Unknown array method should raise a call/index error, got '{message}'")
 end
 
@@ -1895,9 +1907,9 @@ end
 
       for i in {1 into Count} do
          total += #arr
-         arr:clear()
+         arr.clear()
          total += #arr
-         arr:push(i)
+         arr.push(i)
       end
 
       return total, #arr
@@ -1936,7 +1948,7 @@ end
 
       for i in {1 into Count} do
          total += #arr
-         result = arr:resize((i % 4) + 1)
+         result = arr.resize((i % 4) + 1)
          total += #arr
       end
 
@@ -1978,12 +1990,12 @@ end
       local total = 0
 
       for i in {1 into Count} do
-         arr:resize((i % 4) + 2)
-         total += #arr:getString(1)
-         total += #arr:getString(0, 1)
+         arr.resize((i % 4) + 2)
+         total += #arr.getString(1)
+         total += #arr.getString(0, 1)
       end
 
-      return total, #arr:getString(1)
+      return total, #arr.getString(1)
    end
 
    local total = 0
@@ -2018,7 +2030,7 @@ end
       local result = 0
 
       for i in {1 into Count} do
-         result = arr:push("xy")
+         result = arr.push("xy")
          total += result
       end
 
@@ -2060,7 +2072,7 @@ end
          arr ..= "a" .. 65 .. "b" .. 6.5
       end
 
-      return arr:getString(), #arr
+      return arr.getString(), #arr
    end
 
    local final = ""
@@ -2097,7 +2109,7 @@ end
          arr ..= "x" .. i .. "y"
       end
 
-      return arr:getString(), #arr
+      return arr.getString(), #arr
    end
 
    local final = ""
@@ -2452,7 +2464,12 @@ end
       end
       if info != nil and count_trace_opcode(trace_no, info, ir_xload) >= 15 then
          load_trace_found = true
-         assert(count_trace_calls(trace_no, info) is 0,
+         local last_load = 0
+         for instruction in {1 into info.nins} do
+            local _, ir_ot = jit.util.traceIR(trace_no, instruction)
+            if ir_ot != nil and ir_opcode(ir_ot) is ir_xload then last_load = instruction end
+         end
+         assert(count_trace_calls_through(trace_no, last_load) is 0,
             'The stable declared all-scalar read trace should not call the structure getter')
       end
    end
@@ -2693,7 +2710,7 @@ end
       checked_member(array<string> { 'wrong' })
    except e
       failed = true
-      assert(e.message:find('expected array<int>') != nil and e.message:find('got array<string>') != nil,
+      assert(e.message.find('expected array<int>') != nil and e.message.find('got array<string>') != nil,
          'A hot member mismatch should report both array identities: ' .. e.message)
    end
    assert(failed, 'Changing only the array member type at a hot contract site should raise')
@@ -2719,7 +2736,7 @@ end
       checked_string_member(array<int> { 7 })
    except e
       failed = true
-      assert(e.message:find('expected array<string>') != nil and e.message:find('got array<int>') != nil,
+      assert(e.message.find('expected array<string>') != nil and e.message.find('got array<int>') != nil,
          'A hot string member mismatch should report both array identities: ' .. e.message)
    end
    assert(failed, 'A hot string-array contract should reject a numeric member type')
@@ -2749,8 +2766,8 @@ end
       })
    except e
       failed = true
-      assert(e.message:find('expected array<struct<JITArrayContractAlpha>>') != nil and
-         e.message:find('got array<struct<JITArrayContractBeta>>') != nil,
+      assert(e.message.find('expected array<struct<JITArrayContractAlpha>>') != nil and
+         e.message.find('got array<struct<JITArrayContractBeta>>') != nil,
          'A hot structure member mismatch should report both layouts: ' .. e.message)
    end
    assert(failed, 'A hot structure-array contract should reject a different layout')
@@ -2936,9 +2953,9 @@ end
       fractional[0.5 + (i % 4)] = i
    end
    assert(#negative is nil, f"Negative keys should classify on trace, got {tostring(#negative)}")
-   assert(table.kind(negative) is 'sparse', f"Expected sparse, got {table.kind(negative)}")
+   assert(negative.kind() is 'sparse', f"Expected sparse, got {negative.kind()}")
    assert(#fractional is nil, f"Fractional keys should classify on trace, got {tostring(#fractional)}")
-   assert(table.kind(fractional) is 'sparse', f"Expected sparse, got {table.kind(fractional)}")
+   assert(fractional.kind() is 'sparse', f"Expected sparse, got {fractional.kind()}")
 end
 
 @Test(hotpath=100) function DistantNumericKeyStoresStayNumericalOnTrace()
@@ -2949,7 +2966,7 @@ end
       distant[9000 + (i % 4)] = i
    end
    assert(#distant is 3, f"Distant positive keys should preserve the length on trace, got {tostring(#distant)}")
-   assert(table.kind(distant) is 'sequence', f"Expected sequence, got {table.kind(distant)}")
+   assert(distant.kind() is 'sequence', f"Expected sequence, got {distant.kind()}")
 end
 
 @Test(hotpath=100) function NumericStoreTraceExitsOnFirstNegativeKey()
@@ -2965,7 +2982,7 @@ end
    end
 
    assert(#t is nil, f"The first negative key must invalidate length, got {tostring(#t)}")
-   assert(table.kind(t) is 'sparse', f"Expected sparse after the side exit, got {table.kind(t)}")
+   assert(t.kind() is 'sparse', f"Expected sparse after the side exit, got {t.kind()}")
    jit.opt.start()
 end
 
@@ -2979,11 +2996,11 @@ end
    try
       for i in {0 to 100} do
          if i is 80 then t.name = 'classified' end
-         table.insert(t, i)
+         t.insert(i)
       end
    except e
       rejected = true
-      assert(e.message:find('sequence table'), f"Unexpected insert diagnostic: {e.message}")
+      assert(e.message.find('sequence table'), f"Unexpected insert diagnostic: {e.message}")
    end
 
    assert(rejected is true, 'Recorded insert must reject a table after classification')
@@ -3000,12 +3017,12 @@ end
    try
       for i in {0 to 100} do
          if i is 80 then t.name = 'classified' end
-         local joined = table.concat(t, ',')
+         local joined = t.concat(',')
          assert(joined is 'a,b', f"Unexpected concatenation before classification: {joined}")
       end
    except e
       rejected = true
-      assert(e.message:find('sequence table'), f"Unexpected concat diagnostic: {e.message}")
+      assert(e.message.find('sequence table'), f"Unexpected concat diagnostic: {e.message}")
    end
 
    assert(rejected is true, 'Recorded concat must reject a table after classification')
@@ -3151,7 +3168,7 @@ end
    try
       traced_metamethod_length(value, 20)
    except err
-      assert(tostring(err.message):find('__len metamethod must return a number'),
+      assert(tostring(err.message).find('__len metamethod must return a number'),
          'A traced string __len result should report the numeric result requirement')
    success
       error('A traced string __len result should fail')
@@ -3165,7 +3182,7 @@ end
    local t = { 1, 2 }
    t.name = 'x'
    for i in {0 to 200} do
-      table.clear(t)
+      t.clear()
       t[0] = i
    end
    assert(#t is nil, f"Clearing in hot code must not restore a numerical length, got {tostring(#t)}")

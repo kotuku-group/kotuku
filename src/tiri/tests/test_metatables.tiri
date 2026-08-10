@@ -249,7 +249,7 @@ end
    try
       local result = #string_length
    except err
-      assert(tostring(err.message):find('__len metamethod must return a number'),
+      assert(tostring(err.message).find('__len metamethod must return a number'),
          'A string __len result should report the numeric result requirement')
    success
       error('A string __len result should fail')
@@ -259,7 +259,7 @@ end
    try
       local result = #nil_length
    except err
-      assert(tostring(err.message):find('__len metamethod must return a number'),
+      assert(tostring(err.message).find('__len metamethod must return a number'),
          'A nil __len result should report the numeric result requirement')
    success
       error('A nil __len result should fail')
@@ -450,7 +450,7 @@ end
    try
       t.anything = 'value'
    except err
-      assert(tostring(err.message):find('read-only'), "Error should mention read-only, got: " .. tostring(err.message))
+      assert(tostring(err.message).find('read-only'), "Error should mention read-only, got: " .. tostring(err.message))
    success
       error("Setting a key on read-only table should fail")
    end
@@ -529,9 +529,9 @@ end
       end
    }
    t = setmetatable({ data = { a = 1, b = 2, c = 3 } }, mt)
-   assert(t('a') is 1, "__call with self access, a should be 1")
-   assert(t('b') is 2, "__call with self access, b should be 2")
-   assert(t('c') is 3, "__call with self access, c should be 3")
+   assert(t('a') is 1, "__call with Self access, a should be 1")
+   assert(t('b') is 2, "__call with Self access, b should be 2")
+   assert(t('c') is 3, "__call with Self access, c should be 3")
 end
 
 @Test function MetaCallAsFactory()
@@ -567,7 +567,7 @@ end
    try
       setmetatable(t, {})
    except err
-      assert(tostring(err.message):find('protect'), "Error should mention protection, got: " .. tostring(err.message))
+      assert(tostring(err.message).find('protect'), "Error should mention protection, got: " .. tostring(err.message))
    success
       error("setmetatable on protected table should fail")
    end
@@ -666,8 +666,8 @@ end
    dog = Animal.new('Dog', 'Woof')
    cat = Animal.new('Cat', 'Meow')
 
-   assert(dog:speak() is 'Dog says Woof', "Dog should speak correctly, got '" .. dog:speak() .. "'")
-   assert(cat:speak() is 'Cat says Meow', "Cat should speak correctly, got '" .. cat:speak() .. "'")
+   assert(dog.speak(dog) is 'Dog says Woof', "Dog should speak correctly, got '" .. dog.speak(dog) .. "'")
+   assert(cat.speak(cat) is 'Cat says Meow', "Cat should speak correctly, got '" .. cat.speak(cat) .. "'")
    assert(getmetatable(dog) is Animal, "Dog metatable should be Animal")
    assert(getmetatable(cat) is Animal, "Cat metatable should be Animal")
 end
@@ -691,12 +691,12 @@ end
       return setmetatable(obj, Derived)
    end
    function Derived.info(Self)
-      return Self:greet() .. ' (' .. Self.extra .. ')'
+      return Self.greet(Self) .. ' (' .. Self.extra .. ')'
    end
 
    d = Derived.new('Test', 'special')
-   assert(d:greet() is 'Hello, I am Test', "Inherited method should work, got '" .. d:greet() .. "'")
-   assert(d:info() is 'Hello, I am Test (special)', "Derived method should work, got '" .. d:info() .. "'")
+   assert(d.greet(d) is 'Hello, I am Test', "Inherited method should work, got '" .. d.greet(d) .. "'")
+   assert(d.info(d) is 'Hello, I am Test (special)', "Derived method should work, got '" .. d.info(d) .. "'")
 end
 
 -- Shared metatable for wrapped values so __eq works (both operands must share the same metatable).

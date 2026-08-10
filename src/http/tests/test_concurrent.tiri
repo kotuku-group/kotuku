@@ -85,7 +85,7 @@ end
          flags  = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
             if not results[i].data then results[i].data = '' end
-            results[i].data ..= Buffer:getString()
+            results[i].data ..= Buffer.getString()
             print(f'Received: {#results[i].data} bytes')
          end,
          stateChanged = function(HTTP, State)
@@ -139,10 +139,10 @@ end
          contentType = 'application/json',
          flags       = HTF_NO_HEAD,
          inputFile   = 'string:' .. test_data,
-         size        = test_data:len(),
+         size        = test_data.len(),
          incoming = function(HTTP, Buffer)
             if not results[i].data then results[i].data = '' end
-            results[i].data ..= Buffer:getString()
+            results[i].data ..= Buffer.getString()
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -194,7 +194,7 @@ end
          connectTimeout = 5,
          incoming = function(HTTP, Buffer)
             if not results[i].data then results[i].data = '' end
-            if Buffer then results[i].data ..= Buffer:getString() end
+            if Buffer then results[i].data ..= Buffer.getString() end
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

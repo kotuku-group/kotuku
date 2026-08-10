@@ -50,7 +50,9 @@ glMimeTypes = {
 -- Utility Functions
 
 function timestamp():str
-   return tempus.now():toZonedDateTime(tempus.zone.local()):format('yyyy-MM-dd HH:mm:ss.SSS')
+   local instant = tempus.now()
+   local zoned = instant.toZonedDateTime(instant, tempus.zone.local())
+   return zoned.format(zoned, 'yyyy-MM-dd HH:mm:ss.SSS')
 end
 
 function logMessage(self, level, message)
@@ -71,7 +73,7 @@ end
 function parseProxyAddress(Value:any):<table, str>
    if not Value then return nil, nil end
 
-   local address = tostring(Value):trim()
+   local address = string.trim(tostring(Value))
    if address is '' then return nil, 'Upstream proxy must be in host:port form.' end
 
    local host, port_text = rxHostPort.extract(address)
@@ -149,15 +151,15 @@ end
 -- URL-decode percent-encoded characters
 function urlDecode(str:str):str
    if not str then return str end
-   str = str:replace('+', ' ')
+   str = string.replace(str, '+', ' ')
    result = ''
    last_stop = 0
    for start, stop, cap in rxPercentEncoded.findAll(str) do
-      if start > last_stop then result ..= str:sub(last_stop, start) end
+      if start > last_stop then result ..= string.sub(str, last_stop, start) end
       result ..= string.char(tonumber(cap[0], 16))
       last_stop = stop
    end
-   return result .. str:sub(last_stop)
+   return result .. string.sub(str, last_stop)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -183,7 +185,7 @@ function parseHttpRequest(Data:str!):table
       local line = lines[i]
       local name, value = rxHeaderPair.extract(line)
       if name and value then
-         headers[name:lower()] = value
+         headers[string.lower(name)] = value
       end
    end
 
@@ -218,7 +220,7 @@ function parseHttpResponse(Data:str!):table
       line = lines[i]
       name, value = rxHeaderPair.extract(line)
       if name and value then
-         headers[name:lower()] = value
+         headers[string.lower(name)] = value
       end
    end
 
@@ -438,7 +440,7 @@ function createFlowManager(self)
 
       if err != ERR_Okay then return false end
 
-      local content = buffer:sub(0, bytes_read)
+      local content = string.sub(buffer, 0, bytes_read)
 
       local decoded:any = nil
       try
@@ -754,7 +756,7 @@ function checkProxyTimeouts(self)
 
    for _, state in pairs(self._connections) do
       if not state.closed and state.lastActivity and ((now - state.lastActivity) / 1000000 > timeout) then
-         table.insert(expired, state)
+         expired.insert(state)
       end
    end
 
@@ -781,10 +783,10 @@ function startProxyTimeoutTimer(self)
 end
 
 function splitHttpHeaders(Data:str!):<str, str>
-   header_end = Data:find('\r\n\r\n')
+   header_end = string.find(Data, '\r\n\r\n')
    header_end ?! return nil, Data
 
-   return Data:sub(0, header_end + 4), Data:sub(header_end + 4)
+   return string.sub(Data, 0, header_end + 4), string.sub(Data, header_end + 4)
 end
 
 function resolveTarget(Request:table!):<str, num, bool>
@@ -815,14 +817,14 @@ function resolveTarget(Request:table!):<str, num, bool>
 end
 
 function originFormUrl(Url:str!):str
-   scheme_pos = Url:find('://')
+   scheme_pos = string.find(Url, '://')
    if scheme_pos is nil then return Url end
 
-   after_scheme = Url:sub(scheme_pos + 3)
-   path_start = after_scheme:find('/')
+   after_scheme = string.sub(Url, scheme_pos + 3)
+   path_start = string.find(after_scheme, '/')
    if path_start is nil then return '/' end
 
-   return after_scheme:sub(path_start)
+   return string.sub(after_scheme, path_start)
 end
 
 function hostHeaderValue(Host:str!, Port:num!):str
@@ -831,7 +833,7 @@ function hostHeaderValue(Host:str!, Port:num!):str
 end
 
 function absoluteFormUrl(State:table!, Url:str!):str
-   if Url:startsWith('http://') or Url:startsWith('https://') then return Url end
+   if string.startsWith(Url, 'http://') or string.startsWith(Url, 'https://') then return Url end
    return 'http://' .. hostHeaderValue(State.targetHost, State.targetPort) .. originFormUrl(Url)
 end
 
@@ -907,7 +909,7 @@ function writeTunnelClientData(self, State:table, Data:str):bool
    chunk_size = 4096
 
    while offset < #Data do
-      chunk = Data:sub(offset, math.min(offset + chunk_size, #Data))
+      chunk = string.sub(Data, offset, math.min(offset + chunk_size, #Data))
       err = State.upstreamSocket.acWrite(chunk)
       if err != ERR_Okay then
          reportProxyError(self, 'tunnel_write_failed', 'Failed to write tunnel data to upstream', State,
@@ -978,12 +980,12 @@ function upstreamTunnelIncoming(self, State:table!, UpstreamSocket:obj!)
       if bytes_read is 0 then return end
 
       touchProxyConnection(State)
-      data = buffer:sub(0, bytes_read)
+      data = string.sub(buffer, 0, bytes_read)
       offset = 0
       chunk_size = 4096
 
       while offset < #data do
-         chunk = data:sub(offset, math.min(offset + chunk_size, #data))
+         chunk = string.sub(data, offset, math.min(offset + chunk_size, #data))
          write_err = State.clientSocket.acWrite(chunk)
          if write_err != ERR_Okay then
             reportProxyError(self, 'tunnel_client_write_failed', 'Failed to write tunnel data to client', State,
@@ -1023,7 +1025,7 @@ function forwardResponseData(self, State:table!, Data:str!):bool
    chunk_size = 4096
 
    while offset < #Data do
-      chunk = Data:sub(offset, math.min(offset + chunk_size, #Data))
+      chunk = string.sub(Data, offset, math.min(offset + chunk_size, #Data))
       err = State.clientSocket.acWrite(chunk)
       if err != ERR_Okay then
          reportProxyError(self, 'response_client_write_failed', 'Failed to write response to client', State,
@@ -1090,7 +1092,7 @@ function upstreamIncoming(self, State:table!, UpstreamSocket:obj!)
       if bytes_read is 0 then return end
 
       touchProxyConnection(State)
-      data = buffer:sub(0, bytes_read)
+      data = string.sub(buffer, 0, bytes_read)
 
       if State.responseHeadersParsed then
          forwardResponseData(self, State, data)
@@ -1176,7 +1178,7 @@ function upstreamProxyConnectIncoming(self, State:table!, UpstreamSocket:obj!)
       if bytes_read is 0 then return end
 
       touchProxyConnection(State)
-      local data = buffer:sub(0, bytes_read)
+      local data = string.sub(buffer, 0, bytes_read)
       handleUpstreamProxyConnectHeaderBlock(self, State, data)
 
       if State.closed or State.phase is 'tunnelling' then return end
@@ -1353,7 +1355,7 @@ function proxyIncoming(self, ClientSocket:obj!)
    if bytes_read is 0 then return end
 
    touchProxyConnection(state)
-   data = buffer:sub(0, bytes_read)
+   data = string.sub(buffer, 0, bytes_read)
 
    if state.phase is 'reading_headers' then
       state.clientBuffer ..= data

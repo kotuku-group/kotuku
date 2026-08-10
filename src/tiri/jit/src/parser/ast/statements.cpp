@@ -845,7 +845,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
 }
 
 //********************************************************************************************************************
-// Parses function declarations, including method definitions with colon syntax and thunk functions.
+// Parses function declarations, including dot-qualified paths and thunk functions.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
 {
@@ -861,45 +861,26 @@ ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
    }
    path.segments.push_back(make_identifier(name_token.value_ref()));
 
-   bool method = false;
    while (this->ctx.match(TokenKind::Dot).ok()) {
       auto seg = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
       if (not seg.ok()) return ParserResult<StmtNodePtr>::failure(seg.error_ref());
       path.segments.push_back(make_identifier(seg.value_ref()));
    }
 
-   if (this->ctx.match(TokenKind::Colon).ok()) {
-      if (is_thunk) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "Thunk functions do not support method syntax");
-      }
-      method = true;
-      auto seg = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
-      if (not seg.ok()) {
-         return ParserResult<StmtNodePtr>::failure(seg.error_ref());
-      }
-      path.method = make_identifier(seg.value_ref());
+   if (this->ctx.check(TokenKind::Colon)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::DeprecatedSyntax, this->ctx.tokens().current(),
+         "colon-qualified function declarations have been removed; use function receiver.member(...) with an "
+         "explicit receiver parameter instead");
    }
 
    GCstr *funcname = nullptr;
-   if (path.method.has_value() and path.method->symbol) {
-      funcname = path.method->symbol;
-   }
-   else if (not path.segments.empty()) {
+   if (not path.segments.empty()) {
       funcname = path.segments.back().symbol;
    }
 
    auto fn = this->parse_function_literal(func_token, is_thunk, funcname);
    if (not fn.ok()) return ParserResult<StmtNodePtr>::failure(fn.error_ref());
    ExprNodePtr function_expr = std::move(fn.value_ref());
-
-   if (method and path.method.has_value()) {
-      auto* payload = function_payload_from(*function_expr);
-      FunctionParameter self_param;
-      self_param.name = Identifier(&this->ctx.lua(), "self", path.method.value().span);
-      self_param.is_self = true;
-      if (payload) payload->parameters.insert(payload->parameters.begin(), self_param);
-   }
 
    auto stmt = std::make_unique<StmtNode>(AstNodeKind::FunctionStmt, this->span_from(func_token, name_token.value_ref()));
    FunctionStmtPayload payload(std::move(path), move_function_payload(function_expr));

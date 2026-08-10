@@ -11,25 +11,25 @@ function parseSize(SizeStr:str!):<any, any>
    max_size = nil
 
    prefix = nil
-   if SizeStr:sub(0, 1) is '+' then
+   if SizeStr.sub(0, 1) is '+' then
       prefix = '+'
-      SizeStr = SizeStr:sub(1)
-   elseif SizeStr:sub(0, 1) is '-' then
+      SizeStr = SizeStr.sub(1)
+   elseif SizeStr.sub(0, 1) is '-' then
       prefix = '-'
-      SizeStr = SizeStr:sub(1)
+      SizeStr = SizeStr.sub(1)
    end
 
    multiplier = 1
-   last_char = SizeStr:sub(-1):upper()
+   last_char = SizeStr.sub(-1).upper()
    if last_char is 'K' then
       multiplier = 1024
-      SizeStr = SizeStr:sub(0, -2)
+      SizeStr = SizeStr.sub(0, -2)
    elseif last_char is 'M' then
       multiplier = 1048576
-      SizeStr = SizeStr:sub(0, -2)
+      SizeStr = SizeStr.sub(0, -2)
    elseif last_char is 'G' then
       multiplier = 1073741824
-      SizeStr = SizeStr:sub(0, -2)
+      SizeStr = SizeStr.sub(0, -2)
    end
 
    bytes = tonumber(SizeStr) * multiplier
@@ -63,11 +63,11 @@ function parseModified(ModStr:str!):<any, any>
    min_date = nil
    max_date = nil
 
-   prefix = ModStr:sub(0, 1)
+   prefix = ModStr.sub(0, 1)
    assert(prefix is '+' or prefix is '-', f'Modified value must start with + or -: {ModStr}')
 
-   unit = ModStr:sub(-1)
-   num = tonumber(ModStr:sub(1, -2))
+   unit = ModStr.sub(-1)
+   num = tonumber(ModStr.sub(1, -2))
    assert(num, f'Invalid modified value: {ModStr}')
 
    offset_seconds = 0
@@ -125,18 +125,18 @@ end
 
 function countDepth(Path:str!, BasePath:str!):num
    relative = Path
-   if Path:sub(0, BasePath:len()) is BasePath then
-      relative = Path:sub(BasePath:len())
+   if Path.sub(0, BasePath.len()) is BasePath then
+      relative = Path.sub(BasePath.len())
    end
    depth = 0
-   for i in {0 to relative:len()-1} do
-      if relative:sub(i, i+1) is '/' then depth++ end
+   for i in {0 to relative.len()-1} do
+      if relative.sub(i, i+1) is '/' then depth++ end
    end
    return depth
 end
 
 function normaliseSearchPath(Path:str!):str
-   if Path:endsWith('/') or Path:endsWith('\\') then return Path end
+   if Path.endsWith('/') or Path.endsWith('\\') then return Path end
    return Path .. '/'
 end
 
@@ -268,7 +268,7 @@ Examples:
       -- For directories, FileName from io.splitPath() is empty; extract from the full path
       if display_name is '' or not display_name then
          trimmed = full_path
-         if trimmed:sub(-1) is '/' then trimmed = trimmed:sub(0, -2) end
+         if trimmed.sub(-1) is '/' then trimmed = trimmed.sub(0, -2) end
          _, display_name = io.splitPath(trimmed)
       end
 
@@ -295,18 +295,18 @@ Examples:
       end
 
       if glExec then
-         cmd = glExec:replace('{}', full_path)
-         space = cmd:find(' ')
+         cmd = glExec.replace('{}', full_path)
+         space = cmd.find(' ')
          exec_opts = {
             flags = TSF_WAIT,
             timeout = 10,
             outputCallback = function(Task, Buffer)
-               print(Buffer:getString())
+               print(Buffer.getString())
             end
          }
          if space then
-            exec_opts.src  = cmd:sub(0, space)
-            exec_opts.args = cmd:sub(space + 1)
+            exec_opts.src  = cmd.sub(0, space)
+            exec_opts.args = cmd.sub(space + 1)
          else
             exec_opts.src = cmd
          end

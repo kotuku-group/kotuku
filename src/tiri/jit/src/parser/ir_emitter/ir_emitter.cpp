@@ -1623,12 +1623,6 @@ bool IrEmitter::can_elide_expression(const ExprNode &Expression) const
          if (const auto *direct = std::get_if<DirectCallTarget>(&payload.target)) {
             target_valid = direct->callable and this->can_elide_expression(*direct->callable);
          }
-         else if (const auto *method = std::get_if<MethodCallTarget>(&payload.target)) {
-            target_valid = method->receiver and this->can_elide_expression(*method->receiver);
-         }
-         else if (const auto *safe_method = std::get_if<SafeMethodCallTarget>(&payload.target)) {
-            target_valid = safe_method->receiver and this->can_elide_expression(*safe_method->receiver);
-         }
          if (not target_valid) return false;
 
          for (const ExprNodePtr &argument : payload.arguments) {
@@ -2644,7 +2638,7 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
          result = this->emit_safe_index_expr(std::get<SafeIndexExprPayload>(expr.data));
          break;
       case AstNodeKind::SafeCallExpr:
-         result = this->emit_safe_call_expr(std::get<CallExprPayload>(expr.data));
+         result = this->emit_call_expr(std::get<CallExprPayload>(expr.data));
          break;
       case AstNodeKind::CallExpr:
          result = this->emit_call_expr(std::get<CallExprPayload>(expr.data));

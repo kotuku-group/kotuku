@@ -254,8 +254,6 @@ inline void assert_node(bool condition, CSTRING message) { lj_assertX(condition,
 
 struct CallTargetChildCounter {
    [[nodiscard]] size_t operator()(const DirectCallTarget &Target) const { return Target.callable ? 1 : 0; }
-   [[nodiscard]] size_t operator()(const MethodCallTarget &Target) const { return Target.receiver ? 1 : 0; }
-   [[nodiscard]] size_t operator()(const SafeMethodCallTarget &Target) const { return Target.receiver ? 1 : 0; }
 };
 
 struct ExpressionChildCounter {
@@ -519,8 +517,6 @@ struct StatementChildCounter {
 }  // namespace
 
 DirectCallTarget::~DirectCallTarget() = default;
-MethodCallTarget::~MethodCallTarget() = default;
-SafeMethodCallTarget::~SafeMethodCallTarget() = default;
 UnaryExprPayload::~UnaryExprPayload() = default;
 UpdateExprPayload::~UpdateExprPayload() = default;
 BinaryExprPayload::~BinaryExprPayload() = default;
@@ -782,49 +778,12 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
    return node;
 }
 
-ExprNodePtr make_method_call_expr(SourceSpan Span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
-   bool forwards_multret)
-{
-   assert_node(ensure_operand(receiver), "method call requires receiver");
-   CallExprPayload payload;
-   MethodCallTarget target;
-   target.receiver = std::move(receiver);
-   target.method = method;
-   payload.target = std::move(target);
-   payload.arguments = std::move(arguments);
-   payload.forwards_multret = forwards_multret;
-   ExprNodePtr node = std::make_unique<ExprNode>();
-   node->kind = AstNodeKind::CallExpr;
-   node->span = Span;
-   node->data = std::move(payload);
-   return node;
-}
-
-ExprNodePtr make_safe_method_call_expr(SourceSpan Span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
-   bool forwards_multret)
-{
-   assert_node(ensure_operand(receiver), "safe method call requires receiver");
-   CallExprPayload payload;
-   SafeMethodCallTarget target;
-   target.receiver = std::move(receiver);
-   target.method = method;
-   payload.target = std::move(target);
-   payload.arguments = std::move(arguments);
-   payload.forwards_multret = forwards_multret;
-   ExprNodePtr node = std::make_unique<ExprNode>();
-   node->kind = AstNodeKind::SafeCallExpr;
-   node->span = Span;
-   node->data = std::move(payload);
-   return node;
-}
-
-ExprNodePtr make_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier member, bool uses_method_dispatch)
+ExprNodePtr make_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier member)
 {
    assert_node(ensure_operand(Table), "member expression requires table value");
    MemberExprPayload payload;
    payload.table = std::move(Table);
    payload.member = member;
-   payload.uses_method_dispatch = uses_method_dispatch;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::MemberExpr;
    node->span = Span;

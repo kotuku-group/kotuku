@@ -29,7 +29,7 @@ function rawHttpRequest(Method:str, Path:str, Body:any, Headers:any):<num, str>
    end
 
    if Body then
-      request ..= 'Content-Length: ' .. Body:len() .. "\r\n"
+      request ..= 'Content-Length: ' .. Body.len() .. "\r\n"
    end
 
    request ..= "\r\n"
@@ -47,7 +47,7 @@ function rawHttpRequest(Method:str, Path:str, Body:any, Headers:any):<num, str>
          buffer = string.alloc(4096)
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            response ..= buffer:sub(0, read_len)
+            response ..= buffer.sub(0, read_len)
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
@@ -67,9 +67,9 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function rawHttpBody(Response:str):str
-   header_end = Response:find("\r\n\r\n")
+   header_end = Response.find("\r\n\r\n")
    header_end ?! return ''
-   return Response:sub(header_end + 4)
+   return Response.sub(header_end + 4)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -152,9 +152,9 @@ end
       contentType = 'application/json',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. testBody,
-      size        = testBody:len(),
+      size        = testBody.len(),
       incoming = function(HTTP:obj, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP:obj, State:num)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -188,7 +188,7 @@ end
       method = 'DELETE',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -235,13 +235,13 @@ end
    assert(status is 200, 'HEAD unexpected status: ' .. status)
 
    -- HEAD should return no body content, only headers
-   header_end = response:find("\r\n\r\n")
+   header_end = response.find("\r\n\r\n")
    assert(header_end != nil, 'HEAD response missing header terminator')
-   content = response:sub(header_end + 4)
+   content = response.sub(header_end + 4)
    assert(content is '', 'HEAD should return no body content')
 
    -- Check that we received proper headers
-   assert(response:find('content-length:'), 'HEAD should include Content-Length header')
+   assert(response.find('content-length:'), 'HEAD should include Content-Length header')
 
    print('HEAD test passed - headers only, no body content')
 end
@@ -256,7 +256,7 @@ end
       method = 'OPTIONS',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -290,7 +290,7 @@ end
       inputFile = 'string:test',
       size = 4,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

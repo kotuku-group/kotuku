@@ -26,10 +26,10 @@ glCopyList <const> = [[
    if source_size?? then
       source_size = tonumber(source_size)
       for i in {0 to source_size} do
-         glList:push(arg('source(' .. i .. ')'))
+         glList.push(arg('source(' .. i .. ')'))
       end
    else
-      glList:push(arg('source')
+      glList.push(arg('source')
    end
    if arg('move') then Move = true end
    file.ui.copy(glList, arg('dest'), { move=Move })
@@ -128,7 +128,7 @@ end
 function parentWindow(Surface)
    scan = obj.find(Surface.parent)
    while scan do
-      if mSys.GetClassID(mSys.GetOwnerID(scan.id)) is 'window':hash() then
+      if mSys.GetClassID(mSys.GetOwnerID(scan.id)) is 'window'.hash() then
          return scan
       end
       scan = obj.find(scan.parent)
@@ -189,7 +189,7 @@ function file_to_info(Path:str!):table
       if file_flags has FL_VIRTUAL then info.flags = info.flags | RDF_VIRTUAL end
       if file_flags has FL_STREAM  then info.flags = info.flags | RDF_STREAM end
 
-      if Path:endsWith(':') then info.flags = info.flags | RDF_VOLUME end
+      if Path.endsWith(':') then info.flags = info.flags | RDF_VOLUME end
 
       return info
    except ex
@@ -250,10 +250,10 @@ function getFilters(self):array<string>
          if filter.selected then
             if type(filter.ext) is 'table' or type(filter.ext) is 'array' then
                for ext in values(filter.ext) do
-                  self._filters:push(ext)
+                  self._filters.push(ext)
                end
             else
-               self._filters:push(filter.ext)
+               self._filters.push(filter.ext)
             end
          end
       end
@@ -272,12 +272,12 @@ end
 -- Returns true if Filename should be visible
 
 function filterCheck(self:table!, Filename:str!)
-   Filename = Filename:lower()
+   Filename = Filename.lower()
    filters = getFilters(self)
    if #filters is 0 then return true end
    for ext in values(filters) do
-      if not ext:startsWith('.') then ext = '.' .. ext end
-      if Filename:endsWith(ext) then return true end
+      if not ext.startsWith('.') then ext = '.' .. ext end
+      if Filename.endsWith(ext) then return true end
    end
    return false
 end
@@ -420,13 +420,13 @@ function copyFromList(self, Folder:str!, List, Move:bool)
       msg(f'copyFromList({Folder})')
 
       params = array<string> { '--dest', Folder }
-      if Move then params:push('--move') end
-      params:push('--source')
-      params:push('{')
+      if Move then params.push('--move') end
+      params.push('--source')
+      params.push('{')
       for src in values(List) do
-         params:push(src)
+         params.push(src)
       end
-      params:push('}')
+      params.push('}')
 
       task = obj.new('task', {
          location   = 'kotuku:tiri',
@@ -513,7 +513,7 @@ function createFileItem(self, Info)
          type        = 'volume',
          icon        = icon,
          iconTheme   = colour,
-         sort        = '\x02' .. Info.name:lower(),
+         sort        = '\x02' .. Info.name.lower(),
          filename    = Info.name, -- Unique
          insensitive = true,
          name        = { value = display_name },
@@ -523,7 +523,7 @@ function createFileItem(self, Info)
    elseif Info.flags has RDF_FOLDER then
       local display_name:str = self.view.noIcons ? Info.name :> rxStripFolder.extract(Info.name)
 
-      if not Info.name:endsWith('/') then
+      if not Info.name.endsWith('/') then
          display_name ..= '/'
       end
 
@@ -531,10 +531,10 @@ function createFileItem(self, Info)
          type        = 'folder',
          icon        = getFileIcon(self.path .. Info.name),
          iconTheme   = 'yellow',
-         sort        = '\x03' .. Info.name:lower(),
+         sort        = '\x03' .. Info.name.lower(),
          filename    = Info.name,
          fill        = glFolderFill,
-         name        = { sort = 'D' .. display_name:lower(), value = display_name },
+         name        = { sort = 'D' .. display_name.lower(), value = display_name },
          insensitive = true,
          owner       = mSys.ResolveUserID(Info.userID),
          group       = mSys.ResolveGroupID(Info.groupID),
@@ -554,7 +554,7 @@ function createFileItem(self, Info)
           new_item = {
             type        = 'file',
             icon        = getFileIcon(self.path .. Info.name),
-            name        = { sort = 'F' .. Info.name:lower(), value = Info.name },
+            name        = { sort = 'F' .. Info.name.lower(), value = Info.name },
             filename    = filename,
             hidden      = not filterCheck(self, filename),
             size        = { sort = sortNum(Info.size), value = Info.size },
@@ -733,7 +733,7 @@ gui.fileview = function(Options)
             end
          end
 
-         if path:startsWith('\\\\') then
+         if path.startsWith('\\\\') then
             -- Windows doesn't cope well when constantly refreshing UNC paths (folders sometimes fail analysis).
 
          else
@@ -789,8 +789,8 @@ gui.fileview = function(Options)
 
       if not Path then -- If no file is given, the monitored folder was affected by something.
          if ((Flags has MFF_DELETE) and (Flags has MFF_SELF)) or (Flags has MFF_UNMOUNT) then
-            if self.path:startsWith('cd') then
-            elseif self.path:startsWith('disk') then
+            if self.path.startsWith('cd') then
+            elseif self.path.startsWith('disk') then
             else -- Check that the folder is definitely gone and that this is not a mis-report.
                if mSys.AnalysePath(self.path, 0) != ERR_Okay then
                   self.browse(nil)
@@ -912,7 +912,7 @@ gui.fileview = function(Options)
 
    function responseRename(Dialog, Response, State)
       if Response.id > 0 then
-         local c = Dialog.var.src:sub(-1)
+         local c = Dialog.var.src.sub(-1)
          dir = (c is '/' or c is ':' or c is '\\')
 
          dest = self.path .. State.input
@@ -996,7 +996,7 @@ gui.fileview = function(Options)
 
       if Path then
          self.path = io.sanitisePath(Path)
-         local c = self.path:sub(-1)
+         local c = self.path.sub(-1)
          if c != '/' and c != ':' and c != '\\' then
             self.path ..= '/'
          end
@@ -1005,7 +1005,7 @@ gui.fileview = function(Options)
       end
 
       if self.limitPath then -- Limit browsing to the limitPath folder and its sub-folders.
-         if not self.path or (self.path:sub(0, self.limitPath:len()) != self.limitPath) then
+         if not self.path or (self.path.sub(0, self.limitPath.len()) != self.limitPath) then
             self.path = self.limitPath
          end
       end
@@ -1070,7 +1070,7 @@ gui.fileview = function(Options)
          for items in values(self.view.selectedItems()) do
             file_list = { }
             for item in values(items) do
-               table.insert(file_list, self.path .. item.name)
+               file_list.insert(self.path .. item.name)
             end
             copyFromList(self, Dest, file_list)
          end
@@ -1083,9 +1083,9 @@ gui.fileview = function(Options)
 
    self.parentFolder = function()
       self.path ?! return
-      if self.limitPath and self.limitPath:lower() is self.path:lower() then return end
+      if self.limitPath and self.limitPath.lower() is self.path.lower() then return end
 
-      reduced_path, count = rxParentFolder.extract(self.path:sub(0, -2))
+      reduced_path, count = rxParentFolder.extract(self.path.sub(0, -2))
 
       if count is 0 then
          self.browse(nil)
@@ -1217,7 +1217,7 @@ gui.fileview = function(Options)
 
       self.dlgDelete.files = { }
       for item in values(items) do
-         table.insert(self.dlgDelete.files, (self.path ?? '') .. item.name.value)
+         self.dlgDelete.files.insert((self.path ?? '') .. item.name.value)
       end
    end
 
@@ -1244,7 +1244,7 @@ gui.fileview = function(Options)
          if #items > 0 then
             file_list = { }
             for item in values(items) do
-               table.insert(file_list, self.path .. item.name.value)
+               file_list.insert(self.path .. item.name.value)
             end
             copyFromList(self, Dest, file_list, true)
          end
@@ -1323,7 +1323,7 @@ gui.fileview = function(Options)
          end
 
          item = createFileItem(self, dir_info.info)
-         if item then items:push(item) end
+         if item then items.push(item) end
 
          current_time = mSys.PreciseTime()
          if current_time - msg_time > 20000 then
@@ -1591,7 +1591,7 @@ gui.fileview = function(Options)
          self.view.clear()
 
          if self.view.setColumns then
-            self.view:setColumns(defineViewColumns(self.path))
+            self.view.setColumns(defineViewColumns(self.path))
          end
 
          if self.showParent and self.path then
@@ -1694,7 +1694,7 @@ gui.fileview = function(Options)
             if #items > 0 then
                files = array<table> { }
                for item in values(items) do
-                  files:push({ file = { path=self.path .. item.name.value } })
+                  files.push({ file = { path=self.path .. item.name.value } })
                end
 
                xml = {
@@ -1704,7 +1704,7 @@ gui.fileview = function(Options)
                      files
                   }
                }
-               Requester.acDataFeed(Clipboard, DATA_RECEIPT, table.toXML(xml))
+               Requester.acDataFeed(Clipboard, DATA_RECEIPT, xml.toXML())
             end
          end
       end

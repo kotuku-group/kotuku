@@ -10,7 +10,7 @@ io.search = function(Path:str!, Options:table!)
    isRegexFilter = false
 
    function normaliseFolderPath(Path:str!):str
-      if Path:endsWith('/') or Path:endsWith('\\') then return Path end
+      if Path.endsWith('/') or Path.endsWith('\\') then return Path end
       return Path .. '/'
    end
 
@@ -32,10 +32,10 @@ io.search = function(Path:str!, Options:table!)
          buf = string.alloc(bytes)
          err, totalRead = fl.acRead(buf)
 
-         while (err is ERR_Okay) and (totalRead >= lOptions.contentFilter:len()) do
-            if buf:find(lOptions.contentFilter) then return true end
+         while (err is ERR_Okay) and (totalRead >= lOptions.contentFilter.len()) do
+            if buf.find(lOptions.contentFilter) then return true end
             if fl.position is fl.size then return false end
-            fl.acSeek(-lOptions.contentFilter:len(), SEEK_CURRENT) -- Sliding window
+            fl.acSeek(-lOptions.contentFilter.len(), SEEK_CURRENT) -- Sliding window
             err, totalRead = fl.acRead(buf)
          end
       end
@@ -100,8 +100,8 @@ io.search = function(Path:str!, Options:table!)
             cmp_name = file_name
             cmp_filter = lOptions.nameFilter
             if not lOptions.caseSensitive then
-               cmp_name = cmp_name:lower()
-               if not isRegexFilter then cmp_filter = cmp_filter:lower() end
+               cmp_name = string.lower(cmp_name)
+               if not isRegexFilter then cmp_filter = string.lower(cmp_filter) end
             end
 
             if isRegexFilter then
@@ -190,8 +190,8 @@ io.search = function(Path:str!, Options:table!)
             cmp_name = file_name
             cmp_filter = lOptions.nameFilter
             if not lOptions.caseSensitive then
-               cmp_name = cmp_name:lower()
-               if not isRegexFilter then cmp_filter = cmp_filter:lower() end
+               cmp_name = cmp_name.lower()
+               if not isRegexFilter then cmp_filter = cmp_filter.lower() end
             end
 
             if isRegexFilter then

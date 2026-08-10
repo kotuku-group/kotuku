@@ -23,7 +23,7 @@ A demonstration of standard widgets
    glPath = <str{ glSelf.workingPath }>
 
    win = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
    print(f'Callback: {Item.id}, {Item.name}')
@@ -396,5 +396,5 @@ end
       }
    })
 
-   win:show()
+   win.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

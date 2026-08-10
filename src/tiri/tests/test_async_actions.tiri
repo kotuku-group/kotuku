@@ -18,7 +18,7 @@
       nameFilter = regex.new('.+\\.svg'),
       matchFeedback = function(Path:str, FileName:str, File:obj)
          list ..= FileName .. ' '
-         glImages:push({ path=Path .. FileName })
+         glImages.push({ path=Path .. FileName })
       end
    })
 
@@ -105,7 +105,7 @@ end
 
    for i in {0 to expected} do
       async.action(pic, 'Activate', function(ActionID, Object, Error, Key)
-         table.insert(order_log, Key)
+         order_log.insert(Key)
          completed++
          if completed >= expected then
             processing.signal()

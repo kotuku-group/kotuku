@@ -69,7 +69,7 @@ end
       return "ignored"
    end
    target = nil
-   result = target?:speak(argument())
+   result = target?.speak(argument())
    assert(result is nil, "Safe method on nil should yield nil")
    assert(calls is 0, "Method arguments must not be evaluated when base is nil")
 end
@@ -78,10 +78,10 @@ end
 
 @Test function testSafeMethodValue()
    greeter = { prefix = "Hello" }
-   function greeter:say(name)
-      return self.prefix .. ", " .. name
+   function greeter.say(Self, name)
+      return Self.prefix .. ", " .. name
    end
-   result = greeter?:say("World")
+   result = greeter?.say(greeter, "World")
    assert(result is "Hello, World", "Safe method should call method when base exists, got " .. tostring(result))
 end
 
@@ -89,12 +89,12 @@ end
 
 @Test function testSafeMethodChain()
    account = { profile = { email = "user@example.com" } }
-   function account:getProfile():table
-      return self.profile
+   function account.getProfile(Self):table
+      return Self.profile
    end
-   email = account?:getProfile()?.email
+   email = account?.getProfile(account)?.email
    assert(email is "user@example.com", "Safe method chain should propagate returned table, got " .. tostring(email))
-   missing = nil?:getProfile()?.email
+   missing = nil?.getProfile(nil)?.email
    assert(missing is nil, "Safe method chain should short-circuit on nil base, got " .. tostring(missing))
 end
 
@@ -214,11 +214,11 @@ end
 
 @Test function testSafeMethodMultipleArgs()
    calculator = {
-      add = function(self, a, b, c)
+      add = function(Self, a, b, c)
          return a + b + c
       end
    }
-   result = calculator?:add(1, 2, 3)
+   result = calculator?.add(calculator, 1, 2, 3)
    assert(result is 6, "Safe method should handle multiple arguments, got " .. tostring(result))
 end
 
@@ -275,15 +275,15 @@ end
             return 0xff
          end
       },
-      getData = function(self):table
-         return self.data
+      getData = function(Self):table
+         return Self.data
       end
    }
-   v = service?:getData()?.value
+   v = service?.getData(service)?.value
    assert(v is 42, "Chaining methods and fields should work, got " .. tostring(v))
 
    nilService = nil
-   v2 = nilService?:getData()?.value
+   v2 = nilService?.getData(nilService)?.value
    assert(v2 is nil, "Chaining methods and fields should short-circuit on nil")
 
    v = service.data.embedded_function(1, "2", { "3" })
@@ -342,11 +342,11 @@ end
 
 @Test function testSafeMethodReturningNil()
    object = {
-      getNil = function(self)
+      getNil = function(Self)
          return nil
       end
    }
-   v = object?:getNil()
+   v = object?.getNil(object)
    assert(v is nil, "Safe method can return nil as a valid result")
 end
 
@@ -676,7 +676,7 @@ end
          config?.theme, retries = 'dark', 3
       ]])
    except ex
-      assert(ex.message:find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
+      assert(ex.message.find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
          'Expected safe-navigation multi-assignment error, got: ' .. ex.message)
       return
    end
@@ -758,7 +758,7 @@ end
          retries, config?.theme = 3, 'dark'
       ]])
    except ex
-      assert(ex.message:find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
+      assert(ex.message.find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
          'Expected safe-navigation multi-assignment error, got: ' .. ex.message)
       return
    end
@@ -781,7 +781,7 @@ end
          safe_store?.value, second, third = values()
       ]])
    except ex
-      assert(ex.message:find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
+      assert(ex.message.find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
          'Expected safe-navigation multi-assignment error, got: ' .. ex.message)
       return
    end
@@ -856,7 +856,7 @@ end
          end
       ]])
    except ex
-      assert(ex.message:find('Parsing failed') != nil or ex.message:find('Unsupported') != nil or ex.message:find('Unexpected') != nil or ex.message:find('Expected Token') != nil,
+      assert(ex.message.find('Parsing failed') != nil or ex.message.find('Unsupported') != nil or ex.message.find('Unexpected') != nil or ex.message.find('Expected Token') != nil,
          'Expected function-statement safe-nav form to remain unsupported, got: ' .. ex.message)
       return
    end

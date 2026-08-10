@@ -23,7 +23,7 @@ glImagePath = <{ glSVGFolder .. 'basics/sign.png' }>
 function saveScene(Scene:obj, Path:str):str
    svg = obj.new('svg', { target=Scene })
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
-   glFiles:push(Path)
+   glFiles.push(Path)
 
    check svg.acSaveToObject(file, 0)
    file = nil

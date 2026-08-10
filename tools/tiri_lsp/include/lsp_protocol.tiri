@@ -23,20 +23,20 @@ end
 -- If success: content_length, body_start_offset, nil
 
 function parseHeader(Buffer:str):<str,num,str>
-   header_end = Buffer:find('\r\n\r\n')
+   header_end = Buffer.find('\r\n\r\n')
    separator_len = 4
    if not header_end then
-      header_end = Buffer:find('\n\n')
+      header_end = Buffer.find('\n\n')
       separator_len = 2
    end
    header_end ?! return nil, nil, nil  -- Need more data
-   header_section = Buffer:sub(0, header_end)
+   header_section = Buffer.sub(0, header_end)
    content_length = nil
 
    for start, stop, cap in rx_split_header_lines.findAll(header_section) do
       local line = cap[0]
       name, value = rx_header_value.extract(line)
-      if name and name:lower() is 'content-length' then
+      if name and name.lower() is 'content-length' then
          content_length = tonumber(value)
          break
       end
@@ -82,7 +82,7 @@ global function sendResponse(Self:table, ClientSocket, ResponseTable, RequestLog
    if err != ERR_Okay then
       logMessage(Self, 'Failed to send response: ' .. mSys.GetErrorMsg(err))
    else
-      logVerbose(Self, 'Sent response: ' .. formatted:sub(0, 200))
+      logVerbose(Self, 'Sent response: ' .. formatted.sub(0, 200))
 
       -- Log outgoing response if logging enabled
       if RequestLog then
@@ -192,7 +192,7 @@ global function processIncomingData(Self:table, ClientSocket:any, Data:str)
          end
 
          state.content_length = content_length
-         state.buffer = state.buffer:sub(body_start)
+         state.buffer = state.buffer.sub(body_start)
          state.phase = 'READING_BODY'
          logVerbose(Self, 'Header parsed, expecting ' .. content_length .. ' bytes')
       end
@@ -203,11 +203,11 @@ global function processIncomingData(Self:table, ClientSocket:any, Data:str)
          end
 
          -- Extract the JSON body
-         json_body = state.buffer:sub(0, state.content_length)
-         state.buffer = state.buffer:sub(state.content_length)
+         json_body = state.buffer.sub(0, state.content_length)
+         state.buffer = state.buffer.sub(state.content_length)
          state.phase = 'READING_HEADER'
 
-         logVerbose(Self, 'Received message: ' .. json_body:sub(0, 200))
+         logVerbose(Self, 'Received message: ' .. json_body.sub(0, 200))
 
          -- Log incoming request if logging enabled
          if Self.requestLog then
@@ -251,5 +251,5 @@ global function processIncoming(Self:table, ClientSocket:any)
 
    if bytes_read is 0 then return end
 
-   processIncomingData(Self, ClientSocket, buffer:sub(0, bytes_read))
+   processIncomingData(Self, ClientSocket, buffer.sub(0, bytes_read))
 end

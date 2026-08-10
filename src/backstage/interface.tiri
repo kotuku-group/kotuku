@@ -34,7 +34,7 @@ glWorkingPath = glSelf.workingPath
 rx_func_name_chars <const> = <{ regex.new('[^A-Za-z0-9_]+') }>
 
 function route(Method:str, Path:str, Interface:table)
-   glRoutes:push({ method=Method, path=Path, interface=Interface })
+   glRoutes.push({ method=Method, path=Path, interface=Interface })
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -373,7 +373,7 @@ function path_to_regex(Route:table):str
    Route.params = array<string> { }
 
    for i in {0 to #Route.path} do
-      ch = Route.path:sub(i, i + 1)
+      ch = Route.path.sub(i, i + 1)
 
       if in_param then
          if ch is '}' then
@@ -381,7 +381,7 @@ function path_to_regex(Route:table):str
                error('Empty path parameter in route: ' .. Route.path)
             end
 
-            Route.params:push(param_name)
+            Route.params.push(param_name)
             rx ..= path_param_regex(Route, param_name)
             param_name = ''
             in_param = false
@@ -412,7 +412,7 @@ function read_text_file(Path:str):str
 
    buffer = array<byte, file.size>
    check mSys.ReadFileToBuffer(Path, buffer)
-   return buffer:getString()
+   return buffer.getString()
 end
 
 function cpp_string(Value:any):str
@@ -422,7 +422,7 @@ function cpp_string(Value:any):str
    out = '"'
 
    for i in {0 to #text} do
-      ch = text:sub(i, i + 1)
+      ch = text.sub(i, i + 1)
 
       if ch is '\\' then out ..= '\\\\'
       elseif ch is '"' then out ..= '\\"'
@@ -446,10 +446,10 @@ function sorted_field_names(Fields:table):array<string>
    if not Fields then return names end
 
    for name, _ in pairs(Fields) do
-      names:push(name)
+      names.push(name)
    end
 
-   names:sort()
+   names.sort()
    return names
 end
 
@@ -545,13 +545,13 @@ function append_missing_route_handler(Route:table)
    content = read_text_file(target_path)
    signature = 'static ERR ' .. Route.funcName .. '('
 
-   if content:find(signature) then return end
+   if content.find(signature) then return end
 
    local file:obj
    if content?? then
       file = obj.new('file', { path=target_path, flags=FL_WRITE })
       file.acSeek(0, SEEK_END)
-      if not content:endsWith('\n') then file.acWrite('\n') end
+      if not content.endsWith('\n') then file.acWrite('\n') end
    else
       file = obj.new('file', { path=target_path, flags=FL_NEW|FL_WRITE })
    end
@@ -566,11 +566,11 @@ end
    meta = ''
 
    for _, route in glRoutes do
-      routes = route.path:split('/')
+      routes = route.path.split('/')
       route_path = 'routes/' .. routes[1] .. '.cpp'
 
-      func_name = rx_func_name_chars.replace(route.method .. route.path, '_'):lower()
-      if func_name:endsWith('_') then func_name = func_name[{0 to -1}] end
+      func_name = rx_func_name_chars.replace(route.method .. route.path, '_').lower()
+      if func_name.endsWith('_') then func_name = func_name[{0 to -1}] end
       route.funcName = func_name
       route.source   = route_path
 
@@ -579,7 +579,7 @@ end
 
       if (route.interface.transport != 'websocket') and not glIncludes[route.source] then
          glIncludes[route.source] = true
-         glIncludeList:push(route.source)
+         glIncludeList.push(route.source)
       end
 
       if route.interface.transport != 'websocket' then append_missing_route_handler(route) end

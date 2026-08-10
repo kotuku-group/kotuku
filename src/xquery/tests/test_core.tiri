@@ -126,7 +126,7 @@ end
       targetCount++
       err, idValue = xml.mtGetAttrib(TagID, 'id')
       assert(err is ERR_Okay, "Failed to get target id")
-      table.insert(foundIds, idValue)
+      foundIds.insert(idValue)
    end)
 
    assert(targetCount is 2, "Expected 2 targets, found " .. targetCount)

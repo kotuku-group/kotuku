@@ -312,7 +312,6 @@ struct FunctionParameter {
    ArrayElementDescriptor array_element{};
    bool type_is_explicit = false;
    bool required = false;
-   bool is_self = false;
 };
 
 struct DirectCallTarget {
@@ -325,29 +324,7 @@ struct DirectCallTarget {
    ~DirectCallTarget();
 };
 
-struct MethodCallTarget {
-   MethodCallTarget() = default;
-   MethodCallTarget(const MethodCallTarget&) = delete;
-   MethodCallTarget& operator=(const MethodCallTarget&) = delete;
-   MethodCallTarget(MethodCallTarget&&) noexcept = default;
-   MethodCallTarget& operator=(MethodCallTarget&&) noexcept = default;
-   ExprNodePtr receiver;
-   Identifier method;
-   ~MethodCallTarget();
-};
-
-struct SafeMethodCallTarget {
-   SafeMethodCallTarget() = default;
-   SafeMethodCallTarget(const SafeMethodCallTarget&) = delete;
-   SafeMethodCallTarget& operator=(const SafeMethodCallTarget&) = delete;
-   SafeMethodCallTarget(SafeMethodCallTarget&&) noexcept = default;
-   SafeMethodCallTarget& operator=(SafeMethodCallTarget&&) noexcept = default;
-   ExprNodePtr receiver;
-   Identifier method;
-   ~SafeMethodCallTarget();
-};
-
-using CallTarget = std::variant<DirectCallTarget, MethodCallTarget, SafeMethodCallTarget>;
+using CallTarget = std::variant<DirectCallTarget>;
 
 struct VarArgExprPayload {};
 
@@ -467,7 +444,6 @@ struct MemberExprPayload {
    MemberExprPayload& operator=(MemberExprPayload&&) noexcept = default;
    ExprNodePtr table;
    Identifier member;
-   bool uses_method_dispatch = false;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
    ~MemberExprPayload();
@@ -760,7 +736,6 @@ struct LocalFunctionStmtPayload {
 
 struct FunctionNamePath {
    std::vector<Identifier> segments;
-   std::optional<Identifier> method;
    bool is_explicit_global = false;  // True when declared with `global function`
 };
 
@@ -1126,10 +1101,7 @@ ExprNodePtr make_presence_expr(SourceSpan span, ExprNodePtr value);
 ExprNodePtr make_pipe_expr(SourceSpan span, ExprNodePtr lhs, ExprNodePtr rhs_call, uint32_t limit);
 ExprNodePtr make_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret,
    CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic);
-ExprNodePtr make_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments, bool forwards_multret);
-ExprNodePtr make_safe_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
-   bool forwards_multret);
-ExprNodePtr make_member_expr(SourceSpan span, ExprNodePtr table, Identifier member, bool uses_method_dispatch);
+ExprNodePtr make_member_expr(SourceSpan span, ExprNodePtr table, Identifier member);
 ExprNodePtr make_module_function_expr(SourceSpan span, Identifier binding, Identifier function,
    StaticModuleHandle module, GCstr *namespace_name);
 ExprNodePtr make_index_expr(SourceSpan span, ExprNodePtr table, ExprNodePtr index);

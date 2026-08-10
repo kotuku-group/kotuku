@@ -50,7 +50,7 @@ function loadCases(Path)
       expectation = readExpectation(subsetXml, name)
       assert(expectation, 'QT3 test ' .. name .. ' does not define an assertion.')
 
-      table.insert(cases, {
+      cases.insert({
          name = name,
          query = query,
          expect = expectation

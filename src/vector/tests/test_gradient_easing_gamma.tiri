@@ -20,8 +20,8 @@ end
 
 function blackWhiteStops()
    local stops = { }
-   table.insert(stops, stop(0.0, 0.0, 0.0, 0.0))
-   table.insert(stops, stop(1.0, 1.0, 1.0, 1.0))
+   stops.insert(stop(0.0, 0.0, 0.0, 0.0))
+   stops.insert(stop(1.0, 1.0, 1.0, 1.0))
    return stops
 end
 

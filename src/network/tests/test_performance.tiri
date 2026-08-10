@@ -164,7 +164,7 @@ end
             logOutput('[Server] Sending ' .. size .. ' byte message...')
             err, len = Client.acWrite(large_msg)
             if (err is ERR_Okay) then
-               transfer_results:push({ size = size, start_time = start_time })
+               transfer_results.push({ size = size, start_time = start_time })
             else
                error('[Server] Failed to send large message: ' .. mSys.GetErrorMsg(err))
             end
@@ -212,7 +212,7 @@ end
             logOutput('[Server] Sending ' .. size .. ' byte message...')
             err, len = Client.acWrite(large_msg)
             if (err is ERR_Okay) then
-               transfer_results:push({ size = size, start_time = start_time })
+               transfer_results.push({ size = size, start_time = start_time })
             end
          else
             logOutput('[Server] All large message tests completed')
@@ -236,7 +236,7 @@ end
             assert(err is ERR_Okay, '[Client] Large message read failed: ' .. mSys.GetErrorMsg(err))
             if (read_len <= 0) then break end
 
-            local msg = buffer:getString(0, read_len)
+            local msg = buffer.getString(0, read_len)
             local write_err, len = Socket.acWrite(msg)
             assert(write_err is ERR_Okay, '[Client] Large message echo failed: ' .. mSys.GetErrorMsg(write_err))
             assert(len is read_len, '[Client] Large message echo accepted a partial chunk')
@@ -298,7 +298,7 @@ end
          feedback = function(Socket, Client, State)
             if (State is NTC_CONNECTED) then
                local connect_time = mSys.PreciseTime() - start_time
-               table.insert(connection_times, connect_time)
+               connection_times.insert(connect_time)
             end
          end
       })

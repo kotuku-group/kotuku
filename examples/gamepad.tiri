@@ -13,7 +13,7 @@ Gamepad demonstration
    glPath = glSelf.workingPath
 
    win = gui.window({ title='Gamepad Demo', insideWidth=600, insideHeight=400, enableControllers=true })
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
    text = viewport.new('vectortext', {
       x=win.margins.left, y=20, string='Use a gamepad to control the football.', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
@@ -246,5 +246,5 @@ end
       viewport.scene.surface.mtScheduleRedraw()
    end)
 
-   win:show(true)
+   win.show(true)
    processing.sleep()

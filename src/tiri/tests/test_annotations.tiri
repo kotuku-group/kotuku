@@ -13,11 +13,11 @@ top_level_source_line = @SourceLine
       return @SourceLine
    end
 
-   assert(top_level_source_file:endsWith('test_annotations.tiri'),
+   assert(top_level_source_file.endsWith('test_annotations.tiri'),
       "Top level @SourceFile should resolve to this test file, got " .. tostring(top_level_source_file))
    assert(top_level_source_line > 0, "Top level @SourceLine should resolve to a positive line number")
    assert(sourceLineHelper() > top_level_source_line, "Function @SourceLine should resolve inside the function body")
-   assert(@SourceFile:endsWith('test_annotations.tiri'),
+   assert(@SourceFile.endsWith('test_annotations.tiri'),
       "Function @SourceFile should resolve to this test file, got " .. tostring(@SourceFile))
    assert(@SourceLine > sourceLineHelper(), "Inline @SourceLine should resolve at the current statement")
 end
@@ -31,7 +31,7 @@ end
 
    helper_table = {}
 
-   function helper_table:methodHelper()
+   function helper_table.methodHelper(Self)
       return @FunctionName
    end
 
@@ -44,7 +44,7 @@ end
    assert(top_level_function_name is "Main", "Top level @FunctionName should resolve to Main")
    assert(@FunctionName is "FunctionNameAnnotationResolvesScopes", "Current test function name should be resolved")
    assert(namedHelper() is "namedHelper", "Named function should resolve its own name")
-   assert(helper_table:methodHelper() is "methodHelper", "Method function should resolve the method name")
+   assert(helper_table.methodHelper(helper_table) is "methodHelper", "Method function should resolve the method name")
    assert(anonymous_helper() is "Anonymous", "Anonymous function should resolve to Anonymous")
    assert(arrow_helper() is "Anonymous", "Arrow function should resolve to Anonymous")
 end

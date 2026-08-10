@@ -17,7 +17,7 @@
    local err, len = file.acRead(glExpected)
    assert((err is ERR_Okay) and (len is size), 'Failed to read sample.txt fixture.')
    global glExpectedSize = size
-   global glExpectedText = glExpected:getString(0, size)
+   global glExpectedText = glExpected.getString(0, size)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -39,7 +39,7 @@ end
    local err, len = lz.acRead(buf)
    assert(err is ERR_Okay, 'Read() failed: ' .. mSys.GetErrorMsg(err))
    assert(len is glExpectedSize, 'Decoded ' .. len .. ' bytes, expected ' .. glExpectedSize)
-   assert(buf:getString(0, len) is glExpectedText, 'Decoded content does not match the expected plaintext.')
+   assert(buf.getString(0, len) is glExpectedText, 'Decoded content does not match the expected plaintext.')
 
    -- A subsequent read past the end yields zero bytes without error.
    local err2, len2 = lz.acRead(buf)
@@ -60,7 +60,7 @@ end
       local err
       err, len = lz.acRead(chunk)
       assert(err is ERR_Okay, 'Chunked Read() failed: ' .. mSys.GetErrorMsg(err))
-      if len > 0 then acc = acc .. chunk:getString(0, len) total += len end
+      if len > 0 then acc = acc .. chunk.getString(0, len) total += len end
    end
 
    assert(total is glExpectedSize, 'Chunked decode produced ' .. total .. ' bytes, expected ' .. glExpectedSize)

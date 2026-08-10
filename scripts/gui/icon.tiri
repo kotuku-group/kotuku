@@ -16,7 +16,7 @@ rx_volume_prefix = <{ regex.new([[^[^:\/\\]+:]]) }>
 -- NB: If a custom SVG file is desired then the client must specify a volume in the path.
 
 function imageLocation(Path:str!):str
-   if Path:startsWith('icons:') then
+   if Path.startsWith('icons:') then
       return Path
    elseif rx_volume_prefix.test(Path) then
       return Path
@@ -92,7 +92,7 @@ gui.icon = function(Options)
       for word in values(lText) do
          width = mVec.stringWidth(font, word, -1)
          if width > widest_word then widest_word = width end
-         lWords:push({ word=word, width=width })
+         lWords.push({ word=word, width=width })
       end
 
       -- If necessary, expand the width of the icon to fit the longest word.
@@ -112,14 +112,14 @@ gui.icon = function(Options)
             if width + (MARGIN * 2) < lIconWidth then
                current_line = new_line
             else
-               lLines:push(current_line)
+               lLines.push(current_line)
                current_line = word.word -- Push the word to the next line
             end
          end
       end
 
       if current_line then
-         lLines:push(current_line)
+         lLines.push(current_line)
       end
    end
 
@@ -163,7 +163,7 @@ gui.icon = function(Options)
    -- Main entry point
 
    if Options.text?? then
-      lText = rx_whitespace.replace(Options.text:trim(), ' '):split(' ')
+      lText = rx_whitespace.replace(Options.text.trim(), ' ').split(' ')
    else
       lText = nil
    end

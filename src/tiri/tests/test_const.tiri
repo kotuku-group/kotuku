@@ -166,7 +166,7 @@ local x <const> = 1
 x = 2
 ]])
    except ex
-      assert(ex.message:find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
+      assert(ex.message.find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
       return -- Happy path
    end
    error('Reassigning const local should fail to compile')
@@ -182,7 +182,7 @@ global X <const> = 1
 X = 2
 ]])
    except ex
-      assert(ex.message:find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
+      assert(ex.message.find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
       return -- Happy path
    end
    error('Reassigning const global should fail to compile')
@@ -395,7 +395,7 @@ end
    try
       exec([[local x <const>]])
    except ex
-      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
    error('Local const without initialiser should fail to compile')
@@ -408,7 +408,7 @@ end
    try
       exec([[global X <const>]])
    except ex
-      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
    error('Global const without initialiser should fail to compile')

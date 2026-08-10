@@ -122,31 +122,31 @@ end
       local t = { 1, 2, 3, 4, 5 }
 
       -- Insert at end
-      table.insert(t, 6)
-      table.insert(t, 7)
-      table.insert(t, 8)
+      t.insert(6)
+      t.insert(7)
+      t.insert(8)
 
       -- Insert at specific position
-      table.insert(t, 0, 0)     -- Insert at beginning
-      table.insert(t, 5, 99)    -- Insert in middle
+      t.insert(0, 0)     -- Insert at beginning
+      t.insert(5, 99)    -- Insert in middle
 
       -- Remove from end
-      local last = table.remove(t)
+      local last = t.remove()
 
       -- Remove from specific position
-      local first = table.remove(t, 0)
-      local middle = table.remove(t, 3)
+      local first = t.remove(0)
+      local middle = t.remove(3)
       checksum += last + first + middle + #t
 
       -- Build table with inserts
       local built = {}
       for j in {0 to 20} do
-         table.insert(built, j * 10)
+         built.insert(j * 10)
       end
 
       -- Empty table with removes
       while #built > 0 do
-         checksum += table.remove(built)
+         checksum += built.remove()
       end
    end
    return checksum
@@ -160,19 +160,19 @@ end
    for i in {0 to 1000} do
       -- Sort numbers ascending (default)
       local nums = { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
-      table.sort(nums)
+      nums.sort()
 
       -- Sort numbers descending
       local nums2 = { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
-      table.sort(nums2, function(A, B) return A > B end)
+      nums2.sort(function(A, B) return A > B end)
 
       -- Sort strings
       local words = { "cherry", "apple", "banana", "date", "elderberry" }
-      table.sort(words)
+      words.sort()
 
       -- Sort by string length
       local words2 = { "cherry", "apple", "banana", "date", "elderberry" }
-      table.sort(words2, function(A, B) return #A < #B end)
+      words2.sort(function(A, B) return #A < #B end)
 
       -- Sort table of tables by field
       local people = {
@@ -180,7 +180,7 @@ end
          { name = "Alice", age = 30 },
          { name = "Bob", age = 25 }
       }
-      table.sort(people, function(A, B) return A.age < B.age end)
+      people.sort(function(A, B) return A.age < B.age end)
       checksum += nums[0] + nums2[0] + #words[0] + #words2[0] + people[0].age
    end
    return checksum

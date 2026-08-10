@@ -21,7 +21,7 @@ ExprNodePtr make_direct_method_call(ParserContext &Context, SourceSpan Span, std
    ExprNodePtr Receiver, ExprNodeList WrittenArguments, TiriType ResultType)
 {
    Identifier method_id = Identifier::from_keepstr(Context.lex().keepstr(Method), Span);
-   ExprNodePtr callable = make_member_expr(Span, std::move(Receiver), method_id, false);
+   ExprNodePtr callable = make_member_expr(Span, std::move(Receiver), method_id);
    ExprNodePtr call = make_call_expr(Span, std::move(callable), std::move(WrittenArguments), false,
       CallArgumentSyntax::Synthetic);
    std::get<CallExprPayload>(call->data).result_type = ResultType;
@@ -198,13 +198,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
             else if (call_data.result_type IS TiriType::Range) {
                lhs_is_range = true;
             }
-            if (const auto* method = std::get_if<MethodCallTarget>(&call_data.target)) {
-               if (method->method.symbol and strcmp(strdata(method->method.symbol), "each") IS 0) {
-                  if (method->receiver and method->receiver->kind IS AstNodeKind::RangeExpr) lhs_is_range = true;
-                  else lhs_is_array = true;
-               }
-            }
-            else if (const auto *direct = std::get_if<DirectCallTarget>(&call_data.target)) {
+            if (const auto *direct = std::get_if<DirectCallTarget>(&call_data.target)) {
                if (direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
                   const auto &member = std::get<MemberExprPayload>(direct->callable->data);
                   if (member.member.symbol and strcmp(strdata(member.member.symbol), "each") IS 0 and
@@ -306,8 +300,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
       }
 
       // Membership operator: expr in range
-      // Transform `lhs in rhs` into a method call `rhs:contains(lhs)` so that
-      // ranges can implement membership via their :contains method.
+      // Transform `lhs in rhs` into the canonical `rhs.contains(lhs)` built-in method call.
 
       if (next.kind() IS TokenKind::InToken) {
          constexpr uint8_t in_left = 3;
@@ -329,8 +322,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          args.push_back(std::move(lhs_expr));
 
          SourceSpan span = combine_spans(left_span, right_span);
-         Identifier method(&this->ctx.lua(), "contains", next.span());
-         ExprNodePtr call = make_method_call_expr(span, std::move(rhs_expr), method, std::move(args), false);
+         ExprNodePtr call = make_direct_method_call(this->ctx, span, "contains", std::move(rhs_expr),
+            std::move(args), TiriType::Bool);
          left = ParserResult<ExprNodePtr>::success(std::move(call));
          continue;
       }
@@ -476,7 +469,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          ExprNodePtr regex_base = make_identifier_expr(span, regex_ref);
 
          Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr regex_new = make_member_expr(span, std::move(regex_base), new_id, false);
+         ExprNodePtr regex_new = make_member_expr(span, std::move(regex_base), new_id);
 
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(pattern)));
@@ -765,7 +758,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
             // Create member access for .of
             Identifier of_id = Identifier::from_keepstr(this->ctx.lex().keepstr("of"), span);
-            ExprNodePtr array_of = make_member_expr(span, std::move(array_base), of_id, false);
+            ExprNodePtr array_of = make_member_expr(span, std::move(array_base), of_id);
 
             // Build argument list: ('type', v1, v2, ...)
             ExprNodeList args;
@@ -808,7 +801,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                ExprNodePtr array_base2 = make_identifier_expr(span, array_ref2);
 
                Identifier resize_id = Identifier::from_keepstr(this->ctx.lex().keepstr("resize"), span);
-               ExprNodePtr array_resize = make_member_expr(span, std::move(array_base2), resize_id, false);
+               ExprNodePtr array_resize = make_member_expr(span, std::move(array_base2), resize_id);
 
                // Arguments for resize: (_arr, size)
 
@@ -856,7 +849,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
             // Create member access for .new
             Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-            ExprNodePtr array_new = make_member_expr(span, std::move(array_base), new_id, false);
+            ExprNodePtr array_new = make_member_expr(span, std::move(array_base), new_id);
 
             // Build argument list: (size, 'type')
 
@@ -906,7 +899,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          struct_ref.identifier = struct_id;
          ExprNodePtr struct_base = make_identifier_expr(span, struct_ref);
          Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr struct_new = make_member_expr(span, std::move(struct_base), new_id, false);
+         ExprNodePtr struct_new = make_member_expr(span, std::move(struct_base), new_id);
 
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(name_str)));
@@ -1075,7 +1068,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
 
          base = make_member_expr(span_from(token, name_token.value_ref()), std::move(base),
-            make_identifier(name_token.value_ref()), false);
+            make_identifier(name_token.value_ref()));
          continue;
       }
 
@@ -1112,33 +1105,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
       }
 
       if (token.kind() IS TokenKind::Colon) {
-         this->ctx.tokens().advance();
-         auto name_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
-         if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
-
-         bool forwards = false;
-         auto args = this->parse_call_arguments(&forwards);
-         if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
-
-         SourceSpan span = combine_spans(base->span, name_token.value_ref().span());
-         base = make_method_call_expr(span, std::move(base),
-            make_identifier(name_token.value_ref()), std::move(args.value_ref()), forwards);
-         continue;
+         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
+            "colon method syntax has been removed; use receiver.member(...) for built-in methods or pass the "
+            "receiver explicitly to an ordinary callable field");
       }
 
       if (token.kind() IS TokenKind::SafeMethod) {
-         this->ctx.tokens().advance();
-         auto name_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
-         if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
-
-         bool forwards = false;
-         auto args = this->parse_call_arguments(&forwards);
-         if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
-
-         SourceSpan span = combine_spans(base->span, name_token.value_ref().span());
-         base = make_safe_method_call_expr(span, std::move(base),
-            make_identifier(name_token.value_ref()), std::move(args.value_ref()), forwards);
-         continue;
+         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
+            "safe colon method syntax has been removed; use receiver?.member(...) instead");
       }
 
       if (token.kind() IS TokenKind::LeftParen or token.kind() IS TokenKind::LeftBrace or

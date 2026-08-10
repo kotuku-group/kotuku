@@ -96,14 +96,14 @@ function pHash(Bitmap:obj):array<byte>
             end
          end
 
-         samples:push(luminance / (256 * (x_end - x_start) * (y_end - y_start)))
+         samples.push(luminance / (256 * (x_end - x_start) * (y_end - y_start)))
       end
    end
 
    local cosines = array<double>
    for frequency in {0 to dct_size} do
       for position in {0 to sample_size} do
-         cosines:push(math.cos(((2 * position + 1) * frequency * math.pi) / (2 * sample_size)))
+         cosines.push(math.cos(((2 * position + 1) * frequency * math.pi) / (2 * sample_size)))
       end
    end
 
@@ -114,7 +114,7 @@ function pHash(Bitmap:obj):array<byte>
          for x in {0 to sample_size} do
             coefficient += samples[(y * sample_size) + x] * cosines[(frequency_x * sample_size) + x]
          end
-         row_dct:push(coefficient)
+         row_dct.push(coefficient)
       end
    end
 
@@ -125,13 +125,13 @@ function pHash(Bitmap:obj):array<byte>
          for y in {0 to sample_size} do
             coefficient += row_dct[(y * dct_size) + frequency_x] * cosines[(frequency_y * sample_size) + y]
          end
-         coefficients:push(coefficient)
+         coefficients.push(coefficient)
       end
    end
 
    local ac_coefficients = array<double>
-   for i in {1 to #coefficients} do ac_coefficients:push(coefficients[i]) end
-   ac_coefficients:sort()
+   for i in {1 to #coefficients} do ac_coefficients.push(coefficients[i]) end
+   ac_coefficients.sort()
    local median = ac_coefficients[math.floor(#ac_coefficients / 2)]
    local fingerprint = array<byte> { 0, 0, 0, 0, 0, 0, 0, 0 }
 

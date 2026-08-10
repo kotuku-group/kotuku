@@ -9,7 +9,7 @@
 
 function lowercaseOption(Value:any, Param:table):str
    Value ?! return
-   return tostring(Value):lower()
+   return tostring(Value).lower()
 end
 
 glParser = options({
@@ -102,7 +102,7 @@ function hslToRGB(H, S, L, A):table
 end
 
 function rgbToXYZD50(RGB)
-   local linear = RGB:linearise()
+   local linear = RGB.linearise()
 
    local x65 = (0.4124564 * linear.r) + (0.3575761 * linear.g) + (0.1804375 * linear.b)
    local y65 = (0.2126729 * linear.r) + (0.7151522 * linear.g) + (0.0721750 * linear.b)
@@ -117,7 +117,7 @@ function rgbToXYZD50(RGB)
 end
 
 function makePaletteEntry(RGB)
-   local hsl = RGB:toHSL()
+   local hsl = RGB.toHSL()
    return {
       rgb = RGB,
       hex = hexFromRGB(RGB),
@@ -128,7 +128,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function generatePalette(BaseRGB, Scheme, Count)
-   local base_hsl = BaseRGB:toHSL()
+   local base_hsl = BaseRGB.toHSL()
    local palette = {}
    local i = 0
 
@@ -174,13 +174,13 @@ end
 function buildColourReport(Painter)
    nrgb  = Painter.Colour -- Normalised RGB
    rgb   = gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha)
-   oklab = rgb:toOKLab()
-   oklch = rgb:toOKLCH()
-   hsl   = rgb:toHSL()
-   hsv   = rgb:toHSV()
+   oklab = rgb.toOKLab()
+   oklch = rgb.toOKLCH()
+   hsl   = rgb.toHSL()
+   hsv   = rgb.toHSV()
    xyz   = rgbToXYZD50(rgb)
-   p3    = rgb:toDisplayP3()
-   lum   = rgb:luminance()
+   p3    = rgb.toDisplayP3()
+   lum   = rgb.luminance()
 
    alpha = clamp(rgb.a, 0, 1)
 
@@ -218,16 +218,16 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function outputText(Report, Format)
-   if Format:find('rgb')   then print(f'RGB:     {Report.rgb}') end
-   if Format:find('hex')   then print(f'RGB Hex: {Report.hex}') end
-   if Format:find('hsl')   then print(f'HSL:     {Report.css.hsl}') end
-   if Format:find('xyz')   then print(f'CIE XYZ: {Report.css.xyz}') end
-   if Format:find('oklab') then print(f'OKLAB:   {Report.css.oklab}') end
-   if Format:find('oklch') then print(f'OKLCH:   {Report.css.oklch}') end
-   if Format:find('p3')    then print(f'P3:      {Report.css.p3}') end
-   if Format:find('hsv')   then print(f'HSV:     {Report.css.hsv}') end
+   if Format.find('rgb')   then print(f'RGB:     {Report.rgb}') end
+   if Format.find('hex')   then print(f'RGB Hex: {Report.hex}') end
+   if Format.find('hsl')   then print(f'HSL:     {Report.css.hsl}') end
+   if Format.find('xyz')   then print(f'CIE XYZ: {Report.css.xyz}') end
+   if Format.find('oklab') then print(f'OKLAB:   {Report.css.oklab}') end
+   if Format.find('oklch') then print(f'OKLCH:   {Report.css.oklch}') end
+   if Format.find('p3')    then print(f'P3:      {Report.css.p3}') end
+   if Format.find('hsv')   then print(f'HSV:     {Report.css.hsv}') end
 
-   if Format:find('info') then
+   if Format.find('info') then
       print('')
       print(string.format('Luminance: %.4g', Report.luminance))
       print(string.format('Contrast:  %.2f:1 (black) / %.2f:1 (white)', Report.cr_black, Report.cr_white))
@@ -291,7 +291,7 @@ function buildSwatchSVG(Entries)
    end
 
    parts[#parts] = '</svg>'
-   return table.concat(parts)
+   return parts.concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -302,8 +302,8 @@ function emitSwatchPreview(Mode, Entries, PreviewFile, Format)
       if PreviewFile then
          file = io.open(PreviewFile, 'w')
          assert(file, f'Failed to open preview file for writing: {PreviewFile}')
-         file:write(svg)
-         file:close()
+         file.write(svg)
+         file.close()
          if Format is not 'json' then
             print('')
             print(f'Swatch SVG written to: {PreviewFile}')
@@ -321,16 +321,16 @@ end
 function outputJSON(Report, Format, Palette, Scheme)
    output = {}
 
-   if Format:find('rgb')   then output.rgb = Report.rgb end
-   if Format:find('hex')   then output.hex = Report.hex end
-   if Format:find('hsl')   then output.hsl = Report.hsl; output.css_hsl = Report.css.hsl end
-   if Format:find('xyz')   then output.xyz = Report.xyz; output.css_xyz = Report.css.xyz end
-   if Format:find('oklab') then output.oklab = Report.oklab; output.css_oklab = Report.css.oklab end
-   if Format:find('oklch') then output.oklch = Report.oklch; output.css_oklch = Report.css.oklch end
-   if Format:find('p3')    then output.p3 = Report.p3; output.css_p3 = Report.css.p3 end
-   if Format:find('hsv')   then output.hsv = Report.hsv; output.css_hsv = Report.css.hsv end
+   if Format.find('rgb')   then output.rgb = Report.rgb end
+   if Format.find('hex')   then output.hex = Report.hex end
+   if Format.find('hsl')   then output.hsl = Report.hsl; output.css_hsl = Report.css.hsl end
+   if Format.find('xyz')   then output.xyz = Report.xyz; output.css_xyz = Report.css.xyz end
+   if Format.find('oklab') then output.oklab = Report.oklab; output.css_oklab = Report.css.oklab end
+   if Format.find('oklch') then output.oklch = Report.oklch; output.css_oklch = Report.css.oklch end
+   if Format.find('p3')    then output.p3 = Report.p3; output.css_p3 = Report.css.p3 end
+   if Format.find('hsv')   then output.hsv = Report.hsv; output.css_hsv = Report.css.hsv end
 
-   if Format:find('info') then
+   if Format.find('info') then
       output.info = {
          alpha      = Report.alpha,
          luminance  = Report.luminance,
@@ -386,7 +386,7 @@ end
 
       if all_output[0] is 'oklch' then
          convert = function(RGB)
-            oklab = RGB:toOKLCH()
+            oklab = RGB.toOKLCH()
             return tostring(oklab)
          end
       else
@@ -394,29 +394,29 @@ end
       end
 
       for start, stop in rx_hex.findAll(buffer) do
-         segment = buffer:sub(index, start)
+         segment = buffer.sub(index, start)
 
-         col = buffer:sub(start, stop)
+         col = buffer.sub(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
          nrgb = painter.Colour -- Normalised RGB
          out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
          index = stop
       end
-      out ..= buffer:sub(index)
+      out ..= buffer.sub(index)
 
       buffer = out
       out = ''
       index = 0
       for start, stop in rx_rgb.findAll(buffer) do
-         segment = buffer:sub(index, start)
+         segment = buffer.sub(index, start)
 
-         col = buffer:sub(start, stop)
+         col = buffer.sub(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
          nrgb = painter.Colour -- Normalised RGB
          out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
          index = stop
       end
-      out ..= buffer:sub(index)
+      out ..= buffer.sub(index)
 
       print(out)
    elseif colour then

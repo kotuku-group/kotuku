@@ -91,24 +91,24 @@ global glCoreConstants = parseIDL('core')
 global function extractFields(Def:str, Origin:str):table
    fields = { }
    Def ?! return fields
-   for line, content in Def:split('\n') do
+   for line, content in Def.split('\n') do
       local content_b, comment = rx_field_extract.extract(content)
       if content_b then content = content_b end
       local type:str, name:str = rx_type_name.extract(content)
 
       if type?? then
          local virtual = false
-         type = type:trim()
+         type = type.trim()
 
-         if type:startsWith('~') then
+         if type.startsWith('~') then
             virtual = true
-            type = type:sub(1):trim()
+            type = type.sub(1).trim()
          end
 
-         field = cType({ type=type, name=name:trim(), comment=string.trim(comment) }, Origin)
+         field = cType({ type=type, name=name.trim(), comment=string.trim(comment) }, Origin)
          if virtual then field.virtual = true end
-         table.insert(fields, field)
-      elseif not content:trim()?? then
+         fields.insert(field)
+      elseif not content.trim()?? then
          -- Ignore empty line
       else
          error(f"Unable to process line '{content}' for '{Origin}'")
@@ -138,12 +138,12 @@ end
 
 global function functionParameterType(Param:table):str
    if Param.isSpan then
-      assert(not (Param.type:endsWith('&') or Param.type:endsWith('*')),
+      assert(not (Param.type.endsWith('&') or Param.type.endsWith('*')),
          f"Span parameter '{Param.name}' already carries a reference or pointer marker.")
       return 'const ' .. Param.type .. ' &'
    elseif Param.type is 'std::string_view' then
       return 'const std::string_view &'
-   elseif Param.isComplex and not (Param.type:endsWith('&') or Param.type:endsWith('*')) then
+   elseif Param.isComplex and not (Param.type.endsWith('&') or Param.type.endsWith('*')) then
       return Param.type .. ' &'
    else
       return Param.type
@@ -172,7 +172,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
       error("Function '" .. Name .. "' is not declared in the TDL.  Known functions are:\n" .. list)
    end
 
-   if Status then func.status = Status:lower() end
+   if Status then func.status = Status.lower() end
    func.comment     = Comment
    func.description = Description
    func.category    = Category
@@ -181,7 +181,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
 
    if Def.result?? then
       func.result = Def.result
-   elseif not table.empty(Def.errors) then
+   elseif not Def.errors.empty() then
       func.result = cType({ type='error', values=Def.errors, isFunction=true }, 'Function:' .. Name)
    end
 
@@ -195,7 +195,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
 
    if Def.input?? then
       func.input = { }
-      for line, content in Def.input:split('\n') do
+      for line, content in Def.input.split('\n') do
          local content, comment = rx_colon_comment.extract(content)
          assert(comment and content, 'Invalid input reference in ' .. Name .. '(): ' .. content)
 
@@ -203,9 +203,9 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
 
          if type then
             param = cType({
-               type=type:trim(), name=name:trim(), comment=comment:trim(), isFunction=true
+               type=type.trim(), name=name.trim(), comment=comment.trim(), isFunction=true
             }, 'Function:' .. Name)
-            table.insert(func.input, param)
+            func.input.insert(param)
 
             if argSeq?? then
                argSeq    ..= ', '
@@ -235,7 +235,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
                local p_type = functionParameterType(param)
 
                argSeq ..= p_type
-               if not (argSeq:endsWith('*') or argSeq:endsWith('&')) then argSeq ..= ' ' end
+               if not (argSeq.endsWith('*') or argSeq.endsWith('&')) then argSeq ..= ' ' end
                argSeq ..= cName(param)
 
                if param.isSpan then
@@ -249,7 +249,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
             end
 
             last_param = param
-         elseif content:trim()?? then
+         elseif content.trim()?? then
             error(f"Unable to process line '{content}' for function '{Name}'")
          end
       end
@@ -393,7 +393,7 @@ end
 global function buildPrototypes()
    if glClasses then
       for className, cl in pairs(glClasses) do
-         if not table.empty(cl.methods) then
+         if not cl.methods.empty() then
             for method in values(cl.methods) do
                proto = 'OBJECTPTR Object'
                if method.params?? then
@@ -401,14 +401,14 @@ global function buildPrototypes()
                      proto ..= f', {param.extType ?? param.docType} {param.name}'
                   end
                end
-               method.prototype = f'ERR {cl.methodPrefix:lower()}::{method.name}({proto})'
+               method.prototype = f'ERR {cl.methodPrefix.lower()}::{method.name}({proto})'
                method.tiriPrototype = buildTiriPrototype(method.name, method.params, { fullType=glTypes.error, basicType='ERR' })
             end
          end
       end
    end
 
-   if not table.empty(glFunctions) then
+   if not glFunctions.empty() then
       proto = ''
       prefix = ''
       if glFunctionPrefix?? then
@@ -461,7 +461,7 @@ global function buildDefs()
    flist ..= "   { nullptr, nullptr, nullptr }\n"
    flist ..= "};\n\n"
 
-   table.sort(glFunctions, function(a,b) return a.name < b.name end)
+   glFunctions.sort(function(a,b) return a.name < b.name end)
 
    plist = ''
    for func in values(glFunctions) do

@@ -152,13 +152,13 @@ end
    old_api = findSymbol(symbols, 'oldApi')
 
    assert(annotated, 'Annotated function should be listed.')
-   assert(annotated.detail:find('@Test', 0, true), 'Detail should include @Test.')
-   assert(annotated.detail:find('@Disabled', 0, true), 'Detail should include @Disabled.')
-   assert(annotated.detail:find('@Private', 0, true), 'Detail should include @Private.')
+   assert(annotated.detail.find('@Test', 0, true), 'Detail should include @Test.')
+   assert(annotated.detail.find('@Disabled', 0, true), 'Detail should include @Disabled.')
+   assert(annotated.detail.find('@Private', 0, true), 'Detail should include @Private.')
 
    assert(old_api, 'Deprecated function should be listed.')
-   assert(old_api.detail:find('global', 0, true), 'Deprecated global function should retain scope detail.')
-   assert(old_api.detail:find('@Deprecated', 0, true), 'Deprecated function detail should include annotation.')
+   assert(old_api.detail.find('global', 0, true), 'Deprecated global function should retain scope detail.')
+   assert(old_api.detail.find('@Deprecated', 0, true), 'Deprecated function detail should include annotation.')
    assert(hasTag(old_api, 1), 'Deprecated function should use the LSP deprecated tag.')
 end
 
@@ -175,9 +175,9 @@ end
    value_args = findSymbol(symbols, 'valueArgs')
 
    assert(empty_args, 'Inline annotation with empty parentheses should not hide the function symbol.')
-   assert(empty_args.detail:find('@Tag', 0, true), 'Inline empty annotation detail should include @Tag.')
+   assert(empty_args.detail.find('@Tag', 0, true), 'Inline empty annotation detail should include @Tag.')
    assert(value_args, 'Inline annotation with arguments should not hide the function symbol.')
-   assert(value_args.detail:find('@Tag', 0, true), 'Inline value annotation detail should include @Tag.')
+   assert(value_args.detail.find('@Tag', 0, true), 'Inline value annotation detail should include @Tag.')
 end
 
 @Test function IgnoresCommentsStringsAndTableKeys()

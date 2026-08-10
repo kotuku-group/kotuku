@@ -169,18 +169,6 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
       allocator.reserve(BCReg(1)); // Frame link (FR2)
       base = BCReg(callee.u.s.info);
    }
-   else if (const auto *method = std::get_if<MethodCallTarget>(&call_payload.target)) {
-      if (not method->receiver or method->method.symbol IS nullptr) {
-         return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
-      }
-      auto receiver_result = this->emit_expression(*method->receiver);
-      if (not receiver_result.ok()) return receiver_result;
-      callee = receiver_result.value_ref();
-      ExpDesc key(ExpKind::Str);
-      key.u.sval = method->method.symbol;
-      bcemit_method(fs, &callee, &key);
-      base = BCReg(callee.u.s.info);
-   }
    else return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
 
    // Emit LHS expression as the first argument(s)
@@ -265,57 +253,6 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a safe call expression (obj:?method()), returning nil if the receiver is nil.
-
-ParserResult<ExpDesc> IrEmitter::emit_safe_call_expr(const CallExprPayload &Payload)
-{
-   BCLine call_line = this->lex_state.lastline;
-
-   const auto* safe_method = std::get_if<SafeMethodCallTarget>(&Payload.target);
-   if (not safe_method or not safe_method->receiver or safe_method->method.symbol IS nullptr) {
-      return this->unsupported_expr(AstNodeKind::SafeCallExpr, SourceSpan{});
-   }
-
-   auto receiver_result = this->emit_expression(*safe_method->receiver);
-   if (not receiver_result.ok()) return receiver_result;
-
-   NilShortCircuitGuard guard(this, receiver_result.value_ref());
-   if (not guard.ok()) return guard.error<ExpDesc>();
-
-   // Method dispatch and arguments are evaluated only on non-nil path (short-circuit)
-
-   ExpDesc callee = guard.base_expression();
-   ExpDesc key(ExpKind::Str);
-   key.u.sval = safe_method->method.symbol;
-   bcemit_method(&this->func_state, &callee, &key);
-
-   auto call_base = BCReg(callee.u.s.info);
-   auto arg_count = BCReg(0);
-   ExpDesc args(ExpKind::Void);
-   if (not Payload.arguments.empty()) {
-      auto args_result = this->emit_expression_list(Payload.arguments, arg_count);
-      if (not args_result.ok()) return ParserResult<ExpDesc>::failure(args_result.error_ref());
-      args = args_result.value_ref();
-   }
-
-   BCIns ins;
-   bool forward_tail = Payload.forwards_multret and (args.k IS ExpKind::Call);
-   if (forward_tail) {
-      setbc_b(ir_bcptr(&this->func_state, &args), 0);
-      ins = BCINS_ABC(BC_CALLM, call_base, 2, args.u.s.aux - call_base - 1  - 1);
-   }
-   else {
-      if (not (args.k IS ExpKind::Void)) this->materialise_to_next_reg(args, "safe call arguments");
-      ins = BCINS_ABC(BC_CALL, call_base, 2, this->func_state.freereg - call_base  - 1);
-   }
-
-   this->lex_state.lastline = call_line;
-   auto call_pc = BCPos(bcemit_INS(&this->func_state, ins));
-
-   return guard.complete_call(call_base, call_pc);
-}
-
-//********************************************************************************************************************
 // Emit a statically resolved built-in dot method.  The receiver is evaluated once before callable selection, copied
 // into native argument zero and followed by the written arguments in source order.
 
@@ -396,7 +333,7 @@ ParserResult<ExpDesc> IrEmitter::emit_builtin_method_call(const CallExprPayload 
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a call expression (func(args) or obj:method(args)), handling direct and method calls.
+// Emit bytecode for a direct call expression, including statically resolved built-in dot methods.
 
 ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 {
@@ -526,18 +463,6 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       // Reserve register for frame link
       RegisterAllocator allocator(&this->func_state);
       allocator.reserve(BCReg(1));
-      base = BCReg(callee.u.s.info);
-   }
-   else if (const auto *method = std::get_if<MethodCallTarget>(&Payload.target)) {
-      if (not method->receiver or method->method.symbol IS nullptr) {
-         return this->unsupported_expr(AstNodeKind::CallExpr, SourceSpan{});
-      }
-      auto receiver_result = this->emit_expression(*method->receiver);
-      if (not receiver_result.ok()) return receiver_result;
-      callee = receiver_result.value_ref();
-      ExpDesc key(ExpKind::Str);
-      key.u.sval = method->method.symbol;
-      bcemit_method(&this->func_state, &callee, &key);
       base = BCReg(callee.u.s.info);
    }
    else return this->unsupported_expr(AstNodeKind::CallExpr, SourceSpan{});

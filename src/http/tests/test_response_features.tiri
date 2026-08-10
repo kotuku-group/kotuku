@@ -39,7 +39,7 @@ function rawHttpRequestWithHeaders(Method:str, Path:str, Headers:table):<num, st
          buffer = string.alloc(4096)
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            response ..= buffer:sub(0, read_len)
+            response ..= buffer.sub(0, read_len)
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
@@ -64,9 +64,9 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function rawHttpBody(Response:str):str
-   header_end = Response:find("\r\n\r\n")
+   header_end = Response.find("\r\n\r\n")
    header_end ?! return ''
-   return Response:sub(header_end + 4)
+   return Response.sub(header_end + 4)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -142,7 +142,7 @@ end
                res.json({
                   message = 'Compression test response',
                   data = largeMessage,
-                  size = largeMessage:len()
+                  size = largeMessage.len()
                })
             end
          },
@@ -162,7 +162,7 @@ end
                -- Generate large response
                largeData = {}
                for i in {1 to 101} do
-                  table.insert(largeData, {
+                  largeData.insert({
                      id = i,
                      name = 'Item ' .. i,
                      description = 'This is a description for item number ' .. i .. ' with some additional text to make it longer.',
@@ -191,7 +191,7 @@ end
 @Test function RedirectHandling()
    status, redirect_response = rawHttpRequest('GET', '/redirect/test')
    assert(status is 301, 'Redirect should return 301, got: ' .. status)
-   assert(redirect_response:find('location: /redirect/target'), 'Redirect Location header missing')
+   assert(redirect_response.find('location: /redirect/target'), 'Redirect Location header missing')
 
    status, target_response = rawHttpRequest('GET', '/redirect/target')
    assert(status is 200, 'Redirect target status should be 200, got: ' .. status)
@@ -205,7 +205,7 @@ end
 @Test function PermanentRedirect()
    status, response = rawHttpRequest('GET', '/permanent-redirect')
    assert(status is 301, 'Permanent redirect should return 301, got: ' .. status)
-   assert(response:find('location: /redirect/target'), 'Permanent redirect Location header missing')
+   assert(response.find('location: /redirect/target'), 'Permanent redirect Location header missing')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -224,7 +224,7 @@ end
          flags = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
             if not results[i] then results[i] = {content = ''} end
-            if Buffer then results[i].content ..= Buffer:getString() end
+            if Buffer then results[i].content ..= Buffer.getString() end
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -264,15 +264,15 @@ end
 
    response = json.decode(rawHttpBody(raw_response))
    assert(response.customHeaders, 'Custom response headers should be set')
-   assert(raw_response:find('content-type: application/json'), 'Content-Type header not set correctly')
-   assert(raw_response:find('x-custom-response: CustomValue'), 'Custom response header missing')
+   assert(raw_response.find('content-type: application/json'), 'Content-Type header not set correctly')
+   assert(raw_response.find('x-custom-response: CustomValue'), 'Custom response header missing')
 
    content = ''
    http = obj.new('http', {
       src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/headers/response',
       method   = 'GET',
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -321,11 +321,11 @@ end
       Range = 'bytes=999999-1000000'
    })
 
-   local lower_response = response:lower()
+   local lower_response = response.lower()
    local expected_range = f"content-range: bytes */{file_size}"
 
    assert(status is 416, 'Unsatisfiable range should return 416, got: ' .. status)
-   assert(lower_response:find(expected_range, 0, true), '416 response missing Content-Range "' .. expected_range .. '"')
+   assert(lower_response.find(expected_range, 0, true), '416 response missing Content-Range "' .. expected_range .. '"')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -338,7 +338,7 @@ end
       method   = 'GET',
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -368,7 +368,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -400,7 +400,7 @@ end
       method   = 'GET',
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -432,7 +432,7 @@ end
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
          if Buffer then
-            content ..= Buffer:getString()
+            content ..= Buffer.getString()
             total_bytes += #Buffer
          end
       end,

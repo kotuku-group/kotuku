@@ -49,12 +49,12 @@ local glStrTable = { }
 
 for i in {0 to 1000} do
    glIntArray[i] = i
-   table.insert(glIntTable, i)
+   glIntTable.insert(i)
 end
 
 for i in {0 to 100} do
    glStrArray[i] = f"item_{i}"
-   table.insert(glStrTable, f"item_{i}")
+   glStrTable.insert(f"item_{i}")
 end
 
 @Test function ArrayAccessByIndex()
@@ -105,17 +105,17 @@ end
    for i in {0 to 100} do
       local int_arr = array<int>
       for j in {0 to 100} do
-         int_arr:push(j * 10)
+         int_arr.push(j * 10)
       end
 
       local dbl_arr = array<double>
       for j in {0 to 100} do
-         dbl_arr:push(j * 1.5)
+         dbl_arr.push(j * 1.5)
       end
 
       local str_arr = array<string>
       for j in {0 to 50} do
-         str_arr:push(f"item_{j}")
+         str_arr.push(f"item_{j}")
       end
       checksum += #int_arr + #dbl_arr + #str_arr
    end
@@ -127,17 +127,17 @@ end
    for i in {0 to 100} do
       local int_arr = {}
       for j in {0 to 100} do
-         table.insert(int_arr, j * 10)
+         int_arr.insert(j * 10)
       end
 
       local dbl_arr = {}
       for j in {0 to 100} do
-         table.insert(dbl_arr, j * 1.5)
+         dbl_arr.insert(j * 1.5)
       end
 
       local str_arr = {}
       for j in {0 to 50} do
-         table.insert(str_arr, f"item_{j}")
+         str_arr.insert(f"item_{j}")
       end
       checksum += #int_arr + #dbl_arr + #str_arr
    end
@@ -153,21 +153,21 @@ end
       -- Pop integers
       local int_arr = array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }
       for j in {0 to 10} do
-         local val = int_arr:pop()
+         local val = int_arr.pop()
          checksum += val
       end
 
       -- Pop doubles
       local dbl_arr = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
       for j in {0 to 5} do
-         local val = dbl_arr:pop()
+         local val = dbl_arr.pop()
          checksum += val
       end
 
       -- Pop strings
       local str_arr = array<string> { "a", "b", "c", "d", "e" }
       for j in {0 to 5} do
-         local val = str_arr:pop()
+         local val = str_arr.pop()
          checksum += #val
       end
    end
@@ -191,20 +191,20 @@ end
    local checksum = 0
    for i in {0 to 1000} do
       -- Find in integer array
-      local idx1 = int_arr:find(0)
-      local idx2 = int_arr:find(5000)
-      local idx3 = int_arr:find(9990)
-      local idx4 = int_arr:find(12345)  -- Not found
+      local idx1 = int_arr.find(0)
+      local idx2 = int_arr.find(5000)
+      local idx3 = int_arr.find(9990)
+      local idx4 = int_arr.find(12345)  -- Not found
 
       -- Find in double array
-      local idx5 = dbl_arr:find(0.0)
-      local idx6 = dbl_arr:find(750.0)
-      local idx7 = dbl_arr:find(999.999)  -- Not found
+      local idx5 = dbl_arr.find(0.0)
+      local idx6 = dbl_arr.find(750.0)
+      local idx7 = dbl_arr.find(999.999)  -- Not found
 
       -- Find in string array
-      local idx8 = str_arr:find("apple")
-      local idx9 = str_arr:find("grape")
-      local idx10 = str_arr:find("mango")  -- Not found
+      local idx8 = str_arr.find("apple")
+      local idx9 = str_arr.find("grape")
+      local idx10 = str_arr.find("mango")  -- Not found
       checksum += (idx1 is nil ? -1 :> idx1) + (idx2 is nil ? -1 :> idx2) +
          (idx3 is nil ? -1 :> idx3) + (idx4 is nil ? -1 :> idx4) +
          (idx5 is nil ? -1 :> idx5) + (idx6 is nil ? -1 :> idx6) +
@@ -225,17 +225,17 @@ end
    local checksum = 0
    for i in {0 to 1000} do
       -- Check integer array
-      local has1 = int_arr:contains(50)
-      local has2 = int_arr:contains(100)
-      local has3 = int_arr:contains(55)  -- false
+      local has1 = int_arr.contains(50)
+      local has2 = int_arr.contains(100)
+      local has3 = int_arr.contains(55)  -- false
 
       -- Check double array
-      local has4 = dbl_arr:contains(3.5)
-      local has5 = dbl_arr:contains(2.0)  -- false
+      local has4 = dbl_arr.contains(3.5)
+      local has5 = dbl_arr.contains(2.0)  -- false
 
       -- Check string array
-      local has6 = str_arr:contains("blue")
-      local has7 = str_arr:contains("orange")  -- false
+      local has6 = str_arr.contains("blue")
+      local has7 = str_arr.contains("orange")  -- false
       checksum += (has1 ? 1 :> 0) + (has2 ? 1 :> 0) + (has3 ? 1 :> 0) +
          (has4 ? 1 :> 0) + (has5 ? 1 :> 0) + (has6 ? 1 :> 0) + (has7 ? 1 :> 0)
    end
@@ -250,19 +250,19 @@ end
    for i in {0 to 1000} do
       -- Sort integers ascending
       local int_arr = array<int> { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
-      int_arr:sort()
+      int_arr.sort()
 
       -- Sort integers descending
       local int_arr2 = array<int> { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
-      int_arr2:sort(true)
+      int_arr2.sort(true)
 
       -- Sort doubles
       local dbl_arr = array<double> { 3.14, 1.41, 2.71, 1.73, 0.57 }
-      dbl_arr:sort()
+      dbl_arr.sort()
 
       -- Sort strings alphabetically
       local str_arr = array<string> { "cherry", "apple", "banana", "date", "elderberry" }
-      str_arr:sort()
+      str_arr.sort()
       checksum += int_arr[0] + int_arr2[0] + dbl_arr[0] + #str_arr[0]
    end
    return checksum
@@ -276,15 +276,15 @@ end
    for i in {0 to 1000} do
       -- Reverse integer array
       local int_arr = array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }
-      int_arr:reverse()
+      int_arr.reverse()
 
       -- Reverse double array
       local dbl_arr = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
-      dbl_arr:reverse()
+      dbl_arr.reverse()
 
       -- Reverse string array
       local str_arr = array<string> { "first", "second", "third", "fourth", "fifth" }
-      str_arr:reverse()
+      str_arr.reverse()
       checksum += int_arr[0] + dbl_arr[0] + #str_arr[0]
    end
    return checksum
@@ -301,18 +301,18 @@ end
    local checksum = 0
    for i in {0 to 1000} do
       -- Slice integer arrays with different ranges
-      local slice1 = int_arr:slice({0 to 5})      -- First 5 elements
-      local slice2 = int_arr:slice({5 to 10})     -- Last 5 elements
-      local slice3 = int_arr:slice({2 to 8})      -- Middle portion
-      local slice4 = int_arr:slice({-3 to -1})    -- Last 3 using negative indices
+      local slice1 = int_arr.slice({0 to 5})      -- First 5 elements
+      local slice2 = int_arr.slice({5 to 10})     -- Last 5 elements
+      local slice3 = int_arr.slice({2 to 8})      -- Middle portion
+      local slice4 = int_arr.slice({-3 to -1})    -- Last 3 using negative indices
 
       -- Slice double array
-      local slice5 = dbl_arr:slice({0 to 4})
-      local slice6 = dbl_arr:slice({2 into 5})     -- Inclusive range
+      local slice5 = dbl_arr.slice({0 to 4})
+      local slice6 = dbl_arr.slice({2 into 5})     -- Inclusive range
 
       -- Slice string array
-      local slice7 = str_arr:slice({1 to 4})
-      local slice8 = str_arr:slice({0 to -1})     -- All elements
+      local slice7 = str_arr.slice({1 to 4})
+      local slice8 = str_arr.slice({0 to -1})     -- All elements
       checksum += #slice1 + #slice2 + #slice3 + #slice4 + #slice5 + #slice6 + #slice7 + #slice8
    end
    return checksum
@@ -326,21 +326,21 @@ end
    for i in {0 to 1000} do
       -- Fill entire integer array
       local int_arr = array<int, 100>
-      int_arr:fill(42)
+      int_arr.fill(42)
 
       -- Fill portion of array with range
       local int_arr2 = array<int, 100>
-      int_arr2:fill(0)
-      int_arr2:fill(99, {10 to 50})
+      int_arr2.fill(0)
+      int_arr2.fill(99, {10 to 50})
 
       -- Fill double array
       local dbl_arr = array<double, 50>
-      dbl_arr:fill(3.14159)
+      dbl_arr.fill(3.14159)
 
       -- Fill with stepped range
       local int_arr3 = array<int, 100>
-      int_arr3:fill(0)
-      int_arr3:fill(1, range.new(0, 100, false, 2))  -- Every other element
+      int_arr3.fill(0)
+      int_arr3.fill(1, range.new(0, 100, false, 2))  -- Every other element
       checksum += int_arr[0] + int_arr2[10] + dbl_arr[0] + int_arr3[0] + int_arr3[1]
    end
    return checksum
@@ -355,17 +355,17 @@ end
       -- Copy from table to integer array
       local int_arr = array<int, 10>
       local table_data = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100}
-      int_arr:copy(table_data)
+      int_arr.copy(table_data)
 
       -- Copy from table to double array
       local dbl_arr = array<double, 5>
       local dbl_data = {1.1, 2.2, 3.3, 4.4, 5.5}
-      dbl_arr:copy(dbl_data)
+      dbl_arr.copy(dbl_data)
 
       -- Copy with destination offset
       local int_arr2 = array<int, 10>
-      int_arr2:fill(0)
-      int_arr2:copy({100, 200, 300}, 3, 0, 3)
+      int_arr2.fill(0)
+      int_arr2.copy({100, 200, 300}, 3, 0, 3)
       checksum += int_arr[0] + dbl_arr[0] + int_arr2[3] + int_arr2[5]
    end
    return checksum
@@ -492,13 +492,13 @@ end
 @Test function ArrayJoinToString()
    local checksum = 0
    for i in {0 to 50} do
-      local joined1 = glIntArray:concat("-")
-      local joined2 = glIntArray:concat(", ")
-      local joined3 = glIntArray:concat("")
+      local joined1 = glIntArray.concat("-")
+      local joined2 = glIntArray.concat(", ")
+      local joined3 = glIntArray.concat("")
 
-      local joined5 = glStrArray:concat(" ")
-      local joined6 = glStrArray:concat(", ")
-      local joined7 = glStrArray:concat("")
+      local joined5 = glStrArray.concat(" ")
+      local joined6 = glStrArray.concat(", ")
+      local joined7 = glStrArray.concat("")
       checksum += #joined1 + #joined2 + #joined3 + #joined5 + #joined6 + #joined7
    end
    return checksum
@@ -507,13 +507,13 @@ end
 @Test function TableJoinToString()
    local checksum = 0
    for i in {0 to 50} do
-      local joined1 = table.concat(glIntTable, "-")
-      local joined2 = table.concat(glIntTable, ", ")
-      local joined3 = table.concat(glIntTable, "")
+      local joined1 = glIntTable.concat("-")
+      local joined2 = glIntTable.concat(", ")
+      local joined3 = glIntTable.concat("")
 
-      local joined5 = table.concat(glStrTable, " ")
-      local joined6 = table.concat(glStrTable, ", ")
-      local joined7 = table.concat(glStrTable, "")
+      local joined5 = glStrTable.concat(" ")
+      local joined6 = glStrTable.concat(", ")
+      local joined7 = glStrTable.concat("")
       checksum += #joined1 + #joined2 + #joined3 + #joined5 + #joined6 + #joined7
    end
    return checksum
@@ -525,9 +525,9 @@ end
 @Test function ArrayConcatFormatted()
    local checksum = 0
    for i in {0 to 25} do
-      local result1 = glIntArray:concat(", ", "%d")
-      local result2 = glIntArray:concat("-", "%03d")
-      local result5 = glStrArray:concat(" ", "%s")
+      local result1 = glIntArray.concat(", ", "%d")
+      local result2 = glIntArray.concat("-", "%03d")
+      local result5 = glStrArray.concat(" ", "%s")
       checksum += #result1 + #result2 + #result5
    end
    return checksum
@@ -539,10 +539,10 @@ end
 @Test function ArrayFirstLastByMethod()
    local checksum = 0
    for i in {0 to 10000} do
-      local first_int = glIntArray:first()
-      local first_str = glStrArray:first()
-      local last_int = glIntArray:last()
-      local last_str = glStrArray:last()
+      local first_int = glIntArray.first()
+      local first_str = glStrArray.first()
+      local last_int = glIntArray.last()
+      local last_str = glStrArray.last()
       checksum += first_int + last_int + #first_str + #last_str
    end
    return checksum
@@ -596,9 +596,9 @@ end
 
    for i in {0 to 1000} do
       -- Convert to tables
-      local tbl1 = int_arr:table()
-      local tbl2 = dbl_arr:table()
-      local tbl3 = str_arr:table()
+      local tbl1 = int_arr.table()
+      local tbl2 = dbl_arr.table()
+      local tbl3 = str_arr.table()
 
       -- Access converted table elements
       local v1 = tbl1[0]
@@ -621,15 +621,15 @@ end
       end
 
       -- Find values
-      local idx1 = arr:find(5000)
-      local idx2 = arr:find(9999)
+      local idx1 = arr.find(5000)
+      local idx2 = arr.find(9999)
 
       -- Check contains
-      local has1 = arr:contains(5000)
-      local has2 = arr:contains(99999)
+      local has1 = arr.contains(5000)
+      local has2 = arr.contains(99999)
 
       -- Slice
-      local slice = arr:slice({1000 to 2000})
+      local slice = arr.slice({1000 to 2000})
 
       -- Iterate and sum
       local sum = 0
@@ -651,25 +651,25 @@ end
 
       -- Push 100 items
       for j in {0 to 100} do
-         stack:push(j)
+         stack.push(j)
       end
 
       -- Pop all items
       local sum = 0
       while #stack > 0 do
-         sum += stack:pop()
+         sum += stack.pop()
       end
       checksum += sum
 
       -- Mixed push/pop operations
       local mixed = array<string>
-      mixed:push("first")
-      mixed:push("second")
-      local top:str = mixed:pop()
-      mixed:push("third")
-      mixed:push("fourth")
-      top = mixed:pop()
-      top = mixed:pop()
+      mixed.push("first")
+      mixed.push("second")
+      local top:str = mixed.pop()
+      mixed.push("third")
+      mixed.push("fourth")
+      top = mixed.pop()
+      top = mixed.pop()
       checksum += #top
    end
    return checksum
@@ -685,14 +685,14 @@ end
 
       -- Enqueue items
       for j in {0 to 50} do
-         queue:push(j)
+         queue.push(j)
       end
 
       -- De-queue by slicing (simulating queue behaviour)
       while #queue > 0 do
-         local front = queue:first()
+         local front = queue.first()
          checksum += front
-         queue:remove(0)
+         queue.remove(0)
       end
    end
    return checksum

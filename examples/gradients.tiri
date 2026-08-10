@@ -354,7 +354,7 @@ function buildScene()
       },
       events = {
          activate = function(Widget, Text)
-            glColourMap = 'cmap:' .. Text:lower()
+            glColourMap = 'cmap:' .. Text.lower()
             glActiveGradient.colourMap = glColourMap
             gradientVP.scene.surface.mtScheduleRedraw()
          end
@@ -486,7 +486,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
    win = gui.window({ title='Gradient Demo', insideWidth=1024, insideHeight=800 })
-   viewport = win:clientViewport({
+   viewport = win.clientViewport({
       aspectRatio = ARF_MEET,
       resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
       end
@@ -514,5 +514,5 @@ end
       end
    end)
 
-   win:show()
+   win.show()
    processing.sleep()

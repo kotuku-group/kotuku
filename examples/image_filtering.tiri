@@ -265,11 +265,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
    win = gui.window({ title='Image Filtering Demo', insideWidth=1024, insideHeight=800 })
-   viewport = win:clientViewport({
+   viewport = win.clientViewport({
       aspectRatio = ARF_MEET
    })
 
    buildScene()
 
-   win:show()
+   win.show()
    processing.sleep()

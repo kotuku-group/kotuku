@@ -26,9 +26,9 @@ SERVER_PORT <const> = 18944
          { pattern = '/upload/chunked',
             method = 'POST',
             handler = function(req, res)
-               size = req.body and req.body:len() or 0
+               size = req.body and req.body.len() or 0
                isChunked = req.headers['transfer-encoding'] and
-                           req.headers['transfer-encoding']:find('chunked') != nil
+                           req.headers['transfer-encoding'].find('chunked') != nil
                res.json({
                   message = 'Large chunked upload received',
                   receivedSize = size,
@@ -39,9 +39,9 @@ SERVER_PORT <const> = 18944
          { pattern = '/upload/content-length',
             method = 'POST',
             handler = function(req, res)
-               size = req.body and req.body:len() or 0
+               size = req.body and req.body.len() or 0
                isChunked = req.headers['transfer-encoding'] != nil and
-                           req.headers['transfer-encoding']:find('chunked') != nil
+                           req.headers['transfer-encoding'].find('chunked') != nil
                res.json({
                   message = 'Large Content-Length upload received',
                   receivedSize = size,
@@ -52,7 +52,7 @@ SERVER_PORT <const> = 18944
          { pattern = '/upload/very-large',
             method = 'POST',
             handler = function(req, res)
-               size = req.body and req.body:len() or 0
+               size = req.body and req.body.len() or 0
                res.json({
                   message = 'Very large upload received',
                   receivedSize = size
@@ -106,11 +106,11 @@ end
       flags       = HTF_NO_HEAD,
       contentLength = -1, -- Enable chunked encoding
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
          if testPostCompleted then error('Outgoing called multiple times') end
-         print('Sending large chunked body (' .. largeBody:len() .. ' bytes)')
+         print('Sending large chunked body (' .. largeBody.len() .. ' bytes)')
          HTTP.acWrite(largeBody)
          testPostCompleted = true
          check ERR_Terminate
@@ -131,7 +131,7 @@ end
    assert(http.status is 200, 'Large chunked unexpected status: ' .. http.status)
 
    response = json.decode(content)
-   assert(response.receivedSize is largeBody:len(), 'Large chunked size mismatch: expected ' .. largeBody:len() .. ', got ' .. response.receivedSize)
+   assert(response.receivedSize is largeBody.len(), 'Large chunked size mismatch: expected ' .. largeBody.len() .. ', got ' .. response.receivedSize)
    assert(response.isChunked is true, 'Large chunked encoding not detected')
 
    print('Large chunked POST test passed: ' .. response.receivedSize .. ' bytes')
@@ -151,9 +151,9 @@ end
       contentType = 'text/plain',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. largeBody,
-      size        = largeBody:len(),
+      size        = largeBody.len(),
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -171,7 +171,7 @@ end
    assert(http.status is 200, 'Large Content-Length unexpected status: ' .. http.status)
 
    response = json.decode(content)
-   assert(response.receivedSize is largeBody:len(), 'Large Content-Length size mismatch: expected ' .. largeBody:len() .. ', got ' .. response.receivedSize)
+   assert(response.receivedSize is largeBody.len(), 'Large Content-Length size mismatch: expected ' .. largeBody.len() .. ', got ' .. response.receivedSize)
    assert(response.isChunked is false, 'Content-Length should not be chunked')
 
    print('Large Content-Length POST test passed: ' .. response.receivedSize .. ' bytes')
@@ -189,11 +189,11 @@ end
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
          if Buffer then
-            buffer_text = Buffer:getString()
+            buffer_text = Buffer.getString()
             totalReceived += #Buffer
             -- Only keep last 1KB for verification
-            if content:len() > 1024 then
-               content = content:sub(-512) .. buffer_text
+            if content.len() > 1024 then
+               content = content.sub(-512) .. buffer_text
             else
                content ..= buffer_text
             end
@@ -216,7 +216,7 @@ end
 
    -- Verify we received a large amount of data (should be ~20KB)
    assert(totalReceived > 15000, 'Large download too small: ' .. totalReceived .. ' bytes')
-   assert(content:find('END_OF_FILE'), 'Large download missing end marker')
+   assert(content.find('END_OF_FILE'), 'Large download missing end marker')
 
    print('Large file download test passed: ' .. totalReceived .. ' bytes received')
 end
@@ -237,11 +237,11 @@ end
       flags       = HTF_NO_HEAD,
       contentLength = -1, -- Chunked
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
          if testPostCompleted then error('Outgoing called multiple times') end
-         print('Sending very large body (' .. veryLargeBody:len() .. ' bytes)')
+         print('Sending very large body (' .. veryLargeBody.len() .. ' bytes)')
          HTTP.acWrite(veryLargeBody)
          testPostCompleted = true
          check ERR_Terminate
@@ -262,7 +262,7 @@ end
    assert(http.status is 200, 'Very large unexpected status: ' .. http.status)
 
    response = json.decode(content)
-   assert(response.receivedSize is veryLargeBody:len(), 'Very large size mismatch')
+   assert(response.receivedSize is veryLargeBody.len(), 'Very large size mismatch')
 
    print('Very large request test passed: ' .. response.receivedSize .. ' bytes')
 end
@@ -279,7 +279,7 @@ end
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
          if Buffer then
-            table.insert(chunks, Buffer:getString())
+            chunks.insert(Buffer.getString())
             totalReceived += #Buffer
          end
       end,

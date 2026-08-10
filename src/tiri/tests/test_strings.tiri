@@ -80,7 +80,7 @@ end
    assert(type(parts) is "array", "Expected type 'array', got '" .. type(parts) .. "'")
 
    -- Verify array methods are available
-   assert(parts:type() is "string", "Expected array element type 'string', got '" .. tostring(parts:type()) .. "'")
+   assert(parts.type() is "string", "Expected array element type 'string', got '" .. tostring(parts.type()) .. "'")
 
    -- Verify index-based iteration works
    assert(parts[0] is "a", "parts[0] should be 'a'")
@@ -99,7 +99,7 @@ end
    assert(single[0] is "hello", "Single element should be 'hello'")
 
    -- Verify concat method works on string arrays
-   rejoined = parts:concat(",", "%s")
+   rejoined = parts.concat(",", "%s")
    assert(rejoined is "a,b,c", "concat should rejoin elements, got '" .. rejoined .. "'")
 end
 
@@ -244,8 +244,8 @@ end
    assert(not string.contains("hello", "x"), "Should not find absent character")
 
    -- Method syntax
-   assert("hello world":contains("world"), "Method syntax should work")
-   assert(not "hello world":contains("xyz"), "Method syntax negative case")
+   assert("hello world".contains("world"), "Method syntax should work")
+   assert(not "hello world".contains("xyz"), "Method syntax negative case")
 
    -- 'in' operator syntax
    assert("world" in "hello world", "'in' operator should find substring")
@@ -356,10 +356,10 @@ end
    assert(popSingle2 is "a", "Expected 'a', got '" .. popSingle2 .. "'")
 
    -- Method syntax
-   methodPop = "hello world":pop()
+   methodPop = "hello world".pop()
    assert(methodPop is "hello worl", "Expected 'hello worl', got '" .. methodPop .. "'")
 
-   methodPop2 = "hello world":pop(3)
+   methodPop2 = "hello world".pop(3)
    assert(methodPop2 is "hello wo", "Expected 'hello wo', got '" .. methodPop2 .. "'")
 end
 
@@ -693,7 +693,7 @@ end
    assert(count11 is 1, "Expected 1 case-sensitive match, got " .. count11)
 
    -- Method syntax
-   methodCount = "hello world":count("l")
+   methodCount = "hello world".count("l")
    assert(methodCount is 3, "Expected 3 'l' characters, got " .. methodCount)
 
    -- Line endings
@@ -753,7 +753,7 @@ end
    assert(count10 is 2, "Expected 2 replacements, got " .. count10)
 
    -- Method syntax
-   methodResult, methodCount = "hello world":replace("world", "Lua")
+   methodResult, methodCount = "hello world".replace("world", "Lua")
    assert(methodResult is "hello Lua", "Expected 'hello Lua', got '" .. methodResult .. "'")
    assert(methodCount is 1, "Expected 1 replacement, got " .. methodCount)
 

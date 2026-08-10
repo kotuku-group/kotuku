@@ -22,7 +22,7 @@ function assert_activation_succeeds(Statement:str, Message:str)
 end
 
 function clear_table(Target:table)
-   table.clear(Target)
+   Target.clear()
 end
 
 function expect_environment_clear_failure(Target:table, Message:str)
@@ -174,7 +174,7 @@ end
    for i in {1 into 200} do
       local ordinary = { value = i }
       clear_table(ordinary)
-      assert(table.empty(ordinary), 'table.clear should continue to clear ordinary tables')
+      assert(ordinary.empty(), 'table.clear should continue to clear ordinary tables')
    end
 
    local alias = _G

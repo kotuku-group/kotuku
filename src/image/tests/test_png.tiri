@@ -276,25 +276,25 @@ end
          bmp = pic.bitmap
          hash = mSys.GenCRC32(0, bmp.data, bmp.size)
       except ex
-         mismatches:push(entry.src .. ': load failed: ' .. ex.message)
+         mismatches.push(entry.src .. ': load failed: ' .. ex.message)
          continue
       success
          if not entry.crc?? then
             saveBitmap(bmp, entry.src)
-            missing:push("   { src='" .. entry.src .. "', crc=" .. formatHash(hash) .. ' },')
+            missing.push("   { src='" .. entry.src .. "', crc=" .. formatHash(hash) .. ' },')
          elseif entry.crc != hash then
             saveBitmap(bmp, entry.src)
-            mismatches:push(entry.src .. ': computed ' .. formatHash(hash) .. ', expected ' .. formatHash(entry.crc))
+            mismatches.push(entry.src .. ': computed ' .. formatHash(hash) .. ', expected ' .. formatHash(entry.crc))
          end
 
          if entry.mask_crc then
             if not pic.mask then
-               mismatches:push(entry.src .. ': expected alpha mask but none was loaded')
+               mismatches.push(entry.src .. ': expected alpha mask but none was loaded')
             else
                mask_hash = mSys.GenCRC32(0, pic.mask.data, pic.mask.size)
 
                if entry.mask_crc != mask_hash then
-                  mismatches:push(entry.src .. ': mask computed ' .. formatHash(mask_hash) ..
+                  mismatches.push(entry.src .. ': mask computed ' .. formatHash(mask_hash) ..
                      ', expected ' .. formatHash(entry.mask_crc))
                end
             end
@@ -305,11 +305,11 @@ end
    if (#missing > 0) or (#mismatches > 0) then
       message = ''
       if #missing > 0 then
-         message ..= 'Missing Image PNG CRC values:\n' .. missing:concat('\n')
+         message ..= 'Missing Image PNG CRC values:\n' .. missing.concat('\n')
       end
       if #mismatches > 0 then
          if #message > 0 then message ..= '\n\n' end
-         message ..= 'Image PNG CRC mismatches or load failures:\n' .. mismatches:concat('\n')
+         message ..= 'Image PNG CRC mismatches or load failures:\n' .. mismatches.concat('\n')
       end
       error(message)
    end
@@ -324,11 +324,11 @@ end
       try
          obj.new('image', { path=glDataFolder .. entry })
       success
-         failures:push(entry .. ': loaded successfully but should be rejected')
+         failures.push(entry .. ': loaded successfully but should be rejected')
       end
    end
 
    if #failures > 0 then
-      error('Invalid PNG files loaded successfully:\n' .. failures:concat('\n'))
+      error('Invalid PNG files loaded successfully:\n' .. failures.concat('\n'))
    end
 end

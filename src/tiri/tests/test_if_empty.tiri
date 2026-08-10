@@ -109,10 +109,10 @@ end
 
 @Test function TableAccessLHS()
    t = { }
-   table.insert(t, 10)
-   table.insert(t, 20)
-   table.insert(t, 30)
-   table.insert(t, 40)
+   t.insert(10)
+   t.insert(20)
+   t.insert(30)
+   t.insert(40)
 
    one = (t[0] ?? 0)
    two = (t[1] ?? 0)
@@ -274,11 +274,11 @@ end
 
 @Test function MethodCallInOptionalForm()
    local obj = {
-      getValue = function(self)
+      getValue = function()
          return "method_result"
       end
    }
-   v = obj:getValue() ?? "default"
+   v = obj.getValue() ?? "default"
    assert(v is "method_result", "Failed method call in optional form: expected 'method_result', got " .. tostring(v))
 end
 

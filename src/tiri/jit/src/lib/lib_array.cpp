@@ -2735,7 +2735,7 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_method(L, "array", "pop", TiriType::Array, builtin_callable_id(FastFunc::array_pop),
       { TiriType::Any }, { TiriType::Array });
    reg_iface_method(L, "array", "copy", TiriType::Array, builtin_callable_id(FastFunc::array_copy), {},
-      { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
+      { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num, TiriType::Num });
    reg_iface_method(L, "array", "getString", TiriType::Array, builtin_callable_id(FastFunc::array_getString),
       { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });
    reg_iface_method(L, "array", "setString", TiriType::Array, builtin_callable_id(FastFunc::array_setString), {},
@@ -2745,15 +2745,15 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_method(L, "array", "readOnly", TiriType::Array, builtin_callable_id(FastFunc::array_readOnly),
       { TiriType::Bool }, { TiriType::Array });
    reg_iface_method(L, "array", "fill", TiriType::Array, builtin_callable_id(FastFunc::array_fill), {},
-      { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
+      { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
    reg_iface_method(L, "array", "find", TiriType::Array, builtin_callable_id(FastFunc::array_find),
-      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num });
+      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
    reg_iface_method(L, "array", "reverse", TiriType::Array, builtin_callable_id(FastFunc::array_reverse),
       { TiriType::Array }, { TiriType::Array });
    reg_iface_method(L, "array", "slice", TiriType::Array, builtin_callable_id(FastFunc::array_slice),
       { TiriType::Array }, { TiriType::Array, TiriType::Any });
    reg_iface_method(L, "array", "sort", TiriType::Array, builtin_callable_id(FastFunc::array_sort),
-      { TiriType::Array }, { TiriType::Array, TiriType::Func });
+      { TiriType::Array }, { TiriType::Array, TiriType::Any });
    reg_iface_method(L, "array", "each", TiriType::Array, builtin_callable_id(FastFunc::array_each), {},
       { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "map", TiriType::Array, builtin_callable_id(FastFunc::array_map),

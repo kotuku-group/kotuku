@@ -785,13 +785,13 @@ end
 
 @Test(hotpath=true) function ResultWithMethodCall()
    local obj = {
-      getValue = function(self)
+      getValue = function()
          return 'method result'
       end
    }
 
    result = choose true from
-      true -> obj:getValue()
+      true -> obj.getValue()
       else -> 'other'
    end
    assert(result is 'method result', "Expected 'method result', got " .. tostring(result))

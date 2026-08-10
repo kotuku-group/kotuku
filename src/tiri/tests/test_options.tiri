@@ -9,7 +9,7 @@ function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
    assert(err != nil, 'Expected a structured error')
    assert(err.code is Code, f"Expected error code '{Code}', got '{err.code}'")
    if MessagePart != nil then
-      assert(err.message:find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
+      assert(err.message.find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
    end
    assert(type(err.message) is 'string', 'Error should include a message')
    return err
@@ -21,7 +21,7 @@ function expect_error_with_options(Parser:table, Input:any, Options:table, Code:
    assert(err != nil, 'Expected a structured error')
    assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
    if MessagePart != nil then
-      assert(err.message:find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
+      assert(err.message.find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
    end
    return err
 end
@@ -32,7 +32,7 @@ function expect_validate_error(Parser:table, Args:table, Code:num, MessagePart:s
    except err
       assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
       if MessagePart != nil then
-         assert(err.message:find(MessagePart),
+         assert(err.message.find(MessagePart),
             f"Expected error message to include '{MessagePart}', got '{err.message}'")
       end
       return err
@@ -47,7 +47,7 @@ function expect_options_error(Config:table, Code:num, MessagePart:str):table
    except err
       assert(err.code is Code, f"Expected error code '{Code}', got '{err.code} {err.message}'")
       if MessagePart != nil then
-         assert(err.message:find(MessagePart),
+         assert(err.message.find(MessagePart),
             f"Expected error message to include '{MessagePart}', got '{err.message}'")
       end
       return err
@@ -64,8 +64,8 @@ end
 
 function write_test_file(Path:str, Content:str)
    local file = io.open(Path, 'w')
-   file:write(Content)
-   file:close()
+   file.write(Content)
+   file.close()
 end
 
 function delete_test_file(Path:str)
@@ -116,8 +116,8 @@ end
    help = parser.getHelp(nil, 'serve')
 
    assert(parser.cmdName is 'tuku_server', 'Explicit cmdName should be retained on the parser')
-   assert(usage:startsWith('Usage: tuku_server'), 'Usage should use cmdName instead of the display name')
-   assert(help:find('Usage: tuku_server serve'), 'Command help should use cmdName instead of the display name')
+   assert(usage.startsWith('Usage: tuku_server'), 'Usage should use cmdName instead of the display name')
+   assert(help.find('Usage: tuku_server serve'), 'Command help should use cmdName instead of the display name')
 end
 
 @Test function ParserCommandNameDefaultsToLowerCaseName()
@@ -141,7 +141,7 @@ end
          }
       })
    except e
-      assert(tostring(e.message):find("Duplicate parameter name or alias 'f'"),
+      assert(tostring(e.message).find("Duplicate parameter name or alias 'f'"),
          'Duplicate alias diagnostic should be reported')
       return
    end
@@ -153,7 +153,7 @@ end
    try
       options({ args = array<table> { { names = array<string> { 'file', 'file' } } } })
    except e
-      assert(tostring(e.message):find("Duplicate parameter name or alias 'file'"),
+      assert(tostring(e.message).find("Duplicate parameter name or alias 'file'"),
          'Duplicate aliases inside one definition should be reported')
       return
    end
@@ -167,7 +167,7 @@ end
    try
       parser.addParam({ names = array<string> { 'folder', 'file' } })
    except e
-      assert(tostring(e.message):find("Duplicate parameter name or alias 'file'"),
+      assert(tostring(e.message).find("Duplicate parameter name or alias 'file'"),
          'Duplicate addParam() diagnostic should be reported')
       return
    end
@@ -254,7 +254,7 @@ end
    strict_parser = options({ args = array<table> { { name = 'file' } } })
    err = expect_error(strict_parser, array<string> { 'extra=value' }, ERR_ParameterUnknown,
       "Unknown parameter 'extra'.")
-   assert(err.message:find('stack traceback') is nil, 'Unknown named parameters should not include a stack trace')
+   assert(err.message.find('stack traceback') is nil, 'Unknown named parameters should not include a stack trace')
 
    loose_parser = options({ strict = false, args = array<table> { { name = 'file', default = 'fallback.txt' } } })
    args = loose_parser.process(array<string> { 'extra=value' })
@@ -321,7 +321,7 @@ end
    assert(args.label is 'custom:value', 'Custom converter should transform values')
 
    err = expect_error(parser, array<string> { 'fail=value' }, ERR_Exception, 'custom failure')
-   assert(err.message:find('custom failure'), 'Thrown converter errors should be returned by tryProcess()')
+   assert(err.message.find('custom failure'), 'Thrown converter errors should be returned by tryProcess()')
 end
 
 @Test function TryProcessDoesNotUseFailurePath()
@@ -422,7 +422,7 @@ end
    args = parser.process(nil)
 
    assert(args.file != nil, 'Default input should read the current Flute file parameter from the active task')
-   assert(args.file:find('test_options.tiri'), 'Default input should expose the running test file argument')
+   assert(args.file.find('test_options.tiri'), 'Default input should expose the running test file argument')
 end
 
 @Test function RepeatedNamedValues()
@@ -492,7 +492,7 @@ end
       })
    except e
       assert(e.code is ERR_Syntax, 'Invalid variadic declaration should report a syntax error')
-      assert(tostring(e.message):find("Variadic positional parameter 'rest' must be the final positional."),
+      assert(tostring(e.message).find("Variadic positional parameter 'rest' must be the final positional."),
          'Invalid variadic declaration should explain the ordering rule')
       return
    end
@@ -509,7 +509,7 @@ end
 
    err = expect_error(strict_parser, array<string> { 'scene.svg', 'extra.svg' }, ERR_ParameterUnknown,
       "Unknown parameter 'extra.svg'.")
-   assert(err.message:find('stack traceback') is nil, 'Unknown positional parameters should not include a stack trace')
+   assert(err.message.find('stack traceback') is nil, 'Unknown positional parameters should not include a stack trace')
 
    loose_parser = options({
       strict = false,
@@ -750,7 +750,7 @@ end
    result, err = help_parser.tryProcess(array<string> { 'help' })
    assert(err is nil, 'Help requests should not load invalid user config files')
    assert(result.help is true, 'Help should still be returned for parsers with userConfig')
-   assert(result.text:find('Usage: user-config-help'), 'Help should include the parser usage text')
+   assert(result.text.find('Usage: user-config-help'), 'Help should include the parser usage text')
 
    missing_required_parser = options({
       name       = 'missing-required',
@@ -766,7 +766,7 @@ end
    })
    assert(err is nil, 'Empty task parameters with incomplete user config should still return help')
    assert(result.help is true, 'Incomplete user config should not suppress automatic help')
-   assert(result.text:find('Usage: missing-required'), 'Incomplete user config help should include usage')
+   assert(result.text.find('Usage: missing-required'), 'Incomplete user config help should include usage')
 
    delete_test_file(bad_json_path)
    delete_test_file(array_json_path)
@@ -982,10 +982,10 @@ end
    })
 
    usage = parser.getUsage()
-   assert(usage:find('Usage: vuepoint'), 'Usage should include the parser name')
-   assert(usage:find('<INPUT>'), 'Usage should include required positionals')
-   assert(usage:find('output=PATH'), 'Usage should include option metavars')
-   assert(usage:find('<INPUT>') < usage:find('output=PATH'), 'Usage should list positionals before options')
+   assert(usage.find('Usage: vuepoint'), 'Usage should include the parser name')
+   assert(usage.find('<INPUT>'), 'Usage should include required positionals')
+   assert(usage.find('output=PATH'), 'Usage should include option metavars')
+   assert(usage.find('<INPUT>') < usage.find('output=PATH'), 'Usage should list positionals before options')
    assert(usage is 'Usage: vuepoint <INPUT> [output=PATH] [verbose]',
       'Short usage should list every visible parameter')
 
@@ -1006,13 +1006,13 @@ end
       'Long usage should collapse named options to [options...]')
 
    help = parser.getHelp()
-   assert(help:find('View vector documents'), 'Normal help should include the description')
-   assert(help:find('Arguments:'), 'Normal help should group positional arguments')
-   assert(help:find('Options:'), 'Normal help should group named options')
-   assert(help:find('output=PATH, o=PATH'), 'Normal help should show aliases')
-   assert(help:find('default: preview.png'), 'Normal help should show defaults')
-   assert(help:find('verbose, v, no-verbose'), 'Normal help should show flag aliases and negation')
-   assert(help:find('End of help.'), 'Normal help should include the epilog')
+   assert(help.find('View vector documents'), 'Normal help should include the description')
+   assert(help.find('Arguments:'), 'Normal help should group positional arguments')
+   assert(help.find('Options:'), 'Normal help should group named options')
+   assert(help.find('output=PATH, o=PATH'), 'Normal help should show aliases')
+   assert(help.find('default: preview.png'), 'Normal help should show defaults')
+   assert(help.find('verbose, v, no-verbose'), 'Normal help should show flag aliases and negation')
+   assert(help.find('End of help.'), 'Normal help should include the epilog')
 end
 
 @Test function HelpNormalisesMultilineBlockWhitespace()
@@ -1032,10 +1032,10 @@ Examples:
 
    help = parser.getHelp()
 
-   assert(not help:find('\n\n\n'), 'Help should not contain repeated blank lines between generated blocks')
-   assert(help:find('server\n\nServe static files'), 'Description should be separated by one blank line')
-   assert(help:find('Folder to serve.\n\nExamples:'), 'Epilog should be separated by one blank line')
-   assert(not help:endsWith('\n'), 'Help should not end with a trailing newline')
+   assert(not help.find('\n\n\n'), 'Help should not contain repeated blank lines between generated blocks')
+   assert(help.find('server\n\nServe static files'), 'Description should be separated by one blank line')
+   assert(help.find('Folder to serve.\n\nExamples:'), 'Epilog should be separated by one blank line')
+   assert(not help.endsWith('\n'), 'Help should not end with a trailing newline')
 end
 
 @Test function DetailedHelpAndHiddenParameters()
@@ -1055,19 +1055,19 @@ end
    })
 
    help = parser.getHelp()
-   assert(help:find('mode=MODE'), 'Visible parameters should appear in normal help')
-   assert(not help:find('token'), 'Hidden parameters should be excluded from normal help')
+   assert(help.find('mode=MODE'), 'Visible parameters should appear in normal help')
+   assert(not help.find('token'), 'Hidden parameters should be excluded from normal help')
 
    detail = parser.getHelp(nil, 'm')
-   assert(detail:find('mode:'), 'Detailed help should resolve aliases to canonical names')
-   assert(detail:find('Execution mode'), 'Detailed help should include comments')
-   assert(detail:find('Controls how much validation'), 'Detailed help should include descriptions')
-   assert(detail:find('Aliases: m'), 'Detailed help should list aliases')
-   assert(detail:find('Required: yes'), 'Detailed help should show required markers')
-   assert(detail:find('Choices: fast, slow'), 'Detailed help should show choices')
+   assert(detail.find('mode:'), 'Detailed help should resolve aliases to canonical names')
+   assert(detail.find('Execution mode'), 'Detailed help should include comments')
+   assert(detail.find('Controls how much validation'), 'Detailed help should include descriptions')
+   assert(detail.find('Aliases: m'), 'Detailed help should list aliases')
+   assert(detail.find('Required: yes'), 'Detailed help should show required markers')
+   assert(detail.find('Choices: fast, slow'), 'Detailed help should show choices')
 
    hidden_detail = parser.getHelp(nil, 'token')
-   assert(hidden_detail:find('Secret token'), 'Hidden parameters should still support detailed help')
+   assert(hidden_detail.find('Secret token'), 'Hidden parameters should still support detailed help')
 end
 
 @Test function GroupedHelpOutput()
@@ -1080,10 +1080,10 @@ end
    })
 
    help = parser.getHelp()
-   assert(help:find('Input:'), 'Custom input group should be rendered')
-   assert(help:find('Output:'), 'Custom output group should be rendered')
-   assert(help:find('Input path'), 'Grouped parameter comments should be rendered')
-   assert(help:find('Output path'), 'Grouped parameter comments should be rendered')
+   assert(help.find('Input:'), 'Custom input group should be rendered')
+   assert(help.find('Output:'), 'Custom output group should be rendered')
+   assert(help.find('Input path'), 'Grouped parameter comments should be rendered')
+   assert(help.find('Output path'), 'Grouped parameter comments should be rendered')
 end
 
 @Test function AutomaticHelpHandling()
@@ -1097,18 +1097,18 @@ end
    result, err = parser.tryProcess(array<string> { 'help' })
    assert(err is nil, f'tryProcess() should not treat help as a parse failure, got {err}')
    assert(result.help is true, 'tryProcess() should return a structured help result')
-   assert(result.text:find('Usage: demo'), 'Structured help result should include normal help text')
+   assert(result.text.find('Usage: demo'), 'Structured help result should include normal help text')
 
    result, err = parser.tryProcess(array<string> { 'help=file' })
    assert(err is nil, 'tryProcess() should return detailed help without failing')
    assert(result.topic is 'file', 'Detailed help result should report the requested topic')
-   assert(result.text:find('File to read'), 'Detailed help should be generated for help=argname')
+   assert(result.text.find('File to read'), 'Detailed help should be generated for help=argname')
 
    result, err = parser.tryProcess(array<string> { 'help', 'ignored' })
    assert(err is nil, 'Automatic help should ignore trailing ordered tokens')
    assert(result.help is true, 'Automatic help with trailing tokens should return a structured help result')
    assert(result.topic is nil, 'Bare automatic help with trailing tokens should request normal help')
-   assert(result.text:find('Usage: demo'), 'Automatic help with trailing tokens should include normal help text')
+   assert(result.text.find('Usage: demo'), 'Automatic help with trailing tokens should include normal help text')
 
    expect_options_error({
       args = array<table> {
@@ -1142,14 +1142,14 @@ end
    })
    assert(err is nil, 'Default task-parameter help should not validate required arguments')
    assert(result.help is true, 'Default task-parameter help should return a structured help result')
-   assert(result.text:find('Usage: convert'), 'Default task-parameter help should include normal help text')
+   assert(result.text.find('Usage: convert'), 'Default task-parameter help should include normal help text')
 
    result, err = cli_parser.tryProcess(nil, {
       taskParameters = array<string> { '--log-warning', 'test.tiri' }
    })
    assert(err is nil, 'Empty default task parameters should print help instead of validating required arguments')
    assert(result.help is true, 'Empty default task parameters should return a structured help result')
-   assert(result.text:find('Usage: convert'), 'Empty default task parameter help should include normal help text')
+   assert(result.text.find('Usage: convert'), 'Empty default task parameter help should include normal help text')
 
    invalid_default_parser = options({
       name = 'invalid-default',
@@ -1181,7 +1181,7 @@ end
    returned = help_parser.process(array<string> { 'help=file' })
    assert(returned is nil, 'process() should not return normal args for help requests')
    assert(seen_topic is 'file', 'process() should pass the help topic to onHelp')
-   assert(seen_text:find('File to read'), 'process() should pass generated help text to onHelp')
+   assert(seen_text.find('File to read'), 'process() should pass generated help text to onHelp')
 end
 
 @Test function UnsupportedHelpFormatsFail()
@@ -1196,7 +1196,7 @@ end
       parser.getHelp('html')
    except e
       assert(e.code is ERR_InvalidType, 'Unsupported help formats should report an invalid type error')
-      assert(e.message:find("Unsupported help format 'html'."), 'Unsupported format message should be stable')
+      assert(e.message.find("Unsupported help format 'html'."), 'Unsupported format message should be stable')
       failed = true
    end
    assert(failed is true, 'Unsupported help formats should fail')
@@ -1315,7 +1315,7 @@ end
       })
    except e
       assert(e.code is ERR_DuplicateValue, 'Duplicate command aliases should report a duplicate value')
-      assert(e.message:find("Duplicate command name or alias 'b'"),
+      assert(e.message.find("Duplicate command name or alias 'b'"),
          'Duplicate command aliases should explain the conflict')
       return
    end
@@ -1376,7 +1376,7 @@ end
       parser.addParam({ name = 'build', kind = 'flag', type = 'bool' })
    except e
       assert(e.code is ERR_DuplicateValue, 'Global parameter collisions should report a duplicate value')
-      assert(e.message:find("Parameter name or alias 'build' conflicts with command 'build'."),
+      assert(e.message.find("Parameter name or alias 'build' conflicts with command 'build'."),
          'Global parameter collisions should explain the command conflict')
       return
    end
@@ -1537,20 +1537,20 @@ end
    })
 
    help = parser.getHelp()
-   assert(help:find('Commands:'), 'Normal help should include visible commands')
-   assert(help:find('build, b'), 'Normal help should show command aliases')
-   assert(help:find('Build the project'), 'Normal help should include command comments')
-   assert(not help:find('secret'), 'Hidden commands should be excluded from normal help')
+   assert(help.find('Commands:'), 'Normal help should include visible commands')
+   assert(help.find('build, b'), 'Normal help should show command aliases')
+   assert(help.find('Build the project'), 'Normal help should include command comments')
+   assert(not help.find('secret'), 'Hidden commands should be excluded from normal help')
 
    detail = parser.getHelp(nil, 'b')
-   assert(detail:find('build:'), 'Command help should resolve aliases to canonical names')
-   assert(detail:find('Compiles project assets.'), 'Command help should include command descriptions')
-   assert(detail:find('Aliases: b'), 'Command help should include command aliases')
-   assert(detail:find('input=INPUT'), 'Command help should include command parameters')
+   assert(detail.find('build:'), 'Command help should resolve aliases to canonical names')
+   assert(detail.find('Compiles project assets.'), 'Command help should include command descriptions')
+   assert(detail.find('Aliases: b'), 'Command help should include command aliases')
+   assert(detail.find('input=INPUT'), 'Command help should include command parameters')
 
    result, err = parser.tryProcess(array<string> { 'help=build' })
    assert(err is nil, 'help=command should produce command help')
-   assert(result.text:find('Build the project'), 'Structured command help should include command detail')
+   assert(result.text.find('Build the project'), 'Structured command help should include command detail')
 
    result = parser.process(array<string> { 'secret', 'token=abc' })
    assert(result.command is 'secret', 'Hidden commands should remain callable')

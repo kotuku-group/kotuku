@@ -7,12 +7,12 @@ function enforce_hotpath() end
 
 function parameter_names(Signature)
    names = {}
-   for entry in values(Signature:split(',')) do
-      trimmed = entry:trim()
+   for entry in values(Signature.split(',')) do
+      trimmed = entry.trim()
       if trimmed?? then
          colon = string.find(trimmed, ":", 0, true)
          if colon?? then trimmed = string.sub(trimmed, 0, colon) end
-         table.insert(names, trimmed)
+         names.insert(trimmed)
       end
    end
    return names
@@ -20,7 +20,7 @@ end
 
 function build_source(Signature)
    names = parameter_names(Signature)
-   returns = table.concat(names, ", ")
+   returns = names.concat(", ")
    if returns is "" then returns = "nil" end
    return "local function typed(" .. Signature .. ") return " .. returns .. " end return typed"
 end
@@ -142,7 +142,7 @@ end
          exec(Source)
          error('Expected array annotation syntax to be rejected')
       except e
-         assert(e.message:find(Message) != nil, 'Unexpected array annotation diagnostic: ' .. e.message)
+         assert(e.message.find(Message) != nil, 'Unexpected array annotation diagnostic: ' .. e.message)
       end
    end
 

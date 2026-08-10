@@ -83,11 +83,11 @@ function BasicSSLCommunication()
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            emsg = buffer:getString(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Server] Received encrypted message of ' .. read_len .. ' bytes: "' .. tostring(emsg) .. '"')
 
             -- Verify message integrity over SSL
-            if emsg:startsWith('SSL_ECHO:' .. glSSLTestData) then
+            if emsg.startsWith('SSL_ECHO:' .. glSSLTestData) then
                logOutput('[Server] SSL message integrity verified!')
                ssl_data_received = true
                Socket.mtDisconnectSocket(Client)
@@ -132,7 +132,7 @@ function BasicSSLCommunication()
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            emsg = buffer:getString(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Client] Received encrypted message of ' .. read_len .. ' bytes: "' .. tostring(emsg) .. '"')
 
             -- Echo back the message to verify bidirectional SSL
@@ -170,7 +170,7 @@ function SSLStateTransitions()
    ssl_server = obj.new('netserver', {
       name = 'SSLStateServer',
       feedback = function(Socket, Client, State)
-         table.insert(state_sequence, 'SERVER:' .. printableState(State))
+         state_sequence.insert('SERVER:' .. printableState(State))
          logOutput('[Server] State transition: ' .. printableState(State) .. ' (' .. mSys.GetErrorMsg(Socket.error) .. ')')
 
          if (State is NTC_CONNECTED) then
@@ -196,7 +196,7 @@ function SSLStateTransitions()
          err, read_len = Client.acRead(buffer)
          if err is ERR_Okay then
             if read_len is 0 then return end
-            emsg = buffer:getString(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Server] Received: ' .. emsg)
             data_exchange_complete = true
             Socket.mtDisconnectSocket(Client)
@@ -211,7 +211,7 @@ function SSLStateTransitions()
    ssl_client = obj.new('netsocket', {
       name = 'SSLStateClient',
       feedback = function(Socket, State)
-         table.insert(state_sequence, 'CLIENT:' .. printableState(State))
+         state_sequence.insert('CLIENT:' .. printableState(State))
          logOutput('[Client] State transition: ' .. printableState(State))
          if State is NTC_DISCONNECTED then
             ssl_server.acSignal()
@@ -223,7 +223,7 @@ function SSLStateTransitions()
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
             if read_len is 0 then return end
-            emsg = buffer:getString(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Client] Received: ' .. emsg)
             check Socket.acWrite('SSL_STATES_VERIFIED')
          elseif (err != ERR_Disconnected) then
@@ -247,9 +247,9 @@ function SSLStateTransitions()
    local server_connected, client_connected
 
    for state in values(state_sequence) do
-      if state:startsWith('SERVER:CONNECTED') then
+      if state.startsWith('SERVER:CONNECTED') then
          server_connected = true
-      elseif state:startsWith('CLIENT:CONNECTED') then
+      elseif state.startsWith('CLIENT:CONNECTED') then
          client_connected = true
       end
    end
@@ -289,7 +289,7 @@ function SSLDataIntegrity()
          err, read_len = Client.acRead(buffer)
 
          if err is ERR_Okay and read_len > 0 then
-            received = buffer:getString(0, read_len)
+            received = buffer.getString(0, read_len)
             expected = test_messages[msgIndex]
 
             logOutput('[Server] Received echo ' .. msgIndex .. ' (' .. read_len .. ' bytes)')
@@ -324,7 +324,7 @@ function SSLDataIntegrity()
          err, read_len = Socket.acRead(buffer)
 
          if err is ERR_Okay then
-            emsg = buffer:getString(0, read_len)
+            emsg = buffer.getString(0, read_len)
             logOutput('[Client] Received message (' .. read_len .. ' bytes), echoing back...')
 
             -- Echo back exactly what was received
@@ -391,7 +391,7 @@ function HTTPSConnection()
                buffer = array<byte, 8192>
                err, read_len = Socket.acRead(buffer)
                if err is ERR_Okay and read_len > 0 then
-                  chunk = buffer:getString(0, read_len)
+                  chunk = buffer.getString(0, read_len)
                   page_content ..= chunk
                   logOutput(f'Read {read_len} bytes during disconnect (total: {#page_content})')
                   data_received = true
@@ -420,7 +420,7 @@ function HTTPSConnection()
 
                chunks_received++
                callback_total += read_len
-               chunk = buffer:getString(0, read_len)
+               chunk = buffer.getString(0, read_len)
                page_content ..= chunk
 
                logOutput('Chunk ' .. chunks_received .. ' received: ' .. read_len .. ' bytes from ' ..
@@ -429,10 +429,10 @@ function HTTPSConnection()
 
                -- Parse headers if not done yet
                if not headers_complete then
-                  stop = page_content:find('\r\n\r\n')
+                  stop = page_content.find('\r\n\r\n')
                   if stop then
                      headers_complete = true
-                     headers = page_content:sub(0, stop)
+                     headers = page_content.sub(0, stop)
                      logOutput('HTTP headers received (' .. #headers .. ' bytes)')
 
                      -- Extract Content-Length if present
@@ -498,7 +498,7 @@ function HTTPSConnection()
    logOutput('Received ' .. chunks_received .. ' chunks, ' .. #page_content .. ' total bytes')
 
    if expected_content_length > 0 then
-      content_start = page_content:find('\r\n\r\n')
+      content_start = page_content.find('\r\n\r\n')
       if content_start then
          actual_content_length = #page_content - content_start - 3
          logOutput('Body length: ' .. actual_content_length .. ' bytes (expected: ' .. expected_content_length .. ')')
@@ -508,8 +508,8 @@ function HTTPSConnection()
       end
    end
 
-   if rxHTTP.test(page_content) and (page_content:find('200 OK') or page_content:find('301') or
-      page_content:find('302') or page_content:find('404')) then
+   if rxHTTP.test(page_content) and (page_content.find('200 OK') or page_content.find('301') or
+      page_content.find('302') or page_content.find('404')) then
       logOutput(f'Received valid HTTP response ({#page_content} bytes total)')
 
       if #page_content < 2048 then
@@ -517,10 +517,10 @@ function HTTPSConnection()
          logOutput(page_content)
       else
          logOutput('Response preview (first 500 chars):')
-         logOutput(page_content:sub(0, 500) .. '...')
+         logOutput(page_content.sub(0, 500) .. '...')
       end
    else
-      logOutput('Response content preview: ' .. page_content:sub(0, 200))
+      logOutput('Response content preview: ' .. page_content.sub(0, 200))
       error('Invalid HTTP response received from ' .. SITE)
    end
 end
@@ -574,7 +574,7 @@ function runCustomCertificateHandshake(TestName, CertPath, KeyPath, KeyPassword)
          buffer = array<byte, 1024>
          err, read_len = Client.acRead(buffer)
          if err is ERR_Okay and read_len > 0 then
-            message = buffer:getString(0, read_len)
+            message = buffer.getString(0, read_len)
             logOutput('[Server] Received: ' .. message)
             custom_cert_test_complete = true
             Socket.mtDisconnectSocket(Client)

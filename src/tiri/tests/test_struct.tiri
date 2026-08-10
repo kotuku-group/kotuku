@@ -624,7 +624,7 @@ assert(value.Value is 42.5)
          statement ..= [[
 struct ConcurrentInvalidStruct Value: mystery end]]
       end
-      scripts:push(obj.new('tiri', { statement=statement }))
+      scripts.push(obj.new('tiri', { statement=statement }))
    end
 
    for script in values(scripts) do
@@ -645,8 +645,8 @@ end
 
 @Test(hotpath=true)
 function ProbeStruct()
-   local meta = mSys.FindClass('task':hash(), 0)
-   local err, field = meta.mtFindField('args':hash())
+   local meta = mSys.FindClass('task'.hash(), 0)
+   local err, field = meta.mtFindField('args'.hash())
    assert(type(field) is 'table', 'Failed to find args field in task class')
    assert(field.name is 'Args', 'Expected string type for field name')
    assert(field.fieldID > 0, 'Expected fieldID to be greater than zero')
@@ -688,7 +688,7 @@ end
 @Test function ObjectFieldAssignments()
    MAKESTRUCT('ObjectFieldAssignments', 'oValue')
 
-   local value = mSys.FindClass('task':hash(), 0)
+   local value = mSys.FindClass('task'.hash(), 0)
    local container = struct.new('ObjectFieldAssignments', { value=value })
    local initial_value = container.value
    assert(type(initial_value) is 'object', 'struct.new() should return a native object from an object field')
@@ -773,13 +773,13 @@ end
    local values = array<any>
 
    for name, field_value in pairs(value) do
-      fields:push(name)
-      values:push(field_value)
+      fields.push(name)
+      values.push(field_value)
    end
 
    assert(fields is array<string> { 'count', 'name', 'enabled' }, 'pairs() should preserve declaration order')
    assert(values[0] is 7 and values[1] is 'sample' and values[2] is 1, 'pairs() should return live field values')
-   assert(tostring(value):startsWith('IterableRecord: 0x'), 'tostring() should include the struct definition name')
+   assert(tostring(value).startsWith('IterableRecord: 0x'), 'tostring() should include the struct definition name')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -928,7 +928,7 @@ end
       local missing = value.unknown
       assert(missing is nil, 'Unknown struct field access should not return normally')
    except error_value when ERR_FieldNotFound
-      assert(error_value.source:find('test_struct.tiri'),
+      assert(error_value.source.find('test_struct.tiri'),
          'Fast struct reads should retain the access source, got ' .. tostring(error_value.source))
       assert(error_value.line is expected_read_line,
          f'Fast struct reads should retain access line {expected_read_line}, got {error_value.line}')
@@ -941,7 +941,7 @@ end
    try
       value.unknown = 1
    except error_value
-      assert(error_value.source:find('test_struct.tiri'),
+      assert(error_value.source.find('test_struct.tiri'),
          'Fast struct writes should retain the assignment source, got ' .. tostring(error_value.source))
       assert(error_value.line is expected_write_line,
          f'Fast struct writes should retain assignment line {expected_write_line}, got {error_value.line}')
@@ -954,7 +954,7 @@ end
    try
       value.value = 'invalid'
    except error_value when ERR_InvalidType
-      assert(error_value.source:find('test_struct.tiri'),
+      assert(error_value.source.find('test_struct.tiri'),
          'Fast struct field errors should retain the assignment source, got ' .. tostring(error_value.source))
       assert(error_value.line is expected_line,
          f'Fast struct field errors should retain assignment line {expected_line}, got {error_value.line}')

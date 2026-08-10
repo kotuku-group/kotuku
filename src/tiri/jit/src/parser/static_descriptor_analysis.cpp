@@ -150,12 +150,6 @@ private:
             if (auto *direct = std::get_if<DirectCallTarget>(&payload.target)) {
                if (direct->callable) this->discover_expression(*direct->callable);
             }
-            else if (auto *method = std::get_if<MethodCallTarget>(&payload.target)) {
-               if (method->receiver) this->discover_expression(*method->receiver);
-            }
-            else if (auto *safe_method = std::get_if<SafeMethodCallTarget>(&payload.target)) {
-               if (safe_method->receiver) this->discover_expression(*safe_method->receiver);
-            }
             for (auto &argument : payload.arguments) {
                if (argument) this->discover_expression(*argument);
             }
@@ -303,8 +297,7 @@ private:
          }
          case AstNodeKind::FunctionStmt: {
             auto &payload = std::get<FunctionStmtPayload>(Statement.data);
-            bool local = not payload.name.is_explicit_global and payload.name.segments.size() IS 1 and
-               not payload.name.method.has_value();
+            bool local = not payload.name.is_explicit_global and payload.name.segments.size() IS 1;
             if (local) this->declare(payload.name.segments.front(), nullptr, 0, payload.function.get());
             else if (payload.name.is_explicit_global and not payload.name.segments.empty() and
                      payload.name.segments.front().symbol) {
@@ -675,15 +668,6 @@ private:
             member = payload.member.symbol;
          }
       }
-      else if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         receiver = method->receiver.get();
-         member = method->method.symbol;
-      }
-      else if (const auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         receiver = method->receiver.get();
-         member = method->method.symbol;
-      }
-
       if (not receiver or not member) return 0;
       StaticValueDescriptor base = this->descriptor_of(*receiver);
       if (base.primary IS TiriType::Object and base.proved()) {
@@ -1107,21 +1091,15 @@ private:
 
    [[nodiscard]] static std::optional<ArrayFilterCall> array_filter_call(CallExprPayload &Call)
    {
-      if (auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         if (method->receiver and method->method.symbol and
-             method->method.symbol->hash IS kt::strhash("filter") and not Call.arguments.empty()) {
-            return ArrayFilterCall{ method->receiver.get(), 0 };
-         }
-      }
-      else if (auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         if (method->receiver and method->method.symbol and
-             method->method.symbol->hash IS kt::strhash("filter") and not Call.arguments.empty()) {
-            return ArrayFilterCall{ method->receiver.get(), 0 };
-         }
-      }
-      else if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
+      if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
          if (array_interface_member(*direct, kt::strhash("filter")) and Call.arguments.size() > 1) {
             return ArrayFilterCall{ Call.arguments[0].get(), 1 };
+         }
+         if (direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr and not Call.arguments.empty()) {
+            auto &member = std::get<MemberExprPayload>(direct->callable->data);
+            if (member.table and member.member.symbol and member.member.symbol->hash IS kt::strhash("filter")) {
+               return ArrayFilterCall{ member.table.get(), 0 };
+            }
          }
       }
       return std::nullopt;
@@ -1132,15 +1110,7 @@ private:
       const ExprNode *source = nullptr;
       GCstr *operation = nullptr;
 
-      if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         source = method->receiver.get();
-         operation = method->method.symbol;
-      }
-      else if (const auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         source = method->receiver.get();
-         operation = method->method.symbol;
-      }
-      else if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
                direct and direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
          const auto &member = std::get<MemberExprPayload>(direct->callable->data);
          const auto *base = member.table and member.table->kind IS AstNodeKind::IdentifierExpr ?
@@ -1148,6 +1118,10 @@ private:
          if (base and not base->binding_id and base->identifier.symbol and
              base->identifier.symbol->hash IS kt::strhash("array") and not Call.arguments.empty()) {
             source = Call.arguments.front().get();
+            operation = member.member.symbol;
+         }
+         else {
+            source = member.table.get();
             operation = member.member.symbol;
          }
       }
@@ -1199,12 +1173,6 @@ private:
    {
       if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
          if (direct->callable) this->propagate_expression(*direct->callable);
-      }
-      else if (auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         if (method->receiver) this->propagate_expression(*method->receiver);
-      }
-      else if (auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         if (method->receiver) this->propagate_expression(*method->receiver);
       }
 
       auto filter = array_filter_call(Call);
@@ -1810,8 +1778,6 @@ private:
          case AstNodeKind::SafeCallExpr: {
             auto &p = std::get<CallExprPayload>(Expression.data);
             if (auto *d = std::get_if<DirectCallTarget>(&p.target)) visit(d->callable);
-            else if (auto *m = std::get_if<MethodCallTarget>(&p.target)) visit(m->receiver);
-            else if (auto *m = std::get_if<SafeMethodCallTarget>(&p.target)) visit(m->receiver);
             for (auto &v : p.arguments) visit(v);
             break;
          }

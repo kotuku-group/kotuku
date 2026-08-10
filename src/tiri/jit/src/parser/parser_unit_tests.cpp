@@ -861,6 +861,51 @@ static bool test_deprecated_numeric_for_rejected(kt::Log &Log)
 
 //********************************************************************************************************************
 
+static bool test_colon_method_syntax_rejected(kt::Log &Log)
+{
+   struct ColonCase {
+      std::string_view source;
+      std::string_view expected_message;
+   };
+
+   constexpr std::array<ColonCase, 3> cases = { {
+      { "local values = {}\nvalues:clear()", "colon method syntax has been removed" },
+      { "local values:table = nil\nvalues?:clear()", "safe colon method syntax has been removed" },
+      { "local value = {}\nfunction value:clear() end", "colon-qualified function declarations have been removed" }
+   } };
+
+   for (const auto &test_case : cases) {
+      auto result = build_ast_from_source(test_case.source, true);
+      size_t matching = 0;
+      for (const ParserDiagnostic &diagnostic : result.diagnostics) {
+         if (diagnostic.code != ParserErrorCode::DeprecatedSyntax) continue;
+         if (diagnostic.message.find(test_case.expected_message) IS std::string::npos) {
+            Log.error("colon syntax diagnostic did not explain the migration path");
+            log_diagnostics(result.diagnostics, Log);
+            return false;
+         }
+         matching++;
+      }
+      if (matching != 1) {
+         Log.error("expected one colon syntax diagnostic, got %zu", matching);
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   auto annotations = build_ast_from_source(
+      "local value:num = 1\nfunction typed(Input:str):<str, num> return Input, value end\n", true);
+   if (not annotations.chunk.ok() or not annotations.diagnostics.empty()) {
+      Log.error("colon removal interfered with type annotations");
+      log_diagnostics(annotations.diagnostics, Log);
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_array_length_range_for_ast(kt::Log &Log)
 {
    constexpr const char *source = R"(
@@ -4955,8 +5000,7 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
    const auto &write = std::get<AssignmentStmtPayload>(chunk.value_ref()->statements[3]->data);
    const auto *write_member = write.targets.empty() ? nullptr :
       std::get_if<MemberExprPayload>(&write.targets.front()->data);
-   if (not read_member or not write_member or read_member->uses_method_dispatch or write_member->uses_method_dispatch or
-       read_member->is_call_target or write_member->is_call_target) {
+   if (not read_member or not write_member or read_member->is_call_target or write_member->is_call_target) {
       Log.error("ordinary member reads or writes acquired method-call metadata");
       return false;
    }
@@ -6644,7 +6688,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 59> tests = { {
+   constexpr std::array<TestCase, 60> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -6658,6 +6702,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ast_statement_matrix", test_ast_statement_matrix },
       { "range_for_ast", test_range_for_ast },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
+      { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
       { "bare_collection_iteration_emission", test_bare_collection_iteration_emission },

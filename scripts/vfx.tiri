@@ -572,7 +572,7 @@ vfx.wipes.radial.init = function(State, Options)
    for i in {1 to State.segments} do
       radius = State.stroke_size + ((State.max_radius - State.stroke_size)) * (i / (State.segments-1)) -
          (State.stroke_size * 0.5)
-      State.ellipses:push(State.clip.viewport.new('VectorEllipse', {
+      State.ellipses.push(State.clip.viewport.new('VectorEllipse', {
          cx = State.cx, cy = State.cy, rx = radius, ry = radius, fill='none',
          stroke = 'rgb(255,255,255)', visibility = VIS_HIDDEN
       }))
@@ -689,7 +689,7 @@ vfx.initTimer = function(State, Options)
       else
          value = (CurrentTime - State.time) / (State.seconds * 1000000)
          if value >= 1.0 then
-            if (State.free != nil) then State:free() end
+            if (State.free != nil) then State.free() end
             State?.callback(State)
             raise ERR_Terminate
          else

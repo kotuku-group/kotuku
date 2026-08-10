@@ -76,7 +76,7 @@ gui.dialog.file = function(Options)
 
       self?.feedback(self, self.fileview.path, #list > 0 ? list :> nil)
 
-      table.clear(self)
+      self.clear()
       processing.collect('defer')
       return true
    end
@@ -95,7 +95,7 @@ gui.dialog.file = function(Options)
       events = {
          close = function(Window)
             Options?.feedback(self, nil)
-            table.clear(self)
+            self.clear()
             processing.collect('defer')
          end
       }
@@ -105,7 +105,7 @@ gui.dialog.file = function(Options)
 
    self.scene = self.window.scene
 
-   self.viewport = self.window:clientViewport({ })
+   self.viewport = self.window.clientViewport({ })
 
    self.pathbox = gui.input({
       target     = self.viewport,
@@ -139,7 +139,7 @@ gui.dialog.file = function(Options)
       events = {
          activate = function(Button)
             Options?.feedback(self, nil)
-            table.clear(self)
+            self.clear()
             processing.collect()
          end
       }
@@ -201,7 +201,7 @@ gui.dialog.file = function(Options)
       end
 
       for filter in values(Options.filterList) do
-         fv_filters:push(filter)
+         fv_filters.push(filter)
       end
    end
 
@@ -235,8 +235,8 @@ gui.dialog.file = function(Options)
 
    gui.separator(self.window.viewport, 'H', -footer)
 
-   self.window:moveToFront()
-   self.window:show(true)
+   self.window.moveToFront()
+   self.window.show(true)
 
    return self
 end

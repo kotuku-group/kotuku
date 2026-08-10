@@ -8,7 +8,7 @@ Basic demo of the View widget
    import 'gui/window'
 
    lWindow = gui.window({ title='View Widget Example', insideWidth=600, insideHeight=300 })
-   lViewport = lWindow:clientViewport()
+   lViewport = lWindow.clientViewport()
 
    glView = gui.columnView({
       target     = lViewport,
@@ -44,5 +44,5 @@ Basic demo of the View widget
       }
    })
 
-   lWindow:show()
+   lWindow.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

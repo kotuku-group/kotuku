@@ -36,7 +36,7 @@ end
       }
    })
 
-   viewport = window:clientViewport({
+   viewport = window.clientViewport({
       resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
          current_size.string =  Width .. ' x ' .. Height
          current_size.acDraw()
@@ -54,6 +54,6 @@ end
       x = 10, y = 30, string = INITIAL_WIDTH .. ' x ' .. INITIAL_HEIGHT, fill = 'black', fontStyle='bold'
    })
 
-   window:show()
+   window.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT
 

@@ -132,7 +132,7 @@ end
    output_data = array<byte, source_size>
    err = mSys.ReadFileToBuffer('temp:cmp_decompress_object.tiri', output_data)
    assert(err is ERR_Okay, 'Failed to read decompressed output: ' .. mSys.GetErrorMsg(err))
-   assert(output_data:getString() is source_data:getString(), 'DecompressObject() output does not match the source.')
+   assert(output_data.getString() is source_data.getString(), 'DecompressObject() output does not match the source.')
 
    err = cmp.mtRemoveFile('window.tiri')
    assert(err is ERR_Okay, 'RemoveFile() failed: ' .. mSys.GetErrorMsg(err))
@@ -252,7 +252,7 @@ end
 
    err = mSys.ReadFileToBuffer('scripts:gui/button.tiri', cmpsrc)
    assert(err is ERR_Okay, 'Failed to read original source file for comparison: ' .. mSys.GetErrorMsg(err))
-   cmpstr = cmpsrc:getString()
+   cmpstr = cmpsrc.getString()
    assert(#cmpstr is file_size, f"Array length of {#cmpstr} does not match expected file length of {file_size}.")
 
    -- Big buffer test
@@ -260,7 +260,7 @@ end
    cmpfile = obj.new('file', { src='archive:test/scripts/button.tiri', flags=FL_READ })
    err, len = cmpfile.acRead(cmpbuffer)
    assert(err is ERR_Okay, 'Failed to read decompressed data from file archive: ' .. mSys.GetErrorMsg(err))
-   assert(cmpbuffer:getString() is cmpstr, "The decompressed data does not match the original file.")
+   assert(cmpbuffer.getString() is cmpstr, "The decompressed data does not match the original file.")
 
    -- Small buffer test
 
@@ -272,15 +272,15 @@ end
       err, len = cmpfile.acRead(smallbuffer)
       assert(err is ERR_Okay, 'Failed to read decompressed data from file archive: ' .. mSys.GetErrorMsg(err))
       if len < #smallbuffer then
-         cmpbuffer:copy(smallbuffer:getString(0, len), di)
+         cmpbuffer.copy(smallbuffer.getString(0, len), di)
       else
-         cmpbuffer:copy(smallbuffer:getString(), di)
+         cmpbuffer.copy(smallbuffer.getString(), di)
       end
       di += len
    until (len is 0)
 
    assert(di is file_size, f"Decompressed data length of {di} does not match original file length of {#cmpstr}.")
-   assert(cmpbuffer:getString() is cmpstr, "The decompressed data does not match the original file.")
+   assert(cmpbuffer.getString() is cmpstr, "The decompressed data does not match the original file.")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -320,7 +320,7 @@ end
    output_data = array<byte, source_size>
    assert(mSys.ReadFileToBuffer('scripts:gui.tiri', source_data) is ERR_Okay, 'Failed to read source data.')
    assert(mSys.ReadFileToBuffer('temp:gui.tiri', output_data) is ERR_Okay, 'Failed to read decompressed output.')
-   assert(output_data:getString() is source_data:getString(), 'Round-tripped stream output does not match the source.')
+   assert(output_data.getString() is source_data.getString(), 'Round-tripped stream output does not match the source.')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -340,7 +340,7 @@ end
    assert(err is ERR_Okay, 'DecompressBuffer() failed: ' .. mSys.GetErrorMsg(err))
    assert(restored_size is #source_data,
       f'DecompressBuffer() returned {restored_size} bytes, expected {#source_data}.')
-   assert(restored:getString(0, restored_size) is source_data:getString(),
+   assert(restored.getString(0, restored_size) is source_data.getString(),
       'Buffer compression round-trip changed the input.')
 
    short_output = array<byte, 9>
@@ -348,7 +348,7 @@ end
    assert(err is ERR_BufferOverflow, 'A short compression output span should return BufferOverflow.')
 
    truncated_size = compressed_size - 1
-   truncated = compressed:slice({0 to truncated_size})
+   truncated = compressed.slice({0 to truncated_size})
    err = cmp.mtDecompressBuffer(truncated, restored)
    assert(err is ERR_InvalidCompression, 'A truncated encoded input span should return InvalidCompression.')
 end
@@ -378,5 +378,5 @@ end
    local restored_size
    err, restored_size = decoder.acRead(restored)
    assert(err is ERR_Okay, 'Finalised stream could not be decompressed: ' .. mSys.GetErrorMsg(err))
-   assert(restored:sub(0, restored_size) is source, 'Finalised compressed stream did not round-trip correctly.')
+   assert(restored.sub(0, restored_size) is source, 'Finalised compressed stream did not round-trip correctly.')
 end

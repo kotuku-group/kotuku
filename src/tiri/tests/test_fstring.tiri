@@ -183,9 +183,9 @@ end
 @Test function MethodCall()
    t = {
       name = "Method",
-      getName = function(self):str return self.name end
+      getName = function(Self):str return Self.name end
    }
-   result = f"Name: {t:getName()}"
+   result = f"Name: {t.getName(t)}"
    assert(result is "Name: Method", "Method call failed: " .. tostring(result))
 end
 

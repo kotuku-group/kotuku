@@ -80,7 +80,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
    function refreshExample()
       if not self.guidelines then
-         line_col = (gui.strToRGB(lWindow.theme.page.bkgd):luminance() > 0.5) ? 'rgb(0 0 0 / .25)' :> 'rgb(255 255 255 / .15)'
+         line_col = (gui.strToRGB(lWindow.theme.page.bkgd).luminance() > 0.5) ? 'rgb(0 0 0 / .25)' :> 'rgb(255 255 255 / .15)'
          self.guidelines = self.examplePage.new('VectorPath', { strokeWidth = 0.5, stroke = line_col })
       end
 
@@ -126,7 +126,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    function showFontSizes(List)
       sizes = array<table> { }
       for i in {0 to #List} do
-         sizes:push({ id=List[i], name=List[i] })
+         sizes.push({ id=List[i], name=List[i] })
       end
       vwSize.loadItems(sizes)
    end
@@ -137,7 +137,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       styles = array<table> { }
       if lFonts[Face].alias then Face = lFonts[Face].alias end
       for v in values(lFonts[Face].styles) do
-         styles:push({ id=v, name=v })
+         styles.push({ id=v, name=v })
       end
       vwStyle.loadItems(styles)
    end
@@ -191,7 +191,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       }
    })
 
-   self.viewport = lWindow:clientViewport({
+   self.viewport = lWindow.clientViewport({
       resizeEvent = function(Window:obj!)
          refreshGuidelines()
       end
@@ -350,13 +350,13 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    })
 
    faces = { }
-   for _, font in table.sortByKeys(lFonts) do
+   for _, font in lFonts.sortByKeys() do
       if font.hidden?? then continue end
 
       new_font = { id=font.name, name=font.name }
       if font.alias then font = lFonts[font.alias] end
       new_font.icon = font.scalable ? 'items/font' :> 'layout/text_sans'
-      table.insert(faces, new_font)
+      faces.insert(new_font)
    end
    vwFace.loadItems(faces)
 
@@ -372,8 +372,8 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
    highlightSize(self.pointSize)
 
-   lWindow:moveToFront()
-   lWindow:show(true)
+   lWindow.moveToFront()
+   lWindow.show(true)
    --vwFace.acFocus()
 
    return self

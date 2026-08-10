@@ -14,7 +14,7 @@ function enforce_hotpath() end
 
    callback = function()
       msg('Thread has finished execution.')
-      work_list:each(o => num: o.acSignal())
+      work_list.each(o => num: o.acSignal())
    end
 
    proc = processing.new({ timeout=1.0, signals = work_list })
@@ -85,7 +85,7 @@ end
 
    scripts = array<obj>
    for i in {0 to total} do
-      scripts:push(obj.new('tiri', { statement = [[ msg('Queued script ]] .. i .. [[ running.') ]] }))
+      scripts.push(obj.new('tiri', { statement = [[ msg('Queued script ]] .. i .. [[ running.') ]] }))
    end
 
    for script in values(scripts) do
@@ -112,7 +112,7 @@ end
 
    scripts = array<obj> { }
    for i in {0 into 10} do
-      scripts:push(obj.new('tiri', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
+      scripts.push(obj.new('tiri', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
    end
 
    proc = processing.new({ timeout=5.0, signals = scripts })

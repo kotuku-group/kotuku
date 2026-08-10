@@ -44,7 +44,7 @@ end
       feedback = function(Socket, State)
          logOutput('[Client1] State: ' .. State)
          if (State is NTC_DISCONNECTED) then
-            results:push('invalid_ip_handled')
+            results.push('invalid_ip_handled')
          end
       end
    })
@@ -52,7 +52,7 @@ end
    err = client1.mtConnect('999.999.999.999', 80)
    if (err != ERR_Okay) then
       logOutput('[Client1] Connection correctly failed: ' .. mSys.GetErrorMsg(err))
-      results:push('invalid_ip_rejected')
+      results.push('invalid_ip_rejected')
    end
 
    -- Test 2: Connection to non-existent port
@@ -62,7 +62,7 @@ end
       feedback = function(Socket, State)
          logOutput('[Client2] State: ' .. State)
          if (State is NTC_DISCONNECTED) then
-            results:push('closed_port_handled')
+            results.push('closed_port_handled')
          end
       end
    })
@@ -70,7 +70,7 @@ end
    err = client2.mtConnect('127.0.0.1', 65432) -- Unlikely to be in use
    if err != ERR_Okay then
       logOutput('[Client2] Connection to closed port correctly failed: ' .. mSys.GetErrorMsg(err))
-      results:push('closed_port_rejected')
+      results.push('closed_port_rejected')
    end
 
    -- Test 3: Port conflict (two servers on same port)
@@ -92,10 +92,10 @@ end
 
    if (server2 and server2.error != ERR_Okay) then
       logOutput('[Test3] Port conflict correctly detected: ' .. mSys.GetErrorMsg(server2.error))
-      results:push('port_conflict_detected')
+      results.push('port_conflict_detected')
    elseif (not server2) then
       logOutput('[Test3] Second server creation failed as expected')
-      results:push('port_conflict_prevented')
+      results.push('port_conflict_prevented')
    end
 
    processing.halt(1.0) -- Allow time for async operations
@@ -105,7 +105,7 @@ end
    for expected in values(expected_results) do
       found = false
       for result in values(results) do
-         if (result is expected or result:find(expected)) then
+         if (result is expected or result.find(expected)) then
             found = true
             break
          end
@@ -277,7 +277,7 @@ end
          buffer = string.alloc(1024)
          err, read_len = Client.acRead(buffer)
          if err is ERR_Okay then
-            logOutput('[Server] Received: ' .. buffer:sub(0, read_len))
+            logOutput('[Server] Received: ' .. buffer.sub(0, read_len))
          else
             logOutput('[Server] Read error during close: ' .. mSys.GetErrorMsg(err))
          end
@@ -299,7 +299,7 @@ end
          buffer = string.alloc(1024)
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            logOutput('[Client] Received: ' .. buffer:sub(0, read_len))
+            logOutput('[Client] Received: ' .. buffer.sub(0, read_len))
          else
             logOutput('[Client] Read error (expected during close): ' .. mSys.GetErrorMsg(err))
             if err is ERR_Disconnected or err is ERR_Failed then

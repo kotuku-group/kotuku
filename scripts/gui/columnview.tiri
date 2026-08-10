@@ -271,7 +271,7 @@ function bannerZoneClick(View, Col, X, Y, Value)
 
    View._sort.icon.x = Col.align is 'right' ? MARGIN :> Col.px_width - MARGIN - glIconSize
 
-   View:sortColumn(Col, View._sort.ascending)
+   View.sortColumn(Col, View._sort.ascending)
    View.viewport.acDraw()
 end
 
@@ -333,7 +333,7 @@ gui.columnView = function(Options):table
 
          new_col = { _index=c, width=8, title='Untitled' }
          for k, v in pairs(col) do new_col[k] = v end
-         table.insert(set, new_col)
+         set.insert(new_col)
          View.namedCol[col['attrib']] = new_col
          c++
       end
@@ -687,19 +687,19 @@ gui.columnView = function(Options):table
             attrib = Column['attrib']
             if type(View.items[0][attrib]) is 'table' then
                if View.items[0][attrib]['sort'] then
-                  table.sort(View.items, function(a,b)
+                  View.items.sort(function(a,b)
                      return Ascending ? a[attrib].sort < b[attrib].sort :> a[attrib].sort > b[attrib].sort
                   end)
                else
-                  table.sort(View.items, function(a,b)
+                  View.items.sort(function(a,b)
                      return Ascending ? a[attrib].value < b[attrib].value :> a[attrib].value > b[attrib].value
                   end)
                end
             elseif type(View.items[0][attrib]) then
-               table.sort(View.items, function(a,b)
+               View.items.sort(function(a,b)
                   al = a[attrib] ? tostring(a[attrib]) :> ''
                   bl = b[attrib] ? tostring(b[attrib]) :> ''
-                  return Ascending ? al:lower() < bl:lower() :> al:lower() > bl:lower()
+                  return Ascending ? al.lower() < bl.lower() :> al.lower() > bl.lower()
                end)
             end
          end

@@ -38,10 +38,10 @@ end
    -- Generate a large XML document
    parts = {'<root>'}
    for i in {1 into 1000} do
-      table.insert(parts, '<item id="' .. i .. '">Content ' .. i .. '</item>')
+      parts.insert('<item id="' .. i .. '">Content ' .. i .. '</item>')
    end
-   table.insert(parts, '</root>')
-   largeXML = table.concat(parts)
+   parts.insert('</root>')
+   largeXML = parts.concat()
 
    xml = obj.new("xml", { statement = largeXML })
    assert(xml.tags, "Large document should parse successfully")
@@ -206,14 +206,14 @@ end
    depth = 100
 
    for i in {1 into depth} do
-      table.insert(parts, '<level' .. i .. '>')
+      parts.insert('<level' .. i .. '>')
    end
-   table.insert(parts, 'Deep content')
+   parts.insert('Deep content')
    for i in {depth into 1 by -1} do
-      table.insert(parts, '</level' .. i .. '>')
+      parts.insert('</level' .. i .. '>')
    end
 
-   deepXML = table.concat(parts)
+   deepXML = parts.concat()
    xml = obj.new("xml", { statement = deepXML })
 
    assert(xml.tags, "Deep nesting should parse successfully")
@@ -235,11 +235,11 @@ end
    -- Create element with many attributes
    parts = {'<root'}
    for i in {1 into 100} do
-      table.insert(parts, ' attr' .. i .. '="value' .. i .. '"')
+      parts.insert(' attr' .. i .. '="value' .. i .. '"')
    end
-   table.insert(parts, '/>')
+   parts.insert('/>')
 
-   manyAttrsXML = table.concat(parts)
+   manyAttrsXML = parts.concat()
    xml = obj.new("xml", { statement = manyAttrsXML })
 
    assert(xml.tags, "Many attributes should parse successfully")

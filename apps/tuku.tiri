@@ -108,14 +108,14 @@ function encodeFormBody(Form:array<string>!):str
 
    for field in values(Form) do
       text = tostring(field)
-      eq = text:find('=')
+      eq = text.find('=')
       if eq is nil then
          error("Parameter 'form' entries must use name=value syntax.")
       end
 
-      params:push({
-         key   = text:sub(0, eq),
-         value = text:sub(eq + 1)
+      params.push({
+         key   = text.sub(0, eq),
+         value = text.sub(eq + 1)
       })
    end
 
@@ -126,7 +126,7 @@ end
 -- Escapes quoted multipart header values.
 
 function escapeMultipartHeaderValue(Value:str!):str
-   return Value:replace('\\', '\\\\'):replace('"', '\\"')
+   return Value.replace('\\', '\\\\').replace('"', '\\"')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -139,13 +139,13 @@ function buildMultipartBody(Fields:array<string>!):<str, str>
 
    for field in values(Fields) do
       text = tostring(field)
-      eq = text:find('=', 0, true)
+      eq = text.find('=', 0, true)
       if eq is nil then
          error("Parameter 'multipart' entries must use name=value syntax.")
       end
 
-      name = text:sub(0, eq):trim()
-      value = text:sub(eq + 1)
+      name = text.sub(0, eq).trim()
+      value = text.sub(eq + 1)
 
       if name is '' then
          error("Parameter 'multipart' entries require a field name.")
@@ -153,8 +153,8 @@ function buildMultipartBody(Fields:array<string>!):<str, str>
 
       body ..= '--' .. boundary .. crlf
 
-      if value:startsWith('@') then
-         path = value:sub(1)
+      if value.startsWith('@') then
+         path = value.sub(1)
          if path is '' then
             error("Parameter 'multipart' file entries require a path after '@'.")
          end
@@ -181,13 +181,13 @@ end
 -- Splits a Name: Value header argument into its key and value components.
 
 function splitHeader(Header:str!):<str, str>
-   colon = Header:find(':')
+   colon = Header.find(':')
    if colon is nil then
       error("Parameter 'header' entries must use Name: Value syntax.")
    end
 
-   name = Header:sub(0, colon):trim()
-   value = Header:sub(colon + 1):trim()
+   name = Header.sub(0, colon).trim()
+   value = Header.sub(colon + 1).trim()
 
    if name is '' then
       error("Parameter 'header' entries require a header name.")
@@ -200,25 +200,25 @@ end
 -- Splits username:password into the HTTP fields used by the client object.
 
 function splitUser(User:str!):<str, str>
-   colon = User:find(':')
+   colon = User.find(':')
    if colon is nil then
       error("Parameter 'user' must use username:password syntax.")
    end
 
-   return User:sub(0, colon), User:sub(colon + 1)
+   return User.sub(0, colon), User.sub(colon + 1)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Splits host:port proxy arguments into the HTTP fields used by the client object.
 
 function splitProxy(Proxy:str!):<str, num>
-   colon = Proxy:find(':')
+   colon = Proxy.find(':')
    if colon is nil then
       error("Parameter 'proxy' must use host:port syntax.")
    end
 
-   host = Proxy:sub(0, colon):trim()
-   port_text = Proxy:sub(colon + 1):trim()
+   host = Proxy.sub(0, colon).trim()
+   port_text = Proxy.sub(colon + 1).trim()
    port = tonumber(port_text)
 
    if host is '' then
@@ -266,7 +266,7 @@ function validateArgs(Args:table!)
       error("Parameter 'max-redirects' must be at least 1.")
    end
 
-   if Args.url:startsWith('http://') is false and Args.url:startsWith('https://') is false then
+   if Args.url.startsWith('http://') is false and Args.url.startsWith('https://') is false then
       error("Parameter 'url' must start with http:// or https://.")
    end
 
@@ -314,7 +314,7 @@ end
 
 function normaliseArgs(Args:table!):table
    if Args.method != nil then
-      Args.method = Args.method:lower()
+      Args.method = Args.method.lower()
    elseif hasBodyOption(Args) then
       Args.method = 'post'
    else
@@ -389,7 +389,7 @@ function readRawFlag(Name:str!, Current:any):bool
    raw = arg(Name)
    if raw is nil then return Current is true end
 
-   text = tostring(raw):lower()
+   text = tostring(raw).lower()
    return text != 'false' and text != '0' and text != 'no' and text != 'off'
 end
 
@@ -430,7 +430,7 @@ function makeRequestConfig(Args:table!):table
    if Args._captureBody then
       Args._bodyBuffer = ''
       request.incoming = function(HTTP:obj, Buffer:array<byte>!)
-         Args._bodyBuffer ..= Buffer:getString()
+         Args._bodyBuffer ..= Buffer.getString()
       end
    elseif output_file != nil then
       request.outputFile = output_file
@@ -439,12 +439,12 @@ function makeRequestConfig(Args:table!):table
    elseif Args['include'] and not Args.status then
       Args._bodyBuffer = ''
       request.incoming = function(HTTP:obj, Buffer:array<byte>!)
-         Args._bodyBuffer ..= Buffer:getString()
+         Args._bodyBuffer ..= Buffer.getString()
       end
    elseif not Args.status then
       -- Streams response body chunks to standard output when the body is not redirected or suppressed.
       request.incoming = function(HTTP:obj, Buffer:array<byte>!)
-         io.write(Buffer:getString())
+         io.write(Buffer.getString())
       end
    end
 
@@ -476,8 +476,8 @@ end
 function appendFile(Source:str!, Destination:str!)
    data = io.readAll(Source)
    file = io.open(Destination, 'a')
-   file:write(data)
-   file:close()
+   file.write(data)
+   file.close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -561,7 +561,7 @@ function readResponseHeaderNames(HTTP:obj!):array<string>
    if HTTP.responseKeys != nil then
       for key in values(HTTP.responseKeys) do
          if not seen[key] then
-            names:push(key)
+            names.push(key)
             seen[key] = true
          end
       end
@@ -569,11 +569,11 @@ function readResponseHeaderNames(HTTP:obj!):array<string>
 
    if #names is 0 then
       for name in values(glResponseHeaderNames) do
-         names:push(name)
+         names.push(name)
       end
    end
 
-   names:sort()
+   names.sort()
    return names
 end
 
@@ -631,12 +631,12 @@ function filterSensitiveHeaders(Headers:array<string>!):array<string>
    result = array<string>
    for header in values(Headers) do
       name = tostring(header)
-      colon = name:find(':')
+      colon = name.find(':')
       if colon != nil then
-         name = name:sub(0, colon):trim():lower()
+         name = name.sub(0, colon).trim().lower()
       end
       if name != 'authorization' and name != 'cookie' then
-         result:push(header)
+         result.push(header)
       end
    end
    return result
@@ -649,7 +649,7 @@ function applyRedirect(Args:table!, Result:table!)
    location = Result.headers.values.location
    next_url = resolveRedirectUrl(Args.url, location)
 
-   if next_url:startsWith('http://') is false and next_url:startsWith('https://') is false then
+   if next_url.startsWith('http://') is false and next_url.startsWith('https://') is false then
       message = "Redirect location must resolve to an HTTP or HTTPS URL."
       reportError('redirect', message, Result.status, ERR_Failed)
       raise ERR_Failed, message
@@ -743,7 +743,7 @@ end
 -- Prints the verbose transfer summary in a stable line-oriented format.
 
 function printVerboseSummary(Args:table!, Result:table!)
-   print('tuku: method=' .. Args.method:upper())
+   print('tuku: method=' .. Args.method.upper())
    print('tuku: url=' .. Args.url)
    print('tuku: status=' .. tostring(Result.status))
    print('tuku: bytes=' .. tostring(Result.bytes))
@@ -762,7 +762,7 @@ function parseCommandLine():table
    if err != nil then
       raw_silent = arg('silent')
       if raw_silent != nil then
-         raw_silent = tostring(raw_silent):lower()
+         raw_silent = tostring(raw_silent).lower()
          glSilent = raw_silent != 'false' and raw_silent != '0' and raw_silent != 'no' and raw_silent != 'off'
       end
 

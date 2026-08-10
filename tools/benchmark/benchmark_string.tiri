@@ -78,13 +78,13 @@ end
    local checksum = 0
    local result = {}
    for i in {0 to 10000} do
-      table.insert(result, "Hello" .. " " .. "World" .. "!")
-      table.insert(result, a .. b .. c)
-      table.insert(result, "Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4")
-      table.insert(result, "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1))
+      result.insert("Hello" .. " " .. "World" .. "!")
+      result.insert(a .. b .. c)
+      result.insert("Part1" .. "-" .. "Part2" .. "-" .. "Part3" .. "-" .. "Part4")
+      result.insert("Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1))
    end
 
-   local concat_result = table.concat(result)
+   local concat_result = result.concat()
    return #concat_result
 end
 
@@ -120,7 +120,7 @@ end
    local checksum = 0
    local result = array<byte>
    for i in {0 to 100000} do
-      result:clear() -- Maintains the array capacity
+      result.clear() -- Maintains the array capacity
 
       -- Concatenate literals
       result ..= "Hello" .. " " .. "World" .. "!"
@@ -460,11 +460,11 @@ end
    local checksum = 0
 
    for i in {0 to 10000} do
-      local trimmed1 = padded:trim()
-      local trimmed2 = left_pad:trim() -- should use ltrim() if available
-      local trimmed3 = right_pad:rtrim()
-      local trimmed4 = tabs:trim()
-      local trimmed5 = mixed_ws:trim()
+      local trimmed1 = padded.trim()
+      local trimmed2 = left_pad.trim() -- should use ltrim() if available
+      local trimmed3 = right_pad.rtrim()
+      local trimmed4 = tabs.trim()
+      local trimmed5 = mixed_ws.trim()
       checksum += #trimmed1 + #trimmed2 + #trimmed3 + #trimmed4 + #trimmed5
    end
 
@@ -609,16 +609,16 @@ end
    local checksum = 0
 
    for i in {0 to 10000} do
-      local starts_with_doc = filename:startsWith("doc")
-      local starts_with_http = url:startsWith("https")
-      local starts_with_slash = path:startsWith("/")
+      local starts_with_doc = filename.startsWith("doc")
+      local starts_with_http = url.startsWith("https")
+      local starts_with_slash = path.startsWith("/")
 
-      local ends_with_txt = filename:endsWith(".txt")
-      local ends_with_pdf = path:endsWith(".pdf")
-      local ends_with_com = url:endsWith(".com")
+      local ends_with_txt = filename.endsWith(".txt")
+      local ends_with_pdf = path.endsWith(".pdf")
+      local ends_with_com = url.endsWith(".com")
 
       -- Variable prefix/suffix checks
-      local chk = filename:endsWith(extensions[i % 4])
+      local chk = filename.endsWith(extensions[i % 4])
       checksum += (starts_with_doc ? 1 :> 0) + (starts_with_http ? 1 :> 0) +
                   (starts_with_slash ? 1 :> 0) + (ends_with_txt ? 1 :> 0) +
                   (ends_with_pdf ? 1 :> 0) + (ends_with_com ? 1 :> 0) + (chk ? 1 :> 0)

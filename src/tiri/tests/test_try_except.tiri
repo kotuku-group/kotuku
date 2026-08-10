@@ -15,7 +15,7 @@ function enforce_hotpath() end
       error("Test error")
    except e
       handled = true
-      assert(e.message:find("Test error"), "Expected error message to contain 'Test error'")
+      assert(e.message.find("Test error"), "Expected error message to contain 'Test error'")
    end
 
    assert(handled, "Exception should have been handled")
@@ -111,7 +111,7 @@ end
          error("Inner error")
       except e
          inner_handled = true
-         assert(e.message:find("Inner"), "Inner handler should get inner error")
+         assert(e.message.find("Inner"), "Inner handler should get inner error")
       success
          inner_success = true
       end
@@ -187,19 +187,19 @@ end
    except e
       assert(e.code is ERR_Exception, "Lua errors should have ERR_Exception code")
       assert(e.message is "Test message", "Message should be raw, got " .. e.message)
-      assert(e.source:find("test_try_except.tiri"), "Should have source filename, got " .. tostring(e.source))
+      assert(e.source.find("test_try_except.tiri"), "Should have source filename, got " .. tostring(e.source))
       assert(e.line > 0, "Should have line number, got " .. tostring(e.line))
       assert(getmetatable(e) is "exception", "Exception metatable should be protected with name 'exception'")
       local exception_text = tostring(e)
-      assert(exception_text:find("test_try_except.tiri"), "Printable exception should include source")
-      assert(exception_text:find("Test message"), "Printable exception should include message")
-      assert(exception_text:find(tostring(e.line)), "Printable exception should include line")
+      assert(exception_text.find("test_try_except.tiri"), "Printable exception should include source")
+      assert(exception_text.find("Test message"), "Printable exception should include message")
+      assert(exception_text.find(tostring(e.line)), "Printable exception should include line")
       local prefixed_text = "caught: " .. e
-      assert(prefixed_text:find("caught: "), "Prefixed concat should include prefix")
-      assert(prefixed_text:find("Test message"), "Prefixed concat should include message")
+      assert(prefixed_text.find("caught: "), "Prefixed concat should include prefix")
+      assert(prefixed_text.find("Test message"), "Prefixed concat should include message")
       local suffixed_text = e .. " [handled]"
-      assert(suffixed_text:find(" [handled]"), "Suffixed concat should include suffix")
-      assert(suffixed_text:find("Test message"), "Suffixed concat should include message")
+      assert(suffixed_text.find(" [handled]"), "Suffixed concat should include suffix")
+      assert(suffixed_text.find("Test message"), "Suffixed concat should include message")
       -- TODO: trace capture not yet implemented (requires saving before stack restoration)
       -- assert(e.trace != nil, "Should have stack trace")
    end
@@ -213,7 +213,7 @@ end
    except e
       assert(e.message is message, "Message should remain raw, got " .. e.message)
       assert(e.line != 99999, "Line should come from debug metadata, got " .. tostring(e.line))
-      assert(e.source:find("test_try_except.tiri"), "Should have real source filename, got " .. tostring(e.source))
+      assert(e.source.find("test_try_except.tiri"), "Should have real source filename, got " .. tostring(e.source))
    end
 end
 
@@ -663,7 +663,7 @@ end
       y = x.field
    except e
       assert(e.code is ERR_Exception, "Expected ERR_Exception code, got " .. tostring(e.code))
-      assert(e.message:find("nil"), "Should mention nil in message")
+      assert(e.message.find("nil"), "Should mention nil in message")
    end
 
    -- Type error
@@ -739,7 +739,7 @@ end
 
    assert(closed, "<close> handler should be called when try-except catches exception")
    assert(received_err != nil, "Error should be passed to __close handler")
-   assert(tostring(received_err):find("test error in try"), "Error message should be passed to __close: got " .. tostring(received_err))
+   assert(tostring(received_err).find("test error in try"), "Error message should be passed to __close: got " .. tostring(received_err))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -750,7 +750,7 @@ end
    function makeMt(n:num)
       return {
          __close = function(self, err)
-            order:push(n)
+            order.push(n)
          end
       }
    end
@@ -776,8 +776,8 @@ end
 
 @Test(priority=33) function CloseInNestedTry()
    order = array<string>
-   mt_outer = { __close = function() order:push('outer') end }
-   mt_inner = { __close = function() order:push('inner') end }
+   mt_outer = { __close = function() order.push('outer') end }
+   mt_inner = { __close = function() order.push('inner') end }
 
    try
       local outer_obj <close> = setmetatable({}, mt_outer)
@@ -804,20 +804,20 @@ end
    order = array<string>
    mt = {
       __close = function(self, err)
-         order:push('close')
+         order.push('close')
       end
    }
 
    try
       local obj <close> = setmetatable({}, mt)
-      order:push('try-body')
+      order.push('try-body')
    except e
       assert(false, "No exception expected")
    success
-      order:push('success')
+      order.push('success')
    end
 
-   result = order:concat(',')
+   result = order.concat(',')
    assert(result is 'try-body,close,success', "<close> should run before success: '" .. result .. "'")
 end
 
@@ -844,7 +844,7 @@ end
    assert(close_called, "<close> handler should be called")
    -- Per Lua 5.4 semantics, error in __close replaces original
    assert(caught_error != nil, "Should catch an error")
-   assert(tostring(caught_error.message):find("close handler error"), "Error from __close should replace original: got " .. tostring(caught_error.message))
+   assert(tostring(caught_error.message).find("close handler error"), "Error from __close should replace original: got " .. tostring(caught_error.message))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -974,7 +974,7 @@ end
 
    assert(closed, "<close> handler should run before rethrow")
    assert(caught_error != nil, "Outer exception should be caught")
-   assert(tostring(caught_error.message):find("outer"), "Expected rethrown error, got " .. tostring(caught_error.message))
+   assert(tostring(caught_error.message).find("outer"), "Expected rethrown error, got " .. tostring(caught_error.message))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1006,7 +1006,7 @@ end
    assert(#order is 2, "Both <close> handlers should run, got " .. tostring(#order))
    assert(order[0] is "second", "LIFO: second should close first, got " .. tostring(order[0]))
    assert(order[1] is "first", "LIFO: first should close second, got " .. tostring(order[1]))
-   assert(tostring(caught_error.message):find("close second"), "Close error should replace original: got " .. tostring(caught_error.message))
+   assert(tostring(caught_error.message).find("close second"), "Close error should replace original: got " .. tostring(caught_error.message))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1020,18 +1020,18 @@ end
    function subject()
       try
          defer
-            order:push('deferred')
+            order.push('deferred')
          end
-         order:push('try-body')
+         order.push('try-body')
       except e
-         order:push('except')
+         order.push('except')
       success
-         order:push('success')
+         order.push('success')
       end
    end
 
    subject()
-   result = order:concat(',')
+   result = order.concat(',')
    assert(result is 'try-body,deferred,success', "Defer should run before success block: '" .. tostring(result) .. "'")
 end
 
@@ -1043,21 +1043,21 @@ end
    function subject()
       try
          defer
-            order:push('deferred')
+            order.push('deferred')
          end
-         order:push('before-error')
+         order.push('before-error')
          error('test error')
-         order:push('after-error')
+         order.push('after-error')
       except
-         order:push('except')
+         order.push('except')
       end
    end
 
    subject()
 
    -- Document actual behavior - defer may or may not run depending on implementation
-   assert(#order >= 2, "Should have at least before-error and except: '" .. order:concat(',') .. "'")
-   assert(order[0] is 'before-error', "First should be before-error: '" .. order:concat(',') .. "'")
+   assert(#order >= 2, "Should have at least before-error and except: '" .. order.concat(',') .. "'")
+   assert(order[0] is 'before-error', "First should be before-error: '" .. order.concat(',') .. "'")
 end
 
 -- Test multiple defers when exception is caught
@@ -1068,26 +1068,26 @@ end
    function subject()
       try
          defer
-            order:push('defer-1')
+            order.push('defer-1')
          end
          defer
-            order:push('defer-2')
+            order.push('defer-2')
          end
          defer
-            order:push('defer-3')
+            order.push('defer-3')
          end
-         order:push('body')
+         order.push('body')
          error('test error')
       except e
-         order:push('except')
+         order.push('except')
       end
    end
 
    subject()
 
    -- Document actual behavior
-   assert(#order >= 2, "Should have at least body and except: '" .. order:concat(',') .. "'")
-   assert(order[0] is 'body', "First should be body: '" .. order:concat(',') .. "'")
+   assert(#order >= 2, "Should have at least body and except: '" .. order.concat(',') .. "'")
+   assert(order[0] is 'body', "First should be body: '" .. order.concat(',') .. "'")
 end
 
 -- Defer in except block runs correctly when except exits
@@ -1100,18 +1100,18 @@ end
          error('test error')
       except
          defer
-            order:push('except-defer')
+            order.push('except-defer')
          end
-         order:push('except-body')
+         order.push('except-body')
       end
 
-      order:push('after-try')
+      order.push('after-try')
    end
 
    subject()
 
-   assert(order:concat(',') is 'except-body,except-defer,after-try',
-      "Defer in except block should run when except exits: '" .. order:concat(',') .. "'")
+   assert(order.concat(',') is 'except-body,except-defer,after-try',
+      "Defer in except block should run when except exits: '" .. order.concat(',') .. "'")
 end
 
 -- Test defer behavior with nested try blocks
@@ -1122,31 +1122,31 @@ end
    function subject()
       try
          defer
-            order:push('outer-defer')
+            order.push('outer-defer')
          end
-         order:push('outer-body')
+         order.push('outer-body')
 
          try
             defer
-               order:push('inner-defer')
+               order.push('inner-defer')
             end
-            order:push('inner-body')
+            order.push('inner-body')
             error('inner error')
          except e
-            order:push('inner-except')
+            order.push('inner-except')
          end
 
-         order:push('after-inner-try')
+         order.push('after-inner-try')
       except e
-         order:push('outer-except')
+         order.push('outer-except')
       end
    end
 
    subject()
 
    -- Document actual behavior - outer-defer should run, inner-defer behavior may vary
-   assert(order[0] is 'outer-body', "First should be outer-body: '" .. order:concat(',') .. "'")
-   assert(order[1] is 'inner-body', "Second should be inner-body: '" .. order:concat(',') .. "'")
+   assert(order[0] is 'outer-body', "First should be outer-body: '" .. order.concat(',') .. "'")
+   assert(order[1] is 'inner-body', "Second should be inner-body: '" .. order.concat(',') .. "'")
 end
 
 -- Defer runs when returning from try block (no exception)
@@ -1157,22 +1157,22 @@ end
    function subject()
       try
          defer
-            order:push('deferred')
+            order.push('deferred')
          end
-         order:push('before-return')
+         order.push('before-return')
          return 'from-try'
       except e
-         order:push('except')
+         order.push('except')
          return 'from-except'
       end
-      order:push('after-try')
+      order.push('after-try')
       return 'after'
    end
 
    result = subject()
    assert(result is 'from-try', "Should return from try block, got '" .. tostring(result) .. "'")
-   assert(order:concat(',') is 'before-return,deferred',
-      "Defer should run before return: '" .. order:concat(',') .. "'")
+   assert(order.concat(',') is 'before-return,deferred',
+      "Defer should run before return: '" .. order.concat(',') .. "'")
 end
 
 -- Defer runs when breaking from try block in loop (no exception)
@@ -1184,11 +1184,11 @@ end
       for i in {1 to 5} do
          try
             defer
-               order:push('defer-' .. tostring(i))
+               order.push('defer-' .. tostring(i))
             end
-            order:push('body-' .. tostring(i))
+            order.push('body-' .. tostring(i))
          except
-            order:push('except-' .. tostring(i))
+            order.push('except-' .. tostring(i))
          end
       end
    end
@@ -1196,8 +1196,8 @@ end
    subject()
 
    expected = 'body-1,defer-1,body-2,defer-2,body-3,defer-3,body-4,defer-4'
-   assert(order:concat(',') is expected,
-      "Defer should run on break from try:\n" .. expected .. '\n' .. order:concat(','))
+   assert(order.concat(',') is expected,
+      "Defer should run on break from try:\n" .. expected .. '\n' .. order.concat(','))
 end
 
 -- Test defer behavior with continue in try loop
@@ -1209,15 +1209,15 @@ end
       for i in {1 to 4} do
          try
             defer
-               order:push('defer-' .. tostring(i))
+               order.push('defer-' .. tostring(i))
             end
-            order:push('body-' .. tostring(i))
+            order.push('body-' .. tostring(i))
             if i is 2 then
                continue
             end
-            order:push('after-continue-' .. tostring(i))
+            order.push('after-continue-' .. tostring(i))
          except e
-            order:push('except-' .. tostring(i))
+            order.push('except-' .. tostring(i))
          end
       end
    end
@@ -1225,38 +1225,38 @@ end
    subject()
 
    -- Document actual behavior
-   assert(#order >= 3, "Should have multiple entries: '" .. order:concat(',') .. "'")
+   assert(#order >= 3, "Should have multiple entries: '" .. order.concat(',') .. "'")
 end
 
 -- Test interaction between defer and <close> in try block with exception
 
 @Test(priority=45) function DeferAndCloseInTry()
    order = array<string>
-   mt = { __close = function() order:push('close') end }
+   mt = { __close = function() order.push('close') end }
 
    function subject()
       try
          defer
-            order:push('defer')
+            order.push('defer')
          end
          local obj <close> = setmetatable({}, mt)
-         order:push('body')
+         order.push('body')
          error('test error')
       except
-         order:push('except')
+         order.push('except')
       end
    end
 
    subject()
 
    -- Document actual behavior - close should run, defer behavior may vary
-   assert(order[0] is 'body', "First should be body: '" .. order:concat(',') .. "'")
+   assert(order[0] is 'body', "First should be body: '" .. order.concat(',') .. "'")
 
    local has_close = false
    for v in values(order) do
       if v is 'close' then has_close = true end
    end
-   assert(has_close, "<close> handler should be called: '" .. order:concat(',') .. "'")
+   assert(has_close, "<close> handler should be called: '" .. order.concat(',') .. "'")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1289,7 +1289,7 @@ end
    except e
       str = e.stackTrace
       assert(type(str) is "string", "stackTrace should return string")
-      assert(str:find("stack traceback:"), "Should have traceback header")
+      assert(str.find("stack traceback:"), "Should have traceback header")
    end
 end
 
@@ -1321,8 +1321,8 @@ end
       found_inner = false
       found_outer = false
       for i, frame in ipairs(e.trace) do
-         if frame.func and frame.func:find("innerFunc") then found_inner = true end
-         if frame.func and frame.func:find("outerFunc") then found_outer = true end
+         if frame.func and frame.func.find("innerFunc") then found_inner = true end
+         if frame.func and frame.func.find("outerFunc") then found_outer = true end
       end
       -- Note: function names may not always be available depending on how the error is raised
    end
@@ -1393,7 +1393,7 @@ end
    except e
       assert(e.code is ERR_Args, "raise should set error code")
       assert(e.message is "Custom error message", "raise should use raw custom message")
-      assert(e.source:find("test_try_except.tiri"), "raise should set source, got " .. tostring(e.source))
+      assert(e.source.find("test_try_except.tiri"), "raise should set source, got " .. tostring(e.source))
       assert(e.line > 0, "raise should set line, got " .. tostring(e.line))
       return
    end
@@ -1461,10 +1461,10 @@ end
    except e
       assert(e.line is expected_line,
          f"check should retain source line {expected_line}, got {e.line}; message: {e.message}")
-      assert(e.message:startsWith(f'[{expected_line}:'), "check should prefix its line and column, got " .. e.message)
-      assert(e.message:find(mSys.GetErrorMsg(ERR_Failed)), "check should include the error description")
-      assert(e.message:find("stack traceback:"), "check should include a stack traceback")
-      assert(e.message:find("in function 'func'"), "check traceback should identify the Flute test function")
+      assert(e.message.startsWith(f'[{expected_line}:'), "check should prefix its line and column, got " .. e.message)
+      assert(e.message.find(mSys.GetErrorMsg(ERR_Failed)), "check should include the error description")
+      assert(e.message.find("stack traceback:"), "check should include a stack traceback")
+      assert(e.message.find("in function 'func'"), "check traceback should identify the Flute test function")
       return
    end
 
@@ -1534,8 +1534,8 @@ end
    except e
       assert(e.code is ERR_FileNotFound, "Expected ERR_FileNotFound, got " .. tostring(e.code))
       assert(e.message != sentinel, "Module call error message must not be replaced by the string argument")
-      assert(e.message:find("AnalysePath() failed:"), "Module call error should identify the function")
-      assert(e.message:find(mSys.GetErrorMsg(e.code)), "Module call error should include the official message")
+      assert(e.message.find("AnalysePath() failed:"), "Module call error should identify the function")
+      assert(e.message.find(mSys.GetErrorMsg(e.code)), "Module call error should include the official message")
       return
    end
 
@@ -1551,8 +1551,8 @@ end
    except e
       assert(e.code is ERR_NoAction, "Expected ERR_NoAction, got " .. tostring(e.code))
       assert(e.message != sentinel, "Object action error message must not be replaced by the string argument")
-      assert(e.message:find("Time.DataFeed() failed:"), "Object action error should identify the action")
-      assert(e.message:find(mSys.GetErrorMsg(e.code)), "Object action error should include the official message")
+      assert(e.message.find("Time.DataFeed() failed:"), "Object action error should identify the action")
+      assert(e.message.find(mSys.GetErrorMsg(e.code)), "Object action error should include the official message")
       return
    end
 

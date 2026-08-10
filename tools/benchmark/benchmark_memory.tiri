@@ -113,13 +113,13 @@ end
       -- Create typed integer arrays
       local int_arrays = array<array>
       for j in {0 to 50} do
-         int_arrays:push(array<int, 100>)
+         int_arrays.push(array<int, 100>)
       end
 
       -- Create typed double arrays
       local dbl_arrays = array<array>
       for j in {0 to 50} do
-         dbl_arrays:push(array<double, 100>)
+         dbl_arrays.push(array<double, 100>)
       end
 
       -- Create typed string arrays
@@ -140,7 +140,7 @@ end
    for i in {0 to 100} do
       local int_arrays = array<array>
       for j in {0 to 101} do
-         int_arrays:push(array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
+         int_arrays.push(array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
       end
       checksum += #int_arrays + #int_arrays[0]
    end
@@ -152,7 +152,7 @@ end
    for i in {0 to 100} do
       local any_arrays = array<array>
       for j in {0 to 101} do
-         any_arrays:push(array<any> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
+         any_arrays.push(array<any> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
       end
       checksum += #any_arrays + #any_arrays[0]
    end
