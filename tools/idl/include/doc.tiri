@@ -45,7 +45,7 @@ rx_internal_status = <{ regex.new([[^[Ii]nternal]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 
-global function ignoreAction(actionID:num)
+global function ignoreAction(actionID:num):bool
    actionID ?! return
    return glIgnoreList[actionID]
 end
@@ -631,7 +631,7 @@ end
 global function substituteReferences(String:str, Class:table):str
    -- Substitute !Struct and !LOOKUP references, which allow injecting struct and lookup tables into documentation
 
-   String = substituteReferenceMatches(String, rx_struct_insert, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_struct_insert, function(Cap, Match):str
       local lookup = Cap[0]
       local whitespace = Cap[1]
       if glStructures[lookup] then
@@ -652,7 +652,7 @@ global function substituteReferences(String:str, Class:table):str
 
    -- Substitute action and method references, identified as #MethodName()
 
-   String = substituteReferenceMatches(String, rx_action_method, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_action_method, function(Cap, Match):str
       local call_name = Cap[0]
       if not Class then
          print('Missing class association for action/method reference "' .. call_name .. '"')
@@ -669,7 +669,7 @@ global function substituteReferences(String:str, Class:table):str
 
    -- Substitute field references, identified as #Field.
 
-   String = substituteReferenceMatches(String, rx_field_ref, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_field_ref, function(Cap, Match):str
       local field = Cap[0]
       if not Class then -- Localised field lookup
          if rx_rgb.test(field) then -- Ignore RGB values
@@ -691,7 +691,7 @@ global function substituteReferences(String:str, Class:table):str
 
    -- Substitute external function references, identified as ~Module.Function()
 
-   String = substituteReferenceMatches(String, rx_ext_func_ref, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_ext_func_ref, function(Cap, Match):str
       -- TODO: Validate that the module and function actually exist.  Easiest way is
       -- to build a cache of the function list.
       return f'<function module="{Cap[0]}">{Cap[1]}</function>'
@@ -699,7 +699,7 @@ global function substituteReferences(String:str, Class:table):str
 
    -- Substitute local function references, identified as ~Function()
 
-   String = substituteReferenceMatches(String, rx_local_func_ref, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_local_func_ref, function(Cap, Match):str
       local func_name = Cap[0]
       if glFunctionLookup[func_name] then
          return f'<function>{func_name}</function>'
@@ -711,7 +711,7 @@ global function substituteReferences(String:str, Class:table):str
 
    -- Substitute external method/action references, identified as @File.Init()
 
-   String = substituteReferenceMatches(String, rx_ext_method_ref, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_ext_method_ref, function(Cap, Match):str
       local class_name = Cap[0]
       local method_name = Cap[1]
       if mSys.FindClass(class_name:hash(), 0) then
@@ -725,7 +725,7 @@ global function substituteReferences(String:str, Class:table):str
 
    -- Substitute external field references, identified as @File.Size or #File.Size
 
-   String = substituteReferenceMatches(String, rx_ext_field_ref, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_ext_field_ref, function(Cap, Match):str
       local class_name = Cap[0]
       local field_name = Cap[1]
       local meta = mSys.FindClass(class_name:hash(), 0)
@@ -745,7 +745,7 @@ global function substituteReferences(String:str, Class:table):str
 
    -- Substitute class references, identified as @File
 
-   String = substituteReferenceMatches(String, rx_class_ref, function(Cap, Match)
+   String = substituteReferenceMatches(String, rx_class_ref, function(Cap, Match):str
       local class_name = Cap[0]
       if mSys.FindClass(class_name:hash(), 0) then
          return f'<class name="{class_name}">{class_name}</class>'
@@ -1080,7 +1080,7 @@ global function docModuleHeader()
    return out
 end
 
-global function docFieldType(Field)
+global function docFieldType(Field):str
    if not Field.type then return '?' end
 
    type_name = Field.docType ?? Field.type
@@ -1099,7 +1099,7 @@ global function docFieldType(Field)
    return type_name
 end
 
-global function docFunctionPrototype(Function)
+global function docFunctionPrototype(Function):str
    local response = Function.doc_response ?? 'void'
    local prefix = glFunctionPrefix ?? (glFunctionPrefix .. '::') :> ''
    local proto = ''
@@ -1296,7 +1296,7 @@ global function docStructures(References)
             arraySize = ''
             if f.arraySize then arraySize = " size=\"" .. f.arraySize .. '"' end
 
-            local type = f.docType ?? 'NIL'
+            local type:str = f.docType ?? 'NIL'
             prototype = ''
             if f.isFunctionPtr then
                type = 'FUNCTION *'

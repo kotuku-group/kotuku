@@ -805,7 +805,7 @@ end
 @input True when generating a C structure field name
 @result Generated field name
 ]])
-global function cName(Field, CStruct)
+global function cName(Field, CStruct):str
    if Field.isFunctionPtr then return '' end -- Functions have their name embedded in the type.
 
    name = Field.name

@@ -36,13 +36,16 @@
     </input>
     <description>
 <p>The SetVariable() function provides a method for setting global variables in a Tiri script prior to execution of that script.  If the script is cached, the variable settings will be available on the next activation.</p>
+<p>Before the first activation, no script policy is attached to the global environment, so host-provided variables are unconstrained and may be overwritten by declarations in the script source.  After the first activation, variable stores are subject to the script's sticky global type contracts, const bindings and protected built-ins.</p>
     </description>
     <result type="ERR">
       <error code="Okay">The variable was defined successfully.</error>
+      <error code="Failed">A Lua allocation or other runtime error prevented the store.</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="ObjectCorrupt">Privately maintained memory has become inaccessible.</error>
-      <error code="FieldTypeMismatch">A valid field type was not specified in the <code>Type</code> parameter.</error>
-      <error code="InvalidState">The script does not have an active Tiri state.</error>
+      <error code="FieldTypeMismatch">A valid field type was not specified, or the value conflicts with a sticky global type contract.</error>
+      <error code="ReadOnly">The requested name is a protected built-in or an initialised const global.</error>
+      <error code="InvalidState">The script does not have an active Tiri state, or is currently executing.</error>
     </result>
   </function>
 
