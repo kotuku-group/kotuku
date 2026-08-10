@@ -5058,8 +5058,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    error.clear();
    auto annotated_local = compile_snapshot(L,
       "local helpers = {}\n"
-      "helpers.trim = function(Path:str!):str\n"
-      "   local path:str = Path.replace('\\\\', '/')\n"
+      "helpers.trim = function(Path:str):str\n"
+      "   local path = Path.replace('\\\\', '/')\n"
       "   while #path > 1 and path.endsWith('/') do path = path.sub(0, #path - 1) end\n"
       "   return path\n"
       "end\n"
@@ -5067,7 +5067,7 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
       true, error);
    if (not annotated_local or count_opcode_tree(*annotated_local, BC_BFUNC) != 3 or
        count_opcode_tree(*annotated_local, BC_TGETS) != 1) {
-      Log.error("a concrete nullable local did not resolve registered method calls: %s",
+      Log.error("an explicitly typed nullable parameter did not resolve registered method calls: %s",
          error.c_str());
       return false;
    }

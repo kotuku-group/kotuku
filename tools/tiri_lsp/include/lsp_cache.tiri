@@ -159,7 +159,7 @@ function extractInputParams(Content:str):array<table>
    return params
 end
 
-function processModuleXML(FilePath:str!, DocPath:str!):<str,table>
+function processModuleXML(FilePath:str, DocPath:str):<str,table>
    -- Process a module XML file and extract function information
    content = io.readAll(FilePath)
    content ?! return
@@ -209,7 +209,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Process a class XML file and extract method/action/field information
 
-function processClassXML(FilePath:str!, DocPath:str!):<str, table>
+function processClassXML(FilePath:str, DocPath:str):<str, table>
    content = io.readAll(FilePath)
    content ?! return
 

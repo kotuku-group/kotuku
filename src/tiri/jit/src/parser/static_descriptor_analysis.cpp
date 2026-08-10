@@ -839,7 +839,8 @@ private:
       }
       if ((not descriptor.proved() and Call.argument_syntax != CallArgumentSyntax::Synthetic) or
           receiver_type IS TiriType::Any or receiver_type IS TiriType::Unknown or
-          (descriptor.nullable and not safe and Call.argument_syntax != CallArgumentSyntax::Synthetic)) {
+          (descriptor.nullable and not safe and descriptor.proof != StaticProof::Checked and
+           Call.argument_syntax != CallArgumentSyntax::Synthetic)) {
          Call.builtin_method.reset();
          return;
       }
