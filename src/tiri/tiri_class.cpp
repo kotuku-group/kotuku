@@ -997,6 +997,12 @@ static ERR register_interfaces(extTiri *Self)
       return error;
    }
 
+   // Every built-in prototype has now been published, so the registry contents are final and it can be sealed for
+   // lock-free lookups.  This is the last registration point: luaL_openlibs() publishes the core libraries and the
+   // calls above add the remaining interfaces.  Later states repeat the same registrations, which validate against
+   // the new state and return ERR::Exists without mutating the maps.
+   seal_proto_registry();
+
 #ifndef NDEBUG
    int stack_delta = lua_gettop(Self->Lua) - stack_top;
    if (stack_delta) log.warning("Lua initialisation left %d value(s) on the Lua stack.", stack_delta);

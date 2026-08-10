@@ -14,6 +14,12 @@
 
 void init_proto_registry();
 
+// Seal the registry once a complete registration pass has finished, permitting lock-free lookups thereafter.  Called
+// from luaL_openlibs() after every library has registered its prototypes.  Registration remains safe to repeat for
+// subsequent Lua states: repeats are content-identical and their per-state validation still runs.
+
+void seal_proto_registry();
+
 // Register a global/local function prototype
 
 ERR reg_func_prototype(std::string_view Name, std::initializer_list<TiriType> ResultTypes,

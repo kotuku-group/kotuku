@@ -14,6 +14,7 @@
 #include <cstring>
 #include <shared_mutex>
 #include <mutex>
+#include <atomic>
 
 //********************************************************************************************************************
 // Arena allocator for fprototype records
@@ -74,6 +75,12 @@ struct MethodKeyHash {
 static ankerl::unordered_dense::map<MethodKey, fprototype*, MethodKeyHash> glMethodRegistry;
 static std::shared_mutex glRegistryMutex;
 
+// The registry is built once and never mutated afterwards.  Registration runs from luaL_openlibs(), which executes
+// for every Tiri script object rather than once per process, so states 2..N repeat the same registration calls and
+// find every entry already present.  Those repeats are content-identical: a given key always resolves to the same
+// prototype.
+static std::atomic<bool> glRegistrySealed{false};
+
 //********************************************************************************************************************
 
 void init_proto_registry()
@@ -84,6 +91,14 @@ void init_proto_registry()
       glRegistry.clear();
       glMethodRegistry.clear();
    });
+}
+
+//********************************************************************************************************************
+
+void seal_proto_registry()
+{
+   std::unique_lock lock(glRegistryMutex);
+   glRegistrySealed.store(true, std::memory_order_release);
 }
 
 //********************************************************************************************************************
@@ -217,6 +232,10 @@ ERR reg_func_prototype(std::string_view Name, std::initializer_list<TiriType> Re
          BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
    }
 
+   lj_assertX(not glRegistrySealed.load(std::memory_order_acquire), // See reg_iface_method() for the rationale.
+      "function prototype '%.*s' registered after the prototype registry was sealed",
+      int(Name.size()), Name.data());
+
    auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags);
    glRegistry[key] = proto;
    return ERR::Okay;
@@ -243,6 +262,10 @@ ERR reg_iface_prototype(std::string_view Interface, std::string_view Method, std
       return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, TiriType::Unknown,
          BuiltinCallableID::Invalid) ? ERR::Exists : ERR::Mismatch;
    }
+
+   lj_assertX(not glRegistrySealed.load(std::memory_order_acquire), // See reg_iface_method() for the rationale.
+      "interface prototype '%.*s' registered after the prototype registry was sealed",
+      int(Method.size()), Method.data());
 
    auto *proto = alloc_prototype(ResultTypes, ParamTypes, Flags);
    glRegistry[key] = proto;
@@ -297,6 +320,13 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
       return ERR::Mismatch;
    }
 
+   // A new entry after sealing would mutate the maps while lock-free readers are running, which the writer lock does
+   // not exclude.  Registration is expected to be complete before the seal, so reaching here indicates a library that
+   // registers prototypes outside the startup pass - that must be fixed at the call site rather than tolerated.
+   lj_assertX(not glRegistrySealed.load(std::memory_order_acquire),
+      "interface method '%.*s' registered after the prototype registry was sealed",
+      int(Method.size()), Method.data());
+
    auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable);
    glRegistry[prototype_key] = prototype;
    glMethodRegistry[method_key] = prototype;
@@ -324,8 +354,14 @@ const fprototype * get_method_prototype(TiriType ReceiverType, std::string_view 
 
 const fprototype * get_prototype_by_hash(uint32_t IfaceHash, uint32_t FuncHash)
 {
-   std::shared_lock lock(glRegistryMutex);
    ProtoKey key{ IfaceHash, FuncHash };
+
+   if (glRegistrySealed.load(std::memory_order_acquire)) { // Sealed: no writer can run, so no lock is required.
+      auto it = glRegistry.find(key);
+      return (it != glRegistry.end()) ? it->second : nullptr;
+   }
+
+   std::shared_lock lock(glRegistryMutex);
    auto it = glRegistry.find(key);
    return (it != glRegistry.end()) ? it->second : nullptr;
 }
@@ -337,7 +373,14 @@ const fprototype * get_func_prototype_by_hash(uint32_t FuncHash)
 
 const fprototype * get_method_prototype_by_hash(TiriType ReceiverType, uint32_t MethodHash)
 {
+   const MethodKey key{ ReceiverType, MethodHash };
+
+   if (glRegistrySealed.load(std::memory_order_acquire)) { // Sealed: no writer can run, so no lock is required.
+      auto it = glMethodRegistry.find(key);
+      return it != glMethodRegistry.end() ? it->second : nullptr;
+   }
+
    std::shared_lock lock(glRegistryMutex);
-   auto it = glMethodRegistry.find(MethodKey{ ReceiverType, MethodHash });
+   auto it = glMethodRegistry.find(key);
    return it != glMethodRegistry.end() ? it->second : nullptr;
 }

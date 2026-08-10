@@ -15,11 +15,24 @@ Example usage:
    origo flute.tiri file=[file]
 ]]
 
+-- Convert a comma-separated command-line filter into an array of terms.  An absent filter must yield an empty array:
+-- splitting an empty string returns a one-element array holding the separator, which would make every test look
+-- filtered out.
+--
+-- TEMPORARY: string.split() is used rather than the `Filter.split(',')` dot-call because arg() returns a statically
+-- unproved receiver, on which built-in method calls do not resolve.  Revert to the dot-call form once built-in
+-- methods resolve on unproved receivers.
+
+function splitFilter(Filter):any
+   if not Filter?? then return { } end
+   return string.split(Filter, ',') ?? { }
+end
+
    glFile    = arg('file')
-   glTest    = arg('test', '').split(',') ?? { }
+   glTest    = splitFilter(arg('test'))
    glHotPath = arg('hotPath') -- Force hot-path execution for all tests.
    glSelf    = obj.find('self')
-   glLabels  = arg('labels', '').split(',') ?? { }
+   glLabels  = splitFilter(arg('labels'))
 
    jit.opt.start("hotloop=3") -- Lower threshold to trigger JIT sooner, simplifies debugging
 
@@ -117,7 +130,10 @@ end
 function sortTests(Tests:table)
    if #Tests <= 1 then return end
 
-   Tests.sort(function(a:table, b:table):bool
+   -- TEMPORARY: a `:table` annotation on a parameter does not make the receiver statically proved, so this dot-call
+   -- does not resolve to the built-in.  Revert to `Tests.sort(...)` once built-in methods resolve on unproved
+   -- receivers.
+   table.sort(Tests, function(a:table, b:table):bool
       return (a.priority ?? 255) < (b.priority ?? 255)
    end)
 end
@@ -139,6 +155,7 @@ _ANNO = {
 function runTests()
    global glTestTotal = 0
    global glTestsPassed = 0
+   global glTestsDeclared = 0 -- @Test functions found, counted before any disabling is applied.
 
    err, glFile = mSys.ResolvePath(glFile)
    if err != ERR_Okay then
@@ -197,6 +214,8 @@ function runTests()
             end
          end
 
+         if is_test then glTestsDeclared += 1 end
+
          if #glLabels > 0 then -- User is filtering on at least one label
             if test_labels is nil then
                disabled = true
@@ -224,7 +243,10 @@ function runTests()
          end
 
          if not disabled and is_test then
-            body.tests.insert({
+            -- TEMPORARY: `body.tests` is a table field read, so the receiver is statically unproved and the
+            -- `.insert()` dot-call does not resolve to the built-in.  Revert to `body.tests.insert(...)` once
+            -- built-in methods resolve on unproved receivers.
+            table.insert(body.tests, {
                func     = func,
                name     = test_name ?? tostring(func),
                timeout  = test_timeout,
@@ -367,6 +389,13 @@ function runTests()
    if glTestsPassed < glTestTotal then
       -- Setting the errorMessage will ensure that an error code is returned to the shell.
       glSelf.errorMessage = f'Ran {glTestTotal} tests, passed {glTestsPassed}'
+   elseif (glTestTotal is 0) and (glTestsDeclared > 0) and (#glTest is 0) and (#glLabels is 0) then
+      -- A file that declares @Test functions but executes none of them indicates a broken run rather than a passing
+      -- one: every test was disabled without the user asking for it.  Reporting success here is how a whole suite can
+      -- appear green while testing nothing.  Files that declare no tests remain legitimate, and explicit test= or
+      -- labels= filters are exempt because selecting nothing is then the user's choice.
+      glSelf.errorMessage = f'No tests were executed, but {glTestsDeclared} are declared - all were disabled unexpectedly.'
+      print(glSelf.errorMessage)
    else
       glSelf.errorMessage = nil
    end
