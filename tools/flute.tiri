@@ -132,6 +132,42 @@ function sortTests(Tests:table)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+
+-- Format a caught exception with its source metadata using source:line:column: message notation.  Some diagnostics
+-- already start with a [line:column] or [source:line:column] annotation, which is normalised to the same notation.
+
+function formatException(Exception:table):str
+   local message = tostring(Exception.message ?? Exception)
+   local source = Exception.source
+   local line = tonumber(Exception.line) ?? 0
+
+   if message.startsWith('[') then
+      local annotation_end = message.find(']')
+      if annotation_end and annotation_end > 1 then
+         local annotation = string.sub(message, 1, annotation_end)
+         local detail = string.trim(string.sub(message, annotation_end + 1))
+         local annotation_parts = annotation.split(':')
+
+         if tonumber(annotation_parts[0]) then
+            if not source?? or source.startsWith('[') then source = glFile end
+            if source?? then annotation = source .. ':' .. annotation end
+         end
+
+         return annotation .. ': ' .. detail
+      end
+      return message
+   elseif source?? then
+      if line > 0 then return f'{source}:{line}: {message}' end
+      return source .. ': ' .. message
+   elseif line > 0 then
+      if glFile?? then return f'{glFile}:{line}: {message}' end
+      return f'{line}: {message}'
+   else
+      return message
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 --[[
 _ANNO = {
    [functionRef] = {
@@ -328,7 +364,7 @@ function runTests()
                success_count++
             except e
                succeeded = false
-               error_msg = e.message
+               error_msg = formatException(e)
                break
             end
          end

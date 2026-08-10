@@ -45,7 +45,7 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // ordering part of the private bytecode ABI.  Version 0x8a adds BC_BMETH runtime method dispatch.  Older chunks are
 // rejected rather than retaining compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x8a;
+constexpr uint8_t BCDUMP_VERSION = 0x8b;
 
 // Compatibility flags.
 

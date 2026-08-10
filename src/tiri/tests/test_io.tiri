@@ -177,6 +177,57 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test(labels=['io', 'file', 'methods']) function FileMethodCallForms()
+   test_path = glTestFolder .. 'test_file_method_calls.txt'
+   file = io.open(test_path, 'w')
+   glTestFiles.push(test_path)
+
+   file.write('a').write('b');
+   'c' |> file.write();
+
+   callback = file.write
+   callback(file, 'd');
+   (file.write)(file, 'e');
+   file['write'](file, 'f');
+
+   local argument_called = false
+   local function argument():str
+      argument_called = true
+      return 'unexpected'
+   end
+   local maybe:userdata = nil
+   maybe?.write(argument())
+   assert(argument_called is false, 'Safe file method calls should not evaluate arguments for nil receivers')
+
+   try
+      (file.write)('missing receiver')
+   except err
+      assert(tostring(err).find('Tiri.file expected'), 'Grouped calls without an explicit receiver should fail')
+   success
+      error('Grouped file method calls should remain unbound')
+   end
+
+   file.close()
+   assert(readFileContent(test_path) is 'abcdef', 'All supported file method call forms should preserve argument order')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(labels=['io', 'file', 'jit']) function FileMethodHotLoop()
+   test_path = glTestFolder .. 'test_file_method_hot_loop.txt'
+   file = io.open(test_path, 'w')
+   glTestFiles.push(test_path)
+
+   for i in {0 to 200} do
+      file.write('x')
+   end
+   file.close()
+
+   assert(#readFileContent(test_path) is 200, 'Hot file method calls should retain receiver injection under the JIT')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test(labels=['io', 'file']) function FileRead()
    -- Create test file with various content types
    test_content = '123\n456.789\nHello World\nLine 4\n'

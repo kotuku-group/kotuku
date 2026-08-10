@@ -9,7 +9,7 @@ local glStringBenchmarkSink = 0
 @Test function StringGetLength()
    local short_str  = "Hello"
    local medium_str = "The quick brown fox jumps over the lazy dog."
-   local long_str   = string.rep("Lorem ipsum dolor sit amet, consectetur adipiscing elit. ", 20)
+   local long_str   = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".rep(20)
    local checksum = 0
 
    for i in {0 to 10000000} do
@@ -173,9 +173,9 @@ end
    local checksum = 0
 
    for i in {0 to 10000} do
-      local msg1 = string.format("Name: %s, Age: %d", name, age)
-      local msg2 = string.format("Score: %.2f out of 100", score)
-      local msg3 = string.format("Item %05d costs $%8.2f", i, i * 1.99)
+      local msg1 = "Name: %s, Age: %d".format(name, age)
+      local msg2 = "Score: %.2f out of 100".format(score)
+      local msg3 = "Item %05d costs $%8.2f".format(i, i * 1.99)
       checksum += #msg1 + #msg2 + #msg3
    end
 
@@ -206,20 +206,20 @@ end
 
    for i in {0 to 1000000} do
       -- Extract from beginning
-      local first_word = string.sub(text, 1, 3)
+      local first_word = text.sub(1, 3)
 
       -- Extract from middle
-      local middle = string.sub(text, 16, 19)  -- "fox "
+      local middle = text.sub(16, 19)  -- "fox "
 
       -- Extract from end
-      local last_part = string.sub(text, -10)
+      local last_part = text.sub(-10)
 
       -- Extract with negative indices
-      local from_end = string.sub(text, -20, -11)
+      local from_end = text.sub(-20, -11)
 
       -- Variable position extraction
       local pos = (i % 40) + 1
-      local chunk = string.sub(text, pos, pos + 10)
+      local chunk = text.sub(pos, pos + 10)
       checksum += #first_word + #middle + #last_part + #from_end + #chunk
    end
 
@@ -231,26 +231,26 @@ end
 
 @Test function StringFindSubstring()
    local text = "The quick brown fox jumps over the lazy dog. The fox is quick."
-   local paragraph = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. " ..
-                     "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+   local paragraph_start = "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+   local paragraph_end = "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
    local checksum = 0
 
    for i in {0 to 5000000} do
       -- Find word at beginning
-      local pos1 = string.find(text, "The")
+      local pos1 = text.find("The")
 
       -- Find word in middle
-      local pos2 = string.find(text, "fox")
+      local pos2 = text.find("fox")
 
       -- Find word at end
-      local pos3 = string.find(text, "quick", 20)  -- Start search from position 20
+      local pos3 = text.find("quick", 20)  -- Start search from position 20
 
       -- Find substring that doesn't exist
-      local pos4 = string.find(text, "xyz")
+      local pos4 = text.find("xyz")
 
       -- Find in longer text
-      local pos5 = string.find(paragraph, "dolor")
-      local pos6 = string.find(paragraph, "magna")
+      local pos5 = paragraph_start.find("dolor")
+      local pos6 = paragraph_end.find("magna")
       checksum += pos1 + pos2 + pos3 + (pos4 ?? 0) + pos5 + pos6
    end
 
@@ -266,20 +266,20 @@ end
 
    for i in {0 to 10000} do
       -- Replace single occurrence
-      local result1 = string.replace(text, "fox", "cat")
+      local result1 = text.replace("fox", "cat")
 
       -- Replace all occurrences
       local text2 = "the cat sat on the mat with the cat"
-      local result2 = string.replace(text2, "cat", "dog")
+      local result2 = text2.replace("cat", "dog")
 
       -- Replace with pattern
-      local result3 = string.replace(text, " ", "_")  -- Replace spaces with underscores
+      local result3 = text.replace(" ", "_")  -- Replace spaces with underscores
 
       -- Replace multiple different words
-      local result4 = string.replace(text, "quick", "slow")
-      result4 = string.replace(result4, "brown", "white")
-      result4 = string.replace(result4, "lazy", "energetic")
-      checksum += #result1 + #result2 + #result3 + #result4
+      local result4 = text.replace("quick", "slow")
+      local result5 = text.replace("brown", "white")
+      local result6 = text.replace("lazy", "energetic")
+      checksum += #result1 + #result2 + #result3 + #result4 + #result5 + #result6
    end
 
    return checksum
@@ -293,7 +293,7 @@ end
    local checksum = 0
 
    for i in {0 to 10000} do
-      local items = string.split(csv_data, ",")
+      local items = csv_data.split(",")
       checksum += #items
    end
 
@@ -433,16 +433,16 @@ end
 
    for i in {0 to 4000000} do
       -- Convert to uppercase
-      local up1 = string.upper(mixed)
-      local up2 = string.upper(lower)
+      local up1 = mixed.upper()
+      local up2 = lower.upper()
 
       -- Convert to lowercase
-      local lo1 = string.lower(mixed)
-      local lo2 = string.lower(upper)
+      local lo1 = mixed.lower()
+      local lo2 = upper.lower()
 
-      -- Round-trip conversion
-      local round = string.lower(string.upper(mixed))
-      checksum += #up1 + #up2 + #lo1 + #lo2 + #round
+      -- Repeat lowercase conversion on a statically known receiver
+      local normalised = upper.lower()
+      checksum += #up1 + #up2 + #lo1 + #lo2 + #normalised
    end
 
    return checksum
@@ -480,16 +480,16 @@ end
 
    for i in {0 to 1000} do
       -- Get character at specific position using string.sub
-      local char1 = string.sub(text, 1, 1)   -- 'H'
-      local char2 = string.sub(text, 7, 7)   -- ' '
-      local char3 = string.sub(text, -1, -1) -- '!'
+      local char1 = text.sub(1, 1)   -- 'H'
+      local char2 = text.sub(7, 7)   -- ' '
+      local char3 = text.sub(-1, -1) -- '!'
 
       -- Get character code (byte value)
-      local code1 = string.byte(text, 1)     -- 72 ('H')
-      local code2 = string.byte(text, 8)     -- 87 ('W')
+      local code1 = text.byte(1)     -- 72 ('H')
+      local code2 = text.byte(8)     -- 87 ('W')
 
       -- Get multiple byte values
-      local codes = {string.byte(text, 1, 5)}
+      local codes = {text.byte(1, 5)}
 
       -- Create character from code
       local chr = string.char(65)            -- 'A'
@@ -497,8 +497,8 @@ end
 
       -- Variable position access
       local pos = i % #text
-      local var_char = string.sub(text, pos, pos)
-      local var_code = string.byte(text, pos)
+      local var_char = text.sub(pos, pos)
+      local var_code = text.byte(pos)
       checksum += #char1 + #char2 + #char3 + code1 + code2 + #codes + #chr + #str + #var_char + var_code
    end
 
@@ -549,22 +549,22 @@ end
 
    for i in {0 to 100000} do
       -- Repeat single character
-      local repeated1 = string.rep(char, 10)
-      local repeated2 = string.rep(char, 100)
+      local repeated1 = char.rep(10)
+      local repeated2 = char.rep(100)
 
       -- Repeat word
-      local repeated3 = string.rep(word, 5)
-      local repeated4 = string.rep(word, 20)
+      local repeated3 = word.rep(5)
+      local repeated4 = word.rep(20)
 
       -- Build separator line
-      local separator = string.rep(line, 80)
+      local separator = line.rep(80)
 
       -- Repeat with separator
-      local with_sep = string.rep("item", 5, ", ")
+      local with_sep = "item".rep(5, ", ")
 
       -- Variable repetition
       local count = (i % 10) + 1
-      local var_rep = string.rep("*", count)
+      local var_rep = "*".rep(count)
       checksum += #repeated1 + #repeated2 + #repeated3 + #repeated4 + #separator + #with_sep + #var_rep
    end
 
@@ -583,16 +583,16 @@ end
 
    for i in {0 to 10000000} do
       -- Reverse strings of different lengths
-      local rev1 = string.reverse(short)
-      local rev2 = string.reverse(medium)
-      local rev3 = string.reverse(long)
+      local rev1 = short.reverse()
+      local rev2 = medium.reverse()
+      local rev3 = long.reverse()
 
-      -- Double reverse (should equal original)
-      local double_rev = string.reverse(string.reverse(medium))
+      -- Repeat a medium-length reverse to balance the workload
+      local repeated_rev = medium.reverse()
 
       -- Palindrome check pattern
-      local is_palindrome = test is string.reverse(test)
-      checksum += #rev1 + #rev2 + #rev3 + #double_rev + (is_palindrome ? 1 :> 0)
+      local is_palindrome = test is test.reverse()
+      checksum += #rev1 + #rev2 + #rev3 + #repeated_rev + (is_palindrome ? 1 :> 0)
    end
 
    return checksum

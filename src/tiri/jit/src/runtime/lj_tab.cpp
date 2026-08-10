@@ -175,7 +175,7 @@ GCtab * lj_tab_dup(lua_State *L, const GCtab *kt)
    t = newtab(L, kt->asize, kt->hmask > 0 ? lj_fls(kt->hmask) + 1 : 0);
    lj_assertL(kt->asize == t->asize and kt->hmask == t->hmask, "mismatched size of table and template");
    t->nomm = 0;  //  Keys with metamethod names may be present.
-   t->flags = kt->flags;  //  Classification is inherited by duplicates of a template table.
+   t->flags = kt->flags;  //  Permanent metadata is inherited by duplicates of a template table.
 
    asize = kt->asize;
    if (asize > 0) {

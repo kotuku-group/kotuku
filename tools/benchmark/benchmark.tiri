@@ -365,13 +365,13 @@ end
    try
       logMessage(f'Loading last results from log file "{glLogFile}"...')
       log_file = io.open(glLogFile, 'r')
-      local pos = log_file.seek(log_file, 'end', 0)
+      local pos = log_file.seek('end', 0)
       local buffer = ''
       while (pos > 0) do
          local read_size = math.min(1024, pos)
          pos -= read_size
-         log_file.seek(log_file, 'set', pos)
-         buffer = log_file.read(log_file, read_size) .. buffer
+         log_file.seek('set', pos)
+         buffer = log_file.read(read_size) .. buffer
          while string.endsWith(buffer, '\n') do
             buffer = string.rtrim(buffer)
          end
@@ -394,7 +394,7 @@ end
             last_result = json.decode(buffer)
          end
       end
-      log_file.close(log_file)
+      log_file.close()
    except ex
       logMessage(f'Error loading last results: {ex.message}')
    end
@@ -412,9 +412,9 @@ end
       }
 
       log_file = io.open(glLogFile, 'a')
-      log_file.write(log_file, json.encode(report))
-      log_file.write(log_file, '\n')
-      log_file.close(log_file)
+      log_file.write(json.encode(report))
+      log_file.write('\n')
+      log_file.close()
    end
 
    if last_result then

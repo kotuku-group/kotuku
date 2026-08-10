@@ -4228,6 +4228,19 @@ void lj_record_ins(jit_State *J)
          break;
       }
 
+      if (tvisudata(receiver_value)) {
+         GCtab *metatable = tabref(udataV(receiver_value)->metatable);
+         IRBuilder ir(J);
+         TRef metatable_ref = ir.fload_tab(receiver_ref, IRFL_UDATA_META);
+         ir.guard(metatable ? IR_NE : IR_EQ, IRT_TAB, metatable_ref, ir.knull(IRT_TAB));
+         if (metatable) {
+            bool compatible = lj_bmeth_is_method_compatible(receiver_value);
+            TRef flags = ir.fload(metatable_ref, IRFL_TAB_FLAGS, IRT_U8);
+            TRef marker = ir.emit_int(IR_BAND, flags, ir.kint(TAB_METHOD_COMPATIBLE));
+            ir.guard_eq_int(marker, ir.kint(compatible ? TAB_METHOD_COMPATIBLE : 0));
+         }
+      }
+
       RecordIndex lookup{};
       lookup.tab = receiver_ref;
       copyTV(J->L, &lookup.tabv, receiver_value);

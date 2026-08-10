@@ -4492,6 +4492,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  stw PC, SAVE_PC
     |  bl extern lj_bmeth_lookup
     |  lp BASE, L->base
+    |  mr TMP2, CRET1
     |  cmpwi CRET1, 0
     |  blt >1
     |  slwi TMP0, CRET1, 3
@@ -4502,7 +4503,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  stw TMP0, 4(RA)
     |  ins_next
     |
-    |1:  // No built-in: resolve the ordinary member, including __index, then enter the field-call block.
+    |1:  // No built-in: resolve the ordinary member, including __index, using the selected call frame.
     |  ins_getp32 TMP0
     |  slwi TMP1, TMP0, 2
     |  subfic TMP1, TMP1, -4
@@ -4511,9 +4512,12 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  li TMP1, LJ_TSTR
     |  stw TMP1, 0(CARG3)
     |  stw STR:TMP0, 4(CARG3)
+    |  cmpwi TMP2, LJ_BMETH_COMPATIBLE_CALL
+    |  beq >2
     |  ld INS, -8(PC)
     |  decode_RD8 RD, INS
     |  branch_RD
+    |2:
     |  mr CARG1, L
     |   add CARG2, BASE, RA
     |  stp BASE, L->base

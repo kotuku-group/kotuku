@@ -71,7 +71,7 @@ end
 
       -- Create strings via string.format
       for j in {0 to 50} do
-         strings[j] = string.format("item_%03d", j)
+         strings[j] = "item_%03d".format(j)
          checksum += #strings[j]
       end
 
@@ -83,7 +83,7 @@ end
 
       -- Create strings of varying lengths
       for j in {0 to 20} do
-         strings[j] = string.rep("x", j + 1)
+         strings[j] = "x".rep(j + 1)
          checksum += #strings[j]
       end
 
@@ -96,7 +96,7 @@ end
       -- Substring operations creating new strings
       local source = "The quick brown fox jumps over the lazy dog"
       for j in {0 to 20} do
-         local sub = string.sub(source, j + 1, j + 10)
+         local sub = source.sub(j + 1, j + 10)
          checksum += #sub
       end
       checksum += #strings

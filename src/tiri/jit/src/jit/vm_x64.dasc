@@ -3697,6 +3697,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov SAVE_PC, PC
     |  call extern lj_bmeth_lookup  // (lua_State *L, cTValue *receiver, GCstr *method)
     |  mov BASE, L:RB->base
+    |  mov RBd, RCd
     |  test RCd, RCd
     |  js >1
     |  movzx RAd, PC_RA
@@ -3705,15 +3706,18 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov [BASE+RA*8], LFUNC:RC
     |  ins_next
     |
-    |1:  // No built-in: resolve the ordinary member, including __index, then enter the field-call block.
+    |1:  // No built-in: resolve the ordinary member, including __index, using the selected call frame.
     |  movzx RAd, PC_RA
     |  ins_getp32 RCd
     |  not RC
     |  mov STR:RC, [KBASE+RC*8]
     |  settp STR:RC, LJ_TSTR
     |  mov [DISPATCH+DISPATCH_GL(tmptv)], STR:RC
+    |  cmp RBd, LJ_BMETH_COMPATIBLE_CALL
+    |  je >2
     |  movzx RDd, PC_RD
     |  branchPC RD
+    |2:
     |  mov L:CARG1, SAVE_L
     |  mov L:CARG1->base, BASE
     |  lea CARG2, [BASE+RA*8+(1+LJ_FR2)*8]

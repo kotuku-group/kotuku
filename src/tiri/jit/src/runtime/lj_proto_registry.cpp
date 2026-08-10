@@ -415,10 +415,28 @@ TiriType runtime_receiver_type(lua_State *L, cTValue *Receiver)
 
 //********************************************************************************************************************
 
+void lj_bmeth_mark_method_compatible(GCtab *Metatable)
+{
+   if (Metatable) Metatable->flags |= TAB_METHOD_COMPATIBLE;
+}
+
+//********************************************************************************************************************
+
+bool lj_bmeth_is_method_compatible(cTValue *Receiver)
+{
+   if (not Receiver or not tvisudata(Receiver)) return false;
+   GCtab *metatable = tabref(udataV(Receiver)->metatable);
+   return metatable and (metatable->flags & TAB_METHOD_COMPATIBLE) != 0;
+}
+
+//********************************************************************************************************************
+
 extern "C" int32_t lj_bmeth_lookup(lua_State *L, cTValue *Receiver, GCstr *Method)
 {
-   if (not Receiver or not Method) return -1;
+   if (not Receiver or not Method) return LJ_BMETH_FIELD_CALL;
    const fprototype *prototype = get_method_prototype_by_hash(runtime_receiver_type(L, Receiver), Method->hash);
-   if (not prototype or not builtin_callable_valid(prototype->builtin_callable_id)) return -1;
-   return int32_t(builtin_callable_index(prototype->builtin_callable_id));
+   if (prototype and builtin_callable_valid(prototype->builtin_callable_id)) {
+      return int32_t(builtin_callable_index(prototype->builtin_callable_id));
+   }
+   return lj_bmeth_is_method_compatible(Receiver) ? LJ_BMETH_COMPATIBLE_CALL : LJ_BMETH_FIELD_CALL;
 }

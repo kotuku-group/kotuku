@@ -50,9 +50,11 @@ const fprototype* get_prototype_by_hash(uint32_t IfaceHash, uint32_t FuncHash);
 const fprototype* get_func_prototype_by_hash(uint32_t FuncHash);
 const fprototype* get_method_prototype_by_hash(TiriType ReceiverType, uint32_t MethodHash);
 
-// Runtime classification and lookup for unresolved dot-method calls.  The returned value is a canonical built-in
-// callable index, or -1 when the receiver type has no registered method with the requested name.
+// Runtime classification and lookup for unresolved dot-method calls.  Non-negative results are canonical built-in
+// callable indices.  The negative results select one of the two normal member-lookup call frames.
 
 [[nodiscard]] bool is_range_userdata(lua_State *L, GCudata *Userdata);
 [[nodiscard]] TiriType runtime_receiver_type(lua_State *L, cTValue *Receiver);
+void lj_bmeth_mark_method_compatible(GCtab *Metatable);
+[[nodiscard]] bool lj_bmeth_is_method_compatible(cTValue *Receiver);
 extern "C" [[nodiscard]] int32_t lj_bmeth_lookup(lua_State *L, cTValue *Receiver, GCstr *Method);

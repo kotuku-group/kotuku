@@ -4780,6 +4780,39 @@ static bool test_builtin_method_registry(kt::Log &Log)
    lua_State *L = state.get();
    luaL_openlibs(L);
 
+   lua_newuserdata(L, 1);
+   lua_newtable(L);
+   lj_bmeth_mark_method_compatible(tabV(L->top - 1));
+   lua_setmetatable(L, -2);
+   cTValue *file = L->top - 1;
+   GCstr *write = lj_str_newz(L, "write");
+   if (not lj_bmeth_is_method_compatible(file) or
+       lj_bmeth_lookup(L, file, write) != LJ_BMETH_COMPATIBLE_CALL) {
+      Log.error("marked userdata did not expose the private method-compatible dispatch contract");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   lua_newuserdata(L, 1);
+   if (lj_bmeth_is_method_compatible(L->top - 1) or
+       lj_bmeth_lookup(L, L->top - 1, write) != LJ_BMETH_FIELD_CALL) {
+      Log.error("ordinary userdata unexpectedly acquired method-compatible dispatch");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::array<const char *, 3> unmarked_metatables = {
+      "Tiri.regex", "Tiri.processing", "Tiri.input"
+   };
+   for (const char *name : unmarked_metatables) {
+      luaL_getmetatable(L, name);
+      if (lua_istable(L, -1) and (tabV(L->top - 1)->flags & TAB_METHOD_COMPATIBLE) != 0) {
+         Log.error("%s was opted into method-compatible dispatch without an ABI audit", name);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
    const fprototype *table_insert = get_method_prototype(TiriType::Table, "insert");
    const fprototype *array_push = get_method_prototype(TiriType::Array, "push");
    const fprototype *string_upper = get_method_prototype(TiriType::Str, "upper");
@@ -4907,7 +4940,9 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
       "local items = array.of('int', 1)\n"
       "items.push(2);\n"
       "local maybe:table = nil\n"
-      "maybe?.insert(6);\n";
+      "maybe?.insert(6);\n"
+      "local handle:userdata = io.tempFile()\n"
+      "handle.write('x');\n";
 
    LuaStateHolder state;
    lua_State *L = state.get();
@@ -4962,12 +4997,18 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
    const CallExprPayload *upper_call = local_call(10);
    const CallExprPayload *push_call = expression_call(12);
    const CallExprPayload *safe_call = expression_call(14);
+   const CallExprPayload *userdata_call = expression_call(16);
    if (not table_call or not grouped_call or not computed_call or not shorthand_call or not dynamic_call or
-       not upper_call or not push_call or not safe_call) {
+       not upper_call or not push_call or not safe_call or not userdata_call) {
       Log.error("built-in method fixture calls table=%d grouped=%d computed=%d shorthand=%d dynamic=%d upper=%d "
          "push=%d safe=%d statements=%zu", bool(table_call), bool(grouped_call), bool(computed_call),
          bool(shorthand_call), bool(dynamic_call), bool(upper_call), bool(push_call), bool(safe_call),
          chunk.value_ref()->statements.size());
+      return false;
+   }
+   if (not userdata_call->runtime_builtin_method or userdata_call->builtin_method or
+       userdata_call->runtime_builtin_method->member->hash != kt::strhash("write")) {
+      Log.error("proved userdata dot call did not acquire runtime method dispatch");
       return false;
    }
    if (not table_call->builtin_method or
@@ -5095,6 +5136,15 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    }
 
    error.clear();
+   auto userdata = compile_snapshot(L,
+      "local function use(Handle:userdata)\nHandle.write('x')\nHandle.close()\nend\n", true, error);
+   if (not userdata or count_opcode_tree(*userdata, BC_BMETH) != 2 or
+       count_opcode_tree(*userdata, BC_CALL) != 4) {
+      Log.error("proved userdata calls did not emit runtime method dispatch: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
    auto dynamic_tail = compile_snapshot(L,
       "local Values:any = {}\nreturn Values.insert(1)\n", true, error);
    if (not dynamic_tail or count_opcode_tree(*dynamic_tail, BC_BMETH) != 1 or
@@ -5160,6 +5210,37 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    return true;
 }
 
+static int test_method_compatible_echo(lua_State *L)
+{
+   if (not lua_isuserdata(L, 1) or not lua_isstring(L, 2)) {
+      luaL_error(L, "receiver ABI was not selected");
+      return 0;
+   }
+   lua_pushvalue(L, 2);
+   return 1;
+}
+
+static int test_ordinary_userdata_echo(lua_State *L)
+{
+   if (not lua_isstring(L, 1)) {
+      luaL_error(L, "ordinary field-call ABI was not selected");
+      return 0;
+   }
+   lua_pushvalue(L, 1);
+   return 1;
+}
+
+static int test_userdata_index(lua_State *L)
+{
+   if (not lua_isstring(L, 2) or std::string_view(lua_tostring(L, 2)) != "echo") {
+      lua_pushnil(L);
+      return 1;
+   }
+   lua_pushcfunction(L,
+      lj_bmeth_is_method_compatible(L->base) ? test_method_compatible_echo : test_ordinary_userdata_echo);
+   return 1;
+}
+
 static bool test_builtin_method_runtime(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -5215,6 +5296,38 @@ static bool test_builtin_method_runtime(kt::Log &Log)
    lua_pop(L, 1);
    if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != 9) {
       Log.error("public namespace rebinding redirected a canonical instance call");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto register_test_userdata = [&](const char *Name, bool Compatible) {
+      lua_newuserdata(L, 1);
+      lua_newtable(L);
+      if (Compatible) lj_bmeth_mark_method_compatible(tabV(L->top - 1));
+      lua_pushstring(L, "__index");
+      lua_pushcfunction(L, test_userdata_index);
+      lua_settable(L, -3);
+      lua_setmetatable(L, -2);
+      lua_setglobal(L, Name);
+   };
+   register_test_userdata("test_marked_userdata", true);
+   register_test_userdata("test_ordinary_userdata", false);
+
+   constexpr std::string_view userdata_source =
+      "local function invoke(Value:any, Text:str):str return Value.echo(Text) end\n"
+      "local matched = 0\n"
+      "for i in {0 to 200} do\n"
+      "   local value:any = i % 2 is 0 ? test_marked_userdata :> test_ordinary_userdata\n"
+      "   if invoke(value, 'x') is 'x' then matched++ end\n"
+      "end\n"
+      "return matched\n";
+   if (lua_load(L, userdata_source, "method-compatible-userdata-runtime")) {
+      Log.error("failed to compile method-compatible userdata fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0) or lua_tointeger(L, -1) != 200) {
+      Log.error("method-compatible and ordinary userdata did not retain distinct interpreter/JIT call frames: %s",
+         lua_tostring(L, -1));
       return false;
    }
    lua_pop(L, 1);

@@ -897,6 +897,10 @@ private:
       const fprototype *prototype = get_method_prototype_by_hash(receiver_type, member->hash);
       if (not prototype) {
          Call.builtin_method.reset();
+         if (receiver_type IS TiriType::Userdata and
+             Call.argument_syntax IS CallArgumentSyntax::Parenthesised) {
+            Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
+         }
          return;
       }
 

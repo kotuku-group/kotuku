@@ -54,8 +54,8 @@ git.query = function(Path:str!):table
 
    local head_file = io.open(git_path .. 'HEAD', 'r')
    if head_file then
-      local head_content:str = head_file.read(head_file, '*all')
-      head_file.close(head_file)
+      local head_content:str = head_file.read('*all')
+      head_file.close()
 
       if head_content then
          head_content = string.replace(head_content, '\n', '')
@@ -70,8 +70,8 @@ git.query = function(Path:str!):table
             try
                local branch_file = io.open(git_path .. 'refs/heads/' .. branch_ref, 'r')
                if branch_file then
-                  local commit_hash = branch_file.read(branch_file, '*all')
-                  branch_file.close(branch_file)
+                  local commit_hash = branch_file.read('*all')
+                  branch_file.close()
 
                   if commit_hash then
                      commit_hash = string.replace(commit_hash, '\n', '')
