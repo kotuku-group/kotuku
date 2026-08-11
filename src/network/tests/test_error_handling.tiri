@@ -122,7 +122,7 @@ end
    overflow_handled = false
    glPort++
 
-   large_msg = string.rep('OVERFLOW_TEST_DATA_', 1000) -- ~18KB per message
+   large_msg = 'OVERFLOW_TEST_DATA_'.rep(1000) -- ~18KB per message
 
    server = obj.new('netserver', {
       name = 'OverflowTestServer',

@@ -17,7 +17,7 @@ function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
 
    local found = false
    for _, diagnostic in result.diagnostics do
-      if string.find(diagnostic.message, ExpectedMessage, 0, true) != nil then
+      if diagnostic.message.find(ExpectedMessage, 0, true) != nil then
          found = true
          break
       end

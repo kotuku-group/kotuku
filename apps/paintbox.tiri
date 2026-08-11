@@ -70,8 +70,8 @@ function hexFromRGB(RGB):str
    local b = channelToByte(RGB.b)
    local a = channelToByte(RGB.a)
    return (a >= 1) ?
-      string.format('#%02x%02x%02x', r, g, b) :>
-      string.format('#%02x%02x%02x%02x', r, g, b, a)
+      '#%02x%02x%02x'.format(r, g, b) :>
+      '#%02x%02x%02x%02x'.format(r, g, b, a)
 end
 
 function hslToRGB(H, S, L, A):table
@@ -205,19 +205,19 @@ function buildColourReport(Painter)
       cr_black  = cr_black,
       cr_white  = cr_white,
       css = {
-         hsl   = string.format('hsl(%.4g %.4g%% %.4g%% / %.3g)', hsl.h, hsl.s * 100, hsl.l * 100, alpha),
-         xyz   = string.format('color(xyz-d50 %.4g %.4g %.4g / %.3g)', xyz.x, xyz.y, xyz.z, alpha),
-         oklab = string.format('oklab(%.4g %.4g %.4g / %.3g)', oklab.okl, oklab.oka, oklab.okb, alpha),
-         oklch = string.format('oklch(%.4g %.4g %.4g / %.3g)', oklch.okl, oklch.okc, oklch.okh, alpha),
-         p3    = string.format('color(display-p3 %.4g %.4g %.4g / %.3g)', p3.r, p3.g, p3.b, alpha),
-         hsv   = string.format('hsv(%.4g, %.4g, %.4g)', hsv.h, hsv.s, hsv.v)
+         hsl   = 'hsl(%.4g %.4g%% %.4g%% / %.3g)'.format(hsl.h, hsl.s * 100, hsl.l * 100, alpha),
+         xyz   = 'color(xyz-d50 %.4g %.4g %.4g / %.3g)'.format(xyz.x, xyz.y, xyz.z, alpha),
+         oklab = 'oklab(%.4g %.4g %.4g / %.3g)'.format(oklab.okl, oklab.oka, oklab.okb, alpha),
+         oklch = 'oklch(%.4g %.4g %.4g / %.3g)'.format(oklch.okl, oklch.okc, oklch.okh, alpha),
+         p3    = 'color(display-p3 %.4g %.4g %.4g / %.3g)'.format(p3.r, p3.g, p3.b, alpha),
+         hsv   = 'hsv(%.4g, %.4g, %.4g)'.format(hsv.h, hsv.s, hsv.v)
       }
    }
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function outputText(Report, Format)
+function outputText(Report, Format:array<string>)
    if Format.find('rgb')   then print(f'RGB:     {Report.rgb}') end
    if Format.find('hex')   then print(f'RGB Hex: {Report.hex}') end
    if Format.find('hsl')   then print(f'HSL:     {Report.css.hsl}') end
@@ -229,8 +229,8 @@ function outputText(Report, Format)
 
    if Format.find('info') then
       print('')
-      print(string.format('Luminance: %.4g', Report.luminance))
-      print(string.format('Contrast:  %.2f:1 (black) / %.2f:1 (white)', Report.cr_black, Report.cr_white))
+      print('Luminance: %.4g'.format(Report.luminance))
+      print('Contrast:  %.2f:1 (black) / %.2f:1 (white)'.format(Report.cr_black, Report.cr_white))
    end
 end
 

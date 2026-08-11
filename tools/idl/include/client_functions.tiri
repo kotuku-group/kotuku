@@ -893,7 +893,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
 
       cdef = parseClassFields(cl, Spec)
 
-      if not Options.references.empty() then
+      if Options.references?? then
          for v in values(Options.references) do
             if glCustomTypes[v]?? then
                cdef = cdef .. outputLookup(cl.name .. v, glCustomTypes[v].list)
@@ -1187,7 +1187,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
 
       if Options.output?? then
          mdef = ''
-         if not cl.methods.empty() then
+         if cl.methods and not cl.methods.empty() then
             for m in values(cl.methods) do
                if not m.params.empty() then
                   mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params, true)} }};\n'

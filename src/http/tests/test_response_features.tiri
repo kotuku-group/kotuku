@@ -138,7 +138,7 @@ end
             method = 'GET',
             handler = function(req, res)
                -- Large response that would benefit from compression
-               largeMessage = string.rep('This is a test message for compression. ', 100)
+               largeMessage = 'This is a test message for compression. '.rep(100)
                res.json({
                   message = 'Compression test response',
                   data = largeMessage,
@@ -166,7 +166,7 @@ end
                      id = i,
                      name = 'Item ' .. i,
                      description = 'This is a description for item number ' .. i .. ' with some additional text to make it longer.',
-                     data = string.rep('x', 50)
+                     data = 'x'.rep(50)
                   })
                end
 

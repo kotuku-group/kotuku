@@ -984,12 +984,12 @@ end
    order = {}
    mt_first = {
       __close = function(self, err)
-         table.insert(order, "first")
+         order.insert("first")
       end
    }
    mt_second = {
       __close = function(self, err)
-         table.insert(order, "second")
+         order.insert("second")
          error("close second")
       end
    }

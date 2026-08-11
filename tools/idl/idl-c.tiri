@@ -105,7 +105,7 @@ global function extractFields(Def:str, Origin:str):table
             type = type.sub(1).trim()
          end
 
-         field = cType({ type=type, name=name.trim(), comment=string.trim(comment) }, Origin)
+         field = cType({ type=type, name=name.trim(), comment=comment.trim() }, Origin)
          if virtual then field.virtual = true end
          fields.insert(field)
       elseif not content.trim()?? then
@@ -181,7 +181,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
 
    if Def.result?? then
       func.result = Def.result
-   elseif not Def.errors.empty() then
+   elseif Def.errors?? then
       func.result = cType({ type='error', values=Def.errors, isFunction=true }, 'Function:' .. Name)
    end
 
@@ -267,8 +267,8 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
    if Def.ext_proto then
       jumpArgs = Def.ext_proto
       argSeq   = Def.ext_proto
-      if string.sub(argSeq, -3) is '...' then
-         argSeq = string.sub(argSeq, 0, -4) .. 'Args... Tags'
+      if argSeq.sub(-3) is '...' then
+         argSeq = argSeq.sub(0, -4) .. 'Args... Tags'
       end
    elseif not jumpArgs then
       jumpArgs = argSeq
@@ -393,7 +393,7 @@ end
 global function buildPrototypes()
    if glClasses then
       for className, cl in pairs(glClasses) do
-         if not cl.methods.empty() then
+         if cl.methods and not cl.methods.empty() then
             for method in values(cl.methods) do
                proto = 'OBJECTPTR Object'
                if method.params?? then

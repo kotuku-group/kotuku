@@ -500,46 +500,46 @@ end
    t = { item = { name = 'test', value = '42' } }
    result = t.toXML()
    -- Attributes can appear in any order, so check for presence
-   assert(string.find(result, 'name="test"'), "Should contain name attribute, got '" .. result .. "'")
-   assert(string.find(result, 'value="42"'), "Should contain value attribute, got '" .. result .. "'")
-   assert(string.find(result, '/>'), "Element with only attributes should be self-closing")
+   assert(result.find('name="test"'), "Should contain name attribute, got '" .. result .. "'")
+   assert(result.find('value="42"'), "Should contain value attribute, got '" .. result .. "'")
+   assert(result.find('/>'), "Element with only attributes should be self-closing")
 end
 
 @Test function ToXMLWithNumericAttribute()
    -- Numeric attribute values
    t = { item = { count = 5 } }
    result = t.toXML()
-   assert(string.find(result, 'count=5'), "Should contain numeric attribute, got '" .. result .. "'")
+   assert(result.find('count=5'), "Should contain numeric attribute, got '" .. result .. "'")
 end
 
 @Test function ToXMLWithBooleanAttribute()
    -- Boolean true attribute (should appear as bare attribute)
    t = { item = { enabled = true } }
    result = t.toXML()
-   assert(string.find(result, 'enabled'), "Should contain boolean attribute, got '" .. result .. "'")
+   assert(result.find('enabled'), "Should contain boolean attribute, got '" .. result .. "'")
 end
 
 @Test function ToXMLWithChildContent()
    -- Element with text child content
    t = { item = { [0] = 'hello' } }
    result = t.toXML()
-   assert(string.find(result, '>hello</>'), "Should contain text child, got '" .. result .. "'")
+   assert(result.find('>hello</>'), "Should contain text child, got '" .. result .. "'")
 end
 
 @Test function ToXMLEscaping()
    -- Content with special XML characters should be escaped
    t = { item = { [0] = 'a&b<c>d' } }
    result = t.toXML()
-   assert(string.find(result, '&amp;'), "Ampersand should be escaped, got '" .. result .. "'")
-   assert(string.find(result, '&lt;'), "Less-than should be escaped, got '" .. result .. "'")
-   assert(string.find(result, '&gt;'), "Greater-than should be escaped, got '" .. result .. "'")
+   assert(result.find('&amp;'), "Ampersand should be escaped, got '" .. result .. "'")
+   assert(result.find('&lt;'), "Less-than should be escaped, got '" .. result .. "'")
+   assert(result.find('&gt;'), "Greater-than should be escaped, got '" .. result .. "'")
 end
 
 @Test function ToXMLAttributeEscaping()
    -- Attribute values with special characters should be escaped
    t = { item = { title = 'A&B' } }
    result = t.toXML()
-   assert(string.find(result, 'title="A&amp;B"'), "Attribute should have escaped ampersand, got '" .. result .. "'")
+   assert(result.find('title="A&amp;B"'), "Attribute should have escaped ampersand, got '" .. result .. "'")
 end
 
 @Test function ToXMLEmptyTable()
@@ -812,7 +812,7 @@ end
 function assert_duplicate_key(Source:str, Context:str)
    local result = debug.validate(Source)
    assert(result.success is false, Context .. ': source should fail validation')
-   assert(string.find(result.diagnostics[0].message, 'Duplicate key', 0, true) != nil,
+   assert(result.diagnostics[0].message.find('Duplicate key', 0, true) != nil,
       Context .. ': expected a duplicate-key diagnostic, got: ' .. tostring(result.diagnostics[0].message))
 end
 

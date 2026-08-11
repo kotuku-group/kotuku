@@ -144,8 +144,8 @@ function formatException(Exception:table):str
    if message.startsWith('[') then
       local annotation_end = message.find(']')
       if annotation_end and annotation_end > 1 then
-         local annotation = string.sub(message, 1, annotation_end)
-         local detail = string.trim(string.sub(message, annotation_end + 1))
+         local annotation = message.sub(1, annotation_end)
+         local detail = string.trim(message.sub(annotation_end + 1))
          local annotation_parts = annotation.split(':')
 
          if tonumber(annotation_parts[0]) then
@@ -255,7 +255,7 @@ function runTests()
                for label_filter in values(glLabels) do
                   if string.startsWith(label_filter, '~') then
                      inverse = true
-                     label_filter = string.sub(label_filter, 1)
+                     label_filter = label_filter.sub(1)
                   end
 
                   for test_label in values(test_labels) do

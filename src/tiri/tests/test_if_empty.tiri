@@ -267,7 +267,7 @@ end
 @Test function IfEmptyStringFindError()
    local function_value = { status = 'Hello' }
 
-   start_index, end_index = string.find((function_value.status ?? 'then'), 'e')
+   start_index, end_index = (function_value.status ?? 'then').find('e')
    assert(start_index is 1, "Expected search to start at index 1, got '" .. tostring(start_index) .. "'")
    assert(end_index is 1, "Expected search to end at index 1, got '" .. tostring(end_index) .. "'")
 end
@@ -378,7 +378,7 @@ end
    local function_value = { status = 'Hello' }
 
    -- If-empty operator within a function
-   result = string.find((function_value.status ?? 'then'), 'e')
+   result = (function_value.status ?? 'then').find('e')
    assert(result is 1, "Failed test: expected 1, got " .. tostring(result))
 end
 

@@ -522,7 +522,7 @@ global function extractParagraph(Input:str, Context:table, References:table)
 
    i = 0
    while i < #lines do
-      line = string.trim(lines[i])
+      line = lines[i].trim()
       if line?? then
          local action
          if rx_all_anchored.test(line) then
@@ -809,7 +809,7 @@ global function docClass(Class)
    if glModule.copyright?? then out ..= '    <copyright>' .. glModule.copyright.escXML() .. '</copyright>\n' end
    if Class.description??  then out ..= '    <description>\n' .. extractParagraph(Class.description, Class, Class.references) .. '</description>\n' end
 
-   if not table.empty(Class.src) then
+   if Class.src?? then
       out ..= '    <source>\n'
       for path in values(Class.src) do
          dir, filename = rx_path.extract(path)
@@ -860,7 +860,7 @@ global function docClass(Class)
                actions ..= '\n      </description>\n'
             end
 
-            if not table.empty(a.results) then
+            if a.results?? then
                results = ''
                for result in values(a.results) do
                   results ..= '        <error code="' .. result.codeName .. '">' .. substituteReferences(result.msg.escXML(), Class) .. '</error>\n'
@@ -883,10 +883,10 @@ global function docClass(Class)
       end
    end
 
-   if not table.empty(Class.methods) then
+   if Class.methods?? then
       Class.sortedMethods = { }
       for f in values(Class.methods) do
-         table.insert(Class.sortedMethods, f)
+         Class.sortedMethods.insert(f)
       end
 
       table.sort(Class.sortedMethods, function(a,b) return a.name < b.name end)
@@ -902,7 +902,7 @@ global function docClass(Class)
             if method.prototype?? then out ..= f'      <prototype>{method.prototype.escXML()}</prototype>\n' end
             if method.tiriPrototype?? then out ..= f'      <tiriPrototype>{method.tiriPrototype.escXML()}</tiriPrototype>\n' end
 
-            if not table.empty(method.params) then
+            if method.params?? then
                out ..= '      <input>\n'
                for param in values(method.params) do
                   ref = ''
@@ -917,7 +917,7 @@ global function docClass(Class)
                out ..= f'      <description>\n{extractParagraph(method.description, Class, Class.references)}\n      </description>\n'
             end
 
-            if not table.empty(method.results) then
+            if method.results?? then
                results = ''
                for result in values(method.results) do
                   results ..= f"        <error code=\"{result.codeName}\">{substituteReferences(result.msg.escXML(), Class)}</error>\n"
@@ -938,11 +938,11 @@ global function docClass(Class)
       out ..= '  </methods>\n'
    end
 
-   if not table.empty(Class.fields) then
+   if Class.fields?? then
       -- Process fields
       Class.sortedFields = { }
       for f in values(Class.fields) do
-         table.insert(Class.sortedFields, f)
+         Class.sortedFields.insert(f)
       end
 
       table.sort(Class.sortedFields, function(a,b) return a.name < b.name end)
@@ -1059,7 +1059,7 @@ global function docModuleHeader()
       out ..= '    </source>\n'
    end
 
-   if not table.empty(glClasses) then
+   if glClasses?? then
       out ..= '    <classes>\n'
       for className, cl in table.sortByKeys(glClasses) do
          out ..= f'      <class>{cl.name}</class>\n'
@@ -1067,7 +1067,7 @@ global function docModuleHeader()
       out ..= '    </classes>\n'
    end
 
-   if not table.empty(glCategories) then
+   if glCategories?? then
       out ..= '    <categories>\n'
       for className, cl in table.sortByKeys(glCategories) do
          out ..= f'      <category>{cl.name}</category>\n'
@@ -1088,7 +1088,7 @@ global function docFieldType(Field):str
    doc_ptrs  = #type_name.split('*') - 1
 
    if type_ptrs > doc_ptrs then
-      local ptrs = string.rep('*', type_ptrs - doc_ptrs)
+      local ptrs = '*'.rep(type_ptrs - doc_ptrs)
       if type_name.endsWith('*') then
          type_name ..= ptrs
       else
@@ -1145,7 +1145,7 @@ global function docFunction(Function)
 
    -- Function arguments
 
-   if not table.empty(Function.input) then
+   if Function.input?? then
       local args = ''
       for fa in values(Function.input) do
          ref = ''
@@ -1181,8 +1181,8 @@ global function docFunction(Function)
 
    -- Results
 
-   if not table.empty(Function.result) then
-      if not table.empty(Function.result.values) then
+   if Function.result?? then
+      if Function.result.values?? then
          errors = ''
          for result in values(Function.result.values) do
             comment = (result.msg ?? mSys.GetErrorMsg(result.code))
@@ -1212,7 +1212,7 @@ global function docTypes(References:table)
    out = ''
    sortedTypes = { }
    for ct in values(glCustomTypes) do
-      table.insert(sortedTypes, ct)
+      sortedTypes.insert(ct)
    end
 
    table.sort(sortedTypes, function(a,b) return a.prefix < b.prefix end)
@@ -1234,7 +1234,7 @@ global function docTypes(References:table)
 
          sortedValues = { }
          for v in values(ct.list) do
-            table.insert(sortedValues, v)
+            sortedValues.insert(v)
          end
          table.sort(sortedValues, function(a,b) return a.name < b.name end)
 
@@ -1270,7 +1270,7 @@ global function docStructures(References)
 
    sortedStructs = { }
    for f in values(glStructures) do
-      table.insert(sortedStructs, f)
+      sortedStructs.insert(f)
    end
 
    table.sort(sortedStructs, function(a,b) return a.name < b.name end)

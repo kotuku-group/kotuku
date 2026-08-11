@@ -98,7 +98,7 @@ end
 @Test; @Requires(network=true, windows_platform=true)
 function LargeTCPReceive()
    target_size = 2 * 1024 * 1024
-   payload     = string.rep('P', target_size)
+   payload     = 'P'.rep(target_size)
    received    = 0
    bad_data    = false
    port        = nextPort()
@@ -116,7 +116,7 @@ function LargeTCPReceive()
          if read_len <= 0 then return end
 
          chunk = buffer.getString(0, read_len)
-         if chunk != string.rep('P', read_len) then
+         if chunk != 'P'.rep(read_len) then
             bad_data = true
          end
          received += read_len
@@ -150,8 +150,8 @@ end
 @Test; @Requires(network=true, windows_platform=true)
 function LargeBidirectionalTCPTransfer()
    target_size     = 2 * 1024 * 1024
-   server_payload  = string.rep('B', target_size)
-   client_payload  = string.rep('C', target_size)
+   server_payload  = 'B'.rep(target_size)
+   client_payload  = 'C'.rep(target_size)
    server_received = 0
    client_received = 0
    server_bad_data = false
@@ -181,7 +181,7 @@ function LargeBidirectionalTCPTransfer()
             if read_len <= 0 then break end
 
             chunk = buffer.getString(0, read_len)
-            if chunk != string.rep('C', read_len) then server_bad_data = true end
+            if chunk != 'C'.rep(read_len) then server_bad_data = true end
             server_received += read_len
             if server_received >= target_size then break end
          end
@@ -212,7 +212,7 @@ function LargeBidirectionalTCPTransfer()
             if read_len <= 0 then break end
 
             chunk = buffer.getString(0, read_len)
-            if chunk != string.rep('B', read_len) then client_bad_data = true end
+            if chunk != 'B'.rep(read_len) then client_bad_data = true end
             client_received += read_len
             if client_received >= target_size then break end
          end
@@ -242,7 +242,7 @@ end
 @Test; @Requires(network=true, windows_platform=true)
 function SlowReaderBackpressure()
    target_size = 1536 * 1024
-   payload     = string.rep('S', target_size)
+   payload     = 'S'.rep(target_size)
    received    = 0
    delayed     = false
    port        = nextPort()
@@ -398,7 +398,7 @@ function PendingTCPReadWriteFreeDropsCompletion()
    late_client_callbacks = 0
    accepted_client       = nil
    target_size           = 2 * 1024 * 1024
-   payload               = string.rep('W', target_size)
+   payload               = 'W'.rep(target_size)
 
    server = obj.new('netserver', {
       name     = 'IocpPendingTCPFreeServer',
@@ -519,7 +519,7 @@ function PendingUDPReceiveSendFreeDropsCompletion()
 
    processing.collect()
 
-   packet = string.rep('U', 4096)
+   packet = 'U'.rep(4096)
    for i in {0 to 64} do
       err, len = sender.mtSendTo(dest, packet)
       if (err != ERR_Okay) and (err != ERR_BufferOverflow) and (err != ERR_Disconnected) then

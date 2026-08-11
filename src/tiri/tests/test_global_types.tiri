@@ -414,7 +414,7 @@ end
       writer(42)
       error('An incompatible cross-chunk aliased store should raise')
    except e
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'Expected a global contract error, got: ' .. tostring(e.message))
    end
    assert(glGTCrossAlias is 'replaced', 'A rejected cross-chunk store must preserve the previous value')
@@ -453,7 +453,7 @@ end
       rawset(_G, 'glGTSeeded', 42)
       error('A rawset conflicting with the declared contract should raise')
    except e
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'Expected a global contract error, got: ' .. tostring(e.message))
    end
    assert(glGTSeeded is 'declared', 'The declared value must survive the rejected rawset')

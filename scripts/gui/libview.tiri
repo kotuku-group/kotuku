@@ -221,8 +221,8 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
             new_item[k] = v
          end
 
-         table.insert(vw.items, new_item)
-         if NewItems then table.insert(new_items, new_item) end
+         vw.items.insert(new_item)
+         if NewItems then new_items.insert(new_item) end
          vw.lookup[glItemCounter] = new_item
          glItemCounter++
       end
@@ -276,7 +276,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
    vw.addZone = function(X, Y, Width, Height, Item, HoverCallback):table
       if not HoverCallback then HoverCallback = itemHoverCallback end
 
-      table.insert(vw.zones, {
+      vw.zones.insert({
          x      = X,
          y      = Y,
          width  = Width,
@@ -398,7 +398,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
 
       for i in {0 to #vw.items} do
          if vw.items[i] is Item then
-            table.remove(vw.items, i)
+            vw.items.remove(i)
             break
          end
       end
@@ -545,21 +545,21 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
 
       if type(vw.items[0][Attrib]) is 'table' then
          if vw.items[0][Attrib]['sort'] then
-            table.sort(vw.items, function(a,b)
+            vw.items.sort(function(a,b)
                return Ascending ? (a[Attrib].sort < b[Attrib].sort) :> (a[Attrib].sort > b[Attrib].sort)
             end)
          else
-            table.sort(vw.items, function(a,b)
+            vw.items.sort(function(a,b)
                return Ascending ? (a[Attrib].value < b[Attrib].value) :> (a[Attrib].value > b[Attrib].value)
             end)
          end
       elseif type(vw.items[1][Attrib]) is 'string' then
-         table.sort(vw.items, function(a,b)
+         vw.items.sort(function(a,b)
             return Ascending ? (string.lower(a[Attrib]) < string.lower(b[Attrib])) :>
                (string.lower(a[Attrib]) > string.lower(b[Attrib]))
          end)
       else
-         table.sort(vw.items, function(a,b)
+         vw.items.sort(function(a,b)
             return Ascending ? a[Attrib] < b[Attrib] :> a[Attrib] > b[Attrib]
          end)
       end

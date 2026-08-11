@@ -14,7 +14,7 @@ function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
    assert(result.success is false, Context .. ': source should fail validation')
    assert(type(result.diagnostics) is 'table', Context .. ': diagnostics should be returned')
    assert(#result.diagnostics > 0, Context .. ': at least one diagnostic should be reported')
-   assert(string.find(result.diagnostics[0].message, ExpectedMessage, 0, true) != nil,
+   assert(result.diagnostics[0].message.find(ExpectedMessage, 0, true) != nil,
       Context .. ': diagnostic should contain "' .. ExpectedMessage .. '", got: ' ..
       tostring(result.diagnostics[0].message))
 end

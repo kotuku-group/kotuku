@@ -38,7 +38,7 @@ function countMatches(Text:str, Needle:str)
    local offset = 0
 
    while true do
-      local pos = string.find(Text, Needle, offset, true)
+      local pos = Text.find(Needle, offset, true)
       if pos is nil then break end
       count++
       offset = pos + #Needle
@@ -48,17 +48,17 @@ function countMatches(Text:str, Needle:str)
 end
 
 function countMeshRowsInGradient(Text:str, ID:str)
-   local start = string.find(Text, 'id="' .. ID .. '"', 0, true)
+   local start = Text.find('id="' .. ID .. '"', 0, true)
    assert(start != nil, 'Saved SVG should contain meshgradient id ' .. ID)
 
-   local stop = string.find(Text, '</meshgradient>', start, true)
+   local stop = Text.find('</meshgradient>', start, true)
    assert(stop != nil, 'Saved SVG should close meshgradient id ' .. ID)
 
    local count = 0
    local offset = start
 
    while true do
-      local pos = string.find(Text, '<meshrow', offset, true)
+      local pos = Text.find('<meshrow', offset, true)
       if (pos is nil) or (pos >= stop) then break end
       count++
       offset = pos + #'<meshrow'
@@ -528,15 +528,15 @@ end
    local saved = saveScene(scene, output_path)
 
    assert(countMatches(saved, '<meshrow') is 2, 'Saved meshgradient should contain two mesh rows')
-   assert(string.find(saved, 'kotuku:x', 0, true) is nil, 'A standard shared-edge grid should not require independent-patch metadata')
-   assert(string.find(saved, 'gradientTransform=', 0, true) != nil, 'Saved meshgradient should preserve the gradient transform')
+   assert(saved.find('kotuku:x', 0, true) is nil, 'A standard shared-edge grid should not require independent-patch metadata')
+   assert(saved.find('gradientTransform=', 0, true) != nil, 'Saved meshgradient should preserve the gradient transform')
 
    local reparsed_scene, reparsed_gradient = loadMesh(output_path)
    assertMetadata(reparsed_gradient, 'reparsed mesh')
    assertPatchesMatch(reparsed_gradient, gradient, 'round-trip')
 
    local resaved = saveScene(reparsed_scene, 'temp:meshgradient_2x2_roundtrip_resave.svg')
-   assert(string.find(resaved, 'gradientTransform=', 0, true) != nil, 'Reparsed meshgradient should save the gradient transform again')
+   assert(resaved.find('gradientTransform=', 0, true) != nil, 'Reparsed meshgradient should save the gradient transform again')
 end
 
 @Test function HrefOverrideUsesOwnRowsAndColumns()
@@ -689,8 +689,8 @@ end
 
    local saved = saveScene(scene, 'temp:meshgradient_non_rectangular_saved.svg')
    assert(countMeshRowsInGradient(saved, 'mesh2x2') is 1, 'Non-rectangular mesh should flatten to one meshrow')
-   assert(string.find(saved, 'kotuku:x', 0, true) != nil, 'Flattened non-adjacent patch should save as independent')
-   assert(string.find(saved, 'xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"', 0, true) != nil,
+   assert(saved.find('kotuku:x', 0, true) != nil, 'Flattened non-adjacent patch should save as independent')
+   assert(saved.find('xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"', 0, true) != nil,
       'Saved document must declare the kotuku namespace for independent-patch attributes')
 
    local reparsed_scene, reparsed_gradient = loadMesh('temp:meshgradient_non_rectangular_saved.svg')
@@ -754,7 +754,7 @@ end
    -- Round-trip: the imported mesh saves canonically and reparses to identical patch data.
    local output_path = 'temp:meshgradient_inkscape_saved.svg'
    local saved = saveScene(scene, output_path)
-   assert(string.find(saved, 'type="bicubic"', 0, true) != nil, 'Re-saved Inkscape mesh should keep bicubic mode')
+   assert(saved.find('type="bicubic"', 0, true) != nil, 'Re-saved Inkscape mesh should keep bicubic mode')
 
    local reparsed_scene, reparsed_gradient = loadMesh(output_path)
    assert(reparsed_gradient.mode is GMT_BICUBIC, 'Bicubic mode should survive the round-trip')
@@ -773,7 +773,7 @@ end
 
    local output_path = 'temp:meshgradient_bicubic_saved.svg'
    local saved = saveScene(scene, output_path)
-   assert(string.find(saved, 'type="bicubic"', 0, true) != nil, 'Saved bicubic mesh should emit type="bicubic"')
+   assert(saved.find('type="bicubic"', 0, true) != nil, 'Saved bicubic mesh should emit type="bicubic"')
 
    local reparsed_scene, reparsed_gradient = loadMesh(output_path)
    assert(reparsed_gradient.mode is GMT_BICUBIC, 'Bicubic mode should survive a save/reparse round-trip')
@@ -786,7 +786,7 @@ end
    local control_scene, control_gradient = loadMesh(control_path)
    assert(control_gradient.mode is GMT_LINEAR, 'A mesh without a type attribute defaults to linear')
    local control_saved = saveScene(control_scene, 'temp:meshgradient_bilinear_control_saved.svg')
-   assert(string.find(control_saved, 'type="bicubic"', 0, true) is nil,
+   assert(control_saved.find('type="bicubic"', 0, true) is nil,
       'A bilinear mesh must not emit a type attribute')
 end
 

@@ -74,7 +74,7 @@ function runQt3Case(TestCase)
       assert(err != ERR_Okay, 'QT3 ' .. TestCase.name .. ' expected an error but succeeded.')
       if TestCase.expect.code and TestCase.expect.code != '' then
          message = tostring(xq.errorMsg)
-         assert(message and string.find(message, TestCase.expect.code, 1, true),
+         assert(message and message.find(TestCase.expect.code, 1, true),
             'Expected error code ' .. TestCase.expect.code .. ', got ' .. tostring(message))
       end
       return

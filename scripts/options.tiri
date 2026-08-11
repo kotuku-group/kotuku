@@ -117,7 +117,7 @@ function validate_name(Name:any!)
       raise ERR_EmptyString, 'Parameter names must be non-empty strings.'
    end
 
-   if string.find(Name, '=') then
+   if Name.find('=') then
       raise ERR_Syntax, f"Parameter name '{Name}' cannot contain '='."
    end
 end
@@ -203,12 +203,12 @@ end
 -- Split a command-line token into its name, value, and explicit-value marker.
 
 function split_token(Token:str!):<str, any, bool>
-   eq = string.find(Token, '=')
+   eq = Token.find('=')
    if eq is nil then
       return Token, nil, false
    end
 
-   return string.sub(Token, 0, eq), string.sub(Token, eq + 1), true
+   return Token.sub(0, eq), Token.sub(eq + 1), true
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -245,7 +245,7 @@ function convert_csv(Value:any!, Param:table!):array<string>
 
    result = array<string>
    for item in values(string.split(Value, ',')) do
-      result.push(string.trim(item))
+      result.push(item.trim())
    end
 
    return result
@@ -263,9 +263,9 @@ function convert_array(Value:any!, Param:table!):array<string>
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an array value."
    end
 
-   text = string.trim(Value)
+   text = Value.trim()
    if string.startsWith(text, '{') and string.endsWith(text, '}') then
-      text = string.sub(text, 1, #text - 1)
+      text = text.sub(1, #text - 1)
    end
 
    return convert_csv(text, Param)
@@ -279,22 +279,22 @@ function split_number_unit(Value:any!, Param:table!, Description:str!):<num, str
       raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
    end
 
-   text = string.trim(Value)
+   text = Value.trim()
    if text is '' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
    end
 
    index = #text
    while index > 0 do
-      ch = string.lower(string.sub(text, index - 1, index))
+      ch = string.lower(text.sub(index - 1, index))
       if not ((ch >= 'a' and ch <= 'z') or ch is '%') then
          break
       end
       index -= 1
    end
 
-   number_text = string.trim(string.sub(text, 0, index))
-   unit = string.lower(string.trim(string.sub(text, index)))
+   number_text = text.sub(0, index.trim())
+   unit = string.lower(text.sub(index.trim()))
    number = tonumber(number_text)
    if number is nil or unit is '' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
@@ -341,9 +341,9 @@ end
 function convert_percent(Value:any!, Param:table!):num
    if type(Value) is 'number' then return Value end
 
-   text = string.trim(tostring(Value))
+   text = tostring(Value.trim())
    if string.endsWith(text, '%') then
-      number_text = string.trim(string.sub(text, 0, #text - 1))
+      number_text = text.sub(0, #text - 1.trim())
       number = tonumber(number_text)
       if number is nil then
          raise ERR_WrongType, f"Parameter '{Param.name}' requires a percent value."
@@ -384,7 +384,7 @@ function convert_json(Value:any, Param:table!):any
    local param_name = Param.name
    try
       decoded, pos = json.decode(Value)
-      if pos < #Value and string.trim(string.sub(Value, pos)) != '' then
+      if pos < #Value and Value.sub(pos.trim()) != '' then
          raise ERR_Syntax, 'Trailing content after JSON value.'
       end
 
@@ -402,7 +402,7 @@ function convert_date(Value:any!, Param:table!):str
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
    end
 
-   text = string.trim(Value)
+   text = Value.trim()
    if not rx_iso_date.test(text) then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
    end
@@ -418,7 +418,7 @@ function convert_time(Value:any!, Param:table!):str
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO time value."
    end
 
-   text = string.trim(Value)
+   text = Value.trim()
    if not rx_iso_time.test(text) then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO time value."
    end
@@ -434,7 +434,7 @@ function convert_datetime(Value:any!, Param:table!):str
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date-time value."
    end
 
-   text = string.trim(Value)
+   text = Value.trim()
    if not rx_iso_datetime.test(text) then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date-time value."
    end
@@ -450,7 +450,7 @@ function convert_colour(Value:any!, Param:table!):str
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a supported CSS colour value."
    end
 
-   text = string.trim(Value)
+   text = Value.trim()
    if not rx_css_colour.test(text) then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a supported CSS colour value."
    end
@@ -669,7 +669,7 @@ function parse_flag_negation(Parser:table!, Result:table!, ArgNames:table!, Pres
 
    if not string.startsWith(Name, 'no-') then return false end
 
-   suffix = string.sub(Name, 3)
+   suffix = Name.sub(3)
    local param = Parser._named_lookup[suffix]
 
    if param then
@@ -711,8 +711,8 @@ end
 -- Check if a launcher option consumes the following argument.
 
 function launcher_option_needs_value(Token:str!):bool
-   name = string.sub(Token, 2)
-   eq = string.find(name, '=')
+   name = Token.sub(2)
+   eq = name.find('=')
    if eq then return false end
 
    name = string.lower(name)
@@ -823,10 +823,10 @@ function env_suffix(Name:str!):str
    suffix = rx_env_camel.replace(Name, '$1_$2')
    suffix = string.upper(rx_env_chars.replace(suffix, '_'))
    while string.startsWith(suffix, '_') do
-      suffix = string.sub(suffix, 1)
+      suffix = suffix.sub(1)
    end
    while string.endsWith(suffix, '_') do
-      suffix = string.sub(suffix, 0, #suffix - 1)
+      suffix = suffix.sub(0, #suffix - 1)
    end
    return suffix
 end
@@ -936,7 +936,7 @@ end
 -- Join prepared text lines into one help string.
 
 function append_help_line(Output:array<string>, Line:str!)
-   if string.trim(Line) is '' then
+   if Line.trim() is '' then
       if #Output > 0 and Output[#Output - 1] != '' then
          Output.push('')
       end
@@ -944,7 +944,7 @@ function append_help_line(Output:array<string>, Line:str!)
       return
    end
 
-   Output.push(string.rtrim(Line))
+   Output.push(Line.rtrim())
 end
 
 function line_list(Lines:array<string>!):str
@@ -953,8 +953,8 @@ function line_list(Lines:array<string>!):str
    for line in values(Lines) do
       text = tostring(line)
 
-      if string.find(text, '\n') then
-         text = string.trim(text)
+      if text.find('\n') then
+         text = text.trim()
          for item in values(string.split(text, '\n')) do
             append_help_line(output, item)
          end
@@ -1757,7 +1757,7 @@ function load_user_config_defaults(Parser:table!, RawResult:table!):table
    local pos:num
    try
       defaults, pos = json.decode(content)
-      if pos < #content and string.trim(string.sub(content, pos)) != '' then
+      if pos < #content and content.sub(pos.trim()) != '' then
          raise ERR_Syntax, 'Trailing content after JSON value.'
       end
    except e
@@ -1922,7 +1922,7 @@ function is_global_ordered_token(Parser:table, Name:str, HasExplicitValue:bool):
       return true
    end
 
-   if not HasExplicitValue and string.startsWith(Name, 'no-') and Parser._named_lookup[string.sub(Name, 3)] then
+   if not HasExplicitValue and string.startsWith(Name, 'no-') and Parser._named_lookup[Name.sub(3)] then
       return true
    end
 
@@ -2073,7 +2073,7 @@ function reject_command_dispatch_collision(Parser:table, Name:str!)
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with global parameter '{Name}'."
    end
 
-   if string.startsWith(Name, 'no-') and Parser._named_lookup[string.sub(Name, 3)] then
+   if string.startsWith(Name, 'no-') and Parser._named_lookup[Name.sub(3)] then
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with global no- token '{Name}'."
    end
 end

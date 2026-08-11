@@ -168,7 +168,7 @@ end
 --********************************************************************************************************************
 
 print(f"Module call benchmark: {ITERATIONS} iterations, {REPEATS} repeats, JIT {tostring(jit.status())}")
-print(string.rep('-', 96))
+print('-'.rep(96))
 
 print('Steady state:')
 measure('  zero-arg scalar result', ITERATIONS, bench_zero_arg)

@@ -255,7 +255,7 @@ end
    content = ''
 
    -- Create oversized header to test limits
-   largeHeaderValue = string.rep('A', 8192) -- 8KB header
+   largeHeaderValue = 'A'.rep(8192) -- 8KB header
 
    http = obj.new('http', {
       src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/large-header-test',

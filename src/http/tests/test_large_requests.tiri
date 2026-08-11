@@ -75,7 +75,7 @@ SERVER_PORT <const> = 18944
                -- Simulate streaming by sending data in chunks
                streamData = ''
                for i in {1 to 11} do
-                  streamData = streamData .. 'Chunk ' .. i .. ': ' .. string.rep('streaming data ', 20) .. '\n'
+                  streamData = streamData .. 'Chunk ' .. i .. ': ' .. 'streaming data '.rep(20) .. '\n'
                end
                res.header('Content-Type', 'text/plain')
                   .send(streamData)
@@ -97,7 +97,7 @@ end
    testPostCompleted = false
 
    -- Create a large test body (10KB)
-   largeBody = string.rep('ABCDEFGHIJ', 1024) -- 10KB of data
+   largeBody = 'ABCDEFGHIJ'.rep(1024) -- 10KB of data
 
    http = obj.new('http', {
       src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/chunked',
@@ -143,7 +143,7 @@ end
    content = ''
 
    -- Create a large test body (5KB)
-   largeBody = string.rep('Hello World! This is test data. ', 160) -- ~5KB
+   largeBody = 'Hello World! This is test data. '.rep(160) -- ~5KB
 
    http = obj.new('http', {
       src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/content-length',
@@ -228,7 +228,7 @@ end
    testPostCompleted = false
 
    -- Create a very large body (50KB) to test buffer management
-   veryLargeBody = string.rep('X', 51200) -- 50KB
+   veryLargeBody = 'X'.rep(51200) -- 50KB
 
    http = obj.new('http', {
       src         = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/very-large',
@@ -279,11 +279,11 @@ end
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
          if Buffer then
-            chunks.insert(Buffer.getString())
+            table.insert(chunks, Buffer.getString())
             totalReceived += #Buffer
          end
       end,
-      stateChanged = function(HTTP, State)
+      stateChanged = function(HTTP:obj, State:num)
          if State is HGS_COMPLETED or State is HGS_TERMINATED then
             HTTP.acSignal()
          end

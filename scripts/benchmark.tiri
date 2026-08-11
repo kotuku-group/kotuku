@@ -552,7 +552,7 @@ bmark.histogramText = function(Histogram:table!, Width:num):array<string>
    for i in {0 to Histogram.binCount} do
       local bin = Histogram.bins[i]
       local bar_len = max_count > 0 and math.floor((bin.count / max_count) * Width) or 0
-      local bar = string.rep('█', bar_len) .. string.rep('░', Width - bar_len)
+      local bar = '█'.rep(bar_len) .. string.rep('░', Width - bar_len)
       local marker = i is Histogram.modeBin and '*' or ' '
       msg.push(string.format('%s %s |%s| %4d (%5.1f%%)',
          marker, bin.label, bar, bin.count, bin.frequency * 100))

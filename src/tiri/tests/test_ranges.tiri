@@ -9,7 +9,7 @@ function enforce_hotpath() end
    script = obj.new('tiri', { statement=[[
    test_messages = {
       'Binary data: ' .. string.char(0, 1, 2, 3, 255, 254, 253),
-      string.rep('Large SSL message ', 500), -- ~9KB message
+      'Large SSL message '.rep(500), -- ~9KB message
       'Special chars: ������������',
       'JSON: {"encrypted": true, "secure": "data"}',
       'Empty message test: '

@@ -720,7 +720,7 @@ end
 function assert_array_key_rejected(Source:str, Context:str)
    local result = debug.validate(Source)
    assert(result.success is false, Context .. ': source should fail validation')
-   assert(string.find(result.diagnostics[0].message, 'Array initialiser', 0, true) != nil,
+   assert(result.diagnostics[0].message.find('Array initialiser', 0, true) != nil,
       Context .. ': expected an array-initialiser diagnostic, got: ' .. tostring(result.diagnostics[0].message))
 end
 

@@ -58,8 +58,8 @@ git.query = function(Path:str!):table
       head_file.close()
 
       if head_content then
-         head_content = string.replace(head_content, '\n', '')
-         head_content = string.replace(head_content, '\r', '')
+         head_content = head_content.replace('\n', '')
+         head_content = head_content.replace('\r', '')
 
          -- Check if HEAD points to a branch (ref: refs/heads/branch-name)
          local branch_ref = rx_head.extract(head_content)
@@ -74,8 +74,8 @@ git.query = function(Path:str!):table
                   branch_file.close()
 
                   if commit_hash then
-                     commit_hash = string.replace(commit_hash, '\n', '')
-                     commit_hash = string.replace(commit_hash, '\r', '')
+                     commit_hash = commit_hash.replace('\n', '')
+                     commit_hash = commit_hash.replace('\r', '')
                      git_info.commit = commit_hash
                   end
                end

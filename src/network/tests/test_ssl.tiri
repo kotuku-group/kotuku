@@ -264,7 +264,7 @@ end
 function SSLDataIntegrity()
    test_messages = array<string> {
       'Binary data: ' .. string.char(0, 1, 2, 3, 255, 254, 253),
-      string.rep('Large SSL message ', 500), -- ~9KB message
+      'Large SSL message '.rep(500), -- ~9KB message
       'Special chars: àáâãäåæçèéêë',
       'JSON: {"encrypted": true, "secure": "data"}',
       'Empty message test: '

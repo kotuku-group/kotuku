@@ -982,6 +982,6 @@ end
 
    local err, disassembly = capture_struct_disassembly()
    assert(err is ERR_Okay, 'Struct disassembly probe should succeed')
-   assert(string.find(disassembly, 'STGETF'), 'Known struct reads should emit STGETF')
-   assert(string.find(disassembly, 'STSETF'), 'Known struct writes should emit STSETF')
+   assert(disassembly.find('STGETF'), 'Known struct reads should emit STGETF')
+   assert(disassembly.find('STSETF'), 'Known struct writes should emit STSETF')
 end

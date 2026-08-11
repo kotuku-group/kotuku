@@ -562,8 +562,8 @@ global function saveOutput()
    end
 
    if glHead?? then
-      glHead = string.replace(glHead, '[LF]', '\n')
-      glHead = string.replace(glHead, '[DQ]', '"')
+      glHead = glHead.replace('[LF]', '\n')
+      glHead = glHead.replace('[DQ]', '"')
    end
 
    out = glHead
@@ -584,8 +584,8 @@ global function saveOutput()
    end
 
    if glFoot then
-      glFoot = string.replace(glFoot, '[LF]', '\n')
-      glFoot = string.replace(glFoot, '[DQ]', '"')
+      glFoot = glFoot.replace('[LF]', '\n')
+      glFoot = glFoot.replace('[DQ]', '"')
       out ..= glFoot
    end
 

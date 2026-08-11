@@ -1174,7 +1174,7 @@ end
       global glContractReducedConflict = 'wrong'
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'The conflicting declaration should raise a global contract error: ' .. tostring(e.message))
    end
    assert(trapped, 'An incompatible declaration inside try must remain catchable')

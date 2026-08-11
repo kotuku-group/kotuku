@@ -22,12 +22,12 @@ function enforce_hotpath() end
    big = string.alloc(1000)
    assert(#big is 1000, "Large alloc failed, expected 1000, got " .. #big)
 
-   slice = string.sub(s, #s, #s)
+   slice = s.sub(#s, #s)
    assert(slice is "", "Slices copied from mutable buffers should be normal interned strings")
 end
 
 @Test function Index()
---   getmetatable('').__index = function(str,i) return string.sub(str,i,i) end
+--   getmetatable('').__index = function(str,i) return str.sub(i,i) end
 --   hw = "Hello World"
 --   assert(string[1] is "H", "Expected 'H' at index 0, got '" .. tostring(string[1]) .. "'")
 end
@@ -105,57 +105,57 @@ end
 
 @Test function Trim()
    -- Basic trim
-   trimmed = string.trim("  hello world  ")
+   trimmed = "  hello world  ".trim()
    assert(trimmed is "hello world", "Expected 'hello world', got '" .. trimmed .. "'")
 
    -- Left whitespace only
-   left = string.trim("  hello")
+   left = "  hello".trim()
    assert(left is "hello", "Expected 'hello', got '" .. left .. "'")
 
    -- Right whitespace only
-   right = string.trim("hello  ")
+   right = "hello  ".trim()
    assert(right is "hello", "Expected 'hello', got '" .. right .. "'")
 
    -- Mixed whitespace types
-   mixed = string.trim("\t\n  hello world  \r\n\t")
+   mixed = "\t\n  hello world  \r\n\t".trim()
    assert(mixed is "hello world", "Expected 'hello world', got '" .. mixed .. "'")
 
    -- All whitespace
-   allspace = string.trim("   \t\n\r   ")
+   allspace = "   \t\n\r   ".trim()
    assert(allspace is "", "All whitespace should return empty string, got '" .. allspace .. "'")
 
    -- Empty string
-   empty = string.trim("")
+   empty = "".trim()
    assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
 
    -- No whitespace
-   none = string.trim("hello")
+   none = "hello".trim()
    assert(none is "hello", "No whitespace should be unchanged, got '" .. none .. "'")
 end
 
 @Test function RTrim()
    -- Basic right trim
-   trimmed = string.rtrim("hello world  ")
+   trimmed = "hello world  ".rtrim()
    assert(trimmed is "hello world", "Expected 'hello world', got '" .. trimmed .. "'")
 
    -- Left whitespace preserved
-   left = string.rtrim("  hello world  ")
+   left = "  hello world  ".rtrim()
    assert(left is "  hello world", "Expected '  hello world', got '" .. left .. "'")
 
    -- Mixed whitespace types
-   mixed = string.rtrim("hello world  \r\n\t")
+   mixed = "hello world  \r\n\t".rtrim()
    assert(mixed is "hello world", "Expected 'hello world', got '" .. mixed .. "'")
 
    -- All whitespace
-   allspace = string.rtrim("   \t\n\r   ")
+   allspace = "   \t\n\r   ".rtrim()
    assert(allspace is "", "All whitespace should return empty string, got '" .. allspace .. "'")
 
    -- Empty string
-   empty = string.rtrim("")
+   empty = "".rtrim()
    assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
 
    -- No whitespace
-   none = string.rtrim("hello")
+   none = "hello".rtrim()
    assert(none is "hello", "No whitespace should be unchanged, got '" .. none .. "'")
 end
 
@@ -431,45 +431,45 @@ end
 
 @Test function SubStr()
    -- string.sub() uses exclusive end index (like JavaScript substring/Python slicing)
-   -- string.sub(s, start, end) extracts chars from start to end-1
+   -- s.sub(start, end) extracts chars from start to end-1
    s = "hello world"
 
    for i in {0 to 1000} do
       -- Basic substring
-      sub = string.sub(s, 0, 5) -- Indices 0,1,2,3,4 (not 5)
+      sub = s.sub(0, 5) -- Indices 0,1,2,3,4 (not 5)
       assert(sub is "hello", "Expected 'hello', got '" .. sub .. "'")
 
       -- Start from middle
-      mid = string.sub(s, 6, 11) -- Indices 6,7,8,9,10 (not 11)
+      mid = s.sub(6, 11) -- Indices 6,7,8,9,10 (not 11)
       assert(mid is "world", "Expected 'world', got '" .. mid .. "'")
 
       -- Negative indices (count from end)
-      neg = string.sub(s, -5, -1)
+      neg = s.sub(-5, -1)
       assert(neg is "world", "Expected 'world' from negative indices, got '" .. neg .. "'")
 
       -- Negative start, positive end
-      mixed = string.sub(s, -5, 11)
+      mixed = s.sub(-5, 11)
       assert(mixed is "world", "Expected 'world' from mixed indices, got '" .. mixed .. "'")
 
       -- Default end
-      toEnd = string.sub(s, 6)
+      toEnd = s.sub(6)
       assert(toEnd is "world", "Expected 'world' with default end, got '" .. toEnd .. "'")
 
       -- Single character
-      single = string.sub(s, 0, 1)
+      single = s.sub(0, 1)
       assert(single is "h", "Expected 'h', got '" .. single .. "'")
 
       -- Empty range
-      empty = string.sub(s, 5, 5)
+      empty = s.sub(5, 5)
       assert(empty is "", "Expected empty string, got '" .. empty .. "'")
 
       -- Beyond string length
-      beyond = string.sub(s, 0, 100)
+      beyond = s.sub(0, 100)
       assert(#beyond is #s, "Expected length to match original string length, got " .. #beyond)
       assert(beyond is s, "Expected full string when end exceeds length, got '" .. beyond .. "'")
 
       -- Empty string
-      emptyStr = string.sub("", 0, 0)
+      emptyStr = "".sub(0, 0)
       assert(emptyStr is "", "Expected empty string, got '" .. emptyStr .. "'")
    end
 end
@@ -539,27 +539,27 @@ end
 @Test function Rep()
    for i in {0 to 1000} do
       -- Basic repetition
-      rep = string.rep("ab", 3)
+      rep = "ab".rep(3)
       assert(rep is "ababab", "Expected 'ababab', got '" .. rep .. "'")
 
       -- Single repetition
-      single = string.rep("hello", 1)
+      single = "hello".rep(1)
       assert(single is "hello", "Expected 'hello', got '" .. single .. "'")
 
       -- Zero repetitions
-      zero = string.rep("hello", 0)
+      zero = "hello".rep(0)
       assert(zero is "", "Expected empty string, got '" .. zero .. "'")
 
       -- With separator
-      withSep = string.rep("abc", 3, ",")
+      withSep = "abc".rep(3, ",")
       assert(withSep is "abc,abc,abc", "Expected 'abc,abc,abc', got '" .. withSep .. "'")
 
       -- Separator with single repetition (no separator should appear)
-      singleSep = string.rep("hello", 1, ",")
+      singleSep = "hello".rep(1, ",")
       assert(singleSep is "hello", "Expected 'hello' (no separator), got '" .. singleSep .. "'")
 
       -- Empty string repetition
-      emptyRep = string.rep("", 5)
+      emptyRep = "".rep(5)
       assert(emptyRep is "", "Expected empty string, got '" .. emptyRep .. "'")
    end
 end
@@ -629,21 +629,21 @@ end
 @Test function Find()
    -- Basic find (zero-indexed positions)
    s = "hello world"
-   start, finish = string.find(s, "world")
+   start, finish = s.find("world")
    assert(start is 6, "Expected start at 6, got " .. tostring(start))
    assert(finish is 10, "Expected finish at 10, got " .. tostring(finish))
 
    -- Find at beginning
-   start2, finish2 = string.find(s, "hello")
+   start2, finish2 = s.find("hello")
    assert(start2 is 0, "Expected start at 0, got " .. tostring(start2))
    assert(finish2 is 4, "Expected finish at 4, got " .. tostring(finish2))
 
    -- Not found
-   notFound = string.find(s, "xyz")
+   notFound = s.find("xyz")
    assert(notFound is nil, "Expected nil for not found, got " .. tostring(notFound))
 
    -- With start position
-   start3, finish3 = string.find(s, "o", 5)
+   start3, finish3 = s.find("o", 5)
    assert(start3 is 7, "Expected start at 7, got " .. tostring(start3))
    assert(finish3 is 7, "Expected finish at 7, got " .. tostring(finish3))
 end
@@ -703,52 +703,52 @@ end
 
 @Test function Replace()
    -- Basic replacement (all occurrences)
-   result, count = string.replace("hello world", "o", "0")
+   result, count = "hello world".replace("o", "0")
    assert(result is "hell0 w0rld", "Expected 'hell0 w0rld', got '" .. result .. "'")
    assert(count is 2, "Expected 2 replacements, got " .. count)
 
    -- Replace all occurrences of a word
-   result2, count2 = string.replace("hello hello hello", "hello", "hi")
+   result2, count2 = "hello hello hello".replace("hello", "hi")
    assert(result2 is "hi hi hi", "Expected 'hi hi hi', got '" .. result2 .. "'")
    assert(count2 is 3, "Expected 3 replacements, got " .. count2)
 
    -- Limited replacements (max_count parameter)
-   result3, count3 = string.replace("hello hello hello", "hello", "hi", 2)
+   result3, count3 = "hello hello hello".replace("hello", "hi", 2)
    assert(result3 is "hi hi hello", "Expected 'hi hi hello', got '" .. result3 .. "'")
    assert(count3 is 2, "Expected 2 replacements, got " .. count3)
 
    -- Replace only first occurrence
-   result4, count4 = string.replace("aaa", "a", "b", 1)
+   result4, count4 = "aaa".replace("a", "b", 1)
    assert(result4 is "baa", "Expected 'baa', got '" .. result4 .. "'")
    assert(count4 is 1, "Expected 1 replacement, got " .. count4)
 
    -- No matches found
-   result5, count5 = string.replace("hello", "xyz", "abc")
+   result5, count5 = "hello".replace("xyz", "abc")
    assert(result5 is "hello", "Expected 'hello', got '" .. result5 .. "'")
    assert(count5 is 0, "Expected 0 replacements, got " .. count5)
 
    -- Empty search string (should return original with 0 count)
-   result6, count6 = string.replace("hello", "", "x")
+   result6, count6 = "hello".replace("", "x")
    assert(result6 is "hello", "Expected 'hello', got '" .. result6 .. "'")
    assert(count6 is 0, "Expected 0 replacements for empty search, got " .. count6)
 
    -- Empty source string
-   result7, count7 = string.replace("", "a", "b")
+   result7, count7 = "".replace("a", "b")
    assert(result7 is "", "Expected empty string, got '" .. result7 .. "'")
    assert(count7 is 0, "Expected 0 replacements for empty source, got " .. count7)
 
    -- Replacement with empty string (deletion)
-   result8, count8 = string.replace("hello world", "o", "")
+   result8, count8 = "hello world".replace("o", "")
    assert(result8 is "hell wrld", "Expected 'hell wrld', got '" .. result8 .. "'")
    assert(count8 is 2, "Expected 2 deletions, got " .. count8)
 
    -- Multi-character search and replacement
-   result9, count9 = string.replace("one::two::three", "::", "-")
+   result9, count9 = "one::two::three".replace("::", "-")
    assert(result9 is "one-two-three", "Expected 'one-two-three', got '" .. result9 .. "'")
    assert(count9 is 2, "Expected 2 replacements, got " .. count9)
 
    -- Replacement longer than search
-   result10, count10 = string.replace("a-b-c", "-", "---")
+   result10, count10 = "a-b-c".replace("-", "---")
    assert(result10 is "a---b---c", "Expected 'a---b---c', got '" .. result10 .. "'")
    assert(count10 is 2, "Expected 2 replacements, got " .. count10)
 
@@ -758,17 +758,17 @@ end
    assert(methodCount is 1, "Expected 1 replacement, got " .. methodCount)
 
    -- Consecutive matches
-   result11, count11 = string.replace("aaa", "aa", "b")
+   result11, count11 = "aaa".replace("aa", "b")
    assert(result11 is "ba", "Expected 'ba', got '" .. result11 .. "'")
    assert(count11 is 1, "Expected 1 replacement (non-overlapping), got " .. count11)
 
    -- CRLF to LF conversion (common use case)
-   result12, count12 = string.replace("line1\r\nline2\r\nline3", "\r\n", "\n")
+   result12, count12 = "line1\r\nline2\r\nline3".replace("\r\n", "\n")
    assert(result12 is "line1\nline2\nline3", "Expected LF-only string, got '" .. result12 .. "'")
    assert(count12 is 2, "Expected 2 CRLF replacements, got " .. count12)
 
    -- Max count of 0 (should not replace anything)
-   result13, count13 = string.replace("hello", "l", "x", 0)
+   result13, count13 = "hello".replace("l", "x", 0)
    assert(result13 is "hello", "Expected 'hello' with max_count=0, got '" .. result13 .. "'")
    assert(count13 is 0, "Expected 0 replacements with max_count=0, got " .. count13)
 end

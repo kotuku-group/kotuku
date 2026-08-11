@@ -563,7 +563,7 @@ end
       caught_msg = e.message ?? tostring(e)
    end
    assert(caught_msg != nil, 'Expected an exception from the erroring thunk argument')
-   assert(string.find(caught_msg, 'boom') != nil, 'Original thunk error should be propagated, got: ' .. caught_msg)
+   assert(caught_msg.find('boom') != nil, 'Original thunk error should be propagated, got: ' .. caught_msg)
 
    -- Resolution must not be left disabled by the earlier failure
    err = script.mtDebugLog(good())

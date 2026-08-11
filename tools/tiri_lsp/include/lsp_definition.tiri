@@ -52,10 +52,10 @@ global function lspPercentDecode(Text:str):str
 end
 
 function lspPercentEncode(Text:str):str
-   Text = string.replace(Text, '%', '%25')
-   Text = string.replace(Text, ' ', '%20')
-   Text = string.replace(Text, '#', '%23')
-   return string.replace(Text, '?', '%3F')
+   Text = Text.replace('%', '%25')
+   Text = Text.replace(' ', '%20')
+   Text = Text.replace('#', '%23')
+   return Text.replace('?', '%3F')
 end
 
 global function lspUriToPath(Uri:str):str
@@ -66,7 +66,7 @@ global function lspUriToPath(Uri:str):str
       path = path.sub(7)
    end
 
-   path = string.replace(lspPercentDecode(path), '\\', '/')
+   path = lspPercentDecode(path).replace('\\', '/')
 
    -- VS Code sends Windows file URIs as file:///e:/path.
    if #path >= 3 and path.sub(0, 1) is '/' and path.sub(2, 3) is ':' then
@@ -86,8 +86,8 @@ global function lspPathToUri(Path:str):str
    end
    if err != ERR_Okay then return nil end
 
-   resolved = string.replace(resolved, '\\', '/')
-   if #resolved >= 2 and string.sub(resolved, 1, 2) is ':' then
+   resolved = resolved.replace('\\', '/')
+   if #resolved >= 2 and resolved.sub(1, 2) is ':' then
       resolved = '/' .. resolved
    elseif not string.startsWith(resolved, '/') then
       resolved = '/' .. resolved
@@ -98,7 +98,7 @@ end
 
 function getParentPath(Path:str):str
    Path ?! return ''
-   path = string.replace(Path, '\\', '/')
+   path = Path.replace('\\', '/')
    last_slash = -1
 
    for i in {0 to #path} do

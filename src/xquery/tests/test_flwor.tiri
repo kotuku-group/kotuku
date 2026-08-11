@@ -48,14 +48,14 @@ end
    local err = xq.init()
    assert(err is ERR_Syntax, 'Missing assignment should be a syntax error, got ' .. mSys.getErrorMsg(err))
    local message = xq.errorMsg ?? ''
-   assert(string.find(message, "Expected ':=' in let binding", 0, true),
+   assert(message.find("Expected ':=' in let binding", 0, true),
       'Error message should reference missing :=, got ' .. message)
 
    xq.statement = 'let $a := return 5'
    local err = xq.init()
    assert(err is ERR_Syntax, 'Missing expression should be a syntax error, got ' .. mSys.GetErrorMsg(err))
    local message = xq.errorMsg ?? ''
-   assert(string.find(message, "Expected expression after ':=' in let binding", 0, true),
+   assert(message.find("Expected expression after ':=' in let binding", 0, true),
       'Error message should reference missing binding expression, got ' .. message)
 end
 
@@ -75,7 +75,7 @@ end
    assert(err is ERR_Okay, 'Numeric FLWOR return should now succeed with atomic value wrapping')
    assert(result != nil, 'FLWOR should return wrapped atomic values')
    -- The result should be something like "35.1:49.5" (the two discounted prices concatenated)
-   assert(string.find(tostring(result), '35.1', 0, true) or string.find(tostring(result), '49.5', 0, true),
+   assert(tostring(result).find('35.1', 0, true) or string.find(tostring(result), '49.5', 0, true),
       'FLWOR result should contain discounted prices, got ' .. tostring(result))
 end
 
@@ -326,8 +326,8 @@ end
    local xq = obj.new('xquery', { statement = 'let $x := "outer" return (let $x := "inner" return $x, $x)' })
    local err = xq.acActivate()
    local s = tostring(xq.resultString)
-   assert(string.find(s, 'inner', 0, true), 'Inner let should produce inner value, got ' .. s)
-   assert(string.find(s, 'outer', 0, true), 'Outer let should remain accessible after inner scope, got ' .. s)
+   assert(s.find('inner', 0, true), 'Inner let should produce inner value, got ' .. s)
+   assert(s.find('outer', 0, true), 'Outer let should remain accessible after inner scope, got ' .. s)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -339,7 +339,7 @@ end
    local err = xml.mtSearch('for $node in /root/value order by $node where $node return $node')
    assert(err is ERR_Syntax, 'ORDER BY followed by WHERE should be rejected as syntax error, got ' .. mSys.GetErrorMsg(err))
    local message = tostring(xml.errorMsg)
-   assert(string.find(message, 'where clause must precede order by', 0, true), 'Error message should describe WHERE/ORDER BY ordering requirement, got ' .. message)
+   assert(message.find('where clause must precede order by', 0, true), 'Error message should describe WHERE/ORDER BY ordering requirement, got ' .. message)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -353,5 +353,5 @@ end
    local err = xml.mtSearch('for $item in /root/item group by $key := $undefined return $item')
    assert(err != ERR_Okay, 'Group by referencing undefined bindings should fail evaluation')
    local message = tostring(xml.errorMsg)
-   assert(string.find(message, 'Group key expression could not be evaluated.', 0, true), 'Error message should describe invalid grouping expression, got ' .. message)
+   assert(message.find('Group key expression could not be evaluated.', 0, true), 'Error message should describe invalid grouping expression, got ' .. message)
 end

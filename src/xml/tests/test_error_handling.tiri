@@ -155,7 +155,7 @@ end
    -- Test creating and destroying many XML objects
    for i in {1 into 100} do
       xml = obj.new("xml", {
-         statement = '<root><data>' .. string.rep("x", 1000) .. '</data></root>'
+         statement = '<root><data>' .. "x".rep(1000) .. '</data></root>'
       })
    end
 end
@@ -173,7 +173,7 @@ end
    -- This may or may not work depending on XPath implementation
 
    -- Test very long XPath expressions
-   longPath = '/root' .. string.rep('/item', 50)
+   longPath = '/root' .. '/item'.rep(50)
    err, result = xml.mtSearch(longPath)
    assert(err is ERR_Search, "Should fail gracefully for invalid long paths")
 end

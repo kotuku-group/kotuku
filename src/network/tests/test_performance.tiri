@@ -158,7 +158,7 @@ end
             logOutput('[Server] Starting large message test...')
             -- Send first large message
             size = message_sizes[current_size_index]
-            large_msg = string.rep('X', size)
+            large_msg = 'X'.rep(size)
             start_time = mSys.PreciseTime()
 
             logOutput('[Server] Sending ' .. size .. ' byte message...')
@@ -206,7 +206,7 @@ end
          if (current_size_index < #message_sizes) then
             -- Send next size
             size = message_sizes[current_size_index]
-            large_msg = string.rep('Y', size)
+            large_msg = 'Y'.rep(size)
             start_time = mSys.PreciseTime()
 
             logOutput('[Server] Sending ' .. size .. ' byte message...')
@@ -395,7 +395,7 @@ end
 
             -- Rapidly queue many messages without waiting
             for i in {0 to queue_messages} do
-               local msg = 'QUEUE_TEST_' .. i .. '_' .. string.rep('DATA', 10)
+               local msg = 'QUEUE_TEST_' .. i .. '_' .. 'DATA'.rep(10)
                local err, len = Socket.acWrite(msg)
                if (err is ERR_Okay) then
                   messages_queued = messages_queued + 1

@@ -110,7 +110,7 @@ end
 
    for i, size in ipairs(packetSizes) do
       print('Sending packet of size: ' .. size)
-      largeMessage = string.rep('X', size)
+      largeMessage = 'X'.rep(size)
       err, bytesSent = client.mtSendTo(dest, largeMessage)
 
       if (err is ERR_Okay) then

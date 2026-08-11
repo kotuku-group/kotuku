@@ -168,7 +168,7 @@ end
    processing.halt(0.1)  -- Brief pause
 
    -- Test medium packet (1024 bytes)
-   medium_message = string.rep('M', 1024)
+   medium_message = 'M'.rep(1024)
    err, bytesSent = client.mtSendTo(dest, medium_message)
    assert(err is ERR_Okay, 'Failed to send medium packet')
    assert(bytesSent is 1024, 'Medium packet not fully sent')

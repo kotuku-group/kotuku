@@ -424,7 +424,7 @@ end
    log = {}
    mt = {
       __newindex = function(Self, Key, Value)
-         table.insert(log, Key .. '=' .. tostring(Value))
+         log.insert(Key .. '=' .. tostring(Value))
          rawset(Self, Key, Value)
       end
    }

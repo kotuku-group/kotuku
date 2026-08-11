@@ -185,8 +185,8 @@ end
    local output_path = 'temp:diffusiongradient_saved.svg'
    local saved = saveScene(scene, output_path)
 
-   assert(string.find(saved, '<diffusionGradient', 0, true) != nil, 'Saved SVG should contain a diffusionGradient element')
-   assert(string.find(saved, 'left-start=', 0, true) != nil, 'Saved curves should carry left-start colours')
+   assert(saved.find('<diffusionGradient', 0, true) != nil, 'Saved SVG should contain a diffusionGradient element')
+   assert(saved.find('left-start=', 0, true) != nil, 'Saved curves should carry left-start colours')
 
    local reparsed_scene, reparsed_gradient = loadDiffusion(output_path)
    assertCurvesMatch(reparsed_gradient, gradient, 'round-trip')
@@ -213,7 +213,7 @@ end
 
    local output_path = 'temp:diffusiongradient_fixture_saved.svg'
    local saved = saveScene(scene, output_path)
-   assert(string.find(saved, 'gradientTransform=', 0, true) != nil, 'Saved fixture should preserve the gradient transform')
+   assert(saved.find('gradientTransform=', 0, true) != nil, 'Saved fixture should preserve the gradient transform')
 
    local reparsed_scene, reparsed_gradient = loadDiffusion(output_path)
    assertCurvesMatch(reparsed_gradient, gradient, 'fixture round-trip')

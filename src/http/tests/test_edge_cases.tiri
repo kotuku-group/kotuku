@@ -236,7 +236,7 @@ end
    content = ''
 
    -- Create a body larger than server's maxRequestSize (which we'll set to 1KB)
-   oversizedBody = string.rep('X', 2048) -- 2KB body
+   oversizedBody = 'X'.rep(2048) -- 2KB body
 
    http = obj.new('http', {
       src = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/test',

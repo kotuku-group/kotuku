@@ -152,7 +152,7 @@ gui.dialog.message = function(Options)
       local msg:str = self.fmtMessage
       if not msg?? then
          msg = string.escXML(self.message ?? '')
-         msg = string.replace(msg, '\n', '<br/>')
+         msg = msg.replace('\n', '<br/>')
       end
 
       doc ..= [[

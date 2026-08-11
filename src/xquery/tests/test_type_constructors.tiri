@@ -53,7 +53,7 @@ end
       assert(durationValue is 'P2DT3H4M', 'xs:duration should preserve the canonical lexical string, got: ' .. tostring(durationValue))
    else
       local message = string.lower(xml.errorMsg ?? '')
-      assert(string.find(message, 'xpst0051', 1, true),
+      assert(message.find('xpst0051', 1, true),
          'xs:duration should only fail when the constructor is not implemented yet, got: ' .. message)
    end
 
@@ -78,7 +78,7 @@ end
    assert(errMulti != ERR_Okay, 'xs:int should reject node-sets with more than one item')
 
    local message = string.lower(xmlMulti.errorMsg ?? '')
-   assert(string.find(message, 'xpty0004', 0, true),
+   assert(message.find('xpty0004', 0, true),
       'Multiple-node constructor operands should report XPTY0004, got: ' .. message)
 end
 
@@ -93,7 +93,7 @@ end
       assert(qnameInstance is 'true', 'xs:QName with a bound prefix should return an xs:QName value, got: ' .. tostring(qnameInstance))
    else
       local message = string.lower(xml.errorMsg ?? '')
-      assert(string.find(message, 'xpst0051', 0, true),
+      assert(message.find('xpst0051', 0, true),
          'xs:QName constructors should only fail when the schema type is unavailable, got: ' .. message)
    end
 
@@ -101,7 +101,7 @@ end
    assert(err2 != ERR_Okay, 'xs:QName should fail when the prefix is not bound')
 
    local message = string.lower(xml.errorMsg ?? '')
-   assert(string.find(message, 'fons0004', 0, true) or string.find(message, 'xpst0051', 0, true),
+   assert(message.find('fons0004', 0, true) or string.find(message, 'xpst0051', 0, true),
       'Unbound prefix in xs:QName should yield FONS0004 (or XPST0051 until QName constructors land), got: ' .. message)
 end
 
@@ -121,7 +121,7 @@ end
    assert(err3 != ERR_Okay, 'Invalid clock value should raise FORG0001 for xs:time')
 
    local message = string.lower(xml.errorMsg ?? '')
-   assert(string.find(message, 'forg0001', 0, true),
+   assert(message.find('forg0001', 0, true),
       'Invalid constructor lexemes should report FORG0001, got: ' .. message)
 end
 
@@ -135,7 +135,7 @@ end
    assert(err2 != ERR_Okay, 'Constructors invoked with more than one argument should raise XPTY0004')
 
    local message = string.lower(xml.errorMsg ?? '')
-   assert(string.find(message, 'xpty0004', 0, true), 'Constructor arity errors should include XPTY0004, got: ' .. message)
+   assert(message.find('xpty0004', 0, true), 'Constructor arity errors should include XPTY0004, got: ' .. message)
 end
 
 @Test function ConstructorUnsupportedType()
@@ -145,5 +145,5 @@ end
    assert(err != ERR_Okay, 'Constructors targeting unknown schema types should fail at compile time')
 
    local message = string.lower(xml.errorMsg ?? '')
-   assert(string.find(message, 'xpst0051', 0, true), 'Unknown schema constructors should report XPST0051, got: ' .. message)
+   assert(message.find('xpst0051', 0, true), 'Unknown schema constructors should report XPST0051, got: ' .. message)
 end

@@ -488,7 +488,7 @@ end
    Function = { status = 'Hello' }
 
    -- Ternary operator within a function
-   result = string.find((Function.status ? 'then' :> 'else'), 'e')
+   result = (Function.status ? 'then' :> 'else').find('e')
    assert(result is 2, "Failed test: expected 3, got " .. tostring(result))
 end
 

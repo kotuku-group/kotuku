@@ -177,7 +177,7 @@ function canonicalizePath(self, Path:str):str
    end
 
    -- Rebuild clean path
-   cleanPath = '/' .. table.concat(components, '/')
+   cleanPath = '/' .. components.concat('/')
    if Path.endsWith('/') and cleanPath != '/' then
       cleanPath ..= '/'
    end
@@ -205,13 +205,13 @@ function processChunkedBody(State:table!, Server:table!):bool
    while #State.buffer > 0 do
       if State.chunk_state is 'SIZE' then
          -- Look for chunk size line ending with \r\n
-         line_end = string.find(State.buffer, '\r\n')
+         line_end = State.buffer.find('\r\n')
          if not line_end then
             return false -- Need more data for chunk size line
          end
 
-         size_line = string.sub(State.buffer, 0, line_end)
-         State.buffer = string.sub(State.buffer, line_end + 2) -- Remove \r\n
+         size_line = State.buffer.sub(0, line_end)
+         State.buffer = State.buffer.sub(line_end + 2) -- Remove \r\n
 
          -- Parse chunk size (ignore extensions after semicolon)
          hex_size = rxHexChunkSize.extract(size_line)
@@ -245,8 +245,8 @@ function processChunkedBody(State:table!, Server:table!):bool
          end
 
          to_take = math.min(available, needed)
-         State.request.body   = State.request.body .. string.sub(State.buffer, 0, to_take)
-         State.buffer         = string.sub(State.buffer, to_take)
+         State.request.body   = State.request.body .. State.buffer.sub(0, to_take)
+         State.buffer         = State.buffer.sub(to_take)
          State.chunk_received = State.chunk_received + to_take
          State.body_received  = State.body_received + to_take
 
@@ -260,7 +260,7 @@ function processChunkedBody(State:table!, Server:table!):bool
          if #State.buffer < 2 then return false end -- Need more data
 
          if string.startsWith(State.buffer, '\r\n') then
-            State.buffer = string.sub(State.buffer, 2)
+            State.buffer = State.buffer.sub(2)
             State.chunk_state = 'SIZE' -- Ready for next chunk
          else
             -- Be lenient - some clients might not send proper CRLF
@@ -270,9 +270,9 @@ function processChunkedBody(State:table!, Server:table!):bool
 
       elseif State.chunk_state is 'TRAILER' then
          -- Look for final \r\n (trailer headers are ignored for now)
-         trailer_end = string.find(State.buffer, '\r\n')
+         trailer_end = State.buffer.find('\r\n')
          if trailer_end then
-            State.buffer = string.sub(State.buffer, trailer_end + 1)
+            State.buffer = State.buffer.sub(trailer_end + 1)
             return true -- Chunked reading complete
          else
             return false -- Need more data for trailer
@@ -470,7 +470,7 @@ function parseQueryString(QueryString:str):table
             if type(query[key]) != 'table' then
                query[key] = { query[key] }
             end
-            table.insert(query[key], value)
+            query[key].insert(value)
          else
             query[key] = value
          end
@@ -606,7 +606,7 @@ end
 function parseHttpRequest(Req)
    lines = {}
    for start, stop, cap in rxLineIterator.findAll(Req) do
-      table.insert(lines, cap[0])
+      lines.insert(cap[0])
    end
 
    if #lines is 0 then return nil end
@@ -795,7 +795,7 @@ function createResponseObject(self, Client)
          if type(existing) != 'table' then
             existing = { existing }
          end
-         table.insert(existing, cookieStr)
+         existing.insert(cookieStr)
          res._headers['set-cookie'] = existing
       else
          res._headers['set-cookie'] = cookieStr
@@ -1342,7 +1342,7 @@ function addRoute(self:table, route:table)
             end
          end
 
-         table.insert(self._routes[method], {
+         self._routes[method].insert({
             pattern        = pattern,
             callback       = route.handler,
             validateHeader = route.validateHeader,
@@ -1366,7 +1366,7 @@ function extractParams(pattern:str!, matchResults):table
    -- Extract parameter names from the original pattern
    paramNames = {}
    for start, stop, cap in rxRouteParam.findAll(pattern) do
-      table.insert(paramNames, cap[0])
+      paramNames.insert(cap[0])
    end
 
    -- Map parameter names to captured group values (skip index 1 which is full match)
@@ -1447,13 +1447,13 @@ function allowedMethodsForPath(serverInstance, path):str
    for method, methodRoutes in pairs(serverInstance._routes) do
       for route in values(methodRoutes) do
          if routeMatchesPath(route, path) then
-            table.insert(methods, method)
+            methods.insert(method)
             break
          end
       end
    end
 
-   if #methods > 0 then return table.concat(methods, ', ') end
+   if #methods > 0 then return methods.concat(', ') end
    return nil
 end
 
@@ -1597,11 +1597,11 @@ function serverIncoming(self, ClientSocket)
    -- Read and parse headers
    if state.phase is 'READING_HEADERS' then
       -- Look for end of headers marker
-      header_end = string.find(state.buffer, '\r\n\r\n')
+      header_end = state.buffer.find('\r\n\r\n')
       header_end ?! return -- Wait for more data
 
       -- Extract header section
-      header_section = string.sub(state.buffer, 0, header_end + 3) -- Include the \r\n\r\n
+      header_section = state.buffer.sub(0, header_end + 3) -- Include the \r\n\r\n
       state.request = parseHttpRequest(header_section)
 
       if not state.request then
@@ -1640,7 +1640,7 @@ function serverIncoming(self, ClientSocket)
       end
 
       -- Remove processed headers from buffer
-      state.buffer = string.sub(state.buffer, header_end + 4) -- Remove \r\n\r\n as well
+      state.buffer = state.buffer.sub(header_end + 4) -- Remove \r\n\r\n as well
       state.headers_complete = true
 
       -- Call validateHeader callback if route has one
@@ -1697,7 +1697,7 @@ function serverIncoming(self, ClientSocket)
       end
 
       if state.request.method is 'POST' or state.request.method is 'PUT' or state.request.method is 'PATCH' then
-         if (state.transfer_encoding and string.find(string.lower(state.transfer_encoding), 'chunked')) or
+         if (state.transfer_encoding and string.lower(state.transfer_encoding).find('chunked')) or
             (state.content_length and state.content_length > 0) then
             -- Need to read body
             state.phase = 'READING_BODY'
@@ -1713,7 +1713,7 @@ function serverIncoming(self, ClientSocket)
 
    -- Read request body
    if state.phase is 'READING_BODY' then
-      if state.transfer_encoding and string.find(string.lower(state.transfer_encoding), 'chunked') then
+      if state.transfer_encoding and string.lower(state.transfer_encoding).find('chunked') then
          if not processChunkedBody(state, self) then
             return -- Still reading chunks or error occurred
          end
@@ -1724,8 +1724,8 @@ function serverIncoming(self, ClientSocket)
 
          if available > 0 then
             to_take = math.min(available, needed)
-            state.request.body = state.request.body .. string.sub(state.buffer, 0, to_take)
-            state.buffer = string.sub(state.buffer, to_take)
+            state.request.body = state.request.body .. state.buffer.sub(0, to_take)
+            state.buffer = state.buffer.sub(to_take)
             state.body_received = state.body_received + to_take
 
             logMessage(self, 'Body progress: ' .. state.body_received .. '/' .. state.content_length .. ' bytes')
@@ -1939,7 +1939,7 @@ hslib.start = function(Options)
    if Options.folder then
       -- Validate folder input
       folder = Options.folder
-      if string.find(folder, '..') or string.startsWith(folder, '~') then
+      if folder.find('..') or string.startsWith(folder, '~') then
          error(f'Invalid folder path: security violation for: {folder}')
       end
 
@@ -2076,7 +2076,7 @@ hslib.start = function(Options)
    msg(f'  File chunk size: {self.fileChunkSize} bytes')
    msg(f'  Timeout: {self.timeout} seconds')
    msg(f'  Verbose logging: {self.verbose}')
-   msg('  Index files: ' .. table.concat(self.indexFiles, ', '))
+   msg('  Index files: ' .. self.indexFiles.concat(', '))
    msg(f'  Auto-indexing: {self.autoIndex}')
    msg('  Rate limit: ' .. (self.rateLimit > 0 and (f'{self.rateLimit} requests per {self.rateLimitWindow} seconds') or 'disabled'))
    msg('  Security headers: ' .. (self.enableCSP and 'enabled' or 'disabled'))
@@ -2123,7 +2123,7 @@ hslib.start = function(Options)
       self._middleware ?= {}
 
       if type(middleware) is 'function' then
-         table.insert(self._middleware, middleware)
+         self._middleware.insert(middleware)
          logMessage(self, 'Global middleware added')
       else
          error('Middleware must be a function')

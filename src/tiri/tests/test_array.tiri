@@ -1789,17 +1789,17 @@ end
    arr = array<float> { 1.5, 2.5, 3.5 }
    result = arr.concat(', ')
    -- Float formatting may vary, check contains expected values
-   assert(string.find(result, '1.5') != nil, "concat result should contain 1.5")
-   assert(string.find(result, '2.5') != nil, "concat result should contain 2.5")
-   assert(string.find(result, '3.5') != nil, "concat result should contain 3.5")
+   assert(result.find('1.5') != nil, "concat result should contain 1.5")
+   assert(result.find('2.5') != nil, "concat result should contain 2.5")
+   assert(result.find('3.5') != nil, "concat result should contain 3.5")
 end
 
 @Test function ArrayConcatDouble()
    arr = array<double> { 3.14159, 2.71828 }
    result = arr.concat(' and ')
-   assert(string.find(result, '3.14') != nil, "concat result should contain pi")
-   assert(string.find(result, '2.71') != nil, "concat result should contain e")
-   assert(string.find(result, ' and ') != nil, "concat result should contain separator")
+   assert(result.find('3.14') != nil, "concat result should contain pi")
+   assert(result.find('2.71') != nil, "concat result should contain e")
+   assert(result.find(' and ') != nil, "concat result should contain separator")
 end
 
 @Test function ArrayConcatByte()
@@ -1817,8 +1817,8 @@ end
 @Test function ArrayConcatInt64()
    arr = array<int64> { 1234567890123, 9876543210987 }
    result = arr.concat(' | ')
-   assert(string.find(result, '1234567890123') != nil, "concat should contain first int64")
-   assert(string.find(result, '9876543210987') != nil, "concat should contain second int64")
+   assert(result.find('1234567890123') != nil, "concat should contain first int64")
+   assert(result.find('9876543210987') != nil, "concat should contain second int64")
 end
 
 @Test function ArrayConcatEmpty()

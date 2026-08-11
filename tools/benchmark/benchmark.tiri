@@ -255,7 +255,7 @@ end
       logMessage('')
       logMessage(string.format('%-*s  %-11s %8s %8s %8s %10s', longest_name, 'BENCHMARK', 'STATUS',
          'RECORDED', 'COMPILED', 'ABORTED', 'MS/CALL'))
-      logMessage(string.rep('-', longest_name + 50))
+      logMessage('-'.rep(longest_name + 50))
 
       local advice = { }
       local tally = { OPTIMISED=0, CHURNING=0, PARTIAL=0, INTERPRETED=0, ['NO TRACES']=0, ERROR=0 }
@@ -373,20 +373,20 @@ end
          log_file.seek('set', pos)
          buffer = log_file.read(read_size) .. buffer
          while string.endsWith(buffer, '\n') do
-            buffer = string.rtrim(buffer)
+            buffer = buffer.rtrim()
          end
 
          local split
          local search_from = 0
          while true do
-            local next_split = string.find(buffer, '\n', search_from, true)
+            local next_split = buffer.find('\n', search_from, true)
             if next_split is nil then break end
             split = next_split
             search_from = next_split + 1
          end
 
          if split != nil then
-            last_result = json.decode(string.sub(buffer, split + 1))
+            last_result = json.decode(buffer.sub(split + 1))
             break
          end
 
@@ -423,7 +423,7 @@ end
          logMessage('Comparison to last run (+ve % is better):')
          logMessage('')
 
-         for name, eval in table.sortByKeys(last_result.evals) do
+         for name, eval in last_result.evals.sortByKeys() do
             if report.evals[name] then
                local cmp = report.evals[name]
                local last_p99 = comparisonP99(eval)
