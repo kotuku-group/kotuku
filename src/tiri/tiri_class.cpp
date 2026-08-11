@@ -30,6 +30,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include "lua.hpp"
 
 #include "lj_obj.h"
+#include "lj_state.h"
 #include "parser/parser_diagnostics.h"
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
@@ -237,6 +238,7 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 
    for (auto &scan : Self->ActionList) {
       if ((Object->UID IS scan.ObjectID) and (ActionID IS scan.ActionID)) {
+         LuaContextRootGuard context_guard(Self->Lua);
          int depth = GetResource(RES::LOG_DEPTH); // Required because thrown errors cause the debugger to lose its branch
 
          {
@@ -367,6 +369,7 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 
       for (auto it = Self->Requests.begin(); it != Self->Requests.end(); ) {
          if ((Args->Object) and (it->SourceID IS Args->Object->UID)) {
+            LuaContextRootGuard context_guard(Self->Lua);
             // Execute the callback associated with this input subscription: function({Items...})
 
             int step = GetResource(RES::LOG_DEPTH); // Required as thrown errors cause the debugger to lose its step position

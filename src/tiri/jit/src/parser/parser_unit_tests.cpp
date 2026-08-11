@@ -1552,6 +1552,58 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    return true;
 }
 
+static bool test_unmatched_context_entry_rejected(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   constexpr std::string_view source =
+      "local receiver = { name='receiver', read=function():str return .name end }\n"
+      "local value = receiver.read()\n"
+      "return value\n";
+   if (lua_load(lua, source, "unmatched-context-entry")) {
+      Log.error("failed to compile contextual bytecode fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *prototype = funcproto(funcV(lua->top - 1));
+   BCIns *bytecode = proto_bc(prototype);
+   MSize call_position = 0;
+   for (MSize i = 1; i + 1 < prototype->sizebc; ++i) {
+      if ((bc_op(bytecode[i]) IS BC_CTXCALL or bc_op(bytecode[i]) IS BC_CTXCALLM) and
+          bc_op(bytecode[i + 1]) IS BC_CTXLEAVE) {
+         call_position = i;
+         break;
+      }
+   }
+   if (call_position IS 0) {
+      Log.error("contextual bytecode fixture did not emit a call-and-leave pair");
+      return false;
+   }
+
+   BCIns saved_call = bytecode[call_position];
+   BCIns saved_leave = bytecode[call_position + 1];
+   setbc_op(&bytecode[call_position], bc_op(saved_call) IS BC_CTXCALL ? BC_CALL : BC_CALLM);
+   setbc_op(&bytecode[call_position + 1], BC_MOV);
+
+   std::string dump;
+   bool wrote_dump = lj_bcwrite(lua, prototype, bytecode_writer, &dump, 1) IS 0;
+   bytecode[call_position] = saved_call;
+   bytecode[call_position + 1] = saved_leave;
+   lua_pop(lua, 1);
+   if (not wrote_dump) {
+      Log.error("failed to write unmatched contextual entry fixture");
+      return false;
+   }
+
+   if (lua_load(lua, std::string_view(dump.data(), dump.size()), "unmatched-context-entry") IS 0) {
+      Log.error("bytecode reader accepted an unmatched BC_CTXENTER");
+      lua_pop(lua, 1);
+      return false;
+   }
+   lua_pop(lua, 1);
+   return true;
+}
+
 static bool test_signature_static_inference(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -7216,7 +7268,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 63> tests = { {
+   constexpr std::array<TestCase, 64> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7245,6 +7297,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
       { "forward_declaration_signature_validation", test_forward_declaration_signature_validation },
       { "old_bytecode_versions_rejected", test_old_bytecode_versions_rejected },
+      { "unmatched_context_entry_rejected", test_unmatched_context_entry_rejected },
       { "signature_static_inference", test_signature_static_inference },
       { "signature_void_and_bare_return", test_signature_void_and_bare_return },
       { "malformed_signature_rejected", test_malformed_signature_rejected },

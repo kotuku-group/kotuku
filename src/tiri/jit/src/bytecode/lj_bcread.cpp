@@ -295,6 +295,8 @@ static void bcread_knum(LexState *State, GCproto *pt, MSize sizekn)
 static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
 {
    BCIns* bc = proto_bc(pt);
+   BCREG context_entries[BCMAX_A + 1];
+   MSize context_entry_depth = 0;
    bc[0] = BCINS_AD((pt->flags & PROTO_VARARG) ? BC_FUNCV : BC_FUNCF,
       pt->framesize, 0);
    bcread_block(State, bc + 1, (sizebc - 1) * (MSize)sizeof(BCIns));
@@ -324,6 +326,17 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          BCREG call_base = bc_a(bc[i]);
          if (call_base IS 0 or call_base >= pt->framesize) bcread_error(State, ErrMsg::BCBAD);
 
+         if (op IS BC_CTXENTER) {
+            if (context_entry_depth >= BCMAX_A + 1) bcread_error(State, ErrMsg::BCBAD);
+            context_entries[context_entry_depth++] = call_base;
+         }
+         else if (op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXCALLT) {
+            if (context_entry_depth IS 0 or context_entries[context_entry_depth - 1] != call_base) {
+               bcread_error(State, ErrMsg::BCBAD);
+            }
+            --context_entry_depth;
+         }
+
          if (op IS BC_CTXCALL or op IS BC_CTXCALLM) {
             if (i + 1 >= sizebc or bc_op(bc[i + 1]) != BC_CTXLEAVE or bc_a(bc[i + 1]) != call_base) {
                bcread_error(State, ErrMsg::BCBAD);
@@ -339,6 +352,7 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          }
       }
    }
+   if (context_entry_depth != 0) bcread_error(State, ErrMsg::BCBAD);
 }
 
 //********************************************************************************************************************

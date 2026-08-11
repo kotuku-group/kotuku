@@ -1,6 +1,7 @@
 -- Flute regression tests for table-gated contextual member calls.
 
 import 'json'
+module core as mCore
 
 @Test function NamedAndComputedTableCallsEstablishContext()
    local point = { name = 'point', value = 0 }
@@ -205,6 +206,41 @@ end
       'A delayed callback should begin unbound in the state root context')
    .glDelayedContextName = nil
    .glDelayedObservedContext = nil
+end
+
+@Test function ActionCallbacksAreUnbound()
+   .glActionContextName = 'root'
+   .glActionObservedContext = nil
+   local receiver = { glActionContextName = 'receiver' }
+   local file = obj.new('file')
+   local timer
+   local file_freed = false
+
+   defer
+      if timer then check mCore.UpdateTimer(timer, 0) end
+      if not file_freed then file.free() end
+      .glActionContextName = nil
+      .glActionObservedContext = nil
+   end
+
+   function receiver.wait_for_free()
+      file.subscribe('free', function()
+         .glActionObservedContext = .glActionContextName
+         processing.signal()
+      end)
+
+      local err
+      err, timer = mCore.SubscribeTimer(0.01, function()
+         file_freed = true
+         file.free()
+      end)
+      check err
+      check processing.sleep(1.0)
+   end
+
+   receiver.wait_for_free()
+   assert(.glActionObservedContext is 'root',
+      'An out-of-band action callback should begin unbound in the state root context')
 end
 
 @Test function ContextualTailCallsTransferOwnership()
