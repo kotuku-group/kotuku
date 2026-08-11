@@ -702,6 +702,11 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       }
 
       is_contextual_call = receiver_node != nullptr;
+      // A leading-dot receiver is the current context by construction. Ordinary calls inherit that context, so
+      // retaining and re-entering the same table would only add contextual call and result-compaction overhead.
+      if (is_contextual_call and receiver_node->kind IS AstNodeKind::CurrentContextExpr) {
+         is_contextual_call = false;
+      }
       bool proved_specialised_receiver = false;
       if (is_contextual_call and receiver_node->static_value) {
          const auto &descriptor = this->ctx.descriptors().value(receiver_node->static_value);
