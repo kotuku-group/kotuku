@@ -584,7 +584,7 @@ static void trace_start(jit_State *J)
    }
    else {
       BCOp op = bc_op(*J->pc);
-      if (op IS BC_CALLM or op IS BC_CALL or op IS BC_ITERC) {
+      if (op IS BC_CALLM or op IS BC_CALL or op IS BC_CTXCALLM or op IS BC_CTXCALL or op IS BC_ITERC) {
          setintV(L->top++, J->exitno);  //  Parent of stitched trace.
          setintV(L->top++, -1);
       }
@@ -647,6 +647,8 @@ static void trace_stop(jit_State *J)
       break;
    case BC_CALLM:
    case BC_CALL:
+   case BC_CTXCALLM:
+   case BC_CTXCALL:
    case BC_ITERC:
       // Trace stitching: patch link of previous trace.
       traceref(J, J->exitno)->link = traceno;
@@ -1121,10 +1123,12 @@ int lj_trace_exit(jit_State *J, void *exptr)
    // Return MULTRES or 0.
    ERRNO_RESTORE
       switch (bc_op(*pc)) {
-      case BC_CALLM: case BC_CALLMT:
+      case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
          return (int)((BCREG)(L->top - L->base) - bc_a(*pc) - bc_c(*pc) - LJ_FR2);
       case BC_RETM:
          return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc) - bc_d(*pc));
+      case BC_CTXLEAVE:
+         return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc));
       case BC_TSETM:
          return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc));
       default:

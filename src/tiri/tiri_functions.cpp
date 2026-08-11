@@ -14,6 +14,7 @@
 
 #include "lua.h"
 #include "lj_obj.h"
+#include "lj_state.h"
 #include "parser/parser_diagnostics.h"
 
 #include "defs.h"
@@ -89,6 +90,7 @@ static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 {
    auto tiri = (extTiri *)CurrentContext();
    auto lua = tiri->Lua;
+   LuaContextRootGuard context_guard(lua);
 
    kt::Log log(__FUNCTION__);
    log.trace("Received event $%.8x%.8x", (int)((Info->EventID>>32) & 0xffffffff), (int)(Info->EventID & 0xffffffff));

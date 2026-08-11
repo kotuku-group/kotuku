@@ -2499,6 +2499,10 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    InferredType result;
 
    switch (Expr.kind) {
+      case AstNodeKind::CurrentContextExpr:
+         result.primary = TiriType::Table;
+         result.is_nullable = false;
+         break;
       case AstNodeKind::LiteralExpr: {
          auto *payload = std::get_if<LiteralValue>(&Expr.data);
          if (payload) return infer_literal_type(*payload);

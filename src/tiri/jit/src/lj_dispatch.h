@@ -75,9 +75,9 @@ LJ_FUNC void lj_dispatch_init_hotcount(global_State* g);
 LJ_FUNC void lj_dispatch_update(global_State* g);
 
 // Instruction dispatch callback for hooks or when recording.
-LJ_FUNCA void lj_dispatch_ins(lua_State* L, const BCIns* pc);
+LJ_FUNCA uint32_t lj_dispatch_ins(lua_State* L, const BCIns* pc);
 LJ_FUNCA ASMFunction lj_dispatch_call(lua_State* L, const BCIns* pc);
-LJ_FUNCA void lj_dispatch_stitch(jit_State* J, const BCIns* pc);
+LJ_FUNCA uint32_t lj_dispatch_stitch(jit_State* J, const BCIns* pc);
 
 #define ERRNO_SAVE
 #define ERRNO_RESTORE

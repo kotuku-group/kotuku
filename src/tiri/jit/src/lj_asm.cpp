@@ -967,6 +967,7 @@ static void asm_snap_alloc(ASMState* as, int snapno)
    SnapEntry* map = &as->T->snapmap[snap->mapofs];
    MSize n, nent = snap->nent;
    as->snapfilt1 = as->snapfilt2 = 0;
+   if (snap->context_ref and not irref_isk(snap->context_ref)) asm_snap_alloc1(as, snap->context_ref);
    for (n = 0; n < nent; n++) {
       SnapEntry sn = map[n];
       IRRef ref = snap_ref(sn);
@@ -2042,7 +2043,7 @@ static void asm_tail_link(ASMState* as)
       emit_loadu64(as, RID_LPC, u64ptr(pc));
       mres = (int32_t)(snap->nslots - baseslot - LJ_FR2);
       switch (bc_op(*pc)) {
-      case BC_CALLM: case BC_CALLMT:
+      case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
          mres -= (int32_t)(1 + LJ_FR2 + bc_a(*pc) + bc_c(*pc)); break;
       case BC_RETM: mres -= (int32_t)(bc_a(*pc) + bc_d(*pc)); break;
       case BC_TSETM: mres -= (int32_t)bc_a(*pc); break;

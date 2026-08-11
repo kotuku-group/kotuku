@@ -23,6 +23,7 @@ additional functionality in the future.
 #include "lib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
+#include "lj_state.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -55,6 +56,7 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
    auto lua = tiri->Lua;
 
    if (Msg->Callback != LUA_NOREF) {
+      LuaContextRootGuard context_guard(lua);
       if ((Object) and (Object->baseClassID() IS CLASSID::SCRIPT)) {
          auto args = std::to_array<ScriptArg>({
             { "Object", Object, FD_OBJECTPTR }

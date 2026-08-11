@@ -904,6 +904,11 @@ private:
          TiriType generated_type = std::get<CallExprPayload>(receiver->data).result_type;
          if (generated_type != TiriType::Unknown and generated_type != TiriType::Any) receiver_type = generated_type;
       }
+      if (receiver_type IS TiriType::Table and
+          not get_method_prototype_by_hash(TiriType::Table, member->hash)) {
+         Call.builtin_method.reset();
+         return;
+      }
       if ((not descriptor.proved() and Call.argument_syntax != CallArgumentSyntax::Synthetic) or
           receiver_type IS TiriType::Any or receiver_type IS TiriType::Unknown or
           (descriptor.nullable and not safe and Call.argument_syntax != CallArgumentSyntax::Synthetic)) {
@@ -1295,6 +1300,11 @@ private:
       StaticValueDescriptor value;
       StaticResultSetHandle results = 0;
       switch (Expression.kind) {
+         case AstNodeKind::CurrentContextExpr:
+            value.primary = TiriType::Table;
+            value.nullable = false;
+            value.proof = StaticProof::Closed;
+            break;
          case AstNodeKind::LiteralExpr:
             value = this->literal_descriptor(std::get<LiteralValue>(Expression.data));
             break;

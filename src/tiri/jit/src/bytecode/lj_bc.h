@@ -280,7 +280,14 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   /* Immutable state-local built-in callable load. Appended to preserve existing opcode numbers. */ \
   _(BFUNC,     dst,  ___, lit, ___) \
   /* Runtime built-in method resolution. P32 is the member string constant; D is the field fallback edge. */ \
-  _(BMETH,     dst,  ___, jump, ___)
+  _(BMETH,     dst,  ___, jump, ___) \
+  /* Current table context. */ \
+  _(CTXGET,    dst,  ___, ___, ___) \
+  _(CTXCALLM,  base, lit, lit, call) \
+  _(CTXCALL,   base, lit, lit, call) \
+  _(CTXLEAVE,  base, ___, lit, ___) \
+  _(CTXENTER,  base, ___, ___, ___) \
+  _(CTXCALLT,  base, ___, lit, call)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -442,7 +449,15 @@ typedef enum {
    BC_BFUNC = 121,
    BC_BMETH = 122,
 
-   BC__MAX   = 123
+   // Current table context
+   BC_CTXGET = 123,
+   BC_CTXCALLM = 124,
+   BC_CTXCALL = 125,
+   BC_CTXLEAVE = 126,
+   BC_CTXENTER = 127,
+   BC_CTXCALLT = 128,
+
+   BC__MAX   = 129
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

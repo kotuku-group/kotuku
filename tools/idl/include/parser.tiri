@@ -69,8 +69,8 @@ global glOfficialTags = {
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse and validate comma or newline-separated documentation tags for the supplied context.
 
-function parseTags(Tags:str, Context:str):array<string>
-   result = array<string>
+function parseTags(Tags:str, Context:str):array<str>
+   result = array<str>
    Tags ?! return result
 
    for item in values(Tags.replace('\n', ',').split(',')) do
@@ -91,8 +91,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply automatic documentation tags to a tag list based on a field definition.
 
-global function addTag(Tags:array<string>, Tag:str):array<string>
-   Tags ?= array<string>
+global function addTag(Tags:array<str>, Tag:str):array<str>
+   Tags ?= array<str>
 
    for existing_tag in values(Tags) do
       if existing_tag is Tag then return Tags end
@@ -105,9 +105,9 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply automatic documentation tags to a tag list based on a field definition.
 
-global function getTagsFromField(Field:table, Tags:array<string>):array<string>
+global function getTagsFromField(Field:table, Tags:array<str>):array<str>
    Field ?! return Tags
-   Tags ?= array<string>
+   Tags ?= array<str>
 
    if Field.allocated then addTag(Tags, 'caller-owns-result') end
    if Field.flags and Field.flags has FD_ALLOC then addTag(Tags, 'caller-owns-result') end
@@ -122,8 +122,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply automatic documentation tags for every field or parameter in a collection.
 
-global function getTagsFromCollection(Tags:array<string>, Fields:any):array<string>
-   Tags ?= array<string>
+global function getTagsFromCollection(Tags:array<str>, Fields:any):array<str>
+   Tags ?= array<str>
    Fields ?! return Tags
 
    for field in values(Fields) do

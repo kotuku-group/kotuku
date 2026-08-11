@@ -784,7 +784,7 @@ void LexState::fs_fixup_var(GCproto* Prototype, uint8_t* Buffer, size_t OffsetVa
 [[nodiscard]] inline int bcopisret(BCOp op)
 {
    switch (op) {
-      case BC_CALLMT: case BC_CALLT:
+      case BC_CALLMT: case BC_CALLT: case BC_CTXCALLT:
       case BC_RETM: case BC_RET: case BC_RET0: case BC_RET1:
          return 1;
       default:
@@ -847,7 +847,7 @@ static void fs_fixup_ret(FuncState *fs)
          BCIns ins = fs->bcbase[pc].ins;
          BCPOS offset;
          switch (bc_op(ins)) {
-            case BC_CALLMT: case BC_CALLT:
+            case BC_CALLMT: case BC_CALLT: case BC_CTXCALLT:
             case BC_RETM: case BC_RET: case BC_RET0: case BC_RET1:
                offset = bcemit_INS(fs, ins);  // Copy original instruction.
                fs->bcbase[offset].line = fs->bcbase[pc].line;

@@ -7,6 +7,10 @@
 
 #include "lua.h"
 #include "lauxlib.h"
+#include "lj_gc.h"
+#include "lj_state.h"
+#include "lj_str.h"
+#include "lj_tab.h"
 
 #include <array>
 #include <cstddef>
@@ -140,14 +144,84 @@ static bool test_shutdown_does_not_run_new_finalisers(kt::Log &Log)
    return true;
 }
 
+static bool test_context_root_tracks_environment_replacement(kt::Log &Log)
+{
+   lua_State *lua = luaL_newstate(nullptr);
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab *initial = tabref(lua->env);
+   GCtab *replacement = lj_tab_new(lua, 0, 1);
+   setgcref(lua->env, obj2gco(replacement));
+   bool passed = lj_context_depth(lua) IS 1 and lj_context_current(lua) IS replacement and replacement != initial;
+   if (not passed) Log.error("root context did not resolve through the replacement environment");
+   lua_close(lua);
+   return passed;
+}
+
+static bool test_nested_context_ownership_and_stack_relocation(kt::Log &Log)
+{
+   lua_State *lua = luaL_newstate(nullptr);
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab *outer = lj_tab_new(lua, 0, 1);
+   GCtab *inner = lj_tab_new(lua, 0, 1);
+   lj_context_push(lua, outer, lua->base);
+   lj_context_push(lua, inner, lua->base);
+   lj_state_growstack(lua, 256);
+
+   bool passed = lj_context_depth(lua) IS 3 and lj_context_current(lua) IS inner;
+   lj_context_pop(lua, lua->base);
+   passed = passed and lj_context_current(lua) IS outer;
+   lj_context_pop(lua, lua->base);
+   passed = passed and lj_context_depth(lua) IS 1 and lj_context_current(lua) IS tabref(lua->env);
+   if (not passed) Log.error("nested context ownership did not survive stack relocation or restore in order");
+   lua_close(lua);
+   return passed;
+}
+
+static bool test_active_context_survives_full_collection(kt::Log &Log)
+{
+   lua_State *lua = luaL_newstate(nullptr);
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab *context = lj_tab_new(lua, 0, 1);
+   GCstr *key = lj_str_newlit(lua, "context_gc_marker");
+   TValue *slot = lj_tab_setstr(lua, context, key);
+   setintV(slot, 73);
+   lj_context_push(lua, context, lua->base);
+   lj_gc_fullgc(lua);
+
+   cTValue *retained = lj_tab_getstr(lj_context_current(lua), key);
+   bool passed = retained and tvisnumber(retained) and numberVnum(retained) IS 73;
+   if (not passed) {
+      Log.error("active context table was not retained across a full collection (context=%p current=%p type=%d)",
+         context, lj_context_current(lua), retained ? int(itype(retained)) : 0);
+   }
+   lj_context_pop(lua, lua->base);
+   lua_close(lua);
+   return passed;
+}
+
 } // namespace
 
 extern void gc_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 2> Tests = { {
+   constexpr std::array<TestCase, 5> Tests = { {
       { "shutdown_drains_pre_registered_finalisers_after_error",
          test_shutdown_drains_pre_registered_finalisers_after_error },
-      { "shutdown_does_not_run_new_finalisers", test_shutdown_does_not_run_new_finalisers }
+      { "shutdown_does_not_run_new_finalisers", test_shutdown_does_not_run_new_finalisers },
+      { "context_root_tracks_environment_replacement", test_context_root_tracks_environment_replacement },
+      { "nested_context_ownership_and_stack_relocation", test_nested_context_ownership_and_stack_relocation },
+      { "active_context_survives_full_collection", test_active_context_survives_full_collection }
    } };
 
    for (const TestCase& Test : Tests) {

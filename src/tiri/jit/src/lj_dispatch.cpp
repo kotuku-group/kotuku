@@ -130,8 +130,10 @@ void lj_dispatch_update(global_State* g)
       if ((oldmode ^ mode) & (DISPMODE_PROF | DISPMODE_REC | DISPMODE_INS)) {
          // Need to update the whole table.
          if (!(mode & DISPMODE_INS)) {  // No ins dispatch?
-            // Copy static dispatch table to dynamic dispatch table.
-            memcpy(&disp[0], &disp[GG_LEN_DDISP], GG_LEN_SDISP * sizeof(ASMFunction));
+            // Restore ordinary instructions without disturbing an independently active call hook.
+            for (uint32_t i = 0; i < BC__MAX; i++) {
+               if (not bc_is_func_header((BCOp)i)) disp[i] = disp[GG_LEN_DDISP + i];
+            }
             // Overwrite with dynamic return dispatch.
             if ((mode & DISPMODE_RET)) {
                disp[BC_RETM] = lj_vm_rethook;
@@ -145,9 +147,8 @@ void lj_dispatch_update(global_State* g)
             ASMFunction f = (mode & DISPMODE_PROF) ? lj_vm_profhook :
                (mode & DISPMODE_REC) ? lj_vm_record : lj_vm_inshook;
             uint32_t i;
-            for (i = 0; i < GG_LEN_SDISP; i++) disp[i] = f;
-            for (i = BC_FUNCF; i <= BC_FUNCCW; ++i) {
-               disp[i] = (mode & DISPMODE_CALL) ? lj_vm_callhook : makeasmfunc(lj_bc_ofs[i]);
+            for (i = 0; i < BC__MAX; i++) {
+               if (not bc_is_func_header((BCOp)i)) disp[i] = f;
             }
          }
       }
@@ -177,13 +178,13 @@ void lj_dispatch_update(global_State* g)
 
       if ((oldmode ^ mode) & DISPMODE_CALL) {  // Update the whole table?
          uint32_t i;
-         if ((mode & DISPMODE_CALL) IS 0) {  // No call hooks?
-            for (i = BC_FUNCF; i <= BC_FUNCCW; ++i) disp[i] = makeasmfunc(lj_bc_ofs[i]);
-            for (i = BC__MAX; i < GG_LEN_DDISP; ++i) disp[i] = makeasmfunc(lj_bc_ofs[i]);
+         if ((mode & DISPMODE_CALL) == 0) {  // No call hooks?
+            for (i = BC_FUNCF; i <= BC_FUNCCW; i++) disp[i] = makeasmfunc(lj_bc_ofs[i]);
+            for (i = BC__MAX; i < GG_LEN_DDISP; i++) disp[i] = makeasmfunc(lj_bc_ofs[i]);
          }
          else {
-            for (i = BC_FUNCF; i <= BC_FUNCCW; ++i) disp[i] = lj_vm_callhook;
-            for (i = BC__MAX; i < GG_LEN_DDISP; ++i) disp[i] = lj_vm_callhook;
+            for (i = BC_FUNCF; i <= BC_FUNCCW; i++) disp[i] = lj_vm_callhook;
+            for (i = BC__MAX; i < GG_LEN_DDISP; i++) disp[i] = lj_vm_callhook;
          }
       }
 
@@ -359,7 +360,13 @@ static BCREG cur_topslot(GCproto* pt, const BCIns* pc, uint32_t nres)
    BCIns ins = pc[-1];
    if (bc_op(ins) == BC_UCLO) ins = pc[bc_j(ins)];
    switch (bc_op(ins)) {
-      case BC_CALLM: case BC_CALLMT: return bc_a(ins) + bc_c(ins) + nres - 1 + 1 + LJ_FR2;
+      case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
+         return bc_a(ins) + bc_c(ins) + nres - 1 + 1 + LJ_FR2;
+      case BC_CTXLEAVE: {
+         BCIns call_ins = pc[-2];
+         if (bc_b(call_ins) or not nres) return pt->framesize;
+         return bc_a(ins) + nres - 1;
+      }
       case BC_RETM: return bc_a(ins) + bc_d(ins) + nres - 1;
       case BC_TSETM: return bc_a(ins) + nres - 1;
       default: return pt->framesize;
@@ -369,7 +376,7 @@ static BCREG cur_topslot(GCproto* pt, const BCIns* pc, uint32_t nres)
 //********************************************************************************************************************
 // Instruction dispatch. Used by instr/line/return hooks or when recording.
 
-void lj_dispatch_ins(lua_State* L, const BCIns* pc)
+uint32_t lj_dispatch_ins(lua_State* L, const BCIns* pc)
 {
    ERRNO_SAVE
    GCfunc *fn = curr_func(L);
@@ -378,6 +385,7 @@ void lj_dispatch_ins(lua_State* L, const BCIns* pc)
    const BCIns* oldpc = cframe_pc(cf);
    global_State* g = G(L);
    BCREG slots;
+   uint32_t multres = cframe_multres(cf);
    setcframe_pc(cf, pc);
    slots = cur_topslot(pt, pc, cframe_multres_n(cf));
    L->top = L->base + slots;  //  Fix top.
@@ -414,6 +422,7 @@ void lj_dispatch_ins(lua_State* L, const BCIns* pc)
 
    if ((g->hookmask & LUA_MASKRET) and bc_isret(bc_op(pc[-1]))) callhook(L, LUA_HOOKRET, -1);
    ERRNO_RESTORE
+   return multres;
 }
 
 //********************************************************************************************************************
@@ -489,16 +498,27 @@ out :
 //********************************************************************************************************************
 // Stitch a new trace.
 
-void lj_dispatch_stitch(jit_State* J, const BCIns* pc)
+uint32_t lj_dispatch_stitch(jit_State* J, const BCIns* pc)
 {
    ERRNO_SAVE
    lua_State* L = J->L;
    void* cf = cframe_raw(L->cframe);
+   uint32_t multres = cframe_multres(cf);
    const BCIns* oldpc = cframe_pc(cf);
    setcframe_pc(cf, pc);
    // Before dispatch, have to bias PC by 1.
    L->top = L->base + cur_topslot(curr_proto(L), pc + 1, cframe_multres_n(cf));
-   lj_trace_stitch(J, pc - 1);  //  Point to the CALL instruction.
+   BCIns call_ins = pc[-1];
+   if ((bc_op(call_ins) IS BC_CTXCALL or bc_op(call_ins) IS BC_CTXCALLM) and bc_b(call_ins) IS 0) {
+      // A stitched trace has no IR value for the dynamic result count consumed by CTXLEAVE. Blacklist this link until
+      // MULTRES becomes explicit trace state; fixed-result contextual calls remain eligible for stitching.
+      GCtrace *trace = traceref(J, J->exitno);
+      trace->link = trace->traceno;
+   }
+   else {
+      lj_trace_stitch(J, pc - 1);  //  Point to the CALL instruction.
+   }
    setcframe_pc(cf, oldpc);
    ERRNO_RESTORE
+   return multres;
 }
