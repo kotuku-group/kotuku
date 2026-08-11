@@ -1,6 +1,8 @@
 // VERIFIED: 2028-08-06
 // UPDATED: 2026-08-07 - Return type inference now accepts reads from a known table as variant results, so an
 //                       annotation is no longer required for them; added the Variant Results section (commit 58755ad6f)
+// UPDATED: 2026-08-08 - Documented the required value annotation ('!') on parameters and return values; corrected the
+//                       forward declaration caution and the signature comparison list (commit db7996e3e)
 
 [[ch-functions]]
 == Functions
@@ -90,13 +92,13 @@ end
 
 A forward declaration is a complete function definition, so it binds a function value to the global name immediately.  Calling that value before the full definition executes runs the empty body and returns no values.
 
-CAUTION: The empty body is not checked against the declared return type, so a call made before the real definition executes silently yields `nil` for every declared result rather than raising a contract failure.  This is consistent with <<sec-runtime-type-contracts>>, under which `nil` satisfies every contract, but it means a premature call fails quietly.  Place forward declarations immediately before the code that needs them.
+CAUTION: The empty body yields `nil` for every declared result.  A result that is not marked required accepts `nil`, so a call made before the real definition executes fails quietly rather than raising a contract failure.  Place forward declarations immediately before the code that needs them.  A result marked with the `!` suffix (see <<sec-required-values>>) rejects `nil`, so a premature call raises a contract failure instead.
 
 Every subsequent `global function` definition of the same name must match the signature of the forward declaration.  The compiler compares:
 
 * The callable kind, `function` or `thunk`.
 * The parameter count and the presence of the variadic marker.
-* For each parameter, whether a type annotation is present, and the annotated type, including the struct definition for `struct` and `ptr` types and the element type for array types.
+* For each parameter, whether a type annotation is present, the annotated type, including the struct definition for `struct` and `ptr` types and the element type for array types, and whether the annotation marks the parameter required.
 * Whether a return type annotation is present, the declared return count, the presence of a variadic return marker, and each declared return type, compared on the same terms as the parameter types.
 
 Parameter names are excluded from the comparison, so the definition is free to rename its parameters:
@@ -188,6 +190,15 @@ end
 
 See <<sec-explicit-type-annotations>> for the list of supported type names.  An unknown type name raises a parse error.
 
+An annotation accepts `nil` unless it carries the `!` suffix, which marks the parameter required and rejects a `nil` or missing argument.  The suffix is permitted on parameters and return values only; see <<sec-required-values>>.
+
+[source,tiri]
+----
+function connect(Host: str!, Port: num)
+   -- Host must be supplied; Port is optional
+end
+----
+
 When a type is not declared, the compiler infers the parameter type from usage.  If inference fails, the parameter defaults to `any` and no contract is enforced.  In cases where the type is ambiguous, providing explicit type annotations to maximise performance is recommended.
 
 ==== Argument Count Mismatch
@@ -204,7 +215,7 @@ f(1, 2)        -- prints: 1  2  nil
 f(1, 2, 3, 4)  -- prints: 1  2  3  (4 is discarded)
 ----
 
-A missing argument satisfies an annotated parameter, because `nil` satisfies every type contract:
+A missing argument satisfies an annotated parameter, because `nil` satisfies every contract that is not marked required:
 
 [source,tiri]
 ----
@@ -213,6 +224,18 @@ function g(A: num, B: num)
 end
 
 g(1)           -- prints: 1  nil (no contract failure for B)
+----
+
+A parameter whose annotation carries the `!` suffix rejects both a `nil` argument and a missing one (see <<sec-required-values>>):
+
+[source,tiri]
+----
+function h(A: num!, B: num!)
+   print(A, B)
+end
+
+h(1)           -- error: required argument 2 is missing
+h(1, nil)      -- error: required argument 2 cannot be nil
 ----
 
 [[sec-multiple-return-values]]
@@ -275,7 +298,7 @@ end
 
 A declared return type is a runtime contract.  The compiler validates return statements whose types are statically known and raises a compile-time error on mismatch; values whose types cannot be proved at compile time are validated as the function returns (see <<sec-runtime-type-contracts>>).
 
-Returning fewer values than declared is permitted; the undeclared positions read as `nil`.  A declaration without the variadic marker also fixes the result count: values returned beyond the declared positions are discarded rather than passed to the caller.
+Returning fewer values than declared is permitted unless the position is marked required; the undeclared positions read as `nil`.  A declaration without the variadic marker also fixes the result count: values returned beyond the declared positions are discarded rather than passed to the caller.
 
 [source,tiri]
 ----
@@ -286,7 +309,16 @@ end
 a, b = one(5)   -- a=5, b=nil ('text' is discarded)
 ----
 
-The variadic marker `pass:[...]` in a return type list indicates that additional return values are permitted.  Each additional value must satisfy the last declared type:
+A declared return type accepts `nil` unless it carries the `!` suffix, which marks the position required.  A required position rejects a `nil` result, a result the `return` statement omits, and the implicit return produced by falling off the end of the body (see <<sec-required-values>>):
+
+[source,tiri]
+----
+function lookup(Source: table, Key: str):str!
+   return Source[Key]     -- contract failure if the key is absent
+end
+----
+
+The variadic marker `pass:[...]` in a return type list indicates that additional return values are permitted.  Each additional value must satisfy the last declared type, including its required marking:
 
 [source,tiri]
 ----
@@ -296,6 +328,10 @@ end
 
 function badNums():<num, ...>
    return 1, 'two'        -- error: return type mismatch at position 2
+end
+
+function everyNum():<num!, ...>
+   return 1, 2, nil       -- error: required return value 3 cannot be nil
 end
 ----
 
@@ -555,6 +591,8 @@ Arrow functions accept an optional return type annotation between `\=>` and the 
 double = (x => num: x * 2)
 greet = (name => str: 'Hello, ' .. name)
 ----
+
+The required suffix `!` is not accepted in this position.  Use the `function` form when a result must be marked required (see <<sec-required-values>>).
 
 [discrete]
 ==== Restrictions

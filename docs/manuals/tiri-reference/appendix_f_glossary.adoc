@@ -1,6 +1,8 @@
 // UPDATED: 2026-08-06 - Added the table classification terms (commit 26e122ab7)
 // UPDATED: 2026-08-07 - Added the Variant value entry (commit 58755ad6f)
 // UPDATED: 2026-08-07 - Added the Module namespace entry and distinguished it from a `namespace` declaration (commit 45b671b20)
+// UPDATED: 2026-08-08 - Added the Nullable and Required value entries; a type contract now accepts nil only when it is
+//                       not marked required (commit db7996e3e)
 
 [[appendix-glossary]]
 [appendix]
@@ -150,6 +152,9 @@ A type with a single value representing the absence of a useful value.  `nil` is
 Number::
 A dual-representation numeric type supporting both 32-bit integers and 64-bit IEEE 754 double-precision floating-point values.  Arithmetic operations preserve integer representation where possible.  See <<sec-numbers>>.
 
+Nullable::
+The property of a type contract that accepts `nil` in addition to the values of its declared type.  Every contract is nullable unless the annotation marks it required.  See <<sec-required-values>>.
+
 Object::
 A distinct first-class reference type representing a Kōtuku C++ class instance; `type()` returns `"object"`.  Objects expose fields, actions, and methods through the Tiri interface.  Every object has exactly one owner (parent).  See <<ch-the-object-system>>.
 
@@ -173,6 +178,9 @@ A value whose variable holds a reference to the underlying data rather than a co
 
 Regular expression::
 A pattern-matching facility provided by the `regex` library.  Replaces the deprecated Lua pattern system.  See <<ch-regular-expressions>>.
+
+Required value::
+A function parameter or declared return value whose annotation carries the `!` suffix.  A required contract rejects `nil` and rejects a value that is absent altogether.  The suffix is not permitted on any other annotated position.  See <<sec-required-values>>.
 
 Result filter operator::
 The `[mask]` operator placed before a call to select which of its results are kept, using `*` to keep a position and `pass:[_]` to discard it.  The filtered call can appear anywhere a call is valid, not only in an assignment.  Commonly used to drop a leading `ERR` code.  See <<sec-result-filter-operator>>.
@@ -241,7 +249,7 @@ Type annotation::
 An optional declaration constraining a variable's type, written as `:type` after the variable name.  Enables both static (parse-time) and runtime type checking.  See <<sec-explicit-type-annotations>>.
 
 Type contract::
-A type constraint validated by the runtime as a value crosses a boundary: a function parameter, a declared result, a typed local, a typed upvalue or a declared global.  A contract cannot be bypassed by reaching the boundary indirectly, accepts `nil`, and performs no coercion.  See <<sec-runtime-type-contracts>>.
+A type constraint validated by the runtime as a value crosses a boundary: a function parameter, a declared result, a typed local, a typed upvalue or a declared global.  A contract cannot be bypassed by reaching the boundary indirectly, accepts `nil` unless it is marked required, and performs no coercion.  See <<sec-runtime-type-contracts>>.
 
 Upvalue::
 A local variable from an enclosing scope that is captured by a nested function.  The upvalue persists as long as any closure referencing it remains alive.  See <<sec-upvalues-and-closures>>.

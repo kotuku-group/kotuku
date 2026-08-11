@@ -2,6 +2,7 @@
 // CHANGED: 2026-07-27 — Added Result Types under Actions & Methods; native action and method results now carry static types (commit 8905c1966).
 // UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
 // CHANGED: 2026-07-31 — Standardised exception terminology and present-tense behaviour.
+// UPDATED: 2026-08-08 - Native results are nullable in the sense now defined by the required value annotation (commit db7996e3e)
 
 [[ch-the-object-system]]
 == The Object System
@@ -182,7 +183,7 @@ err, tag = xml.mtFindTag('/document/body')
 
 The `ERR` code indicates whether the operation succeeded.  Even when an error is returned, result parameters are populated (with nil or default values), as some implementations return information on error.
 
-indexterm:[actions, result types] indexterm:[methods, result types] The compiler derives the type of every action and method result from the native signature and applies it to the assignment targets, as defined in <<sec-native-result-types>>.  Each result carries the type declared by its result parameter and is nullable:
+indexterm:[actions, result types] indexterm:[methods, result types] The compiler derives the type of every action and method result from the native signature and applies it to the assignment targets, as defined in <<sec-native-result-types>>.  Each result carries the type declared by its result parameter and is nullable (<<sec-required-values>>):
 
 [source,tiri]
 ----
@@ -269,7 +270,7 @@ Use `exists()` to verify that a weakly referenced object is still alive before a
 
 [.api]`alive = object.exists()`
 
-Returns `true` if the object is still alive.  Returns `nil` if the object has been destroyed.  Use this method to verify weakly referenced objects before access.
+Returns `true` if the object is still alive, otherwise `false`.  Use this method to verify weakly referenced objects before access.
 
 ==== object.detach()
 

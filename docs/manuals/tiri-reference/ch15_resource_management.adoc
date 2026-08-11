@@ -463,11 +463,11 @@ The explicitly typed form includes a type name before the opening brace:
 
 [source,tiri]
 ----
-x = <string{ getValue() }>
+x = <str{ getValue() }>
 y = <num{ compute() }>
 ----
 
-Supported type names: `str`, `num`, `bool`, `table`, `obj`, `string`, `number`.  Any other name raises a parse-time error.
+The type name is drawn from the native vocabulary and accepts every name listed in <<sec-supported-type-names>>, with the exception of the constrained forms `array<element>` and `struct<Name>`: the deferred form takes a bare name, so `array` and `struct` impose no element or layout constraint.  Any other name raises a parse-time error.
 
 [discrete]
 ==== Semantics
@@ -569,7 +569,7 @@ A deferred parameter avoids computation until the function uses its value.  For 
 
 [source,tiri]
 ----
-assert(condition, <string{ 'Failure details: ' .. expensive_debug_info() }>)
+assert(condition, <str{ 'Failure details: ' .. expensive_debug_info() }>)
 -- expensive_debug_info() runs only if condition is false
 ----
 

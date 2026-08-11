@@ -1,51 +1,48 @@
 // VERIFIED: 2026-02-13
-// UPDATED: 2026-07-13 — Structures promoted to a first-class 'struct' type; added struct.clone()/struct.copy(), field-assignment semantics, pairs() iteration and tostring() representation.
-// CHANGED: 2026-07-27 — Added the Result Types section; module call results now carry static types derived from the native signature (commit 8905c1966).
-// UPDATED: 2026-07-15 — Struct documentation relocated to the Structs chapter in Part II following the native 'struct' keyword implementation (commit 9279202).  Chapter retitled to Modules.
-// CHANGED: 2026-07-31 — Replaced informal callouts with standard AsciiDoc admonitions.
+// UPDATED: 2026-08-08 - Native results are nullable in the sense now defined by the required value annotation (commit db7996e3e)
 
 [[ch-modules]]
 == Modules
-indexterm:[modules] Tiri provides direct access to Kōtuku's compiled modules through the `mod` namespace.  This chapter defines the interfaces for loading modules and calling module functions.  Struct definitions registered by modules are documented in <<ch-structs>>.
+indexterm:[modules] Tiri provides direct access to Kōtuku's compiled modules through _module namespaces_.  This chapter defines the declaration that binds a module to a namespace, the restrictions that apply to namespaces, and the behaviour of module function calls.  Struct definitions registered by modules are documented in <<ch-structs>>.
 
-The Core module (`mSys`) is loaded automatically and is always available.  All other modules are loaded on demand with `mod.load()`.  The `include` directive (<<sec-the-include-directive>>) provides a lightweight alternative that loads only definitions (constants, structures, and class metadata) without opening the module's function table.
+A module namespace is immutable compiler metadata.  It is not a value and has no runtime representation.  The compiler resolves each namespace member to a callable that is bound directly to the compilation unit, so a namespace can appear only as the subject of a named member selection.
 
-[[sec-loading-modules]]
-=== Loading Modules
-==== mod.load()
+The Core module is bound to the namespace `mSys` in every compilation unit and requires no declaration (<<sec-the-core-namespace>>).  All other modules are bound with the `module` declaration.  The `include` directive (<<sec-the-include-directive>>) provides an alternative that loads only definitions (constants, structures, and class metadata) without binding a namespace.
 
-[.api]`module = mod.load(Name)`
+[[sec-module-declarations]]
+=== Module Declarations
+[.api]`module Name as Namespace`
 
-indexterm:[modules, loading] Loads the Kōtuku module identified by `Name` and returns a module interface object.  `Name` is a case-insensitive alphanumeric string with a maximum length of 32 characters.  Passing an invalid name raises an exception with `ERR_Syntax`.
-
-If the module cannot be loaded (e.g. the binary is missing or initialisation fails), an exception is raised with `ERR_LoadModule`.
-
-Loading a module automatically processes its IDL definitions, making all constants and structure definitions available.  A separate `include` call for the same module is unnecessary.
+indexterm:[modules, declaring] indexterm:[module declaration] Binds the Kōtuku module identified by `Name` to `Namespace` for the remainder of the compilation unit.  `Name` and `Namespace` are both identifiers.  `Name` is matched case-insensitively against the module's canonical name.
 
 [source,tiri]
 ----
-mGfx = mod.load('display')
+module display as mGfx
+
 err, x, y = mGfx.getCursorPos()
 ----
 
-[discrete]
-==== Module Protection
+The declaration is processed while the source is parsed.  It loads the module, registers the module's IDL definitions (constants, structures, and class definitions) in the same way as `include`, and records the namespace as compiler metadata.  A separate `include` directive for the same module is unnecessary.
 
-Each module is loaded at most once per process.  Subsequent calls to `mod.load()` with the same name return the existing module interface without reloading.  Use the `?=` operator to guard against redundant calls:
+If the module cannot be loaded, the declaration raises a parse error naming the module and the underlying failure.  A module that is optional at runtime must be guarded (<<sec-optional-modules>>).
 
-[source,tiri]
-----
-mGfx ?= mod.load('display')
-----
+The declaration produces no value.  `module` is a contextual keyword: it introduces a declaration only when followed by an identifier, and remains available as an ordinary identifier elsewhere.
 
 [discrete]
-==== Naming Conventions
+==== Placement
 
-Store module interfaces in consistently named variables at the top-level scope.  The following table defines the standard names for the default modules:
+A `module` declaration is permitted only at compilation-unit level.  A declaration inside a function body, block, or any other nested scope raises a parse error.
+
+Namespaces have compilation-unit scope.  An imported file (<<sec-the-import-directive>>) is its own compilation unit, so a namespace declared in an imported file is private to that file, and a namespace declared by the importing script is not visible to it.  Each file that references a module declares the module for itself.
+
+[discrete]
+==== Namespace Naming
+
+indexterm:[modules, naming conventions] The following table defines the standard namespace for each of the default modules:
 
 [cols="1,1a",options="header"]
 |===
-|Module |Global Name
+|Module |Namespace
 |audio
 |`mAudio`
 |core
@@ -62,23 +59,84 @@ Store module interfaces in consistently named variables at the top-level scope. 
 |`mXML`
 |===
 
-NOTE: The Core module (`mSys`) is loaded by default.
+A namespace that does not follow the `mName` convention — a leading `m` followed by an upper-case letter — emits a low-priority style tip.  The declaration remains valid.
 
-[[sec-calling-module-functions]]
 [discrete]
-==== Calling Module Functions
+==== Aliases and Redeclaration
 
-Module functions are accessed through dot notation on the module interface.  Function lookup is case-insensitive.
+A module is bound to more than one namespace by declaring it more than once.  All namespaces of one module share a single dependency, and a function referenced through two namespaces resolves to one callable:
 
 [source,tiri]
 ----
-mGfx = mod.load('display')
+module core as mCore
+module core as mClock
+
+local a <const> = mCore.PreciseTime
+local b <const> = mClock.PreciseTime  -- a is b
+----
+
+Repeating a declaration that binds the same namespace to the same module is redundant and is accepted without effect.  Binding a namespace that is already bound to a different module raises a parse error.
+
+[[sec-optional-modules]]
+[discrete]
+==== Optional Modules
+
+A module that is not present on every host raises a parse error when declared unconditionally.  Guard the declaration with `@if(exists='modules:Name')` (<<ch-annotations-and-preprocessing>>) so that the declaration is parsed only when the module is available:
+
+[source,tiri]
+----
+@if(exists='modules:display')
+   module display as mGfx
+@end
+----
+
+Code that references the namespace must be guarded by the same condition, because the namespace does not exist when the declaration is excluded.
+
+[[sec-the-core-namespace]]
+=== The Core Namespace
+indexterm:[mSys] indexterm:[modules, core] Every compilation unit behaves as though it begins with `module core as mSys`.  The binding is created when the unit first selects a member of `mSys`, so a unit that never references the namespace neither opens Core nor emits an activation statement.
+
+`mSys` is subject to every restriction that applies to a declared namespace (<<sec-namespace-restrictions>>), and it is not present in the global table.
+
+An explicit `module core as mSys` declaration is redundant rather than an error, in either statement order, and an alias of Core shares the implicit namespace's dependency:
+
+[source,tiri]
+----
+module core as mSys      -- redundant, accepted
+module core as mCore     -- alias: shares one dependency with mSys
+----
+
+Binding `mSys` to any module other than Core raises a parse error, whether or not the unit references the namespace.
+
+[[sec-calling-module-functions]]
+=== Calling Module Functions
+Module functions are called through dot notation on a namespace.  Function names resolve case-insensitively against the module's canonical names:
+
+[source,tiri]
+----
+module display as mGfx
+
 err, x, y = mGfx.getCursorPos()
 ----
+
+A name that the module does not export raises a parse error identifying the function and the module.  Selection of an unknown function is therefore reported when the source is compiled rather than when the call is reached.
 
 Most module functions return an `ERR` code as their first result, followed by any additional return values.  See <<appendix-error-code-reference>> for the full error code reference and <<ch-error-handling>> for general advice.
 
 Error codes at or above `ERR_ExceptionThreshold` are automatically promoted to exceptions when the call is enclosed in a `try` statement.
+
+[discrete]
+==== Extracted Callables
+
+Selecting a function without calling it yields the callable itself.  The callable retains its module for as long as it is reachable, and repeated selections of one function — including selections through different namespaces and different letter cases — yield the same callable:
+
+[source,tiri]
+----
+module core as mCore
+
+local clock <const> = mCore.PreciseTime
+print(clock())
+----
 
 [discrete]
 ==== Multiple Return Values
@@ -97,7 +155,7 @@ Functions that return allocated resources are automatically covered by the garba
 [discrete]
 ==== Result Types
 
-indexterm:[modules, result types] The compiler derives the type of every module result from the module's native signature and applies it to the assignment targets, as defined in <<sec-native-result-types>>.  Each result is typed independently, so an unannotated declaration that consumes a module result is fixed to that result's type:
+indexterm:[modules, result types] The compiler derives the type of every module result from the module's native signature and applies it to the assignment targets, as defined in <<sec-native-result-types>>.  Every namespace call carries its signature, so result types are derived for all module calls without further qualification.  Each result is typed independently, so an unannotated declaration that consumes a module result is fixed to that result's type:
 
 [source,tiri]
 ----
@@ -128,23 +186,7 @@ Result types map from the native signature as follows:
 |`userdata`
 |===
 
-Results other than the error code are nullable: they satisfy their type and also accept `nil`.  A function that declares no results yields `nil`.  A safe call marks every result nullable:
-
-[source,tiri]
-----
-local time = mSys?.PreciseTime()   -- nullable numeric result
-----
-
-Result types are derived only when the module reference is statically known.  That condition holds for a module registered by the framework as a built-in global (`mSys`), for a `<const>` alias of such a global, and for `mod.load()` called with a string literal that names a module already registered in the process, where the result is bound to a `<const>` name:
-
-[source,tiri]
-----
-local sys <const> = mSys               -- typed results
-local core <const> = mod.load('core')  -- typed results
-local gfx = mod.load('display')        -- results are unconstrained
-----
-
-A module reference held in a reassignable variable is not statically known because its value can change, so its call results perform dynamic ingress (<<sec-dynamic-ingress>>).  Declare the reference `<const>` to obtain result types.
+Results other than the error code are nullable: they satisfy their type and also accept `nil` (<<sec-required-values>>).  A function that declares no results yields `nil`.
 
 [discrete]
 ==== Buffer Handling
@@ -220,21 +262,21 @@ Each module name must be a non-empty alphanumeric string.  Variables, expression
 * `include` may appear wherever a statement is valid.  Inside a function body, it still loads definitions during parsing rather than when the function is called.
 * An `include` list loads each module named in the list from left to right.
 * Each module is loaded at most once per session.  Repeated `include` calls for the same module are silently ignored.
-* Calling `mod.load()` automatically loads the corresponding module definitions, making an explicit `include` unnecessary in many cases.
+* A `module` declaration loads the corresponding module definitions, making an explicit `include` unnecessary for a module that is bound to a namespace.
 
 [discrete]
 ==== When to Use include
 
-Use `include` when access to a module's constants, structures, or class definitions is needed without loading the module's function table.  If the function table is also required, prefer `mod.load()` (see <<sec-loading-modules>>), which loads definitions implicitly.
+Use `include` when access to a module's constants, structures, or class definitions is needed without calling any of the module's functions.  If functions are also required, declare a namespace instead (<<sec-module-declarations>>), which loads definitions implicitly.
 
 [source,tiri]
 ----
--- Access display constants without loading the function table
+-- Access display constants without binding a namespace
 include 'display'
 flags = DPMS_OFF -- The DPMS_OFF constant originates from the display module
 
--- Equivalent: mod.load() loads definitions and also returns the interface
-mGfx = mod.load('display')
+-- Equivalent: the declaration loads definitions and binds the namespace
+module display as mGfx
 ----
 
 [[sec-type-conversion]]

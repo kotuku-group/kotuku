@@ -1,13 +1,4 @@
 // VERIFIED: 2026-02-12
-// UPDATED: 2026-08-06 - Corrected the array<struct> annotation form, which is rejected, and the quoted array member mismatch diagnostic (commit bbac3cf3f)
-// UPDATED: 2026-08-06 - int8 is now an accepted array element spelling; corrected the unsigned rows, which are struct-only (commit 7517513e3)
-// UPDATED: 2026-08-06 - Removed the 'boolean' annotation alias, leaving 'bool' as the sole spelling (commit 66ad8a7dc)
-// UPDATED: 2026-08-06 - 'obj' is now the sole source spelling for objects, including array elements; 'object' survives
-//                       only as the runtime name reported by type() (commit ca06aefda)
-// UPDATED: 2026-08-07 - Reads from a known table are variant, not dynamic ingress; corrected the ingress list and
-//                       made the receiver's type explicit in the example (commit 58755ad6f)
-// UPDATED: 2026-08-07 - Every module namespace call now carries its signature, so native result types no longer
-//                       depend on a statically known module reference (commit 45b671b20)
 
 [[ch-type-system]]
 == Type System
@@ -22,7 +13,7 @@ Tiri also names types with two distinct vocabularies, one for the language and o
 
 indexterm:[type vocabularies] indexterm:[compatibility types] indexterm:[native types] Type names in Tiri are drawn from two separate vocabularies.  They overlap in spelling, but each name belongs to one vocabulary only and is rejected in a position that expects the other.
 
-The _native vocabulary_ describes the language's own value model.  Its names are the ones `type()` reports (see <<sec-type-inspection>>) and the only ones a type annotation accepts.  It is deliberately coarse: `num` covers every numeric representation, `str` covers every string, and storage width, signedness and memory layout are not expressible in it.  All type inference, all annotations and all runtime type contracts operate in this vocabulary.
+The _native vocabulary_ describes the language's own value model.  It is the only vocabulary a type annotation accepts.  Its names overlap the ones `type()` reports (see <<sec-type-inspection>>) without coinciding with them: `type()` reports `number`, `string` and `object`, whereas the corresponding annotations are spelled `num`, `str` and `obj`.  The vocabulary is deliberately coarse: `num` covers every numeric representation, `str` covers every string, and storage width, signedness and memory layout are not expressible in it.  All type inference, all annotations and all runtime type contracts operate in this vocabulary.
 
 The _compatibility vocabulary_ describes how a value is laid out in memory that the host platform can also address.  Its names carry storage width and signedness, and it includes forms with no native counterpart, such as raw pointers and C strings.  Exactly two interfaces use it, because both expose their storage to C and C++ code:
 
@@ -56,12 +47,16 @@ The two interfaces share a core of names but are not identical dialects, and the
 
 |`bool`                          |--   |Yes |Boolean
 |`char`                          |Yes  |Yes |Number, but `char[N]` reads as a string
-|`byte`, `int8`, `uint8`         |`byte` |Yes |Number
-|`int16`, `uint16`               |`int16` |Yes |Number
-|`int`, `int32`, `uint`, `uint32`|`int` |Yes |Number
-|`int64`, `uint64`               |`int64` |Yes |Number
+|`byte`, `int8`                  |`byte` |Yes |Number
+|`uint8`                         |--   |Yes |Number
+|`int16`                         |`int16` |Yes |Number
+|`uint16`                        |--   |Yes |Number
+|`int`                           |`int` |Yes |Number
+|`uint`                          |--   |Yes |Number
+|`int64`                         |`int64` |Yes |Number
+|`uint64`                        |--   |Yes |Number
 |`float`, `double`               |Yes  |Yes |Number
-|`string`                        |Yes  |Yes |String
+|`str`                           |Yes  |Yes |String
 |`cstr`                          |--   |Yes |String
 |`table`                         |Yes  |--  |Table
 |`array`, `array<type>`, `type[N]`|`array` |Yes |Array
@@ -72,7 +67,7 @@ The two interfaces share a core of names but are not identical dialects, and the
 |`any`                           |Yes  |--  |Any
 |===
 
-Unsigned integers, `cstr`, `ptr` and fixed arrays exist only in the compatibility vocabulary.  Conversely `nil`, `range`, `userdata` and the alternative spellings `num`, `str`, `obj`, `number`, `boolean` and `function` exist only in the native vocabulary.
+The unsigned types are accepted as struct field types only.  An array element type must be named with one of the accepted spellings shown above; `array<uint8>` is rejected, whereas `array<int8>` is accepted as a synonym of `array<byte>`.
 
 [discrete]
 ==== Crossing Between the Systems
@@ -299,6 +294,13 @@ An annotation is written in the native vocabulary.  The sole exception is the el
 ----
 local_declaration = "local" identifier ":" type_name [ "=" expression ] ;
 
+(* the required suffix "!" is permitted on function parameters
+   and return values only *)
+parameter         = identifier [ ":" type_name [ "!" ] ] ;
+return_annotation = ":" ( type_name [ "!" ]
+                  | "<" result_list [ "," "..." ] ">" ) ;
+result_list       = type_name [ "!" ] { "," type_name [ "!" ] } ;
+
 (* native vocabulary *)
 type_name         = "any" | "nil" | "bool"
                   | "num" | "number" | "str" | "string"
@@ -338,6 +340,7 @@ A mismatched initialiser produces a compile-time error:
 local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 ----
 
+[[sec-supported-type-names]]
 [discrete]
 ==== Supported Type Names
 
@@ -350,8 +353,8 @@ These are the names of the native vocabulary, and they are the complete set that
 |`any`              |Any (see <<sec-the-any-type>>)
 |`nil`              |Nil
 |`bool`             |Boolean
-|`num`, `number`    |Number
-|`str`, `string`    |String
+|`num`              |Number
+|`str`              |String
 |`table`            |Table
 |`array<element>`   |Array constrained to the declared element type (see <<sec-array-member-annotations>>)
 |`func`, `function` |Function
@@ -465,6 +468,17 @@ function process(Data, Count: num, Validate: bool)
 end
 ----
 
+An annotated parameter accepts `nil` and accepts a call that omits it.  Suffix the annotation with `!` to reject both (<<sec-required-values>>):
+
+[source,tiri]
+----
+function greet(Name: str!, Times: num)
+   -- Name must be a string and must be supplied
+end
+
+greet()                 -- error: required argument is missing
+----
+
 [discrete]
 ==== Function Return Types
 
@@ -478,6 +492,15 @@ end
 
 function divide(A: num, B: num):<num, num>
    return math.floor(A / B), A % B
+end
+----
+
+A declared result accepts `nil` and accepts a return that omits it.  Suffix the annotation with `!` to reject both (<<sec-required-values>>).  Each position is marked independently, and a mark on the position preceding the variadic marker applies to every additional value:
+
+[source,tiri]
+----
+function name_of(Names: table, Id: num): str!
+   return Names[Id] or 'unknown'   -- the contract guarantees a string
 end
 ----
 
@@ -602,7 +625,9 @@ The following boundaries carry contracts:
 |Global    |Global introduced by a `global` declaration, whether annotated or inferred |On every write into the global environment, before the global is updated
 |===
 
-Unannotated parameters, unannotated return values, globals that were never declared with `global`, and every declaration annotated `:any` impose no contract.
+Unannotated parameters, unannotated return values, globals that were never declared with `global`, and every declaration annotated `:any` impose no contract.  The sole exception is `any!`, which imposes a presence contract without a type constraint (<<sec-required-values>>).
+
+A contract accepts `nil` unless the annotation marks the position required.  See <<sec-required-values>>.
 
 [discrete]
 ==== Enforcement is Independent of the Call Route
@@ -798,7 +823,7 @@ A global declaration must still precede any use of the name for compile-time dia
 [discrete]
 ==== Nil and Missing Values
 
-`nil` satisfies every contract.  A missing argument, a cleared variable and a missing return value are therefore all accepted:
+`nil` satisfies every contract that is not marked required.  A missing argument, a cleared variable and a missing return value are therefore all accepted:
 
 [source,tiri]
 ----
@@ -867,6 +892,12 @@ A contract failure raises a standard Tiri exception at the point of the boundary
 type contract failed for parameter 1 ('Value'): expected num, got string
 ----
 
+A required contract that receives `nil` or no value reports the same form, with `nil` as the type supplied:
+
+----
+type contract failed for parameter 1 ('Value'): expected num, got nil
+----
+
 Contract failures are catchable with `try` (see <<ch-error-handling>>) and behave identically in the interpreter and in compiled traces.  No dedicated error code is assigned; handlers must catch the exception rather than filter on an `ERR` name:
 
 [source,tiri]
@@ -909,6 +940,8 @@ variant = load_json()       -- valid regardless of return type
 
 A variable annotated with `:any` is marked as fixed with type `any` at the point of declaration.  The `any` type matches every other type in both directions: assigning any value to an `any` variable is permitted, and assigning an `any` value to a typed variable requires a runtime check.
 
+A parameter or return value annotated `:any` carries no contract.  The `any!` form is the exception: it constrains presence rather than type, accepting every value except `nil` (<<sec-required-values>>).
+
 [discrete]
 ==== Trade-offs
 
@@ -921,7 +954,7 @@ TIP: Prefer sticky types by default.  Reserve `:any` for variables that genuinel
 
 [[sec-nil-semantics-in-typed-code]]
 === Nil Semantics in Typed Code
-indexterm:[nil, typed code] The value `nil` has special status in the type system.  It acts as a universal "clear" value that is always permitted for any variable, regardless of the variable's fixed type.
+indexterm:[nil, typed code] The value `nil` has special status in the type system.  It acts as a universal "clear" value that is always permitted for any variable, regardless of the variable's fixed type.  The rules in this section govern variables; a function parameter or return value marked required rejects `nil` outright (<<sec-required-values>>).
 
 [discrete]
 ==== Uninitialised Variables
@@ -966,3 +999,5 @@ name = 42        -- error: cannot assign 'number' to variable of type 'string'
 ==== Design Rationale
 
 This design allows variables to represent optional or nullable values naturally without requiring a separate nullable type annotation.  A typed variable can alternate between `nil` and valid values of its declared type, providing the equivalent of "optional" semantics while still enforcing type consistency for non-nil values.
+
+Optional is therefore the default, and the required annotation is the opt-in for the boundaries where a value must be present.  It is confined to function parameters and return values because those are the boundaries a caller and a callee negotiate; a variable has no such counterparty.

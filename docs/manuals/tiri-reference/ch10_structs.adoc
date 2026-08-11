@@ -5,6 +5,7 @@
 // CHANGED: 2026-07-31 — Replaced ambiguous pointer-safety guidance with a specific warning.
 // CHANGED: 2026-08-02 — Field writes validate value categories exactly; added sec-struct-numeric-conversion for truncation, width wrapping and non-finite rejection (commit 9f89c965).
 // CHANGED: 2026-08-07 — Module definitions are now registered by the 'module' declaration; 'mod.load()' no longer exists (commit 45b671b20).
+// UPDATED: 2026-08-08 — The struct<Name> initialiser table is now optional; removed the retired 'int32' and 'uint32' field spellings (commit d04a2e798).
 
 [[ch-structs]]
 == Structs
@@ -58,7 +59,7 @@ print(user.Name, user.Age)   -- Alice  30
 
 Each field is declared as `Name: type`, where `type` is one of the official field types listed in <<sec-struct-field-types>>.  Fields are separated by commas or newlines; both separators are interchangeable within the same declaration.
 
-A declaration does not bind the definition name as a variable or constructor.  Instances are constructed through the explicit `struct<Name> { ... }` form described in <<sec-struct-construction>>, or through the `struct` namespace functions in <<sec-struct-namespace>>.  Braces are reserved for construction and cannot delimit a declaration.
+A declaration does not bind the definition name as a variable or constructor.  Instances are constructed through the explicit `struct<Name>` form described in <<sec-struct-construction>>, or through the `struct` namespace functions in <<sec-struct-namespace>>.  Braces are reserved for construction and cannot delimit a declaration.
 
 [discrete]
 ==== Semantics
@@ -87,15 +88,16 @@ The following conditions raise a parse error:
 [discrete]
 ==== Construction
 
-[.api]`instance = struct<Name> { [Fields] }`
+[.api]`instance = struct<Name> [{ Fields }]`
 
-The explicit `struct<Name>` construction form creates an instance of the declared layout `Name`.  This is the only construction syntax bound to a declaration; the definition name is not itself callable.  `Name` must reference a definition that has already been registered.  A `struct<Name>` reference with no following initialiser table raises a parse error, as does a reference to an unregistered definition.
+The explicit `struct<Name>` construction form creates an instance of the declared layout `Name`.  This is the only construction syntax bound to a declaration; the definition name is not itself callable.  `Name` must reference a definition that has already been registered; a reference to an unregistered definition raises a parse error.
 
-The initialiser table is mandatory.  An empty table constructs a zero-initialised instance: numeric fields read `0`, `bool` fields read `false`, string fields read `''`, object and pointer fields read `nil`, and dynamic array fields read as empty arrays.  When `Fields` is present, its key-value pairs are applied to the corresponding fields after zero-initialisation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
+The initialiser table is optional.  Omitting it constructs a zero-initialised instance, as does supplying an empty table: numeric fields read `0`, `bool` fields read `false`, string fields read `''`, object and pointer fields read `nil`, and dynamic array fields read as empty arrays.  When `Fields` is present, its key-value pairs are applied to the corresponding fields after zero-initialisation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
 
 [source,tiri]
 ----
-empty = struct<User> { }
+empty = struct<User>
+same  = struct<User> { }
 user  = struct<User> { Name='Alice', Age=30, Enabled=true }
 ----
 
@@ -132,11 +134,11 @@ user  = struct<User> { Name='Alice', Age=30, Enabled=true }
 |Unsigned 16-bit integer.
 |2
 
-|`int`, `int32`
+|`int`
 |Signed 32-bit integer.
 |4
 
-|`uint`, `uint32`
+|`uint`
 |Unsigned 32-bit integer.
 |4
 

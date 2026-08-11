@@ -4,6 +4,7 @@
 // UPDATED: 2026-07-02 - Documented in-place ..= append, byte-array string pushes, and array<char> as the preferred string-buffer builder (commit 1dc290463)
 // UPDATED: 2026-08-06 - int8 accepted as a byte element synonym; recorded the complete set of accepted element type names (commit 7517513e3)
 // UPDATED: 2026-07-26 - Range arguments to fill(), find() and slice() must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
+// UPDATED: 2026-08-08 - 'int32' and 'uint32' are retired everywhere, not just outside struct fields (commit d04a2e798)
 // CHANGED: 2026-07-31 — Removed repeated array-concatenation guidance.
 // UPDATED: 2026-08-02 - Documented the exact element storage contract, defined numeric narrowing, atomic mutation, and struct element identity (commit c393e710d)
 // UPDATED: 2026-08-02 - Cross-referenced member-specialised array type annotations (commit 31fd44072)
@@ -32,6 +33,8 @@ All indexing is zero-based.  The `#` operator returns the element count.  Elemen
 ==== Element Types
 
 indexterm:[arrays, fundamentals] Each array declares a fixed element type at creation.  Storing a value of an incompatible type raises an error, as defined in <<sec-element-storage-contract>>.
+
+The names below are the complete set accepted in an `array<pass:[...]>` declaration and in the `Type` argument of `array.new()` and `array.of()`.  A name that is not listed is rejected.
 
 [cols="1,1,3a",options="header"]
 |===
@@ -85,6 +88,8 @@ indexterm:[arrays, fundamentals] Each array declares a fixed element type at cre
 |16
 |Any Tiri value (mixed types permitted)
 |===
+
+CAUTION: `int8` names an *unsigned* element in an array declaration, because it is a synonym of `byte`.  This diverges from the struct vocabulary, where `int8` is a signed 8-bit field distinct from `byte` (see <<ch-structs>>).  `array<int8>` therefore stores values in the range 0--255 and wraps a negative value into that range, exactly as `array<byte>` does.
 
 [[sec-element-storage-contract]]
 [discrete]
