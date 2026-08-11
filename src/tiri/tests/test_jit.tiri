@@ -1940,6 +1940,29 @@ end
    assert(trace_found is true, "Expected array.clear() to produce a JIT trace")
 end
 
+@Test function TableClearMetamethodTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local calls = 0
+   local target = setmetatable({ value=42 }, {
+      ['__clear'] = function(Self)
+         calls += 1
+      end
+   })
+
+   local function clear_target(Target:table)
+      Target.clear()
+   end
+
+   for i in {0 to 80} do clear_target(target) end
+
+   assert(calls is 80, f"Expected __clear to run 80 times, got {calls}")
+   assert(target.value is 42, "Recorded __clear calls should not raw-clear the receiver")
+   assert(count_jit_traces(30) > 0, "Expected table.clear() with __clear to produce a JIT trace")
+end
+
 @Test(hotpath=80) function ArrayResizeTracesAndInvalidatesLength()
    jit.on()
    jit.flush()
