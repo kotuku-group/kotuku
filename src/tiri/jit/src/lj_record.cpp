@@ -1241,6 +1241,7 @@ static void rec_isarr(jit_State *J, BCREG ra)
 // Record calls and returns
 
 // Dynamic and trusted inferred results specialise calls by prototype because their metadata describes the prototype.
+// Contextual calls also require prototype guards because their virtual snapshots cannot grow direct side traces.
 
 static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
 {
@@ -1262,23 +1263,23 @@ static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
 
 // Specialise to the runtime value of the called function or its prototype.
 
-static TRef rec_call_specialise(jit_State *J, GCfunc* fn, TRef tr)
+static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool PrototypeSpecialisation)
 {
    IRBuilder ir(J);
    TRef kfunc;
-   if (isluafunc(fn)) {
-      GCproto* pt = funcproto(fn);
+   if (isluafunc(Function)) {
+      GCproto* pt = funcproto(Function);
       // Too many closures created? Probably not a monomorphic function.
-      if (rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
-         TRef trpt = ir.fload_ptr(tr, IRFL_FUNC_PC);
+      if (PrototypeSpecialisation or rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
+         TRef trpt = ir.fload_ptr(Ref, IRFL_FUNC_PC);
          ir.guard_eq(trpt, ir.kptr(proto_bc(pt)), IRT_PGC);
          (void)lj_ir_kgc(J, obj2gco(pt), IRT_PROTO);  //  Prevent GC of proto.
-         return tr;
+         return Ref;
       }
    }
    // Otherwise specialise to the function (closure) value itself.
-   kfunc = ir.kfunc(fn);
-   ir.guard_eq(tr, kfunc, IRT_FUNC);
+   kfunc = ir.kfunc(Function);
+   ir.guard_eq(Ref, kfunc, IRT_FUNC);
    return kfunc;
 }
 
@@ -1305,7 +1306,12 @@ static void rec_call_setup(jit_State *J, BCREG func, ptrdiff_t nargs)
       functv = &ix.mobjv;
    }
 
-   kfunc = rec_call_specialise(J, funcV(functv), fbase[0]);
+   BCOp call_op = bc_op(*J->pc);
+   bool contextual_call = call_op IS BC_CTXCALL or call_op IS BC_CTXCALLM or call_op IS BC_CTXCALLT;
+   // Virtual contextual activations cannot link side traces directly because their runtime state is materialised only
+   // when an exit resumes in the interpreter.  Guard Lua callees by prototype so fresh equivalent closures reuse the
+   // parent trace instead of repeatedly taking an exit whose snapshot cannot grow a side trace.
+   kfunc = rec_call_specialise(J, funcV(functv), fbase[0], contextual_call);
    fbase[0] = kfunc;
    fbase[1] = TREF_FRAME;
    J->maxslot = (BCREG)nargs;
@@ -1339,16 +1345,9 @@ static TRef rec_context_current(jit_State *J)
 enum : uint8_t {
    CONTEXT_CALL_NONE,
    CONTEXT_CALL_VIRTUAL,
-   CONTEXT_CALL_MATERIALISED
+   CONTEXT_CALL_MATERIALISED,
+   CONTEXT_CALL_EXEMPT
 };
-
-static bool rec_context_has_activation(jit_State *J)
-{
-   for (uint8_t state : J->context_call_state) {
-      if (state != CONTEXT_CALL_NONE) return true;
-   }
-   return false;
-}
 
 static void rec_context_materialise(jit_State *J)
 {
@@ -1381,6 +1380,13 @@ static void rec_context_enter(jit_State *J, BCREG CallBase)
       return;
    }
 
+   // Internal namespaces inherit the caller's context.  Record the exemption before the callable overwrites its
+   // receiver slot so CTXLEAVE can still perform result compaction without attempting to restore an activation.
+   if (lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]))) {
+      J->context_call_state[int32_t(J->baseslot) + int32_t(CallBase)] = CONTEXT_CALL_EXEMPT;
+      return;
+   }
+
    if (tail_call or native_target) rec_context_materialise(J);
 
    int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
@@ -1389,14 +1395,16 @@ static void rec_context_enter(jit_State *J, BCREG CallBase)
 
    if (not tail_call) {
       J->context_call_receiver[function_slot] = receiver;
-      if (not J->L->context_active and not rec_context_has_activation(J)) {
+      if (not J->L->context_active and not J->context_call_activation_count) {
          J->context_call_state[function_slot] = CONTEXT_CALL_VIRTUAL;
+         J->context_call_activation_count++;
          J->context_virtual_slot = function_slot;
          J->needsnap = 1;
          return;
       }
       rec_context_materialise(J);
       J->context_call_state[function_slot] = CONTEXT_CALL_MATERIALISED;
+      J->context_call_activation_count++;
    }
    IRBuilder ir(J);
    int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
@@ -1411,20 +1419,29 @@ static void rec_context_enter(jit_State *J, BCREG CallBase)
 static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc)
 {
    int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
-   if (not J->context_call_func[function_slot]) {
-      lj_record_stop(J, TraceLink::INTERP, 0);
-      return;
-   }
-   uint8_t context_state = J->context_call_state[function_slot];
-   if (context_state IS CONTEXT_CALL_VIRTUAL) {
-      lj_assertJ(J->context_virtual_slot IS function_slot, "virtual context leave has inconsistent owner");
-      J->context_virtual_slot = -1;
-   }
-   else {
-      IRBuilder ir(J);
-      int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
-      TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
-      lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+   bool exempt_call = J->context_call_state[function_slot] IS CONTEXT_CALL_EXEMPT;
+   if (not exempt_call) {
+      if (not J->context_call_func[function_slot]) {
+         lj_record_stop(J, TraceLink::INTERP, 0);
+         return;
+      }
+      uint8_t context_state = J->context_call_state[function_slot];
+      if (context_state IS CONTEXT_CALL_VIRTUAL) {
+         lj_assertJ(J->context_virtual_slot IS function_slot, "virtual context leave has inconsistent owner");
+         J->context_virtual_slot = -1;
+      }
+      else {
+         IRBuilder ir(J);
+         int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
+         TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+         lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+      }
+      // Native calls retain CONTEXT_CALL_NONE on this branch because their explicit receiver handling does not create
+      // a recorder-managed activation.  CTXLEAVE still performs its existing restoration and result compaction.
+      if (context_state != CONTEXT_CALL_NONE) {
+         lj_assertJ(J->context_call_activation_count > 0, "context activation count underflow");
+         J->context_call_activation_count--;
+      }
    }
    J->context_call_state[function_slot] = CONTEXT_CALL_NONE;
 
@@ -1504,9 +1521,11 @@ static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t Argumen
    }
 
    TRef receiver = getslot(J, int32_t(CallBase) - 1);
+   bool exempt_receiver = tvistab(&J->L->base[CallBase - 1]) and
+      lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]));
    rec_call_setup(J, CallBase, ArgumentCount);
 
-   if (tref_istab(receiver)) {
+   if (tref_istab(receiver) and not exempt_receiver) {
       IRBuilder ir(J);
       int32_t prepared_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
       TRef prepared_owner = rec_stack_slot_addr(J, ir, prepared_slot);
@@ -4841,6 +4860,7 @@ void lj_record_setup(jit_State *J)
    memset(J->context_call_receiver, 0, sizeof(J->context_call_receiver));
    memset(J->context_call_result, 0, sizeof(J->context_call_result));
    memset(J->context_call_state, 0, sizeof(J->context_call_state));
+   J->context_call_activation_count = 0;
    J->context_virtual_slot = -1;
    memset(J->trymat, 0, sizeof(J->trymat));
    memset(J->chain, 0, sizeof(J->chain));

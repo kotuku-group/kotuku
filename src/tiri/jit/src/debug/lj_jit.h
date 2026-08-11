@@ -498,6 +498,7 @@ struct jit_State {
   TRef context_call_receiver[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
   TRef context_call_result[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
   uint8_t context_call_state[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  uint16_t context_call_activation_count;
   int32_t context_virtual_slot;
 
   int32_t param[JIT_P__MAX];  //  JIT engine parameters.

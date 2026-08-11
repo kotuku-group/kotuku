@@ -284,76 +284,76 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Goal: Call ordinary callable fields with explicit receivers
+-- Goal: Call contextual methods on tables
 
 @Test function FunctionMethodCalls()
    -- Create object-like tables with methods
    local Counter = {
       value = 0,
-      increment = function(Self):num
-         Self.value++
-         return Self.value
+      increment = function():num
+         .value++
+         return .value
       end,
-      decrement = function(Self):num
-         Self.value -= 1
-         return Self.value
+      decrement = function():num
+         .value -= 1
+         return .value
       end,
-      add = function(Self, n):num
-         Self.value += n
-         return Self.value
+      add = function(n):num
+         .value += n
+         return .value
       end,
-      getValue = function(Self):num
-         return Self.value
+      getValue = function():num
+         return .value
       end,
-      reset = function(Self)
-         Self.value = 0
+      reset = function()
+         .value = 0
       end
    }
 
    local Point = {
       x = 0,
       y = 0,
-      set = function(Self, x, y)
-         Self.x = x
-         Self.y = y
+      set = function(x, y)
+         .x = x
+         .y = y
       end,
-      translate = function(Self, dx, dy)
-         Self.x += dx
-         Self.y += dy
+      translate = function(dx, dy)
+         .x += dx
+         .y += dy
       end,
-      distance = function(Self)
-         return math.sqrt(Self.x * Self.x + Self.y * Self.y)
+      distance = function()
+         return math.sqrt(.x * .x + .y * .y)
       end
    }
 
    local checksum = 0.0
    for i in {0 to 10000} do
-      Counter.reset(Counter)
-      Counter.increment(Counter)
-      Counter.increment(Counter)
-      Counter.add(Counter, 5)
-      local v1 = Counter.getValue(Counter)
-      Counter.decrement(Counter)
+      Counter.reset()
+      Counter.increment()
+      Counter.increment()
+      Counter.add(5)
+      local v1 = Counter.getValue()
+      Counter.decrement()
 
       -- Multiple method calls in sequence
-      Point.set(Point, i % 100, i % 50)
-      Point.translate(Point, 1, 2)
-      Point.translate(Point, -1, 1)
-      local d = Point.distance(Point)
+      Point.set(i % 100, i % 50)
+      Point.translate(1, 2)
+      Point.translate(-1, 1)
+      local d = Point.distance()
 
       -- Create new instances
       local instance = { value = 0 }
       setmetatable(instance, { __index = Counter })
-      instance.increment(instance)
-      instance.add(instance, 10)
-      local v2 = instance.getValue(instance)
+      instance.increment()
+      instance.add(10)
+      local v2 = instance.getValue()
 
       -- Chain-like method usage
-      Counter.reset(Counter)
+      Counter.reset()
       for j in {0 to 10} do
-         Counter.increment(Counter)
+         Counter.increment()
       end
-      local final = Counter.getValue(Counter)
+      local final = Counter.getValue()
       checksum += v1 + d + v2 + final
    end
    return checksum

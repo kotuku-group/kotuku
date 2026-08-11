@@ -34,6 +34,15 @@ static LJ_AINLINE void lj_state_checkstack(lua_State* L, MSize need)
 LJ_FUNC void lj_state_free(global_State* g, lua_State* L);
 
 // State-local table context.  The root is represented by an empty override stack and always resolves through L->env.
+
+// Client tables establish context.  Internal library namespaces are permanent implementation interfaces and inherit
+// the caller's context instead.  The interpreter and recorder share this predicate to keep their behaviour aligned.
+
+[[nodiscard]] inline bool lj_context_receiver_establishes(const TValue *Receiver) noexcept
+{
+   return tvistab(Receiver) and not lj_tab_is_context_exempt(tabV(Receiver));
+}
+
 LJ_FUNC [[nodiscard]] GCtab * lj_context_current(lua_State *L) noexcept;
 extern "C" LJ_FUNC void lj_context_load(lua_State *L, TValue *Destination) noexcept;
 extern "C" LJ_FUNC GCtab * lj_context_current_jit(lua_State *L) noexcept;

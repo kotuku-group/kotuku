@@ -58,6 +58,24 @@ end
       'A returned contextual call should complete restoration before returning to its caller')
 end
 
+@Test function InternalNamespacesInheritCurrentContext()
+   local outer = { name = 'namespace outer' }
+
+   function read_namespace_argument():num
+      assert(.name is 'namespace outer', 'Namespace argument evaluation should inherit the caller context')
+      return -19
+   end
+
+   function outer.run():<num, str>
+      local result = math.abs(read_namespace_argument())
+      return result, .name
+   end
+
+   local result, restored_name = outer.run()
+   assert(result is 19, 'A context-exempt math call should preserve its result')
+   assert(restored_name is 'namespace outer', 'A namespace call should not replace its caller context')
+end
+
 @Test function ReturnAritiesRestoreContext()
    local receiver = { name = 'receiver' }
 
@@ -523,6 +541,43 @@ end
    assert(recorded is interpreted,
       'A virtual context side exit should restore a receiver allocated by the recorded loop')
    assert(.value is nil, 'An allocated virtual receiver should no longer be current after contextual restoration')
+end
+
+@Test function JITFreshContextualClosuresReusePrototypeTrace()
+   function run_factory(Offset:num, Count:num):num
+      local target = {
+         value = 3,
+         read = function():num return .value + Offset end
+      }
+      local total = 0
+      for _ in {0 to Count} do total += target.read() end
+      return total
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local total = 0
+   for offset in {0 to 12} do total += run_factory(offset, 128) end
+
+   local prototype_guard = false
+   for trace_no in {1 into 30} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+      for instruction in {1 into info.nins} do
+         local _, ir_ot, _, ir_op2 = jit.util.traceIR(trace_no, instruction)
+         -- IR_FLOAD is opcode 69 and IRFL_FUNC_PC is field 2 in the append-only IR definitions.
+         if ir_ot != nil and (ir_ot >> 8) is 69 and ir_op2 is 2 then prototype_guard = true end
+      end
+   end
+
+   jit.off()
+   jit.opt.start()
+
+   assert(total is 13056, 'Prototype-specialised contextual closures should retain their individual upvalues')
+   assert(prototype_guard,
+      'Fresh contextual closures should record a reusable prototype guard instead of an exact closure guard')
 end
 
 @Test function JITVirtualExitPreservesMaterialisedCallerContext()
