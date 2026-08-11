@@ -30,14 +30,14 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       SourceSpan span = Payload.body->span;
       span.line = this->lex_state.lastline;
 
-      // Create inner closure (no parameters, captures parent's as upvalues)
-      // Move original body to inner function
+      // Create inner closure (no parameters, captures parent's as upvalues).  Runtime method dispatch can emit the
+      // same argument expression for more than one call branch, so restore the body after lowering the temporary AST.
 
       auto inner_body = std::make_unique<BlockStmt>();
       inner_body->span = span;
-      for (auto& stmt : Payload.body->statements) {
-         inner_body->statements.push_back(std::move(const_cast<StmtNodePtr&>(stmt)));
-      }
+      auto &source_statements = const_cast<StmtNodeList&>(Payload.body->statements);
+      inner_body->statements = std::move(source_statements);
+      BlockStmt *lowered_body = inner_body.get();
 
       ExprNodePtr inner_fn = make_function_expr(span, {}, false, std::move(inner_body));
 
@@ -81,8 +81,12 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       wrapper_payload.is_thunk = false;  // Important: wrapper is not a thunk
       wrapper_payload.body = std::move(wrapper_body);
 
-      // Recursively emit the wrapper function (which is now a regular function)
-      return this->emit_function_expr(wrapper_payload);
+      // Recursively emit the wrapper function (which is now a regular function), then restore the source thunk so
+      // another bytecode branch can emit it again.
+
+      auto result = this->emit_function_expr(wrapper_payload);
+      source_statements = std::move(lowered_body->statements);
+      return result;
    }
 
    // Regular function emission

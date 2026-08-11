@@ -102,7 +102,7 @@ function hslToRGB(H, S, L, A):table
 end
 
 function rgbToXYZD50(RGB)
-   local linear = RGB.linearise()
+   local linear = RGB.linearise(RGB)
 
    local x65 = (0.4124564 * linear.r) + (0.3575761 * linear.g) + (0.1804375 * linear.b)
    local y65 = (0.2126729 * linear.r) + (0.7151522 * linear.g) + (0.0721750 * linear.b)
@@ -117,7 +117,7 @@ function rgbToXYZD50(RGB)
 end
 
 function makePaletteEntry(RGB)
-   local hsl = RGB.toHSL()
+   local hsl = RGB.toHSL(RGB)
    return {
       rgb = RGB,
       hex = hexFromRGB(RGB),
@@ -128,7 +128,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function generatePalette(BaseRGB, Scheme, Count)
-   local base_hsl = BaseRGB.toHSL()
+   local base_hsl = BaseRGB.toHSL(BaseRGB)
    local palette = {}
    local i = 0
 
@@ -174,13 +174,13 @@ end
 function buildColourReport(Painter)
    nrgb  = Painter.Colour -- Normalised RGB
    rgb   = gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha)
-   oklab = rgb.toOKLab()
-   oklch = rgb.toOKLCH()
-   hsl   = rgb.toHSL()
-   hsv   = rgb.toHSV()
+   oklab = rgb.toOKLab(rgb)
+   oklch = rgb.toOKLCH(rgb)
+   hsl   = rgb.toHSL(rgb)
+   hsv   = rgb.toHSV(rgb)
    xyz   = rgbToXYZD50(rgb)
-   p3    = rgb.toDisplayP3()
-   lum   = rgb.luminance()
+   p3    = rgb.toDisplayP3(rgb)
+   lum   = rgb.luminance(rgb)
 
    alpha = clamp(rgb.a, 0, 1)
 
@@ -386,7 +386,7 @@ end
 
       if all_output[0] is 'oklch' then
          convert = function(RGB)
-            oklab = RGB.toOKLCH()
+            oklab = RGB.toOKLCH(RGB)
             return tostring(oklab)
          end
       else

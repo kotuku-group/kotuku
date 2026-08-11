@@ -5163,6 +5163,15 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    }
 
    error.clear();
+   auto dynamic_thunk = compile_snapshot(L,
+      "local Values:any = {}\nValues.insert(thunk():num return 1 end)\n", true, error);
+   if (not dynamic_thunk or count_opcode(*dynamic_thunk, BC_BMETH) != 1 or
+       count_opcode(*dynamic_thunk, BC_CALL) != 2) {
+      Log.error("runtime built-in method could not emit a thunk argument for both branches: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
    auto dynamic_safe = compile_snapshot(L,
       "local maybe:any = nil\nmaybe?.insert(1)\nreturn maybe\n", true, error);
    if (not dynamic_safe or count_opcode(*dynamic_safe, BC_BMETH) != 1 or

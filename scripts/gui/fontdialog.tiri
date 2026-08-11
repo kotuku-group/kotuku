@@ -80,7 +80,9 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
    function refreshExample()
       if not self.guidelines then
-         line_col = (gui.strToRGB(lWindow.theme.page.bkgd).luminance() > 0.5) ? 'rgb(0 0 0 / .25)' :> 'rgb(255 255 255 / .15)'
+         local page_colour = gui.strToRGB(lWindow.theme.page.bkgd)
+         line_col = (page_colour.luminance(page_colour) > 0.5) ? 'rgb(0 0 0 / .25)' :>
+            'rgb(255 255 255 / .15)'
          self.guidelines = self.examplePage.new('VectorPath', { strokeWidth = 0.5, stroke = line_col })
       end
 
