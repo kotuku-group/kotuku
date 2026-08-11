@@ -780,20 +780,23 @@ boundary.
 
 ##### Contextual Call Layout (Gate C)
 
-Current-context access uses the dedicated `CTXGET` opcode. Table member calls use appended contextual variants of the
-existing call family. Their register layout reserves the slot immediately before the ordinary call base for the
-original receiver; the callable and written arguments otherwise retain the `CALL`/`CALLM` layout. `CTXENTER` performs
-the runtime table gate after member lookup and before argument evaluation. `CTXCALL` repeats the gate idempotently at
-the activation boundary, and `CTXLEAVE` restores the inherited context after a normal return. It shifts returned
-values down over the retained receiver slot so expression result allocation remains identical to an ordinary member
-call.
+Current-context access uses the dedicated `CTXGET` opcode. Potentially contextual member calls use appended variants
+of the existing call family. Their register layout reserves the slot immediately before the ordinary call base for
+the original receiver; the callable and written arguments otherwise retain the `CALL`/`CALLM` layout. `CTXENTER`
+performs the runtime gate after member lookup and before argument evaluation. The gate requires both a table receiver
+and a Lua function declared as table-associated. Dot-qualified declarations and function literals used directly as
+named or computed table fields carry this portable prototype attribute; independent function references merely
+stored in tables do not. `CTXCALL` repeats the gate idempotently at the activation boundary, and `CTXLEAVE` restores
+the inherited context after a normal return.  It shifts returned values down over the retained receiver slot so
+expression result allocation remains identical to an ordinary member call.
 
 Named and computed lookup continue to use the appropriate existing `TGET*` operation while retaining the original
 receiver. Safe calls branch around lookup, entry and argument evaluation on their `nil` path. Statically proved
 strings, arrays, ranges, structures and objects retain their specialised receiver dispatch without emitting context
 operations. Dynamically typed receivers use the contextual variants, whose runtime gate leaves non-table values and
-their visible argument layout unchanged. `CTXCALLT` transfers a prepared receiver from the discarded activation to
-the reused tail frame, replacing an override owned by that frame where necessary. Direct tail calls naturally retain
+independent callables unchanged without altering their visible argument layout.  `CTXCALLT` transfers a prepared
+receiver from the discarded activation to the reused tail frame, replacing an override owned by that frame where
+necessary.  Direct tail calls naturally retain
 their existing frame owner. Variable-argument contextual calls retain the ordinary call-and-return form so their
 multiple-result state does not cross a context helper boundary. Direct calls and compiler-managed module namespace
 calls retain their existing bytecode and overhead.

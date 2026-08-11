@@ -64,7 +64,13 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
          }
       }
 
-      auto value_result = this->emit_expression(*field.value);
+      ParserResult<ExpDesc> value_result;
+      if (field.kind != TableFieldKind::Array and field.value->kind IS AstNodeKind::FunctionExpr) {
+         this->lex_state.lastline = field.value->span.line;
+         value_result = this->emit_function_expr(
+            std::get<FunctionExprPayload>(field.value->data), nullptr, true);
+      }
+      else value_result = this->emit_expression(*field.value);
       if (not value_result.ok()) return value_result;
 
       ExpDesc val = value_result.value_ref();

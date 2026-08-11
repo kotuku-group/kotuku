@@ -82,6 +82,13 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
          "piped runtime built-in method annotation has no direct receiver"));
    }
 
+   bool contextual_field = true;
+   if (receiver_node->static_value) {
+      TiriType receiver_type = this->ctx.descriptors().value(receiver_node->static_value).primary;
+      contextual_field = receiver_type IS TiriType::Unknown or receiver_type IS TiriType::Any or
+         receiver_type IS TiriType::Table or receiver_type IS TiriType::Nil;
+   }
+
    FuncState *state = &this->func_state;
    BCLine call_line = this->lex_state.lastline;
    BCReg call_base = state->free_reg();
@@ -114,7 +121,8 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
       state, BCINS_AJP(BC_BMETH, call_base.raw(), NO_JMP, member_constant)));
 
    auto emit_branch = [&](bool BuiltinBranch) -> ParserResult<BCPos> {
-      state->freereg = call_base.raw() + 1 + LJ_FR2 + (BuiltinBranch ? 1 : 0);
+      BCReg branch_base = BuiltinBranch or not contextual_field ? call_base : BCReg(call_base.raw() + 1);
+      state->freereg = branch_base.raw() + 1 + LJ_FR2 + (BuiltinBranch ? 1 : 0);
       auto lhs_result = this->emit_expression(*Payload.lhs);
       if (not lhs_result.ok()) return ParserResult<BCPos>::failure(lhs_result.error_ref());
       ExpDesc lhs = lhs_result.value_ref();
@@ -141,15 +149,15 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
 
       BCIns instruction;
       if (forward_multret and Call.arguments.empty()) {
-         instruction = BCINS_ABC(BC_CALLM, call_base.raw(), 2,
-            lhs.u.s.aux - call_base.raw() - 1 - LJ_FR2);
+         instruction = BCINS_ABC(BuiltinBranch or not contextual_field ? BC_CALLM : BC_CTXCALLM, branch_base.raw(), 2,
+            lhs.u.s.aux - branch_base.raw() - 1 - LJ_FR2);
       }
       else {
          if (arguments.k != ExpKind::Void) {
             this->materialise_to_next_reg(arguments, "runtime method pipe arguments");
          }
-         instruction = BCINS_ABC(BC_CALL, call_base.raw(), 2,
-            state->freereg - call_base.raw() - 1);
+         instruction = BCINS_ABC(BuiltinBranch or not contextual_field ? BC_CALL : BC_CTXCALL, branch_base.raw(), 2,
+            state->freereg - branch_base.raw() - 1);
       }
       this->lex_state.lastline = call_line;
       return ParserResult<BCPos>::success(BCPos(bcemit_INS(state, instruction)));
@@ -173,9 +181,17 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
       field_nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
    }
 
+   BCReg field_call_base = contextual_field ? BCReg(call_base.raw() + 1) : call_base;
+   if (contextual_field) {
+      bcemit_AD(state, BC_MOV, field_call_base.raw(), call_base.raw());
+      bcemit_AD(state, BC_MOV, call_base.raw(), receiver_slot);
+      bcemit_INS(state, BCINS_AD(BC_CTXENTER, field_call_base.raw(), 0));
+   }
+
    auto field_result = emit_branch(false);
    if (not field_result.ok()) return ParserResult<ExpDesc>::failure(field_result.error_ref());
    BCPos field_call = field_result.value_ref();
+   if (contextual_field) bcemit_INS(state, BCINS_AD(BC_CTXLEAVE, field_call_base.raw(), 1));
    skip_field.patch_here();
 
    if (Call.runtime_builtin_method->safe) {
@@ -493,6 +509,13 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
          "runtime built-in method annotation has no direct receiver"));
    }
 
+   bool contextual_field = true;
+   if (receiver_node->static_value) {
+      TiriType receiver_type = this->ctx.descriptors().value(receiver_node->static_value).primary;
+      contextual_field = receiver_type IS TiriType::Unknown or receiver_type IS TiriType::Any or
+         receiver_type IS TiriType::Table or receiver_type IS TiriType::Nil;
+   }
+
    FuncState *state = &this->func_state;
    BCLine call_line = this->lex_state.lastline;
    BCReg call_base = state->free_reg();
@@ -525,7 +548,8 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
       state, BCINS_AJP(BC_BMETH, call_base.raw(), NO_JMP, member_constant)));
 
    auto emit_branch_call = [&](bool BuiltinBranch) -> ParserResult<BCPos> {
-      state->freereg = call_base.raw() + 1 + LJ_FR2 + (BuiltinBranch ? 1 : 0);
+      BCReg branch_base = BuiltinBranch or not contextual_field ? call_base : BCReg(call_base.raw() + 1);
+      state->freereg = branch_base.raw() + 1 + LJ_FR2 + (BuiltinBranch ? 1 : 0);
       BCReg argument_count(0);
       ExpDesc arguments(ExpKind::Void);
       if (not Payload.arguments.empty()) {
@@ -538,16 +562,16 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
       bool forward_tail = Payload.forwards_multret and arguments.k IS ExpKind::Call;
       if (forward_tail) {
          set_call_result_count(state, arguments, 0);
-         instruction = BCINS_ABC(BC_CALLM, call_base.raw(), 2,
-            arguments.u.s.aux - call_base.raw() - 1 - LJ_FR2);
+         instruction = BCINS_ABC(BuiltinBranch or not contextual_field ? BC_CALLM : BC_CTXCALLM, branch_base.raw(), 2,
+            arguments.u.s.aux - branch_base.raw() - 1 - LJ_FR2);
       }
       else {
          if (arguments.k != ExpKind::Void) {
             this->materialise_to_next_reg(arguments,
                BuiltinBranch ? "runtime built-in method arguments" : "runtime field-call arguments");
          }
-         instruction = BCINS_ABC(BC_CALL, call_base.raw(), 2,
-            state->freereg - call_base.raw() - 1);
+         instruction = BCINS_ABC(BuiltinBranch or not contextual_field ? BC_CALL : BC_CTXCALL, branch_base.raw(), 2,
+            state->freereg - branch_base.raw() - 1);
       }
       this->lex_state.lastline = call_line;
       return ParserResult<BCPos>::success(BCPos(bcemit_INS(state, instruction)));
@@ -574,9 +598,17 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
       field_nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
    }
 
+   BCReg field_call_base = contextual_field ? BCReg(call_base.raw() + 1) : call_base;
+   if (contextual_field) {
+      bcemit_AD(state, BC_MOV, field_call_base.raw(), call_base.raw());
+      bcemit_AD(state, BC_MOV, call_base.raw(), receiver_slot);
+      bcemit_INS(state, BCINS_AD(BC_CTXENTER, field_call_base.raw(), 0));
+   }
+
    auto field_call_result = emit_branch_call(false);
    if (not field_call_result.ok()) return ParserResult<ExpDesc>::failure(field_call_result.error_ref());
    BCPos field_call = field_call_result.value_ref();
+   if (contextual_field) bcemit_INS(state, BCINS_AD(BC_CTXLEAVE, field_call_base.raw(), 1));
    skip_field.patch_here();
 
    if (Payload.runtime_builtin_method->safe) {

@@ -1863,6 +1863,58 @@ static bool test_signature_void_and_bare_return(kt::Log &Log)
    return true;
 }
 
+static bool test_table_association_metadata_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   constexpr std::string_view source =
+      "local independent = function():str return 'callback' end\n"
+      "local holder = {\n"
+      "   name = 'holder',\n"
+      "   callback = independent,\n"
+      "   literal = function():str return .name end\n"
+      "}\n"
+      "function holder.declared():str return .name end\n"
+      "return independent, holder.literal, holder.declared\n";
+
+   if (lua_load(lua, source, "table-association-roundtrip")) {
+      Log.error("failed to compile table-association source: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   std::string dump;
+   if (lj_bcwrite(lua, root, bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to write table-association bytecode");
+      return false;
+   }
+
+   auto verify = [&](std::string_view Label) {
+      if (lua_pcall(lua, 0, 3, 0)) {
+         Log.error("failed to execute %.*s table-association fixture: %s", int(Label.size()), Label.data(),
+            lua_tostring(lua, -1));
+         return false;
+      }
+      bool valid = tvisfunc(lua->top - 3) and tvisfunc(lua->top - 2) and tvisfunc(lua->top - 1) and
+         not func_is_table_associated(funcV(lua->top - 3)) and
+         func_is_table_associated(funcV(lua->top - 2)) and
+         func_is_table_associated(funcV(lua->top - 1));
+      lua_pop(lua, 3);
+      if (not valid) {
+         Log.error("%.*s bytecode did not distinguish independent, literal and declared functions",
+            int(Label.size()), Label.data());
+      }
+      return valid;
+   };
+
+   if (not verify("source")) return false;
+   if (lua_load(lua, std::string_view(dump.data(), dump.size()), "table-association-roundtrip")) {
+      Log.error("failed to reload table-association bytecode: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   return verify("reloaded");
+}
+
 static bool test_malformed_signature_rejected(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -5532,8 +5584,10 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
       "local body = { values={} }\nbody.values.insert(1)\nreturn body.values[0]\n", true, error);
    const BCIns *dynamic_dispatch = dynamic ? find_opcode(*dynamic, BC_BMETH) : nullptr;
    if (not dynamic or not dynamic_dispatch or count_opcode(*dynamic, BC_BMETH) != 1 or
-       count_opcode(*dynamic, BC_CALL) != 2 or count_opcode(*dynamic, BC_JMP) != 1 or
-       count_opcode(*dynamic, BC_BFUNC) != 0 or bc_j(*dynamic_dispatch) <= 0) {
+       count_opcode(*dynamic, BC_CALL) != 1 or count_opcode(*dynamic, BC_CTXCALL) != 1 or
+       count_opcode(*dynamic, BC_CTXENTER) != 1 or count_opcode(*dynamic, BC_CTXLEAVE) != 1 or
+       count_opcode(*dynamic, BC_JMP) != 1 or count_opcode(*dynamic, BC_BFUNC) != 0 or
+       bc_j(*dynamic_dispatch) <= 0) {
       Log.error("unproved dot call did not emit the two-branch runtime method shape: %s", error.c_str());
       return false;
    }
@@ -5542,17 +5596,30 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto userdata = compile_snapshot(L,
       "local function use(Handle:userdata)\nHandle.write('x')\nHandle.close()\nend\n", true, error);
    if (not userdata or count_opcode_tree(*userdata, BC_BMETH) != 2 or
-       count_opcode_tree(*userdata, BC_CALL) != 4) {
+       count_opcode_tree(*userdata, BC_CALL) != 4 or count_opcode_tree(*userdata, BC_CTXCALL) != 0 or
+       count_opcode_tree(*userdata, BC_CTXENTER) != 0 or count_opcode_tree(*userdata, BC_CTXLEAVE) != 0) {
       Log.error("proved userdata calls did not emit runtime method dispatch: %s", error.c_str());
       return false;
    }
 
    error.clear();
    auto dynamic_tail = compile_snapshot(L,
-      "local Values:any = {}\nreturn Values.insert(1)\n", true, error);
+      "local Values:any = {}\nlocal function forward():<any, ...> return Values.insert(1) end\nreturn forward()\n",
+      true, error);
    if (not dynamic_tail or count_opcode_tree(*dynamic_tail, BC_BMETH) != 1 or
-       count_opcode_tree(*dynamic_tail, BC_CALLT) != 2) {
+       count_opcode_tree(*dynamic_tail, BC_CALLT) != 2 or count_opcode_tree(*dynamic_tail, BC_CTXCALLT) != 1 or
+       count_opcode_tree(*dynamic_tail, BC_CTXENTER) != 1) {
       Log.error("runtime built-in method tail branches did not both use CALLT: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_root_tail = compile_snapshot(L,
+      "local Values:any = {}\nreturn Values.insert(1)\n", true, error);
+   if (not dynamic_root_tail or count_opcode_tree(*dynamic_root_tail, BC_CTXCALLT) != 0 or
+       count_opcode_tree(*dynamic_root_tail, BC_CTXCALL) != 1 or
+       count_opcode_tree(*dynamic_root_tail, BC_CTXLEAVE) != 1) {
+      Log.error("root runtime method call used an ownership-transferring tail frame: %s", error.c_str());
       return false;
    }
 
@@ -5560,7 +5627,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_forwarded = compile_snapshot(L,
       "local function item():num return 2 end\nlocal Values:any = {}\nValues.insert(item())\n", true, error);
    if (not dynamic_forwarded or count_opcode(*dynamic_forwarded, BC_BMETH) != 1 or
-       count_opcode(*dynamic_forwarded, BC_CALLM) != 2) {
+       count_opcode(*dynamic_forwarded, BC_CALLM) != 1 or
+       count_opcode(*dynamic_forwarded, BC_CTXCALLM) != 1) {
       Log.error("runtime built-in method argument forwarding lost either CALLM branch: %s", error.c_str());
       return false;
    }
@@ -5569,7 +5637,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_thunk = compile_snapshot(L,
       "local Values:any = {}\nValues.insert(thunk():num return 1 end)\n", true, error);
    if (not dynamic_thunk or count_opcode(*dynamic_thunk, BC_BMETH) != 1 or
-       count_opcode(*dynamic_thunk, BC_CALL) != 2) {
+       count_opcode(*dynamic_thunk, BC_CALL) != 2 or count_opcode(*dynamic_thunk, BC_CALLM) != 1 or
+       count_opcode(*dynamic_thunk, BC_CTXCALLM) != 1) {
       Log.error("runtime built-in method could not emit a thunk argument for both branches: %s", error.c_str());
       return false;
    }
@@ -5578,7 +5647,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_safe = compile_snapshot(L,
       "local maybe:any = nil\nmaybe?.insert(1)\nreturn maybe\n", true, error);
    if (not dynamic_safe or count_opcode(*dynamic_safe, BC_BMETH) != 1 or
-       count_opcode(*dynamic_safe, BC_ISEQP) != 2 or count_opcode(*dynamic_safe, BC_CALL) != 2) {
+       count_opcode(*dynamic_safe, BC_ISEQP) != 2 or count_opcode(*dynamic_safe, BC_CALL) != 1 or
+       count_opcode(*dynamic_safe, BC_CTXCALL) != 1) {
       Log.error("unproved safe dot call lost runtime dispatch or nil short-circuiting: %s", error.c_str());
       return false;
    }
@@ -5587,7 +5657,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_pipe = compile_snapshot(L,
       "local body = { values={} }\n1 |> body.values.insert()\nreturn body.values[0]\n", true, error);
    if (not dynamic_pipe or count_opcode(*dynamic_pipe, BC_BMETH) != 1 or
-       count_opcode(*dynamic_pipe, BC_CALL) != 2) {
+       count_opcode(*dynamic_pipe, BC_CALL) != 1 or count_opcode(*dynamic_pipe, BC_CTXCALL) != 1 or
+       count_opcode(*dynamic_pipe, BC_CTXENTER) != 1 or count_opcode(*dynamic_pipe, BC_CTXLEAVE) != 1) {
       Log.error("unproved piped dot call did not emit both runtime call frames: %s", error.c_str());
       return false;
    }
@@ -7268,7 +7339,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 64> tests = { {
+   constexpr std::array<TestCase, 65> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7295,6 +7366,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
+      { "table_association_metadata_roundtrip", test_table_association_metadata_roundtrip },
       { "forward_declaration_signature_validation", test_forward_declaration_signature_validation },
       { "old_bytecode_versions_rejected", test_old_bytecode_versions_rejected },
       { "unmatched_context_entry_rejected", test_unmatched_context_entry_rejected },

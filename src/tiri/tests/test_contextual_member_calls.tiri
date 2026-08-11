@@ -31,6 +31,81 @@ module core as mCore
       'A computed contextual call should compact table and multiple results into the expression destination')
 end
 
+@Test function DynamicallyResolvedTableCallsEstablishContext()
+   local account_factory = {}
+
+   function account_factory.new(Name:str):table
+      local account = { name = Name, balance = 0 }
+
+      function account.deposit(Amount:num):num
+         .balance += Amount
+         return .balance
+      end
+
+      return account
+   end
+
+   local account = account_factory.new('paul')
+   assert(account.deposit(10) is 10,
+      'A local inferred from a member-call result should establish its table receiver context')
+
+   local wrapper = { nested = account_factory.new('nested') }
+   assert(wrapper.nested.deposit(7) is 7,
+      'A nested member receiver should establish its resolved table as context')
+
+   function deposit_any(Receiver:any, Amount:num):num
+      return Receiver.deposit(Amount)
+   end
+
+   function deposit_untyped(Receiver, Amount:num):num
+      return Receiver.deposit(Amount)
+   end
+
+   assert(deposit_any(account, 4) is 14,
+      'A table passed through an any parameter should establish its runtime receiver context')
+   assert(deposit_untyped(account, 6) is 20,
+      'A table passed through an unannotated parameter should establish its runtime receiver context')
+end
+
+@Test function DynamicFluentAndPipedCallsPreserveContextAndResults()
+   local builder = { value = '' }
+
+   function builder.add(Value:str):table
+      .value ..= Value
+      return builder
+   end
+
+   builder.add('a').add('b')
+   assert(builder.value is 'ab', 'Each dynamically resolved receiver in a fluent chain should establish context')
+
+   local holder = { target = { total = 0 } }
+   function holder.target.add(Value:num):num
+      .total += Value
+      return .total
+   end
+
+   assert(9 |> holder.target.add() is 9,
+      'A piped dynamically resolved field call should preserve its context and result layout')
+   assert(holder.target.total is 9, 'A piped field call should update its runtime table receiver')
+end
+
+@Test function DynamicTailAndMultipleResultCallsPreserveContext()
+   local receiver = { name = 'dynamic', value = 27 }
+
+   function receiver.describe():<str, num>
+      return .name, .value
+   end
+
+   function forward(Receiver:any):<any, ...>
+      return Receiver.describe()
+   end
+
+   local name, value = forward(receiver)
+   assert(name is 'dynamic' and value is 27,
+      'A runtime-resolved contextual tail call should preserve every returned value')
+   assert(.name is nil, 'A runtime-resolved contextual tail call should restore the root context')
+end
+
 @Test function DirectCallsInheritAndNestedTableCallsRestoreContext()
    local outer = { name = 'outer' }
    local inner = { name = 'inner' }
@@ -416,10 +491,11 @@ end
 end
 
 @Test function MetatableLookupKeepsOriginalReceiver()
-   local implementation = function():str
-      return .name
-   end
-   local prototype = { inherited = implementation }
+   local prototype = {
+      inherited = function():str
+         return .name
+      end
+   }
    local receiver = setmetatable({ name = 'receiver' }, { __index = prototype })
 
    assert(receiver.inherited() is 'receiver',
@@ -465,6 +541,39 @@ end
    local callback = receiver.read
    assert(callback() is 'root', 'An extracted member should inherit invocation-time context without binding its table')
    .glContextualExtractionName = nil
+end
+
+@Test function TableAssociationDistinguishesMethodsFromStoredCallbacks()
+   .glContextualAssociationName = 'root'
+
+   function independent_callback():str
+      return .glContextualAssociationName
+   end
+
+   local callback_holder = {
+      glContextualAssociationName = 'callback holder',
+      invoke = independent_callback
+   }
+   assert(callback_holder.invoke() is 'root',
+      'Storing an independent function reference in a table should not associate it with that table')
+
+   local literal_method = {
+      glContextualAssociationName = 'literal method',
+      invoke = function():str
+         return .glContextualAssociationName
+      end
+   }
+   assert(literal_method.invoke() is 'literal method',
+      'A function literal declared in a table field should be associated with that table')
+
+   local declared_method = { glContextualAssociationName = 'declared method' }
+   function declared_method.invoke():str
+      return .glContextualAssociationName
+   end
+   assert(declared_method.invoke() is 'declared method',
+      'A dot-qualified function declaration should be associated with its table')
+
+   .glContextualAssociationName = nil
 end
 
 @Test function StaticStructureMemberCallsBypassContextBytecode()
@@ -568,15 +677,11 @@ end
 end
 
 @Test(hotpath=80) function JITAlternatingReceiversUseRecordedContext()
-   local first = { value = 3 }
-   local second = { value = 7 }
-
-   function read_value():num
-      return .value
-   end
-
-   first.read = read_value
-   second.read = read_value
+   local first = {
+      value = 3,
+      read = function():num return .value end
+   }
+   local second = { value = 7, read = first.read }
 
    function run(Count:num):num
       local total = 0
@@ -602,15 +707,17 @@ end
 end
 
 @Test function JITVirtualContextRestoresAllocatedReceiverOnExit()
-   function read_allocated():num
-      if .alternate then return .value + 1 end
-      return .value
-   end
-
    function run(Count:num):num
       local total = 0
       for i in {0 to Count} do
-         local target = { value = i, alternate = i is 24, read = read_allocated }
+         local target = {
+            value = i,
+            alternate = i is 24,
+            read = function():num
+               if .alternate then return .value + 1 end
+               return .value
+            end
+         }
          total += target.read()
       end
       return total

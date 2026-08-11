@@ -7,7 +7,8 @@
 // For thunk functions, transforms into a wrapper that returns thunk userdata via AST transformation.
 // The optional funcname parameter sets the function's name for tostring() output.
 
-ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &Payload, GCstr *funcname)
+ParserResult<ExpDesc> IrEmitter::emit_function_expr(
+   const FunctionExprPayload &Payload, GCstr *FuncName, bool TableAssociated)
 {
    if (not Payload.body) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
 
@@ -84,7 +85,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       // Recursively emit the wrapper function (which is now a regular function), then restore the source thunk so
       // another bytecode branch can emit it again.
 
-      auto result = this->emit_function_expr(wrapper_payload);
+      auto result = this->emit_function_expr(wrapper_payload, nullptr, TableAssociated);
       source_statements = std::move(lowered_body->statements);
       return result;
    }
@@ -95,6 +96,9 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
    // Create FuncState in container first
    FuncState &child_state = this->lex_state.fs_init();
+   if (TableAssociated) {
+      child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::TableAssociated);
+   }
    FuncStateGuard fs_guard(&this->lex_state);  // Restore ls->fs on error
 
    ParserAllocator allocator = ParserAllocator::from(this->lex_state.L);
@@ -203,6 +207,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
    IrEmitter child_emitter(child_ctx);
    child_emitter.current_callable = Payload.callable;
+   child_emitter.is_root_chunk = false;
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
       if (param.name.is_blank or param.name.symbol IS nullptr) continue;
@@ -238,7 +243,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    // Copy explicit return types to the function state before emitting the body so return lowering can preserve
    // contracts, fixed arity and tail-call eligibility.
 
-   child_state.funcname = funcname;
+   child_state.funcname = FuncName;
    if (Payload.return_types.is_explicit) {
       child_state.return_contract_explicit = true;
       child_state.return_declared_count = Payload.return_types.count;
@@ -822,7 +827,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
    auto target_result = this->emit_function_lvalue(Payload.name);
    if (not target_result.ok()) return ParserResult<IrEmitUnit>::failure(target_result.error_ref());
    // Pass the function name for tostring() support
-   auto function_value = this->emit_function_expr(*Payload.function, funcname);
+   auto function_value = this->emit_function_expr(
+      *Payload.function, funcname, Payload.name.segments.size() > 1);
    if (not function_value.ok()) return ParserResult<IrEmitUnit>::failure(function_value.error_ref());
 
    ExpDesc target = target_result.value_ref();

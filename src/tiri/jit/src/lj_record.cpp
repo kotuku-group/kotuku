@@ -1380,12 +1380,15 @@ static void rec_context_enter(jit_State *J, BCREG CallBase)
       return;
    }
 
-   // Internal namespaces inherit the caller's context.  Record the exemption before the callable overwrites its
-   // receiver slot so CTXLEAVE can still perform result compaction without attempting to restore an activation.
-   if (lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]))) {
+   // Internal namespaces and independent callbacks inherit the caller's context. Record the exemption before the
+   // callable overwrites its receiver slot so CTXLEAVE can still compact results without restoring an activation.
+   if (lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1])) or not tvisfunc(callable) or
+       not func_is_table_associated(funcV(callable))) {
       J->context_call_state[int32_t(J->baseslot) + int32_t(CallBase)] = CONTEXT_CALL_EXEMPT;
       return;
    }
+
+   J->base[CallBase] = rec_call_specialise(J, funcV(callable), getslot(J, CallBase), true);
 
    if (tail_call or native_target) rec_context_materialise(J);
 
@@ -1523,9 +1526,10 @@ static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t Argumen
    TRef receiver = getslot(J, int32_t(CallBase) - 1);
    bool exempt_receiver = tvistab(&J->L->base[CallBase - 1]) and
       lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]));
+   bool associated_function = isluafunc(funcV(callable)) and func_is_table_associated(funcV(callable));
    rec_call_setup(J, CallBase, ArgumentCount);
 
-   if (tref_istab(receiver) and not exempt_receiver) {
+   if (tref_istab(receiver) and not exempt_receiver and associated_function) {
       IRBuilder ir(J);
       int32_t prepared_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
       TRef prepared_owner = rec_stack_slot_addr(J, ir, prepared_slot);

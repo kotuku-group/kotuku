@@ -252,7 +252,8 @@ extern "C" void lj_context_enter_call(lua_State *L, uint32_t CallBase)
    if (not L->context_stack.empty() and L->context_stack.back().owner_base IS owner_base) return;
 
    TValue *receiver = L->base + CallBase - 1;
-   if (lj_context_receiver_establishes(receiver)) {
+   TValue *callable = L->base + CallBase;
+   if (lj_context_call_establishes(receiver, callable)) {
       lj_context_push(L, tabV(receiver), L->base + CallBase + 1 + LJ_FR2);
    }
 }
@@ -260,7 +261,8 @@ extern "C" void lj_context_enter_call(lua_State *L, uint32_t CallBase)
 extern "C" uint32_t lj_context_prepare_call(lua_State *L, uint32_t CallBase, uint32_t ArgumentCount)
 {
    TValue *receiver = L->base + CallBase - 1;
-   if (lj_context_receiver_establishes(receiver)) {
+   TValue *callable = L->base + CallBase;
+   if (lj_context_call_establishes(receiver, callable)) {
       lj_context_enter_call(L, CallBase);
    }
    return ArgumentCount;
@@ -291,7 +293,8 @@ extern "C" void lj_context_leave_call(
 extern "C" uint32_t lj_context_prepare_tail_call(lua_State *L, uint32_t CallBase, uint32_t ArgumentCount)
 {
    TValue *receiver = L->base + CallBase - 1;
-   if (not lj_context_receiver_establishes(receiver)) return ArgumentCount;
+   TValue *callable = L->base + CallBase;
+   if (not lj_context_call_establishes(receiver, callable)) return ArgumentCount;
 
    ptrdiff_t prepared_owner = savestack(L, L->base + CallBase + 1 + LJ_FR2);
    lj_assertL(not L->context_stack.empty() and L->context_stack.back().owner_base IS prepared_owner,
