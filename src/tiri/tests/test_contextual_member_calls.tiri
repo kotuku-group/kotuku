@@ -59,6 +59,57 @@ end
       'A returned contextual call should complete restoration before returning to its caller')
 end
 
+@Test function CurrentContextMemberCallsUseOrdinaryCallBytecode()
+   .glCurrentContextCallName = 'root'
+   .glCurrentContextCallRead = function(Value:str):str
+      assert(.glCurrentContextCallName is 'root', 'A root leading-dot call should inherit the root context')
+      return Value
+   end
+   assert(.glCurrentContextCallRead('root') is 'root',
+      'A root leading-dot member call should execute without a contextual override')
+   .glCurrentContextCallRead = nil
+   .glCurrentContextCallName = nil
+
+   local receiver = { name = 'receiver' }
+
+   function receiver.read(Value:str):str
+      assert(.name is 'receiver', 'An inherited current-context call should retain its receiver')
+      return Value
+   end
+
+   function receiver.forward(Value:str):str
+      return .read(Value)
+   end
+
+   assert(receiver.forward('ordinary') is 'ordinary',
+      'A leading-dot member call should inherit the active context without re-entering it')
+
+   local script = obj.new('tiri', { statement = [[
+local receiver = {}
+
+function receiver.read(Value:str):str
+   return Value
+end
+
+function receiver.invoke(Value:str)
+   .read(Value)
+end
+
+function receiver.forward(Value:str):<any, ...>
+   return .read(Value)
+end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   assert(disassembly.find('CTXGET') != nil and disassembly.find('CALL      A=') != nil and
+      disassembly.find('CALLT') != nil,
+      'Leading-dot calls should load the context and use ordinary call bytecode')
+   assert(disassembly.find('CTXENTER') is nil and disassembly.find('CTXCALL') is nil and
+      disassembly.find('CTXLEAVE') is nil,
+      'A leading-dot member call should not emit redundant contextual call bytecode')
+end
+
 @Test function InternalNamespacesInheritCurrentContext()
    local outer = { name = 'namespace outer' }
 
