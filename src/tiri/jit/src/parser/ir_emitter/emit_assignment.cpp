@@ -269,6 +269,35 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
    auto nvars = BCReg(BCREG(targets.size()));
    if (not nvars) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 
+   auto emit_assignment_values = [&](BCReg &Count) -> ParserResult<ExpDesc> {
+      Count = BCReg(0);
+      if (values.empty()) return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Void));
+
+      ExpDesc last(ExpKind::Void);
+      bool first = true;
+      for (size_t i = 0; i < values.size(); ++i) {
+         const ExprNodePtr &node = values[i];
+         if (not node) return this->unsupported_expr(AstNodeKind::ExpressionStmt, SourceSpan{});
+         if (not first) this->materialise_to_next_reg(last, "assignment expression list baton");
+
+         ParserResult<ExpDesc> value;
+         bool associate = i < targets.size() and targets[i].associates_function_literal and
+            node->kind IS AstNodeKind::FunctionExpr;
+         if (associate) {
+            this->lex_state.lastline = node->span.line;
+            value = this->emit_function_expr(std::get<FunctionExprPayload>(node->data), nullptr, true);
+         }
+         else value = this->emit_expression(*node);
+
+         if (not value.ok()) return value;
+         last = value.value_ref();
+         ++Count;
+         first = false;
+      }
+
+      return ParserResult<ExpDesc>::success(last);
+   };
+
    if (nvars IS BCReg(1) and targets.front().safe_nav_skip.valid()) {
       PreparedAssignment& target = targets.front();
       // Single-target safe-nav assignment keeps the stronger short-circuit semantics: if the guarded
@@ -276,7 +305,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       ExpDesc tail(ExpKind::Void);
       auto nexps = BCReg(0);
       if (not values.empty()) {
-         auto list = this->emit_expression_list(values, nexps);
+         auto list = emit_assignment_values(nexps);
          if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
          tail = list.value_ref();
       }
@@ -333,7 +362,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       ExpDesc tail(ExpKind::Void);
       auto nexps = BCReg(0);
       if (not values.empty()) {
-         auto list = this->emit_expression_list(values, nexps);
+         auto list = emit_assignment_values(nexps);
          if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
          tail = list.value_ref();
       }
@@ -363,7 +392,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
    ExpDesc tail(ExpKind::Void);
    auto nexps = BCReg(0);
    if (not values.empty()) {
-      auto list = this->emit_expression_list(values, nexps);
+      auto list = emit_assignment_values(nexps);
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
       tail = list.value_ref();
    }
@@ -843,6 +872,7 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
       if (not lvalue.ok()) return ParserResult<std::vector<PreparedAssignment>>::failure(lvalue.error_ref());
 
       ExpDesc slot = lvalue.value_ref();
+      prepared.associates_function_literal = slot.k IS ExpKind::Indexed;
 
       // Check if this is an Unscoped variable that needs a new local
       // Keep it as Unscoped and defer local creation until after expression evaluation

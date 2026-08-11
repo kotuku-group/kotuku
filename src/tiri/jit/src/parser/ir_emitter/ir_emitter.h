@@ -118,6 +118,7 @@ struct PreparedAssignment {
    RegisterSpan reserved;
    bool newly_created = false;   // True if a new local was created for an undeclared variable
    bool needs_var_add = false;   // True if var_add() must be called after expression evaluation
+   bool associates_function_literal = false; // True when a direct function literal is stored in a table field
    GCstr* pending_symbol = nullptr;  // Symbol name for deferred var_add
    StaticBindingID binding_id = 0;
    BCLine pending_line = 0;      // Line number for deferred variable declaration

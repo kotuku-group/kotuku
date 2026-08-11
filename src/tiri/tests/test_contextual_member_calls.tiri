@@ -557,6 +557,11 @@ end
    assert(callback_holder.invoke() is 'root',
       'Storing an independent function reference in a table should not associate it with that table')
 
+   local assigned_callback_holder = { glContextualAssociationName = 'assigned callback holder' }
+   assigned_callback_holder.invoke = independent_callback
+   assert(assigned_callback_holder.invoke() is 'root',
+      'Assigning an independent function reference to a table should not associate it with that table')
+
    local literal_method = {
       glContextualAssociationName = 'literal method',
       invoke = function():str
@@ -572,6 +577,21 @@ end
    end
    assert(declared_method.invoke() is 'declared method',
       'A dot-qualified function declaration should be associated with its table')
+
+   local assigned_method = { glContextualAssociationName = 'assigned method' }
+   assigned_method.invoke = function():str
+      return .glContextualAssociationName
+   end
+   assert(assigned_method.invoke() is 'assigned method',
+      'A function literal assigned to a named table field should be associated with that table')
+
+   local computed_method = { glContextualAssociationName = 'computed method' }
+   local method_key = 'invoke'
+   computed_method[method_key] = function():str
+      return .glContextualAssociationName
+   end
+   assert(computed_method.invoke() is 'computed method',
+      'A function literal assigned to a computed table field should be associated with that table')
 
    .glContextualAssociationName = nil
 end

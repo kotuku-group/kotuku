@@ -1875,7 +1875,12 @@ static bool test_table_association_metadata_roundtrip(kt::Log &Log)
       "   literal = function():str return .name end\n"
       "}\n"
       "function holder.declared():str return .name end\n"
-      "return independent, holder.literal, holder.declared\n";
+      "local assigned = { name = 'assigned' }\n"
+      "assigned.literal = function():str return .name end\n"
+      "local key = 'computed'\n"
+      "assigned[key] = function():str return .name end\n"
+      "assigned.callback = independent\n"
+      "return independent, holder.literal, holder.declared, assigned.literal, assigned.computed\n";
 
    if (lua_load(lua, source, "table-association-roundtrip")) {
       Log.error("failed to compile table-association source: %s", lua_tostring(lua, -1));
@@ -1890,18 +1895,21 @@ static bool test_table_association_metadata_roundtrip(kt::Log &Log)
    }
 
    auto verify = [&](std::string_view Label) {
-      if (lua_pcall(lua, 0, 3, 0)) {
+      if (lua_pcall(lua, 0, 5, 0)) {
          Log.error("failed to execute %.*s table-association fixture: %s", int(Label.size()), Label.data(),
             lua_tostring(lua, -1));
          return false;
       }
-      bool valid = tvisfunc(lua->top - 3) and tvisfunc(lua->top - 2) and tvisfunc(lua->top - 1) and
-         not func_is_table_associated(funcV(lua->top - 3)) and
+      bool valid = tvisfunc(lua->top - 5) and tvisfunc(lua->top - 4) and tvisfunc(lua->top - 3) and
+         tvisfunc(lua->top - 2) and tvisfunc(lua->top - 1) and
+         not func_is_table_associated(funcV(lua->top - 5)) and
+         func_is_table_associated(funcV(lua->top - 4)) and
+         func_is_table_associated(funcV(lua->top - 3)) and
          func_is_table_associated(funcV(lua->top - 2)) and
          func_is_table_associated(funcV(lua->top - 1));
-      lua_pop(lua, 3);
+      lua_pop(lua, 5);
       if (not valid) {
-         Log.error("%.*s bytecode did not distinguish independent, literal and declared functions",
+         Log.error("%.*s bytecode did not preserve function association across declaration and assignment forms",
             int(Label.size()), Label.data());
       }
       return valid;
