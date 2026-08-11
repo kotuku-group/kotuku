@@ -433,6 +433,7 @@ struct CallExprPayload {
       bool safe = false;
    };
    mutable std::optional<RuntimeBuiltinMethodCall> runtime_builtin_method;
+   mutable bool unresolved_method_reported = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
    mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition

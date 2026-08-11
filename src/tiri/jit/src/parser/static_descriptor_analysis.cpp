@@ -894,6 +894,7 @@ private:
          if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) {
             Call.builtin_method.reset();
             Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
+            this->report_unresolved_method(Call, *receiver, member);
             return;
          }
       }
@@ -909,6 +910,7 @@ private:
          Call.builtin_method.reset();
          if (Call.argument_syntax IS CallArgumentSyntax::Parenthesised) {
             Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
+            this->report_unresolved_method(Call, *receiver, member);
          }
          return;
       }
@@ -933,6 +935,17 @@ private:
          .arguments_validated = already_validated
       };
       this->validate_builtin_method_arguments(Call);
+   }
+
+   void report_unresolved_method(CallExprPayload &Call, const ExprNode &Receiver, GCstr *Member)
+   {
+      if (Call.unresolved_method_reported or not this->context_.config().warn_unresolved_methods) return;
+
+      this->context_.emit_warning(ParserErrorCode::UnresolvedMethodReceiver,
+         Token::from_span(Receiver.span, TokenKind::Identifier), std::format(
+         "cannot resolve the receiver type for dot-method '{}'; built-in method selection will occur at runtime",
+         std::string_view(strdata(Member), Member->len)));
+      Call.unresolved_method_reported = true;
    }
 
    void annotate_callables_expression(ExprNode &Expression)

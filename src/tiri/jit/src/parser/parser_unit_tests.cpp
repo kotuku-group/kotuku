@@ -5141,6 +5141,87 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
    return true;
 }
 
+static bool test_unresolved_method_receiver_diagnostic(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "local body = { values={} }\n"
+      "body.values.insert(1)\n"
+      "local values = {}\n"
+      "values.insert(2)\n"
+      "(body.values.insert)(3)\n"
+      "body.values['insert'](4)\n";
+
+   auto analyse = [&](bool EnableWarning) {
+      AstHarnessResult result;
+      result.state = std::make_unique<LuaStateHolder>();
+      lua_State *L = result.state->get();
+      luaL_openlibs(L);
+      StringReaderCtx reader{ source.data(), source.size() };
+      LexState lex(L, unit_reader, &reader, "unresolved-method-diagnostic", std::nullopt);
+      FuncState &fs = lex.fs_init();
+      ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(L));
+      ParserConfig config;
+      config.abort_on_error = false;
+      config.max_diagnostics = 32;
+      config.warn_unresolved_methods = EnableWarning;
+      ParserSession session(context, config);
+      lex.next();
+      AstBuilder builder(context);
+      result.chunk = builder.parse_chunk();
+      if (result.chunk.ok()) {
+         discover_static_bindings(context, *result.chunk.value_ref());
+         propagate_static_descriptors(context, *result.chunk.value_ref());
+         run_type_analysis(context, *result.chunk.value_ref());
+         propagate_static_descriptors(context, *result.chunk.value_ref());
+      }
+      auto entries = context.diagnostics().entries();
+      result.diagnostics.assign(entries.begin(), entries.end());
+      return result;
+   };
+
+   auto disabled = analyse(false);
+   if (not disabled.chunk.ok() or not disabled.diagnostics.empty()) {
+      Log.error("unresolved method diagnostic was not off by default");
+      log_diagnostics(disabled.diagnostics, Log);
+      return false;
+   }
+
+   auto enabled = analyse(true);
+   size_t warning_count = 0;
+   for (const ParserDiagnostic &diagnostic : enabled.diagnostics) {
+      if (diagnostic.code != ParserErrorCode::UnresolvedMethodReceiver) continue;
+      ++warning_count;
+      if (diagnostic.severity != ParserDiagnosticSeverity::Warning or
+          diagnostic.message.find("insert") IS std::string::npos or
+          diagnostic.message.find("runtime") IS std::string::npos or
+          diagnostic.token.span().line.lineNumber() != 2) {
+         Log.error("unresolved method diagnostic had incorrect content or source location");
+         log_diagnostics(enabled.diagnostics, Log);
+         return false;
+      }
+   }
+   if (not enabled.chunk.ok() or warning_count != 1 or enabled.diagnostics.size() != 1) {
+      Log.error("expected one opt-in unresolved method warning, got %zu diagnostic(s)",
+         enabled.diagnostics.size());
+      log_diagnostics(enabled.diagnostics, Log);
+      return false;
+   }
+
+   LuaStateHolder published_state;
+   lua_State *published = published_state.get();
+   luaL_openlibs(published);
+   published->script->JitOptions |= JOF::DIAGNOSE;
+   if (lua_load(published, source, "unresolved-method-published") or not published->parser_diagnostics or
+       published->parser_diagnostics->entries().size() != 1 or
+       published->parser_diagnostics->entries().front().code != ParserErrorCode::UnresolvedMethodReceiver) {
+      Log.error("diagnose mode did not publish the unresolved method warning");
+      if (published->parser_diagnostics) log_diagnostics(published->parser_diagnostics->entries(), Log);
+      return false;
+   }
+   lua_pop(published, 1);
+   return true;
+}
+
 static const BCIns * find_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
 {
    for (const BCIns &instruction : Snapshot.instructions) {
@@ -6944,7 +7025,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 61> tests = { {
+   constexpr std::array<TestCase, 62> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -6996,6 +7077,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_registry", test_builtin_method_registry },
       { "builtin_method_table_initialiser_rejection", test_builtin_method_table_initialiser_rejection },
       { "builtin_method_static_classification", test_builtin_method_static_classification },
+      { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
