@@ -549,6 +549,18 @@ static void build_subroutines(BuildCtx *ctx)
   |   stwu TMP1, FRAME_PC(RA)		// Prepend true to results.
   |
   |->vm_returnc:
+  |  lwz L, SAVE_L
+  |  lbz TMP0, L->context_active
+  |  cmpwi TMP0, 0
+  |  beq >9
+  |  stp BASE, L->base
+  |  mr CARG1, L
+  |  mr CARG2, BASE
+  |  mr CARG3, RD
+  |  bl extern lj_context_leave_native_frame
+  |  lp BASE, L->base
+  |  mr RD, CRET1
+  |9:
   |  addi RD, RD, 8			// RD = (nresults+1)*8.
   |   andix. TMP0, PC, FRAME_TYPE
   |  cmpwi cr1, RD, 0
@@ -2033,6 +2045,18 @@ static void build_subroutines(BuildCtx *ctx)
   |  li RD, (1+1)*8
   |->fff_res:
   |  // RA = results, RD = (nresults+1)*8, PC = return.
+  |  lwz L, SAVE_L
+  |  lbz TMP0, L->context_active
+  |  cmpwi TMP0, 0
+  |  beq >9
+  |  stp BASE, L->base
+  |  mr CARG1, L
+  |  mr CARG2, BASE
+  |  mr CARG3, RD
+  |  bl extern lj_context_leave_native_frame
+  |  lp BASE, L->base
+  |  mr RD, CRET1
+  |9:
   |  andix. TMP0, PC, FRAME_TYPE
   |   mr MULTRES, RD
   |  bney ->vm_return
@@ -2859,6 +2883,11 @@ static void build_subroutines(BuildCtx *ctx)
   |   stp BASE, L->base
   |  // SAVE_PC must hold the _previous_ PC. The callee updates it with PC.
   |  bl extern lj_dispatch_ins		// (lua_State *L, const BCIns *pc)
+  |  lbz TMP0, -8(PC)
+  |  cmpwi TMP0, BC_CTXLEAVE
+  |  bne >6
+  |  mr MULTRES, CRET1
+  |6:
   |3:
   |  lp BASE, L->base
   |4:  // Re-dispatch to static ins.
@@ -2973,6 +3002,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  addi CARG1, DISPATCH, GG_DISP2J
   |  mr CARG2, PC
   |  bl extern lj_dispatch_stitch	// (jit_State *J, const BCIns *pc)
+  |  mr MULTRES, CRET1
   |  lp BASE, L->base
   |  b ->cont_nop
   |
@@ -5533,6 +5563,43 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_call
     break;
 
+  case BC_CTXCALLM: case BC_CTXCALL:
+    |  lwz L, SAVE_L
+    |  ld INS, -8(PC)
+    |  decode_RC8 RC, INS
+    if (op IS BC_CTXCALLM) {
+      |  add NARGS8:RC, NARGS8:RC, MULTRES
+    }
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  srwi CARG3, NARGS8:RC, 3
+    |  bl extern lj_context_prepare_call
+    |  slwi NARGS8:RC, CRET1, 3
+    |  lp BASE, L->base
+    |  mr TMP2, BASE
+    |  lwzux TMP0, BASE, RA
+    |   lwz LFUNC:RB, 4(BASE)
+    |    subi NARGS8:RC, NARGS8:RC, 8
+    |   addi BASE, BASE, 8
+    |  checkfunc TMP0; bne ->vmeta_call
+    |  ins_call
+    break;
+
+  case BC_CTXCALLT:
+    |  lwz L, SAVE_L
+    |  ld INS, -8(PC)
+    |  decode_RC8 RC, INS
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  srwi CARG3, NARGS8:RC, 3
+    |  bl extern lj_context_prepare_tail_call
+    |  slwi NARGS8:RC, CRET1, 3
+    |  lp BASE, L->base
+    |  b ->BC_CALLT_CONTEXT_Z
+    break;
+
   case BC_CALLMT:
     |  // RA = base*8, (RB = 0,) RC = extra_nargs*8
     |  add NARGS8:RC, NARGS8:RC, MULTRES
@@ -5540,6 +5607,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
   case BC_CALLT:
     |  // RA = base*8, (RB = 0,) RC = (nargs+1)*8
+    |->BC_CALLT_CONTEXT_Z:
     |  lwzux TMP0, RA, BASE
     |   lwz LFUNC:RB, 4(RA)
     |    subi NARGS8:RC, NARGS8:RC, 8
@@ -5962,10 +6030,41 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_RETM:
     |  // RA = results*8, RD = extra_nresults*8
     |  add RD, RD, MULTRES		// MULTRES >= 8, so RD >= 8.
-    |  // Fall through. Assumes BC_RET follows.
+    |  lwz L, SAVE_L
+    |  lbz TMP0, L->context_active
+    |  cmpwi TMP0, 0
+    |  beq >9
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  mr CARG2, BASE
+    |  mr CARG3, RD
+    |  bl extern lj_context_leave_frame
+    |  lp BASE, L->base
+    |  mr RD, CRET1
+    |  ld INS, -8(PC)
+    |  decode_RA8 RA, INS
+    |9:
+    |  b ->BC_RET_CONTEXT_Z
     break;
 
   case BC_RET:
+    if (op != BC_RETM) {
+      |  lwz L, SAVE_L
+      |  lbz TMP0, L->context_active
+      |  cmpwi TMP0, 0
+      |  beq >9
+      |  stp BASE, L->base
+      |  mr CARG1, L
+      |  mr CARG2, BASE
+      |  li CARG3, 0
+      |  bl extern lj_context_leave_frame
+      |  lp BASE, L->base
+      |  ld INS, -8(PC)
+      |  decode_RA8 RA, INS
+      |  decode_RD8 RD, INS
+      |9:
+    }
+    |->BC_RET_CONTEXT_Z:
     |  // RA = results*8, RD = (nresults+1)*8
     |  lwz PC, FRAME_PC(BASE)
     |   add RA, BASE, RA
@@ -6047,6 +6146,20 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_RET0: case BC_RET1:
+    |  lwz L, SAVE_L
+    |  lbz TMP0, L->context_active
+    |  cmpwi TMP0, 0
+    |  beq >9
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  mr CARG2, BASE
+    |  li CARG3, 0
+    |  bl extern lj_context_leave_frame
+    |  lp BASE, L->base
+    |  ld INS, -8(PC)
+    |  decode_RA8 RA, INS
+    |  decode_RD8 RD, INS
+    |9:
     |  // RA = results*8, RD = (nresults+1)*8
     |  lwz PC, FRAME_PC(BASE)
     |   add RA, BASE, RA
@@ -6693,6 +6806,38 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mr CARG1, L
     |  stw PC, SAVE_PC
     |  bl extern tiri_module_activate
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXGET:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  add CARG2, BASE, RA
+    |  mr CARG1, L
+    |  bl extern lj_context_load
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXLEAVE:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  subi CARG3, PC, 16
+    |  srwi CARG4, MULTRES, 3
+    |  bl extern lj_context_leave_call
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXENTER:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  bl extern lj_context_enter_call
     |  lp BASE, L->base
     |  ins_next
     break;

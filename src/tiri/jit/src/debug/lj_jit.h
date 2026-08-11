@@ -184,6 +184,8 @@ struct MCLink {
 struct SnapShot {
   uint32_t mapofs;   //  Offset into snapshot map.
   IRRef1 ref;      //  First IR ref for this snapshot.
+  IRRef1 context_ref; // Virtual contextual receiver restored on trace exit, or zero.
+  uint16_t context_owner_slot; // Root-frame slot owning the virtual contextual activation.
   uint16_t mcofs;   //  Offset into machine code in MCode units.
   uint8_t nslots;   //  Number of valid slots.
   uint8_t topslot;   //  Maximum frame extent.
@@ -491,6 +493,13 @@ struct jit_State {
 
   IRRef1 chain[IR__MAX];  //  IR instruction skip-list chain anchors.
   TRef slot[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];  //  Stack slot map.
+  // Callable, receiver and result refs retained across contextual calls and result shifts.
+  TRef context_call_func[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  TRef context_call_receiver[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  TRef context_call_result[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  uint8_t context_call_state[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  uint16_t context_call_activation_count;
+  int32_t context_virtual_slot;
 
   int32_t param[JIT_P__MAX];  //  JIT engine parameters.
 

@@ -227,10 +227,16 @@ static void loop_subst_snap(jit_State* J, SnapShot* osnap, SnapEntry* loopmap, I
    // Setup new snapshot.
    snap->mapofs = (uint32_t)nmapofs;
    snap->ref = (IRRef1)J->cur.nins;
+   snap->context_ref = osnap->context_ref;
+   if (snap->context_ref and not irref_isk(snap->context_ref)) {
+      lj_assertJ(subst[snap->context_ref] != REF_DROP, "virtual context dropped during loop substitution");
+      snap->context_ref = subst[snap->context_ref];
+   }
+   snap->context_owner_slot = osnap->context_owner_slot;
    snap->mcofs = 0;
    snap->nslots = nslots;
    snap->topslot = osnap->topslot;
-   snap->count = 0;
+   snap->count = snap->context_ref ? SNAPCOUNT_DONE : 0;
    nmap = &J->cur.snapmap[nmapofs];
    // Substitute snapshot slots.
    on = ln = nn = 0;
@@ -378,6 +384,21 @@ static void loop_unroll(LoopState* lps)
    *psentinel = J->cur.snapmap[J->cur.snap[0].nent];  //  Restore PC.
 
    loop_emit_phi(J, subst, phi, nphi, onsnap);
+
+   // Contextual calls remove their receiver slot after the call and retain the overwritten function/result refs for
+   // SLOAD forwarding.  Loop copy-substitution must advance those retained refs just like the ordinary slot map;
+   // otherwise they can point at an instruction number that the loop body has reused for a different value.
+   for (size_t slot = 0; slot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA; slot++) {
+      TRef *retained_refs[] = {
+         &J->context_call_func[slot], &J->context_call_receiver[slot], &J->context_call_result[slot]
+      };
+      for (TRef *retained_ref : retained_refs) {
+         IRRef ref = tref_ref(*retained_ref);
+         if (ref >= REF_FIRST and ref < invar and subst[ref] != REF_DROP) {
+            *retained_ref = (*retained_ref & ~TREF_REFMASK) | subst[ref];
+         }
+      }
+   }
 }
 
 // Undo any partial changes made by the loop optimization.

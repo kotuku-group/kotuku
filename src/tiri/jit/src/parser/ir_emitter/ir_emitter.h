@@ -195,6 +195,7 @@ private:
    ParserResult<ExpDesc> emit_expression(const ExprNode& expr);
    ParserResult<ExpDesc> emit_literal_expr(const LiteralValue& literal);
    ParserResult<ExpDesc> emit_identifier_expr(const NameRef& reference, bool AllowUnscoped = false);
+   ParserResult<ExpDesc> emit_current_context_expr();
    ParserResult<ExpDesc> emit_vararg_expr();
    ParserResult<ExpDesc> emit_unary_expr(const UnaryExprPayload& payload);
    ParserResult<ExpDesc> emit_update_expr(const UpdateExprPayload& payload);

@@ -40,6 +40,7 @@ For drag and drop operations, data can be requested from a source as follows:
 #include "lib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
+#include "lj_state.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -66,6 +67,7 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
    kt::Log log(__FUNCTION__);
 
    auto Self = (extTiri *)CurrentContext();
+   LuaContextRootGuard context_guard(Self->Lua);
 
    auto list = Self->InputList;
    for (; (list) and (list->InputHandle != Handle); list=list->Next);
@@ -457,6 +459,7 @@ static void key_event(evKey *Event, int Size, struct finput *Input)
    log.traceBranch("Incoming keyboard input");
 
    auto lua = tiri->Lua;
+   LuaContextRootGuard context_guard(lua);
    int depth = GetResource(RES::LOG_DEPTH); // Required because thrown errors cause the debugger to lose its step position
    int top = lua_gettop(lua);
    lua_rawgeti(lua, LUA_REGISTRYINDEX, Input->Callback); // Get the function reference in Lua and place it on the stack

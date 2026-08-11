@@ -45,6 +45,7 @@ struct ParserConfig {
    bool type_errors_are_fatal = true;      // Treat type mismatches as errors
    bool infer_local_types = true;          // Track types of local variables
    bool warn_unresolved_methods = false;   // Report dot-method receivers requiring runtime classification
+   bool reject_legacy_member_syntax = false; // Compatibility control retained for parser test harnesses
    ParserProfilingResult profiling_result;
 };
 

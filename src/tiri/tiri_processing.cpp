@@ -11,6 +11,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
+#include "lj_state.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -460,6 +461,7 @@ ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte
    luaL_unref(lua, LUA_REGISTRYINDEX, msg->ref); // Remove it
 
    kt::SwitchContext ctx(lua->script);
+   LuaContextRootGuard context_guard(lua);
    if (lua_pcall(lua, 0, 0, 0)) {
       process_error(lua->script, "delayedCall()");
    }

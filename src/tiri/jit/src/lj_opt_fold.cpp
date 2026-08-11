@@ -2218,8 +2218,13 @@ LJFOLDF(fwd_sload)
       return tref_ref(tr) < J->chain[IR_RETF] ? EMITFOLD : tr;
    }
    else {
-      lj_assertJ(J->slot[fins->op1] != 0, "uninitialized slot accessed");
-      return J->slot[fins->op1];
+      TRef slot_ref = J->slot[fins->op1];
+      if (not slot_ref) {
+         slot_ref = irt_type(fins->t) IS IRT_FUNC ? J->context_call_func[fins->op1] :
+            J->context_call_result[fins->op1];
+      }
+      lj_assertJ(slot_ref != 0, "uninitialized slot accessed");
+      return slot_ref;
    }
 }
 

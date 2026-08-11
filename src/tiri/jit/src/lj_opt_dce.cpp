@@ -25,6 +25,7 @@ static void dce_marksnap(jit_State* J)
    SnapNo i, nsnap = J->cur.nsnap;
    for (i = 0; i < nsnap; i++) {
       SnapShot* snap = &J->cur.snap[i];
+      if (snap->context_ref >= REF_FIRST) irt_setmark(IR(snap->context_ref)->t);
       SnapEntry* map = &J->cur.snapmap[snap->mapofs];
       MSize n, nent = snap->nent;
       for (n = 0; n < nent; n++) {

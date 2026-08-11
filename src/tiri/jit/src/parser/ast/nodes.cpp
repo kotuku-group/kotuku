@@ -189,6 +189,10 @@ TiriType infer_expression_type(const ExprNode &Expr)
          return TiriType::Unknown;
       }
 
+      // Context is always a non-null table.  Other receiver types do not participate in context management.
+      case AstNodeKind::CurrentContextExpr:
+         return TiriType::Table;
+
       // For these, we cannot infer without runtime information
       case AstNodeKind::IdentifierExpr:
       case AstNodeKind::VarArgExpr:
@@ -259,6 +263,7 @@ struct CallTargetChildCounter {
 struct ExpressionChildCounter {
    [[nodiscard]] inline size_t operator()(const LiteralValue &) const { return 0; }
    [[nodiscard]] inline size_t operator()(const NameRef &) const { return 0; }
+   [[nodiscard]] inline size_t operator()(const CurrentContextExprPayload &) const { return 0; }
    [[nodiscard]] inline size_t operator()(const VarArgExprPayload &) const { return 0; }
 
    [[nodiscard]] inline size_t operator()(const UnaryExprPayload &Payload) const {
@@ -581,6 +586,15 @@ ExprNodePtr make_identifier_expr(SourceSpan Span, const NameRef &Reference)
    return node;
 }
 
+ExprNodePtr make_current_context_expr(SourceSpan Span)
+{
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::CurrentContextExpr;
+   node->span = Span;
+   node->data.emplace<CurrentContextExprPayload>();
+   return node;
+}
+
 ExprNodePtr make_vararg_expr(SourceSpan Span)
 {
    ExprNodePtr node = std::make_unique<ExprNode>();
@@ -760,11 +774,15 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
    if (callee->kind IS AstNodeKind::MemberExpr) {
       auto *member_payload = std::get_if<MemberExprPayload>(&callee->data);
       if (member_payload) member_payload->is_call_target = true;
+      payload.dispatch = CallDispatch::MemberNamed;
    }
    else if (callee->kind IS AstNodeKind::SafeMemberExpr) {
       auto *member_payload = std::get_if<SafeMemberExprPayload>(&callee->data);
       if (member_payload) member_payload->is_call_target = true;
+      payload.dispatch = CallDispatch::SafeMemberNamed;
    }
+   else if (callee->kind IS AstNodeKind::IndexExpr) payload.dispatch = CallDispatch::MemberComputed;
+   else if (callee->kind IS AstNodeKind::SafeIndexExpr) payload.dispatch = CallDispatch::SafeMemberComputed;
    DirectCallTarget target;
    target.callable = std::move(callee);
    payload.target = std::move(target);

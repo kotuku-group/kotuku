@@ -338,6 +338,17 @@ static void build_subroutines(BuildCtx *ctx)
   |   str TMP0, [RA, #-8]!		// Prepend true to results.
   |
   |->vm_returnc:
+  |  ldr L, SAVE_L
+  |  ldrb TMP0w, L->context_active
+  |  cbz TMP0w, >9
+  |  str BASE, L->base
+  |  mov CARG1, L
+  |  mov CARG2, BASE
+  |  mov CARG3w, RCw
+  |  bl extern lj_context_leave_native_frame
+  |  ldr BASE, L->base
+  |  mov RC, CRET1
+  |9:
   |  adds RC, RC, #8			// RC = (nresults+1)*8.
   |  mov CRET1, #LUA_YIELD
   |  beq ->vm_unwind_c_eh
@@ -1431,6 +1442,17 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov RC, #(1+1)*8
   |->fff_res:
   |  // RC = (nresults+1)*8, PC = return.
+  |  ldr L, SAVE_L
+  |  ldrb TMP0w, L->context_active
+  |  cbz TMP0w, >9
+  |  str BASE, L->base
+  |  mov CARG1, L
+  |  mov CARG2, BASE
+  |  mov CARG3w, RCw
+  |  bl extern lj_context_leave_native_frame
+  |  ldr BASE, L->base
+  |  mov RC, CRET1
+  |9:
   |  ands CARG1, PC, #FRAME_TYPE
   |   str RCw, SAVE_MULTRES
   |   sub RA, BASE, #16
@@ -1881,6 +1903,11 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov CARG2, PC
   |  // SAVE_PC must hold the _previous_ PC. The callee updates it with PC.
   |  bl extern lj_dispatch_ins		// (lua_State *L, const BCIns *pc)
+  |  ldrb TMP0w, [PC, #-8]
+  |  cmp TMP0w, #BC_CTXLEAVE
+  |  bne >6
+  |  str CRET1w, SAVE_MULTRES
+  |6:
   |3:
   |  ldr BASE, L->base
   |4:  // Re-dispatch to static ins.
@@ -1982,6 +2009,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  add CARG1, GL, #GG_G2J
   |  mov CARG2, PC
   |  bl extern lj_dispatch_stitch	// (jit_State *J, const BCIns *pc)
+  |  str CRET1w, SAVE_MULTRES
   |  ldr BASE, L->base
   |  b ->cont_nop
   |
@@ -3802,6 +3830,45 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_call
     break;
 
+  case BC_CTXCALLM:
+    |  ldr TMP0w, SAVE_MULTRES
+    |  decode_RC8RD NARGS8:RC, RC
+    |  add NARGS8:RC, NARGS8:RC, TMP0
+    |  b >1
+    break;
+  case BC_CTXCALL:
+    |  decode_RC8RD NARGS8:RC, RC
+    |1:
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2w, RAw
+    |  lsr CARG3, NARGS8:RC, #3
+    |  bl extern lj_context_prepare_call
+    |  lsl NARGS8:RC, CRET1, #3
+    |  ldr BASE, L->base
+    |  mov RB, BASE
+    |  add BASE, BASE, RA, lsl #3
+    |  ldr CARG3, [BASE]
+    |   sub NARGS8:RC, NARGS8:RC, #8
+    |   add BASE, BASE, #16
+    |  checkfunc CARG3, ->vmeta_call
+    |  ins_call
+    break;
+
+  case BC_CTXCALLT:
+    |  decode_RC8RD NARGS8:RC, RC
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2w, RAw
+    |  lsr CARG3, NARGS8:RC, #3
+    |  bl extern lj_context_prepare_tail_call
+    |  lsl NARGS8:RC, CRET1, #3
+    |  ldr BASE, L->base
+    |  b ->BC_CALLT_CONTEXT_Z
+    break;
+
   case BC_CALLMT:
     |  // RA = base, (RB = 0,) RC = extra_nargs
     |  ldr TMP0w, SAVE_MULTRES
@@ -3812,6 +3879,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  lsl NARGS8:RC, RC, #3
     |  // RA = base, (RB = 0,) RC = (nargs+1)*8
     |->BC_CALLT1_Z:
+    |->BC_CALLT_CONTEXT_Z:
     |  add RA, BASE, RA, lsl #3
     |  ldr TMP1, [RA]
     |   sub NARGS8:RC, NARGS8:RC, #8
@@ -4120,13 +4188,34 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_RETM:
     |  // RA = results, RC = extra results
     |  ldr TMP0w, SAVE_MULTRES
-    |   ldr PC, [BASE, FRAME_PC]
-    |    add RA, BASE, RA, lsl #3
     |  add RC, TMP0, RC, lsl #3
+    |  ldr L, SAVE_L
+    |  ldrb TMP0w, L->context_active
+    |  cbz TMP0w, >9
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2, BASE
+    |  mov CARG3w, RCw
+    |  bl extern lj_context_leave_frame
+    |  ldr BASE, L->base
+    |  mov RC, CRET1
+    |9:
+    |  ldr PC, [BASE, FRAME_PC]
+    |   add RA, BASE, RA, lsl #3
     |  b ->BC_RETM_Z
     break;
 
   case BC_RET:
+    |  ldr L, SAVE_L
+    |  ldrb TMP0w, L->context_active
+    |  cbz TMP0w, >9
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2, BASE
+    |  mov CARG3w, wzr
+    |  bl extern lj_context_leave_frame
+    |  ldr BASE, L->base
+    |9:
     |  // RA = results, RC = nresults+1
     |  ldr PC, [BASE, FRAME_PC]
     |   lsl RC, RC, #3
@@ -4182,6 +4271,16 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_RET0: case BC_RET1:
+    |  ldr L, SAVE_L
+    |  ldrb TMP0w, L->context_active
+    |  cbz TMP0w, >9
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2, BASE
+    |  mov CARG3w, wzr
+    |  bl extern lj_context_leave_frame
+    |  ldr BASE, L->base
+    |9:
     |  // RA = results, RC = nresults+1
     |  ldr PC, [BASE, FRAME_PC]
     |   lsl RC, RC, #3
@@ -4656,6 +4755,39 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov CARG1, L
     |  str PC, SAVE_PC
     |  bl extern tiri_module_activate
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXGET:
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  add CARG2, BASE, RA, lsl #3
+    |  mov CARG1, L
+    |  bl extern lj_context_load
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXLEAVE:
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2w, RAw
+    |  sub CARG3, PC, #16
+    |  ldr CARG4w, SAVE_MULTRES
+    |  lsr CARG4w, CARG4w, #3
+    |  bl extern lj_context_leave_call
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXENTER:
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2w, RAw
+    |  bl extern lj_context_enter_call
     |  ldr BASE, L->base
     |  ins_next
     break;
