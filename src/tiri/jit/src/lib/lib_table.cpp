@@ -17,6 +17,7 @@
 #include "lj_str.h"
 #include "lj_buf.h"
 #include "lj_tab.h"
+#include "lj_meta.h"
 #include "lj_ff.h"
 #include "lj_strfmt.h"
 #include "lib.h"
@@ -343,15 +344,22 @@ LJLIB_CF(table_size)
 
 //********************************************************************************************************************
 
-LJLIB_CF(table_clear)   LJLIB_REC(.)
+LJLIB_ASM(table_clear)   LJLIB_REC(.)
 {
    GCtab *table = lj_lib_checktab(L, 1);
    if (lj_tab_is_environment(table)) {
       lj_err_callermsg(L, "cannot clear a global environment");
    }
 
+   cTValue *metamethod = lj_meta_lookup(L, L->base, MM_clear);
+   if (not tvisnil(metamethod)) {
+      L->top = L->base + 1;
+      copyTV(L, L->base - 2, metamethod);
+      return FFH_TAILCALL;
+   }
+
    lj_tab_clear(table);
-   return 0;
+   return FFH_RES(0);
 }
 
 //********************************************************************************************************************

@@ -582,6 +582,8 @@ void register_async_class(lua_State *Lua)
    lua_setfield(Lua, -2, "__index");
    lua_pushcfunction(Lua, pool_set);
    lua_setfield(Lua, -2, "__newindex");
+   lua_pushcfunction(Lua, pool_reset);
+   lua_setfield(Lua, -2, "__clear");
    lua_pop(Lua, 1);
 
    lua_newtable(Lua);                          // Create the pool table
