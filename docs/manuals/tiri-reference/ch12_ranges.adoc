@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-12
+// UPDATED: 2026-08-11 - Range methods are called with '.' as built-in method calls (commit 7e6746950)
 
 [[ch-ranges]]
 == Ranges
@@ -217,9 +218,9 @@ Range construction validates only the three numeric fields.  The following condi
 [%unbreakable]
 [source,tiri]
 ----
-range(1e15, 1e15+1, false, 0.1):toArray()  -- error: step too small
+range(1e15, 1e15+1, false, 0.1).toArray()  -- error: step too small
 range(0, 1e20).length                      -- error: count unrepresentable
-range(0, 4294967297):toArray()             -- error: allocation too large
+range(0, 4294967297).toArray()             -- error: allocation too large
 ----
 
 [[sec-iteration-with-ranges]]
@@ -339,7 +340,7 @@ Raises an error if `Object` is not a string, table, or array.
 
 indexterm:[ranges, integer requirement] Collections are indexed by whole element positions, so any range used as a collection index must have a `start`, `stop` and `step` that are all whole numbers within the signed 32-bit integer bounds.  A range that does not satisfy this raises an error rather than truncating its operands.
 
-The requirement applies to `range.slice()`, the `obj[{range}]` index syntax on strings, tables, and arrays, `arr:slice()`, `arr:fill()`, and `arr:find()`.
+The requirement applies to `range.slice()`, the `obj[{range}]` index syntax on strings, tables, and arrays, `arr.slice()`, `arr.fill()`, and `arr.find()`.
 
 A range constructed from whole-valued doubles satisfies the requirement; only a fractional component or an out-of-bounds magnitude fails it.
 
@@ -354,7 +355,7 @@ range.slice({10, 20, 30}, range(0.5, 2))-- error: fractional start
 [discrete]
 ==== range.toArray()
 
-[.api]`arr = r:toArray()`
+[.api]`arr = r.toArray()`
 
 Returns the range as an array containing all values in the sequence.  The array preserves the range's direction and step.
 
@@ -364,10 +365,10 @@ The element type is `int` when `start`, `stop` and `step` are all whole numbers 
 ----
 {0 to 5}:toArray()                -- array<int>: {0, 1, 2, 3, 4}
 {0 into 5}:toArray()              -- array<int>: {0, 1, 2, 3, 4, 5}
-range(0, 10, false, 2):toArray()  -- array<int>: {0, 2, 4, 6, 8}
+range(0, 10, false, 2).toArray()  -- array<int>: {0, 2, 4, 6, 8}
 {5 into 0}:toArray()              -- array<int>: {5, 4, 3, 2, 1, 0}
 {0 to 1 by 0.25}:toArray()        -- array<double>: {0, 0.25, 0.5, 0.75}
-range(0, 5.5):toArray()           -- array<double>: {0, 1, 2, 3, 4, 5}
+range(0, 5.5).toArray()           -- array<double>: {0, 1, 2, 3, 4, 5}
 ----
 
 ==== Index Syntax
@@ -481,13 +482,13 @@ Alignment is tested by converting the value to its ordinal, `(Value - start) / s
 [source,tiri]
 ----
 r = {0 to 1 by 0.1}
-r:contains(0.3)   -- true  (tolerated representation error)
-r:contains(0.35)  -- false (between two generated values)
+r.contains(0.3)   -- true  (tolerated representation error)
+r.contains(0.35)  -- false (between two generated values)
 
 b = 1e15
 t = range(b, b + 10, false, 1)
-t:contains(b + 2)    -- true
-t:contains(b + 1.5)  -- false
+t.contains(b + 2)    -- true
+t.contains(b + 1.5)  -- false
 ----
 
 The bounds test is applied before alignment, so an excluded `stop` is never admitted by the tolerance.
@@ -495,19 +496,19 @@ The bounds test is applied before alignment, so an excluded `stop` is never admi
 [discrete]
 ==== contains()
 
-[.api]`result = r:contains(Value)`
+[.api]`result = r.contains(Value)`
 
 Returns `true` if `Value` is a finite number that lies within the range and aligns to a generated ordinal.  Returns `false` for non-numeric, infinite, and NaN values, and for values that do not align.
 
 [source,tiri]
 ----
 r = {0 to 10}
-r:contains(5)     -- true
-r:contains(10)    -- false (exclusive)
-r:contains(1.5)   -- false (not on step boundary)
+r.contains(5)     -- true
+r.contains(10)    -- false (exclusive)
+r.contains(1.5)   -- false (not on step boundary)
 
 f = {0 to 1 by 0.5}
-f:contains(0.5)   -- true
+f.contains(0.5)   -- true
 ----
 
 The `in` operator uses `contains()` internally.
@@ -519,7 +520,7 @@ indexterm:[ranges, functional iteration] Ranges provide functional programming m
 [discrete]
 ==== each()
 
-[.api]`r = r:each(Callback)`
+[.api]`r = r.each(Callback)`
 
 Calls `Callback(Value)` for each value in the range.  Returns the original range for chaining.
 
@@ -527,7 +528,7 @@ Calls `Callback(Value)` for each value in the range.  Returns the original range
 ----
 sum = 0
 r = {1 to 6}
-r:each(Value => sum += Value)
+r.each(Value => sum += Value)
 -- sum is 15
 ----
 
@@ -537,7 +538,7 @@ The callback can return `false` to terminate early.  Returning `true` or `nil` c
 ----
 sum = 0
 r = {1 to 100}
-r:each(function(Value)
+r.each(function(Value)
    if Value > 5 then return false end
    sum += Value
 end)
@@ -550,7 +551,7 @@ The return value enables chaining:
 [source,tiri]
 ----
 r = {1 to 6}
-r:each(Value => print(Value))
+r.each(Value => print(Value))
  :each(Value => process(Value))
 ----
 
@@ -559,13 +560,13 @@ The `each()` method also works with constructor-based ranges:
 [%unbreakable]
 [source,tiri]
 ----
-range(0, 10, false, 2):each(Value => print(Value))
+range(0, 10, false, 2).each(Value => print(Value))
 ----
 
 [discrete]
 ==== filter()
 
-[.api]`arr = r:filter(Predicate)`
+[.api]`arr = r.filter(Predicate)`
 
 Returns an array containing only values for which `Predicate(Value)` returns a truthy value.  Returns an empty array if no values match or the range is empty.  The element type follows the same rule as `toArray()`: `int` for whole-numbered ranges, `double` otherwise.
 
@@ -582,7 +583,7 @@ near = {0 to 1 by 0.2}:filter(v => v >= 0.4)
 [discrete]
 ==== map()
 
-[.api]`arr = r:map(Transform)`
+[.api]`arr = r.map(Transform)`
 
 Returns an `array<any>` where each element is the result of `Transform(Value)`.  The transform function can return any type.  Returns an empty array if the range is empty.
 
@@ -598,7 +599,7 @@ labels = {1 to 4}:map(i => 'Item ' .. tostring(i))
 [discrete]
 ==== reduce()
 
-[.api]`result = r:reduce(Initial, Reducer)`
+[.api]`result = r.reduce(Initial, Reducer)`
 
 Folds all values into a single accumulated result.  `Reducer(Accumulator, Value)` is called for each value, threading the accumulator from left to right.  Returns `Initial` unchanged if the range is empty.
 
@@ -614,7 +615,7 @@ factorial = {1 into 5}:reduce(1, (acc, i) => acc * i)
 [discrete]
 ==== take()
 
-[.api]`arr = r:take(Count)`
+[.api]`arr = r.take(Count)`
 
 Returns an array containing the first `Count` values from the range.  If `Count` exceeds the range length, returns all available values.  If `Count` is zero or negative, returns an empty array.  The element type is determined by the same rule as `toArray()`: `int` for whole-numbered ranges, `double` otherwise.
 
@@ -629,7 +630,7 @@ Returns an array containing the first `Count` values from the range.  If `Count`
 [discrete]
 ==== any()
 
-[.api]`result = r:any(Predicate)`
+[.api]`result = r.any(Predicate)`
 
 Returns `true` if `Predicate(Value)` returns a truthy value for at least one element.  Short-circuits on the first match.  Returns `false` on an empty range.
 
@@ -642,7 +643,7 @@ Returns `true` if `Predicate(Value)` returns a truthy value for at least one ele
 [discrete]
 ==== all()
 
-[.api]`result = r:all(Predicate)`
+[.api]`result = r.all(Predicate)`
 
 Returns `true` if `Predicate(Value)` returns a truthy value for every element.  Short-circuits on the first failure.  Returns `true` on an empty range (vacuous truth).
 
@@ -655,7 +656,7 @@ Returns `true` if `Predicate(Value)` returns a truthy value for every element.  
 [discrete]
 ==== find()
 
-[.api]`result = r:find(Predicate)`
+[.api]`result = r.find(Predicate)`
 
 Returns the first value for which `Predicate(Value)` returns a truthy value, or `nil` if no match is found.  Returns `nil` on an empty range.
 

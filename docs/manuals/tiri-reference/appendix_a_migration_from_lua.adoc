@@ -3,6 +3,8 @@
 // UPDATED: 2026-08-06 - Broadened the #t divergence to every non-numeric key (commit d40436498)
 // UPDATED: 2026-08-06 - Added the sparse-key divergence, the sequence guards and duplicate constructor keys (commit 26e122ab7)
 // UPDATED: 2026-08-06 - Added the type() 'bool' divergence and regrouped the silent differences (commit 66ad8a7dc)
+// UPDATED: 2026-08-11 - Added the Method Calls and the Colon migration section and summary-table rows for the removal of
+//                       colon calls, colon-qualified declarations and implicit self (commit 7e6746950)
 
 [[appendix-migration-from-lua]]
 [appendix]
@@ -93,6 +95,19 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |One-based indexing
 |Zero-based indexing
 |<<sec-migration-indexing>>
+
+|`receiver:method()`
+|`receiver.method()`
+|<<sec-migration-method-calls>>
+
+|`function t:name()` +
+implicit `self`
+|Removed; declare the receiver as an explicit parameter
+|<<sec-migration-method-calls>>
+
+|`obj?:method()`
+|`obj?.method()`
+|<<sec-migration-method-calls>>
 
 |Variables global by default
 |Variables local by default
@@ -212,7 +227,7 @@ print(t[1])   -- 'b'
 -- Lua: string.sub(s, 1, 3)
 -- Tiri: string.sub(s, 0, 3)
 s = 'hello'
-print(s:sub(0, 3))   -- 'hel'
+print(s.sub(0, 3))   -- 'hel'
 ----
 
 This change affects all table constructors, `ipairs()` iteration, string functions and array access.  When migrating numeric `for` loops that iterate over tables, adjust the start index from 1 to 0 and the end condition accordingly.
@@ -282,7 +297,7 @@ end
 
 `try-except` supports filtered handlers with the `when` clause to catch specific `ERR` codes, a `success` block that runs when no exception occurred, and optional stack trace capture with `try<trace>`.
 
-The `io.*` library functions raise exceptions on error instead of returning error codes.  Replace code that checks return values from `io.open()` or `file:read()` with `try-except` blocks:
+The `io.*` library functions raise exceptions on error instead of returning error codes.  Replace code that checks return values from `io.open()` or `file.read()` with `try-except` blocks:
 
 [source,tiri]
 ----
@@ -573,7 +588,7 @@ s = string.gsub(s, '^%s+', '')
 s = string.gsub(s, '%s+$', '')
 
 -- Tiri
-s = s:trim()
+s = s.trim()
 -- Or with regex:
 s = regex.new([[^\s+]]).replace(s, '')
 s = regex.new([[\s+$]]).replace(s, '')
@@ -587,7 +602,7 @@ for item in string.gmatch(csv, '([^,]+)') do
 end
 
 -- Tiri
-items = csv:split(',')
+items = csv.split(',')
 for i, item in ipairs(items) do
    process(item)
 end
@@ -599,7 +614,7 @@ end
 result = string.gsub(text, 'old', 'new')
 
 -- Tiri
-result = text:replace('old', 'new')
+result = text.replace('old', 'new')
 -- Or with regex for pattern-based replacement:
 result = regex.new([[pattern]]).replace(text, 'replacement')
 ----
@@ -820,7 +835,7 @@ table.insert(items, 'd')
 
 -- Tiri: use an array
 items = array<string> { 'a', 'b', 'c' }
-items:push('d')
+items.push('d')
 ----
 
 Arrays are zero-indexed, support dedicated methods (`push`, `pop`, `map`, `filter`, `sort`, etc.) and offer better iteration performance than tables.  See <<ch-arrays>> for the complete API.
@@ -974,7 +989,7 @@ table.sort(items, function(a, b)
 end)
 
 -- Tiri
-items:sort((a, b) => a.name < b.name)
+items.sort((a, b) => a.name < b.name)
 ----
 
 [discrete]
@@ -991,7 +1006,7 @@ function readConfig(path)
    local file, err = io.open(path, 'r')
    if not file then return nil, err end
    local ok, content = pcall(file.read, file, '*a')
-   file:close()           -- must remember to close before every return
+   file.close()           -- must remember to close before every return
    if not ok then return nil, content end
    return content
 end
@@ -999,17 +1014,17 @@ end
 -- Tiri
 handle_mt = {
    __close = function(Self:table, Error)
-      Self.file:close()
+      Self.file.close()
    end
 }
 
 function readConfig(Path)
    local cfg <close> = setmetatable({ file = io.open(Path, 'r') }, handle_mt)
-   return cfg.file:read('*a')   -- closed on every outcome
+   return cfg.file.read('*a')   -- closed on every outcome
 end
 ----
 
-A `<close>` variable is used here rather than `defer` because `io.open()` and `file:read()` raise exceptions, and `defer` does not run during error unwinding.  Use `defer` when cleanup only needs to cover normal exits, `return`, `break` and `continue`.  File handles returned by `io.open()` carry no `pass:[__]close` metamethod of their own, so the wrapper table above supplies one.
+A `<close>` variable is used here rather than `defer` because `io.open()` and `file.read()` raise exceptions, and `defer` does not run during error unwinding.  Use `defer` when cleanup only needs to cover normal exits, `return`, `break` and `continue`.  File handles returned by `io.open()` carry no `pass:[__]close` metamethod of their own, so the wrapper table above supplies one.
 
 [discrete]
 ==== Ranges

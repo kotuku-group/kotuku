@@ -1,4 +1,6 @@
 // VERIFIED: 2026-08-06
+// UPDATED: 2026-08-11 - Safe method calls are written 'obj?.method()'; 'in' and pipe iteration lower to dot-form contains()
+//                       and each() (commit 7e6746950)
 
 [[ch-operators]]
 == Operators
@@ -536,9 +538,11 @@ indexterm:[operators, safe navigation] The safe navigation operators provide nil
 |Operator |Syntax |Effect
 |Safe field access |`obj?.field`    |Returns `nil` if `obj` is `nil`; otherwise returns `obj.field`
 |Safe field call   |`obj?.field()`  |Returns `nil` if `obj` or `field` is `nil`; otherwise calls `obj.field()`
-|Safe method call  |`obj?:method()` |Returns `nil` if `obj` is `nil`; otherwise calls `obj:method()`
+|Safe method call  |`obj?.method()` |Returns `nil` if `obj` is `nil`; otherwise calls the built-in method `obj.method()`
 |Safe index access |`obj?[key]`     |Returns `nil` if `obj` is `nil`; otherwise returns `obj[key]`
 |===
+
+`?.` covers both safe field calls and safe built-in method calls; the receiver's type determines which applies (see <<sec-built-in-method-calls>>).
 
 Safe navigation checks for `nil` only.  Other falsey values (`false`, `0`, `""`) are treated as valid receivers and access proceeds.
 
