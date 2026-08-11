@@ -1941,6 +1941,9 @@ static void build_subroutines(BuildCtx *ctx)
   |.endif
   |  b ->fff_res
   |
+  |.ffunc_1 table_clear
+  |  b ->fff_fallback
+  |
   |//-- Base library: catch errors ----------------------------------------
   |
   |.ffunc pcall

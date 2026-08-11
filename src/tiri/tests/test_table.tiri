@@ -433,6 +433,42 @@ end
    assert(#t is nil, "Clearing must not restore a numerical length")
 end
 
+@Test function ClearMetamethod()
+   local target = { value=42 }
+   local expected = target
+   local calls = 0
+   setmetatable(target, {
+      ['__clear'] = function(Self)
+         calls += 1
+         assert(Self is expected, "__clear should receive the table being cleared")
+      end
+   })
+
+   target.clear()
+
+   assert(calls is 1, "table.clear() should invoke __clear exactly once")
+   assert(target.value is 42, "table.clear() should not raw-clear a table handled by __clear")
+end
+
+@Test function ClearMetamethodErrorPropagation()
+   local target = setmetatable({}, {
+      ['__clear'] = function(Self)
+         error('clear hook failed')
+      end
+   })
+   local caught = false
+
+   try
+      target.clear()
+   except e
+      caught = tostring(e).find('clear hook failed') != nil
+   success
+      error('Expected __clear failure to propagate')
+   end
+
+   assert(caught, "table.clear() should propagate errors raised by __clear")
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Tests for table.sortByKeys() (extended)
 

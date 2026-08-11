@@ -194,7 +194,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Verify that async.pool.reset() removes all entries.
 
-@Test(priority=8) function PoolReset()
+@Test(priority=8) function PoolResetAndClear()
    async.pool.reset()
 
    async.pool.a = 1
@@ -206,6 +206,16 @@ end
    assert(async.pool.a is nil, 'Expected nil after reset')
    assert(async.pool.b is nil, 'Expected nil after reset')
    assert(async.pool.c is nil, 'Expected nil after reset')
+
+   local reset = async.pool.reset
+   async.pool.a = 1
+   async.pool.b = 2
+
+   async.pool.clear()
+
+   assert(async.pool.a is nil, 'Expected nil after clear')
+   assert(async.pool.b is nil, 'Expected nil after clear')
+   assert(async.pool.reset is reset, 'async.pool.clear() should preserve async.pool.reset()')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

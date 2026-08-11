@@ -1352,6 +1352,9 @@ static void build_subroutines(BuildCtx *ctx)
   |   str CFUNC:CARG4, [BASE, #-16]
   |  b ->fff_res
   |
+  |.ffunc_1 table_clear
+  |  b ->fff_fallback
+  |
   |//-- Base library: catch errors ----------------------------------------
   |
   |.ffunc pcall
