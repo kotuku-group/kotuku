@@ -114,7 +114,7 @@ gui.dropdown = function(Options)
             mi.height = vText.lineSpacing * ITEM_SPACING
             y = math.floor(y + mi.height)
 
-            table.insert(self.items, mi)
+            self.items.insert(mi)
          end
       end
 

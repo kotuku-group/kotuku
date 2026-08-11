@@ -73,7 +73,7 @@ end
    function makeMt(n)
       return {
          __close = function(self, err)
-            table.insert(order, n)
+            order.insert(n)
          end
       }
    end
@@ -96,14 +96,14 @@ end
    order = {}
    do
       outer <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'outer') end
+         __close = function() order.insert('outer') end
       })
       do
          inner <close> = setmetatable({}, {
-            __close = function() table.insert(order, 'inner') end
+            __close = function() order.insert('inner') end
          })
       end
-      table.insert(order, 'between')
+      order.insert('between')
    end
    assert(#order is 3, 'Should have 3 events')
    assert(order[0] is 'inner', 'Inner scope closes first: ' .. tostring(order[0]))
@@ -117,10 +117,10 @@ end
    order = {}
    do
       defer
-         table.insert(order, 'defer')
+         order.insert('defer')
       end
       local obj <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'close') end
+         __close = function() order.insert('close') end
       })
    end
    assert(#order is 2, 'Both close and defer should run')
@@ -216,11 +216,11 @@ end
    order = {}
    do
       a <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'a') end
+         __close = function() order.insert('a') end
       })
       b <close> = nil
       c <close> = setmetatable({}, {
-         __close = function() table.insert(order, 'c') end
+         __close = function() order.insert('c') end
       })
    end
 
@@ -257,7 +257,7 @@ end
    assert(closed, 'Close should be called when error is caught by try')
    -- The error must be passed to __close during error unwinding
    assert(received_err != nil, 'Error should be passed to __close handler')
-   assert(tostring(received_err):find('test error message'), 'Error message should contain "test error message": got ' .. tostring(received_err))
+   assert(tostring(received_err).find('test error message'), 'Error message should contain "test error message": got ' .. tostring(received_err))
 end
 
 -- Close with string value - should not crash
@@ -284,7 +284,7 @@ end
    function makeMt(n)
       return {
          __close = function(self, err)
-            table.insert(order, n)
+            order.insert(n)
             errors_received[n] = err
          end
       }
@@ -310,7 +310,7 @@ end
    -- All handlers should receive the same error
    for i in {0 to 3} do
       assert(errors_received[i] != nil, 'Handler ' .. i .. ' should receive error')
-      assert(tostring(errors_received[i]):find('multi close error'), 'Handler ' .. i .. ' should get correct error')
+      assert(tostring(errors_received[i]).find('multi close error'), 'Handler ' .. i .. ' should get correct error')
    end
 end
 
@@ -335,8 +335,8 @@ end
 
 @Test function NestedFunctionsClose()
    order = {}
-   mt_outer = { __close = function() table.insert(order, 'outer') end }
-   mt_inner = { __close = function() table.insert(order, 'inner') end }
+   mt_outer = { __close = function() order.insert('outer') end }
+   mt_inner = { __close = function() order.insert('inner') end }
 
    function inner()
       local obj <close> = setmetatable({}, mt_inner)
@@ -366,7 +366,7 @@ end
    order = {}
 
    function source()
-      table.insert(order, 'call')
+      order.insert('call')
       return { marker='first' }, 'second'
    end
 
@@ -374,7 +374,7 @@ end
       local resource <close> = setmetatable({}, {
          __close=function()
             processing.collect('full')
-            table.insert(order, 'close')
+            order.insert('close')
          end
       })
       return source()
@@ -450,13 +450,13 @@ end
    order = {}
    mt1 = {
       __close = function(self, err)
-         table.insert(order, 'close1')
+         order.insert('close1')
          error('close1 error')
       end
    }
    mt2 = {
       __close = function(self, err)
-         table.insert(order, 'close2')
+         order.insert('close2')
          -- This handler should receive the error from close1 (or original)
       end
    }
@@ -480,7 +480,7 @@ end
    assert(order[1] is 'close2', 'close2 second (LIFO)')
    -- The error should be from close1, not the original (per Lua 5.4)
    assert(caught_ex != nil, 'Exception should be caught')
-   assert(tostring(caught_ex.message):find('close1 error'), 'Error from __close should replace original: ' .. tostring(caught_ex.message))
+   assert(tostring(caught_ex.message).find('close1 error'), 'Error from __close should replace original: ' .. tostring(caught_ex.message))
 end
 
 -- Multiple __close errors - last one wins
@@ -490,14 +490,14 @@ end
    mt1 = {
       __close = function(self, err)
          msg('mt1 __close called')
-         table.insert(order, 'close1')
+         order.insert('close1')
          error('close1 error')
       end
    }
    mt2 = {
       __close = function(self, err)
          msg('mt2 __close called')
-         table.insert(order, 'close2')
+         order.insert('close2')
          error('close2 error')
       end
    }
@@ -521,7 +521,7 @@ end
    assert(#order is 2, 'Both close handlers should be called, got ' .. #order)
    -- The last error (from close2) should be the final error
    assert(caught_ex, 'Exception should be caught')
-   assert(caught_ex.message:find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
+   assert(caught_ex.message.find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
 end
 
 -- An error from __gc must remain contained by the collector's protected call, even when collection is requested from
@@ -554,6 +554,6 @@ end
    assert(finalised, 'The unreachable table should have been finalised')
    assert(continued_after_collection, 'Collection should return after containing the finaliser error')
    assert(caught_message != nil, "The caller's restored try handler should catch the post-collection error")
-   assert(caught_message:find('caller error after collection'),
+   assert(caught_message.find('caller error after collection'),
       "The caller's restored try handler should catch only the post-collection error: " .. caught_message)
 end

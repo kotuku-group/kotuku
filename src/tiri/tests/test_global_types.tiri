@@ -17,8 +17,8 @@ end
 
 local function assert_global_contract_before_store(Statement, Context)
    local disasm = disassemble(Statement)
-   local contract = disasm:find('CONTRACT')
-   local store = disasm:find('GSET')
+   local contract = disasm.find('CONTRACT')
+   local store = disasm.find('GSET')
    assert(contract != nil and store != nil and contract < store,
       Context .. ' must emit CONTRACT before GSET, got:\n' .. disasm)
    return disasm
@@ -34,10 +34,10 @@ global glGTSticky = 'first'
 local dynamic:any = 'second'
 glGTSticky = dynamic
 ]])
-   assert(disasm:count('CONTRACT') is 3,
+   assert(disasm.count('CONTRACT') is 3,
       'An inferred declaration must validate and publish around its store, then retain a bootstrap-capable hint, got:\n' ..
       disasm)
-   assert(disasm:count('GSET') is 2,
+   assert(disasm.count('GSET') is 2,
       'The inferred global declaration and reassignment should each emit GSET, got:\n' .. disasm)
 end
 --[=[
@@ -51,7 +51,7 @@ glGTBootstrapArray = dynamic
 ]])
    except e
       trapped = true
-      assert(e.message:find('expected array<int>') != nil,
+      assert(e.message.find('expected array<int>') != nil,
          'The bootstrap hint should preserve the exact array policy: ' .. e.message)
    end
 
@@ -75,7 +75,7 @@ glGTAuthoritativePolicy = dynamic
       rawset(_G, 'glGTAuthoritativePolicy', 42)
       error('The original environment policy should remain authoritative')
    except e
-      assert(e.message:find('expected str') != nil,
+      assert(e.message.find('expected str') != nil,
          'The preserved environment policy should report its string contract: ' .. e.message)
    end
    assert(glGTAuthoritativePolicy is 'updated',
@@ -96,7 +96,7 @@ end
       exec([[global glGTFailedDeclaration = 'first']])
    except e
       trapped = true
-      assert(e.message:find('blocked global store') != nil,
+      assert(e.message.find('blocked global store') != nil,
          'The failed declaration should preserve the environment store error: ' .. e.message)
    end
    setmetatable(_G, previous_metatable)
@@ -138,7 +138,7 @@ end
       try
          redeclare_variant()
       except e
-         if e.message:find('blocked JIT variant store') != nil then blocked++
+         if e.message.find('blocked JIT variant store') != nil then blocked++
          else contract_errors++ end
       end
    end
@@ -163,16 +163,16 @@ end
    local function_disasm = disassemble([[
 global function glGTContractFunction() return 1 end
 ]])
-   local function_contract = function_disasm:find('CONTRACT')
-   local function_store = function_disasm:find('GSET')
+   local function_contract = function_disasm.find('CONTRACT')
+   local function_store = function_disasm.find('GSET')
    assert(function_contract != nil and function_store != nil and function_contract < function_store,
       'A global function contract must precede its store, got:\n' .. function_disasm)
 
    local thunk_disasm = disassemble([[
 global thunk glGTContractThunk():str return 'value' end
 ]])
-   local thunk_contract = thunk_disasm:find('CONTRACT')
-   local thunk_store = thunk_disasm:find('GSET')
+   local thunk_contract = thunk_disasm.find('CONTRACT')
+   local thunk_store = thunk_disasm.find('GSET')
    assert(thunk_contract != nil and thunk_store != nil and thunk_contract < thunk_store,
       'A global thunk func contract must precede its store, got:\n' .. thunk_disasm)
 
@@ -180,7 +180,7 @@ global thunk glGTContractThunk():str return 'value' end
 local holder = {}
 function holder.callback() return 1 end
 ]])
-   assert(member_disasm:find('CONTRACT') is nil,
+   assert(member_disasm.find('CONTRACT') is nil,
       'A table method must not publish a global binding contract, got:\n' .. member_disasm)
 end
 
@@ -233,7 +233,7 @@ try
    declare_value()
 end
 ]], 'nested declaration')
-   assert(nested:count('CONTRACT') is 2,
+   assert(nested.count('CONTRACT') is 2,
       'A nested reduced declaration should validate and publish around its store, got:\n' .. nested)
 
    local multi = disassemble([[
@@ -242,9 +242,9 @@ try
    global glGTReducedNumber, glGTReducedText = pair()
 end
 ]])
-   assert(multi:count('CONTRACT') >= 4,
+   assert(multi.count('CONTRACT') >= 4,
       'Both reduced multi-result positions must validate and publish in addition to callable contracts, got:\n' .. multi)
-   assert(multi:count('GSET') is 2,
+   assert(multi.count('GSET') is 2,
       'Both reduced multi-result positions must emit stores, got:\n' .. multi)
 
    assert_global_contract_before_store([[
@@ -268,9 +268,9 @@ function writeField()
    glGTRec.bravo = 5
 end
 ]])
-   assert(disasm:find('CONTRACT') != nil, 'Inferred global struct declaration should emit CONTRACT, got:\n' .. disasm)
-   assert(disasm:find('STGETF') != nil, 'Global struct read should emit STGETF, got:\n' .. disasm)
-   assert(disasm:find('STSETF') != nil, 'Global struct write should emit STSETF, got:\n' .. disasm)
+   assert(disasm.find('CONTRACT') != nil, 'Inferred global struct declaration should emit CONTRACT, got:\n' .. disasm)
+   assert(disasm.find('STGETF') != nil, 'Global struct read should emit STGETF, got:\n' .. disasm)
+   assert(disasm.find('STSETF') != nil, 'Global struct write should emit STSETF, got:\n' .. disasm)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -284,7 +284,7 @@ function readField():num
    return glGTExplicit.alpha
 end
 ]])
-   assert(disasm:find('STGETF') != nil, 'Explicit global struct read should emit STGETF, got:\n' .. disasm)
+   assert(disasm.find('STGETF') != nil, 'Explicit global struct read should emit STGETF, got:\n' .. disasm)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -299,8 +299,8 @@ function readField():num
    return glGTMixed.alpha
 end
 ]])
-   assert(disasm:find('STGETF') is nil, 'Any global must not emit STGETF, got:\n' .. disasm)
-   assert(disasm:find('TGETS') != nil, 'Any global should use TGETS, got:\n' .. disasm)
+   assert(disasm.find('STGETF') is nil, 'Any global must not emit STGETF, got:\n' .. disasm)
+   assert(disasm.find('TGETS') != nil, 'Any global should use TGETS, got:\n' .. disasm)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -313,8 +313,8 @@ function readYear()
    return glGTTime.year
 end
 ]])
-   assert(disasm:find('CONTRACT') != nil, 'Inferred global object declaration should emit CONTRACT, got:\n' .. disasm)
-   assert(disasm:find('OBGETF') != nil, 'Global object field read should emit OBGETF, got:\n' .. disasm)
+   assert(disasm.find('CONTRACT') != nil, 'Inferred global object declaration should emit CONTRACT, got:\n' .. disasm)
+   assert(disasm.find('OBGETF') != nil, 'Global object field read should emit OBGETF, got:\n' .. disasm)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -341,8 +341,8 @@ function readNum()
    return glGTNums[1]
 end
 ]])
-   assert(disasm:find('CONTRACT') != nil, 'Inferred global array declaration should emit CONTRACT, got:\n' .. disasm)
-   assert(disasm:find('AGETB') != nil or disasm:find('AGETV') != nil,
+   assert(disasm.find('CONTRACT') != nil, 'Inferred global array declaration should emit CONTRACT, got:\n' .. disasm)
+   assert(disasm.find('AGETB') != nil or disasm.find('AGETV') != nil,
       'Global array indexing should emit AGETB/AGETV, got:\n' .. disasm)
 end
 
@@ -358,7 +358,7 @@ function readShadowed():num
    return glGTShadow.alpha
 end
 ]])
-   assert(disasm:find('STGETF') is nil, 'Local shadow of a struct global must use generic access, got:\n' .. disasm)
+   assert(disasm.find('STGETF') is nil, 'Local shadow of a struct global must use generic access, got:\n' .. disasm)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -414,7 +414,7 @@ end
       writer(42)
       error('An incompatible cross-chunk aliased store should raise')
    except e
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'Expected a global contract error, got: ' .. tostring(e.message))
    end
    assert(glGTCrossAlias is 'replaced', 'A rejected cross-chunk store must preserve the previous value')
@@ -435,7 +435,7 @@ end
       writer(array<string> { 'wrong' })
       error('A different array member identity should be rejected')
    except e
-      assert(e.message:find('expected array<int>') != nil and e.message:find('got array<string>') != nil,
+      assert(e.message.find('expected array<int>') != nil and e.message.find('got array<string>') != nil,
          'The global member diagnostic should include both array identities: ' .. e.message)
    end
    assert(glGTMemberArray[0] is 9, 'A rejected cross-chunk array store should preserve the previous value')
@@ -453,7 +453,7 @@ end
       rawset(_G, 'glGTSeeded', 42)
       error('A rawset conflicting with the declared contract should raise')
    except e
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'Expected a global contract error, got: ' .. tostring(e.message))
    end
    assert(glGTSeeded is 'declared', 'The declared value must survive the rejected rawset')

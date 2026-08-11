@@ -31,9 +31,9 @@ global function lspPercentDecode(Text:str):str
    pos = 0
 
    while pos < #Text do
-      c = Text:sub(pos, pos + 1)
+      c = Text.sub(pos, pos + 1)
       if c is '%' and pos + 2 < #Text then
-         hex = Text:sub(pos + 1, pos + 3)
+         hex = Text.sub(pos + 1, pos + 3)
          value = tonumber(hex, 16)
          if value then
             result ..= string.char(value)
@@ -52,22 +52,25 @@ global function lspPercentDecode(Text:str):str
 end
 
 function lspPercentEncode(Text:str):str
-   return Text:replace('%', '%25'):replace(' ', '%20'):replace('#', '%23'):replace('?', '%3F')
+   Text = Text.replace('%', '%25')
+   Text = Text.replace(' ', '%20')
+   Text = Text.replace('#', '%23')
+   return Text.replace('?', '%3F')
 end
 
 global function lspUriToPath(Uri:str):str
    Uri ?! return nil
    path = Uri
 
-   if path:startsWith('file://') then
-      path = path:sub(7)
+   if path.startsWith('file://') then
+      path = path.sub(7)
    end
 
-   path = lspPercentDecode(path):replace('\\', '/')
+   path = lspPercentDecode(path).replace('\\', '/')
 
    -- VS Code sends Windows file URIs as file:///e:/path.
-   if #path >= 3 and path:sub(0, 1) is '/' and path:sub(2, 3) is ':' then
-      path = path:sub(1)
+   if #path >= 3 and path.sub(0, 1) is '/' and path.sub(2, 3) is ':' then
+      path = path.sub(1)
    end
 
    return path
@@ -83,10 +86,10 @@ global function lspPathToUri(Path:str):str
    end
    if err != ERR_Okay then return nil end
 
-   resolved = resolved:replace('\\', '/')
-   if #resolved >= 2 and resolved:sub(1, 2) is ':' then
+   resolved = resolved.replace('\\', '/')
+   if #resolved >= 2 and resolved.sub(1, 2) is ':' then
       resolved = '/' .. resolved
-   elseif not resolved:startsWith('/') then
+   elseif not resolved.startsWith('/') then
       resolved = '/' .. resolved
    end
 
@@ -95,15 +98,15 @@ end
 
 function getParentPath(Path:str):str
    Path ?! return ''
-   path = Path:replace('\\', '/')
+   path = Path.replace('\\', '/')
    last_slash = -1
 
    for i in {0 to #path} do
-      if path:sub(i, i + 1) is '/' then last_slash = i end
+      if path.sub(i, i + 1) is '/' then last_slash = i end
    end
 
    if last_slash < 0 then return '' end
-   return path:sub(0, last_slash + 1)
+   return path.sub(0, last_slash + 1)
 end
 
 function resolveExistingPath(Path:str):str
@@ -126,13 +129,13 @@ function offsetToPosition(Content:str, Offset:num):table
 
    -- Character is reported as a UTF-16 column, so advance by whole UTF-8 sequences and count their unit width.
    while pos < limit do
-      c = Content:sub(pos, pos + 1)
+      c = Content.sub(pos, pos + 1)
       if c is '\n' then
          line++
          character = 0
          pos++
       else
-         seq = utf8SequenceLength(Content:byte(pos))   -- :byte() is 0-based
+         seq = utf8SequenceLength(Content.byte(pos))   -- .byte() is 0-based
          character += (seq is 4) and 2 or 1
          pos += seq
       end
@@ -182,7 +185,7 @@ function makeXmlLocation(Entry:table, ByteStart:num, ByteEnd:num):table
 end
 
 function pushLocation(Locations:array<table>, Location:table)
-   if Location then Locations:push(Location) end
+   if Location then Locations.push(Location) end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -197,24 +200,24 @@ function getStringAtPosition(Doc:table, Line:num, Character:num):table
 
    pos = 0
    while pos < #line_text do
-      c = line_text:sub(pos, pos + 1)
+      c = line_text.sub(pos, pos + 1)
       if c is '"' or c is "'" then
          quote = c
          start_pos = pos
          pos++
 
          while pos < #line_text do
-            sc = line_text:sub(pos, pos + 1)
+            sc = line_text.sub(pos, pos + 1)
             if sc is '\\' and pos + 1 < #line_text then
                pos += 2
             elseif sc is quote then
                if byte_character > start_pos and byte_character < pos then
                   return {
-                     text = line_text:sub(start_pos + 1, pos),
+                     text = line_text.sub(start_pos + 1, pos),
                      quoteStart = start_pos,
                      quoteEnd = pos,
                      line = Line,
-                     before = line_text:sub(0, start_pos)
+                     before = line_text.sub(0, start_pos)
                   }
                end
                break
@@ -270,7 +273,7 @@ end
 
 function addSymbol(Symbols:array<table>, Name:str, Kind:str, Line:num, StartChar:num, EndChar:num)
    if not Name or Name is '' then return end
-   Symbols:push({
+   Symbols.push({
       name = Name,
       kind = Kind,
       line = Line,
@@ -289,11 +292,11 @@ function addFunctionParameters(Symbols:array<table>, Params:str, LineText:str, L
 
    -- Only the first identifier of each comma-separated segment is the parameter name; anything after a ':' is a
    -- type annotation (e.g. 'Person: struct<User>') and must not shadow real declarations.
-   for segment in values(Params:split(',')) do
+   for segment in values(Params.split(',')) do
       s, e, cap = rx_def_param.findFirst(segment)
       name = s and cap[0]
       if name and name != '' then
-         name_start = LineText:find(name, scan_from, true)
+         name_start = LineText.find(name, scan_from, true)
          if name_start then
             addSymbol(Symbols, name, 'parameter', Line, name_start, name_start + #name)
             scan_from = name_start + #name
@@ -306,7 +309,7 @@ function updateTableDepth(LineCode:str, TableDepth:num):num
    depth = TableDepth or 0
 
    for i in {0 to #LineCode} do
-      c = LineCode:sub(i, i + 1)
+      c = LineCode.sub(i, i + 1)
       if c is '{' then
          depth++
       elseif c is '}' and depth > 0 then
@@ -322,11 +325,11 @@ end
 function addStructFieldSymbols(Symbols:array<table>, StructName:str, LineCode:str, LineText:str, Line:num, SearchFrom:num)
    scan_from = SearchFrom or 0
 
-   for segment in values(LineCode:split(',')) do
+   for segment in values(LineCode.split(',')) do
       s, e, cap = rx_def_struct_field.findFirst(segment)
       if s then
          field_name = cap[0]
-         name_start = LineText:find(field_name, scan_from, true)
+         name_start = LineText.find(field_name, scan_from, true)
          if name_start then
             addSymbol(Symbols, StructName .. '.' .. field_name, 'field', Line, name_start,
                name_start + #field_name)
@@ -359,10 +362,10 @@ global function extractDefinitionSymbols(Doc:table):array<table>
       struct_start, struct_stop, struct_cap = rx_def_struct.findFirst(line_code)
       if struct_start then
          struct_name = struct_cap[0]
-         name_start = line_text:find(struct_name, struct_start, true) or struct_start
+         name_start = line_text.find(struct_name, struct_start, true) or struct_start
          addSymbol(symbols, struct_name, 'struct', line_num, name_start, name_start + #struct_name)
 
-         remainder = line_code:sub(struct_stop)
+         remainder = line_code.sub(struct_stop)
          addStructFieldSymbols(symbols, struct_name, remainder, line_text, line_num, struct_stop)
          if not rx_def_end.test(remainder) then struct_frame = struct_name end
          table_depth = updateTableDepth(line_code, table_depth)
@@ -372,10 +375,10 @@ global function extractDefinitionSymbols(Doc:table):array<table>
       for start, stop, cap in rx_def_func.findAll(line_code) do
          name = cap[0]
          params = cap[1]
-         name_start = line_text:find(name, start, true) or start
+         name_start = line_text.find(name, start, true) or start
          addSymbol(symbols, name, 'function', line_num, name_start, name_start + #name)
 
-         paren_start = line_text:find('(', name_start + #name, true)
+         paren_start = line_text.find('(', name_start + #name, true)
          if paren_start then
             addFunctionParameters(symbols, params, line_text, line_num, paren_start + 1)
          end
@@ -384,10 +387,10 @@ global function extractDefinitionSymbols(Doc:table):array<table>
       for start, stop, cap in rx_def_assign_func.findAll(line_code) do
          name = cap[0]
          params = cap[1]
-         name_start = line_text:find(name, start, true) or start
+         name_start = line_text.find(name, start, true) or start
          addSymbol(symbols, name, 'function', line_num, name_start, name_start + #name)
 
-         paren_start = line_text:find('(', name_start + #name, true)
+         paren_start = line_text.find('(', name_start + #name, true)
          if paren_start then
             addFunctionParameters(symbols, params, line_text, line_num, paren_start + 1)
          end
@@ -396,7 +399,7 @@ global function extractDefinitionSymbols(Doc:table):array<table>
       for start, stop, cap in rx_def_decl.findAll(line_code) do
          name = cap[1]
          if name and name != 'function' then
-            name_start = line_text:find(name, start, true) or start
+            name_start = line_text.find(name, start, true) or start
             addSymbol(symbols, name, 'variable', line_num, name_start, name_start + #name)
          end
       end
@@ -404,9 +407,9 @@ global function extractDefinitionSymbols(Doc:table):array<table>
       for start, stop, cap in rx_def_assign.findAll(line_code) do
          name = cap[0]
          if name and name != 'local' and name != 'global' and not in_table_literal then
-            name_start = line_text:find(name, start, true) or start
-            eq_pos = line_text:find('=', name_start + #name, true)
-            next_char = eq_pos and line_text:sub(eq_pos + 1, eq_pos + 2) or ''
+            name_start = line_text.find(name, start, true) or start
+            eq_pos = line_text.find('=', name_start + #name, true)
+            next_char = eq_pos and line_text.sub(eq_pos + 1, eq_pos + 2) or ''
 
             if eq_pos and next_char != '=' and next_char != '>' then
                addSymbol(symbols, name, 'variable', line_num, name_start, name_start + #name)
@@ -429,7 +432,7 @@ function buildDefinitionStructTypeMap(Doc:table, Position:table):table
    for line_num in {0 to total_lines} do
       line_text = getLine(Doc, line_num)
       if Position and line_num is Position.line then
-         line_text = line_text:sub(0, utf16ColToByteCol(line_text, Position.character))
+         line_text = line_text.sub(0, utf16ColToByteCol(line_text, Position.character))
       end
       line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
 
@@ -440,7 +443,7 @@ function buildDefinitionStructTypeMap(Doc:table, Position:table):table
       -- The class name passed to struct.new() is a string and is therefore absent from LineCode.  Match the raw
       -- line, then require the assignment itself to remain visible in the masked code to reject comments.
       for start, stop, cap in rx_def_struct_new.findAll(line_text) do
-         if line_code:sub(start, start + #cap[0]) is cap[0] then
+         if line_code.sub(start, start + #cap[0]) is cap[0] then
             type_map[cap[0]] = cap[1]
          end
       end
@@ -468,7 +471,7 @@ function symbolNameMatches(SymbolName:str, TokenInfo:table):bool
       if SymbolName is TokenInfo.object .. ':' .. token then return true end
    end
 
-   if SymbolName:endsWith('.' .. token) or SymbolName:endsWith(':' .. token) then return true end
+   if SymbolName.endsWith('.' .. token) or SymbolName.endsWith(':' .. token) then return true end
    return false
 end
 
@@ -530,7 +533,7 @@ end
 function normaliseModuleName(Name:str):str
    if not Name or not glDocCache or not glDocCache.modules then return nil end
    for module_name, entry in pairs(glDocCache.modules) do
-      if module_name:lower() is Name:lower() then return module_name end
+      if module_name.lower() is Name.lower() then return module_name end
    end
    return nil
 end
@@ -539,14 +542,14 @@ function resolveScriptImport(Doc:table, Name:str):table
    candidates = array<string>
    doc_path = lspUriToPath(Doc.uri)
    base_path = getParentPath(doc_path)
-   script_name = Name:endsWith('.tiri') and Name or (Name .. '.tiri')
-   local_import = Name:startsWith('./') or Name:startsWith('../')
+   script_name = Name.endsWith('.tiri') and Name or (Name .. '.tiri')
+   local_import = Name.startsWith('./') or Name.startsWith('../')
 
    if local_import then
-      candidates:push(base_path .. script_name)
+      candidates.push(base_path .. script_name)
    else
-      candidates:push('sdk:scripts/' .. script_name)
-      candidates:push('scripts:' .. script_name)
+      candidates.push('sdk:scripts/' .. script_name)
+      candidates.push('scripts:' .. script_name)
    end
 
    for candidate in values(candidates) do
@@ -585,10 +588,10 @@ function normaliseClassName(Name:str):str
    if glDocCache.classes[Name] then return Name end
 
    for class_name, entry in pairs(glDocCache.classes) do
-      if class_name:lower() is Name:lower() then return class_name end
+      if class_name.lower() is Name.lower() then return class_name end
    end
 
-   capitalised = Name:sub(0, 1):upper() .. Name:sub(1)
+   capitalised = Name.sub(0, 1).upper() .. Name.sub(1)
    if glDocCache.classes[capitalised] then return capitalised end
 
    return nil
@@ -609,7 +612,7 @@ end
 function addSourceFallback(Locations:array<table>, ApiEntry:table)
    if not ApiEntry or not ApiEntry.sources or not ApiEntry.module then return end
 
-   module_folder = ApiEntry.module:lower()
+   module_folder = ApiEntry.module.lower()
    for source in values(ApiEntry.sources) do
       if source.file and source.file != '' then
          candidate = 'sdk:src/' .. module_folder .. '/' .. (source.path or '') .. source.file
@@ -647,7 +650,7 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array<table>
          locations = array<table>
 
          if rx_def_action_prefix.test(token) then
-            action_name = token:sub(2)
+            action_name = token.sub(2)
             if class_doc.actions and class_doc.actions[action_name] then
                action_doc = class_doc.actions[action_name]
                pushLocation(locations, makeXmlLocation(class_doc, action_doc.byteStart, action_doc.byteEnd))
@@ -655,7 +658,7 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array<table>
          end
 
          if #locations is 0 and rx_def_method_prefix.test(token) then
-            method_name = token:sub(2)
+            method_name = token.sub(2)
             if class_doc.methods and class_doc.methods[method_name] then
                method_doc = class_doc.methods[method_name]
                pushLocation(locations, makeXmlLocation(class_doc, method_doc.byteStart, method_doc.byteEnd))
@@ -675,7 +678,7 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array<table>
          if #locations is 0 and class_doc.fields then
             field_doc = class_doc.fields[token]
             if not field_doc then
-               field_name = token:sub(0, 1):upper() .. token:sub(1)
+               field_name = token.sub(0, 1).upper() .. token.sub(1)
                field_doc = class_doc.fields[field_name]
             end
 

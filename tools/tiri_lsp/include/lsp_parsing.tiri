@@ -21,7 +21,7 @@ rx_starts_upper = <{ regex.new("^[A-Z]") }>
 rx_all_upper    = <{ regex.new([[^[A-Z_]+$]]) }>
 
 -- Multi-byte (non-ASCII) operators recognised by the Tiri lexer, keyed by their UTF-8 byte sequence.  These are
--- scanned byte-at-a-time by :sub(), so the tokeniser cannot match them with a single-character comparison and must
+-- scanned byte-at-a-time by .sub(), so the tokeniser cannot match them with a single-character comparison and must
 -- look them up by their full sequence.  The value is the number of UTF-8 bytes the operator occupies.
 MULTIBYTE_OPERATORS = {
    ['«'] = 2, ['»'] = 2, ['×'] = 2, ['÷'] = 2,
@@ -45,7 +45,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    -- Helper to add a token (skips zero-length tokens)
    function addToken(TokenLine, TokenCol, TokenLen, TokenType, TokenMod)
       if TokenLen <= 0 then return end  -- Skip invalid tokens
-      tokens:push({
+      tokens.push({
          line   = TokenLine,
          char   = TokenCol,
          length = TokenLen,
@@ -57,7 +57,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    -- Skip whitespace and track position
    function skipWhitespace()
       while pos < len do
-         c = Source:sub(pos, pos + 1)
+         c = Source.sub(pos, pos + 1)
          if c is ' ' or c is '\t' then
             col++
             pos++
@@ -67,7 +67,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             pos++
          elseif c is '\r' then
             pos++
-            if pos < len and Source:sub(pos, pos + 1) is '\n' then
+            if pos < len and Source.sub(pos, pos + 1) is '\n' then
                pos++
             end
             line++
@@ -105,7 +105,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
 
    function previousNonWhitespace(Pos:num):num
       while Pos >= 0 do
-         c = Source:sub(Pos, Pos + 1)
+         c = Source.sub(Pos, Pos + 1)
          if c is ' ' or c is '\t' then Pos -= 1 else break end
       end
       return Pos
@@ -113,7 +113,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
 
    function nextNonWhitespace(Pos:num):num
       while Pos < len do
-         c = Source:sub(Pos, Pos + 1)
+         c = Source.sub(Pos, Pos + 1)
          if c is ' ' or c is '\t' then Pos++ else break end
       end
       return Pos
@@ -122,7 +122,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    function skipQuotedSource(Pos:num, Quote):num
       Pos++
       while Pos < len do
-         c = Source:sub(Pos, Pos + 1)
+         c = Source.sub(Pos, Pos + 1)
          if c is '\\' then
             Pos += 2
          elseif c is Quote then
@@ -142,7 +142,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       before = previousNonWhitespace(StartPos - 1)
 
       if before < 0 then return false end
-      prev = Source:sub(before, before + 1)
+      prev = Source.sub(before, before + 1)
       if prev is '{' or prev is ',' or prev is ';' or prev is '.' or prev is ':' or
             not canEndRangeExpression(prev) then
          return false
@@ -152,7 +152,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       brace_pos = nil
       scan = StartPos - 1
       while scan >= 0 do
-         sc = Source:sub(scan, scan + 1)
+         sc = Source.sub(scan, scan + 1)
          if sc is '}' or sc is ']' or sc is ')' then
             depth++
          elseif sc is '{' then
@@ -174,7 +174,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       after = nextNonWhitespace(StopPos)
 
       if after >= len then return false end
-      next_c = Source:sub(after, after + 1)
+      next_c = Source.sub(after, after + 1)
       if next_c is '}' or next_c is ',' or next_c is ';' or next_c is '.' or next_c is ':' or
             next_c is '=' then
          return false
@@ -184,7 +184,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       close_pos = nil
       scan = after
       while scan < len do
-         sc = Source:sub(scan, scan + 1)
+         sc = Source.sub(scan, scan + 1)
          if sc is '{' or sc is '[' or sc is '(' then
             depth++
          elseif sc is '}' then
@@ -211,7 +211,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       depth = 0
 
       while scan < close_pos do
-         sc = Source:sub(scan, scan + 1)
+         sc = Source.sub(scan, scan + 1)
 
          if sc is '"' or sc is "'" then
             if depth is 0 then
@@ -240,15 +240,15 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             return false
          elseif isIdentStart(sc) then
             word_start = scan
-            while scan < close_pos and isIdentChar(Source:sub(scan, scan + 1)) do
+            while scan < close_pos and isIdentChar(Source.sub(scan, scan + 1)) do
                scan++
             end
 
-            word = Source:sub(word_start, scan)
+            word = Source.sub(word_start, scan)
             prev_pos = previousNonWhitespace(word_start - 1)
             next_pos = nextNonWhitespace(scan)
-            prev_char = prev_pos >= 0 and Source:sub(prev_pos, prev_pos + 1) or ''
-            next_char = next_pos < len and Source:sub(next_pos, next_pos + 1) or ''
+            prev_char = prev_pos >= 0 and Source.sub(prev_pos, prev_pos + 1) or ''
+            next_char = next_pos < len and Source.sub(next_pos, next_pos + 1) or ''
             member_name_context = prev_char is '.' or prev_char is ':'
             can_separate = not member_name_context and canEndRangeExpression(prev_char) and
                not (next_char is '}' or next_char is ',' or next_char is ';' or next_char is '.' or
@@ -284,15 +284,15 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       skipWhitespace()
       if pos >= len then break end
 
-      c = Source:sub(pos, pos + 1)
+      c = Source.sub(pos, pos + 1)
       start_col = col
       start_pos = pos
 
-      -- Multi-byte operators (≈, ≠, ≤, ≥, «, », ×, ÷, ...).  :sub() is byte-indexed, so a single-byte comparison
+      -- Multi-byte operators (≈, ≠, ≤, ≥, «, », ×, ÷, ...).  .sub() is byte-indexed, so a single-byte comparison
       -- can never match these; look up the full UTF-8 sequence and emit an operator token spanning its bytes.
 
-      op_bytes = (c:byte(0) or 0) >= 0x80 and (MULTIBYTE_OPERATORS[Source:sub(pos, pos + 3)] or
-         MULTIBYTE_OPERATORS[Source:sub(pos, pos + 2)]) or nil
+      op_bytes = (c.byte(0) or 0) >= 0x80 and (MULTIBYTE_OPERATORS[Source.sub(pos, pos + 3)] or
+         MULTIBYTE_OPERATORS[Source.sub(pos, pos + 2)]) or nil
 
       if op_bytes then
          addToken(line, col, op_bytes, 1, 0)  -- operator
@@ -300,20 +300,20 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          col += op_bytes
 
       -- Line comment: --
-      elseif c is '-' and pos + 1 < len and Source:sub(pos + 1, pos + 2) is '-' then
+      elseif c is '-' and pos + 1 < len and Source.sub(pos + 1, pos + 2) is '-' then
          comment_start = col
 
          -- Check for block comment --[[
-         if pos + 3 < len and Source:sub(pos + 2, pos + 4) is '[[' then
+         if pos + 3 < len and Source.sub(pos + 2, pos + 4) is '[[' then
             pos += 4
             col += 4
             -- Find closing ]]
             while pos < len do
-               if Source:sub(pos, pos + 2) is ']]' then
+               if Source.sub(pos, pos + 2) is ']]' then
                   pos += 2
                   col += 2
                   break
-               elseif Source:sub(pos, pos + 1) is '\n' then
+               elseif Source.sub(pos, pos + 1) is '\n' then
                   -- Only add token if there's content on this line
                   if col > comment_start then
                      addToken(line, comment_start, col - comment_start, 6, 0)  -- comment
@@ -333,7 +333,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             end
          else
             -- Line comment - find end of line
-            while pos < len and Source:sub(pos, pos + 1) != '\n' do
+            while pos < len and Source.sub(pos, pos + 1) != '\n' do
                pos++
                col++
             end
@@ -347,7 +347,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          pos++
          col++
          while pos < len do
-            sc = Source:sub(pos, pos + 1)
+            sc = Source.sub(pos, pos + 1)
             if sc is quote then
                pos++
                col++
@@ -365,14 +365,14 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          addToken(line, str_start, col - str_start, 4, 0)  -- string
 
       -- Multiline string [[
-      elseif c is '[' and pos + 1 < len and Source:sub(pos + 1, pos + 2) is '[' then
+      elseif c is '[' and pos + 1 < len and Source.sub(pos + 1, pos + 2) is '[' then
          str_start_line = line
          str_start_col = col
          pos += 2
          col += 2
          segment_start = col
          while pos < len do
-            if Source:sub(pos, pos + 2) is ']]' then
+            if Source.sub(pos, pos + 2) is ']]' then
                if col > segment_start or line is str_start_line then
                   addToken(line, (line is str_start_line) and str_start_col or 0,
                      (line is str_start_line) and (col - str_start_col + 2) or (col + 2), 4, 0)
@@ -380,7 +380,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
                pos += 2
                col += 2
                break
-            elseif Source:sub(pos, pos + 1) is '\n' then
+            elseif Source.sub(pos, pos + 1) is '\n' then
                if line is str_start_line then
                   addToken(line, str_start_col, col - str_start_col, 4, 0)
                else
@@ -397,14 +397,14 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
 
       -- Numbers
-      elseif isDigit(c) or (c is '.' and pos + 1 < len and isDigit(Source:sub(pos + 1, pos + 2))) then
+      elseif isDigit(c) or (c is '.' and pos + 1 < len and isDigit(Source.sub(pos + 1, pos + 2))) then
          num_start = col
          -- Hex number
-         if c is '0' and pos + 1 < len and (Source:sub(pos + 1, pos + 2) is 'x' or Source:sub(pos + 1, pos + 2) is 'X') then
+         if c is '0' and pos + 1 < len and (Source.sub(pos + 1, pos + 2) is 'x' or Source.sub(pos + 1, pos + 2) is 'X') then
             pos += 2
             col += 2
             while pos < len do
-               nc = Source:sub(pos, pos + 1)
+               nc = Source.sub(pos, pos + 1)
                if isDigit(nc) or (nc >= 'a' and nc <= 'f') or (nc >= 'A' and nc <= 'F') then
                   pos++
                   col++
@@ -414,28 +414,28 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             end
          else
             -- Decimal number
-            while pos < len and isDigit(Source:sub(pos, pos + 1)) do
+            while pos < len and isDigit(Source.sub(pos, pos + 1)) do
                pos++
                col++
             end
             -- Decimal part
-            if pos < len and Source:sub(pos, pos + 1) is '.' then
+            if pos < len and Source.sub(pos, pos + 1) is '.' then
                pos++
                col++
-               while pos < len and isDigit(Source:sub(pos, pos + 1)) do
+               while pos < len and isDigit(Source.sub(pos, pos + 1)) do
                   pos++
                   col++
                end
             end
             -- Exponent
-            if pos < len and (Source:sub(pos, pos + 1) is 'e' or Source:sub(pos, pos + 1) is 'E') then
+            if pos < len and (Source.sub(pos, pos + 1) is 'e' or Source.sub(pos, pos + 1) is 'E') then
                pos++
                col++
-               if pos < len and (Source:sub(pos, pos + 1) is '+' or Source:sub(pos, pos + 1) is '-') then
+               if pos < len and (Source.sub(pos, pos + 1) is '+' or Source.sub(pos, pos + 1) is '-') then
                   pos++
                   col++
                end
-               while pos < len and isDigit(Source:sub(pos, pos + 1)) do
+               while pos < len and isDigit(Source.sub(pos, pos + 1)) do
                   pos++
                   col++
                end
@@ -444,11 +444,11 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          addToken(line, num_start, col - num_start, 5, 0)  -- number
       elseif isIdentStart(c) then -- Identifiers and keywords
          ident_start = col
-         while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+         while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
             pos++
             col++
          end
-         ident = Source:sub(start_pos, pos)
+         ident = Source.sub(start_pos, pos)
          ident_len = col - ident_start
 
          if isRangeOperator(start_pos, pos, ident) then
@@ -457,27 +457,27 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             -- 'struct' is a soft keyword.  Followed immediately by '<' it forms a struct<Name> type reference or
             -- explicit construction; followed by an identifier it begins an end-terminated declaration.  Anything
             -- else is the runtime library namespace, e.g. struct.new().
-            if pos < len and Source:sub(pos, pos + 1) is '<' then
+            if pos < len and Source.sub(pos, pos + 1) is '<' then
                sk_pos = pos
                sk_col = col
                pos++
                col++
-               while pos < len and (Source:sub(pos, pos + 1) is ' ' or Source:sub(pos, pos + 1) is '\t') do
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
                   pos++
                   col++
                end
-               if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
+               if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
                   name_col = col
-                  while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+                  while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
                      pos++
                      col++
                   end
                   name_len = col - name_col
-                  while pos < len and (Source:sub(pos, pos + 1) is ' ' or Source:sub(pos, pos + 1) is '\t') do
+                  while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
                      pos++
                      col++
                   end
-                  if pos < len and Source:sub(pos, pos + 1) is '>' then
+                  if pos < len and Source.sub(pos, pos + 1) is '>' then
                      pos++
                      col++
                      addToken(line, ident_start, ident_len, 0, 0)  -- 'struct' keyword
@@ -496,11 +496,11 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             sk_line = line
             sk_matched = false
             skipWhitespace()
-            if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
+            if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
                name_line = line
                name_col = col
                name_pos = pos
-               while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
                   pos++
                   col++
                end
@@ -530,21 +530,21 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             module_line = line
             module_col = col
             module_start = pos
-            if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
-               while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do pos++; col++ end
+            if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
                module_len = pos - module_start
                skipWhitespace()
                as_line = line
                as_col = col
                as_start = pos
-               while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do pos++; col++ end
-               as_word = Source:sub(as_start, pos)
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
+               as_word = Source.sub(as_start, pos)
                skipWhitespace()
                namespace_line = line
                namespace_col = col
                namespace_start = pos
-               if as_word is 'as' and pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
-                  while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do pos++; col++ end
+               if as_word is 'as' and pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+                  while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
                   addToken(after_keyword_line, ident_start, ident_len, 0, 0)
                   addToken(module_line, module_col, module_len, 10, 8)
                   addToken(as_line, as_col, 2, 0, 0)
@@ -559,7 +559,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             save_col = col
             save_line = line
             skipWhitespace()
-            if pos < len and Source:sub(pos, pos + 1) is '(' then
+            if pos < len and Source.sub(pos, pos + 1) is '(' then
                addToken(save_line, ident_start, ident_len, 3, 0)
             end
             pos = save_pos
@@ -575,7 +575,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             addToken(line, ident_start, ident_len, 3, 128)  -- function + defaultLibrary
          elseif FLUID_MODULES[ident] or module_prefixes[ident] then
             addToken(line, ident_start, ident_len, 10, 0)  -- namespace
-         elseif ident:startsWith('ERR_') then
+         elseif ident.startsWith('ERR_') then
             addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly (error constants)
          elseif rx_global_var.test(ident) then
             addToken(line, ident_start, ident_len, 2, 8)  -- variable + static (global)
@@ -588,7 +588,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             save_col = col
             save_line = line
             skipWhitespace()
-            if pos < len and Source:sub(pos, pos + 1) is '(' then
+            if pos < len and Source.sub(pos, pos + 1) is '(' then
                addToken(save_line, ident_start, ident_len, 3, 0)  -- function
             end
             -- Restore position (we don't consume the paren)
@@ -601,15 +601,15 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          pos++
          col++
 
-         if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
+         if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
             name_start = col
             name_pos = pos
-            while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+            while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
                pos++
                col++
             end
 
-            anno_name = Source:sub(name_pos, pos)
+            anno_name = Source.sub(name_pos, pos)
             token_type = 3
             token_mod = 0
             if FLUID_PARSER_ANNOTATIONS[anno_name] then
@@ -626,27 +626,27 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '?' then -- Symbolic operators (multi-character first, then single-character)
          op_start = col
-         if pos + 2 < len and Source:sub(pos + 1, pos + 3) is '?=' then
+         if pos + 2 < len and Source.sub(pos + 1, pos + 3) is '?=' then
             -- ??= if-empty assignment
             addToken(line, op_start, 3, 1, 0)
             pos += 3
             col += 3
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '?' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '?' then
             -- ?? if-empty operator or extended ternary condition
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- ?= if-nil assignment
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '.' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '.' then
             -- ?. safe navigation
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '[' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '[' then
             -- ?[ safe index
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -659,7 +659,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '|' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
             -- |> pipe operator
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -672,7 +672,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '=' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
             -- => arrow function
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -684,7 +684,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is ':' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
             -- :> ternary else
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -696,17 +696,17 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '.' then
          op_start = col
-         if pos + 2 < len and Source:sub(pos + 1, pos + 3) is '.=' then
+         if pos + 2 < len and Source.sub(pos + 1, pos + 3) is '.=' then
             -- ..= concatenation assignment
             addToken(line, op_start, 3, 1, 0)
             pos += 3
             col += 3
-         elseif pos + 2 < len and Source:sub(pos + 1, pos + 3) is '..' then
+         elseif pos + 2 < len and Source.sub(pos + 1, pos + 3) is '..' then
             -- ... varargs
             addToken(line, op_start, 3, 1, 0)
             pos += 3
             col += 3
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '.' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '.' then
             -- .. concatenation
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -718,12 +718,12 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '+' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '+' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '+' then
             -- ++ increment
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- += compound assignment
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -736,7 +736,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '-' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- -= compound assignment
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -749,12 +749,12 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '*' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- *= compound assignment
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '*' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '*' then
             -- ** exponentiation
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -767,7 +767,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '/' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- /= compound assignment
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -780,7 +780,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '%' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- %= compound assignment
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -793,12 +793,12 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '<' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '<' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '<' then
             -- << left shift
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- <= less than or equal
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -811,12 +811,12 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '>' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '>' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
             -- >> right shift
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
-         elseif pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- >= greater than or equal
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -829,7 +829,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          end
       elseif c is '!' then
          op_start = col
-         if pos + 1 < len and Source:sub(pos + 1, pos + 2) is '=' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
             -- != not equal
             addToken(line, op_start, 2, 1, 0)
             pos += 2
@@ -865,17 +865,17 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    -- everything that follows them on the same line.
 
    line_starts = array<int>
-   line_starts:push(0)
+   line_starts.push(0)
    scan = 0
    while scan < len do
-      if Source:sub(scan, scan + 1) is '\n' then line_starts:push(scan + 1) end
+      if Source.sub(scan, scan + 1) is '\n' then line_starts.push(scan + 1) end
       scan++
    end
 
    for tok in values(tokens) do
       line_start = line_starts[tok.line] or 0
-      line_end = Source:find('\n', line_start) or len
-      line_text = Source:sub(line_start, line_end)
+      line_end = Source.find('\n', line_start) or len
+      line_text = Source.sub(line_start, line_end)
 
       byte_start = tok.char
       byte_end = tok.char + tok.length
@@ -902,10 +902,10 @@ global function extractFoldingRanges(Doc:table):array<table>
 
       -- Handle block comments --[[ ... ]]
       if in_block_comment then
-         if line_text:find(']]') then
+         if line_text.find(']]') then
             -- End of block comment
             if line_num > block_comment_start then
-               ranges:push({
+               ranges.push({
                   startLine = block_comment_start,
                   endLine = line_num,
                   kind = FOLDING_KIND.COMMENT
@@ -917,10 +917,10 @@ global function extractFoldingRanges(Doc:table):array<table>
       end
 
       -- Check for block comment start
-      block_comment_pos = line_text:find('--[[')
+      block_comment_pos = line_text.find('--[[')
       if block_comment_pos then
          -- Check it's not inside a string (simplified check)
-         before = line_text:sub(0, block_comment_pos)
+         before = line_text.sub(0, block_comment_pos)
          if not rx_quote_char.test(before) then
             in_block_comment = true
             block_comment_start = line_num
@@ -933,12 +933,12 @@ global function extractFoldingRanges(Doc:table):array<table>
 
       -- Skip if line is a comment
       trimmed = rx_trim_start.extract(line_text)
-      if trimmed:sub(0, 2) is '--' then
+      if trimmed.sub(0, 2) is '--' then
          continue
       end
 
       -- Find comment position to avoid matching keywords in comments
-      comment_pos = line_text:find('--')
+      comment_pos = line_text.find('--')
 
       -- Check for block openers (only if not in a comment)
       function checkKeyword(RxPattern):num
@@ -951,46 +951,46 @@ global function extractFoldingRanges(Doc:table):array<table>
 
       -- function ... (opens a block)
       if checkKeyword(rx_func_sig) or checkKeyword(rx_func_paren) then
-         block_stack:push({ line = line_num, kind = 'function' })
+         block_stack.push({ line = line_num, kind = 'function' })
       end
 
       -- if ... then (opens a block)
       if checkKeyword(rx_kw_if) and checkKeyword(rx_kw_then) then
-         block_stack:push({ line = line_num, kind = 'if' })
+         block_stack.push({ line = line_num, kind = 'if' })
       end
 
       -- for ... do (opens a block)
       if checkKeyword(rx_kw_for) and checkKeyword(rx_kw_do) then
-         block_stack:push({ line = line_num, kind = 'for' })
+         block_stack.push({ line = line_num, kind = 'for' })
       end
 
       -- while ... do (opens a block)
       if checkKeyword(rx_kw_while) and checkKeyword(rx_kw_do) then
-         block_stack:push({ line = line_num, kind = 'while' })
+         block_stack.push({ line = line_num, kind = 'while' })
       end
 
       -- repeat (opens a block, closed by until)
       if checkKeyword(rx_kw_repeat) then
-         block_stack:push({ line = line_num, kind = 'repeat' })
+         block_stack.push({ line = line_num, kind = 'repeat' })
       end
 
       -- defer (opens a block)
       if checkKeyword(rx_kw_defer) then
-         block_stack:push({ line = line_num, kind = 'defer' })
+         block_stack.push({ line = line_num, kind = 'defer' })
       end
 
       -- struct Name ... end (declaration block)
       if checkKeyword(rx_kw_struct) then
-         block_stack:push({ line = line_num, kind = 'struct' })
+         block_stack.push({ line = line_num, kind = 'struct' })
       end
 
       -- Check for block closers
       -- 'end' closes function, if, for, while, defer and struct declarations
       if checkKeyword(rx_kw_end) then
          if #block_stack > 0 then
-            block_start = block_stack:pop()
+            block_start = block_stack.pop()
             if block_start and line_num > block_start.line then
-               ranges:push({
+               ranges.push({
                   startLine = block_start.line,
                   endLine = line_num
                })
@@ -1001,9 +1001,9 @@ global function extractFoldingRanges(Doc:table):array<table>
       -- 'until' closes repeat
       if checkKeyword(rx_kw_until) then
          if #block_stack > 0 then
-            block_start = block_stack:pop()
+            block_start = block_stack.pop()
             if block_start and block_start.kind is 'repeat' and line_num > block_start.line then
-               ranges:push({
+               ranges.push({
                   startLine = block_start.line,
                   endLine = line_num
                })
@@ -1027,11 +1027,11 @@ global function encodeSemanticTokens(Tokens:array<table>):array<int>
       delta_line = tok.line - prev_line
       delta_char = (delta_line is 0) and (tok.char - prev_char) or tok.char
 
-      data:push(delta_line)
-      data:push(delta_char)
-      data:push(tok.length)
-      data:push(tok.type)
-      data:push(tok.modifiers)
+      data.push(delta_line)
+      data.push(delta_char)
+      data.push(tok.length)
+      data.push(tok.type)
+      data.push(tok.modifiers)
 
       prev_line = tok.line
       prev_char = tok.char
@@ -1107,7 +1107,7 @@ global function computeTokenEdits(OldData:array<int>, NewData:array<int>):array<
    if insert_count > 0 then
       edit.data = array<int>
       for i in {prefix_ints to prefix_ints + insert_count} do
-         edit.data:push(NewData[i])
+         edit.data.push(NewData[i])
       end
    end
 

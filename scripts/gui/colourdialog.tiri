@@ -39,7 +39,7 @@ function saveColours(self)
 
    svgColours = array<string> {}
    for col in values(self._userColours) do
-      svgColours:push(tostring(col))
+      svgColours.push(tostring(col))
    end
 
    output = json.encode(svgColours)
@@ -59,7 +59,7 @@ function updateRGBInput(self, RGB:table)
    RGB ?! return
    self._rgb = RGB
    self.vecChosenColour?.fill = tostring(self._rgb)
-   self.inputRGB:setText(tostring(self._rgb))
+   self.inputRGB.setText(tostring(self._rgb))
    self.viewport.acDraw()
 end
 
@@ -189,7 +189,7 @@ function buildLayout(self, Options)
             roundY = 2
          })
 
-         self._links:push({
+         self._links.push({
             vector=vec, x=x, y=y, width=BTNSIZE, height=BTNSIZE, colour=rgb,
             routine = function(Link)
                updateRGBInput(self, Link.colour)
@@ -247,9 +247,9 @@ function buildLayout(self, Options)
             roundY = 2
          })
 
-         self._colourNodes:push(vec)
+         self._colourNodes.push(vec)
          index = (((row-1) * 7) + column) - 1
-         self._links:push({ vector=vec, x=x, y=y, width=BTNSIZE, height=BTNSIZE, colour=rgb, index=index,
+         self._links.push({ vector=vec, x=x, y=y, width=BTNSIZE, height=BTNSIZE, colour=rgb, index=index,
             routine = function(Link)
                if self._userColours?[index] then updateRGBInput(self, self._userColours[index]) end
             end
@@ -266,13 +266,13 @@ function buildLayout(self, Options)
             target = self.viewport, x = x+2, y = y, size = BTNSIZE, image = 'items/add',
             events = {
                activate = function(Icon)
-                  if self._userColours:any(col => ((col.r is self._rgb.r) and (col.g is self._rgb.g) and (col.b is self._rgb.b))) then
+                  if self._userColours.any(col => ((col.r is self._rgb.r) and (col.g is self._rgb.g) and (col.b is self._rgb.b))) then
                      return
                   end
 
                   if #self._userColours < 7 * 2 then
                      self._paletteChanged = true
-                     self._userColours:push(self._rgb)
+                     self._userColours.push(self._rgb)
                      refreshColourNodes(self)
                      self.viewport.acDraw()
                   else
@@ -289,7 +289,7 @@ function buildLayout(self, Options)
                   for k, col in ipairs(self._userColours) do
                      if (col.r is self._rgb.r) and (col.g is self._rgb.g) and (col.b is self._rgb.b) then
                         self._paletteChanged = true
-                        self._userColours:remove(k)
+                        self._userColours.remove(k)
                         refreshColourNodes(self)
                         self.viewport.acDraw()
                         break
@@ -391,7 +391,7 @@ function buildLayout(self, Options)
       events = {
          activate = function(Widget)
             self?.feedback(nil)
-            table.clear(self)
+            self.clear()
             processing.collect('defer')
          end
       }
@@ -407,7 +407,7 @@ function buildLayout(self, Options)
          activate = function(Widget)
             saveColours(self)
             self?.feedback(self._rgb)
-            table.clear(self)
+            self.clear()
             processing.collect('defer')
          end
       }
@@ -584,14 +584,14 @@ gui.dialog.colour = function(Options)
          close = function(Window)
             saveColours(self)
             self?.feedback(nil)
-            table.clear(self)
+            self.clear()
          end
       }
    })
 
    self.scene = self._window.scene
 
-   self.viewport = self._window:clientViewport({
+   self.viewport = self._window.clientViewport({
       resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
          arrangeLayout(self)
       end
@@ -602,15 +602,15 @@ gui.dialog.colour = function(Options)
    self.viewport.viewWidth, self.viewport.viewHeight = buildLayout(self, Options)
    scale = self.viewport.viewHeight / self.viewport.viewWidth
    client = { width = 600, height = 600 * scale }
-   self._window:resizeClientArea(client.width, math.floor(client.width * scale))
-   self._window:sizeHints(client.width/4, client.height/4, client.width * 3, client.height * 3, true)
+   self._window.resizeClientArea(client.width, math.floor(client.width * scale))
+   self._window.sizeHints(client.width/4, client.height/4, client.width * 3, client.height * 3, true)
 
    updateRGBInput(self, gui.strToRGB(Options.colour ?? 'rgb(200,200,200)'))
 
    check self.viewport.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, inputFeedback)
 
-   self._window:moveToFront()
-   self._window:show(true)
+   self._window.moveToFront()
+   self._window.show(true)
 
    arrangeLayout(self)
 

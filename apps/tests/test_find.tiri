@@ -26,11 +26,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function quoteTaskParam(Param:str):str
-   if Param:find(' ') is nil and Param:find('"') is nil then
+   if Param.find(' ') is nil and Param.find('"') is nil then
       return Param
    end
 
-   return '"' .. Param:replace('"', '\\"') .. '"'
+   return '"' .. Param.replace('"', '\\"') .. '"'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -38,24 +38,24 @@ end
 function runFind(Parameters:array<string>):table
    local output = ''
    local errors = ''
-   local task_params = array<string> { quoteTaskParam(glFindPath:replace('\\', '/')) }
+   local task_params = array<string> { quoteTaskParam(glFindPath.replace('\\', '/')) }
 
    for param in values(Parameters) do
-      task_params:push(quoteTaskParam(param))
+      task_params.push(quoteTaskParam(param))
    end
-   task_params:push('--log-warning')
-   task_params:push('--no-console')
+   task_params.push('--log-warning')
+   task_params.push('--no-console')
 
    local task = obj.new('task', {
       src = glOrigoPath,
-      args = task_params:concat(' '),
+      args = task_params.concat(' '),
       flags = TSF_WAIT|TSF_SHELL,
       timeout = 10,
       outputCallback = function(Task:obj, Buffer:array<byte>)
-         output ..= Buffer:getString()
+         output ..= Buffer.getString()
       end,
       errorCallback = function(Task:obj, Buffer:array<byte>)
-         errors ..= Buffer:getString()
+         errors ..= Buffer.getString()
       end
    })
 
@@ -80,7 +80,7 @@ end
    })
 
    assert(result.returnCode is 0, 'Content search should return 0: ' .. result.errors)
-   assert(result.text:find('find.tiri') != nil, 'Content search returned unexpected output: ' .. result.text)
+   assert(result.text.find('find.tiri') != nil, 'Content search returned unexpected output: ' .. result.text)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -94,7 +94,7 @@ end
    })
 
    assert(result.returnCode is 0, 'Non-matching content search should return 0: ' .. result.errors)
-   assert(result.text:find('0') != nil, 'Non-matching content search should report zero: ' .. result.text)
+   assert(result.text.find('0') != nil, 'Non-matching content search should report zero: ' .. result.text)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -103,7 +103,7 @@ end
    result = runFind(array<string> { 'help' })
 
    assert(result.returnCode is 0, 'Help should return 0: ' .. result.errors)
-   assert(result.text:find('content=CONTENT'), 'Help should list the content option')
-   assert(result.text:find('Match files containing the specified literal text.'),
+   assert(result.text.find('content=CONTENT'), 'Help should list the content option')
+   assert(result.text.find('Match files containing the specified literal text.'),
       'Help should describe literal content matching')
 end

@@ -121,7 +121,7 @@ end
 @Test function TableSliceWithStep()
    t = {10, 20, 30, 40, 50, 60, 70}
    r = range(0, 7, true, 2)  -- Every 2nd element: {10, 30, 50, 70}
-   result = table.slice(t, r)
+   result = t.slice(r)
    assert(#result is 4, "stepped slice should have 4 elements, got " .. #result)
    assert(result[0] is 10, "first element should be 10")
    assert(result[1] is 30, "second element should be 30")
@@ -132,7 +132,7 @@ end
 @Test function TableSliceWithStepThree()
    t = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
    r = range(0, 9, true, 3)  -- Every 3rd: {0, 3, 6, 9}
-   result = table.slice(t, r)
+   result = t.slice(r)
    assert(#result is 4, "step 3 slice should have 4 elements, got " .. #result)
    assert(result[0] is 0)
    assert(result[1] is 3)
@@ -172,7 +172,7 @@ end
    t = {10, 20, 30, 40, 50, 60, 70}
    r = range(6, 0, true, -2)  -- 6, 4, 2, 0
    -- Custom step requires explicit table.slice() call
-   result = table.slice(t, r)
+   result = t.slice(r)
    assert(#result is 4, "reverse stepped slice should have 4 elements, got " .. #result)
    assert(result[0] is 70, "first should be 70")
    assert(result[1] is 50, "second should be 50")
@@ -290,7 +290,7 @@ end
    t = {10, 20, 30, 40, 50}
    r = {1 to 4}
    -- Range variables require explicit table.slice() call
-   result = table.slice(t, r)
+   result = t.slice(r)
    assert(#result is 3, "slice using range variable should work")
    assert(result[0] is 20)
    assert(result[2] is 40)
@@ -299,7 +299,7 @@ end
 @Test function TableSliceUsingRangeConstructor()
    t = {10, 20, 30, 40, 50}
    -- Range constructor also requires explicit table.slice() call
-   result = table.slice(t, range(1, 4))
+   result = t.slice(range(1, 4))
    assert(#result is 3, "slice using range() constructor should work")
    assert(result[0] is 20)
    assert(result[2] is 40)

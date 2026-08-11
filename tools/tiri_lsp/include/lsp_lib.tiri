@@ -51,7 +51,7 @@ function rebuildLineIndex(Doc:table, FromLine:num)
       end
 
       -- Remove entries from FromLine onwards
-      Doc.lineIndex:resize(keep_count)
+      Doc.lineIndex.resize(keep_count)
 
       -- Start scanning from where FromLine begins
       if keep_count >= 2 then
@@ -65,19 +65,19 @@ function rebuildLineIndex(Doc:table, FromLine:num)
 
    while pos < len do
       -- Find end of line (newline or end of content)
-      newline_pos = content:find('\n', pos)
+      newline_pos = content.find('\n', pos)
       if newline_pos then
-         Doc.lineIndex:push(pos, newline_pos - 1)
+         Doc.lineIndex.push(pos, newline_pos - 1)
          pos = newline_pos + 1  -- Skip past the newline
       else
-         Doc.lineIndex:push(pos, len - 1)
+         Doc.lineIndex.push(pos, len - 1)
          break
       end
    end
 
    -- Handle empty document or trailing newline
-   if #Doc.lineIndex is 0 or (len > 0 and content:sub(len - 1, len) is '\n') then
-      Doc.lineIndex:push(len, len)  -- start, stop
+   if #Doc.lineIndex is 0 or (len > 0 and content.sub(len - 1, len) is '\n') then
+      Doc.lineIndex.push(len, len)  -- start, stop
    end
 end
 
@@ -92,7 +92,7 @@ global function getLine(Doc:table, LineNo:num):str
    if LineNo < 0 or LineNo >= total_lines then return '' end
 
    idx = LineNo * 2
-   return Doc.content:sub(Doc.lineIndex[idx], Doc.lineIndex[idx + 1] + 1)
+   return Doc.content.sub(Doc.lineIndex[idx], Doc.lineIndex[idx + 1] + 1)
 end
 
 -- Mark line N and subsequent lines for recomputation.  Currently we are very lazy about this...
@@ -109,7 +109,7 @@ end
 -- LSP positions count characters in UTF-16 code units, whilst Tiri strings are byte-indexed.  Multi-byte operators
 -- such as ≈, ≠, ≤, ≥ occupy three UTF-8 bytes but a single UTF-16 unit, so edits and diagnostics on lines that
 -- contain them drift unless the column is converted.  The helpers below operate on a single line's byte text and
--- treat the byte offset as the 0-based start used elsewhere by :sub(pos, pos + 1).
+-- treat the byte offset as the 0-based start used elsewhere by .sub(pos, pos + 1).
 --
 -- A UTF-8 lead byte determines both the codepoint's byte length and its UTF-16 unit count:
 --    0x00-0x7F : 1 byte,  1 unit
@@ -136,7 +136,7 @@ global function utf16ColToByteCol(LineText:str, Utf16Col:num):num
    units = 0
 
    while units < Utf16Col and byte_pos < len do
-      lead = LineText:byte(byte_pos)   -- :byte() is 0-based
+      lead = LineText.byte(byte_pos)   -- .byte() is 0-based
       seq = utf8SequenceLength(lead)
       byte_pos += seq
       units += (seq is 4) and 2 or 1
@@ -156,7 +156,7 @@ global function byteColToUtf16Col(LineText:str, ByteCol:num):num
    units = 0
 
    while byte_pos < ByteCol do
-      lead = LineText:byte(byte_pos)   -- :byte() is 0-based
+      lead = LineText.byte(byte_pos)   -- .byte() is 0-based
       seq = utf8SequenceLength(lead)
       byte_pos += seq
       units += (seq is 4) and 2 or 1
@@ -385,9 +385,9 @@ end
 
 global function moduleDocumentByName(Name:str):table
    if not Name or not glDocCache?.modules then return nil end
-   local canonical_name = Name:lower()
+   local canonical_name = Name.lower()
    for module_name, module_doc in pairs(glDocCache.modules) do
-      if module_name:lower() is canonical_name then return module_doc end
+      if module_name.lower() is canonical_name then return module_doc end
    end
    return nil
 end
@@ -442,7 +442,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
    line_text = getLine(Doc, Line)
    if Column >= #line_text then return Column, Column + 1 end
 
-   c = line_text:sub(Column, Column + 1)
+   c = line_text.sub(Column, Column + 1)
 
    -- If starting on an identifier/number character, extend both directions
    if isIdentChar(c) or (c >= '0' and c <= '9') then
@@ -450,7 +450,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
 
       start_col = Column
       while start_col > 0 do
-         prev_c = line_text:sub(start_col - 1, start_col)
+         prev_c = line_text.sub(start_col - 1, start_col)
          if isIdentChar(prev_c) or (prev_c >= '0' and prev_c <= '9') then
             start_col -= 1
          else
@@ -462,7 +462,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
 
       end_col = Column + 1
       while end_col < #line_text do
-         next_c = line_text:sub(end_col, end_col + 1)
+         next_c = line_text.sub(end_col, end_col + 1)
          if isIdentChar(next_c) or (next_c >= '0' and next_c <= '9') then
             end_col++
          else
@@ -475,7 +475,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
    -- For operators and punctuation, try to capture multi-character operators
 
    if c is '=' or c is '!' or c is '<' or c is '>' or c is '~' or c is ':' or c is '.' or c is '≈' then
-      next_c = (Column + 1 < #line_text) and line_text:sub(Column + 1, Column + 2) or ''
+      next_c = (Column + 1 < #line_text) and line_text.sub(Column + 1, Column + 2) or ''
       if next_c is '=' or next_c is '>' then
          return Column, Column + 2
       end
@@ -486,7 +486,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
    if c is '"' or c is "'" then
       end_col = Column + 1
       while end_col < #line_text do
-         sc = line_text:sub(end_col, end_col + 1)
+         sc = line_text.sub(end_col, end_col + 1)
          if sc is c then
             return Column, end_col + 1
          elseif sc is '\\' then
@@ -532,7 +532,7 @@ global function computeDiagnostics(Doc:table)
          start_col = byteColToUtf16Col(diag_line, start_col)
          end_col = byteColToUtf16Col(diag_line, end_col)
 
-         lsp_diags:push({
+         lsp_diags.push({
             range = {
                start = { line = diag.line, character = start_col },
                ['end'] = { line = diag.line, character = end_col }
@@ -559,7 +559,7 @@ global function computeDiagnostics(Doc:table)
          start_col = byteColToUtf16Col(tip_line, start_col)
          end_col = byteColToUtf16Col(tip_line, end_col)
 
-         lsp_diags:push({
+         lsp_diags.push({
             range = {
                start = { line = tip.line, character = start_col },
                ['end'] = { line = tip.line, character = end_col }
@@ -593,7 +593,7 @@ end
 global function lspInitDocs(DocPath)
    DocPath ?! return false
 
-   if not (DocPath:endsWith('/') or DocPath:endsWith('\\')) then -- Ensure path ends with separator
+   if not (string.endsWith(DocPath, '/') or string.endsWith(DocPath, '\\')) then -- Ensure path ends with separator
       DocPath ..= '/'
    end
 
@@ -656,8 +656,8 @@ function runStdioServer(Self:table)
          return stdio_state
       end,
       acWrite = function(Data)
-         output:write(Data)
-         output:flush()
+         output.write(Data)
+         output.flush()
          return ERR_Okay
       end,
       acDeactivate = function()
@@ -675,7 +675,7 @@ function runStdioServer(Self:table)
    end
 
    while not disconnected do
-      data = input:read(8192)
+      data = input.read(8192)
       if not data then
          logVerbose(Self, 'Stdio input closed')
          break

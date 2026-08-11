@@ -12,14 +12,14 @@
 
 bmark.save = function(Results:table!, Path:str!)
    local file = io.open(Path, 'w')
-   file:write(json.encode(Results))
-   file:close()
+   file.write(json.encode(Results))
+   file.close()
 end
 
 bmark.load = function(Path:str!):table
    local file = io.open(Path, 'r')
-   local jsonStr = file:read('*a')
-   file:close()
+   local jsonStr = file.read('*a')
+   file.close()
    return json.decode(jsonStr)
 end
 
@@ -28,34 +28,34 @@ end
 bmark.textReport = function(Results:table!):array<string>
    assert(Results, "Results are required")
    local msg = array<string>
-   msg:push('=== BENCHMARK RESULTS ===')
-   msg:push(string.format('Total calls:    %d (%d warmup + %d benchmark)', Results.totalCalls, Results.warmupCount ?? 0, Results.benchmarkCalls))
-   msg:push(string.format('Total time:     %.2f seconds', Results.totalTime))
-   msg:push(string.format('Overall rate:   %.2f calls per second', Results.totalCalls / Results.totalTime))
-   msg:push(string.format('Benchmark time: %.2f seconds', Results.benchmarkTime))
-   msg:push(string.format('Benchmark rate: %.2f calls per second', Results.callsPerSecond))
-   msg:push('')
-   msg:push('=== CALL STATISTICS (ms) ===')
-   msg:push(string.format('Average:    %.3f ms', Results.stats.mean))
-   msg:push(string.format('Median:     %.3f ms', Results.stats.median))
-   msg:push(string.format('Minimum:    %.3f ms', Results.stats.min))
-   msg:push(string.format('Maximum:    %.3f ms', Results.stats.max ?? 0))
-   msg:push(string.format('95th %%ile:  %.3f ms', Results.stats.p95))
-   msg:push(string.format('99th %%ile:  %.3f ms', Results.stats.p99))
-   msg:push(string.format('Std Dev:    %.3f ms', Results.stats.stddev))
+   msg.push('=== BENCHMARK RESULTS ===')
+   msg.push(string.format('Total calls:    %d (%d warmup + %d benchmark)', Results.totalCalls, Results.warmupCount ?? 0, Results.benchmarkCalls))
+   msg.push(string.format('Total time:     %.2f seconds', Results.totalTime))
+   msg.push(string.format('Overall rate:   %.2f calls per second', Results.totalCalls / Results.totalTime))
+   msg.push(string.format('Benchmark time: %.2f seconds', Results.benchmarkTime))
+   msg.push(string.format('Benchmark rate: %.2f calls per second', Results.callsPerSecond))
+   msg.push('')
+   msg.push('=== CALL STATISTICS (ms) ===')
+   msg.push(string.format('Average:    %.3f ms', Results.stats.mean))
+   msg.push(string.format('Median:     %.3f ms', Results.stats.median))
+   msg.push(string.format('Minimum:    %.3f ms', Results.stats.min))
+   msg.push(string.format('Maximum:    %.3f ms', Results.stats.max ?? 0))
+   msg.push(string.format('95th %%ile:  %.3f ms', Results.stats.p95))
+   msg.push(string.format('99th %%ile:  %.3f ms', Results.stats.p99))
+   msg.push(string.format('Std Dev:    %.3f ms', Results.stats.stddev))
    if Results.stats.ci95 then
-      msg:push(string.format('95%% CI:     %.3f - %.3f ms (±%.3f)',
+      msg.push(string.format('95%% CI:     %.3f - %.3f ms (±%.3f)',
          Results.stats.ci95.lower, Results.stats.ci95.upper, Results.stats.ci95.margin))
    end
-   msg:push('')
-   msg:push(string.format('Consistency: %.1f%% (lower is more consistent)', (Results.stats.stddev / Results.stats.mean) * 100))
-   msg:push('')
+   msg.push('')
+   msg.push(string.format('Consistency: %.1f%% (lower is more consistent)', (Results.stats.stddev / Results.stats.mean) * 100))
+   msg.push('')
    -- NB: For the most accurate reporting on memory usage, the caller should disable the Feedback mechanism
-   msg:push('=== MEMORY USAGE STATISTICS ===')
-   msg:push(string.format('Initial:    %.2f MB', Results.initialMemory / (1024*1024)))
-   msg:push(string.format('Peak:       %.2f MB', Results.peakMemory / (1024*1024)))
-   msg:push(string.format('Final:      %.2f MB', Results.finalMemory / (1024*1024)))
-   msg:push(string.format('Growth:     %.2f MB', Results.totalMemoryGrowth / (1024*1024)))
+   msg.push('=== MEMORY USAGE STATISTICS ===')
+   msg.push(string.format('Initial:    %.2f MB', Results.initialMemory / (1024*1024)))
+   msg.push(string.format('Peak:       %.2f MB', Results.peakMemory / (1024*1024)))
+   msg.push(string.format('Final:      %.2f MB', Results.finalMemory / (1024*1024)))
+   msg.push(string.format('Growth:     %.2f MB', Results.totalMemoryGrowth / (1024*1024)))
    return msg
 end
 
@@ -172,7 +172,7 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
          end
       else -- This is a benchmark call, include in statistics
          if #reservoir < RESERVOIR_SIZE then
-            reservoir:push(callTime)
+            reservoir.push(callTime)
          else
             break
          end
@@ -183,7 +183,7 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
          local cmem = mSys.GetResource(RES_MEMORY_USAGE)
          if results.warmupCount >= Options.warmupCalls then
             -- Only track memory during actual benchmark phase
-            mem_usage:push(cmem)
+            mem_usage.push(cmem)
             if cmem > results.peakMemory then
                results.peakMemory = cmem
             end
@@ -244,9 +244,9 @@ bmark.stats = function(Values:any!):table
    -- Sort values for percentile calculations
    sorted_sample = {}
    for value in values(Values) do
-      if value?? then table.insert(sorted_sample, value) end
+      if value?? then sorted_sample.insert(value) end
    end
-   table.sort(sorted_sample)
+   sorted_sample.sort()
 
    -- Discard top 20% of outliers for min/max calculations
    sample_n = math.max(1, math.floor(#sorted_sample * 0.8))
@@ -388,7 +388,7 @@ bmark.removeOutliers = function(Values:array<double>!, Multiplier:num):table
    for i, value in ipairs(Values) do
       sorted[i] = value
    end
-   table.sort(sorted)
+   sorted.sort()
 
    -- Calculate Q1 (25th percentile) and Q3 (75th percentile)
    local function getQuartile(SortedValues:table!, Quartile:num!):num
@@ -422,9 +422,9 @@ bmark.removeOutliers = function(Values:array<double>!, Multiplier:num):table
 
    for value in values(Values) do
       if value >= lower_bound and value <= upper_bound then
-         filtered:push(value)
+         filtered.push(value)
       else
-         outliers:push(value)
+         outliers.push(value)
       end
    end
 
@@ -535,10 +535,10 @@ bmark.histogramText = function(Histogram:table!, Width:num):array<string>
    Width ??= 40
 
    local msg = array<string>
-   msg:push('=== DISTRIBUTION HISTOGRAM ===')
-   msg:push(string.format('Total samples: %d', Histogram.total))
-   msg:push(string.format('Range: %.3f - %.3f (bin width: %.3f)', Histogram.min, Histogram.max, Histogram.binWidth))
-   msg:push('')
+   msg.push('=== DISTRIBUTION HISTOGRAM ===')
+   msg.push(string.format('Total samples: %d', Histogram.total))
+   msg.push(string.format('Range: %.3f - %.3f (bin width: %.3f)', Histogram.min, Histogram.max, Histogram.binWidth))
+   msg.push('')
 
    -- Find max count for scaling
    local max_count = 0
@@ -552,14 +552,14 @@ bmark.histogramText = function(Histogram:table!, Width:num):array<string>
    for i in {0 to Histogram.binCount} do
       local bin = Histogram.bins[i]
       local bar_len = max_count > 0 and math.floor((bin.count / max_count) * Width) or 0
-      local bar = string.rep('█', bar_len) .. string.rep('░', Width - bar_len)
+      local bar = '█'.rep(bar_len) .. string.rep('░', Width - bar_len)
       local marker = i is Histogram.modeBin and '*' or ' '
-      msg:push(string.format('%s %s |%s| %4d (%5.1f%%)',
+      msg.push(string.format('%s %s |%s| %4d (%5.1f%%)',
          marker, bin.label, bar, bin.count, bin.frequency * 100))
    end
 
-   msg:push('')
-   msg:push(string.format('Mode: %.3f - %.3f', Histogram.modeRange.lower, Histogram.modeRange.upper))
+   msg.push('')
+   msg.push(string.format('Mode: %.3f - %.3f', Histogram.modeRange.lower, Histogram.modeRange.upper))
 
    return msg
 end
@@ -662,7 +662,7 @@ bmark.compareToBaseline = function(Current:table!, BaselinePath:str!, Threshold:
 
    -- Throughput regression (lower is worse)
    if comparison.throughput.change < -Threshold then
-      table.insert(comparison.regressions, {
+      comparison.regressions.insert({
          metric = 'throughput',
          message = string.format('Throughput decreased by %.1f%% (threshold: %.1f%%)',
             -comparison.throughput.change, Threshold)
@@ -671,7 +671,7 @@ bmark.compareToBaseline = function(Current:table!, BaselinePath:str!, Threshold:
 
    -- Timing regressions (higher is worse)
    if comparison.timing.mean.change > Threshold then
-      table.insert(comparison.regressions, {
+      comparison.regressions.insert({
          metric = 'mean_time',
          message = string.format('Mean time increased by %.1f%% (threshold: %.1f%%)',
             comparison.timing.mean.change, Threshold)
@@ -679,7 +679,7 @@ bmark.compareToBaseline = function(Current:table!, BaselinePath:str!, Threshold:
    end
 
    if comparison.timing.p95.change > Threshold then
-      table.insert(comparison.regressions, {
+      comparison.regressions.insert({
          metric = 'p95_time',
          message = string.format('95th percentile increased by %.1f%% (threshold: %.1f%%)',
             comparison.timing.p95.change, Threshold)
@@ -687,7 +687,7 @@ bmark.compareToBaseline = function(Current:table!, BaselinePath:str!, Threshold:
    end
 
    if comparison.timing.p99.change > Threshold then
-      table.insert(comparison.regressions, {
+      comparison.regressions.insert({
          metric = 'p99_time',
          message = string.format('99th percentile increased by %.1f%% (threshold: %.1f%%)',
             comparison.timing.p99.change, Threshold)
@@ -696,7 +696,7 @@ bmark.compareToBaseline = function(Current:table!, BaselinePath:str!, Threshold:
 
    -- Memory regression (higher growth is worse)
    if comparison.memory.growth.change > Threshold and baseline.totalMemoryGrowth > 0 then
-      table.insert(comparison.regressions, {
+      comparison.regressions.insert({
          metric = 'memory_growth',
          message = string.format('Memory growth increased by %.1f%% (threshold: %.1f%%)',
             comparison.memory.growth.change, Threshold)
@@ -727,62 +727,62 @@ bmark.comparisonReport = function(Comparison:table!):array<string>
       return string.format('%s%.1f%% %s', sign, Change, indicator)
    end
 
-   msg:push('=== BENCHMARK COMPARISON ===')
-   msg:push('')
+   msg.push('=== BENCHMARK COMPARISON ===')
+   msg.push('')
 
    -- Throughput comparison
-   msg:push('THROUGHPUT:')
-   msg:push(string.format('  Baseline: %.2f calls/sec', Comparison.throughput.baseline))
-   msg:push(string.format('  Current:  %.2f calls/sec', Comparison.throughput.current))
-   msg:push(string.format('  Change:   %s', formatChange(Comparison.throughput.change, Comparison.throughput.improved)))
-   msg:push('')
+   msg.push('THROUGHPUT:')
+   msg.push(string.format('  Baseline: %.2f calls/sec', Comparison.throughput.baseline))
+   msg.push(string.format('  Current:  %.2f calls/sec', Comparison.throughput.current))
+   msg.push(string.format('  Change:   %s', formatChange(Comparison.throughput.change, Comparison.throughput.improved)))
+   msg.push('')
 
    -- Timing comparison
-   msg:push('TIMING (ms):')
-   msg:push(string.format('  Mean:   %.3f -> %.3f (%s)',
+   msg.push('TIMING (ms):')
+   msg.push(string.format('  Mean:   %.3f -> %.3f (%s)',
       Comparison.timing.mean.baseline, Comparison.timing.mean.current,
       formatChange(Comparison.timing.mean.change, Comparison.timing.mean.improved)))
-   msg:push(string.format('  Median: %.3f -> %.3f (%s)',
+   msg.push(string.format('  Median: %.3f -> %.3f (%s)',
       Comparison.timing.median.baseline, Comparison.timing.median.current,
       formatChange(Comparison.timing.median.change, Comparison.timing.median.improved)))
-   msg:push(string.format('  P95:    %.3f -> %.3f (%s)',
+   msg.push(string.format('  P95:    %.3f -> %.3f (%s)',
       Comparison.timing.p95.baseline, Comparison.timing.p95.current,
       formatChange(Comparison.timing.p95.change, Comparison.timing.p95.improved)))
-   msg:push(string.format('  P99:    %.3f -> %.3f (%s)',
+   msg.push(string.format('  P99:    %.3f -> %.3f (%s)',
       Comparison.timing.p99.baseline, Comparison.timing.p99.current,
       formatChange(Comparison.timing.p99.change, Comparison.timing.p99.improved)))
-   msg:push('')
+   msg.push('')
 
    -- Consistency comparison
-   msg:push('CONSISTENCY (coefficient of variation):')
-   msg:push(string.format('  Baseline: %.1f%%', Comparison.consistency.baseline))
-   msg:push(string.format('  Current:  %.1f%%', Comparison.consistency.current))
-   msg:push(string.format('  Change:   %s', formatChange(Comparison.consistency.change, Comparison.consistency.improved)))
-   msg:push('')
+   msg.push('CONSISTENCY (coefficient of variation):')
+   msg.push(string.format('  Baseline: %.1f%%', Comparison.consistency.baseline))
+   msg.push(string.format('  Current:  %.1f%%', Comparison.consistency.current))
+   msg.push(string.format('  Change:   %s', formatChange(Comparison.consistency.change, Comparison.consistency.improved)))
+   msg.push('')
 
    -- Memory comparison
-   msg:push('MEMORY:')
-   msg:push(string.format('  Growth: %.2f MB -> %.2f MB (%s)',
+   msg.push('MEMORY:')
+   msg.push(string.format('  Growth: %.2f MB -> %.2f MB (%s)',
       Comparison.memory.growth.baseline / (1024*1024),
       Comparison.memory.growth.current / (1024*1024),
       formatChange(Comparison.memory.growth.change, Comparison.memory.growth.improved)))
-   msg:push(string.format('  Peak:   %.2f MB -> %.2f MB (%s)',
+   msg.push(string.format('  Peak:   %.2f MB -> %.2f MB (%s)',
       Comparison.memory.peak.baseline / (1024*1024),
       Comparison.memory.peak.current / (1024*1024),
       formatChange(Comparison.memory.peak.change, Comparison.memory.peak.improved)))
-   msg:push('')
+   msg.push('')
 
    -- Regression summary
    if Comparison.regressions then
       if #Comparison.regressions is 0 then
-         msg:push('=== NO REGRESSIONS DETECTED ===')
-         msg:push(string.format('All metrics within %.1f%% threshold', Comparison.threshold))
+         msg.push('=== NO REGRESSIONS DETECTED ===')
+         msg.push(string.format('All metrics within %.1f%% threshold', Comparison.threshold))
       else
-         msg:push('=== REGRESSIONS DETECTED ===')
-         msg:push(string.format('Threshold: %.1f%%', Comparison.threshold))
-         msg:push('')
+         msg.push('=== REGRESSIONS DETECTED ===')
+         msg.push(string.format('Threshold: %.1f%%', Comparison.threshold))
+         msg.push('')
          for _, regression in ipairs(Comparison.regressions) do
-            msg:push(string.format('  ✗ %s', regression.message))
+            msg.push(string.format('  ✗ %s', regression.message))
          end
       end
    end

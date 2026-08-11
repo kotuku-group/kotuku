@@ -104,7 +104,7 @@ global function flags(Prefix:str, Options:table, ...)
    Options ?= {}
 
    if Options.restrict?? or glRestrict then return end -- Restricted definitions are never exported
-   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   if Options.module?? and (Options.module.lower() != glModuleName.lower()) then return end
    verbose('Processing flags ' .. Prefix)
 
    list = { }
@@ -114,7 +114,7 @@ global function flags(Prefix:str, Options:table, ...)
          local key:any = rx_key_comment.extract(flag_def)
          key ??= flag_def
 
-         for v in values(key:split('|')) do
+         for v in values(key.split('|')) do
             list[v] = 1 << f
          end
       elseif type(flag_def) is 'table' then
@@ -135,7 +135,7 @@ global function flags(Prefix:str, Options:table, ...)
                list[flag] = key
             else
                local f = 0
-               for v in values(key:split('|')) do
+               for v in values(key.split('|')) do
                   if list[v] then
                      f = f | list[v]
                   else
@@ -160,7 +160,7 @@ global function enums(Prefix, Options:table, ...)
    Options ?= {}
 
    if Options.restrict?? or glRestrict then return end -- Restricted definitions are never exported
-   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   if Options.module?? and (Options.module.lower() != glModuleName.lower()) then return end
    verbose('Processing enum ' .. Prefix)
 
    list = { }
@@ -170,7 +170,7 @@ global function enums(Prefix, Options:table, ...)
          local val:str = rx_value_only.extract(enum_def)  -- Scrap any comment for this value
          val ?= enum_def
 
-         for name in values(val:split('|')) do
+         for name in values(val.split('|')) do
             list[name] = inc
          end
       elseif type(enum_def) is 'table' then -- The client provided a table of fixed values
@@ -192,7 +192,7 @@ global function constants(Prefix, Options:table, ...)
    Options ?= {}
 
    if Options.restrict?? or glRestrict then return end -- Restricted definitions are never exported
-   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   if Options.module?? and (Options.module.lower() != glModuleName.lower()) then return end
    verbose('Processing constants ' .. Prefix)
 
    list = { }
@@ -219,11 +219,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 global function platform(Platform:str, Function:func)
-   if Platform:lower() is 'windows' then
+   if Platform.lower() is 'windows' then
       Function()
-   elseif Platform:lower() is 'linux' then
+   elseif Platform.lower() is 'linux' then
       Function()
-   elseif Platform:lower() is 'x11' then
+   elseif Platform.lower() is 'x11' then
       Function()
    else
       error("Unrecognised platform '" .. Platform .. "'")
@@ -234,12 +234,12 @@ end
 
 global function str_to_bytes(String:str):str
    local list
-   String = String:replace("\\n", string.char(10))
+   String = String.replace("\\n", string.char(10))
    for i in {0 to #String} do
       if list then
-         list ..= string.format(',%d', String:byte(i))
+         list ..= string.format(',%d', String.byte(i))
       else
-         list = string.format('%d', String:byte(i))
+         list = string.format('%d', String.byte(i))
       end
    end
    return list
@@ -446,19 +446,19 @@ end
 global function extractStructFields(Def:str, Origin:str):table
    fields = { }
    Def ?! return fields
-   for line, content in Def:split('\n') do
+   for line, content in Def.split('\n') do
       local content_b, comment = rx_field_extract.extract(content)
       if content_b then content = content_b end
       local type, name = rx_type_name.extract(content)
 
       if type?? then
-         if type:startsWith('!') then
+         if type.startsWith('!') then
             error('struct() declarations should not contain virtual fields.')
          else
-            field = cType({ type=type:trim(), name=name:trim() }, Origin)
-            table.insert(fields, field)
+            field = cType({ type=type.trim(), name=name.trim() }, Origin)
+            fields.insert(field)
          end
-      elseif not content:trim()?? then
+      elseif not content.trim()?? then
          -- Ignore empty line
       else
          error(f"Unable to process line '{content}' for '{Origin}'")
@@ -473,7 +473,7 @@ end
 global function structdef(Name:str, Options:table, Def:str)
    Options ?= {}
    if Options.restrict?? or glRestrict then return end -- Restricted structures are never exported
-   if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
+   if Options.module?? and (Options.module.lower() != glModuleName.lower()) then return end
    verbose('Processing structure ' .. Name)
    local struct = {
       name    = Name,
@@ -483,7 +483,7 @@ global function structdef(Name:str, Options:table, Def:str)
    }
    struct.sequence = sequenceStruct(struct.fields)
    glStructures[Name] = struct
-   table.insert(glOrderedStructures, struct)
+   glOrderedStructures.insert(struct)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -494,9 +494,9 @@ global function sequenceStruct(fields)
    for f in values(fields) do
       if seq?? then seq ..= ',' end
       if f.sequence then
-         seq ..= 'e' .. f.name:cap() .. ':' .. f.type
+         seq ..= 'e' .. f.name.cap() .. ':' .. f.type
       else
-         seq ..= f.type .. f.name:cap()
+         seq ..= f.type .. f.name.cap()
       end
    end
    return seq
@@ -509,7 +509,7 @@ global function saveOutput()
 
    if not outPath then
       if glModuleName?? then
-         outPath = f'sdk:data/config/defs/{glModuleName:lower()}.def'
+         outPath = f'sdk:data/config/defs/{glModuleName.lower()}.def'
       else
          error('No output path specified in command-line.')
       end
@@ -535,12 +535,12 @@ global function saveOutput()
    for prefix, tab in pairs(glConstants) do
       sortedkv = { }
       for k, v in pairs(tab) do
-         table.insert(sortedkv, { name = k, value = v })
+         sortedkv.insert({ name = k, value = v })
       end
-      table.sort(sortedkv, function(a,b) return a.name < b.name end)
-      table.insert(sortedConstants, { prefix=prefix, table=sortedkv })
+      sortedkv.sort(function(a,b) return a.name < b.name end)
+      sortedConstants.insert({ prefix=prefix, table=sortedkv })
    end
-   table.sort(sortedConstants, function(a,b) return a.prefix < b.prefix end)
+   sortedConstants.sort(function(a,b) return a.prefix < b.prefix end)
 
    c = ''
    for group in values(sortedConstants) do
@@ -554,7 +554,7 @@ global function saveOutput()
             e ..= f'{const.name}="{const.value}"'
          else
             hexval = string.format('%x', const.value)
-            if hexval:len() is 16 then hexval = hexval:sub(-8) end
+            if hexval.len() is 16 then hexval = hexval.sub(-8) end
             e ..= f'{const.name}=0x{hexval}'
          end
       end
@@ -562,13 +562,13 @@ global function saveOutput()
    end
 
    if glHead?? then
-      glHead = string.replace(glHead, '[LF]', '\n')
-      glHead = string.replace(glHead, '[DQ]', '"')
+      glHead = glHead.replace('[LF]', '\n')
+      glHead = glHead.replace('[DQ]', '"')
    end
 
    out = glHead
    if glFormat is 'c' then
-      if s:len() + c:len() >= 16 * 1024 then -- MSVC doesn't like defined strings > 16Kb, so we need this alternative
+      if s.len() + c.len() >= 16 * 1024 then -- MSVC doesn't like defined strings > 16Kb, so we need this alternative
          out ..= 'char glIDL[] = { '
          out ..= str_to_bytes((s ?? '') .. (c ?? ''))
          out ..= ',0 };\n'
@@ -584,8 +584,8 @@ global function saveOutput()
    end
 
    if glFoot then
-      glFoot = string.replace(glFoot, '[LF]', '\n')
-      glFoot = string.replace(glFoot, '[DQ]', '"')
+      glFoot = glFoot.replace('[LF]', '\n')
+      glFoot = glFoot.replace('[DQ]', '"')
       out ..= glFoot
    end
 

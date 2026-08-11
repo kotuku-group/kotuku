@@ -93,12 +93,6 @@ static ParserResult<IrEmitUnit> assignment_value_count_error(
       Emitter->make_error(ParserErrorCode::InternalInvariant, Message, span));
 }
 
-static GCstr * array_append_helper_key(LexState *State)
-{
-   static constexpr std::string_view key("\x1f" "array.append", 13);
-   return State->keepstr(key);
-}
-
 static void collect_concat_operands(const ExprNode &Expr, std::vector<const ExprNode *> &Operands)
 {
    if (not Expr.is_grouped and Expr.kind IS AstNodeKind::BinaryExpr) {
@@ -382,13 +376,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       // Handle call results - adjust for multi-return
       if (tail.k IS ExpKind::Call) {
          if (bc_op(*ir_bcptr(&this->func_state, &tail)) IS BC_VARG) {
-            setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
+            set_call_result_count(&this->func_state, tail, nvars.raw() + 1);
             this->func_state.freereg--;
             allocator.reserve(BCReg(nvars.raw() - 1));
          }
          else {
             // Fixup call result count
-            setbc_b(ir_bcptr(&this->func_state, &tail), nvars.raw() + 1);
+            set_call_result_count(&this->func_state, tail, nvars.raw() + 1);
             if (nvars > BCReg(1)) {
                allocator.reserve(BCReg(nvars.raw() - 1));
             }
@@ -535,14 +529,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
             "compound assignment expects exactly one RHS value");
       }
 
-      ExpDesc append_func;
-      append_func.init(ExpKind::Global, 0);
-      append_func.u.sval = array_append_helper_key(this->func_state.ls);
-      this->materialise_to_next_reg(append_func, "array append helper");
-
+      auto call_base = BCReg(this->func_state.free_reg());
+      bcemit_builtin_callable(
+         &this->func_state, builtin_callable_id(FastFunc::array_append), call_base.raw());
       RegisterAllocator call_allocator(&this->func_state);
-      call_allocator.reserve(BCReg(1));
-      auto call_base = BCReg(append_func.u.s.info);
+      call_allocator.reserve(BCReg(2));
 
       this->materialise_to_next_reg(working, "array append compound receiver");
 

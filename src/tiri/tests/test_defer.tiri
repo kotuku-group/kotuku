@@ -3,17 +3,17 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
-function join(values)
-   return table.concat(values, ',')
+function join(values:table):str
+   return values.concat(',')
 end
 
 @Test function BasicExecution()
    order = {}
    function subject()
       defer
-         table.insert(order, 'deferred')
+         order.insert('deferred')
       end
-      table.insert(order, 'body')
+      order.insert('body')
    end
 
    subject()
@@ -25,14 +25,14 @@ end
 
    function subject()
       defer
-         table.insert(order, 'alpha')
+         order.insert('alpha')
       end
 
       defer()
-         table.insert(order, 'beta')
+         order.insert('beta')
       end
 
-      table.insert(order, 'body')
+      order.insert('body')
    end
 
    subject()
@@ -44,15 +44,15 @@ end
    order = {}
    function subject()
       defer
-         table.insert(order, 'first')
+         order.insert('first')
       end
       defer
-         table.insert(order, 'second')
+         order.insert('second')
       end
       defer
-         table.insert(order, 'third')
+         order.insert('third')
       end
-      table.insert(order, 'body')
+      order.insert('body')
    end
 
    subject()
@@ -61,9 +61,9 @@ end
 
 function subjectReturn(order)
    defer
-      table.insert(order, 'deferred')
+      order.insert('deferred')
    end
-   table.insert(order, 'before-return')
+   order.insert('before-return')
    return 'result'
 end
 
@@ -80,17 +80,17 @@ end
 
    function subject()
       defer
-         table.insert(order, 'outer')
+         order.insert('outer')
       end
 
       do
          defer
-            table.insert(order, 'inner')
+            order.insert('inner')
          end
-         table.insert(order, 'inner-body')
+         order.insert('inner-body')
       end
 
-      table.insert(order, 'after-inner')
+      order.insert('after-inner')
    end
 
    subject()
@@ -104,9 +104,9 @@ end
    function subject()
       for i in {0 to 3} do
          defer
-            table.insert(order, 'loop-' .. tostring(i))
+            order.insert('loop-' .. tostring(i))
          end
-         table.insert(order, 'before-break-' .. tostring(i))
+         order.insert('before-break-' .. tostring(i))
          break
       end
    end
@@ -121,14 +121,14 @@ end
    function subject()
       for i in {0 to 2} do
          defer
-            table.insert(order, 'defer-' .. tostring(i))
+            order.insert('defer-' .. tostring(i))
          end
-         table.insert(order, 'body-' .. tostring(i))
+         order.insert('body-' .. tostring(i))
          if i is 0 then
-            table.insert(order, 'continue-' .. tostring(i))
+            order.insert('continue-' .. tostring(i))
             continue
          end
-         table.insert(order, 'after-' .. tostring(i))
+         order.insert('after-' .. tostring(i))
       end
    end
 
@@ -142,10 +142,10 @@ end
    function subject()
       value = 10
       defer
-         table.insert(captures, value)
+         captures.insert(value)
       end
       value = 25
-      table.insert(captures, 'body')
+      captures.insert('body')
       value = 30
    end
 
@@ -161,12 +161,12 @@ end
       value = 5
 
       defer(arg)
-         table.insert(events, 'defer-' .. tostring(arg))
+         events.insert('defer-' .. tostring(arg))
       end(value)
 
-      table.insert(events, 'body-' .. tostring(value))
+      events.insert('body-' .. tostring(value))
       value += 10
-      table.insert(events, 'mutated-' .. tostring(value))
+      events.insert('mutated-' .. tostring(value))
    end
 
    subject()
@@ -198,13 +198,13 @@ end
    order = {}
 
    function source()
-      table.insert(order, 'call')
+      order.insert('call')
       return 'first', 'second'
    end
 
    function subject()
       defer
-         table.insert(order, 'defer')
+         order.insert('defer')
       end
       return source()
    end
@@ -219,17 +219,17 @@ end
 
    function subject()
       defer
-         table.insert(order, 'outer')
+         order.insert('outer')
       end
 
       if true then
          defer
-            table.insert(order, 'if-block')
+            order.insert('if-block')
          end
-         table.insert(order, 'if-body')
+         order.insert('if-body')
       end
 
-      table.insert(order, 'after-if')
+      order.insert('after-if')
    end
 
    subject()
@@ -243,15 +243,15 @@ end
    function subject()
       for i in {0 to 2} do
          defer
-            table.insert(order, 'outer-' .. tostring(i))
+            order.insert('outer-' .. tostring(i))
          end
          do
             defer
-               table.insert(order, 'inner-' .. tostring(i))
+               order.insert('inner-' .. tostring(i))
             end
-            table.insert(order, 'inner-body-' .. tostring(i))
+            order.insert('inner-body-' .. tostring(i))
          end
-         table.insert(order, 'loop-body-' .. tostring(i))
+         order.insert('loop-body-' .. tostring(i))
       end
    end
 
@@ -278,13 +278,13 @@ end
 
 function recurse(n, order)
    defer
-      table.insert(order, 'defer-' .. tostring(n))
+      order.insert('defer-' .. tostring(n))
    end
-   table.insert(order, 'enter-' .. tostring(n))
+   order.insert('enter-' .. tostring(n))
    if n > 1 then
       recurse(n - 1, order)
    end
-   table.insert(order, 'leave-' .. tostring(n))
+   order.insert('leave-' .. tostring(n))
 end
 
 @Test function Recursive()
@@ -300,7 +300,7 @@ end
       sum = 0
       defer
          sum += 5
-         table.insert(calls, sum)
+         calls.insert(sum)
       end
       sum += 10
       return sum
@@ -315,11 +315,11 @@ end
    log = {}
 
    function cleanup(resource, token)
-      table.insert(log, 'cleanup-' .. resource.name .. '-' .. token)
+      log.insert('cleanup-' .. resource.name .. '-' .. token)
    end
 
    function acquire(name)
-      table.insert(log, 'acquire-' .. name)
+      log.insert('acquire-' .. name)
       return { name = name }
    end
 
@@ -333,7 +333,7 @@ end
 
       resource.name = 'beta'
       label = 'updated'
-      table.insert(log, 'body-' .. resource.name .. '-' .. label)
+      log.insert('body-' .. resource.name .. '-' .. label)
    end
 
    subject()

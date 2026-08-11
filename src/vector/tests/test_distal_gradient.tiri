@@ -32,17 +32,17 @@ end
 
 function rampStops()
    local stops = { }
-   table.insert(stops, stop(0.0, 0.0, 0.0, 1.0)) -- blue  - deepest interior
-   table.insert(stops, stop(0.5, 0.0, 1.0, 0.0)) -- green - the outline marker
-   table.insert(stops, stop(1.0, 1.0, 0.0, 0.0)) -- red   - exterior (masked away for a simple fill)
+   stops.insert(stop(0.0, 0.0, 0.0, 1.0)) -- blue  - deepest interior
+   stops.insert(stop(0.5, 0.0, 1.0, 0.0)) -- green - the outline marker
+   stops.insert(stop(1.0, 1.0, 0.0, 0.0)) -- red   - exterior (masked away for a simple fill)
    return stops
 end
 
 function blackStops()
    local stops = { }
-   table.insert(stops, stop(0.0, 0.0, 0.0, 0.0))
-   table.insert(stops, stop(0.5, 0.0, 0.0, 0.0))
-   table.insert(stops, stop(1.0, 0.0, 0.0, 0.0))
+   stops.insert(stop(0.0, 0.0, 0.0, 0.0))
+   stops.insert(stop(0.5, 0.0, 0.0, 0.0))
+   stops.insert(stop(1.0, 0.0, 0.0, 0.0))
    return stops
 end
 

@@ -79,15 +79,15 @@ end
    --mFont.refreshFonts()
 
    glWindow = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
-   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    y = 6
    items = array<table> { }
    list = resolve(gui.fontList)
 
-   for _, rec in table.sortByKeys(list) do
+   for _, rec in list.sortByKeys() do
       if not rec.hidden then
-         items:push({ item=rec.name })
+         items.push({ item=rec.name })
       end
    end
 
@@ -108,5 +108,5 @@ end
 
    setFont(items[0].item, glFontSize)
 
-   glWindow:show()
+   glWindow.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

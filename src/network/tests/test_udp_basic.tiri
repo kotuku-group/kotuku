@@ -34,10 +34,10 @@ glTestTimeout = 3.0
          assert(err is ERR_Okay, 'Server failed to receive UDP data: ' .. mSys.GetErrorMsg(err))
 
          if (bytesRead > 0) then
-            local msg = sv_buffer:sub(0, bytesRead)
+            local msg = sv_buffer.sub(0, bytesRead)
             local err, ip = mNet.AddressToStr(sv_source)
             logOutput('[UDP Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. sv_source.port)
-            assert(msg:startsWith('Hello UDP Server'), 'Unexpected message received')
+            assert(msg.startsWith('Hello UDP Server'), 'Unexpected message received')
 
             -- Echo back a response
             local response = 'Hello UDP Client'
@@ -57,10 +57,10 @@ glTestTimeout = 3.0
          assert(err is ERR_Okay, 'Client failed to receive UDP data: ' .. mSys.GetErrorMsg(err))
 
          if (bytesRead > 0) then
-            local msg = cl_buffer:sub(0, bytesRead)
+            local msg = cl_buffer.sub(0, bytesRead)
             local err, ip = mNet.AddressToStr(cl_source)
             logOutput('[UDP Client] Received: "' .. msg .. '" from ' .. ip .. ':' .. cl_source.port)
-            assert(msg:startsWith('Hello UDP Client'), 'Unexpected response received')
+            assert(msg.startsWith('Hello UDP Client'), 'Unexpected response received')
             client_received = true
             Socket.acSignal()
          end
@@ -168,7 +168,7 @@ end
    processing.halt(0.1)  -- Brief pause
 
    -- Test medium packet (1024 bytes)
-   medium_message = string.rep('M', 1024)
+   medium_message = 'M'.rep(1024)
    err, bytesSent = client.mtSendTo(dest, medium_message)
    assert(err is ERR_Okay, 'Failed to send medium packet')
    assert(bytesSent is 1024, 'Medium packet not fully sent')

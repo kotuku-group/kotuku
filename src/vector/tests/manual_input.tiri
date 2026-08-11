@@ -23,11 +23,11 @@ module vector as mVector
       x=-20, y=-20, width='90', height='90', cursor = 'hand'
    })
    vp.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill=COL_VIEWPORT })
-   table.insert(vectors, vp)
+   vectors.insert(vp)
 
-   table.insert(vectors, lViewport.new('VectorRectangle', { x=130, y=130, width='40', height='40', fill=COL_SHAPE }))
+   vectors.insert(lViewport.new('VectorRectangle', { x=130, y=130, width='40', height='40', fill=COL_SHAPE }))
 
-   table.insert(vectors, lViewport.new('VectorEllipse', { cx=400, cy=200, rx='80', ry='100', fill=COL_SHAPE }))
+   vectors.insert(lViewport.new('VectorEllipse', { cx=400, cy=200, rx='80', ry='100', fill=COL_SHAPE }))
 
    -- Nested viewport and vectors
 
@@ -42,16 +42,16 @@ module vector as mVector
    nvp.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill=COL_VIEWPORT })
    local subvp = nvp.new('VectorViewport', { x=10, y=10, width=20, height=20 })
    subvp.new('VectorRectangle', { width='100%', height='100%', fill='rgb(0,255,0)' })
-   table.insert(vectors, nvp)
+   vectors.insert(nvp)
 
-   table.insert(vectors, parent.new('VectorRectangle', { x=25, y=95, width=80, height=80, fill=COL_SHAPE }))
+   vectors.insert(parent.new('VectorRectangle', { x=25, y=95, width=80, height=80, fill=COL_SHAPE }))
 
    -- Vectors with transforms
 
    local br = lViewport.new('VectorRectangle', { x=400, y=20, width='90', height='90', fill=COL_SHAPE })
    local err, brt = br.mtNewMatrix()
    mVector.rotate(brt, 45, br.width*0.5, br.height*0.5)
-   table.insert(vectors, br)
+   vectors.insert(br)
 
    local vp = lViewport.new('VectorViewport', { x=200, y=20, width='90', height='90', cursor='hand' })
    vp.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill=COL_VIEWPORT })
@@ -59,7 +59,7 @@ module vector as mVector
    mVector.translate(mxTransform, vp.width*0.5, vp.height*0.5)
    mVector.rotate(mxTransform, 45, vp.width*0.5, vp.height*0.5)
    mVector.translate(mxTransform, -vp.width*0.5, -vp.height*0.5)
-   table.insert(vectors, vp)
+   vectors.insert(vp)
 
    -- Apply a standard input capture to all created vectors
 

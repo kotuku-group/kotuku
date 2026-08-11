@@ -29,7 +29,8 @@ return {
 
       dec = State.slider.decoration
       local stroke
-      if gui.strToRGB(Theme.slider.fore):luminance() > 0.5 then
+      local slider_colour = gui.strToRGB(Theme.slider.fore)
+      if slider_colour.luminance(slider_colour) > 0.5 then
          stroke = 'rgb(0 0 0 / .5)'
       else
          stroke = 'rgb(255 255 255 / .5)'

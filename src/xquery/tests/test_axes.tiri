@@ -68,7 +68,7 @@ end
 
    local attributeNames = {}
    local err = xml.mtSearch('/root/item/attribute::*', function(XML, TagID, Attrib)
-      table.insert(attributeNames, Attrib)
+      attributeNames.insert(Attrib)
    end)
    assert(err is ERR_Okay, 'attribute::* should enumerate attribute nodes: ' .. mSys.GetErrorMsg(err))
 

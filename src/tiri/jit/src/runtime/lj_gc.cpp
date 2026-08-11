@@ -303,8 +303,12 @@ static void gc_mark(global_State *g, GCobj* o)
 
 static void gc_mark_gcroot(global_State *g)
 {
-   ptrdiff_t i;
-   for (i = 0; i < GCROOT_MAX; i++) {
+   for (size_t builtin_index = 0; builtin_index < BUILTIN_CALLABLE_CAPACITY; builtin_index++) {
+      if (gcref(G2GG(g)->builtin_callables[builtin_index]) != nullptr) {
+         gc_markobj(g, gcref(G2GG(g)->builtin_callables[builtin_index]));
+      }
+   }
+   for (ptrdiff_t i = 0; i < GCROOT_MAX; i++) {
       if (gcref(g->gcroot[i]) != nullptr) gc_markobj(g, gcref(g->gcroot[i]));
    }
 }

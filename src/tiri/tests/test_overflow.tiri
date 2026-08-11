@@ -269,11 +269,11 @@ function source_after_large_constant_pool(Tail):str
    local lines = array<string> { 'local constant_pool = {}' }
 
    for i in {0 to 256} do
-      lines:push("constant_pool[" .. i .. "] = 'constant_" .. i .. "'")
+      lines.push("constant_pool[" .. i .. "] = 'constant_" .. i .. "'")
    end
 
-   lines:push(Tail)
-   return lines:concat('\n', '%s')
+   lines.push(Tail)
+   return lines.concat('\n', '%s')
 end
 
 @Test function TempusImportBeforeAnnotatedFunction()
@@ -281,7 +281,7 @@ end
       import 'tempus'
 
       @Test function GeneratedAnnotationAfterTempusImport():num
-         return tempus.instant(0):toUnixSeconds()
+         return tempus.instant(0).toUnixSeconds()
       end
 
       return GeneratedAnnotationAfterTempusImport()
@@ -294,11 +294,11 @@ end
    local result = exec(source_after_large_constant_pool([[
       local target = { marker = 'method-ok' }
 
-      function target:overflowMethod():str
-         return self.marker
+      function target.overflowMethod(Self):str
+         return Self.marker
       end
 
-      return target:overflowMethod()
+      return target.overflowMethod(target)
    ]]))
 
    assert(result is 'method-ok', 'Method lookup should work after the short string constant range is exceeded')

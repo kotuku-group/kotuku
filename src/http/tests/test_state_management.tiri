@@ -24,7 +24,7 @@ SERVER_PORT <const> = 18943
             handler = function(req, res)
                res.json({
                   message = 'Incomplete request handled',
-                  bodyLength = req.body and req.body:len() or 0,
+                  bodyLength = req.body and req.body.len() or 0,
                   hasBody = req.body != nil
                })
             end
@@ -110,7 +110,7 @@ end
       inputFile = 'string:' .. request_body,
       size = #request_body,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -145,7 +145,7 @@ end
          method = 'GET',
          flags = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
-            if Buffer then content ..= Buffer:getString() end
+            if Buffer then content ..= Buffer.getString() end
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -182,7 +182,7 @@ end
       flags = HTF_NO_HEAD,
       connectTimeout = 3, -- 3 second timeout
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if State is HGS_TERMINATED and HTTP.error != ERR_Okay then
@@ -217,7 +217,7 @@ end
          flags = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
             if not results[req] then results[req] = '' end
-            if Buffer then results[req] ..= Buffer:getString() end
+            if Buffer then results[req] ..= Buffer.getString() end
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -229,7 +229,7 @@ end
          end
       })
 
-      requests:push(http)
+      requests.push(http)
       if not wait_http then wait_http = http end
    end
 
@@ -262,7 +262,7 @@ end
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
          if Buffer and #Buffer > 0 then
-            content ..= Buffer:getString()
+            content ..= Buffer.getString()
             chunksReceived = chunksReceived + 1
          end
       end,
@@ -300,7 +300,7 @@ end
          method = 'GET',
          flags = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
-            content ..= Buffer:getString()
+            content ..= Buffer.getString()
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -335,7 +335,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

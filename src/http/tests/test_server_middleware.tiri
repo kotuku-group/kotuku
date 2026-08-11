@@ -17,19 +17,19 @@ SERVER_PORT <const> = 18947
    -- Create middleware functions
    function loggingMiddleware(req, res, next)
       if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
-      req.middlewareOrder:push('logging')
+      req.middlewareOrder.push('logging')
       next()
    end
 
    function authMiddleware(req, res, next)
       if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
-      req.middlewareOrder:push('auth')
+      req.middlewareOrder.push('auth')
       next()
    end
 
    function timingMiddleware(req, res, next)
       if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
-      req.middlewareOrder:push('timing')
+      req.middlewareOrder.push('timing')
       next()
    end
 
@@ -91,7 +91,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -125,7 +125,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -157,7 +157,7 @@ end
       inputFile = 'string:test',
       size = 4,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -187,7 +187,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -221,7 +221,7 @@ end
       method = 'OPTIONS', -- CORS preflight
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

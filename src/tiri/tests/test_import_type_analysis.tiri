@@ -33,8 +33,19 @@ local y:num = probe_add(1, 2)
       f"Diagnostic should be attributed to the imported file, got '{tostring(diag.file)}'")
    assert(diag.line is 5, f"Expected 0-based line 5 for the helper's type error, got {diag.line}")
    assert(diag.code is 'TypeMismatchAssignment', f"Unexpected diagnostic code '{diag.code}'")
-   assert(string.find(diag.message, 'cannot assign', 0, true) != nil,
+   assert(diag.message.find('cannot assign', 0, true) != nil,
       f"Unexpected diagnostic message: {diag.message}")
+end
+
+@Test function ImportedLexicalErrorAttributed()
+   local script = obj.new('tiri', { path = glFolder .. 'import_lexical_error_launcher.tiri' })
+   local err = script.acQuery()
+
+   assert(err is ERR_Syntax, f'An imported lexical error should return ERR_Syntax, got {err}')
+   assert(script.errorMessage.find('import_lexical_error_helper.tiri:2') != nil,
+      'An imported lexical error should identify its source file and line: ' .. script.errorMessage)
+   assert(script.errorMessage.find("Malformed number near '1.trim'") != nil,
+      'An imported lexical error should retain the lexer diagnostic: ' .. script.errorMessage)
 end
 
 @Test function CleanImportNoDiagnostics()
@@ -129,9 +140,9 @@ print('done')
    local i = 0
    while result.tips[i] do
       local tip = result.tips[i]
-      assert(string.find(tip.message, 'unused_helper_var', 0, true) is nil,
+      assert(tip.message.find('unused_helper_var', 0, true) is nil,
          f"Tips from the imported library should be suppressed, got: {tip.message}")
-      if string.find(tip.message, 'main_unused', 0, true) != nil then main_tip_found = true end
+      if tip.message.find('main_unused', 0, true) != nil then main_tip_found = true end
       i++
    end
 

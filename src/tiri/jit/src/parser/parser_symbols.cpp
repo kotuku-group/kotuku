@@ -332,11 +332,6 @@ static std::string function_name_to_string(const FunctionNamePath &Path)
       name += identifier_to_string(Path.segments[i]);
    }
 
-   if (Path.method.has_value()) {
-      name += ":";
-      name += identifier_to_string(Path.method.value());
-   }
-
    return name;
 }
 
@@ -372,7 +367,6 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
    bool first = true;
 
    for (const FunctionParameter &param : Function.parameters) {
-      if (param.is_self) continue;
 
       if (not first) signature += ", ";
       first = false;
@@ -441,7 +435,6 @@ static void add_params(ParserSymbolMetadata &Symbol, const FunctionExprPayload &
    size_t param_index = 0;
 
    for (const FunctionParameter &param : Function.parameters) {
-      if (param.is_self) continue;
 
       ParserDocParamMetadata meta;
       meta.name = identifier_to_string(param.name);
@@ -464,7 +457,6 @@ static TiriType infer_result_expression_type(const ExprNode &Expression, const F
          std::string expr_name = identifier_to_string(name->identifier);
 
          for (const FunctionParameter &param : Function.parameters) {
-            if (param.is_self) continue;
             if (identifier_to_string(param.name) IS expr_name and param.type != TiriType::Unknown) return param.type;
          }
       }

@@ -19,17 +19,17 @@ rxSplitPair <const> = <{ regex.new('([^=]+)=([^=]*)') }>
 function decodeFormComponent(Value:str):str
    Value ?! return ''
 
-   Value = Value:replace('+', ' ')
+   Value = Value.replace('+', ' ')
    result = ''
    last_stop = 0
 
    for start, stop, cap in rxPercentEncoded.findAll(Value) do
-      if start > last_stop then result ..= Value:sub(last_stop, start) end
+      if start > last_stop then result ..= Value.sub(last_stop, start) end
       result ..= string.char(tonumber(cap[0], 16))
       last_stop = stop
    end
 
-   return result .. Value:sub(last_stop)
+   return result .. Value.sub(last_stop)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -50,7 +50,7 @@ end
                  message = 'JSON test response',
                  contentType = req.headers['content-type'],
                  parsedData = parsedData,
-                 bodyLength = req.body and req.body:len() or 0
+                 bodyLength = req.body and req.body.len() or 0
               })
            end
          },
@@ -60,8 +60,8 @@ end
               res.json({
                  message = 'XML test response',
                  contentType = req.headers['content-type'],
-                 bodyLength = req.body and req.body:len() or 0,
-                 bodyPreview = req.body and req.body:sub(0, 100) or ''
+                 bodyLength = req.body and req.body.len() or 0,
+                 bodyPreview = req.body and req.body.sub(0, 100) or ''
               })
            end
          },
@@ -71,8 +71,8 @@ end
               isBinary = false
               if req.body then
                  -- Check for binary data (non-printable characters)
-                 for i in {0 to math.min(req.body:len(), 100)} do
-                    byte = req.body:byte(i)
+                 for i in {0 to math.min(req.body.len(), 100)} do
+                    byte = req.body.byte(i)
                     if byte < 32 and byte != 9 and byte != 10 and byte != 13 then
                        isBinary = true
                        break
@@ -83,7 +83,7 @@ end
               res.json({
                  message = 'Binary upload received',
                  contentType = req.headers['content-type'],
-                 bodyLength = req.body and req.body:len() or 0,
+                 bodyLength = req.body and req.body.len() or 0,
                  isBinary = isBinary
               })
            end
@@ -94,7 +94,7 @@ end
               -- Parse form data manually for testing
              parsedForm = {}
              if req.body then
-                 for pair in values(req.body:split('&')) do
+                 for pair in values(req.body.split('&')) do
                     local key, value = rxSplitPair.extract(pair)
                     if key and value then
                        parsedForm[decodeFormComponent(key)] = decodeFormComponent(value)
@@ -106,7 +106,7 @@ end
                  message = 'Form test response',
                  contentType = req.headers['content-type'],
                  parsedForm = parsedForm,
-                 bodyLength = req.body and req.body:len() or 0
+                 bodyLength = req.body and req.body.len() or 0
               })
            end
          },
@@ -120,7 +120,7 @@ end
                  message = 'Text test response',
                  contentType = contentType,
                  charset = charset or 'unknown',
-                 bodyLength = req.body and req.body:len() or 0
+                 bodyLength = req.body and req.body.len() or 0
               })
            end
          },
@@ -131,11 +131,11 @@ end
               negotiatedType = 'application/json' -- Default to JSON
 
               -- Simple content negotiation based on Accept header
-              if accept:find('application/json') then
+              if accept.find('application/json') then
                  negotiatedType = 'application/json'
-              elseif accept:find('application/xml') then
+              elseif accept.find('application/xml') then
                  negotiatedType = 'application/xml'
-              elseif accept:find('text/plain') then
+              elseif accept.find('text/plain') then
                  negotiatedType = 'text/plain'
               end
 
@@ -153,9 +153,9 @@ end
               contentType = req.headers['content-type'] or ''
 
               -- Only accept specific content types
-              if not (contentType:find('application/json') or
-                     contentType:find('application/xml') or
-                     contentType:find('text/plain')) then
+              if not (contentType.find('application/json') or
+                     contentType.find('application/xml') or
+                     contentType.find('text/plain')) then
                  res.status(415).json({
                     error = 'Unsupported Media Type',
                     received = contentType,
@@ -198,9 +198,9 @@ end
       contentType = 'application/json',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. jsonData,
-      size        = jsonData:len(),
+      size        = jsonData.len(),
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -245,9 +245,9 @@ end
       contentType = 'application/xml',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. xmlData,
-      size        = xmlData:len(),
+      size        = xmlData.len(),
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -265,8 +265,8 @@ end
 
    response = json.decode(content)
    assert(response.contentType is 'application/xml', 'XML content type not detected')
-   assert(response.bodyLength is xmlData:len(), 'XML body length mismatch')
-   assert(response.bodyPreview:find('<user>'), 'XML content not preserved')
+   assert(response.bodyLength is xmlData.len(), 'XML body length mismatch')
+   assert(response.bodyPreview.find('<user>'), 'XML content not preserved')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -287,7 +287,7 @@ end
       flags         = HTF_NO_HEAD,
       contentLength = -1,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
          assert(binarySent != true, 'Binary upload body requested more than once.')
@@ -311,7 +311,7 @@ end
 
    response = json.decode(content)
    assert(response.contentType is 'image/png', 'Binary content type not detected')
-   assert(response.bodyLength is binaryData:len(), 'Binary data length mismatch')
+   assert(response.bodyLength is binaryData.len(), 'Binary data length mismatch')
    assert(response.isBinary is true, 'Binary data not detected as binary')
 end
 
@@ -328,9 +328,9 @@ end
       contentType = 'application/x-www-form-urlencoded',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. formData,
-      size        = formData:len(),
+      size        = formData.len(),
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -367,7 +367,7 @@ end
       flags         = HTF_NO_HEAD,
       contentLength = -1,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
          assert(textSent != true, 'Text upload body requested more than once.')
@@ -390,9 +390,9 @@ end
    assert(http.status is 200, 'Text unexpected status: ' .. http.status)
 
    response = json.decode(content)
-   assert(response.contentType:find('text/plain'), 'Text content type not detected')
+   assert(response.contentType.find('text/plain'), 'Text content type not detected')
    assert(response.charset is 'utf-8', 'Charset not parsed correctly')
-   assert(response.bodyLength is textData:len(), 'Text data length mismatch')
+   assert(response.bodyLength is textData.len(), 'Text data length mismatch')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -405,7 +405,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -442,7 +442,7 @@ end
       inputFile   = 'string:custom binary data',
       size        = 18,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

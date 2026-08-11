@@ -34,16 +34,16 @@ function symbolCountBlockKeyword(LineCode:str, Keyword:str):num
    len = #LineCode
 
    while pos < len do
-      c = LineCode:sub(pos, pos + 1)
+      c = LineCode.sub(pos, pos + 1)
       if symbolIsBlockTokenChar(c) then
          token_start = pos
          pos++
 
-         while pos < len and symbolIsBlockTokenChar(LineCode:sub(pos, pos + 1)) do
+         while pos < len and symbolIsBlockTokenChar(LineCode.sub(pos, pos + 1)) do
             pos++
          end
 
-         if LineCode:sub(token_start, pos) is Keyword then
+         if LineCode.sub(token_start, pos) is Keyword then
             count++
          end
       else
@@ -57,7 +57,7 @@ end
 function symbolCountChar(LineCode:str, Char:str):num
    count = 0
    for i in {0 to #LineCode} do
-      if LineCode:sub(i, i + 1) is Char then count++ end
+      if LineCode.sub(i, i + 1) is Char then count++ end
    end
    return count
 end
@@ -72,9 +72,9 @@ end
 function symbolAddChild(Roots:array<table>, Stack:array<table>, Symbol:table)
    parent = symbolCurrentParent(Stack)
    if parent then
-      parent.children:push(Symbol)
+      parent.children.push(Symbol)
    else
-      Roots:push(Symbol)
+      Roots.push(Symbol)
    end
 end
 
@@ -95,7 +95,7 @@ end
 function symbolAnnotationLabels(Annotations:array<table>):array<string>
    labels = array<string>
    for anno in values(Annotations or array<table>) do
-      labels:push('@' .. anno.name)
+      labels.push('@' .. anno.name)
    end
    return labels
 end
@@ -109,24 +109,24 @@ end
 
 function symbolBuildDetail(Base:str, Annotations:array<table>):str
    parts = array<string>
-   if Base and Base != '' then parts:push(Base) end
+   if Base and Base != '' then parts.push(Base) end
    for label in values(symbolAnnotationLabels(Annotations)) do
-      parts:push(label)
+      parts.push(label)
    end
    if #parts is 0 then return nil end
-   return parts:concat(' ')
+   return parts.concat(' ')
 end
 
 function symbolMergeAnnotations(Left:array<table>, Right:array<table>):array<table>
    merged = array<table>
-   for anno in values(Left or array<table>) do merged:push(anno) end
-   for anno in values(Right or array<table>) do merged:push(anno) end
+   for anno in values(Left or array<table>) do merged.push(anno) end
+   for anno in values(Right or array<table>) do merged.push(anno) end
    return merged
 end
 
 function symbolSkipSpaces(Text:str, Pos:num):num
    while Pos < #Text do
-      c = Text:sub(Pos, Pos + 1)
+      c = Text.sub(Pos, Pos + 1)
       if c != ' ' and c != '\t' then break end
       Pos++
    end
@@ -138,13 +138,13 @@ function symbolReadAnnotationArgs(Text:str, Pos:num):<str,num>
    depth = 0
 
    while Pos < #Text do
-      c = Text:sub(Pos, Pos + 1)
+      c = Text.sub(Pos, Pos + 1)
 
       if c is '"' or c is "'" then
          quote = c
          Pos++
          while Pos < #Text do
-            sc = Text:sub(Pos, Pos + 1)
+            sc = Text.sub(Pos, Pos + 1)
             if sc is '\\' and Pos + 1 < #Text then
                Pos += 2
             elseif sc is quote then
@@ -161,14 +161,14 @@ function symbolReadAnnotationArgs(Text:str, Pos:num):<str,num>
          depth -= 1
          Pos++
          if depth <= 0 then
-            return Text:sub(start_pos + 1, Pos - 1), Pos
+            return Text.sub(start_pos + 1, Pos - 1), Pos
          end
       else
          Pos++
       end
    end
 
-   return Text:sub(start_pos + 1), Pos
+   return Text.sub(start_pos + 1), Pos
 end
 
 function symbolParseAnnotationPrefix(LineText:str):<array<table>,num>
@@ -177,32 +177,32 @@ function symbolParseAnnotationPrefix(LineText:str):<array<table>,num>
 
    while pos < #LineText do
       pos = symbolSkipSpaces(LineText, pos)
-      if pos < #LineText and LineText:sub(pos, pos + 1) is ';' then
+      if pos < #LineText and LineText.sub(pos, pos + 1) is ';' then
          pos++
          continue
       end
-      if pos >= #LineText or LineText:sub(pos, pos + 1) != '@' then break end
+      if pos >= #LineText or LineText.sub(pos, pos + 1) != '@' then break end
 
       pos++
       name_start = pos
-      if pos >= #LineText or not symbolIsIdentStart(LineText:sub(pos, pos + 1)) then break end
+      if pos >= #LineText or not symbolIsIdentStart(LineText.sub(pos, pos + 1)) then break end
 
       pos++
-      while pos < #LineText and symbolIsIdentChar(LineText:sub(pos, pos + 1)) do
+      while pos < #LineText and symbolIsIdentChar(LineText.sub(pos, pos + 1)) do
          pos++
       end
 
-      name = LineText:sub(name_start, pos)
+      name = LineText.sub(name_start, pos)
       args = nil
       pos = symbolSkipSpaces(LineText, pos)
-      if pos < #LineText and LineText:sub(pos, pos + 1) is '(' then
+      if pos < #LineText and LineText.sub(pos, pos + 1) is '(' then
          args, pos = symbolReadAnnotationArgs(LineText, pos)
       end
 
-      annotations:push({ name = name, args = args })
+      annotations.push({ name = name, args = args })
       pos = symbolSkipSpaces(LineText, pos)
 
-      if pos < #LineText and LineText:sub(pos, pos + 1) is ';' then
+      if pos < #LineText and LineText.sub(pos, pos + 1) is ';' then
          pos++
       end
    end
@@ -236,13 +236,13 @@ function symbolDetectFunction(LineCode:str, LineText:str, LineNo:num, Annotation
    if start_pos then
       scope = nil
       if cap[0] then
-         prefix = cap[0]:trim()
+         prefix = cap[0].trim()
          if prefix is 'local' or prefix is 'global' then scope = prefix end
       end
 
       name = cap[2]
-      name_start = LineText:find(name, start_pos, true) or start_pos
-      kind = name:find(':', 0, true) and SYMBOL_KIND.METHOD or SYMBOL_KIND.FUNCTION
+      name_start = LineText.find(name, start_pos, true) or start_pos
+      kind = name.find(':', 0, true) and SYMBOL_KIND.METHOD or SYMBOL_KIND.FUNCTION
       detail = symbolBuildDetail(scope, Annotations)
       return symbolMakeDocumentSymbol(name, kind, LineNo, LineText, name_start, detail, Annotations)
    end
@@ -251,14 +251,14 @@ function symbolDetectFunction(LineCode:str, LineText:str, LineNo:num, Annotation
    if start_pos then
       scope = nil
       if cap[0] then
-         prefix = cap[0]:trim()
+         prefix = cap[0].trim()
          if prefix is 'local' or prefix is 'global' then scope = prefix end
       end
 
       name = cap[1]
-      name_start = LineText:find(name, start_pos, true) or start_pos
-      kind = name:find('.', 0, true) and SYMBOL_KIND.METHOD or SYMBOL_KIND.FUNCTION
-      if name:find(':', 0, true) then kind = SYMBOL_KIND.METHOD end
+      name_start = LineText.find(name, start_pos, true) or start_pos
+      kind = name.find('.', 0, true) and SYMBOL_KIND.METHOD or SYMBOL_KIND.FUNCTION
+      if name.find(':', 0, true) then kind = SYMBOL_KIND.METHOD end
 
       detail_base = scope
       if kind is SYMBOL_KIND.METHOD then detail_base = scope and (scope .. ' method') or 'method' end
@@ -274,7 +274,7 @@ function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
    if decl_start then
       local module_name = decl_cap[0]
       local namespace_name = decl_cap[1]
-      local name_start = LineText:find(namespace_name, decl_start, true) or decl_start
+      local name_start = LineText.find(namespace_name, decl_start, true) or decl_start
       return symbolMakeDocumentSymbol(namespace_name, SYMBOL_KIND.NAMESPACE, LineNo, LineText, name_start,
          'module ' .. module_name, nil)
    end
@@ -285,7 +285,7 @@ function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
       name = cap[1]
       if name is 'function' then return nil end
 
-      name_start = LineText:find(name, start_pos, true) or start_pos
+      name_start = LineText.find(name, start_pos, true) or start_pos
       is_const = cap[2] and cap[2] != ''
       detail = is_const and (scope .. ' const') or scope
       kind = is_const and SYMBOL_KIND.CONSTANT or SYMBOL_KIND.VARIABLE
@@ -299,20 +299,20 @@ function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
 
       name = cap[0]
       is_const = cap[1] and cap[1] != ''
-      name_start = LineText:find(name, start_pos, true) or start_pos
+      name_start = LineText.find(name, start_pos, true) or start_pos
 
       eq_pos = stop_pos - 1
       if eq_pos > 0 then
-         prev_char = LineCode:sub(eq_pos - 1, eq_pos)
+         prev_char = LineCode.sub(eq_pos - 1, eq_pos)
          if prev_char is '=' or prev_char is '<' or prev_char is '>' or prev_char is '!' or prev_char is '~' then return nil end
       end
       if eq_pos + 1 < #LineCode then
-         next_char = LineCode:sub(eq_pos + 1, eq_pos + 2)
+         next_char = LineCode.sub(eq_pos + 1, eq_pos + 2)
          if next_char is '=' then return nil end
       end
 
-      after_assign = LineCode:sub(stop_pos)
-      is_table = rx_symbol_trim.extract(after_assign):startsWith('{')
+      after_assign = LineCode.sub(stop_pos)
+      is_table = rx_symbol_trim.extract(after_assign).startsWith('{')
       kind = is_table and SYMBOL_KIND.OBJECT or (is_const and SYMBOL_KIND.CONSTANT or SYMBOL_KIND.VARIABLE)
       detail = is_table and 'table' or (is_const and 'const' or nil)
       return symbolMakeDocumentSymbol(name, kind, LineNo, LineText, name_start, detail, nil)
@@ -328,7 +328,7 @@ function symbolDetectStruct(LineCode:str, LineText:str, LineNo:num):table
    if not start_pos then return nil end
 
    name = cap[0]
-   name_start = LineText:find(name, start_pos, true) or start_pos
+   name_start = LineText.find(name, start_pos, true) or start_pos
    return symbolMakeDocumentSymbol(name, SYMBOL_KIND.STRUCT, LineNo, LineText, name_start, 'struct', nil)
 end
 
@@ -337,18 +337,18 @@ end
 
 function symbolAddStructFields(Symbol:table, LineCode:str, LineText:str, LineNo:num, SearchFrom:num)
    search_pos = SearchFrom or 0
-   for segment in values(LineCode:split(',')) do
+   for segment in values(LineCode.split(',')) do
       s, e, cap = rx_symbol_struct_field.findFirst(segment)
       if s then
          field_name = cap[0]
-         field_type = segment:sub(e)
+         field_type = segment.sub(e)
          close_pos = rx_symbol_struct_end.findFirst(field_type)
-         if close_pos then field_type = field_type:sub(0, close_pos) end
-         field_type = field_type:trim()
-         name_start = LineText:find(field_name, search_pos, true) or search_pos
+         if close_pos then field_type = field_type.sub(0, close_pos) end
+         field_type = field_type.trim()
+         name_start = LineText.find(field_name, search_pos, true) or search_pos
          child = symbolMakeDocumentSymbol(field_name, SYMBOL_KIND.FIELD, LineNo, LineText, name_start,
             field_type, nil)
-         Symbol.children:push(child)
+         Symbol.children.push(child)
          search_pos = name_start + #field_name
       end
    end
@@ -359,13 +359,13 @@ function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:t
    if FunctionFrame and function_count > 0 then function_count -= 1 end
 
    for i in {1 to function_count+1} do
-      Stack:push({ kind = 'function' })
+      Stack.push({ kind = 'function' })
    end
 
    if symbolCountBlockKeyword(LineCode, 'then') > 0 then
       if_count = symbolCountBlockKeyword(LineCode, 'if')
       for i in {1 to if_count+1} do
-         Stack:push({ kind = 'block' })
+         Stack.push({ kind = 'block' })
       end
    end
 
@@ -373,21 +373,21 @@ function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:t
       for_count = symbolCountBlockKeyword(LineCode, 'for')
       while_count = symbolCountBlockKeyword(LineCode, 'while')
       for i in {1 to for_count+1} do
-         Stack:push({ kind = 'block' })
+         Stack.push({ kind = 'block' })
       end
       for i in {1 to while_count+1} do
-         Stack:push({ kind = 'block' })
+         Stack.push({ kind = 'block' })
       end
    end
 
    repeat_count = symbolCountBlockKeyword(LineCode, 'repeat')
    for i in {1 to repeat_count+1} do
-      Stack:push({ kind = 'repeat' })
+      Stack.push({ kind = 'repeat' })
    end
 
    defer_count = symbolCountBlockKeyword(LineCode, 'defer')
    for i in {1 to defer_count+1} do
-      Stack:push({ kind = 'block' })
+      Stack.push({ kind = 'block' })
    end
 end
 
@@ -395,7 +395,7 @@ function symbolCloseBlockFrames(Stack:array<table>, LineCode:str, LineNo:num, Li
    close_count = symbolCountBlockKeyword(LineCode, 'end') + symbolCountBlockKeyword(LineCode, 'until')
    for i in {1 to close_count+1} do
       if #Stack > 0 then
-         frame = Stack:pop()
+         frame = Stack.pop()
          symbolCloseFrame(frame, LineNo, LineText)
       end
    end
@@ -430,7 +430,7 @@ function symbolCloseTables(Stack:array<table>, LineCode:str, LineNo:num, LineTex
    for i in {#Stack - 1 into 0 by -1} do
       frame = Stack[i]
       if symbolIsBraceFrame(frame) then
-         Stack:remove(i)
+         Stack.remove(i)
          symbolCloseFrame(frame, LineNo, LineText)
          break
       end
@@ -471,7 +471,7 @@ global function extractDocumentSymbols(Doc:table):array<table>
 
       if #inline_annotations > 0 then
          line_annotations = symbolMergeAnnotations(pending_annotations, inline_annotations)
-         symbol_code = line_code:sub(annotation_end)
+         symbol_code = line_code.sub(annotation_end)
 
          if rx_symbol_trim.extract(symbol_code) is '' then
             pending_annotations = line_annotations
@@ -485,17 +485,17 @@ global function extractDocumentSymbols(Doc:table):array<table>
       if current_symbol then
          symbolAddChild(symbols, stack, current_symbol)
          function_frame = { kind = 'function', symbol = current_symbol }
-         stack:push(function_frame)
+         stack.push(function_frame)
          pending_annotations = array<table>
       elseif #stack is 0 then
          struct_symbol = symbolDetectStruct(symbol_code, line_text, line_num)
          if struct_symbol then
             symbolAddChild(symbols, stack, struct_symbol)
-            name_start = line_text:find(struct_symbol.name, 0, true) or 0
+            name_start = line_text.find(struct_symbol.name, 0, true) or 0
             remainder_start = name_start + #struct_symbol.name
-            symbolAddStructFields(struct_symbol, symbol_code:sub(remainder_start), line_text, line_num,
+            symbolAddStructFields(struct_symbol, symbol_code.sub(remainder_start), line_text, line_num,
                remainder_start)
-            stack:push({ kind = 'struct', symbol = struct_symbol })
+            stack.push({ kind = 'struct', symbol = struct_symbol })
          else
             module_symbol = symbolDetectModuleValue(symbol_code, line_text, line_num)
             if module_symbol then
@@ -503,7 +503,7 @@ global function extractDocumentSymbols(Doc:table):array<table>
                open_count = symbolCountChar(symbol_code, '{')
                close_count = symbolCountChar(symbol_code, '}')
                if module_symbol.kind is SYMBOL_KIND.OBJECT and open_count > close_count then
-                  stack:push({ kind = 'table', symbol = module_symbol, brace_depth = 0 })
+                  stack.push({ kind = 'table', symbol = module_symbol, brace_depth = 0 })
                end
             end
          end
@@ -523,7 +523,7 @@ global function extractDocumentSymbols(Doc:table):array<table>
    last_line = symbolLastContentLine(Doc, total_lines)
    last_text = getLine(Doc, last_line)
    while #stack > 0 do
-      frame = stack:pop()
+      frame = stack.pop()
       symbolCloseFrame(frame, last_line, last_text)
    end
 

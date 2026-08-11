@@ -34,21 +34,21 @@ global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
 
    -- Scan backwards to find token start
    while startCol > 0 do
-      c = lineText:sub(startCol - 1, startCol)
+      c = lineText.sub(startCol - 1, startCol)
       if not isIdent(c) then break end
       startCol -= 1
    end
 
    -- Scan forward to find token end
    while endCol < #lineText do
-      c = lineText:sub(endCol, endCol + 1)
+      c = lineText.sub(endCol, endCol + 1)
       if not isIdent(c) then break end
       endCol++
    end
 
    if startCol is endCol then return nil end
 
-   token = lineText:sub(startCol, endCol)
+   token = lineText.sub(startCol, endCol)
    context = 'identifier'
    precedingIdent = nil
 
@@ -57,29 +57,29 @@ global function getTokenAtPosition(Doc:table, Line:num, Character:num):table
       beforeStart = startCol - 1
 
       -- Skip whitespace
-      while beforeStart > 0 and (lineText:sub(beforeStart, beforeStart + 1) is ' ' or lineText:sub(beforeStart, beforeStart + 1) is '\t') do
+      while beforeStart > 0 and (lineText.sub(beforeStart, beforeStart + 1) is ' ' or lineText.sub(beforeStart, beforeStart + 1) is '\t') do
          beforeStart -= 1
       end
 
-      if lineText:sub(beforeStart, beforeStart + 1) is '.' then
+      if lineText.sub(beforeStart, beforeStart + 1) is '.' then
          -- Find the preceding identifier (the object/module name)
          objEnd = beforeStart
          objStart = beforeStart - 1
 
-         while objStart > 0 and isIdent(lineText:sub(objStart - 1, objStart)) do
+         while objStart > 0 and isIdent(lineText.sub(objStart - 1, objStart)) do
             objStart -= 1
          end
 
          if objStart < objEnd then
-            precedingIdent = lineText:sub(objStart, objEnd)
+            precedingIdent = lineText.sub(objStart, objEnd)
 
             -- Check if followed by parenthesis (method call)
             afterEnd = endCol
-            while afterEnd < #lineText and (lineText:sub(afterEnd, afterEnd + 1) is ' ' or lineText:sub(afterEnd, afterEnd + 1) is '\t') do
+            while afterEnd < #lineText and (lineText.sub(afterEnd, afterEnd + 1) is ' ' or lineText.sub(afterEnd, afterEnd + 1) is '\t') do
                afterEnd++
             end
 
-            if lineText:sub(afterEnd, afterEnd + 1) is '(' then
+            if lineText.sub(afterEnd, afterEnd + 1) is '(' then
                context = 'method_call'
             else
                context = 'field_access'
@@ -110,7 +110,7 @@ function buildTypeMap(Doc):table
       local varname, classname = cap[0], cap[1]
       -- Capitalize first letter for class name lookup (e.g., 'netsocket' -> 'NetSocket')
       -- Most class names in the XML are in TitleCase
-      normalizedClass = classname:sub(1,1):upper() .. classname:sub(2)
+      normalizedClass = classname.sub(1,1).upper() .. classname.sub(2)
       typeMap[varname] = normalizedClass
    end
 
@@ -130,7 +130,7 @@ function buildStructTypeMap(Doc:table, Position:table):table
    for line_num in {0 to total_lines} do
       line_text = getLine(Doc, line_num)
       if Position and line_num is Position.line then
-         line_text = line_text:sub(0, utf16ColToByteCol(line_text, Position.character))
+         line_text = line_text.sub(0, utf16ColToByteCol(line_text, Position.character))
       end
       line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
 
@@ -141,7 +141,7 @@ function buildStructTypeMap(Doc:table, Position:table):table
       -- The struct name is masked as a string, so match against the raw line and require the assignment prefix to
       -- remain visible in LineCode.  This excludes examples in comments and strings.
       for start, stop, cap in rx_struct_new.findAll(line_text) do
-         if line_code:sub(start, start + #cap[0]) is cap[0] then
+         if line_code.sub(start, start + #cap[0]) is cap[0] then
             struct_map[cap[0]] = cap[1]
          end
       end
@@ -204,7 +204,7 @@ function formatModuleFunctionHover(ModuleName, FuncName, FuncDoc)
       md ..= '```lua\n' .. doc.prototype .. '\n```\n\n'
    end
    md ..= doc.comment or ''
-   md ..= f'\n\n[Documentation]({HTML_URI}{ModuleName:lower()}.html?page={FuncName})'
+   md ..= f'\n\n[Documentation]({HTML_URI}{ModuleName.lower()}.html?page={FuncName})'
    return md
 end
 
@@ -281,12 +281,12 @@ function hoverAppendParamSection(Markdown:str, Params:any):str
             label ..= ': ' .. param.type
          end
          if label is '' then label = 'parameter' end
-         lines:push(f'- `{label}` - {param.doc}')
+         lines.push(f'- `{label}` - {param.doc}')
       end
    end
 
    if #lines > 0 then
-      Markdown ..= '\n\n**Parameters**\n\n' .. lines:concat('\n')
+      Markdown ..= '\n\n**Parameters**\n\n' .. lines.concat('\n')
    end
 
    return Markdown
@@ -300,12 +300,12 @@ function hoverAppendResultSection(Markdown:str, Results:any):str
          label = result.type or 'result'
          line = f'- `{label}`'
          if hoverTextHasContent(result.doc) then line ..= ' - ' .. result.doc end
-         lines:push(line)
+         lines.push(line)
       end
    end
 
    if #lines > 0 then
-      Markdown ..= '\n\n**Results**\n\n' .. lines:concat('\n')
+      Markdown ..= '\n\n**Results**\n\n' .. lines.concat('\n')
    end
 
    return Markdown
@@ -319,12 +319,12 @@ function hoverAppendErrorSection(Markdown:str, Errors:any):str
          label = err.code or 'error'
          line = f'- `{label}`'
          if hoverTextHasContent(err.doc) then line ..= ' - ' .. err.doc end
-         lines:push(line)
+         lines.push(line)
       end
    end
 
    if #lines > 0 then
-      Markdown ..= '\n\n**Errors**\n\n' .. lines:concat('\n')
+      Markdown ..= '\n\n**Errors**\n\n' .. lines.concat('\n')
    end
 
    return Markdown
@@ -340,11 +340,11 @@ function hoverAppendFieldSection(Markdown:str, Fields:any):str
       end
       line = f'- `{label}`'
       if hoverTextHasContent(field.doc) then line ..= ' - ' .. field.doc end
-      lines:push(line)
+      lines.push(line)
    end
 
    if #lines > 0 then
-      Markdown ..= '\n\n**Fields**\n\n' .. lines:concat('\n')
+      Markdown ..= '\n\n**Fields**\n\n' .. lines.concat('\n')
    end
 
    return Markdown
@@ -421,9 +421,9 @@ function resolveStructFieldHover(TokenInfo:table, Doc:table, Position:table):str
       if field.name is token then return formatStructFieldHover(struct_symbol.name, field) end
    end
 
-   lower_token = token:lower()
+   lower_token = token.lower()
    for field in values(struct_symbol.fields or array<table>) do
-      if field.name:lower() is lower_token then return formatStructFieldHover(struct_symbol.name, field) end
+      if field.name.lower() is lower_token then return formatStructFieldHover(struct_symbol.name, field) end
    end
 
    return nil
@@ -499,7 +499,7 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
             if context is 'method_call' then
                -- Check for action pattern (acXxx)
                if rx_action_prefix.test(token) then
-                  actionName = token:sub(3)
+                  actionName = token.sub(3)
                   if classDoc.actions and classDoc.actions[actionName] then
                      return formatActionHover(className, actionName, classDoc.actions[actionName])
                   end
@@ -507,7 +507,7 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
 
                -- Check for method pattern (mtXxx)
                if rx_method_prefix.test(token) then
-                  methodName = token:sub(3)
+                  methodName = token.sub(3)
                   if classDoc.methods and classDoc.methods[methodName] then
                      return formatMethodHover(className, methodName, classDoc.methods[methodName])
                   end
@@ -530,7 +530,7 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
                      return formatFieldHover(className, token, classDoc.fields[token])
                   end
                   -- Try capitalized (Tiri uses lowercase, XML uses TitleCase)
-                  capitalizedToken = token:sub(1,1):upper() .. token:sub(2)
+                  capitalizedToken = token.sub(1,1).upper() .. token.sub(2)
                   if classDoc.fields[capitalizedToken] then
                      return formatFieldHover(className, capitalizedToken, classDoc.fields[capitalizedToken])
                   end

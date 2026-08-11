@@ -13,7 +13,7 @@
    end
 
    expected = (count * (count + 1)) / 2
-   xq = obj.new('xquery', { statement = table.concat(terms, ' + ') })
+   xq = obj.new('xquery', { statement = terms.concat(' + ') })
    err = xq.acActivate()
    assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
    result = tonumber(xq.resultString)
@@ -31,7 +31,7 @@ end
    end
 
    expected = (count * (count + 1)) / 2
-   xq = obj.new('xquery', { statement = table.concat(terms, ' + ') })
+   xq = obj.new('xquery', { statement = terms.concat(' + ') })
    err = xq.acActivate()
    assert(err is ERR_Okay, 'Query execution failed: ' .. tostring(xq.errorMsg))
    result = tonumber(xq.resultString)
@@ -46,7 +46,7 @@ end
    for index in {2 into 10} do
       factors[#factors] = tostring(index)
    end
-   chain = table.concat(factors, ' * ')
+   chain = factors.concat(' * ')
 
    expected = 1
    for index in {2 into 10} do

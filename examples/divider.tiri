@@ -6,7 +6,7 @@
    import 'gui/window'
 
    win = gui.window({ title='Divider Example', insideWidth=400, insideHeight=200, minWidth=200, minHeight=50 })
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
    -- Create left and right viewports with a vertical divider to split them through the middle.
 
@@ -41,5 +41,5 @@
 
    -- Now show the window and enter the main loop.
 
-   win:show()
+   win.show()
    processing.sleep()

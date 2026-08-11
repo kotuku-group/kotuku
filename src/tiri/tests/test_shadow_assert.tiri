@@ -25,7 +25,7 @@ end
    try
       assert(false, 'Custom error message')
    except ex
-      assert(ex.message:find('Custom error message'), 'Error message should contain custom message')
+      assert(ex.message.find('Custom error message'), 'Error message should contain custom message')
    success
       error('Assert should have failed')
    end
@@ -38,7 +38,7 @@ end
    try
       assert(false)
    except ex
-      assert(ex.message:find('Assertion failed'), 'Error should contain default message, got ' .. ex.message)
+      assert(ex.message.find('Assertion failed'), 'Error should contain default message, got ' .. ex.message)
    success
       error('Assert should have failed')
    end

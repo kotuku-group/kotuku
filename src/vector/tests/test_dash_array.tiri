@@ -53,7 +53,7 @@ end
       })
    except e when ERR_SetValueNotArray
       caught = true
-      assert(e.message:contains('array<double>'),
+      assert(e.message.contains('array<double>'),
          'The DashArray type mismatch should identify array<double> as the expected field type.')
    end
 
@@ -72,7 +72,7 @@ end
       polygon.dashArray = array<int> { 2, 3 }
    except e when ERR_SetValueNotArray
       caught = true
-      assert(e.message:contains('array<double>'),
+      assert(e.message.contains('array<double>'),
          'The DashArray type mismatch should identify array<double> as the expected field type, got: ' .. e.message)
    end
 

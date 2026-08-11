@@ -21,7 +21,7 @@ function first_non_space(String:str!):num
 end
 
 function validate_text(Text:str!, Description:str!)
-   if Text:find('\n', 0, true) or Text:find('\r', 0, true) then
+   if Text.find('\n', 0, true) or Text.find('\r', 0, true) then
       error(Description .. ' cannot contain line breaks.')
    end
 end
@@ -35,7 +35,7 @@ end
 
 function validate_group_name(Name:any!):str
    Name = validate_name(Name, 'Config group name')
-   if Name:find('[', 0, true) or Name:find(']', 0, true) then
+   if Name.find('[', 0, true) or Name.find(']', 0, true) then
       error('Config group name cannot contain brackets.')
    end
    return Name
@@ -44,11 +44,11 @@ end
 function validate_key_name(Name:any!, GroupName:str!):str
    local description = f'Config key name in group "{GroupName}"'
    Name = validate_name(Name, description)
-   if Name:trim() != Name then error(description .. ' cannot contain surrounding whitespace.') end
-   if Name:startsWith('#') or Name:startsWith('[') then
+   if Name.trim() != Name then error(description .. ' cannot contain surrounding whitespace.') end
+   if Name.startsWith('#') or Name.startsWith('[') then
       error(description .. ' cannot start with "#" or "[".')
    end
-   if Name:find('=', 0, true) then error(description .. ' cannot contain "=".') end
+   if Name.find('=', 0, true) then error(description .. ' cannot contain "=".') end
    return Name
 end
 
@@ -60,24 +60,24 @@ end
 config.decode = function(String:str!):table
    local result:table = { }
    local current_group:table = nil
-   local normalised = String:replace('\r\n', '\n'):replace('\r', '\n')
+   local normalised = String.replace('\r\n', '\n').replace('\r', '\n')
 
-   for raw_line in values(normalised:split('\n')) do
+   for raw_line in values(normalised.split('\n')) do
       local content_start = first_non_space(raw_line)
       if content_start is nil then continue end
 
-      local line = raw_line:sub(content_start)
-      if line:startsWith('#') then continue end
+      local line = raw_line.sub(content_start)
+      if line.startsWith('#') then continue end
 
-      if line:startsWith('[') then
-         local close_pos = line:find(']', 1, true)
-         local nested_open_pos = line:find('[', 1, true)
+      if line.startsWith('[') then
+         local close_pos = line.find(']', 1, true)
+         local nested_open_pos = line.find('[', 1, true)
          if close_pos is nil or (nested_open_pos and nested_open_pos < close_pos) then
             current_group = nil
             continue
          end
 
-         local group_name = line:sub(1, close_pos)
+         local group_name = line.sub(1, close_pos)
          if group_name is '' then
             current_group = nil
             continue
@@ -93,16 +93,16 @@ config.decode = function(String:str!):table
 
       if current_group is nil then continue end
 
-      local equals_pos = line:find('=', 0, true)
+      local equals_pos = line.find('=', 0, true)
       if equals_pos is nil then continue end
 
-      local key = line:sub(0, equals_pos):rtrim()
+      local key = line.sub(0, equals_pos).rtrim()
       if key is '' then continue end
 
-      local value:str = line:sub(equals_pos + 1)
+      local value:str = line.sub(equals_pos + 1)
       local value_start:num = first_non_space(value)
       if value_start is nil then value = ''
-      else value = value:sub(value_start) end
+      else value = value.sub(value_start) end
 
       current_group[key] = value
    end
@@ -119,15 +119,15 @@ config.encode = function(Value:table!):str
    local output = array<string>
    local group_count = 0
 
-   for group_name, group in table.sortByKeys(Value) do
+   for group_name, group in Value.sortByKeys() do
       group_name = validate_group_name(group_name)
       if type(group) != 'table' then error(f'Config group "{group_name}" must be a table.') end
 
-      if group_count > 0 then output:push('\n') end
-      output:push('[', group_name, ']\n')
+      if group_count > 0 then output.push('\n') end
+      output.push('[', group_name, ']\n')
       group_count++
 
-      for key, value in table.sortByKeys(group) do
+      for key, value in group.sortByKeys() do
          key = validate_key_name(key, group_name)
 
          local value_type = type(value)
@@ -137,9 +137,9 @@ config.encode = function(Value:table!):str
 
          local value_text = tostring(value)
          validate_text(value_text, f'Config value for "{group_name}.{key}"')
-         output:push(key, ' = ', value_text, '\n')
+         output.push(key, ' = ', value_text, '\n')
       end
    end
 
-   return output:concat()
+   return output.concat()
 end

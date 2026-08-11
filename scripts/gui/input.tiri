@@ -46,7 +46,7 @@ gui.input = function(Options)
 
    -- Change the active state of the input box to disabled or enabled
 
-   self.disable = function(self)
+   self.disable = function()
       self.disabled = true
       self.viewport.acDisable()
       self.text.opacity = 0.5
@@ -55,7 +55,7 @@ gui.input = function(Options)
       self.viewport.acDraw()
    end
 
-   self.enable = function(self)
+   self.enable = function()
       self.disabled = false
       self.viewport.acDisable()
       self.text.opacity = 1.0
@@ -74,7 +74,7 @@ gui.input = function(Options)
       end
    end
 
-   self.setText = function(self, Text:str!)
+   self.setText = function(Text:str!)
       if self.text then self.text.string = Text end
       checkShadowLabel(self)
       self.viewport.acDraw()

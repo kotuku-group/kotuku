@@ -20,7 +20,7 @@ end
 
    win = gui.window({ title='Wave Function Demo', insideWidth=1024, insideHeight=800 })
 
-   viewport = win:clientViewport({
+   viewport = win.clientViewport({
       aspectRatio = ARF_MEET
    })
 
@@ -51,7 +51,7 @@ end
          { item='Flare' }, { item='Crest' }, { item='Viridis' }, { item='Plasma' }, { item='Inferno' } },
       events = {
          activate = function(Widget, Text)
-            waveFunction.colourMap = 'cmap:' .. Text:lower()
+            waveFunction.colourMap = 'cmap:' .. Text.lower()
             waveVP.scene.surface.mtScheduleRedraw()
          end
       }
@@ -141,5 +141,5 @@ end
    waveVP.y = cmbColours.viewport.y + cmbColours.viewport.height + 12
    updateText()
 
-   win:show()
+   win.show()
    processing.sleep()

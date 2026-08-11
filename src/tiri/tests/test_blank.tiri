@@ -77,7 +77,7 @@ end
    t = {a=1, b=2, c=3}
    local keys = {}
    for key, _ in pairs(t) do
-      table.insert(keys, key)
+      keys.insert(key)
    end
    assert(#keys is 3, "Failed for loop pairs blank value: expected 3 keys, got " .. #keys)
 end
@@ -215,7 +215,7 @@ end
    try
       exec("return _")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
       error("Expected parsing to fail when reading blank identifier")
    end
@@ -225,7 +225,7 @@ end
    try
       exec("print(_)")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
       error("Expected parsing to fail when reading blank identifier")
    end
@@ -235,7 +235,7 @@ end
    try
       exec("x = 'test' .. _")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
       error("Expected parsing to fail when reading blank identifier")
    end
@@ -246,7 +246,7 @@ end
    try
       exec("x = 1 + _")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
       error("Expected parsing to fail when reading blank identifier")
    end

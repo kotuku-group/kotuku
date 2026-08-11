@@ -31,7 +31,7 @@ function readFile(Path:str):str
    buffer = array<byte, file.size>
    err = mSys.ReadFileToBuffer(Path, buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
-   return buffer:getString()
+   return buffer.getString()
 end
 
 @BeforeAll function init()
@@ -135,7 +135,7 @@ end
    assert(err is ERR_Okay, 'Failed to read file ' .. fl.path)
 
    fl.acSeek(SEEK_START, 0)
-   fl.acWrite(buf:reverse())
+   fl.acWrite(buf.reverse())
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -159,7 +159,7 @@ function PathOnlyFileOwnership()
    try
       print(missing_file.user)
    except ex
-      assert(ex.message:startsWith('Read failure: File.user:'),
+      assert(ex.message.startsWith('Read failure: File.user:'),
          'A failed field read should identify File.user, got: ' .. ex.message)
    success
       error('Reading User for a missing file should fail.')
@@ -180,7 +180,7 @@ end
    err, result = fl.acRead(buffer)
    assert(err is ERR_Okay, 'Failed to read into mutable string buffer: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'Read length should match expected content size.')
-   assert(string.sub(buffer, 0, result) is expected, 'Mutable string buffer read returned unexpected content.')
+   assert(buffer.sub(0, result) is expected, 'Mutable string buffer read returned unexpected content.')
 
    try
       fl.acSeek(SEEK_START, 0)
@@ -220,7 +220,7 @@ end
    err, result = fl.acRead(buffer)
    assert(err is ERR_Okay, 'Buffered acRead() failed: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'Buffered acRead() returned an unexpected byte count.')
-   assert(string.sub(buffer, 0, result) is expected, 'Buffered acRead() returned unexpected content.')
+   assert(buffer.sub(0, result) is expected, 'Buffered acRead() returned unexpected content.')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -239,11 +239,11 @@ end
    assert((fl.flags & FL_BUFFER) != 0, 'BufferContent() should enable the BUFFER flag.')
    assert(fl.size is #expected, 'Buffered physical file Size should match the source content length.')
    assert(#fl.buffer is #expected, 'Public Buffer length should match the buffered file Size.')
-   assert(fl.buffer:getString() is expected, 'Buffered physical file content was not preserved.')
+   assert(fl.buffer.getString() is expected, 'Buffered physical file content was not preserved.')
 
    err = fl.mtBufferContent()
    assert(err is ERR_NothingDone, 'Repeated BufferContent() should be a no-op: ' .. mSys.GetErrorMsg(err))
-   assert(fl.buffer:getString() is expected, 'Repeated BufferContent() should not clear the existing buffer.')
+   assert(fl.buffer.getString() is expected, 'Repeated BufferContent() should not clear the existing buffer.')
 
    err = fl.acSeek(SEEK_START, 0)
    assert(err is ERR_Okay, 'Buffered physical acSeek() failed: ' .. mSys.GetErrorMsg(err))
@@ -267,7 +267,7 @@ end
    assert((fl.flags & FL_BUFFER) != 0, 'string: paths should create buffered files.')
    assert(fl.size is #expected, 'string: buffered file Size should match the string content length.')
    assert(#fl.buffer is #expected, 'string: public Buffer length should match the Size field.')
-   assert(fl.buffer:getString() is expected, 'string: buffer content was not preserved.')
+   assert(fl.buffer.getString() is expected, 'string: buffer content was not preserved.')
 
    err, line = fl.mtReadLine()
    assert(err is ERR_Okay, 'First buffered ReadLine() failed: ' .. mSys.GetErrorMsg(err))
@@ -513,17 +513,17 @@ end
    err, result = mSys.ReadFileToBuffer(read_path, buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'ReadFileToBuffer() returned an incorrect byte count.')
-   assert(buffer:getString() is expected, 'ReadFileToBuffer() did not return the expected text.')
+   assert(buffer.getString() is expected, 'ReadFileToBuffer() did not return the expected text.')
 
    approx_buffer = array<byte, #expected>
    err = mSys.ReadFileToBuffer('~' .. glTempRoot .. 'buffer_read', approx_buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed for an approximated path: ' .. mSys.GetErrorMsg(err))
-   assert(approx_buffer:getString() is expected, 'ReadFileToBuffer() did not resolve the approximated path correctly.')
+   assert(approx_buffer.getString() is expected, 'ReadFileToBuffer() did not resolve the approximated path correctly.')
 
    string_buffer = string.alloc(#expected)
    err = mSys.ReadFileToBuffer(read_path, string_buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed for a mutable string buffer: ' .. mSys.GetErrorMsg(err))
-   assert(string.sub(string_buffer, 0, #expected) is expected, 'ReadFileToBuffer() did not fill the mutable string buffer.')
+   assert(string_buffer.sub(0, #expected) is expected, 'ReadFileToBuffer() did not fill the mutable string buffer.')
 
    try
       mSys.ReadFileToBuffer(read_path, 'literal')
@@ -565,7 +565,7 @@ end
 
    events = array<table> { }
    err = folder.mtWatch(function(File, Path, Flags)
-      events:push({ path=tostring(Path), flags=Flags })
+      events.push({ path=tostring(Path), flags=Flags })
       return ERR_Okay
    end, MFF_CREATE|MFF_DELETE|MFF_CLOSED|MFF_MOVED|MFF_ATTRIB)
 

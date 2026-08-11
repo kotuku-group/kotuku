@@ -38,7 +38,7 @@ end
          buffer = array<byte, 1024>
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            print(buffer:getString(0, 80))
+            print(buffer.getString(0, 80))
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else

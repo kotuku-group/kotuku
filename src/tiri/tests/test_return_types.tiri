@@ -388,7 +388,7 @@ end
    end
 
    assert(count_down(100000, 0) is 100000,
-      "a typed self-tail call should complete without exhausting the stack")
+      "a typed Self-tail call should complete without exhausting the stack")
 end
 
 @Test function TypedTailRecursionPreservesTheReturnContract()
@@ -426,7 +426,7 @@ end
    end
 
    void_tail(100000)
-   assert(visits is 100001, "an explicit-void self-tail call should execute every recursive activation")
+   assert(visits is 100001, "an explicit-void Self-tail call should execute every recursive activation")
 end
 
 @Test function RecursiveFunctionWithoutTypeError()
@@ -620,10 +620,10 @@ end
 
 @Test function ReturnTypeInMethodSyntax()
    local obj = {}
-   function obj:getValue():num
+   function obj.getValue(Self):num
       return 42
    end
-   assert(obj:getValue() is 42, "method with return type should work")
+   assert(obj.getValue(obj) is 42, "method with return type should work")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -801,7 +801,7 @@ end
    except ex
       -- Check that error message is helpful
       local msg = ex.message
-      assert(string.find(msg, "type") or string.find(msg, "num") or string.find(msg, "str"),
+      assert(msg.find("type") or string.find(msg, "num") or string.find(msg, "str"),
          "error message should mention type information")
    success
       error("should have caught type error")

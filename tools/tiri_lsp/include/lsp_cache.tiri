@@ -26,9 +26,9 @@ global function decodeField(Str:any):table
    if type(Str) != 'string' then return Str end  -- Already decoded or nil
 
    result = {}
-   for field in values(Str:split('\t')) do
-      key = field:sub(0, 1)
-      value = field:sub(2)
+   for field in values(Str.split('\t')) do
+      key = field.sub(0, 1)
+      value = field.sub(2)
       if key is 'A' then
          result.access = value
       elseif key is 'L' then
@@ -61,7 +61,7 @@ function extractAttrFromText(Text:str, AttrName:str):str
    for start, stop, cap in rx_xml_attr.findAll(Text or '') do
       if cap[0] is AttrName then
          value = cap[1]
-         value?:unescapeXML()
+         value?.unescapeXML()
          return value
       end
    end
@@ -86,14 +86,14 @@ function extractXMLElement(Content:str, TagName:str, StartPos):table
    openTag = f'<{TagName}>'
    closeTag = f'</{TagName}>'
 
-   tagStart = Content:find(openTag, StartPos)
+   tagStart = Content.find(openTag, StartPos)
    tagStart ?! return
 
-   tagEnd = Content:find(closeTag, tagStart)
+   tagEnd = Content.find(closeTag, tagStart)
    tagEnd ?! return
 
-   content = Content:sub(tagStart + #openTag, tagEnd - 1)
-   content = content?:unescapeXML()
+   content = Content.sub(tagStart + #openTag, tagEnd - 1)
+   content = content?.unescapeXML()
 
    return {
       byteStart = tagStart,
@@ -106,7 +106,7 @@ function extractChildText(Content:str, TagName:str):str
    -- Extract text content of a child element
    rx = regex.new(f'<{TagName}>([^<]*)<\\/{TagName}>')
    content = rx.extract(Content)
-   content?:unescapeXML()
+   content?.unescapeXML()
    return content
 end
 
@@ -114,7 +114,7 @@ function extractChildAttr(Content:str, TagName:str, AttrName:str):str
    -- Extract attribute value from a child element
    rx = regex.new(f'<{TagName}[^>]*{AttrName}="([^"]*)"')
    content = rx.extract(Content)
-   content?:unescapeXML()
+   content?.unescapeXML()
    return content
 end
 
@@ -124,14 +124,14 @@ function extractSources(Content:str):array<table>
    sourceMatch ?! return sources
 
    for start, stop, cap in rx_source_file_path.findAll(sourceMatch.content) do
-      sources:push({
+      sources.push({
          path = cap[0] or '',
          file = cap[1] or ''
       })
    end
 
    for start, stop, cap in rx_source_file_plain.findAll(sourceMatch.content) do
-      sources:push({
+      sources.push({
          path = '',
          file = cap[0] or ''
       })
@@ -148,8 +148,8 @@ function extractInputParams(Content:str):array<table>
    for start, stop, cap in rx_input_param.findAll(inputMatch.content) do
       attrs = cap[0] or ''
       comment = cap[1] or ''
-      comment = comment:unescapeXML()
-      params:push({
+      comment = comment.unescapeXML()
+      params.push({
          name = extractAttrFromText(attrs, 'name') or '',
          type = extractAttrFromText(attrs, 'type') or '',
          doc = comment
@@ -164,7 +164,7 @@ function processModuleXML(FilePath:str, DocPath:str):<str,table>
    content = io.readAll(FilePath)
    content ?! return
 
-   relativePath = FilePath:replace(DocPath, '')
+   relativePath = FilePath.replace(DocPath, '')
 
    -- Extract module info
    infoMatch = extractXMLElement(content, 'info', 0)
@@ -213,7 +213,7 @@ function processClassXML(FilePath:str, DocPath:str):<str, table>
    content = io.readAll(FilePath)
    content ?! return
 
-   relativePath = FilePath:replace(DocPath, '')
+   relativePath = FilePath.replace(DocPath, '')
 
    -- Extract class info
    infoMatch = extractXMLElement(content, 'info', 0)
@@ -373,7 +373,7 @@ function serializeTable(Tbl:any, Indent):str
    if type(Tbl) != 'table' and type(Tbl) != 'array' then
       if type(Tbl) is 'string' then
          -- Escape special characters
-         escaped = Tbl:replace('\\', '\\\\'):replace('\n', '\\n'):replace('\r', '\\r'):replace("'", "\\'")
+         escaped = Tbl.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace("'", "\\'")
          return "'" .. escaped .. "'"
       elseif type(Tbl) is 'number' then
          return tostring(Tbl)
@@ -388,14 +388,14 @@ function serializeTable(Tbl:any, Indent):str
    for k, v in pairs(Tbl) do
       keyStr = type(k) is 'string' and "['" .. k .. "']" or '[' .. tostring(k) .. ']'
       valStr = serializeTable(v, nextIndent)
-      parts:push(nextIndent .. keyStr .. ' = ' .. valStr)
+      parts.push(nextIndent .. keyStr .. ' = ' .. valStr)
    end
 
    if #parts is 0 then
       return '{}'
    end
 
-   return '{\n' .. parts:concat(',\n') .. Indent .. '}'
+   return '{\n' .. parts.concat(',\n') .. Indent .. '}'
 end
 
 ----------------------------------------------------------------------------------------------------------------------

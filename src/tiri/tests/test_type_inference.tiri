@@ -261,5 +261,5 @@ end
    end
 
    local message:any = protectedCall()
-   assert(message:find('tail-position failure'), 'A try boundary must catch an exception from a returned call')
+   assert(message.find('tail-position failure'), 'A try boundary must catch an exception from a returned call')
 end

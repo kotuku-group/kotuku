@@ -547,9 +547,9 @@ static int pool_set(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// async.pool.clear() — Remove all entries from the shared pool.
+// async.pool.reset() — Remove all entries from the shared pool.
 
-static int pool_clear(lua_State *Lua)
+static int pool_reset(lua_State *Lua)
 {
    auto pool = get_pool(Lua);
    std::unique_lock lock(pool->mutex);
@@ -588,9 +588,9 @@ void register_async_class(lua_State *Lua)
    luaL_getmetatable(Lua, "Tiri.async.pool");
    lua_setmetatable(Lua, -2);                  // Assign the metatable
 
-   // Store pool.clear() as a raw key so it takes precedence over __index.
-   lua_pushstring(Lua, "clear");
-   lua_pushcfunction(Lua, pool_clear);
+   // Store pool.reset() as a raw key so it takes precedence over __index.
+   lua_pushstring(Lua, "reset");
+   lua_pushcfunction(Lua, pool_reset);
    lua_rawset(Lua, -3);
 
    lua_getglobal(Lua, "async");                // Push the async table

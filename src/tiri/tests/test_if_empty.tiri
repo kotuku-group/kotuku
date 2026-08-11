@@ -109,10 +109,10 @@ end
 
 @Test function TableAccessLHS()
    t = { }
-   table.insert(t, 10)
-   table.insert(t, 20)
-   table.insert(t, 30)
-   table.insert(t, 40)
+   t.insert(10)
+   t.insert(20)
+   t.insert(30)
+   t.insert(40)
 
    one = (t[0] ?? 0)
    two = (t[1] ?? 0)
@@ -267,18 +267,18 @@ end
 @Test function IfEmptyStringFindError()
    local function_value = { status = 'Hello' }
 
-   start_index, end_index = string.find((function_value.status ?? 'then'), 'e')
+   start_index, end_index = (function_value.status ?? 'then').find('e')
    assert(start_index is 1, "Expected search to start at index 1, got '" .. tostring(start_index) .. "'")
    assert(end_index is 1, "Expected search to end at index 1, got '" .. tostring(end_index) .. "'")
 end
 
 @Test function MethodCallInOptionalForm()
    local obj = {
-      getValue = function(self)
+      getValue = function()
          return "method_result"
       end
    }
-   v = obj:getValue() ?? "default"
+   v = obj.getValue() ?? "default"
    assert(v is "method_result", "Failed method call in optional form: expected 'method_result', got " .. tostring(v))
 end
 
@@ -378,7 +378,7 @@ end
    local function_value = { status = 'Hello' }
 
    -- If-empty operator within a function
-   result = string.find((function_value.status ?? 'then'), 'e')
+   result = (function_value.status ?? 'then').find('e')
    assert(result is 1, "Failed test: expected 1, got " .. tostring(result))
 end
 

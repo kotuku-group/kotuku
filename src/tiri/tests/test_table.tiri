@@ -15,8 +15,8 @@ end
 @Test function NewUsable()
    -- Pre-allocated table should be usable normally
    t = table.new(5, 0)
-   table.insert(t, 'a')
-   table.insert(t, 'b')
+   t.insert('a')
+   t.insert('b')
    assert(#t is 2, "Pre-allocated table should support insert")
    assert(t[0] is 'a')
    assert(t[1] is 'b')
@@ -25,52 +25,49 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function NilAndEmpty()
-   -- nil is treated as an empty table
-   assert(table.empty(nil) is true, "nil should be considered empty")
-
    -- empty table literal
    t = {}
-   assert(table.empty(t) is true, "{} should be empty")
+   assert(t.empty() is true, "{} should be empty")
 end
 
 @Test function ArrayAndHash()
    -- Non-empty array part
    arr = {1}
-   assert(table.empty(arr) is false, "Array with one element should not be empty")
+   assert(arr.empty() is false, "Array with one element should not be empty")
 
    -- Non-empty hash part
    map = { a = 1 }
-   assert(table.empty(map) is false, "Hash with one key should not be empty")
+   assert(map.empty() is false, "Hash with one key should not be empty")
 end
 
 @Test function SparseAndHoles()
    -- Sparse array with only a high index populated
    t = {}
    t[100] = 1
-   assert(table.empty(t) is false, "Sparse table with an entry should not be empty")
+   assert(t.empty() is false, "Sparse table with an entry should not be empty")
 
    -- Table with only holes (all nil)
    holes = {}
    holes[0] = nil
    holes[1] = nil
-   assert(table.empty(holes) is true, "Table with only nil entries should be empty")
+   assert(holes.empty() is true, "Table with only nil entries should be empty")
 end
 
 @Test function ClearAndMutation()
    t = { a = 5, 7 }
-   assert(table.empty(t) is false, "Initially non-empty table should not be empty")
+   assert(t.empty() is false, "Initially non-empty table should not be empty")
 
-   table.clear(t)
-   assert(table.empty(t) is true, "table.clear() should result in an empty table")
+   t.clear()
+   assert(t.empty() is true, "table.clear() should result in an empty table")
 
    -- Re-populate and re-check
    t[0] = 10
-   assert(table.empty(t) is false, "Re-populated table should not be empty")
+   assert(t.empty() is false, "Re-populated table should not be empty")
 end
 
 @Test function LookupWithField()
    cfg = { }
-   table.insert(cfg, { apple = "banana", orange = "lemon" })
+   cfg.insert({ apple = "banana", orange = "lemon" })
    lookup = { value = "apple" }
    assert(cfg[0][lookup.value] is "banana", "Lookup with field should return correct value")
 
@@ -78,7 +75,7 @@ end
    clients = { }
    for i in {0 to 2} do
       m[i] = {}
-      table.insert(m[i], 'CLIENT_' .. i)
+      m[i].insert('CLIENT_' .. i)
    end
    clients[0] = { }
    clients[0].messageIndex = 0
@@ -89,8 +86,8 @@ end
 @Test function SortByKeys()
    t = { b = 2, a = 1, c = 3 }
    local keys = {}
-   for k, v in table.sortByKeys(t) do
-      table.insert(keys, k)
+   for k, v in t.sortByKeys() do
+      keys.insert(k)
    end
    assert(#keys is 3, "Should have 3 keys after sorting, got " .. #keys)
    assert(keys[0] is 'a', "First key should be 'a'")
@@ -125,10 +122,10 @@ end
 @Test function TableLengthAfterInsertRemove()
    -- Test getn after modifications
    t = {}
-   table.insert(t, 'a')
-   table.insert(t, 'b')
+   t.insert('a')
+   t.insert('b')
    assert(#t is 2, "After 2 inserts, length should be 2")
-   table.remove(t)
+   t.remove()
    assert(#t is 1, "After remove, length should be 1")
 end
 
@@ -137,7 +134,7 @@ end
 @Test function MoveBasic()
    -- Test basic move within same table
    t = { 'a', 'b', 'c', 'd', 'e' }
-   result = table.move(t, 0, 2, 3)  -- Move indices 0-2 to start at 3
+   result = t.move(0, 2, 3)  -- Move indices 0-2 to start at 3
    assert(result is t, "move should return the target table")
    assert(t[3] is 'a', "t[3] should be 'a', got " .. tostring(t[3]))
    assert(t[4] is 'b', "t[4] should be 'b', got " .. tostring(t[4]))
@@ -148,7 +145,7 @@ end
    -- Test move to a different table
    src = { 10, 20, 30 }
    dst = {}
-   result = table.move(src, 0, 2, 0, dst)
+   result = src.move(0, 2, 0, dst)
    assert(result is dst, "move should return destination table")
    assert(dst[0] is 10, "dst[0] should be 10")
    assert(dst[1] is 20, "dst[1] should be 20")
@@ -159,7 +156,7 @@ end
    -- Test move with empty range (e < f)
    t = { 1, 2, 3 }
    original_len = #t
-   result = table.move(t, 2, 1, 5)  -- Empty range, should do nothing
+   result = t.move(2, 1, 5)  -- Empty range, should do nothing
    assert(result is t, "move should return the table")
    assert(#t is original_len, "Table length should be unchanged")
 end
@@ -167,14 +164,14 @@ end
 @Test function MoveSingleElement()
    -- Test moving a single element
    t = { 'x', 'y', 'z' }
-   table.move(t, 1, 1, 5)  -- Move t[1] to t[5]
+   t.move(1, 1, 5)  -- Move t[1] to t[5]
    assert(t[5] is 'y', "t[5] should be 'y', got " .. tostring(t[5]))
 end
 
 @Test function MoveOverlappingForward()
    -- Test overlapping move (shifting forward)
    t = { 1, 2, 3, 4, 5 }
-   table.move(t, 0, 2, 1)  -- Move 0-2 to 1-3 (overlapping)
+   t.move(0, 2, 1)  -- Move 0-2 to 1-3 (overlapping)
    assert(t[1] is 1, "t[1] should be 1, got " .. tostring(t[1]))
    assert(t[2] is 2, "t[2] should be 2, got " .. tostring(t[2]))
    assert(t[3] is 3, "t[3] should be 3, got " .. tostring(t[3]))
@@ -184,14 +181,14 @@ end
    -- Test that move returns the destination table
    src = { 1, 2, 3 }
    dst = { 'a', 'b' }
-   result = table.move(src, 0, 2, 0, dst)
+   result = src.move(0, 2, 0, dst)
    assert(result is dst, "move should return destination table when provided")
 end
 
 @Test function MoveNoDestination()
    -- Test move without explicit destination (uses source)
    t = { 'a', 'b', 'c' }
-   result = table.move(t, 0, 1, 5)
+   result = t.move(0, 1, 5)
    assert(result is t, "move should return source table when no destination")
    assert(t[5] is 'a', "t[5] should be 'a'")
    assert(t[6] is 'b', "t[6] should be 'b'")
@@ -203,19 +200,25 @@ end
 @Test function InsertAppend()
    -- Default insert appends to end
    t = {}
-   table.insert(t, 'a')
-   table.insert(t, 'b')
-   table.insert(t, 'c')
+   t.insert('a')
+   t.insert('b')
+   t.insert('c')
    assert(#t is 3, "Table should have 3 elements after 3 inserts")
    assert(t[0] is 'a', "t[0] should be 'a'")
    assert(t[1] is 'b', "t[1] should be 'b'")
    assert(t[2] is 'c', "t[2] should be 'c'")
 end
 
+@Test function DotNativeMemberCall()
+   local t = {}
+   t.insert('dot')
+   assert(t[0] is 'dot', 'A dot native table member call should use the original table context')
+end
+
 @Test function InsertAtPosition()
    -- Positional insert shifts elements
    t = { 'a', 'b', 'c' }
-   table.insert(t, 1, 'x')
+   t.insert(1, 'x')
    assert(#t is 4, "Table should have 4 elements after positional insert")
    assert(t[0] is 'a', "t[0] should remain 'a'")
    assert(t[1] is 'x', "t[1] should be inserted 'x'")
@@ -226,7 +229,7 @@ end
 @Test function InsertAtStart()
    -- Insert at position 0 shifts everything
    t = { 10, 20, 30 }
-   table.insert(t, 0, 5)
+   t.insert(0, 5)
    assert(#t is 4, "Table should have 4 elements")
    assert(t[0] is 5, "t[0] should be 5")
    assert(t[1] is 10, "t[1] should be 10")
@@ -237,10 +240,10 @@ end
 @Test function InsertMixedTypes()
    -- Insert different value types
    t = {}
-   table.insert(t, 42)
-   table.insert(t, 'hello')
-   table.insert(t, true)
-   table.insert(t, { nested = 1 })
+   t.insert(42)
+   t.insert('hello')
+   t.insert(true)
+   t.insert({ nested = 1 })
    assert(#t is 4, "Table should have 4 elements")
    assert(t[0] is 42, "t[0] should be 42")
    assert(t[1] is 'hello', "t[1] should be 'hello'")
@@ -254,7 +257,7 @@ end
 @Test function RemoveLast()
    -- Remove without position removes last element
    t = { 'a', 'b', 'c' }
-   val = table.remove(t)
+   val = t.remove()
    assert(val is 'c', "Removed value should be 'c', got " .. tostring(val))
    assert(#t is 2, "Table should have 2 elements after remove")
    assert(t[0] is 'a', "t[0] should still be 'a'")
@@ -264,7 +267,7 @@ end
 @Test function RemoveAtPosition()
    -- Remove at specific position shifts elements
    t = { 'a', 'b', 'c', 'd' }
-   val = table.remove(t, 1)
+   val = t.remove(1)
    assert(val is 'b', "Removed value should be 'b', got " .. tostring(val))
    assert(#t is 3, "Table should have 3 elements after remove")
    assert(t[0] is 'a', "t[0] should be 'a'")
@@ -275,7 +278,7 @@ end
 @Test function RemoveAtStart()
    -- Remove at position 0
    t = { 10, 20, 30 }
-   val = table.remove(t, 0)
+   val = t.remove(0)
    assert(val is 10, "Removed value should be 10, got " .. tostring(val))
    assert(#t is 2, "Table should have 2 elements")
    assert(t[0] is 20, "t[0] should be 20")
@@ -285,14 +288,14 @@ end
 @Test function RemoveFromEmpty()
    -- Remove from empty table should return nothing
    t = {}
-   val = table.remove(t)
+   val = t.remove()
    assert(val is nil, "Remove from empty table should return nil")
 end
 
 @Test function RemoveOutOfBounds()
    -- Remove with out-of-bounds position
    t = { 1, 2, 3 }
-   val = table.remove(t, 10)
+   val = t.remove(10)
    assert(val is nil, "Remove out of bounds should return nil")
    assert(#t is 3, "Table should be unchanged after out-of-bounds remove")
 end
@@ -303,42 +306,42 @@ end
 @Test function ConcatBasic()
    -- Basic concatenation of string elements
    t = { 'a', 'b', 'c' }
-   result = table.concat(t)
+   result = t.concat()
    assert(result is 'abc', "concat without separator should join directly, got '" .. result .. "'")
 end
 
 @Test function ConcatWithSeparator()
    -- Concatenation with separator
    t = { 'hello', 'world', 'foo' }
-   result = table.concat(t, ', ')
+   result = t.concat(', ')
    assert(result is 'hello, world, foo', "concat with separator failed, got '" .. result .. "'")
 end
 
 @Test function ConcatNumbers()
    -- Numbers should be converted to strings
    t = { 1, 2, 3, 4, 5 }
-   result = table.concat(t, '-')
+   result = t.concat('-')
    assert(result is '1-2-3-4-5', "concat numbers failed, got '" .. result .. "'")
 end
 
 @Test function ConcatWithRange()
    -- Concatenation with start and end indices
    t = { 'a', 'b', 'c', 'd', 'e' }
-   result = table.concat(t, ',', 1, 3)
+   result = t.concat(',', 1, 3)
    assert(result is 'b,c,d', "concat with range failed, got '" .. result .. "'")
 end
 
 @Test function ConcatSingleElement()
    -- Single element table
    t = { 'only' }
-   result = table.concat(t, ',')
+   result = t.concat(',')
    assert(result is 'only', "concat single element should return element itself, got '" .. result .. "'")
 end
 
 @Test function ConcatEmpty()
    -- Empty table
    t = {}
-   result = table.concat(t, ',')
+   result = t.concat(',')
    assert(result is '', "concat empty table should return empty string, got '" .. result .. "'")
 end
 
@@ -348,7 +351,7 @@ end
 @Test function SortNumeric()
    -- Sort numbers in ascending order (default)
    t = { 5, 3, 1, 4, 2 }
-   table.sort(t)
+   t.sort()
    assert(t[0] is 1, "t[0] should be 1, got " .. tostring(t[0]))
    assert(t[1] is 2, "t[1] should be 2, got " .. tostring(t[1]))
    assert(t[2] is 3, "t[2] should be 3")
@@ -359,7 +362,7 @@ end
 @Test function SortStrings()
    -- Sort strings alphabetically
    t = { 'banana', 'apple', 'cherry', 'date' }
-   table.sort(t)
+   t.sort()
    assert(t[0] is 'apple', "t[0] should be 'apple'")
    assert(t[1] is 'banana', "t[1] should be 'banana'")
    assert(t[2] is 'cherry', "t[2] should be 'cherry'")
@@ -369,7 +372,7 @@ end
 @Test function SortWithComparator()
    -- Sort with custom comparator (descending)
    t = { 1, 5, 3, 2, 4 }
-   table.sort(t, function(a, b) return a > b end)
+   t.sort(function(a, b) return a > b end)
    assert(t[0] is 5, "t[0] should be 5 (descending)")
    assert(t[1] is 4, "t[1] should be 4")
    assert(t[2] is 3, "t[2] should be 3")
@@ -380,7 +383,7 @@ end
 @Test function SortAlreadySorted()
    -- Sorting an already sorted table should be stable
    t = { 1, 2, 3, 4, 5 }
-   table.sort(t)
+   t.sort()
    assert(t[0] is 1, "Already sorted table should remain sorted")
    assert(t[4] is 5)
 end
@@ -388,14 +391,14 @@ end
 @Test function SortSingleElement()
    -- Sorting a single element table
    t = { 42 }
-   table.sort(t)
+   t.sort()
    assert(t[0] is 42, "Single element should remain unchanged")
 end
 
 @Test function SortTwoElements()
    -- Sorting two elements
    t = { 9, 1 }
-   table.sort(t)
+   t.sort()
    assert(t[0] is 1, "t[0] should be 1")
    assert(t[1] is 9, "t[1] should be 9")
 end
@@ -405,7 +408,7 @@ end
 @Test function ClearArrayPart()
    -- Clear should remove array elements
    t = { 1, 2, 3, 4, 5 }
-   table.clear(t)
+   t.clear()
    assert(#t is 0, "Cleared table should have length 0")
    assert(t[0] is nil, "t[0] should be nil after clear")
 end
@@ -413,8 +416,8 @@ end
 @Test function ClearHashPart()
    -- Clear should also remove hash entries
    t = { a = 1, b = 2, c = 3 }
-   table.clear(t)
-   assert(table.empty(t) is true, "Cleared hash table should be empty")
+   t.clear()
+   assert(t.empty() is true, "Cleared hash table should be empty")
    assert(t.a is nil, "t.a should be nil after clear")
    assert(t.b is nil, "t.b should be nil after clear")
 end
@@ -423,10 +426,10 @@ end
    -- Clear a table with both array and hash parts.  Clearing empties the table but does not restore its
    -- classification, so the length operator continues to report nil.
    t = { 'x', 'y', name = 'test', value = 42 }
-   table.clear(t)
+   t.clear()
    assert(t[0] is nil, "Array part should be cleared")
    assert(t.name is nil, "Hash part should be cleared")
-   assert(table.empty(t) is true, "Table should be completely empty")
+   assert(t.empty() is true, "Table should be completely empty")
    assert(#t is nil, "Clearing must not restore a numerical length")
 end
 
@@ -437,7 +440,7 @@ end
    -- Empty table should yield no iterations
    t = {}
    count = 0
-   for k, v in table.sortByKeys(t) do
+   for k, v in t.sortByKeys() do
       count++
    end
    assert(count is 0, "Empty table should have 0 iterations")
@@ -448,9 +451,9 @@ end
    t = { solo = 99 }
    local keys = {}
    vals = {}
-   for k, v in table.sortByKeys(t) do
-      table.insert(keys, k)
-      table.insert(vals, v)
+   for k, v in t.sortByKeys() do
+      keys.insert(k)
+      vals.insert(v)
    end
    assert(#keys is 1, "Should have 1 key")
    assert(keys[0] is 'solo', "Key should be 'solo'")
@@ -461,8 +464,8 @@ end
    -- Custom comparator for reverse order
    t = { b = 2, a = 1, c = 3 }
    local keys = {}
-   for k, v in table.sortByKeys(t, function(a, b) return a > b end) do
-      table.insert(keys, k)
+   for k, v in t.sortByKeys(function(a, b) return a > b end) do
+      keys.insert(k)
    end
    assert(#keys is 3, "Should have 3 keys")
    assert(keys[0] is 'c', "First key should be 'c' (descending)")
@@ -474,8 +477,8 @@ end
    -- Verify values are correctly paired with keys
    t = { b = 20, a = 10, c = 30 }
    pairs_list = {}
-   for k, v in table.sortByKeys(t) do
-      table.insert(pairs_list, k .. '=' .. v)
+   for k, v in t.sortByKeys() do
+      pairs_list.insert(k .. '=' .. v)
    end
    assert(pairs_list[0] is 'a=10', "First pair should be 'a=10'")
    assert(pairs_list[1] is 'b=20', "Second pair should be 'b=20'")
@@ -488,61 +491,61 @@ end
 @Test function ToXMLSimpleElement()
    -- Simple element with no attributes or children
    t = { item = {} }
-   result = table.toXML(t)
+   result = t.toXML()
    assert(result is '<item/>', "Simple empty element should be self-closing, got '" .. result .. "'")
 end
 
 @Test function ToXMLWithAttributes()
    -- Element with string attributes
    t = { item = { name = 'test', value = '42' } }
-   result = table.toXML(t)
+   result = t.toXML()
    -- Attributes can appear in any order, so check for presence
-   assert(string.find(result, 'name="test"'), "Should contain name attribute, got '" .. result .. "'")
-   assert(string.find(result, 'value="42"'), "Should contain value attribute, got '" .. result .. "'")
-   assert(string.find(result, '/>'), "Element with only attributes should be self-closing")
+   assert(result.find('name="test"'), "Should contain name attribute, got '" .. result .. "'")
+   assert(result.find('value="42"'), "Should contain value attribute, got '" .. result .. "'")
+   assert(result.find('/>'), "Element with only attributes should be self-closing")
 end
 
 @Test function ToXMLWithNumericAttribute()
    -- Numeric attribute values
    t = { item = { count = 5 } }
-   result = table.toXML(t)
-   assert(string.find(result, 'count=5'), "Should contain numeric attribute, got '" .. result .. "'")
+   result = t.toXML()
+   assert(result.find('count=5'), "Should contain numeric attribute, got '" .. result .. "'")
 end
 
 @Test function ToXMLWithBooleanAttribute()
    -- Boolean true attribute (should appear as bare attribute)
    t = { item = { enabled = true } }
-   result = table.toXML(t)
-   assert(string.find(result, 'enabled'), "Should contain boolean attribute, got '" .. result .. "'")
+   result = t.toXML()
+   assert(result.find('enabled'), "Should contain boolean attribute, got '" .. result .. "'")
 end
 
 @Test function ToXMLWithChildContent()
    -- Element with text child content
    t = { item = { [0] = 'hello' } }
-   result = table.toXML(t)
-   assert(string.find(result, '>hello</>'), "Should contain text child, got '" .. result .. "'")
+   result = t.toXML()
+   assert(result.find('>hello</>'), "Should contain text child, got '" .. result .. "'")
 end
 
 @Test function ToXMLEscaping()
    -- Content with special XML characters should be escaped
    t = { item = { [0] = 'a&b<c>d' } }
-   result = table.toXML(t)
-   assert(string.find(result, '&amp;'), "Ampersand should be escaped, got '" .. result .. "'")
-   assert(string.find(result, '&lt;'), "Less-than should be escaped, got '" .. result .. "'")
-   assert(string.find(result, '&gt;'), "Greater-than should be escaped, got '" .. result .. "'")
+   result = t.toXML()
+   assert(result.find('&amp;'), "Ampersand should be escaped, got '" .. result .. "'")
+   assert(result.find('&lt;'), "Less-than should be escaped, got '" .. result .. "'")
+   assert(result.find('&gt;'), "Greater-than should be escaped, got '" .. result .. "'")
 end
 
 @Test function ToXMLAttributeEscaping()
    -- Attribute values with special characters should be escaped
    t = { item = { title = 'A&B' } }
-   result = table.toXML(t)
-   assert(string.find(result, 'title="A&amp;B"'), "Attribute should have escaped ampersand, got '" .. result .. "'")
+   result = t.toXML()
+   assert(result.find('title="A&amp;B"'), "Attribute should have escaped ampersand, got '" .. result .. "'")
 end
 
 @Test function ToXMLEmptyTable()
    -- Empty input table should produce empty string
    t = {}
-   result = table.toXML(t)
+   result = t.toXML()
    assert(result is '', "Empty table should produce empty XML string, got '" .. result .. "'")
 end
 
@@ -598,7 +601,7 @@ end
    t.name = nil
    assert(#t is nil, "Deleting the last string entry must not restore the length")
 
-   table.clear(t)
+   t.clear()
    assert(#t is nil, "table.clear() must not restore the length")
 
    t[0] = 'a'
@@ -622,7 +625,7 @@ end
    t = { 1, 2, 3 }
    t[-5] = 'negative'
    assert(#t is nil, "A negative key should classify the table as sparse, got " .. tostring(#t))
-   assert(table.kind(t) is 'sparse', "Expected sparse, got " .. table.kind(t))
+   assert(t.kind() is 'sparse', "Expected sparse, got " .. t.kind())
 end
 
 @Test function LengthNilAfterFractionalKey()
@@ -630,7 +633,7 @@ end
    t = { 1, 2, 3 }
    t[1.5] = 'fractional'
    assert(#t is nil, "A fractional key should classify the table as sparse, got " .. tostring(#t))
-   assert(table.kind(t) is 'sparse', "Expected sparse, got " .. table.kind(t))
+   assert(t.kind() is 'sparse', "Expected sparse, got " .. t.kind())
 end
 
 @Test function LengthSurvivesDistantNumericKey()
@@ -639,7 +642,7 @@ end
    t = { 1, 2, 3 }
    t[9999] = 'distant'
    assert(#t is 3, "A distant positive key should preserve the length, got " .. tostring(#t))
-   assert(table.kind(t) is 'sequence', "Expected sequence, got " .. table.kind(t))
+   assert(t.kind() is 'sequence', "Expected sequence, got " .. t.kind())
 end
 
 @Test function LengthNilAfterNonNumericKeys()
@@ -692,17 +695,17 @@ end
 
    local rejected = false
    try
-      table.insert(t, 3)
+      t.insert(3)
    except e
       rejected = true
-      assert(e.message:find('sequence table'), "Diagnostic should name the requirement, got " .. e.message)
-      assert(e.message:find('associative'), "Diagnostic should name the classification, got " .. e.message)
+      assert(tostring(e.message).find('sequence table'), "Diagnostic should name the requirement, got " .. e.message)
+      assert(tostring(e.message).find('associative'), "Diagnostic should name the classification, got " .. e.message)
    end
    assert(rejected is true, "insert should reject an associative table")
 
    rejected = false
    try
-      table.remove(t)
+      t.remove()
    except e
       rejected = true
    end
@@ -710,35 +713,35 @@ end
 
    rejected = false
    try
-      table.sort(t)
+      t.sort()
    except e
       rejected = true
    end
    assert(rejected is true, "sort should reject an associative table")
 
    -- table.empty() is independent of classification and keeps inspecting live entries.
-   assert(table.empty(t) is false, "Table with entries should not be empty")
+   assert(t.empty() is false, "Table with entries should not be empty")
 end
 
 @Test function SequenceFunctionsAcceptSequences()
    -- The guard must not disturb ordinary dense sequence usage.
    t = { 1, 2 }
-   table.insert(t, 3)
+   t.insert(3)
    assert(t[2] is 3, "insert should append at the numerical length")
-   assert(table.remove(t) is 3, "remove should operate on the sequence")
-   assert(table.empty(t) is false, "Table with entries should not be empty")
+   assert(t.remove() is 3, "remove should operate on the sequence")
+   assert(t.empty() is false, "Table with entries should not be empty")
 end
 
 @Test function ExplicitBoundsRemainValidOnClassifiedTables()
    -- Explicitly bounded operations work on the caller-supplied domain, so they accept any classification.
    t = { 'a', 'b', 'c' }
    t.name = 'x'
-   assert(table.concat(t, ',', 0, 2) is 'a,b,c', "Explicitly bounded concat should be permitted")
+   assert(t.concat(',', 0, 2) is 'a,b,c', "Explicitly bounded concat should be permitted")
 
    -- Omitting the end index infers the boundary and is therefore rejected.
    local rejected = false
    try
-      local joined = table.concat(t, ',')
+      local joined = t.concat(',')
    except e
       rejected = true
    end
@@ -747,17 +750,17 @@ end
 
 @Test function KindReportsEveryClassification()
    -- table.kind() reports permanent usage history, not the table's current live shape.
-   assert(table.kind({ 10, 20, 30 }) is 'sequence', "Dense literal should be a sequence")
-   assert(table.kind({ name = 'example' }) is 'associative', "Named field should classify as associative")
+   assert(({ 10, 20, 30 }).kind() is 'sequence', "Dense literal should be a sequence")
+   assert(({ name = 'example' }).kind() is 'associative', "Named field should classify as associative")
 
    local sparse = { 1, 2 }
    sparse[-1] = 'negative'
-   assert(table.kind(sparse) is 'sparse', "Negative key should classify as sparse")
+   assert(sparse.kind() is 'sparse', "Negative key should classify as sparse")
 
    local mixed = { 1, 2 }
    mixed[-1] = 'negative'
    mixed.name = 'example'
-   assert(table.kind(mixed) is 'mixed', "Both histories should report mixed")
+   assert(mixed.kind() is 'mixed', "Both histories should report mixed")
 end
 
 @Test function KindIsPermanent()
@@ -765,11 +768,11 @@ end
    local t = { 1, 2, 3 }
    t.name = 'example'
    t.name = nil
-   assert(table.kind(t) is 'associative', "Deleting the key must not restore the classification")
+   assert(t.kind() is 'associative', "Deleting the key must not restore the classification")
 
-   table.clear(t)
-   assert(table.kind(t) is 'associative', "table.clear() must not restore the classification")
-   assert(table.empty(t) is true, "table.clear() should still empty the table")
+   t.clear()
+   assert(t.kind() is 'associative', "table.clear() must not restore the classification")
+   assert(t.empty() is true, "table.clear() should still empty the table")
 end
 
 @Test function LiteralClassificationSurvivesBytecodeRoundTrip()
@@ -781,35 +784,35 @@ end
       local sparse = exec(string.dump(sparse_factory, stripped))
       local associative = exec(string.dump(associative_factory, stripped))
       local mixed = exec(string.dump(mixed_factory, stripped))
-      assert(table.kind(sparse) is 'sparse', "Sparse literal classification must survive bytecode dumping")
-      assert(table.kind(associative) is 'associative',
+      assert(sparse.kind() is 'sparse', "Sparse literal classification must survive bytecode dumping")
+      assert(associative.kind() is 'associative',
          "Associative literal classification must survive bytecode dumping")
-      assert(table.kind(mixed) is 'mixed', "Mixed literal classification must survive bytecode dumping")
+      assert(mixed.kind() is 'mixed', "Mixed literal classification must survive bytecode dumping")
    end
 end
 
 @Test function SizeCountsEveryLiveEntry()
    -- table.size() counts array and hash entries alike, independently of classification and '#'.
-   assert(table.size({ 10, 20, name = 'example' }) is 3, "Should count array and hash entries")
-   assert(table.size({}) is 0, "Empty table should report zero")
+   assert(({ 10, 20, name = 'example' }).size() is 3, "Should count array and hash entries")
+   assert(({}).size() is 0, "Empty table should report zero")
 
    local sparse = {}
    sparse[-1] = true
-   assert(table.size(sparse) is 1, "Should count a single sparse entry")
+   assert(sparse.size() is 1, "Should count a single sparse entry")
 
    -- Falsey values are live entries; nilled nodes are not.
    local falsey = { false, 0, '' }
-   assert(table.size(falsey) is 3, "Falsey values are live entries")
+   assert(falsey.size() is 3, "Falsey values are live entries")
 
    local removed = { 1, 2, 3 }
    removed[2] = nil
-   assert(table.size(removed) is 2, "Nilled entries should not be counted")
+   assert(removed.size() is 2, "Nilled entries should not be counted")
 end
 
 function assert_duplicate_key(Source:str, Context:str)
    local result = debug.validate(Source)
    assert(result.success is false, Context .. ': source should fail validation')
-   assert(string.find(result.diagnostics[0].message, 'Duplicate key', 0, true) != nil,
+   assert(result.diagnostics[0].message.find('Duplicate key', 0, true) != nil,
       Context .. ': expected a duplicate-key diagnostic, got: ' .. tostring(result.diagnostics[0].message))
 end
 
@@ -855,6 +858,6 @@ end
 @Test function LiteralClassificationIgnoresOrder()
    -- Explicit non-negative integer keys remain in the sequence-compatible domain regardless of source order.
    local ordered = { [1] = 'b', [0] = 'a', [2] = 'c' }
-   assert(table.kind(ordered) is 'sequence', "Out-of-order dense keys should remain a sequence")
+   assert(ordered.kind() is 'sequence', "Out-of-order dense keys should remain a sequence")
    assert(#ordered is 3, "Out-of-order dense literal should report its length, got " .. tostring(#ordered))
 end

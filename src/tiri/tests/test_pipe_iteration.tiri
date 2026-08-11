@@ -78,7 +78,7 @@ end
    -- Pipe iteration should return original range for chaining
    -- NOTE: When using a variable, use :each() directly since parser can't detect range type
    r = {1 to 5}
-   returned = r:each(function(i) end)
+   returned = r.each(function(i) end)
    assert(returned is r, "pipe iteration should return original range")
 end
 
@@ -94,7 +94,7 @@ end
    -- NOTE: When using a variable, use :each() directly since parser can't detect range type
    r = {1 to 6}
    sum = 0
-   r:each(function(i) sum += i end)
+   r.each(function(i) sum += i end)
    assert(sum is 15, "sum should be 15, got " .. sum)
 end
 

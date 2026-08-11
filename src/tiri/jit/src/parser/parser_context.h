@@ -44,6 +44,7 @@ struct ParserConfig {
    bool enable_type_analysis = true;       // Enable static type checking
    bool type_errors_are_fatal = true;      // Treat type mismatches as errors
    bool infer_local_types = true;          // Track types of local variables
+   bool warn_unresolved_methods = false;   // Report dot-method receivers requiring runtime classification
    ParserProfilingResult profiling_result;
 };
 

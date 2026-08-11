@@ -7,6 +7,7 @@
 #include "lauxlib.h"
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_str.h"
@@ -25,6 +26,30 @@
 
 //********************************************************************************************************************
 // Library initialization
+
+void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function)
+{
+   if (not builtin_callable_valid(Id) or not Function or
+       Function->c.ffid != builtin_callable_index(Id)) {
+      lj_err_callermsg(L, "invalid built-in callable registration");
+   }
+
+   GCRef &slot = L2GG(L)->builtin_callables[builtin_callable_index(Id)];
+   GCobj *existing = gcref(slot);
+   if (existing and existing != obj2gco(Function)) {
+      lj_err_callermsg(L, "conflicting built-in callable registration");
+   }
+
+   // NOBARRIER: global_State fields are roots and the slot is immutable after initial library registration.
+   setgcref(slot, obj2gco(Function));
+}
+
+GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept
+{
+   if (not builtin_callable_valid(Id)) return nullptr;
+   GCobj *callable = gcref(L2GG(L)->builtin_callables[builtin_callable_index(Id)]);
+   return callable and callable->gch.gct IS uint8_t(~LJ_TFUNC) ? gco_to_function(callable) : nullptr;
+}
 
 static GCtab * lib_create_table(lua_State *L, const char *libname, int hsize)
 {
@@ -105,6 +130,8 @@ void lj_lib_register(lua_State *L, const char* libname, const uint8_t* p, const 
 
          if (tag IS LIBINIT_ASM_) fn->c.f = ofn->c.f;  //  Copy handler from previous function.
          else fn->c.f = *cf++;  //  Get cf or handler from C function table.
+
+         lj_builtin_register(L, builtin_callable_id(FastFunc(fn->c.ffid)), fn);
 
          if (len) { // NOBARRIER: See above for common barrier.
             setfuncV(L, lj_tab_setstr(L, tab, lj_str_new(L, name, len)), fn);

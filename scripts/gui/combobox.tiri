@@ -14,7 +14,8 @@ BOX_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
 MARGIN     <const> = math.floor(FONT_HEIGHT * 0.5) + 1
 
 function iconTheme(Widget:table!):str
-   if gui.strToRGB(Widget.theme.page.text):brightness() > 0.5 then
+   local colour = gui.strToRGB(Widget.theme.page.text)
+   if colour.brightness(colour) > 0.5 then
       return 'pearl'
    else
       return 'default' -- The default theme is dark
@@ -55,7 +56,7 @@ gui.combobox = function(Options)
 
    -- Change the active state of the combobox box to disabled or enabled
 
-   self.disable = function(self)
+   self.disable = function()
       self.disabled = true
       self.viewport.acDisable()
       self.text.opacity = 0.5
@@ -64,7 +65,7 @@ gui.combobox = function(Options)
       self.viewport.acDraw()
    end
 
-   self.enable = function(self)
+   self.enable = function()
       self.disabled = false
       self.viewport.acDisable()
       self.text.opacity = 1.0

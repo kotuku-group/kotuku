@@ -28,6 +28,7 @@
 #include "lj_bc.h"
 #include "lj_ff.h"
 #include "lj_dispatch.h"
+#include "lj_proto_registry.h"
 #include "lj_char.h"
 #include "lj_strscan.h"
 #include "lj_strfmt.h"
@@ -149,15 +150,6 @@ static uint32_t tiri_type_name_index(TiriType Type)
       case TiriType::Unknown:  return TYPE_NAME_USERDATA;
    }
    return TYPE_NAME_USERDATA;
-}
-
-static bool is_range_userdata(lua_State *L, GCudata *Userdata)
-{
-   GCtab *mt = tabref(Userdata->metatable);
-   if (not mt) return false;
-
-   cTValue *range_metatable = lj_tab_getstr(tabV(registry(L)), lj_str_newz(L, RANGE_METATABLE));
-   return range_metatable and tvistab(range_metatable) and tabV(range_metatable) IS mt;
 }
 
 LJLIB_PUSH("nil")

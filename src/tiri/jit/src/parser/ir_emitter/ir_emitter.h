@@ -212,8 +212,11 @@ private:
    ParserResult<ExpDesc> emit_table_slice_call(const IndexExprPayload& payload);
    ParserResult<ExpDesc> emit_safe_member_expr(const SafeMemberExprPayload& payload);
    ParserResult<ExpDesc> emit_safe_index_expr(const SafeIndexExprPayload& payload);
-   ParserResult<ExpDesc> emit_safe_call_expr(const CallExprPayload& payload);
    ParserResult<ExpDesc> emit_call_expr(const CallExprPayload& payload);
+   ParserResult<ExpDesc> emit_builtin_method_call(const CallExprPayload& payload);
+   ParserResult<ExpDesc> emit_runtime_builtin_method_call(const CallExprPayload& payload);
+   ParserResult<ExpDesc> emit_runtime_builtin_method_pipe(
+      const PipeExprPayload& payload, const CallExprPayload& call);
    ParserResult<ExpDesc> emit_result_filter_expr(const ResultFilterPayload& payload);
    ParserResult<ExpDesc> emit_table_expr(const TableExprPayload& payload);
    ParserResult<ExpDesc> emit_range_expr(const RangeExprPayload& payload);

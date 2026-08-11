@@ -41,7 +41,7 @@ function createTestFiles()
 
    -- Create a file large enough to force the streaming path without exceeding socket buffering in the test harness.
    largeFile = obj.new('file', { path = glTestDir .. '/large.txt', flags = FL_NEW|FL_WRITE })
-   largeContent = string.rep('This line is repeated to create a large file for testing streaming functionality.\n', 300)
+   largeContent = 'This line is repeated to create a large file for testing streaming functionality.\n'.rep(300)
    global glLargeContentSize = #largeContent
    largeFile.acWrite(largeContent)
    largeFile.free()
@@ -108,14 +108,14 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
    local response = ''
 
    function isCompleteResponse(Response:str):bool
-      local header_end = Response:find('\r\n\r\n')
+      local header_end = Response.find('\r\n\r\n')
       header_end ?! return false
 
-      local headers = Response:sub(0, header_end + 2)
+      local headers = Response.sub(0, header_end + 2)
       local length_text = rxContentLength.extract(headers)
       length_text ?! return false
 
-      local body = Response:sub(header_end + 4)
+      local body = Response.sub(header_end + 4)
       return #body >= tonumber(length_text)
    end
 
@@ -135,7 +135,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
          local buffer = string.alloc(32768)
          local err, bytes_read = Socket.acRead(buffer)
          if err is ERR_Okay then
-            if bytes_read > 0 then response ..= buffer:sub(0, bytes_read) end
+            if bytes_read > 0 then response ..= buffer.sub(0, bytes_read) end
             if isCompleteResponse(response) then Socket.acSignal() end
          elseif err is ERR_Disconnected then
             Socket.acSignal()
@@ -165,13 +165,13 @@ function parseHttpResponse(Response:str):<str, str, str>
       return nil, nil, nil
    end
 
-   header_end = Response:find('\r\n\r\n')
+   header_end = Response.find('\r\n\r\n')
    if not header_end then
       return nil, Response, ''
    end
 
-   headers = Response:sub(0, header_end)
-   body = Response:sub(header_end + 4)
+   headers = Response.sub(0, header_end)
+   body = Response.sub(header_end + 4)
 
    status_code = rxStatusLine.extract(headers) ?? '000'
 
@@ -191,7 +191,7 @@ end
 
    statusCode, headers, body = parseHttpResponse(response)
    assert(statusCode is '200', 'Expected 200 status, got: ' .. (statusCode or 'nil'))
-   assert(body:find('<h1>HTTP Server Test Index</h1>'), 'Expected index.html content not found')
+   assert(body.find('<h1>HTTP Server Test Index</h1>'), 'Expected index.html content not found')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -208,7 +208,7 @@ end
    encodedResponse = sendHttpRequest('127.0.0.1', glPort, encodedRequest)
    encodedStatusCode, _, encodedBody = parseHttpResponse(encodedResponse)
    assert(encodedStatusCode is '200', 'URL decoding failed for encoded filename')
-   assert(encodedBody:find('small test file'), 'Decoded file content incorrect')
+   assert(encodedBody.find('small test file'), 'Decoded file content incorrect')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -244,7 +244,7 @@ end
 
    statusCode, headers, body = parseHttpResponse(response)
    assert(statusCode is '200', 'HEAD request failed, got status: ' .. (statusCode or 'nil'))
-   assert(headers:find('content-type'), 'Content-Type header missing in HEAD response')
+   assert(headers.find('content-type'), 'Content-Type header missing in HEAD response')
    assert(#body is 0, 'HEAD request should not return body content')
 end
 
@@ -265,7 +265,7 @@ end
       statusCode, headers = parseHttpResponse(response)
       assert(statusCode is '200', 'Request for ' .. test.file .. ' failed')
 
-      assert(headers:find('content-type: ' .. test.expectedType),
+      assert(headers.find('content-type: ' .. test.expectedType),
              'Wrong MIME type for ' .. test.file .. '. Expected: ' .. test.expectedType .. ', Headers: ' .. headers)
    end
 end
@@ -279,8 +279,8 @@ end
 
    statusCode, headers, body = parseHttpResponse(response)
    assert(statusCode is '404', 'Expected 404 status for nonexistent file')
-   assert(body:find('404 Not Found'), 'Error page title missing')
-   assert(body:find('error-container'), 'Styled error page not generated')
+   assert(body.find('404 Not Found'), 'Error page title missing')
+   assert(body.find('error-container'), 'Styled error page not generated')
 
    -- Test 405 method not allowed
    invalidMethodRequest = "POST / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
@@ -288,8 +288,8 @@ end
 
    methodStatusCode, methodHeaders, methodBody = parseHttpResponse(methodResponse)
    assert(methodStatusCode is '405', 'Expected 405 status for invalid method')
-   assert(methodHeaders:find('allow: GET, HEAD'), 'Allow header missing or incorrect')
-   assert(methodBody:find('405 Method Not Allowed'), 'Method not allowed error page missing')
+   assert(methodHeaders.find('allow: GET, HEAD'), 'Allow header missing or incorrect')
+   assert(methodBody.find('405 Method Not Allowed'), 'Method not allowed error page missing')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -337,7 +337,7 @@ end
    statusCode, headers, body = parseHttpResponse(response)
    assert(statusCode is '200', 'Large file request failed')
    assert(#body > 20000, 'Large file content too small, streaming may not have worked. Got: ' .. #body)
-   assert(body:find('repeated to create a large file'), 'Large file content incorrect')
+   assert(body.find('repeated to create a large file'), 'Large file content incorrect')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -349,8 +349,8 @@ end
 
    statusCode, headers, body = parseHttpResponse(response)
    assert(statusCode is '206', 'Range request should return 206 Partial Content, got: ' .. (statusCode or 'nil'))
-   assert(headers:find('content-range'), 'Content-Range header missing')
-   assert(headers:find('accept-ranges: bytes'), 'Accept-Ranges header missing or incorrect')
+   assert(headers.find('content-range'), 'Content-Range header missing')
+   assert(headers.find('accept-ranges: bytes'), 'Accept-Ranges header missing or incorrect')
    assert(#body is 1000, 'Range request returned wrong amount of data. Expected 1000 bytes, got: ' .. #body)
 end
 
@@ -364,11 +364,11 @@ end
    expected_end = glLargeContentSize - 1
    assert(statusCode is '206',
       'Open-ended range request should return 206 Partial Content, got: ' .. (statusCode or 'nil'))
-   assert(headers:find(f'content-range: bytes 0-{expected_end}/{glLargeContentSize}'),
+   assert(headers.find(f'content-range: bytes 0-{expected_end}/{glLargeContentSize}'),
       'Content-Range header incorrect: ' .. headers)
    assert(#body is glLargeContentSize,
       f'Open-ended range returned wrong amount of data. Expected {glLargeContentSize} bytes, got {#body}')
-   assert(body:find('repeated to create a large file'), 'Open-ended range content incorrect')
+   assert(body.find('repeated to create a large file'), 'Open-ended range content incorrect')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -380,6 +380,6 @@ end
 
    statusCode, headers, body = parseHttpResponse(response)
    assert(statusCode is '200', 'Directory listing request failed')
-   assert(body:find('Directory listing'), 'Directory listing page not generated')
-   assert(body:find('nested.txt'), 'File not listed in directory')
+   assert(body.find('Directory listing'), 'Directory listing page not generated')
+   assert(body.find('nested.txt'), 'File not listed in directory')
 end

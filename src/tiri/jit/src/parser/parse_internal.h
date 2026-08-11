@@ -11,6 +11,7 @@
 
 #include <kotuku/strings.hpp>
 
+#include "lj_ff.h"
 #include "parse_concepts.h"  // Must be early for concept-constrained templates
 
 enum class TokenKind : uint16_t;
@@ -127,6 +128,20 @@ static inline BCPOS bcemit_AJ(FuncState *fs, Op o, BCREG a, BCPOS j) {
    return bcemit_INS(fs, BCINS_AJ(o, a, j));
 }
 
+// Emit a validated canonical native callable directly into a requested register.  The dependent dot-method lowering
+// uses the returned function-typed expression without publishing compiler-private global names.
+
+[[nodiscard]] static inline ExpDesc bcemit_builtin_callable(
+   FuncState *State, BuiltinCallableID Id, BCREG Destination)
+{
+   fs_check_assert(State, builtin_callable_valid(Id) and lj_builtin_callable(State->L, Id),
+      "unregistered built-in callable ID");
+   bcemit_AD(State, BC_BFUNC, Destination, BCREG(builtin_callable_index(Id)));
+   ExpDesc result(ExpKind::NonReloc, Destination);
+   result.result_type = TiriType::Func;
+   return result;
+}
+
 // Emit BC_TGETS with overflow protection. When the string constant index exceeds 255 (the 8-bit C field limit),
 // falls back to BC_KSTR + BC_TGETV to avoid bytecode corruption.
 
@@ -211,7 +226,6 @@ static void expr_tonextreg(FuncState *, ExpDesc* e);
 static BCREG expr_toanyreg(FuncState *, ExpDesc* e);
 static void expr_toval(FuncState *, ExpDesc* e);
 static void bcemit_store(FuncState *, ExpDesc* var, ExpDesc* e, const RuntimeContract * = nullptr, bool = false);
-static void bcemit_method(FuncState *, ExpDesc* e, ExpDesc* key);
 // These are now exported (non-static) for use by OperatorEmitter facade
 extern BCPOS bcemit_jmp(FuncState *);
 extern void invertcond(FuncState *, ExpDesc* e);

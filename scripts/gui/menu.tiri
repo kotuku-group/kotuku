@@ -146,7 +146,7 @@ gui.menu = function(Options)
             mi.height = ITEM_HEIGHT
             y = math.ceil(y + mi.height)
 
-            self.items:push(mi)
+            self.items.push(mi)
          end
       end
 

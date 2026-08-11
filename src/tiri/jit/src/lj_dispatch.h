@@ -23,7 +23,7 @@ constexpr int HOTCOUNT_CALL = 1;
 constexpr int GG_NUM_ASMFF = 54;
 
 constexpr int GG_LEN_DDISP = (BC__MAX + GG_NUM_ASMFF);
-constexpr int GG_LEN_SDISP = BC_FUNCF;
+constexpr int GG_LEN_SDISP = BC__MAX;
 constexpr int GG_LEN_DISP = (GG_LEN_DDISP + GG_LEN_SDISP);
 
 // Global state, main thread and extra fields are allocated together.
@@ -43,7 +43,11 @@ struct GG_State {
 #endif
    ASMFunction dispatch[GG_LEN_DISP]; // Instruction dispatch tables.
    BCIns bcff[GG_NUM_ASMFF];          // Bytecode for ASM fast functions.
+   // VM-only roots live after JIT state so growth does not move fields encoded in the 10-bit FOLD key.
+   GCRef builtin_callables[BUILTIN_CALLABLE_CAPACITY]; // Immutable canonical native closures, indexed by FastFunc.
 };
+
+static_assert(sizeof(((GG_State *)nullptr)->builtin_callables) / sizeof(GCRef) IS BUILTIN_CALLABLE_CAPACITY);
 
 #define GG_OFS(field) ((int)offsetof(GG_State, field))
 #define G2GG(gl)      ((GG_State *)((char *)(gl) - GG_OFS(g)))
@@ -55,9 +59,11 @@ struct GG_State {
 
 constexpr int GG_G2J = (offsetof(GG_State, J) - offsetof(GG_State, g));
 constexpr int GG_G2DISP = (offsetof(GG_State, dispatch) - offsetof(GG_State, g));
+constexpr int GG_G2BUILTIN = (offsetof(GG_State, builtin_callables) - offsetof(GG_State, g));
 constexpr int GG_DISP2G = int(offsetof(GG_State, g)) - int(offsetof(GG_State, dispatch));
 constexpr int GG_DISP2J = int(offsetof(GG_State, J)) - int(offsetof(GG_State, dispatch));
 constexpr int GG_DISP2HOT = int(offsetof(GG_State, hotcount)) - int(offsetof(GG_State, dispatch));
+constexpr int GG_DISP2BUILTIN = int(offsetof(GG_State, builtin_callables)) - int(offsetof(GG_State, dispatch));
 constexpr int GG_DISP2STATIC = (GG_LEN_DDISP * (int)sizeof(ASMFunction));
 
 #define hotcount_get(gg, pc) (gg)->hotcount[(u32ptr(pc)>>2) & (HOTCOUNT_SIZE-1)]

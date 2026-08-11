@@ -175,9 +175,9 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
    glWindow = gui.window({ title='Wave Demo', insideWidth=1024, insideHeight=800 })
-   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    buildScene()
 
-   glWindow:show()
+   glWindow.show()
    processing.sleep()

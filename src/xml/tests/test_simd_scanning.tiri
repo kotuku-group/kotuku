@@ -13,7 +13,7 @@
 
 @Test function AttrValueBlockBoundaries()
    for _, len in ipairs({ 1, 15, 16, 17, 31, 32, 33, 48, 100 }) do
-      local value = string.rep('a', len)
+      local value = 'a'.rep(len)
       local xml = obj.new('xml', { statement = '<root attr="' .. value .. '"/>' })
       assert(xml.tags, 'Parse failed for value length ' .. len)
       local err, got = xml.mtGetAttrib(xml.tags[0].id, 'attr')
@@ -38,7 +38,7 @@ end
 -- in full, and the closing tag correctly located.
 
 @Test function LongContentRun()
-   local content = string.rep('X', 200)
+   local content = 'X'.rep(200)
    local xml = obj.new('xml', { statement = '<root>' .. content .. '</root>' })
    local children = xml.tags[0].children
    assert(#children is 1, 'Expected single content node, got ' .. #children)
@@ -50,7 +50,7 @@ end
 -- attributes parsed.  Newlines inside the run must be counted (validated separately below).
 
 @Test function LongWhitespaceRun()
-   local gap = string.rep(' ', 40)
+   local gap = ' '.rep(40)
    local xml = obj.new('xml', { statement = '<root' .. gap .. 'a="1"' .. gap .. 'b="2"/>' })
    local id = xml.tags[0].id
    local e1, v1 = xml.mtGetAttrib(id, 'a')
@@ -74,12 +74,12 @@ end
    for i in {1 into 20} do
       -- A comment wider than 16 bytes (its own source line), then the item on its own source line.  Comments are
       -- stripped from the tree but still occupy a source line, so item i lands on source line (2*i + 1).
-      table.insert(parts, '<!-- padding-comment-' .. i .. '-with-extra-width -->')
-      table.insert(parts, '<item n="' .. i .. '"/>')
+      parts.insert('<!-- padding-comment-' .. i .. '-with-extra-width -->')
+      parts.insert('<item n="' .. i .. '"/>')
       expected[i] = 2 * i + 1
    end
-   table.insert(parts, '</root>')
-   local doc = table.concat(parts, '\n')
+   parts.insert('</root>')
+   local doc = parts.concat('\n')
 
    local xml = obj.new('xml', { statement = doc })
    assert(xml.tags, 'Document with newline-laden padding should parse')
@@ -102,10 +102,10 @@ end
 
 @Test function SerialisationStableAcrossLengths()
    for _, len in ipairs({ 14, 16, 18, 34 }) do
-      local content = string.rep('z', len)
+      local content = 'z'.rep(len)
       local xml = obj.new('xml', { statement = '<root><item>' .. content .. '</item></root>' })
       local err, out = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
       assert(err is ERR_Okay, 'Serialise failed at length ' .. len)
-      assert(string.find(out, content, 1, true), 'Serialised output missing content at length ' .. len)
+      assert(out.find(content, 1, true), 'Serialised output missing content at length ' .. len)
    end
 end

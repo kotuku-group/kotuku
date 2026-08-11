@@ -163,7 +163,7 @@ end
       local result = script.acActivate()
       assert(result != ERR_Okay or script.error != ERR_Okay,
          'Unsupported bare targets should fail before iteration')
-      assert(string.find(script.errorMessage, 'cannot iterate over a ' .. case.type_name .. ' value') != nil,
+      assert(script.errorMessage.find('cannot iterate over a ' .. case.type_name .. ' value') != nil,
          'Unsupported bare target diagnostic should identify its runtime type: ' .. script.errorMessage)
    end
 end

@@ -56,7 +56,7 @@ end
       math.clamp(1, 0)
    except e
       missing_arg_raised = true
-      assert(e.message:find('number'), 'math.clamp() missing argument error should mention number')
+      assert(e.message.find('number'), 'math.clamp() missing argument error should mention number')
    end
    assert(missing_arg_raised is true, 'math.clamp() should reject missing numeric arguments')
 
@@ -65,7 +65,7 @@ end
       math.clamp(1, 'low', 10)
    except e
       bad_arg_raised = true
-      assert(e.message:find('number'), 'math.clamp() bad argument error should mention number')
+      assert(e.message.find('number'), 'math.clamp() bad argument error should mention number')
    end
    assert(bad_arg_raised is true, 'math.clamp() should reject non-numeric arguments')
 end

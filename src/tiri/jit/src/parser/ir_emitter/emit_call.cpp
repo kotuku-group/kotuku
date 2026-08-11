@@ -37,6 +37,173 @@ static bool is_global_cfunction(lua_State *L, CSTRING Name)
    return is_cfunc;
 }
 
+// Return the receiver selected by static built-in method classification.  Only direct named dot calls can acquire the
+// annotation, so reaching emission with any other target is an internal consistency failure.
+
+static const ExprNode * builtin_method_receiver(const CallExprPayload &Payload)
+{
+   const auto *direct = std::get_if<DirectCallTarget>(&Payload.target);
+   if (not direct or not direct->callable) return nullptr;
+   if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+      return std::get<MemberExprPayload>(direct->callable->data).table.get();
+   }
+   if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+      return std::get<SafeMemberExprPayload>(direct->callable->data).table.get();
+   }
+   return nullptr;
+}
+
+static BCReg prepare_builtin_method_frame(
+   FuncState *State, BuiltinCallableID Callable, BCReg Receiver, BCReg CallBase)
+{
+   RegisterAllocator allocator(State);
+   BCREG required_top = CallBase.raw() + 2 + LJ_FR2;
+   if (State->freereg < required_top) allocator.reserve(BCReg(required_top - State->freereg));
+   bcemit_AD(State, BC_MOV, CallBase.raw() + 1 + LJ_FR2, Receiver.raw());
+   bcemit_builtin_callable(State, Callable, CallBase.raw());
+   return CallBase;
+}
+
+//********************************************************************************************************************
+// Emit an unresolved built-in method used as a pipe destination.  The selected branch owns the pipe operand and the
+// written arguments, so their expressions execute once with the call-frame layout selected at runtime.
+
+ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
+   const PipeExprPayload &Payload, const CallExprPayload &Call)
+{
+   if (not Call.runtime_builtin_method or not Call.runtime_builtin_method->member) {
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "invalid piped runtime built-in method annotation"));
+   }
+
+   const ExprNode *receiver_node = builtin_method_receiver(Call);
+   if (not receiver_node) {
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "piped runtime built-in method annotation has no direct receiver"));
+   }
+
+   FuncState *state = &this->func_state;
+   BCLine call_line = this->lex_state.lastline;
+   BCReg call_base = state->free_reg();
+   auto receiver_result = this->emit_expression(*receiver_node);
+   if (not receiver_result.ok()) return receiver_result;
+
+   std::unique_ptr<NilShortCircuitGuard> nil_guard;
+   ExpDesc receiver = receiver_result.value_ref();
+   RegisterAllocator allocator(state);
+   BCReg receiver_reg(0);
+   if (Call.runtime_builtin_method->safe) {
+      nil_guard = std::make_unique<NilShortCircuitGuard>(this, receiver);
+      if (not nil_guard->ok()) return nil_guard->error<ExpDesc>();
+      receiver = nil_guard->base_expression();
+      receiver_reg = BCReg(receiver.u.s.info);
+   }
+   else {
+      ExpressionValue receiver_value(state, receiver);
+      receiver_reg = receiver_value.discharge_to_any_reg(allocator);
+   }
+
+   BCREG receiver_slot = call_base.raw() + 1 + LJ_FR2;
+   BCREG required_top = receiver_slot + 1;
+   if (state->freereg < required_top) allocator.reserve(BCReg(required_top - state->freereg));
+   bcemit_AD(state, BC_MOV, receiver_slot, receiver_reg.raw());
+
+   BCREG member_constant = const_gc(
+      state, obj2gco(Call.runtime_builtin_method->member), LJ_TSTR);
+   BCPos dispatch_pc = BCPos(bcemit_INS(
+      state, BCINS_AJP(BC_BMETH, call_base.raw(), NO_JMP, member_constant)));
+
+   auto emit_branch = [&](bool BuiltinBranch) -> ParserResult<BCPos> {
+      state->freereg = call_base.raw() + 1 + LJ_FR2 + (BuiltinBranch ? 1 : 0);
+      auto lhs_result = this->emit_expression(*Payload.lhs);
+      if (not lhs_result.ok()) return ParserResult<BCPos>::failure(lhs_result.error_ref());
+      ExpDesc lhs = lhs_result.value_ref();
+      bool forward_multret = false;
+      if (lhs.k IS ExpKind::Call) {
+         if (Payload.limit > 0) {
+            set_call_result_count(state, lhs, Payload.limit + 1);
+            state->freereg = lhs.u.s.aux + Payload.limit;
+         }
+         else {
+            set_call_result_count(state, lhs, 0);
+            forward_multret = true;
+         }
+      }
+      else this->materialise_to_next_reg(lhs, "runtime method pipe operand");
+
+      BCReg argument_count(0);
+      ExpDesc arguments(ExpKind::Void);
+      if (not Call.arguments.empty()) {
+         auto arguments_result = this->emit_expression_list(Call.arguments, argument_count);
+         if (not arguments_result.ok()) return ParserResult<BCPos>::failure(arguments_result.error_ref());
+         arguments = arguments_result.value_ref();
+      }
+
+      BCIns instruction;
+      if (forward_multret and Call.arguments.empty()) {
+         instruction = BCINS_ABC(BC_CALLM, call_base.raw(), 2,
+            lhs.u.s.aux - call_base.raw() - 1 - LJ_FR2);
+      }
+      else {
+         if (arguments.k != ExpKind::Void) {
+            this->materialise_to_next_reg(arguments, "runtime method pipe arguments");
+         }
+         instruction = BCINS_ABC(BC_CALL, call_base.raw(), 2,
+            state->freereg - call_base.raw() - 1);
+      }
+      this->lex_state.lastline = call_line;
+      return ParserResult<BCPos>::success(BCPos(bcemit_INS(state, instruction)));
+   };
+
+   auto builtin_result = emit_branch(true);
+   if (not builtin_result.ok()) return ParserResult<ExpDesc>::failure(builtin_result.error_ref());
+   BCPos builtin_call = builtin_result.value_ref();
+   ControlFlowEdge skip_field = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+
+   bcemit_AD(state, BC_MOV, call_base.raw(), call_base.raw());
+   this->control_flow.make_unconditional(dispatch_pc).patch_to(state->current_pc());
+
+   // BC_BMETH leaves the ordinary field value in call_base on its fallback path.  A safe destination must also
+   // short-circuit when that field is nil, not just when the receiver is nil.  Emit this check before emit_branch()
+   // so neither the pipe operand nor its written arguments are evaluated for a missing method.
+   ControlFlowEdge field_nil_jump;
+   if (Call.runtime_builtin_method->safe) {
+      ExpDesc nil_value(ExpKind::Nil);
+      bcemit_INS(state, BCINS_AD(BC_ISEQP, call_base, const_pri(&nil_value)));
+      field_nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+   }
+
+   auto field_result = emit_branch(false);
+   if (not field_result.ok()) return ParserResult<ExpDesc>::failure(field_result.error_ref());
+   BCPos field_call = field_result.value_ref();
+   skip_field.patch_here();
+
+   if (Call.runtime_builtin_method->safe) {
+      // Successful built-in and field calls converge above and must preserve their result.  Only field_nil_jump enters
+      // the synthetic nil-result block; skip_nil carries both successful paths around it to the common continuation.
+      ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+      field_nil_jump.patch_to(state->current_pc());
+      bcemit_nil(state, call_base.raw(), 1);
+      skip_nil.patch_here();
+   }
+
+   ParserResult<ExpDesc> emitted = nil_guard ? nil_guard->complete_call(call_base, field_call) :
+      ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Call, field_call.raw()));
+   if (not emitted.ok()) return emitted;
+   ExpDesc result = emitted.value_ref();
+   result.alternate_call = builtin_call.raw();
+   result.u.s.aux = call_base.raw();
+   result.static_results = Call.results;
+   if (Call.results) {
+      const auto &descriptor = this->ctx.descriptors().results(Call.results).value_at(0);
+      result.result_type = descriptor.primary;
+      result.object_class_id = descriptor.object_class_id;
+      result.struct_def = descriptor.struct_def;
+   }
+   state->freereg = call_base.raw() + 1;
+   return ParserResult<ExpDesc>::success(result);
+}
+
 //********************************************************************************************************************
 // Pipe expression: lhs |> rhs_call()
 // Prepends the LHS result(s) as argument(s) to the RHS function call.  The RHS must be a CallExpr node.
@@ -52,28 +219,25 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
    if (not Payload.lhs or not Payload.rhs_call) return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
 
    // Deferred iteration: the parser couldn't determine the LHS type at AST time.
-   // Now that we can resolve variable types, check if LHS is an array and emit :each(func).
+   // Now that we can resolve variable types, select the canonical array/range each() callable.
 
    if (Payload.deferred_iteration) {
+      BCReg call_base = this->func_state.free_reg();
       auto lhs_result = this->emit_expression(*Payload.lhs);
       if (not lhs_result.ok()) return lhs_result;
       ExpDesc callee = lhs_result.value_ref();
 
-      if (callee.result_type != TiriType::Array) {
+      const fprototype *prototype = get_method_prototype(callee.result_type, "each");
+      if (not prototype or (callee.result_type != TiriType::Array and callee.result_type != TiriType::Range)) {
          return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UnexpectedToken,
             "pipe operator requires function call on right-hand side (or an array/range on the left)",
             Payload.lhs->span));
       }
 
-      // Emit LHS:each(func) — method dispatch on the array
-
       this->materialise_to_next_reg(callee, "deferred pipe array receiver");
-
-      ExpDesc key(ExpKind::Str);
-      key.u.sval = lj_str_newlit(this->lex_state.L, "each");
-      bcemit_method(&this->func_state, &callee, &key);
-
-      auto call_base = BCReg(callee.u.s.info);
+      BCReg receiver_reg = BCReg(callee.u.s.info);
+      prepare_builtin_method_frame(
+         &this->func_state, prototype->builtin_callable_id, receiver_reg, call_base);
 
       // Emit the function argument
 
@@ -89,7 +253,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
       ExpDesc result;
       result.init(ExpKind::Call, bcemit_INS(&this->func_state, ins));
       result.u.s.aux = call_base;
-      result.result_type = TiriType::Array; // array:each() returns the array, enabling chaining
+      result.result_type = callee.result_type;
       this->func_state.freereg = call_base + 1;
       return ParserResult<ExpDesc>::success(result);
    }
@@ -103,12 +267,42 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
    FuncState *fs = &this->func_state;
 
    const CallExprPayload &call_payload = std::get<CallExprPayload>(Payload.rhs_call->data);
+   if (call_payload.runtime_builtin_method) {
+      return this->emit_runtime_builtin_method_pipe(Payload, call_payload);
+   }
 
    // Emit the callee (function) FIRST to establish base register
 
    ExpDesc callee;
    BCReg base(0);
-   if (const auto* direct = std::get_if<DirectCallTarget>(&call_payload.target)) {
+   std::unique_ptr<NilShortCircuitGuard> nil_guard;
+   if (call_payload.builtin_method) {
+      base = fs->free_reg();
+      const ExprNode *receiver_node = builtin_method_receiver(call_payload);
+      if (not receiver_node or not builtin_callable_valid(call_payload.builtin_method->callable)) {
+         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+            "invalid piped built-in method annotation"));
+      }
+
+      auto receiver_result = this->emit_expression(*receiver_node);
+      if (not receiver_result.ok()) return receiver_result;
+      ExpDesc receiver = receiver_result.value_ref();
+      RegisterAllocator allocator(fs);
+      BCReg receiver_reg(0);
+      if (call_payload.builtin_method->safe) {
+         nil_guard = std::make_unique<NilShortCircuitGuard>(this, receiver);
+         if (not nil_guard->ok()) return nil_guard->error<ExpDesc>();
+         receiver = nil_guard->base_expression();
+         receiver_reg = BCReg(receiver.u.s.info);
+      }
+      else {
+         ExpressionValue receiver_value(fs, receiver);
+         receiver_reg = receiver_value.discharge_to_any_reg(allocator);
+      }
+
+      prepare_builtin_method_frame(fs, call_payload.builtin_method->callable, receiver_reg, base);
+   }
+   else if (const auto* direct = std::get_if<DirectCallTarget>(&call_payload.target)) {
       if (not direct->callable) return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
       auto callee_result = this->emit_expression(*direct->callable);
       if (not callee_result.ok()) return callee_result;
@@ -116,18 +310,6 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
       this->materialise_to_next_reg(callee, "pipe call callee");
       RegisterAllocator allocator(fs);
       allocator.reserve(BCReg(1)); // Frame link (FR2)
-      base = BCReg(callee.u.s.info);
-   }
-   else if (const auto *method = std::get_if<MethodCallTarget>(&call_payload.target)) {
-      if (not method->receiver or method->method.symbol IS nullptr) {
-         return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
-      }
-      auto receiver_result = this->emit_expression(*method->receiver);
-      if (not receiver_result.ok()) return receiver_result;
-      callee = receiver_result.value_ref();
-      ExpDesc key(ExpKind::Str);
-      key.u.sval = method->method.symbol;
-      bcemit_method(fs, &callee, &key);
       base = BCReg(callee.u.s.info);
    }
    else return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
@@ -152,7 +334,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
          // Set BC_CALL B field to request exactly 'limit' return values
          // B = limit + 1 means "expect limit results"
 
-         setbc_b(ir_bcptr(fs, &lhs), Payload.limit + 1);
+         set_call_result_count(fs, lhs, Payload.limit + 1);
 
          // The call results are placed starting at lhs.u.s.aux (the call base)
          // Update freereg to reflect the limited number of results
@@ -160,7 +342,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
          fs->freereg = lhs.u.s.aux + Payload.limit;
       }
       else { // Forward all return values - keep B=0 for CALLM pattern
-         setbc_b(ir_bcptr(fs, &lhs), 0);
+         set_call_result_count(fs, lhs, 0);
          forward_multret = true;
       }
    }
@@ -193,40 +375,68 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
 
    this->lex_state.lastline = call_line;
 
+   BCPos call_pc = BCPos(bcemit_INS(fs, ins));
    ExpDesc result;
-   result.init(ExpKind::Call, bcemit_INS(fs, ins));
+   if (nil_guard) {
+      auto completed = nil_guard->complete_call(base, call_pc);
+      if (not completed.ok()) return completed;
+      result = completed.value_ref();
+   }
+   else result.init(ExpKind::Call, call_pc);
    result.u.s.aux = base;
+   result.static_results = call_payload.results;
+   if (call_payload.results) {
+      const auto &descriptor = this->ctx.descriptors().results(call_payload.results).value_at(0);
+      result.result_type = descriptor.primary;
+      result.object_class_id = descriptor.object_class_id;
+      result.struct_def = descriptor.struct_def;
+   }
    fs->freereg = base + 1;
    return ParserResult<ExpDesc>::success(result);
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a safe call expression (obj:?method()), returning nil if the receiver is nil.
+// Emit a statically resolved built-in dot method.  The receiver is evaluated once before callable selection, copied
+// into native argument zero and followed by the written arguments in source order.
 
-ParserResult<ExpDesc> IrEmitter::emit_safe_call_expr(const CallExprPayload &Payload)
+ParserResult<ExpDesc> IrEmitter::emit_builtin_method_call(const CallExprPayload &Payload)
 {
-   BCLine call_line = this->lex_state.lastline;
-
-   const auto* safe_method = std::get_if<SafeMethodCallTarget>(&Payload.target);
-   if (not safe_method or not safe_method->receiver or safe_method->method.symbol IS nullptr) {
-      return this->unsupported_expr(AstNodeKind::SafeCallExpr, SourceSpan{});
+   if (not Payload.builtin_method or not builtin_callable_valid(Payload.builtin_method->callable)) {
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "invalid built-in method annotation"));
    }
 
-   auto receiver_result = this->emit_expression(*safe_method->receiver);
+   const ExprNode *receiver_node = builtin_method_receiver(Payload);
+   if (not receiver_node) {
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "built-in method annotation has no direct receiver"));
+   }
+
+   BCLine call_line = this->lex_state.lastline;
+   BCReg call_base = this->func_state.free_reg();
+   auto receiver_result = this->emit_expression(*receiver_node);
    if (not receiver_result.ok()) return receiver_result;
 
-   NilShortCircuitGuard guard(this, receiver_result.value_ref());
-   if (not guard.ok()) return guard.error<ExpDesc>();
+   std::unique_ptr<NilShortCircuitGuard> nil_guard;
+   ExpDesc receiver = receiver_result.value_ref();
+   RegisterAllocator allocator(&this->func_state);
+   BCReg receiver_reg(0);
+   if (Payload.builtin_method->safe) {
+      nil_guard = std::make_unique<NilShortCircuitGuard>(this, receiver);
+      if (not nil_guard->ok()) return nil_guard->error<ExpDesc>();
+      receiver = nil_guard->base_expression();
+      receiver_reg = BCReg(receiver.u.s.info);
+   }
+   else {
+      ExpressionValue receiver_value(&this->func_state, receiver);
+      receiver_reg = receiver_value.discharge_to_any_reg(allocator);
+      receiver = receiver_value.legacy();
+   }
 
-   // Method dispatch and arguments are evaluated only on non-nil path (short-circuit)
+   prepare_builtin_method_frame(
+      &this->func_state, Payload.builtin_method->callable, receiver_reg, call_base);
 
-   ExpDesc callee = guard.base_expression();
-   ExpDesc key(ExpKind::Str);
-   key.u.sval = safe_method->method.symbol;
-   bcemit_method(&this->func_state, &callee, &key);
-
-   auto call_base = BCReg(callee.u.s.info);
-   auto arg_count = BCReg(0);
+   BCReg arg_count(0);
    ExpDesc args(ExpKind::Void);
    if (not Payload.arguments.empty()) {
       auto args_result = this->emit_expression_list(Payload.arguments, arg_count);
@@ -237,25 +447,173 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_call_expr(const CallExprPayload &Payl
    BCIns ins;
    bool forward_tail = Payload.forwards_multret and (args.k IS ExpKind::Call);
    if (forward_tail) {
-      setbc_b(ir_bcptr(&this->func_state, &args), 0);
-      ins = BCINS_ABC(BC_CALLM, call_base, 2, args.u.s.aux - call_base - 1  - 1);
+      set_call_result_count(&this->func_state, args, 0);
+      ins = BCINS_ABC(BC_CALLM, call_base, 2, args.u.s.aux - call_base - 1 - 1);
    }
    else {
-      if (not (args.k IS ExpKind::Void)) this->materialise_to_next_reg(args, "safe call arguments");
-      ins = BCINS_ABC(BC_CALL, call_base, 2, this->func_state.freereg - call_base  - 1);
+      if (args.k != ExpKind::Void) this->materialise_to_next_reg(args, "built-in method arguments");
+      ins = BCINS_ABC(BC_CALL, call_base, 2, this->func_state.freereg - call_base - 1);
    }
 
    this->lex_state.lastline = call_line;
-   auto call_pc = BCPos(bcemit_INS(&this->func_state, ins));
+   BCPos call_pc = BCPos(bcemit_INS(&this->func_state, ins));
 
-   return guard.complete_call(call_base, call_pc);
+   ParserResult<ExpDesc> emitted = nil_guard ? nil_guard->complete_call(call_base, call_pc) :
+      ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Call, call_pc));
+   if (not emitted.ok()) return emitted;
+
+   ExpDesc result = emitted.value_ref();
+   result.u.s.aux = call_base;
+   result.static_results = Payload.results;
+   if (Payload.results) {
+      const auto &descriptor = this->ctx.descriptors().results(Payload.results).value_at(0);
+      result.result_type = descriptor.primary;
+      result.object_class_id = descriptor.object_class_id;
+      result.struct_def = descriptor.struct_def;
+   }
+   this->func_state.freereg = call_base + 1;
+   return ParserResult<ExpDesc>::success(result);
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a call expression (func(args) or obj:method(args)), handling direct and method calls.
+// Emit a runtime-resolved built-in dot method.  BC_BMETH selects either the canonical built-in call frame or an
+// ordinary field-call frame.  The receiver is evaluated once; written arguments remain branch-local so each frame
+// retains the same layout as its statically selected counterpart.
+
+ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExprPayload &Payload)
+{
+   if (not Payload.runtime_builtin_method or not Payload.runtime_builtin_method->member) {
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "invalid runtime built-in method annotation"));
+   }
+
+   const ExprNode *receiver_node = builtin_method_receiver(Payload);
+   if (not receiver_node) {
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "runtime built-in method annotation has no direct receiver"));
+   }
+
+   FuncState *state = &this->func_state;
+   BCLine call_line = this->lex_state.lastline;
+   BCReg call_base = state->free_reg();
+   auto receiver_result = this->emit_expression(*receiver_node);
+   if (not receiver_result.ok()) return receiver_result;
+
+   std::unique_ptr<NilShortCircuitGuard> nil_guard;
+   ExpDesc receiver = receiver_result.value_ref();
+   RegisterAllocator allocator(state);
+   BCReg receiver_reg(0);
+   if (Payload.runtime_builtin_method->safe) {
+      nil_guard = std::make_unique<NilShortCircuitGuard>(this, receiver);
+      if (not nil_guard->ok()) return nil_guard->error<ExpDesc>();
+      receiver = nil_guard->base_expression();
+      receiver_reg = BCReg(receiver.u.s.info);
+   }
+   else {
+      ExpressionValue receiver_value(state, receiver);
+      receiver_reg = receiver_value.discharge_to_any_reg(allocator);
+   }
+
+   BCREG receiver_slot = call_base.raw() + 1 + LJ_FR2;
+   BCREG required_top = receiver_slot + 1;
+   if (state->freereg < required_top) allocator.reserve(BCReg(required_top - state->freereg));
+   bcemit_AD(state, BC_MOV, receiver_slot, receiver_reg.raw());
+
+   BCREG member_constant = const_gc(
+      state, obj2gco(Payload.runtime_builtin_method->member), LJ_TSTR);
+   BCPos dispatch_pc = BCPos(bcemit_INS(
+      state, BCINS_AJP(BC_BMETH, call_base.raw(), NO_JMP, member_constant)));
+
+   auto emit_branch_call = [&](bool BuiltinBranch) -> ParserResult<BCPos> {
+      state->freereg = call_base.raw() + 1 + LJ_FR2 + (BuiltinBranch ? 1 : 0);
+      BCReg argument_count(0);
+      ExpDesc arguments(ExpKind::Void);
+      if (not Payload.arguments.empty()) {
+         auto arguments_result = this->emit_expression_list(Payload.arguments, argument_count);
+         if (not arguments_result.ok()) return ParserResult<BCPos>::failure(arguments_result.error_ref());
+         arguments = arguments_result.value_ref();
+      }
+
+      BCIns instruction;
+      bool forward_tail = Payload.forwards_multret and arguments.k IS ExpKind::Call;
+      if (forward_tail) {
+         set_call_result_count(state, arguments, 0);
+         instruction = BCINS_ABC(BC_CALLM, call_base.raw(), 2,
+            arguments.u.s.aux - call_base.raw() - 1 - LJ_FR2);
+      }
+      else {
+         if (arguments.k != ExpKind::Void) {
+            this->materialise_to_next_reg(arguments,
+               BuiltinBranch ? "runtime built-in method arguments" : "runtime field-call arguments");
+         }
+         instruction = BCINS_ABC(BC_CALL, call_base.raw(), 2,
+            state->freereg - call_base.raw() - 1);
+      }
+      this->lex_state.lastline = call_line;
+      return ParserResult<BCPos>::success(BCPos(bcemit_INS(state, instruction)));
+   };
+
+   auto builtin_call_result = emit_branch_call(true);
+   if (not builtin_call_result.ok()) return ParserResult<ExpDesc>::failure(builtin_call_result.error_ref());
+   BCPos builtin_call = builtin_call_result.value_ref();
+   ControlFlowEdge skip_field = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+
+   // The instruction immediately before the fallback target carries the call base in operand A.  This matches the
+   // VM continuation convention used when ordinary member lookup invokes an __index function before arguments are
+   // evaluated.
+   bcemit_AD(state, BC_MOV, call_base.raw(), call_base.raw());
+   BCPos field_path = state->current_pc();
+   this->control_flow.make_unconditional(dispatch_pc).patch_to(field_path);
+
+   // BC_BMETH leaves the resolved ordinary callable in call_base on its fallback path.  Safe-call semantics require a
+   // missing field to produce nil without evaluating arguments, even when the receiver itself was non-nil.
+   ControlFlowEdge field_nil_jump;
+   if (Payload.runtime_builtin_method->safe) {
+      ExpDesc nil_value(ExpKind::Nil);
+      bcemit_INS(state, BCINS_AD(BC_ISEQP, call_base, const_pri(&nil_value)));
+      field_nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+   }
+
+   auto field_call_result = emit_branch_call(false);
+   if (not field_call_result.ok()) return ParserResult<ExpDesc>::failure(field_call_result.error_ref());
+   BCPos field_call = field_call_result.value_ref();
+   skip_field.patch_here();
+
+   if (Payload.runtime_builtin_method->safe) {
+      // Both successful call paths jump over the nil assignment.  The missing-field edge alone writes the safe result
+      // into call_base before all paths rejoin for the existing receiver nil guard and result metadata handling.
+      ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
+      field_nil_jump.patch_to(state->current_pc());
+      bcemit_nil(state, call_base.raw(), 1);
+      skip_nil.patch_here();
+   }
+
+   ParserResult<ExpDesc> emitted = nil_guard ? nil_guard->complete_call(call_base, field_call) :
+      ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Call, field_call.raw()));
+   if (not emitted.ok()) return emitted;
+
+   ExpDesc result = emitted.value_ref();
+   result.alternate_call = builtin_call.raw();
+   result.u.s.aux = call_base.raw();
+   result.static_results = Payload.results;
+   if (Payload.results) {
+      const auto &descriptor = this->ctx.descriptors().results(Payload.results).value_at(0);
+      result.result_type = descriptor.primary;
+      result.object_class_id = descriptor.object_class_id;
+      result.struct_def = descriptor.struct_def;
+   }
+   state->freereg = call_base.raw() + 1;
+   return ParserResult<ExpDesc>::success(result);
+}
+
+//********************************************************************************************************************
+// Emit bytecode for a direct call expression, including statically resolved built-in dot methods.
 
 ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 {
+   if (Payload.builtin_method) return this->emit_builtin_method_call(Payload);
+   if (Payload.runtime_builtin_method) return this->emit_runtime_builtin_method_call(Payload);
+
    kt::Log log(__FUNCTION__);
 
    // We save lastline here before it gets overwritten by processing sub-expressions.
@@ -382,18 +740,6 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       allocator.reserve(BCReg(1));
       base = BCReg(callee.u.s.info);
    }
-   else if (const auto *method = std::get_if<MethodCallTarget>(&Payload.target)) {
-      if (not method->receiver or method->method.symbol IS nullptr) {
-         return this->unsupported_expr(AstNodeKind::CallExpr, SourceSpan{});
-      }
-      auto receiver_result = this->emit_expression(*method->receiver);
-      if (not receiver_result.ok()) return receiver_result;
-      callee = receiver_result.value_ref();
-      ExpDesc key(ExpKind::Str);
-      key.u.sval = method->method.symbol;
-      bcemit_method(&this->func_state, &callee, &key);
-      base = BCReg(callee.u.s.info);
-   }
    else return this->unsupported_expr(AstNodeKind::CallExpr, SourceSpan{});
 
    // For safe callable expressions (obj?.method()), emit a nil check on the callable.
@@ -418,7 +764,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    BCIns ins;
    bool forward_tail = Payload.forwards_multret and (args.k IS ExpKind::Call);
    if (forward_tail) {
-      setbc_b(ir_bcptr(&this->func_state, &args), 0);
+      set_call_result_count(&this->func_state, args, 0);
       ins = BCINS_ABC(BC_CALLM, base, 2, args.u.s.aux - base - 1  - 1);
    }
    else {
@@ -566,7 +912,7 @@ ParserResult<ExpDesc> IrEmitter::emit_result_filter_expr(const ResultFilterPaylo
 
    // Set B=0 on the inner call to request all return values
 
-   if (call.k IS ExpKind::Call) setbc_b(ir_bcptr(fs, &call), 0);
+   if (call.k IS ExpKind::Call) set_call_result_count(fs, call, 0);
    this->materialise_to_next_reg(call, "filter input");
 
    // Emit CALLM to call __filter with variable arguments from the inner call

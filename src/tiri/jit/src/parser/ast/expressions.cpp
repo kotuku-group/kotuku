@@ -17,6 +17,17 @@ namespace {
       Operator IS AstBinaryOperator::GreaterThan or Operator IS AstBinaryOperator::GreaterEqual;
 }
 
+ExprNodePtr make_direct_method_call(ParserContext &Context, SourceSpan Span, std::string_view Method,
+   ExprNodePtr Receiver, ExprNodeList WrittenArguments, TiriType ResultType)
+{
+   Identifier method_id = Identifier::from_keepstr(Context.lex().keepstr(Method), Span);
+   ExprNodePtr callable = make_member_expr(Span, std::move(Receiver), method_id);
+   ExprNodePtr call = make_call_expr(Span, std::move(callable), std::move(WrittenArguments), false,
+      CallArgumentSyntax::Synthetic);
+   std::get<CallExprPayload>(call->data).result_type = ResultType;
+   return call;
+}
+
 } // namespace
 
 //********************************************************************************************************************
@@ -172,22 +183,36 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          if (not rhs.ok()) return rhs;
 
          // Check for pipe iteration pattern: range/array |> function
-         // When LHS is a range or array literal and RHS is a function (not a call), rewrite to LHS:each(func)
-         // Also support chaining: range:each(f1) |> f2 → range:each(f1):each(f2)
+         // When LHS is a range or array literal and RHS is a function (not a call), rewrite to an explicit
+         // interface call.  This keeps compiler-generated iteration on the canonical built-in path.
 
          bool lhs_is_range = left.value_ref()->kind IS AstNodeKind::RangeExpr;
 
          // Check if LHS is an array literal or a method call to :each() (for chaining support)
          bool lhs_is_array = false;
-         bool lhs_is_each_call = false;
          if (left.value_ref()->kind IS AstNodeKind::CallExpr) {
             const CallExprPayload& call_data = std::get<CallExprPayload>(left.value_ref()->data);
             if (call_data.result_type IS TiriType::Array) {
                lhs_is_array = true;
             }
-            else if (const auto* method = std::get_if<MethodCallTarget>(&call_data.target)) {
-               if (method->method.symbol and strcmp(strdata(method->method.symbol), "each") IS 0) {
-                  lhs_is_each_call = true;
+            else if (call_data.result_type IS TiriType::Range) {
+               lhs_is_range = true;
+            }
+            if (const auto *direct = std::get_if<DirectCallTarget>(&call_data.target)) {
+               if (direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
+                  const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+                  if (member.member.symbol and strcmp(strdata(member.member.symbol), "each") IS 0 and
+                      member.table) {
+                     if (member.table->kind IS AstNodeKind::RangeExpr) lhs_is_range = true;
+                     else if (member.table->kind IS AstNodeKind::IdentifierExpr) {
+                        const auto &interface = std::get<NameRef>(member.table->data);
+                        if (interface.identifier.symbol and
+                            std::string_view(strdata(interface.identifier.symbol), interface.identifier.symbol->len) IS
+                               "range") lhs_is_range = true;
+                        else lhs_is_array = true;
+                     }
+                     else lhs_is_array = true;
+                  }
                }
             }
          }
@@ -199,17 +224,13 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          bool rhs_is_call = rhs.value_ref()->kind IS AstNodeKind::CallExpr or
                             rhs.value_ref()->kind IS AstNodeKind::SafeCallExpr;
 
-         if ((lhs_is_range or lhs_is_each_call or lhs_is_array) and rhs_is_function) {
-            // Pipe iteration: transform range/array |> func into LHS:each(func)
-            // For chaining: LHS:each(f1) |> f2 → LHS:each(f1):each(f2)
+         if ((lhs_is_range or lhs_is_array) and rhs_is_function) {
             SourceSpan span = combine_spans(left.value_ref()->span, rhs.value_ref()->span);
-
-            Identifier method(&this->ctx.lua(), "each", next.span());
-
             ExprNodeList args;
             args.push_back(std::move(rhs.value_ref()));
-
-            ExprNodePtr call = make_method_call_expr(span, std::move(left.value_ref()), method, std::move(args), false);
+            TiriType result_type = lhs_is_array ? TiriType::Array : TiriType::Range;
+            ExprNodePtr call = make_direct_method_call(this->ctx, span, "each", std::move(left.value_ref()),
+               std::move(args), result_type);
             left = ParserResult<ExprNodePtr>::success(std::move(call));
             continue;
          }
@@ -279,8 +300,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
       }
 
       // Membership operator: expr in range
-      // Transform `lhs in rhs` into a method call `rhs:contains(lhs)` so that
-      // ranges can implement membership via their :contains method.
+      // Transform `lhs in rhs` into the canonical `rhs.contains(lhs)` built-in method call.
 
       if (next.kind() IS TokenKind::InToken) {
          constexpr uint8_t in_left = 3;
@@ -298,13 +318,12 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          ExprNodePtr rhs_expr = std::move(right.value_ref());
          ExprNodePtr lhs_expr = std::move(left.value_ref());
 
-         Identifier method(&this->ctx.lua(), "contains", next.span());
-
          ExprNodeList args;
          args.push_back(std::move(lhs_expr));
 
          SourceSpan span = combine_spans(left_span, right_span);
-         ExprNodePtr call = make_method_call_expr(span, std::move(rhs_expr), method, std::move(args), false);
+         ExprNodePtr call = make_direct_method_call(this->ctx, span, "contains", std::move(rhs_expr),
+            std::move(args), TiriType::Bool);
          left = ParserResult<ExprNodePtr>::success(std::move(call));
          continue;
       }
@@ -450,7 +469,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          ExprNodePtr regex_base = make_identifier_expr(span, regex_ref);
 
          Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr regex_new = make_member_expr(span, std::move(regex_base), new_id, false);
+         ExprNodePtr regex_new = make_member_expr(span, std::move(regex_base), new_id);
 
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(pattern)));
@@ -739,7 +758,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
             // Create member access for .of
             Identifier of_id = Identifier::from_keepstr(this->ctx.lex().keepstr("of"), span);
-            ExprNodePtr array_of = make_member_expr(span, std::move(array_base), of_id, false);
+            ExprNodePtr array_of = make_member_expr(span, std::move(array_base), of_id);
 
             // Build argument list: ('type', v1, v2, ...)
             ExprNodeList args;
@@ -782,7 +801,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                ExprNodePtr array_base2 = make_identifier_expr(span, array_ref2);
 
                Identifier resize_id = Identifier::from_keepstr(this->ctx.lex().keepstr("resize"), span);
-               ExprNodePtr array_resize = make_member_expr(span, std::move(array_base2), resize_id, false);
+               ExprNodePtr array_resize = make_member_expr(span, std::move(array_base2), resize_id);
 
                // Arguments for resize: (_arr, size)
 
@@ -830,7 +849,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
             // Create member access for .new
             Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-            ExprNodePtr array_new = make_member_expr(span, std::move(array_base), new_id, false);
+            ExprNodePtr array_new = make_member_expr(span, std::move(array_base), new_id);
 
             // Build argument list: (size, 'type')
 
@@ -880,7 +899,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          struct_ref.identifier = struct_id;
          ExprNodePtr struct_base = make_identifier_expr(span, struct_ref);
          Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr struct_new = make_member_expr(span, std::move(struct_base), new_id, false);
+         ExprNodePtr struct_new = make_member_expr(span, std::move(struct_base), new_id);
 
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(name_str)));
@@ -1049,7 +1068,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
 
          base = make_member_expr(span_from(token, name_token.value_ref()), std::move(base),
-            make_identifier(name_token.value_ref()), false);
+            make_identifier(name_token.value_ref()));
          continue;
       }
 
@@ -1086,33 +1105,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
       }
 
       if (token.kind() IS TokenKind::Colon) {
-         this->ctx.tokens().advance();
-         auto name_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
-         if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
-
-         bool forwards = false;
-         auto args = this->parse_call_arguments(&forwards);
-         if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
-
-         SourceSpan span = combine_spans(base->span, name_token.value_ref().span());
-         base = make_method_call_expr(span, std::move(base),
-            make_identifier(name_token.value_ref()), std::move(args.value_ref()), forwards);
-         continue;
+         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
+            "colon method syntax has been removed; use receiver.member(...) for built-in methods or pass the "
+            "receiver explicitly to an ordinary callable field");
       }
 
       if (token.kind() IS TokenKind::SafeMethod) {
-         this->ctx.tokens().advance();
-         auto name_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
-         if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
-
-         bool forwards = false;
-         auto args = this->parse_call_arguments(&forwards);
-         if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
-
-         SourceSpan span = combine_spans(base->span, name_token.value_ref().span());
-         base = make_safe_method_call_expr(span, std::move(base),
-            make_identifier(name_token.value_ref()), std::move(args.value_ref()), forwards);
-         continue;
+         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
+            "safe colon method syntax has been removed; use receiver?.member(...) instead");
       }
 
       if (token.kind() IS TokenKind::LeftParen or token.kind() IS TokenKind::LeftBrace or
@@ -1177,10 +1177,13 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          }
 
          bool forwards = false;
+         CallArgumentSyntax argument_syntax = token.kind() IS TokenKind::LeftParen ?
+            CallArgumentSyntax::Parenthesised : token.kind() IS TokenKind::LeftBrace ?
+            CallArgumentSyntax::TableConstructor : CallArgumentSyntax::StringLiteral;
          auto args = this->parse_call_arguments(&forwards);
          if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
          SourceSpan span = combine_spans(base->span, token.span());
-         base = make_call_expr(span, std::move(base), std::move(args.value_ref()), forwards);
+         base = make_call_expr(span, std::move(base), std::move(args.value_ref()), forwards, argument_syntax);
          continue;
       }
 

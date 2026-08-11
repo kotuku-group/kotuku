@@ -32,7 +32,7 @@ function rawHttpRequest(Method:str, Path:str):<num, str>
          buffer = string.alloc(4096)
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            response ..= buffer:sub(0, read_len)
+            response ..= buffer.sub(0, read_len)
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
@@ -123,7 +123,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -158,7 +158,7 @@ end
          flags = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
             if not results[i] then results[i] = {content = ''} end
-            if Buffer then results[i].content = results[i].content .. Buffer:getString() end
+            if Buffer then results[i].content = results[i].content .. Buffer.getString() end
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -224,7 +224,7 @@ end
       method   = 'GET',
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -255,14 +255,14 @@ end
    content = ''
 
    -- Create oversized header to test limits
-   largeHeaderValue = string.rep('A', 8192) -- 8KB header
+   largeHeaderValue = 'A'.rep(8192) -- 8KB header
 
    http = obj.new('http', {
       src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/large-header-test',
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -292,7 +292,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

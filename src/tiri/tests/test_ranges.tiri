@@ -9,7 +9,7 @@ function enforce_hotpath() end
    script = obj.new('tiri', { statement=[[
    test_messages = {
       'Binary data: ' .. string.char(0, 1, 2, 3, 255, 254, 253),
-      string.rep('Large SSL message ', 500), -- ~9KB message
+      'Large SSL message '.rep(500), -- ~9KB message
       'Special chars: ������������',
       'JSON: {"encrypted": true, "secure": "data"}',
       'Empty message test: '
@@ -203,44 +203,44 @@ end
    -- Test contains method for exclusive ranges
    r = range(0, 10)  -- 0-9
 
-   assert(r:contains(0) is true, "0 should be in range 0 to 10")
-   assert(r:contains(5) is true, "5 should be in range 0 to 10")
-   assert(r:contains(9) is true, "9 should be in range 0 to 10")
-   assert(r:contains(10) is false, "10 should NOT be in exclusive range 0 to 10")
-   assert(r:contains(-1) is false, "-1 should NOT be in range 0 to 10")
-   assert(r:contains(11) is false, "11 should NOT be in range 0 to 10")
+   assert(r.contains(0) is true, "0 should be in range 0 to 10")
+   assert(r.contains(5) is true, "5 should be in range 0 to 10")
+   assert(r.contains(9) is true, "9 should be in range 0 to 10")
+   assert(r.contains(10) is false, "10 should NOT be in exclusive range 0 to 10")
+   assert(r.contains(-1) is false, "-1 should NOT be in range 0 to 10")
+   assert(r.contains(11) is false, "11 should NOT be in range 0 to 10")
 end
 
 @Test function RangeContainsInclusive()
    -- Test contains method for inclusive ranges
    r = range(0, 10, true)  -- 0-10
 
-   assert(r:contains(0) is true, "0 should be in range 0 into 10")
-   assert(r:contains(10) is true, "10 should be in inclusive range 0 into 10")
-   assert(r:contains(11) is false, "11 should NOT be in range 0 into 10")
+   assert(r.contains(0) is true, "0 should be in range 0 into 10")
+   assert(r.contains(10) is true, "10 should be in inclusive range 0 into 10")
+   assert(r.contains(11) is false, "11 should NOT be in range 0 into 10")
 end
 
 @Test function RangeContainsWithStep()
    -- Test contains with step values
    r = range(0, 10, false, 2)  -- 0, 2, 4, 6, 8
 
-   assert(r:contains(0) is true, "0 should be in range 0 to 10 step 2")
-   assert(r:contains(2) is true, "2 should be in range 0 to 10 step 2")
-   assert(r:contains(8) is true, "8 should be in range 0 to 10 step 2")
-   assert(r:contains(1) is false, "1 should NOT be in range 0 to 10 step 2")
-   assert(r:contains(3) is false, "3 should NOT be in range 0 to 10 step 2")
-   assert(r:contains(10) is false, "10 should NOT be in exclusive range 0 to 10 step 2")
+   assert(r.contains(0) is true, "0 should be in range 0 to 10 step 2")
+   assert(r.contains(2) is true, "2 should be in range 0 to 10 step 2")
+   assert(r.contains(8) is true, "8 should be in range 0 to 10 step 2")
+   assert(r.contains(1) is false, "1 should NOT be in range 0 to 10 step 2")
+   assert(r.contains(3) is false, "3 should NOT be in range 0 to 10 step 2")
+   assert(r.contains(10) is false, "10 should NOT be in exclusive range 0 to 10 step 2")
 end
 
 @Test function RangeContainsReverse()
    -- Test contains for reverse ranges
    r = range(10, 0)  -- 10, 9, 8, ... 1 (exclusive of 0)
 
-   assert(r:contains(10) is true, "10 should be in range 10 to 0")
-   assert(r:contains(5) is true, "5 should be in range 10 to 0")
-   assert(r:contains(1) is true, "1 should be in range 10 to 0")
-   assert(r:contains(0) is false, "0 should NOT be in exclusive range 10 to 0")
-   assert(r:contains(11) is false, "11 should NOT be in range 10 to 0")
+   assert(r.contains(10) is true, "10 should be in range 10 to 0")
+   assert(r.contains(5) is true, "5 should be in range 10 to 0")
+   assert(r.contains(1) is true, "1 should be in range 10 to 0")
+   assert(r.contains(0) is false, "0 should NOT be in exclusive range 10 to 0")
+   assert(r.contains(11) is false, "11 should NOT be in range 10 to 0")
 end
 
 @Test function RangeMembership()
@@ -281,13 +281,13 @@ end
 @Test function RangeToTable()
    -- Test toArray method
    r1 = range(0, 5)
-   t1 = r1:toArray()
+   t1 = r1.toArray()
    assert(#t1 is 5, "toArray should return 5 elements")
    assert(t1[0] is 0, "first element should be 0")
    assert(t1[4] is 4, "last element should be 4")
 
    r2 = range(0, 5, true)
-   t2 = r2:toArray()
+   t2 = r2.toArray()
    assert(#t2 is 6, "inclusive toArray should return 6 elements")
    assert(t2[5] is 5, "last element should be 5")
 end
@@ -295,7 +295,7 @@ end
 @Test function RangeToTableWithStep()
    -- Test toArray with step
    r = range(0, 10, false, 2)
-   t = r:toArray()
+   t = r.toArray()
    assert(#t is 5, "toArray with step 2 should return 5 elements")
    assert(t[0] is 0, "first element should be 0")
    assert(t[1] is 2, "second element should be 2")
@@ -305,7 +305,7 @@ end
 @Test function RangeToTableReverse()
    -- Test toArray for reverse range
    r = range(5, 0, true)
-   t = r:toArray()
+   t = r.toArray()
    assert(#t is 6, "reverse toArray should return 6 elements")
    assert(t[0] is 5, "first element should be 5")
    assert(t[5] is 0, "last element should be 0")
@@ -458,14 +458,14 @@ end
 @Test function RangeLiteralContains()
    -- Test contains method on range literals
    r = {0 to 10}
-   assert(r:contains(0) is true, "0 should be in {0 to 10}")
-   assert(r:contains(5) is true, "5 should be in {0 to 10}")
-   assert(r:contains(9) is true, "9 should be in {0 to 10}")
-   assert(r:contains(10) is false, "10 should NOT be in {0 to 10} (exclusive)")
+   assert(r.contains(0) is true, "0 should be in {0 to 10}")
+   assert(r.contains(5) is true, "5 should be in {0 to 10}")
+   assert(r.contains(9) is true, "9 should be in {0 to 10}")
+   assert(r.contains(10) is false, "10 should NOT be in {0 to 10} (exclusive)")
 
    stepped = {0 to 10 by 2}
-   assert(stepped:contains(4) is true, "4 should be in {0 to 10 by 2}")
-   assert(stepped:contains(5) is false, "5 should NOT be in {0 to 10 by 2}")
+   assert(stepped.contains(4) is true, "4 should be in {0 to 10 by 2}")
+   assert(stepped.contains(5) is false, "5 should NOT be in {0 to 10 by 2}")
 end
 
 @Test function RangeLiteralWithVariables()
@@ -699,10 +699,10 @@ end
 @Test function StringMethodsStillWork()
    -- Ensure string methods still work after adding range support
    s = "hello"
-   assert(s.upper(s) is "HELLO", "string.upper should still work")
-   assert(s.sub(s, 0, 3) is "hel", "string.sub should still work")
-   assert(s.len(s) is 5, "string.len should still work")
-   assert(s.reverse(s) is "olleh", "string.reverse should still work")
+   assert(s.upper() is "HELLO", "string.upper should still work")
+   assert(s.sub(0, 3) is "hel", "string.sub should still work")
+   assert(s.len() is 5, "string.len should still work")
+   assert(s.reverse() is "olleh", "string.reverse should still work")
 end
 
 @Test function StringSliceMixedAccess()
@@ -1024,7 +1024,7 @@ end
    -- Test basic each() iteration
    sum = 0
    r = {1 to 6}
-   r:each(function(Value) sum += Value end)
+   r.each(function(Value) sum += Value end)
    assert(sum is 15, "each() sum of {1 to 6} should be 15 (1+2+3+4+5), got " .. sum)
 end
 
@@ -1032,7 +1032,7 @@ end
    -- Test each() with inclusive range
    sum = 0
    r = {1 into 5}
-   r:each(function(Value) sum += Value end)
+   r.each(function(Value) sum += Value end)
    assert(sum is 15, "each() sum of {1 into 5} should be 15, got " .. sum)
 end
 
@@ -1040,7 +1040,7 @@ end
    -- Test each() with reverse range
    result = {}
    r = {5 to 1}
-   r:each(function(Value) result[#result] = Value end)
+   r.each(function(Value) result[#result] = Value end)
    assert(#result is 4, "each() reverse {5 to 1} should have 4 elements, got " .. #result)
    assert(result[0] is 5, "first element should be 5")
    assert(result[3] is 2, "last element should be 2")
@@ -1050,7 +1050,7 @@ end
    -- Test each() with reverse inclusive range
    result = {}
    r = {5 into 1}
-   r:each(function(Value) result[#result] = Value end)
+   r.each(function(Value) result[#result] = Value end)
    assert(#result is 5, "each() reverse {5 into 1} should have 5 elements, got " .. #result)
    assert(result[0] is 5, "first element should be 5")
    assert(result[4] is 1, "last element should be 1")
@@ -1059,7 +1059,7 @@ end
 @Test function RangeEachWithStep()
    -- Test each() with custom step via range constructor
    result = {}
-   range(0, 10, false, 2):each(function(Value) result[#result] = Value end)
+   range(0, 10, false, 2).each(function(Value) result[#result] = Value end)
    assert(#result is 5, "each() with step 2 should have 5 elements, got " .. #result)
    assert(result[0] is 0, "first element should be 0")
    assert(result[4] is 8, "last element should be 8")
@@ -1069,7 +1069,7 @@ end
    -- Test each() on empty range
    count = 0
    r = {5 to 5}
-   r:each(function(Value) count += 1 end)
+   r.each(function(Value) count += 1 end)
    assert(count is 0, "each() on empty range {5 to 5} should not iterate, got " .. count)
 end
 
@@ -1078,7 +1078,7 @@ end
    count = 0
    captured = nil
    r = {5 into 5}
-   r:each(function(Value) count += 1; captured = Value end)
+   r.each(function(Value) count += 1; captured = Value end)
    assert(count is 1, "each() on {5 into 5} should iterate once, got " .. count)
    assert(captured is 5, "captured value should be 5")
 end
@@ -1087,7 +1087,7 @@ end
    -- Test early termination by returning false
    sum = 0
    r = {1 to 100}
-   r:each(function(Value)
+   r.each(function(Value)
       if Value > 5 then return false end
       sum += Value
    end)
@@ -1098,7 +1098,7 @@ end
    -- Test that returning true does NOT terminate early
    sum = 0
    r = {1 to 6}
-   r:each(function(Value)
+   r.each(function(Value)
       sum += Value
       return true  -- Should continue iterating
    end)
@@ -1109,7 +1109,7 @@ end
    -- Test that returning nil (no return) continues iteration
    count = 0
    r = {1 to 6}
-   r:each(function(Value)
+   r.each(function(Value)
       count += 1
       -- No explicit return
    end)
@@ -1121,11 +1121,11 @@ end
    sum1 = 0
    sum2 = 0
    r = {1 to 6}
-   returned = r:each(function(Value) sum1 += Value end)
+   returned = r.each(function(Value) sum1 += Value end)
    assert(returned is r, "each() should return the original range for chaining")
 
    -- Chain another each call
-   returned:each(function(Value) sum2 += Value end)
+   returned.each(function(Value) sum2 += Value end)
    assert(sum2 is 15, "chained each() should also work, got " .. sum2)
 end
 
@@ -1133,7 +1133,7 @@ end
    -- Test each() on range stored in variable
    r = {0 to 5}
    sum = 0
-   r:each(function(Value) sum += Value end)
+   r.each(function(Value) sum += Value end)
    assert(sum is 10, "each() via variable should sum to 10, got " .. sum)
 end
 
@@ -1141,7 +1141,7 @@ end
    -- Test each() with negative values
    result = {}
    r = {-3 to 2}
-   r:each(function(Value) result[#result] = Value end)
+   r.each(function(Value) result[#result] = Value end)
    assert(#result is 5, "each() on {-3 to 2} should have 5 elements, got " .. #result)
    assert(result[0] is -3, "first element should be -3")
    assert(result[4] is 1, "last element should be 1")
@@ -1151,7 +1151,7 @@ end
    -- Test early termination in reverse iteration
    result = {}
    r = {10 to 0}
-   r:each(function(Value)
+   r.each(function(Value)
       result[#result] = Value
       if Value <= 7 then return false end
    end)
@@ -1164,8 +1164,8 @@ end
 -- Range filter() method tests
 
 @Test function RangeFilterBasic()
-   result = {1 to 10}:filter(i => i % 2 is 0)
-   assert(result:type() is "int", "filtering an integral range should return array<int>")
+   result = {1 to 10}.filter(i => i % 2 is 0)
+   assert(result.type() is "int", "filtering an integral range should return array<int>")
    assert(#result is 4, "filter even numbers from {1 to 10} should have 4 elements, got " .. #result)
    assert(result[0] is 2, "first even should be 2")
    assert(result[1] is 4, "second even should be 4")
@@ -1173,28 +1173,28 @@ end
 end
 
 @Test function RangeFilterPreservesIntegerType()
-   result = {0 to 10}:filter(v => v % 2)
+   result = {0 to 10}.filter(v => v % 2)
    assert(tostring(result) is "array<int, 10>",
       "filtering an integral range should preserve its storage type, got " .. tostring(result))
 end
 
 @Test function RangeFilterNoneMatch()
-   result = {1 to 5}:filter(i => i > 100)
+   result = {1 to 5}.filter(i => i > 100)
    assert(#result is 0, "filter with no matches should return empty table")
 end
 
 @Test function RangeFilterAllMatch()
-   result = {1 to 5}:filter(i => i > 0)
+   result = {1 to 5}.filter(i => i > 0)
    assert(#result is 4, "filter where all match should have 4 elements, got " .. #result)
 end
 
 @Test function RangeFilterEmpty()
-   result = {5 to 5}:filter(i => true)
+   result = {5 to 5}.filter(i => true)
    assert(#result is 0, "filter on empty range should return empty table")
 end
 
 @Test function RangeFilterInclusive()
-   result = {1 into 5}:filter(i => i % 2 is 1)
+   result = {1 into 5}.filter(i => i % 2 is 1)
    assert(#result is 3, "filter odd from {1 into 5} should have 3 elements, got " .. #result)
    assert(result[0] is 1)
    assert(result[1] is 3)
@@ -1204,7 +1204,7 @@ end
 @Test function RangeFilterReverse()
    -- {10 to 5} is exclusive reverse: 10, 9, 8, 7, 6 (excludes 5)
    -- Filtering i > 7 gives: 10, 9, 8
-   result = {10 to 5}:filter(i => i > 7)
+   result = {10 to 5}.filter(i => i > 7)
    assert(#result is 3, "filter from reverse range should work, got " .. #result)
    assert(result[0] is 10, "first should be 10")
    assert(result[1] is 9, "second should be 9")
@@ -1215,27 +1215,27 @@ end
 -- Range reduce() method tests
 
 @Test function RangeReduceSum()
-   sum = {1 to 6}:reduce(0, (acc, i) => acc + i)
+   sum = {1 to 6}.reduce(0, (acc, i) => acc + i)
    assert(sum is 15, "reduce sum of {1 to 6} should be 15, got " .. sum)
 end
 
 @Test function RangeReduceProduct()
-   product = {1 into 5}:reduce(1, (acc, i) => acc * i)
+   product = {1 into 5}.reduce(1, (acc, i) => acc * i)
    assert(product is 120, "reduce product of {1 into 5} should be 120, got " .. product)
 end
 
 @Test function RangeReduceEmpty()
-   result = {5 to 5}:reduce(42, (acc, i) => acc + i)
+   result = {5 to 5}.reduce(42, (acc, i) => acc + i)
    assert(result is 42, "reduce on empty range should return initial value")
 end
 
 @Test function RangeReduceStringConcat()
-   str = {1 to 4}:reduce("", (acc, i) => acc .. tostring(i))
+   str = {1 to 4}.reduce("", (acc, i) => acc .. tostring(i))
    assert(str is "123", "reduce string concat should be '123', got '" .. str .. "'")
 end
 
 @Test function RangeReduceReverse()
-   result = {5 into 1}:reduce({}, function(acc, i):table
+   result = {5 into 1}.reduce({}, function(acc, i):table
       acc[#acc] = i
       return acc
    end)
@@ -1248,7 +1248,7 @@ end
 -- Range map() method tests
 
 @Test function RangeMapBasic()
-   result = {1 to 5}:map(i => i * 2)
+   result = {1 to 5}.map(i => i * 2)
    assert(#result is 4, "map should have 4 elements, got " .. #result)
    assert(result[0] is 2, "first should be 2")
    assert(result[1] is 4, "second should be 4")
@@ -1256,19 +1256,19 @@ end
 end
 
 @Test function RangeMapToStrings()
-   result = {1 to 4}:map(i => "n" .. tostring(i))
+   result = {1 to 4}.map(i => "n" .. tostring(i))
    assert(result[0] is "n1")
    assert(result[1] is "n2")
    assert(result[2] is "n3")
 end
 
 @Test function RangeMapEmpty()
-   result = {5 to 5}:map(i => i * 2)
+   result = {5 to 5}.map(i => i * 2)
    assert(#result is 0, "map on empty range should return empty table")
 end
 
 @Test function RangeMapInclusive()
-   result = {1 into 3}:map(i => i * i)
+   result = {1 into 3}.map(i => i * i)
    assert(#result is 3, "map on {1 into 3} should have 3 elements")
    assert(result[0] is 1)
    assert(result[1] is 4)
@@ -1279,26 +1279,26 @@ end
 -- Range take() method tests
 
 @Test function RangeTakeBasic()
-   result = {1 to 100}:take(5)
+   result = {1 to 100}.take(5)
    assert(#result is 5, "take(5) should have 5 elements, got " .. #result)
    assert(result[0] is 1)
    assert(result[4] is 5)
 end
 
 @Test function RangeTakeMoreThanAvailable()
-   result = {1 to 4}:take(10)
+   result = {1 to 4}.take(10)
    assert(#result is 3, "take(10) from {1 to 4} should have 3 elements, got " .. #result)
 end
 
 @Test function RangeTakeZero()
-   result = {1 to 10}:take(0)
+   result = {1 to 10}.take(0)
    assert(#result is 0, "take(0) should return empty table")
 end
 
 @Test function RangeTakeFromReverse()
    -- {10 to 0} is exclusive reverse: 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 (excludes 0)
    -- Taking 3 gives: 10, 9, 8
-   result = {10 to 0}:take(3)
+   result = {10 to 0}.take(3)
    assert(#result is 3, "take from reverse should have 3 elements")
    assert(result[0] is 10, "first should be 10")
    assert(result[1] is 9, "second should be 9")
@@ -1309,20 +1309,20 @@ end
 -- Range any() method tests
 
 @Test function RangeAnyTrue()
-   assert({1 to 10}:any(i => i > 5) is true, "any(i > 5) on {1 to 10} should be true")
+   assert({1 to 10}.any(i => i > 5) is true, "any(i > 5) on {1 to 10} should be true")
 end
 
 @Test function RangeAnyFalse()
-   assert({1 to 10}:any(i => i > 100) is false, "any(i > 100) on {1 to 10} should be false")
+   assert({1 to 10}.any(i => i > 100) is false, "any(i > 100) on {1 to 10} should be false")
 end
 
 @Test function RangeAnyEmpty()
-   assert({5 to 5}:any(i => true) is false, "any on empty range should be false")
+   assert({5 to 5}.any(i => true) is false, "any on empty range should be false")
 end
 
 @Test function RangeAnyFirstElement()
    called_count = 0
-   {1 to 100}:any(function(i)
+   {1 to 100}.any(function(i)
       called_count += 1
       return i is 1
    end)
@@ -1333,20 +1333,20 @@ end
 -- Range all() method tests
 
 @Test function RangeAllTrue()
-   assert({1 to 10}:all(i => i > 0) is true, "all(i > 0) on {1 to 10} should be true")
+   assert({1 to 10}.all(i => i > 0) is true, "all(i > 0) on {1 to 10} should be true")
 end
 
 @Test function RangeAllFalse()
-   assert({1 to 10}:all(i => i < 5) is false, "all(i < 5) on {1 to 10} should be false")
+   assert({1 to 10}.all(i => i < 5) is false, "all(i < 5) on {1 to 10} should be false")
 end
 
 @Test function RangeAllEmpty()
-   assert({5 to 5}:all(i => false) is true, "all on empty range should be true (vacuous truth)")
+   assert({5 to 5}.all(i => false) is true, "all on empty range should be true (vacuous truth)")
 end
 
 @Test function RangeAllStopsOnFail()
    called_count = 0
-   {1 to 100}:all(function(i)
+   {1 to 100}.all(function(i)
       called_count += 1
       return i < 5
    end)
@@ -1357,27 +1357,27 @@ end
 -- Range find() method tests
 
 @Test function RangeFindBasic()
-   found = {1 to 10}:find(i => i > 5)
+   found = {1 to 10}.find(i => i > 5)
    assert(found is 6, "find(i > 5) should return 6, got " .. tostring(found))
 end
 
 @Test function RangeFindNotFound()
-   found = {1 to 10}:find(i => i > 100)
+   found = {1 to 10}.find(i => i > 100)
    assert(found is nil, "find with no match should return nil")
 end
 
 @Test function RangeFindEmpty()
-   found = {5 to 5}:find(i => true)
+   found = {5 to 5}.find(i => true)
    assert(found is nil, "find on empty range should return nil")
 end
 
 @Test function RangeFindFirst()
-   found = {1 to 10}:find(i => i % 2 is 0)
+   found = {1 to 10}.find(i => i % 2 is 0)
    assert(found is 2, "find first even should be 2, got " .. tostring(found))
 end
 
 @Test function RangeFindReverse()
-   found = {10 to 0}:find(i => i < 5)
+   found = {10 to 0}.find(i => i < 5)
    assert(found is 4, "find in reverse range should work, got " .. tostring(found))
 end
 
@@ -1387,7 +1387,7 @@ end
 @Test function RangeMethodChaining()
    -- Use reduce directly on a range (filter returns a table, so can't chain reduce on it)
    -- Sum even numbers by filtering in the reducer
-   sum = {1 to 20}:reduce(0, function(acc, i):num
+   sum = {1 to 20}.reduce(0, function(acc, i):num
       if i % 2 is 0 then return acc + i end
       return acc
    end)
@@ -1397,7 +1397,7 @@ end
 
 @Test function RangeMapFilterChain()
    -- Note: map/filter return tables, not ranges, so chaining range methods doesn't work
-   doubled = {1 to 6}:map(i => i * 2)
+   doubled = {1 to 6}.map(i => i * 2)
    -- doubled = {2, 4, 6, 8, 10}
    assert(#doubled is 5, "map should produce 5 elements")
    assert(doubled[0] is 2)
@@ -1540,13 +1540,13 @@ end
 
    aligned = {0 into 1 by 0.25}
    unaligned = {0 into 1 by 0.3}
-   assert(#aligned is 5 and aligned:contains(1), "aligned inclusive stop should be present")
-   assert(#unaligned is 4 and not unaligned:contains(1), "unreachable inclusive stop should not be forced")
-   assert(exclusive:contains(0.3), "contains should tolerate normal floating-point representation error")
-   assert(not exclusive:contains(1), "exclusive stop should never be admitted by tolerance")
+   assert(#aligned is 5 and aligned.contains(1), "aligned inclusive stop should be present")
+   assert(#unaligned is 4 and not unaligned.contains(1), "unreachable inclusive stop should not be forced")
+   assert(exclusive.contains(0.3), "contains should tolerate normal floating-point representation error")
+   assert(not exclusive.contains(1), "exclusive stop should never be admitted by tolerance")
 
    reverse = range(1.0, 0.0, false, -0.2)
-   assert(#reverse is 5 and approximately(reverse:find(v => v < 0.7), 0.6))
+   assert(#reverse is 5 and approximately(reverse.find(v => v < 0.7), 0.6))
    assert(#range(0.0, 1.0, false, -0.1) is 0, "a step pointing away from the stop should be empty")
    assert(#range(0.5, 0.5) is 0 and #range(0.5, 0.5, true) is 1)
 end
@@ -1555,13 +1555,13 @@ end
    generic_values = array<double>
    generic_range = range(0, 1, false, 0.2)
    for value in generic_range() do
-      generic_values:push(value)
+      generic_values.push(value)
    end
    assert(#generic_values is 5 and approximately(generic_values[3], 0.6))
 
    literal_values = array<double>
    for value in {0 to 1 by 0.2} do
-      literal_values:push(value)
+      literal_values.push(value)
    end
    assert(#literal_values is #generic_values)
    for i in {0 to #generic_values} do
@@ -1569,34 +1569,34 @@ end
    end
 
    each_sum = 0
-   generic_range:each(v => do each_sum += v end)
+   generic_range.each(v => do each_sum += v end)
    assert(approximately(each_sum, 2.0))
 
-   filtered = {0 to 1 by 0.2}:filter(v => v >= 0.4)
-   mapped = {0 to 1 by 0.25}:map(v => v * 2)
-   taken = {0 to 1 by 0.2}:take(3)
-   assert(filtered:type() is "double" and #filtered is 3 and approximately(filtered[0], 0.4))
+   filtered = {0 to 1 by 0.2}.filter(v => v >= 0.4)
+   mapped = {0 to 1 by 0.25}.map(v => v * 2)
+   taken = {0 to 1 by 0.2}.take(3)
+   assert(filtered.type() is "double" and #filtered is 3 and approximately(filtered[0], 0.4))
    assert(#mapped is 4 and approximately(mapped[3], 1.5))
-   assert(taken:type() is "double" and #taken is 3 and approximately(taken[2], 0.4))
-   assert(approximately({0 to 1 by 0.25}:reduce(0, (acc, v) => acc + v), 1.5))
-   assert({0 to 1 by 0.2}:any(v => v > 0.7))
-   assert({0 to 1 by 0.2}:all(v => v < 1))
+   assert(taken.type() is "double" and #taken is 3 and approximately(taken[2], 0.4))
+   assert(approximately({0 to 1 by 0.25}.reduce(0, (acc, v) => acc + v), 1.5))
+   assert({0 to 1 by 0.2}.any(v => v > 0.7))
+   assert({0 to 1 by 0.2}.all(v => v < 1))
 end
 
 @Test function ExplicitRangeObjectIteration()
    local ascending = array<int>
    local ascending_range = range.new(0, 10, false, 2)
-   for value in ascending_range() do ascending:push(value) end
-   assert(ascending:concat(',') is '0,2,4,6,8', 'Explicit ascending range iteration should preserve its step')
+   for value in ascending_range() do ascending.push(value) end
+   assert(ascending.concat(',') is '0,2,4,6,8', 'Explicit ascending range iteration should preserve its step')
 
    local descending = array<int>
    local descending_range = range.new(9, 0, true, -3)
-   for value in descending_range() do descending:push(value) end
-   assert(descending:concat(',') is '9,6,3,0', 'Explicit descending range iteration should include an aligned stop')
+   for value in descending_range() do descending.push(value) end
+   assert(descending.concat(',') is '9,6,3,0', 'Explicit descending range iteration should include an aligned stop')
 
    local fractional = array<double>
    local fractional_range = range.new(-0.5, 0.5, true, 0.2)
-   for value in fractional_range() do fractional:push(value) end
+   for value in fractional_range() do fractional.push(value) end
    assert(#fractional is 6 and approximately(fractional[3], 0.1) and approximately(fractional[5], 0.5),
       'Explicit fractional range iteration should retain ordinal FMA value generation')
 end
@@ -1621,10 +1621,10 @@ end
 end
 
 @Test function FloatingRangeMaterialisationTypes()
-   integers = range(0.0, 5.0, false, 1.0):toArray()
-   fractions = range(-0.5, 0.6, false, 0.25):toArray()
-   assert(integers:type() is "int", "legacy integral ranges should materialise as array<int>")
-   assert(fractions:type() is "double", "fractional ranges should materialise as array<double>")
+   integers = range(0.0, 5.0, false, 1.0).toArray()
+   fractions = range(-0.5, 0.6, false, 0.25).toArray()
+   assert(integers.type() is "int", "legacy integral ranges should materialise as array<int>")
+   assert(fractions.type() is "double", "fractional ranges should materialise as array<double>")
    assert(#fractions is 5 and approximately(fractions[4], 0.5))
 end
 
@@ -1632,9 +1632,9 @@ end
    large_start = 1e15
    translated = range(large_start, large_start + 10, false, 1)
 
-   assert(translated:contains(large_start + 2), "aligned values should remain members of translated ranges")
-   assert(not translated:contains(large_start + 0.5), "half-step values should not be admitted near the start")
-   assert(not translated:contains(large_start + 1.5), "half-step values should not be admitted inside the range")
+   assert(translated.contains(large_start + 2), "aligned values should remain members of translated ranges")
+   assert(not translated.contains(large_start + 0.5), "half-step values should not be admitted near the start")
+   assert(not translated.contains(large_start + 1.5), "half-step values should not be admitted inside the range")
 end
 
 @Test function DirectRuntimeRangeLoopSemanticMatrix()
@@ -1822,7 +1822,7 @@ end
 
 @Test function FloatingRangeRejectsUnrepresentableSteps()
    try
-      tmp = range(1e15, 1e15 + 1, false, 0.1):toArray()
+      tmp = range(1e15, 1e15 + 1, false, 0.1).toArray()
    success
       error("materialising a range with repeated generated values should fail")
    end
@@ -1868,7 +1868,7 @@ end
       error("ranges too large for a Lua integer should fail")
    end
    try
-      tmp = range(0, 4294967297):toArray()
+      tmp = range(0, 4294967297).toArray()
    success
       error("ranges too large for a native array should fail before allocation")
    end
@@ -1892,12 +1892,12 @@ end
 
    data_values = array<int> { 1, 2, 3, 4 }
    try
-      data_values:fill(0, range(0, 4, false, 0.5))
+      data_values.fill(0, range(0, 4, false, 0.5))
    success
       error("array.fill should reject fractional ranges")
    end
    try
-      data_values:find(2, range(0.5, 4))
+      data_values.find(2, range(0.5, 4))
    success
       error("array.find should reject fractional ranges")
    end

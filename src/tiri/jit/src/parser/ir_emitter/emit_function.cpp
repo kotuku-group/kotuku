@@ -30,14 +30,14 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       SourceSpan span = Payload.body->span;
       span.line = this->lex_state.lastline;
 
-      // Create inner closure (no parameters, captures parent's as upvalues)
-      // Move original body to inner function
+      // Create inner closure (no parameters, captures parent's as upvalues).  Runtime method dispatch can emit the
+      // same argument expression for more than one call branch, so restore the body after lowering the temporary AST.
 
       auto inner_body = std::make_unique<BlockStmt>();
       inner_body->span = span;
-      for (auto& stmt : Payload.body->statements) {
-         inner_body->statements.push_back(std::move(const_cast<StmtNodePtr&>(stmt)));
-      }
+      auto &source_statements = const_cast<StmtNodeList&>(Payload.body->statements);
+      inner_body->statements = std::move(source_statements);
+      BlockStmt *lowered_body = inner_body.get();
 
       ExprNodePtr inner_fn = make_function_expr(span, {}, false, std::move(inner_body));
 
@@ -81,8 +81,12 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       wrapper_payload.is_thunk = false;  // Important: wrapper is not a thunk
       wrapper_payload.body = std::move(wrapper_body);
 
-      // Recursively emit the wrapper function (which is now a regular function)
-      return this->emit_function_expr(wrapper_payload);
+      // Recursively emit the wrapper function (which is now a regular function), then restore the source thunk so
+      // another bytecode branch can emit it again.
+
+      auto result = this->emit_function_expr(wrapper_payload);
+      source_statements = std::move(lowered_body->statements);
+      return result;
    }
 
    // Regular function emission
@@ -323,20 +327,20 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a function declaration path (module.submodule.name or module:method), resolving the lvalue target.
+// Emit bytecode for a dot-qualified function declaration path, resolving the lvalue target.
 
 ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &path)
 {
    if (path.segments.empty()) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
 
    NameRef base_ref = make_name_ref(path.segments.front());
-   bool single_local_function = path.segments.size() IS 1 and not path.method.has_value();
+   bool single_local_function = path.segments.size() IS 1;
    auto base_expr = this->emit_identifier_expr(base_ref, single_local_function);
    if (not base_expr.ok()) return base_expr;
 
    ExpDesc target = base_expr.value_ref();
 
-   size_t traverse_limit = path.method.has_value() ? path.segments.size() : (path.segments.size() > 0 ? path.segments.size() - 1 : 0);
+   size_t traverse_limit = path.segments.size() > 0 ? path.segments.size() - 1 : 0;
    for (size_t i = 1; i < traverse_limit; ++i) {
       const Identifier &segment = path.segments[i];
       if (not segment.symbol) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
@@ -353,8 +357,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &pa
    }
 
    const Identifier *final_name = nullptr;
-   if (path.method.has_value()) final_name = &path.method.value();
-   else if (path.segments.size() > 1) final_name = &path.segments.back();
+   if (path.segments.size() > 1) final_name = &path.segments.back();
 
    if (not final_name) return ParserResult<ExpDesc>::success(target);
 
@@ -725,7 +728,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_function_stmt(const LocalFunction
 //********************************************************************************************************************
 // Emit bytecode for a function declaration statement.
 // With protected_globals enabled, simple function declarations (function foo()) create local functions.
-// Method syntax (function foo:bar()) and table paths (function foo.bar()) always store to the target.
+// Table paths (function foo.bar()) always store to the target.
 // Explicit global declarations (global function foo()) always store to global.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload &Payload)
@@ -737,7 +740,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
    if (Payload.name.is_explicit_global and not Payload.name.segments.empty()) {
       GCstr *name = Payload.name.segments.front().symbol;
       if (name) {
-         bool is_direct_global_store = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
+         bool is_direct_global_store = Payload.name.segments.size() IS 1;
          if (is_direct_global_store and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
             return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
                std::format("cannot override built-in '{}'", std::string_view(strdata(name), name->len)),
@@ -752,21 +755,16 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       }
    }
 
-   // Check if this is a simple function name (not a path like foo.bar or method foo:bar)
+   // Check if this is a simple function name (not a path like foo.bar)
    // and if protected_globals is enabled without explicit global declaration
 
-   bool is_simple_name = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
+   bool is_simple_name = Payload.name.segments.size() IS 1;
    bool should_be_local = is_simple_name and not Payload.name.is_explicit_global;
 
    // Determine the function name for tostring() support.
    // For simple names, use the single segment. For paths like foo.bar, use the last segment.
-   // For methods like foo:bar, use the method name.
-
    GCstr *funcname = nullptr;
-   if (Payload.name.method.has_value() and Payload.name.method->symbol) {
-      funcname = Payload.name.method->symbol;
-   }
-   else if (not Payload.name.segments.empty()) {
+   if (not Payload.name.segments.empty()) {
       funcname = Payload.name.segments.back().symbol;
    }
 

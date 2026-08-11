@@ -26,7 +26,7 @@ SERVER_PORT <const> = 18946
                res.json({
                   message = 'Multipart upload received',
                   contentType = req.headers['content-type'],
-                  bodyLength = req.body and req.body:len() or 0
+                  bodyLength = req.body and req.body.len() or 0
                })
             end
          },
@@ -80,7 +80,7 @@ SERVER_PORT <const> = 18946
             handler = function(req, res)
                filename = req.headers['x-filename'] or 'unknown'
                expectedSize = tonumber(req.headers['x-file-size']) or 0
-               actualSize = req.body and req.body:len() or 0
+               actualSize = req.body and req.body.len() or 0
 
                res.json({
                   message = 'File upload received',
@@ -126,9 +126,9 @@ end
       contentType = 'multipart/form-data; boundary=' .. boundary,
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. multipartBody,
-      size        = multipartBody:len(),
+      size        = multipartBody.len(),
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -145,7 +145,7 @@ end
    assert(http.status is 200, 'Multipart unexpected status: ' .. http.status)
 
    response = json.decode(content)
-   assert(response.contentType:find('multipart/form-data'), 'Multipart content type not detected')
+   assert(response.contentType.find('multipart/form-data'), 'Multipart content type not detected')
    assert(response.bodyLength > 0, 'Multipart body should not be empty')
 end
 
@@ -159,7 +159,7 @@ end
       method  = 'GET',
       flags   = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -192,7 +192,7 @@ end
       method  = 'GET',
       flags   = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -227,7 +227,7 @@ end
       method   = 'GET',
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -259,7 +259,7 @@ end
       method = 'GET',
       flags  = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -296,9 +296,9 @@ end
       contentType = 'application/octet-stream',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. fileContent,
-      size        = fileContent:len(),
+      size        = fileContent.len(),
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -308,7 +308,7 @@ end
    })
 
    check http.acSetKey('X-Filename', 'test.txt')
-   check http.acSetKey('X-File-Size', tostring(fileContent:len()))
+   check http.acSetKey('X-File-Size', tostring(fileContent.len()))
    proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
@@ -318,6 +318,6 @@ end
 
    response = json.decode(content)
    assert(response.filename is 'test.txt', 'Filename header not received')
-   assert(response.fileSize is fileContent:len(), 'File size mismatch')
-   assert(response.contentReceived is fileContent:len(), 'File content not fully received')
+   assert(response.fileSize is fileContent.len(), 'File size mismatch')
+   assert(response.contentReceived is fileContent.len(), 'File content not fully received')
 end

@@ -23,13 +23,13 @@ function resolveSDKPath(Path)
       search_path = 'CMakeLists.txt'
       limit = 5
       while (err != ERR_Okay) and (limit > 0) do
-         table.insert(search_list, search_path)
+         search_list.insert(search_path)
          err, sdk_path = mSys.ResolvePath(search_path)
          search_path = f'../{search_path}'
          limit -= 1
       end
    else
-      table.insert(search_list, f'{Path}/CMakeLists.txt')
+      search_list.insert(f'{Path}/CMakeLists.txt')
       err, sdk_path = mSys.ResolvePath(f'{Path}/CMakeLists.txt')
    end
 
@@ -82,12 +82,12 @@ end
    io.search(md_folder, {
       nameFilter = regex.new([[^.*\.md$]]),
       matchFeedback = function(Path, FileName, File)
-         title = FileName:replace('-', ' ')
-         title = title:replace('.md', '')
+         title = FileName.replace('-', ' ')
+         title = title.replace('.md', '')
 
          src_path = Path .. FileName
          output_path = rx_wiki_path.replace(src_path, '/html/wiki/')
-         output_path = output_path:replace('.md', '.html')
+         output_path = output_path.replace('.md', '.html')
 
          err, res_src_path = mSys.ResolvePath(src_path)
          assert(err is ERR_Okay, f'Failed to resolve path {src_path}')
@@ -103,7 +103,7 @@ end
 
          cmdlist ..= f'"{pandoc_path}" {parameters}\n'
 
-         output_files:push({ title=title, pandoc_output=pandoc_output, target_path=res_output_path })
+         output_files.push({ title=title, pandoc_output=pandoc_output, target_path=res_output_path })
       end
    })
 
@@ -111,7 +111,7 @@ end
 
    if state.platform is 'Windows' then
       output_path ??= 'temp:docgen.bat'
-      cmdlist = cmdlist:replace('\\','\\\\')
+      cmdlist = cmdlist.replace('\\','\\\\')
    else
       output_path ??= 'temp:docgen.sh'
       cmdlist = f'#!/bin/bash\n{cmdlist}'
@@ -141,10 +141,10 @@ end
          md_output = io.readAll(v.pandoc_output)
          fl = obj.new('file', { path=v.target_path, flags=FL_WRITE|FL_NEW })
 
-         mod_header = header:replace('<title>Kōtuku Wiki</title>', '<title>Kōtuku Wiki - ' .. v.title .. '</title>')
-         md_output = md_output:replace('<hr />', '<hr>') -- HTML5 compliance
-         md_output = md_output:replace("\r\n", "\n") -- CRLF conversion
-         md_output = md_output:replace(".md\">", ".html\">")
+         mod_header = header.replace('<title>Kōtuku Wiki</title>', '<title>Kōtuku Wiki - ' .. v.title .. '</title>')
+         md_output = md_output.replace('<hr />', '<hr>') -- HTML5 compliance
+         md_output = md_output.replace("\r\n", "\n") -- CRLF conversion
+         md_output = md_output.replace(".md\">", ".html\">")
 
          fl.acWrite(mod_header)
          fl.acWrite('\n<h1>' .. v.title .. '</h1>\n')

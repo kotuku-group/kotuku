@@ -65,7 +65,7 @@ gui.dialog.message = function(Options)
       if page_width < 100 then page_width = 100 end
       if page_height < 100 then page_height = 100 end
 
-      self.window:sizeHints(page_width/4, page_height/4, page_width * 3, page_height * 3, self.scaleWindow)
+      self.window.sizeHints(page_width/4, page_height/4, page_width * 3, page_height * 3, self.scaleWindow)
       self.window.surface.width  = page_width
       self.window.surface.height = page_height
 
@@ -100,7 +100,7 @@ gui.dialog.message = function(Options)
          end
 
          if self.waiting then processing.signal() end
-         table.clear(self)
+         self.clear()
          processing.collect('defer')
       else
          print('Document event received')
@@ -152,7 +152,7 @@ gui.dialog.message = function(Options)
       local msg:str = self.fmtMessage
       if not msg?? then
          msg = string.escXML(self.message ?? '')
-         msg = string.replace(msg, '\n', '<br/>')
+         msg = msg.replace('\n', '<br/>')
       end
 
       doc ..= [[
@@ -262,12 +262,12 @@ gui.dialog.message = function(Options)
             self?.feedback(self, nil, nil)
 
             if self.waiting then processing.signal() end
-            table.clear(self)
+            self.clear()
          end
       }
    })
 
-   self.viewport = self.window:clientViewport()
+   self.viewport = self.window.clientViewport()
 
    lDoc = self.viewport.new('document', {
       eventMask     = 'LinkActivated',
@@ -283,8 +283,8 @@ gui.dialog.message = function(Options)
 
    matchWindowToDocSize(self, lDoc)
 
-   self.window:moveToFront()
-   self.window:show(true)
+   self.window.moveToFront()
+   self.window.show(true)
 
    self.document = lDoc
 

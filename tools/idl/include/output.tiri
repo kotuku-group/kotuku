@@ -61,7 +61,7 @@ function outputVisibleFields(Class:table, Private:str, Custom:str)
 
    if Private?? then
       output()
-      output('#ifdef PRV_' .. Class.name:upper())
+      output('#ifdef PRV_' .. Class.name.upper())
       output(Private)
       output('#endif')
    end
@@ -79,10 +79,10 @@ function outputActionStubs(Class:table)
    output('')
    output('   // Action stubs\n')
 
-   if not table.empty(Class.sortedActions) then
+   if not Class.sortedActions.empty() then
       for action in values(Class.sortedActions) do
          if glActionStubs[action.name] then
-            if glActionStubs[action.name]:len() != 0 then
+            if glActionStubs[action.name].len() != 0 then
                output(actionStub(glActionStubs[action.name]))
             end
          else
@@ -101,8 +101,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Emit inline C++ wrappers for registered methods that need nested class declarations.
 
-function outputNestedMethods(Class:table)
-   if not table.empty(Class.methods) then
+function outputNestedMethods(Class:table!)
+   if Class.methods and not Class.methods.empty() then
       for m in values(Class.methods) do
          if m.nestedInline then output(m.nestedInline) end
       end
@@ -113,8 +113,8 @@ end
 -- Convert a field member name into the matching generated field identifier name.
 
 function fieldSetIDName(FieldName:str):str
-   local id = FieldName:sub(-3)
-   if rx_lowercase_id.test(id) then return FieldName:sub(0, -3) end
+   local id = FieldName.sub(-3)
+   if rx_lowercase_id.test(id) then return FieldName.sub(0, -3) end
 
    return FieldName
 end
@@ -139,12 +139,12 @@ end
 function fieldSetType(Field:table):str
    local field_type = Field.type
 
-   if field_type:startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
+   if field_type.startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
 
-   if field_type:startsWith('const ') then return field_type end
+   if field_type.startsWith('const ') then return field_type end
 
    if (Field.flags has FD_STRING) and (not fieldIsSequence(Field)) then
-      if field_type:startsWith('STRING') or field_type:startsWith('CSTRING') then return 'T &&' end
+      if field_type.startsWith('STRING') or field_type.startsWith('CSTRING') then return 'T &&' end
       return f'const {field_type}'
    elseif Field.flags has (FD_POINTER | FD_OBJECT) then
       return field_type -- Applying const to pointers can cause type conversion issues.
@@ -166,8 +166,8 @@ end
 function fieldArrayElementType(Field:table):str
    local field_type = Field.innerType ?? Field.type
 
-   if field_type:endsWith('[]') then return field_type:sub(0, -3):trim() end
-   if field_type:endsWith('*') then return field_type:sub(0, -2):trim() end
+   if field_type.endsWith('[]') then return field_type.sub(0, -3).trim() end
+   if field_type.endsWith('*') then return field_type.sub(0, -2).trim() end
 
    return field_type
 end
@@ -178,7 +178,7 @@ end
 
 function fieldArraySetterElementType(Field:table):str
    local array_type = fieldArrayElementType(Field)
-   if array_type:startsWith('const ') then return array_type end
+   if array_type.startsWith('const ') then return array_type end
    return 'const ' .. array_type
 end
 
@@ -188,7 +188,7 @@ end
 function fieldGetType(Field:table):str
    local field_type = Field.type
 
-   if field_type:startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
+   if field_type.startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
 
    if fieldIsVector(Field) then
       if Field.read is 'Get' then return Field.innerType end
@@ -208,7 +208,7 @@ end
 -- Format field definition flags as the hexadecimal literal used in generated C++.
 
 function fieldFlagsHex(Flags:num):str
-   return string.format('%08x', Flags):sub(-8)
+   return string.format('%08x', Flags).sub(-8)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ function outputFieldGetSignature(Field:table, Name:str, FieldType:str, Reader:st
    elseif Field.flags has FD_FUNCTION then
       FieldType ..= ' *'
    elseif Field.flags has FD_STRUCT then
-      if not FieldType:endsWith('*') then
+      if not FieldType.endsWith('*') then
          FieldType ..= ' *'
       end
    end
@@ -459,8 +459,8 @@ function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
       else
          output(f'   inline ERR set{FidName}(std::span<{fieldArraySetterElementType(Field)}> Value) noexcept {{')
       end
-   elseif FieldType:endsWith('[]') then
-      local array_type = FieldType:sub(0,-3):trim()
+   elseif FieldType.endsWith('[]') then
+      local array_type = FieldType.sub(0,-3).trim()
       output(f'   inline ERR set{FidName}(std::span<{array_type}> Value) noexcept {{')
    elseif Field.flags has FD_STRING then -- std::string internally, accessed as std::string_view.
       output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')
@@ -475,7 +475,7 @@ end
 -- Emit a complete setter body that delegates assignment to FIELD::WriteValue().
 
 function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
-   if Field.struct and not fieldIsSequence(Field) and not FieldType:endsWith('*') then
+   if Field.struct and not fieldIsSequence(Field) and not FieldType.endsWith('*') then
       if Field.flags has FD_POINTER then
          FieldType ..= ' *'
       else
@@ -578,7 +578,7 @@ global function outputClassHeader(Class:table, Private:str, Custom:str)
    priority(f'class obj{Class.name};') -- Forward declaration
    output(f'class obj{Class.name} : public {Class.base ?? 'Object'} {{')
    output('   public:')
-   output(f'   static constexpr CLASSID CLASS_ID = CLASSID::{Class.name:upper()};')
+   output(f'   static constexpr CLASSID CLASS_ID = CLASSID::{Class.name.upper()};')
    output(f'   static constexpr CSTRING CLASS_NAME = "{Class.name}";')
    output('')
    output(f'   using create = kt::Create<obj{Class.name}>;')
@@ -631,10 +631,10 @@ end
 function buildFunctionTableOutput():str
    local out = ''
    out ..= '#ifdef KOTUKU_STATIC\n'
-   out ..= f'#define JUMPTABLE_{glModule.name:upper()} [[maybe_unused]] static struct ' ..
+   out ..= f'#define JUMPTABLE_{glModule.name.upper()} [[maybe_unused]] static struct ' ..
       f'{glModule.name}Base *{glModule.name}Base = nullptr;\n'
    out ..= '#else\n'
-   out ..= f'#define JUMPTABLE_{glModule.name:upper()} struct {glModule.name}Base *{glModule.name}Base = nullptr;\n'
+   out ..= f'#define JUMPTABLE_{glModule.name.upper()} struct {glModule.name}Base *{glModule.name}Base = nullptr;\n'
    out ..= '#endif\n\n'
 
    out ..= f'struct {glModule.name}Base {{\n'
@@ -647,10 +647,10 @@ function buildFunctionTableOutput():str
    out ..= '#endif // KOTUKU_STATIC\n'
    out ..= '};\n\n'
 
-   out ..= '#if !defined(KOTUKU_STATIC) and !defined(PRV_' .. glModule.name:upper() .. '_MODULE)\n'
+   out ..= '#if !defined(KOTUKU_STATIC) and !defined(PRV_' .. glModule.name.upper() .. '_MODULE)\n'
    out ..= f'extern struct {glModule.name}Base *{glModule.name}Base;\n'
    if glFunctionPrefix?? then
-      out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
+      out ..= 'namespace ' .. glFunctionPrefix.lower() .. ' {\n'
    end
 
    for k, func in ipairs(glFunctions) do
@@ -665,7 +665,7 @@ function buildFunctionTableOutput():str
 
    out ..= '#else\n'
    if glFunctionPrefix?? then
-      out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
+      out ..= 'namespace ' .. glFunctionPrefix.lower() .. ' {\n'
    end
 
    for _, func in ipairs(glFunctions) do
@@ -691,7 +691,7 @@ function parseClassOffsetSections(Content:str, Path:str):table
    local open_section
    local cursor = 0
 
-   for _, line in Content:split('\n') do
+   for _, line in Content.split('\n') do
       local start_name = rx_offset_section_start.extract(line)
       local end_name = rx_offset_section_end.extract(line)
 
@@ -731,7 +731,7 @@ end
 function parseClassOffsetEntries(Content:str, Path:str):table
    local constants = { }
 
-   for _, line in Content:split('\n') do
+   for _, line in Content.split('\n') do
       local symbol, value = rx_offset_constant.extract(line)
       if symbol then
          if constants[symbol] then error(f"Duplicate class-offset constant {symbol} in {Path}.") end
@@ -748,7 +748,7 @@ end
 function renderClassOffsetSection(ModuleName:str):str
    local out = f'// {ModuleName} module start\n'
 
-   for symbol, entry in table.sortByKeys(glClassOffsets) do
+   for symbol, entry in glClassOffsets.sortByKeys() do
       if symbol != 'CLASS_OFFSET' then
          out ..= f'inline constexpr int32_t {symbol} = {entry.origin};\n'
       end
@@ -764,7 +764,7 @@ end
 function replaceClassOffsetSection(Content:str, ModuleName:str, Sections:table, Section:str):str
    local existing = Sections[ModuleName]
    if existing then
-      return Content:sub(0, existing.start) .. Section .. Content:sub(existing.finish)
+      return Content.sub(0, existing.start) .. Section .. Content.sub(existing.finish)
    end
 
    local insert_at
@@ -775,10 +775,10 @@ function replaceClassOffsetSection(Content:str, ModuleName:str, Sections:table, 
    end
 
    if insert_at != nil then
-      return Content:sub(0, insert_at) .. Section .. '\n\n' .. Content:sub(insert_at)
+      return Content.sub(0, insert_at) .. Section .. '\n\n' .. Content.sub(insert_at)
    end
 
-   local separator = Content:endsWith('\n') ? '\n' :> '\n\n'
+   local separator = Content.endsWith('\n') ? '\n' :> '\n\n'
    return Content .. separator .. Section .. '\n'
 end
 
@@ -789,7 +789,7 @@ function classOffsetModuleName():str
    if glModule.exportXML then return glModule.name end
 
    local _, source_name = io.splitPath(glSource)
-   return source_name:replace('.tdl', ''):cap()
+   return source_name.replace('.tdl', '').cap()
 end
 
 -- Ensure every origin collected from live metadata matches the active platform table.
@@ -819,11 +819,11 @@ function prepareClassOffsetOutput():table
    elseif state.platform is 'Linux' then
       active_path = 'sdk:include/kotuku/system/linux_class_offsets.h'
    else
-      if table.empty(glClassOffsets) then return nil end
+      if glClassOffsets.empty() then return nil end
       error(f"No generated class-offset table is available for platform {state.platform}.")
    end
 
-   if table.empty(glClassOffsets) then return nil end
+   if glClassOffsets.empty() then return nil end
 
    local active_content = readTextFile(active_path, 'active platform class-offset table')
    local active_sections = parseClassOffsetSections(active_content, active_path)
@@ -842,7 +842,7 @@ global function saveOutput()
    outPath = glOutputPath
    if not outPath then
       if glModule.name?? then
-         outPath = 'sdk:include/kotuku/modules/' .. glModule.name:lower() .. '.h'
+         outPath = 'sdk:include/kotuku/modules/' .. glModule.name.lower() .. '.h'
       else
          error('No output path specified in command-line.')
       end
@@ -866,7 +866,7 @@ global function saveOutput()
       end
    end
 
-   if content:endsWith('\n\n') then content = content:sub(0, -3) end
+   if content.endsWith('\n\n') then content = content.sub(0, -3) end
 
    local offset_output = prepareClassOffsetOutput()
    if offset_output then

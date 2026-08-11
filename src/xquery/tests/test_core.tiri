@@ -126,7 +126,7 @@ end
       targetCount++
       err, idValue = xml.mtGetAttrib(TagID, 'id')
       assert(err is ERR_Okay, "Failed to get target id")
-      table.insert(foundIds, idValue)
+      foundIds.insert(idValue)
    end)
 
    assert(targetCount is 2, "Expected 2 targets, found " .. targetCount)
@@ -387,12 +387,12 @@ end
 
    -- Test immediate content extraction (excludes nested tags)
    err, immediateContent = xml.mtEvaluate('/root/section')
-   assert(string.find(immediateContent, "Direct content"), "Immediate content not extracted")
-   assert(string.find(immediateContent, "more content"), "Trailing content not extracted")
+   assert(immediateContent.find("Direct content"), "Immediate content not extracted")
+   assert(immediateContent.find("more content"), "Trailing content not extracted")
 
    -- Test deep content extraction
    err, deepContent = xml.mtEvaluate('string(/root/section)')
-   assert(string.find(deepContent, "emphasized"), "Deep content not extracted, got: " .. deepContent)
+   assert(deepContent.find("emphasized"), "Deep content not extracted, got: " .. deepContent)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -430,8 +430,8 @@ end
    err, id = xml.mtSearch('/root/section/item')
    err, result = xml.mtSerialise(id, false)
 
-   assert(string.find(result, 'id="1"'), "Extracted XML is missing attributes: " .. tostring(result))
-   assert(string.find(result, "Content"), "Extracted XML is missing content" .. tostring(result))
+   assert(result.find('id="1"'), "Extracted XML is missing attributes: " .. tostring(result))
+   assert(result.find("Content"), "Extracted XML is missing content" .. tostring(result))
 end
 
 -----------------------------------------------------------------------------------------------------------------------

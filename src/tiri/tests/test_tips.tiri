@@ -45,7 +45,7 @@ glConcatScript = [[
    for i in {0 into 10} do
       items[#items + 1] = tostring(i)  -- Collect in table - no warning
    end
-   final = table.concat(items, ', ')  -- Single concat outside loop - no warning
+   final = items.concat(', ')  -- Single concat outside loop - no warning
 ]]
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -288,7 +288,7 @@ end
    data = { { val = 3 }, { val = 1 }, { val = 2 } }
    for i in {0 into 5} do
       -- This is a common anti-pattern: sorting with inline comparator in loop
-      table.sort(data, function(a, b) return a.val < b.val end)
+      data.sort(function(a, b) return a.val < b.val end)
    end
 ]]
 

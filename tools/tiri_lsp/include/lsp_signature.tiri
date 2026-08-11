@@ -17,14 +17,14 @@ function signaturePositionToOffset(Doc:table, Position:table):num
    content = Doc.content or ''
 
    while current_line < Position.line and offset < #content do
-      c = content:sub(offset, offset + 1)
+      c = content.sub(offset, offset + 1)
       if c is '\n' then current_line++ end
       offset++
    end
 
    -- Position.character counts UTF-16 code units; convert to bytes against the target line.
-   line_end = content:find('\n', offset) or (#content + 1)
-   line_text = content:sub(offset, line_end)
+   line_end = content.find('\n', offset) or (#content + 1)
+   line_text = content.sub(offset, line_end)
    offset += utf16ColToByteCol(line_text, Position.character)
    if offset > #content then offset = #content end
    return offset
@@ -46,7 +46,7 @@ end
 
 function signatureSkipBackSpaces(Content:str, Pos:num):num
    while Pos >= 0 do
-      c = Content:sub(Pos, Pos + 1)
+      c = Content.sub(Pos, Pos + 1)
       if c != ' ' and c != '\t' and c != '\r' and c != '\n' then break end
       Pos -= 1
    end
@@ -57,15 +57,15 @@ end
 
 function signatureReadIdentifierBefore(Content:str, Pos:num):table
    end_pos = signatureSkipBackSpaces(Content, Pos)
-   if end_pos < 0 or not signatureIsIdentChar(Content:sub(end_pos, end_pos + 1)) then return nil end
+   if end_pos < 0 or not signatureIsIdentChar(Content.sub(end_pos, end_pos + 1)) then return nil end
 
    start_pos = end_pos
-   while start_pos > 0 and signatureIsIdentChar(Content:sub(start_pos - 1, start_pos)) do
+   while start_pos > 0 and signatureIsIdentChar(Content.sub(start_pos - 1, start_pos)) do
       start_pos -= 1
    end
 
    return {
-      text = Content:sub(start_pos, end_pos + 1),
+      text = Content.sub(start_pos, end_pos + 1),
       startPos = start_pos,
       endPos = end_pos + 1
    }
@@ -82,10 +82,10 @@ function signatureReadCallName(Content:str, ParenPos:num):table
    object_end = signatureSkipBackSpaces(Content, name_info.startPos - 1)
 
    if object_end >= 0 then
-      sep = Content:sub(object_end, object_end + 1)
-      if sep is '.' or sep is ':' then
+      sep = Content.sub(object_end, object_end + 1)
+      if sep is '.' then
          separator = sep
-         if sep is '.' and object_end > 0 and Content:sub(object_end - 1, object_end) is '?' then
+         if object_end > 0 and Content.sub(object_end - 1, object_end) is '?' then
             object_end -= 2
          else
             object_end -= 1
@@ -109,7 +109,7 @@ end
 
 function signaturePushFrame(Stack:array<table>, Content:str, Pos:num)
    call = signatureReadCallName(Content, Pos)
-   Stack:push({
+   Stack.push({
       name = call?.name,
       object = call?.object,
       fullName = call?.fullName,
@@ -128,14 +128,14 @@ global function signatureFindCallContext(Doc:table, Position:table):table
    pos = 0
 
    while pos < limit do
-      c = content:sub(pos, pos + 1)
-      next_two = content:sub(pos, pos + 2)
+      c = content.sub(pos, pos + 1)
+      next_two = content.sub(pos, pos + 2)
 
       if c is '"' or c is "'" then
          quote = c
          pos++
          while pos < limit do
-            sc = content:sub(pos, pos + 1)
+            sc = content.sub(pos, pos + 1)
             if sc is '\\' and pos + 1 < limit then
                pos += 2
             elseif sc is quote then
@@ -146,15 +146,15 @@ global function signatureFindCallContext(Doc:table, Position:table):table
             end
          end
       elseif next_two is '--' then
-         if content:sub(pos, pos + 4) is '--[[' then
-            close_pos = content:find(']]', pos + 4)
+         if content.sub(pos, pos + 4) is '--[[' then
+            close_pos = content.find(']]', pos + 4)
             if close_pos and close_pos < limit then
                pos = close_pos + 2
             else
                break
             end
          else
-            newline_pos = content:find('\n', pos + 2)
+            newline_pos = content.find('\n', pos + 2)
             if newline_pos and newline_pos < limit then
                pos = newline_pos + 1
             else
@@ -162,7 +162,7 @@ global function signatureFindCallContext(Doc:table, Position:table):table
             end
          end
       elseif next_two is '[[' then
-         close_pos = content:find(']]', pos + 2)
+         close_pos = content.find(']]', pos + 2)
          if close_pos and close_pos < limit then
             pos = close_pos + 2
          else
@@ -172,7 +172,7 @@ global function signatureFindCallContext(Doc:table, Position:table):table
          signaturePushFrame(stack, content, pos)
          pos++
       elseif c is ')' then
-         if #stack > 0 then stack:pop() end
+         if #stack > 0 then stack.pop() end
          pos++
       elseif c is '{' then
          if #stack > 0 then stack[#stack - 1].braceDepth++ end
@@ -239,7 +239,7 @@ function signatureBuildParameterInfo(Params:any):array<table>
       label = param.label or signatureParamLabel(param)
       entry = { label = label }
       if param.doc and param.doc != '' then entry.documentation = signatureMarkup(param.doc) end
-      result:push(entry)
+      result.push(entry)
    end
    return result
 end
@@ -276,10 +276,10 @@ function signatureSplitParams(ParamText:str):array<table>
    pos = 0
 
    while pos < #ParamText do
-      c = ParamText:sub(pos, pos + 1)
+      c = ParamText.sub(pos, pos + 1)
       if c is ',' and paren_depth is 0 and bracket_depth is 0 and brace_depth is 0 then
-         label = current:trim()
-         if label != '' then params:push({ label = label }) end
+         label = current.trim()
+         if label != '' then params.push({ label = label }) end
          current = ''
       else
          current ..= c
@@ -294,8 +294,8 @@ function signatureSplitParams(ParamText:str):array<table>
       pos++
    end
 
-   label = current:trim()
-   if label != '' then params:push({ label = label }) end
+   label = current.trim()
+   if label != '' then params.push({ label = label }) end
    return params
 end
 
@@ -303,26 +303,26 @@ end
 
 function signatureParamsFromPrototype(Prototype:str):array<table>
    Prototype ?! return array<table>
-   open_pos = Prototype:find('(', 0, true)
-   close_pos = Prototype:find(')', open_pos or 0, true)
+   open_pos = Prototype.find('(', 0, true)
+   close_pos = Prototype.find(')', open_pos or 0, true)
    if not open_pos or not close_pos or close_pos <= open_pos then return array<table> end
-   return signatureSplitParams(Prototype:sub(open_pos + 1, close_pos))
+   return signatureSplitParams(Prototype.sub(open_pos + 1, close_pos))
 end
 
 -- Extract the display name from a prototype, falling back when no callable name is present.
 
 function signatureDisplayNameFromPrototype(Prototype:str, Fallback:str):str
-   open_pos = Prototype and Prototype:find('(', 0, true) or nil
+   open_pos = Prototype and Prototype.find('(', 0, true) or nil
    if not open_pos then return Fallback end
 
    end_pos = open_pos - 1
-   while end_pos >= 0 and (Prototype:sub(end_pos, end_pos + 1) is ' ' or Prototype:sub(end_pos, end_pos + 1) is '\t') do
+   while end_pos >= 0 and (Prototype.sub(end_pos, end_pos + 1) is ' ' or Prototype.sub(end_pos, end_pos + 1) is '\t') do
       end_pos -= 1
    end
 
    start_pos = end_pos
    while start_pos > 0 do
-      c = Prototype:sub(start_pos - 1, start_pos)
+      c = Prototype.sub(start_pos - 1, start_pos)
       if signatureIsIdentChar(c) or c is ':' then
          start_pos -= 1
       else
@@ -330,9 +330,9 @@ function signatureDisplayNameFromPrototype(Prototype:str, Fallback:str):str
       end
    end
 
-   name = Prototype:sub(start_pos, end_pos + 1)
-   sep = name:find('::', 0, true)
-   if sep then name = name:sub(sep + 2) end
+   name = Prototype.sub(start_pos, end_pos + 1)
+   sep = name.find('::', 0, true)
+   if sep then name = name.sub(sep + 2) end
    return name != '' and name or Fallback
 end
 
@@ -377,7 +377,7 @@ end
 function signatureFromDocumentSymbol(Symbol:table):table
    params = array<table>
    for param in values(Symbol.params or array<table>) do
-      params:push({
+      params.push({
          name = param.name,
          type = param.type,
          doc = param.doc
@@ -421,10 +421,10 @@ function signatureNormaliseClassName(Name:str):str
    if glDocCache.classes[Name] then return Name end
 
    for class_name, entry in pairs(glDocCache.classes) do
-      if class_name:lower() is Name:lower() then return class_name end
+      if class_name.lower() is Name.lower() then return class_name end
    end
 
-   capitalised = Name:sub(0, 1):upper() .. Name:sub(1)
+   capitalised = Name.sub(0, 1).upper() .. Name.sub(1)
    if glDocCache.classes[capitalised] then return capitalised end
 end
 
@@ -443,23 +443,23 @@ end
 -- Convert a C-style prototype parameter label to the signature-help parameter shape.
 
 function signatureParamFromPrototypeLabel(Label:str):table
-   label = Label:trim()
+   label = Label.trim()
    if label is '' then return { label = '' } end
 
    end_pos = #label - 1
-   while end_pos >= 0 and not signatureIsIdentChar(label:sub(end_pos, end_pos + 1)) do
+   while end_pos >= 0 and not signatureIsIdentChar(label.sub(end_pos, end_pos + 1)) do
       end_pos -= 1
    end
 
    if end_pos < 0 then return { label = label } end
 
    start_pos = end_pos
-   while start_pos > 0 and signatureIsIdentChar(label:sub(start_pos - 1, start_pos)) do
+   while start_pos > 0 and signatureIsIdentChar(label.sub(start_pos - 1, start_pos)) do
       start_pos -= 1
    end
 
-   name = label:sub(start_pos, end_pos + 1)
-   param_type = label:sub(0, start_pos):trim()
+   name = label.sub(start_pos, end_pos + 1)
+   param_type = label.sub(0, start_pos).trim()
    return {
       name = name,
       type = param_type,
@@ -470,14 +470,14 @@ end
 -- Convert a Tiri-style prototype parameter label to the signature-help parameter shape.
 
 function signatureParamFromTiriLabel(Label:str):table
-   label = Label:trim()
+   label = Label.trim()
    if label is '' then return { label = '' } end
    if label is '...' then return { label = '...' } end
 
-   colon_pos = label:find(':', 0, true)
+   colon_pos = label.find(':', 0, true)
    if colon_pos then
-      name = label:sub(0, colon_pos):trim()
-      param_type = label:sub(colon_pos + 1):trim()
+      name = label.sub(0, colon_pos).trim()
+      param_type = label.sub(colon_pos + 1).trim()
       return {
          name = name,
          type = param_type,
@@ -493,7 +493,7 @@ end
 function signatureXmlParamsFromPrototype(Prototype:str):array<table>
    params = array<table>
    for param in values(signatureParamsFromPrototype(Prototype)) do
-      params:push(signatureParamFromPrototypeLabel(param.label))
+      params.push(signatureParamFromPrototypeLabel(param.label))
    end
    return params
 end
@@ -503,7 +503,7 @@ end
 function signatureTiriParamsFromPrototype(Prototype:str):array<table>
    params = array<table>
    for param in values(signatureParamsFromPrototype(Prototype)) do
-      params:push(signatureParamFromTiriLabel(param.label))
+      params.push(signatureParamFromTiriLabel(param.label))
    end
    return params
 end
@@ -512,18 +512,18 @@ end
 
 function signaturePrototypeIsTiri(Prototype:str):bool
    if not Prototype or Prototype is '' then return false end
-   if Prototype:find('=', 0, true) then return true end
+   if Prototype.find('=', 0, true) then return true end
 
-   open_pos = Prototype:find('(', 0, true)
+   open_pos = Prototype.find('(', 0, true)
    open_pos ?! return false
-   close_pos = Prototype:find(')', open_pos, true)
+   close_pos = Prototype.find(')', open_pos, true)
    close_pos ?! return false
 
-   param_text = Prototype:sub(open_pos + 1, close_pos)
-   if param_text:find(':', 0, true) then return true end
+   param_text = Prototype.sub(open_pos + 1, close_pos)
+   if param_text.find(':', 0, true) then return true end
 
-   suffix = Prototype:sub(close_pos + 1):trim()
-   return suffix:startsWith(':')
+   suffix = Prototype.sub(close_pos + 1).trim()
+   return suffix.startsWith(':')
 end
 
 -- Copy parameter documentation from generated API metadata onto parsed prototype parameters.
@@ -551,7 +551,7 @@ function signatureIsImplicitObjectParam(Param:table, Index:num):bool
    if Index != 0 then return false end
    label = Param.label or ''
    param_type = Param.type or ''
-   return label:startsWith('*Object') or param_type:startsWith('OBJECTPTR') or param_type:startsWith('*')
+   return label.startsWith('*Object') or param_type.startsWith('OBJECTPTR') or param_type.startsWith('*')
 end
 
 -- Build visible API parameters, optionally hiding the generated receiver argument.
@@ -566,7 +566,7 @@ function signatureXmlParams(MethodDoc:table, HideReceiver:bool):array<table>
    index = 0
    for param in values(source_params or array<table>) do
       if not HideReceiver or not signatureIsImplicitObjectParam(param, index) then
-         params:push({
+         params.push({
             name = param.name,
             type = param.type,
             doc = param.doc,
@@ -583,22 +583,22 @@ end
 function signatureXmlLabel(DisplayName:str, Params:array<table>):str
    labels = array<string>
    for param in values(Params or array<table>) do
-      labels:push(signatureParamLabel(param))
+      labels.push(signatureParamLabel(param))
    end
-   return DisplayName .. '(' .. labels:concat(', ') .. ')'
+   return DisplayName .. '(' .. labels.concat(', ') .. ')'
 end
 
 -- Build the display label for a signature that has an explicit Tiri prototype.
 
 function signatureTiriLabel(DisplayName:str, Prototype:str):str
-   open_pos = Prototype and Prototype:find('(', 0, true) or nil
+   open_pos = Prototype and Prototype.find('(', 0, true) or nil
    if not open_pos then return DisplayName end
 
    prefix = ''
-   equals_pos = Prototype:find('=', 0, true)
-   if equals_pos and equals_pos < open_pos then prefix = Prototype:sub(0, equals_pos + 1):rtrim() .. ' ' end
+   equals_pos = Prototype.find('=', 0, true)
+   if equals_pos and equals_pos < open_pos then prefix = Prototype.sub(0, equals_pos + 1).rtrim() .. ' ' end
 
-   return prefix .. DisplayName .. Prototype:sub(open_pos)
+   return prefix .. DisplayName .. Prototype.sub(open_pos)
 end
 
 -- Convert a generated API entry into LSP signature information.
@@ -641,15 +641,15 @@ function resolveApiSignature(Doc:table, Context:table):table
    class_doc ?! return nil
 
    token = Context.name
-   if token:startsWith('ac') then
-      action_name = token:sub(2)
+   if token.startsWith('ac') then
+      action_name = token.sub(2)
       if class_doc.actions and class_doc.actions[action_name] then
          return signatureFromXmlEntry(Context.object .. '.' .. token, class_doc.actions[action_name], true)
       end
    end
 
-   if token:startsWith('mt') then
-      method_name = token:sub(2)
+   if token.startsWith('mt') then
+      method_name = token.sub(2)
       if class_doc.methods and class_doc.methods[method_name] then
          return signatureFromXmlEntry(Context.object .. '.' .. token, class_doc.methods[method_name], true)
       end

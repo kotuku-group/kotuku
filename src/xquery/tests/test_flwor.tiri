@@ -48,14 +48,14 @@ end
    local err = xq.init()
    assert(err is ERR_Syntax, 'Missing assignment should be a syntax error, got ' .. mSys.getErrorMsg(err))
    local message = xq.errorMsg ?? ''
-   assert(string.find(message, "Expected ':=' in let binding", 0, true),
+   assert(message.find("Expected ':=' in let binding", 0, true),
       'Error message should reference missing :=, got ' .. message)
 
    xq.statement = 'let $a := return 5'
    local err = xq.init()
    assert(err is ERR_Syntax, 'Missing expression should be a syntax error, got ' .. mSys.GetErrorMsg(err))
    local message = xq.errorMsg ?? ''
-   assert(string.find(message, "Expected expression after ':=' in let binding", 0, true),
+   assert(message.find("Expected expression after ':=' in let binding", 0, true),
       'Error message should reference missing binding expression, got ' .. message)
 end
 
@@ -75,7 +75,7 @@ end
    assert(err is ERR_Okay, 'Numeric FLWOR return should now succeed with atomic value wrapping')
    assert(result != nil, 'FLWOR should return wrapped atomic values')
    -- The result should be something like "35.1:49.5" (the two discounted prices concatenated)
-   assert(string.find(tostring(result), '35.1', 0, true) or string.find(tostring(result), '49.5', 0, true),
+   assert(tostring(result).find('35.1', 0, true) or string.find(tostring(result), '49.5', 0, true),
       'FLWOR result should contain discounted prices, got ' .. tostring(result))
 end
 
@@ -98,13 +98,13 @@ end
             local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
             assert(errAttr is ERR_Okay,
                'Iteration ' .. iteration .. ' should resolve id attribute: ' .. mSys.GetErrorMsg(errAttr))
-            table.insert(collected, idValue)
+            collected.insert(idValue)
          end)
 
       assert(err is ERR_Okay, 'Iteration ' .. iteration .. ' should evaluate successfully: ' .. mSys.GetErrorMsg(err))
-      table.sort(collected)
+      collected.sort()
       assert(#collected is 2 and collected[0] is 'a' and collected[1] is 'c',
-         'Iteration ' .. iteration .. ' should yield consistent fiction ids, got ' .. table.concat(collected, ','))
+         'Iteration ' .. iteration .. ' should yield consistent fiction ids, got ' .. collected.concat(','))
    end
 end
 
@@ -126,13 +126,13 @@ end
       function(XML, TagID)
          local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
          assert(errAttr is ERR_Okay, 'WHERE clause should preserve attribute access: ' .. mSys.GetErrorMsg(errAttr))
-         table.insert(filtered, idValue)
+         filtered.insert(idValue)
       end)
 
    assert(err is ERR_Okay, 'WHERE clause FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
-   table.sort(filtered)
+   filtered.sort()
    assert(#filtered is 2 and filtered[0] is 'bk-1' and filtered[1] is 'bk-3',
-      'Filtered identifiers should match price predicate, got ' .. table.concat(filtered, ','))
+      'Filtered identifiers should match price predicate, got ' .. filtered.concat(','))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -153,10 +153,10 @@ end
       function(XML, TagID)
          local errId, idValue = xml.mtGetAttrib(TagID, 'id')
          assert(errId is ERR_Okay, 'ORDER BY clause should expose node attributes post-sort: ' .. mSys.GetErrorMsg(errId))
-         table.insert(ordered, idValue)
+         ordered.insert(idValue)
       end)
 
-   local recv_order = table.concat(ordered, ',')
+   local recv_order = ordered.concat(',')
    assert(err is ERR_Okay, 'ORDER BY clause FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
    assert(recv_order is 'bk-1,bk-2,bk-4,bk-3', 'Expected order of bk-1,bk-2,bk-4,bk-3, got ' .. recv_order)
 end
@@ -179,10 +179,10 @@ end
       function(XML, TagID)
          local errId, idValue = xml.mtGetAttrib(TagID, 'id')
          assert(errId is ERR_Okay, 'ORDER BY with numeric descending should expose node attributes: ' .. mSys.GetErrorMsg(errId))
-         table.insert(ordered, idValue)
+         ordered.insert(idValue)
       end)
 
-   local recv_order = table.concat(ordered, ',')
+   local recv_order = ordered.concat(',')
 
    assert(err is ERR_Okay, 'ORDER BY clause with descending numeric sort should evaluate successfully: ' .. tostring(xml.errorMsg))
    assert(recv_order is 'bk-3,bk-4,bk-1,bk-2', 'Expected order of bk-3,bk-4,bk-1,bk-2, got ' .. recv_order)
@@ -265,12 +265,12 @@ end
          assert(errPos is ERR_Okay, 'COUNT clause should expose generated positional attribute: ' .. mSys.GetErrorMsg(errPos))
          local errId, idValue = xml.mtGetAttrib(TagID, 'id')
          assert(errId is ERR_Okay, 'COUNT clause should maintain binding access after sorting: ' .. mSys.GetErrorMsg(errId))
-         table.insert(order, posValue .. ':' .. idValue)
+         order.insert(posValue .. ':' .. idValue)
       end)
 
    assert(err is ERR_Okay, 'COUNT clause FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
    assert(order[0] is '1:bk-1' and order[1] is '2:bk-3' and order[2] is '3:bk-2',
-      'COUNT clause should align positional counters with sorted order, got "' .. table.concat(order, ',') .. '"')
+      'COUNT clause should align positional counters with sorted order, got "' .. order.concat(',') .. '"')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -290,7 +290,7 @@ end
          local errA, ida = xml.mtGetAttrib(TagID, 'a')
          local errB, idb = xml.mtGetAttrib(TagID, 'b')
          assert(errA is ERR_Okay and errB is ERR_Okay, 'Nested FOR should expose both bindings')
-         table.insert(pairs, ida .. '-' .. idb)
+         pairs.insert(ida .. '-' .. idb)
       end)
 
    assert(err is ERR_Okay, 'Nested FOR FLWOR should evaluate successfully: ' .. tostring(xml.errorMsg))
@@ -313,7 +313,7 @@ end
    local err1 = xml.mtSearch('for $book in /library/book order by $book/@genre ascending empty greatest, number($book/@price) ascending empty least return <e id="{$book/@id}"/>',
       function(XML, TagID)
          local _, idv = xml.mtGetAttrib(TagID, 'id')
-         table.insert(seq1, idv)
+         seq1.insert(idv)
       end)
    assert(err1 is ERR_Okay, 'ORDER BY with empty modes should evaluate: ' .. tostring(xml.errorMsg))
    assert(seq1[0] is 'bk-2' or seq1[0] is 'bk-3', 'First element should be empty-greatest genre or lowest price within first genre')
@@ -326,8 +326,8 @@ end
    local xq = obj.new('xquery', { statement = 'let $x := "outer" return (let $x := "inner" return $x, $x)' })
    local err = xq.acActivate()
    local s = tostring(xq.resultString)
-   assert(string.find(s, 'inner', 0, true), 'Inner let should produce inner value, got ' .. s)
-   assert(string.find(s, 'outer', 0, true), 'Outer let should remain accessible after inner scope, got ' .. s)
+   assert(s.find('inner', 0, true), 'Inner let should produce inner value, got ' .. s)
+   assert(s.find('outer', 0, true), 'Outer let should remain accessible after inner scope, got ' .. s)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -339,7 +339,7 @@ end
    local err = xml.mtSearch('for $node in /root/value order by $node where $node return $node')
    assert(err is ERR_Syntax, 'ORDER BY followed by WHERE should be rejected as syntax error, got ' .. mSys.GetErrorMsg(err))
    local message = tostring(xml.errorMsg)
-   assert(string.find(message, 'where clause must precede order by', 0, true), 'Error message should describe WHERE/ORDER BY ordering requirement, got ' .. message)
+   assert(message.find('where clause must precede order by', 0, true), 'Error message should describe WHERE/ORDER BY ordering requirement, got ' .. message)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -353,5 +353,5 @@ end
    local err = xml.mtSearch('for $item in /root/item group by $key := $undefined return $item')
    assert(err != ERR_Okay, 'Group by referencing undefined bindings should fail evaluation')
    local message = tostring(xml.errorMsg)
-   assert(string.find(message, 'Group key expression could not be evaluated.', 0, true), 'Error message should describe invalid grouping expression, got ' .. message)
+   assert(message.find('Group key expression could not be evaluated.', 0, true), 'Error message should describe invalid grouping expression, got ' .. message)
 end

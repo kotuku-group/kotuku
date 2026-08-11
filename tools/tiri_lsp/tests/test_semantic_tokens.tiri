@@ -201,6 +201,17 @@ end
    assert(diagnostic.range.start.character is 6, "Removed numeric for diagnostic should start at '='.")
 end
 
+@Test function RemovedColonCallProducesLspDiagnostic()
+   doc = makeDoc("value = 'hello'\nresult = value:upper()\n")
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics > 0, 'Removed colon call syntax should produce an LSP diagnostic.')
+   diagnostic = result.diagnostics[0]
+   assert(diagnostic.code is 'DeprecatedSyntax', 'Colon diagnostics should preserve the DeprecatedSyntax code.')
+   assert(diagnostic.severity is 1, 'Removed colon call syntax should be an LSP error.')
+   assert(diagnostic.range.start.line is 1, 'Colon call diagnostic should identify the call line.')
+end
+
 @Test function TernaryModesReceiveSemanticTokens()
    source = 'standard = value ? \'yes\' :> \'no\'\n' ..
       'extended = value ?? \'yes\' :> \'no\'\n' ..
@@ -335,8 +346,8 @@ end
    hover = resolveHoverContent(token, doc)
 
    assert(token and token.text is 'SourceFile', 'Hover token extraction should identify SourceFile.')
-   assert(hover and hover:find('@SourceFile', 0, true), 'Hover should document @SourceFile.')
-   assert(hover:find('Parser annotation', 0, true), 'Hover should identify parser annotations.')
+   assert(hover and hover.find('@SourceFile', 0, true), 'Hover should document @SourceFile.')
+   assert(hover.find('Parser annotation', 0, true), 'Hover should identify parser annotations.')
 end
 
 @Test function StructDeclarationReceivesKeywordToken()

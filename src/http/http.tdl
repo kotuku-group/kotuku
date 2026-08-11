@@ -18,7 +18,7 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
    "SENDING_CONTENT: During the uploading of data to the server (e.g. `POST`), the HTTP object will remain in this state.",
    "SEND_COMPLETE: On successful completion of the send phase, the state changes to `SEND_COMPLETE`.  Successful completion requires either that the number of bytes indicated in #ContentLength have been sent, or `ERR::Terminate` has been returned by the callback functions.",
    "READING_CONTENT: The client will remain in this state when the server is sending data to the client.",
-   // 'Finished' codes start from HGS_COMPLETED
+   -- 'Finished' codes start from HGS_COMPLETED
    "COMPLETED: This state indicates that the HTTP request was completed in a normal manner.",
    "TERMINATED: If an HTTP command fails to complete normally - for instance if the connection is broken before completion - then the state is set to `TERMINATED`.",
    "END: Private")
