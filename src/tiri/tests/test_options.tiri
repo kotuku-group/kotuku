@@ -7,7 +7,7 @@ function expect_error(Parser:table, Input:any, Code:num, MessagePart:str):table
    local args, err = Parser.tryProcess(Input)
    assert(args is nil, 'Expected parsing to fail')
    assert(err != nil, 'Expected a structured error')
-   assert(err.code is Code, f"Expected error code '{Code}', got '{err.code}'")
+   assert(err.code is Code, f"Expected error '{mSys.GetErrorMsg(Code)}', got '{mSys.GetErrorMsg(err.code)}'")
    if MessagePart != nil then
       assert(err.message.find(MessagePart), f"Expected error message to include '{MessagePart}', got '{err.message}'")
    end

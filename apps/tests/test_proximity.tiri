@@ -100,7 +100,7 @@ end
 function findFlow(Method:str, UrlSuffix:str):table
    local flows = glProxy.getFlows()
    for _, flow in pairs(flows) do
-      if flow.request.method is Method and string.endsWith(flow.request.url, UrlSuffix) then return flow end
+      if flow.request.method is Method and flow.request.url.endsWith(UrlSuffix) then return flow end
    end
 
    return nil
@@ -221,7 +221,7 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
          local body_prefix = state.buffer.sub(header_end + 4)
          glLastUpstreamProxyRequest = header_block
 
-         if string.startsWith(header_block, 'CONNECT ') then
+         if header_block.startsWith('CONNECT ') then
             if glUpstreamProxyRejectConnect then
                local response = 'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
                check Client.acWrite(response)
@@ -556,7 +556,7 @@ end
    assert(responseStatus(response) is 200, 'Chained HTTP proxy request should return 200')
    assert(responseBody(response) is 'response-from-upstream-proxy',
       'Client should receive upstream proxy response body')
-   assert(string.startsWith(glLastUpstreamProxyRequest, 'GET http://example.test/proxy-path?x=1 HTTP/1.1\r\n'),
+   assert(glLastUpstreamProxyRequest.startsWith('GET http://example.test/proxy-path?x=1 HTTP/1.1\r\n'),
       'Upstream proxy should receive an absolute-form request line, got: ' .. glLastUpstreamProxyRequest)
    assert(glLastUpstreamProxyRequest.find('connection: close') != nil,
       'Downstream proxy should force Connection: close when chaining')

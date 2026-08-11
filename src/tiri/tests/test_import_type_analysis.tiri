@@ -37,6 +37,17 @@ local y:num = probe_add(1, 2)
       f"Unexpected diagnostic message: {diag.message}")
 end
 
+@Test function ImportedLexicalErrorAttributed()
+   local script = obj.new('tiri', { path = glFolder .. 'import_lexical_error_launcher.tiri' })
+   local err = script.acQuery()
+
+   assert(err is ERR_Syntax, f'An imported lexical error should return ERR_Syntax, got {err}')
+   assert(script.errorMessage.find('import_lexical_error_helper.tiri:2') != nil,
+      'An imported lexical error should identify its source file and line: ' .. script.errorMessage)
+   assert(script.errorMessage.find("Malformed number near '1.trim'") != nil,
+      'An imported lexical error should retain the lexer diagnostic: ' .. script.errorMessage)
+end
+
 @Test function CleanImportNoDiagnostics()
    local result = validate_here([[
 import './import_type_clean_helper'

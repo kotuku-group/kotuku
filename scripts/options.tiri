@@ -264,7 +264,7 @@ function convert_array(Value:any!, Param:table!):array<string>
    end
 
    text = Value.trim()
-   if string.startsWith(text, '{') and string.endsWith(text, '}') then
+   if text.startsWith('{') and text.endsWith('}') then
       text = text.sub(1, #text - 1)
    end
 
@@ -293,8 +293,8 @@ function split_number_unit(Value:any!, Param:table!, Description:str!):<num, str
       index -= 1
    end
 
-   number_text = text.sub(0, index.trim())
-   unit = string.lower(text.sub(index.trim()))
+   number_text = text.sub(0, index).trim()
+   unit = text.sub(index).trim().lower()
    number = tonumber(number_text)
    if number is nil or unit is '' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
@@ -342,8 +342,8 @@ function convert_percent(Value:any!, Param:table!):num
    if type(Value) is 'number' then return Value end
 
    text = tostring(Value.trim())
-   if string.endsWith(text, '%') then
-      number_text = text.sub(0, #text - 1.trim())
+   if text.endsWith('%') then
+      number_text = text.sub(0, #text - 1)
       number = tonumber(number_text)
       if number is nil then
          raise ERR_WrongType, f"Parameter '{Param.name}' requires a percent value."
@@ -384,7 +384,7 @@ function convert_json(Value:any, Param:table!):any
    local param_name = Param.name
    try
       decoded, pos = json.decode(Value)
-      if pos < #Value and Value.sub(pos.trim()) != '' then
+      if pos < #Value and Value.sub(pos).trim() != '' then
          raise ERR_Syntax, 'Trailing content after JSON value.'
       end
 
@@ -488,7 +488,7 @@ function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
    elseif TypeName is 'bool' then
       if type(Value) is 'bool' then return Value end
 
-      local text = string.lower(tostring(Value))
+      local text = tostring(Value).lower()
       if text is 'true' or text is '1' or text is 'yes' or text is 'on' then return true end
       if text is 'false' or text is '0' or text is 'no' or text is 'off' then return false end
 
@@ -667,7 +667,7 @@ end
 
 function parse_flag_negation(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Name:str):bool
 
-   if not string.startsWith(Name, 'no-') then return false end
+   if not Name.startsWith('no-') then return false end
 
    suffix = Name.sub(3)
    local param = Parser._named_lookup[suffix]
@@ -715,7 +715,7 @@ function launcher_option_needs_value(Token:str!):bool
    eq = name.find('=')
    if eq then return false end
 
-   name = string.lower(name)
+   name = name.lower()
    return name is 'procedure' or name is 'statement' or name is 'jit-options' or name is 'set-volume' or
       name is 'log-file' or name is 'gfx-driver' or name is 'audio-device'
 end
@@ -733,7 +733,7 @@ function get_script_arguments(Parameters:array<string>!):array<string>
       assert(type(token) is 'string', 'Task parameters must contain strings')
 
       if not script_seen then
-         if string.startsWith(token, '--') then
+         if token.startsWith('--') then
             if launcher_option_needs_value(token) and index + 1 < #Parameters then
                index += 2
             else
@@ -822,10 +822,10 @@ end
 function env_suffix(Name:str!):str
    suffix = rx_env_camel.replace(Name, '$1_$2')
    suffix = string.upper(rx_env_chars.replace(suffix, '_'))
-   while string.startsWith(suffix, '_') do
+   while suffix.startsWith('_') do
       suffix = suffix.sub(1)
    end
-   while string.endsWith(suffix, '_') do
+   while suffix.endsWith('_') do
       suffix = suffix.sub(0, #suffix - 1)
    end
    return suffix
@@ -955,7 +955,7 @@ function line_list(Lines:array<string>!):str
 
       if text.find('\n') then
          text = text.trim()
-         for item in values(string.split(text, '\n')) do
+         for item in values(text.split('\n')) do
             append_help_line(output, item)
          end
       else
@@ -1679,7 +1679,7 @@ function find_table_help(Parser:table!, Input:table!):<bool, str>
          if Value is true then return true end
          if Value is nil then return false end
 
-         text = string.lower(tostring(Value))
+         text = tostring(Value).lower()
          return text is 'true' or text is '1'
       end
 
@@ -1687,7 +1687,7 @@ function find_table_help(Parser:table!, Input:table!):<bool, str>
          if Value is false then return true end
          if Value is nil then return false end
 
-         text = string.lower(tostring(Value))
+         text = tostring(Value).lower()
          return text is 'false' or text is '0' or text is 'no' or text is 'off'
       end
 
@@ -1757,7 +1757,7 @@ function load_user_config_defaults(Parser:table!, RawResult:table!):table
    local pos:num
    try
       defaults, pos = json.decode(content)
-      if pos < #content and content.sub(pos.trim()) != '' then
+      if pos < #content and content.sub(pos).trim() != '' then
          raise ERR_Syntax, 'Trailing content after JSON value.'
       end
    except e
@@ -1790,7 +1790,7 @@ function resolve_input_result(Parser:table!, InputResult:table!, InputArgNames:t
       for name, value in pairs(Defaults) do
          param = Parser._lookup[name]
          if param is nil then
-            if string.startsWith(name, '_') then continue end -- Ignore private keys
+            if name.startsWith('_') then continue end -- Ignore private keys
             raise ERR_ParameterUnknown, f"Unknown default parameter '{name}'."
          end
 
@@ -1922,7 +1922,7 @@ function is_global_ordered_token(Parser:table, Name:str, HasExplicitValue:bool):
       return true
    end
 
-   if not HasExplicitValue and string.startsWith(Name, 'no-') and Parser._named_lookup[Name.sub(3)] then
+   if not HasExplicitValue and Name.startsWith('no-') and Parser._named_lookup[Name.sub(3)] then
       return true
    end
 
@@ -2073,7 +2073,7 @@ function reject_command_dispatch_collision(Parser:table, Name:str!)
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with global parameter '{Name}'."
    end
 
-   if string.startsWith(Name, 'no-') and Parser._named_lookup[Name.sub(3)] then
+   if Name.startsWith('no-') and Parser._named_lookup[Name.sub(3)] then
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with global no- token '{Name}'."
    end
 end

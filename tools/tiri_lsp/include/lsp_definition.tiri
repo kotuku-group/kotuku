@@ -89,7 +89,7 @@ global function lspPathToUri(Path:str):str
    resolved = resolved.replace('\\', '/')
    if #resolved >= 2 and resolved.sub(1, 2) is ':' then
       resolved = '/' .. resolved
-   elseif not string.startsWith(resolved, '/') then
+   elseif not resolved.startsWith('/') then
       resolved = '/' .. resolved
    end
 

@@ -1848,6 +1848,11 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    // Set chunk_name for error reporting (normally done in lj_parse for the main file)
    import_lex->chunk_name = lj_str_newz(L, import_lex->chunk_arg);
 
+   // Keep the imported chunk name alive while parsing.  LexState stores a raw GCstr pointer, so leaving this value
+   // unanchored allows a collection to recycle it and corrupt immediate lexer diagnostics.
+   setstrV(L, L->top, import_lex->chunk_name);
+   incr_top(L);
+
    // Point the FuncState to the new lexer temporarily
    FuncState &fs = this->ctx.func();
    LexState *saved_ls = fs.ls;
@@ -1880,6 +1885,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
       import_builder.prepend_implicit_dependencies(*result.value_ref());
       import_builder.finalise_module_dependencies();
    }
+
+   L->top--; // Release the imported chunk-name anchor.
 
    fs.ls = saved_ls; // Restore the parent FuncState's lexer reference
    // import_guard destructor handles cleanup

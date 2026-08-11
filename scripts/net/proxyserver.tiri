@@ -833,7 +833,7 @@ function hostHeaderValue(Host:str!, Port:num!):str
 end
 
 function absoluteFormUrl(State:table!, Url:str!):str
-   if string.startsWith(Url, 'http://') or string.startsWith(Url, 'https://') then return Url end
+   if Url.startsWith('http://') or Url.startsWith('https://') then return Url end
    return 'http://' .. hostHeaderValue(State.targetHost, State.targetPort) .. originFormUrl(Url)
 end
 

@@ -144,7 +144,7 @@ function buildMultipartBody(Fields:array<string>!):<str, str>
          error("Parameter 'multipart' entries must use name=value syntax.")
       end
 
-      name = text.sub(0, eq).trim()
+      name = string.trim(text.sub(0, eq))
       value = text.sub(eq + 1)
 
       if name is '' then
@@ -186,8 +186,8 @@ function splitHeader(Header:str!):<str, str>
       error("Parameter 'header' entries must use Name: Value syntax.")
    end
 
-   name = Header.sub(0, colon).trim()
-   value = Header.sub(colon + 1).trim()
+   name = string.trim(Header.sub(0, colon))
+   value = string.trim(Header.sub(colon + 1))
 
    if name is '' then
       error("Parameter 'header' entries require a header name.")
@@ -217,8 +217,8 @@ function splitProxy(Proxy:str!):<str, num>
       error("Parameter 'proxy' must use host:port syntax.")
    end
 
-   host = Proxy.sub(0, colon).trim()
-   port_text = Proxy.sub(colon + 1).trim()
+   host = string.trim(Proxy.sub(0, colon))
+   port_text = string.trim(Proxy.sub(colon + 1))
    port = tonumber(port_text)
 
    if host is '' then
@@ -633,7 +633,7 @@ function filterSensitiveHeaders(Headers:array<string>!):array<string>
       name = tostring(header)
       colon = name.find(':')
       if colon != nil then
-         name = name.sub(0, colon).trim().lower()
+         name = string.lower(string.trim(name.sub(0, colon)))
       end
       if name != 'authorization' and name != 'cookie' then
          result.push(header)

@@ -253,7 +253,7 @@ function runTests()
                inverse = false
 
                for label_filter in values(glLabels) do
-                  if string.startsWith(label_filter, '~') then
+                  if label_filter.startsWith('~') then
                      inverse = true
                      label_filter = label_filter.sub(1)
                   end
