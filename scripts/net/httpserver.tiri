@@ -172,7 +172,7 @@ function canonicalizePath(self, Path:str):str
          logMessage(self, 'Security: Blocked directory traversal attempt with ..')
          return
       elseif component != '.' and component != '' then
-         table.insert(components, component)
+         components.insert(component)
       end
    end
 

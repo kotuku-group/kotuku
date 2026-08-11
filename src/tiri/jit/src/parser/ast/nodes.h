@@ -530,6 +530,7 @@ struct TableField {
    std::optional<Identifier> name;
    ExprNodePtr key;
    ExprNodePtr value;
+   bool builtin_shadow_reported = false;
    ~TableField();
 };
 

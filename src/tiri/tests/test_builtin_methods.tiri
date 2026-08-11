@@ -148,19 +148,42 @@ end
 end
 
 @Test function BuiltinShadowAssignmentRules()
-   local rejected = false
-   try
-      exec("local values = {}; values.insert = function(Value) end")
-   except Error
-      rejected = tostring(Error).contains('explicit shadowing field')
-   success
-      error('A direct function assignment colliding with table.insert should be rejected')
+   local function expect_shadow_rejection(Source, Description)
+      local rejected = false
+      try
+         exec(Source)
+      except Error
+         local message = tostring(Error)
+         rejected = message.contains("built-in method 'insert'") and
+            message.contains("['insert']")
+      success
+         error(Description .. ' should be rejected')
+      end
+      assert(rejected, Description .. ' should recommend computed-key syntax')
    end
-   assert(rejected, 'The shadowing diagnostic should direct authors to computed-key syntax')
+
+   expect_shadow_rejection("local values = {}; values.insert = function(Value) end",
+      'A direct function assignment colliding with table.insert')
+   expect_shadow_rejection("local values = { insert = function(Value) end }",
+      'A bare function-valued table field colliding with table.insert')
+   expect_shadow_rejection(
+      "local callback = function(Value) end; local values = { insert = callback }",
+      'A proved function alias in a colliding table field')
 
    exec("local values = {}; values.insert = 1")
    exec("local values = {}; values['insert'] = function(Value) end")
    exec("local mt = {}; mt.push = function(Value) end")
+
+   local data = exec("return { size = 1, insert = 1 }")
+   assert(data.size is 1 and data.insert is 1,
+      'Non-function fields should retain names that collide with built-in methods')
+
+   local explicit = exec("return { ['insert'] = function(Value:any):any return Value end }")
+   assert(explicit['insert'](42) is 42,
+      'Computed-key syntax should preserve an intentional function shadow')
+
+   local ordinary = exec("return { callback = function(Value:any):any return Value end }")
+   assert(ordinary.callback(42) is 42, 'Non-colliding bare function fields should remain legal')
 end
 
 @Test function RangeMethods()

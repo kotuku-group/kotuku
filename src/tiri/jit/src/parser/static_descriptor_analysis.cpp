@@ -789,6 +789,25 @@ private:
       member.builtin_shadow_reported = true;
    }
 
+   void reject_builtin_method_shadow(TableField &Field)
+   {
+      if (Field.builtin_shadow_reported or not (Field.kind IS TableFieldKind::Record) or not Field.name or
+          not Field.name->symbol or not Field.value or
+          not (this->descriptor_of(*Field.value).primary IS TiriType::Func) or
+          not get_method_prototype_by_hash(TiriType::Table, Field.name->symbol->hash)) return;
+
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::InvalidAssignment;
+      diagnostic.message = std::format(
+         "cannot assign a function to built-in method '{}'; use ['{}'] to create an explicit shadowing field",
+         std::string_view(strdata(Field.name->symbol), Field.name->symbol->len),
+         std::string_view(strdata(Field.name->symbol), Field.name->symbol->len));
+      diagnostic.token = Token::from_span(Field.name->span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
+      Field.builtin_shadow_reported = true;
+   }
+
    void validate_builtin_method_arguments(CallExprPayload &Call)
    {
       if (not Call.builtin_method or Call.builtin_method->arguments_validated) return;
@@ -1274,6 +1293,9 @@ private:
             break;
          }
          case AstNodeKind::TableExpr:
+            for (auto &field : std::get<TableExprPayload>(Expression.data).fields) {
+               this->reject_builtin_method_shadow(field);
+            }
             value.primary = TiriType::Table;
             value.proof = StaticProof::Closed;
             break;

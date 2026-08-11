@@ -473,7 +473,7 @@ gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:n
       vc.rgb.green = col.g
       vc.rgb.blue  = col.b
       vc.rgb.alpha = col.a ? col.a :> 1.0
-      table.insert(stops, vc)
+      stops.insert(vc)
       i++
    end
 

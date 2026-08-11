@@ -1743,7 +1743,7 @@ end
    assert(count_jit_traces(30) > 0, "Expected base-metatable array method call to produce a JIT trace")
 
    debug.setMetatable(arr, {
-      clear = function(Self)
+      ['clear'] = function(Self)
          array.resize(Self, 0)
          array.push(Self, "override")
       end
@@ -1770,7 +1770,7 @@ end
 
    local arr = array.new("")
    local mt = {
-      clear = function(Self)
+      ['clear'] = function(Self)
          array.resize(Self, 0)
          array.push(Self, "first")
       end

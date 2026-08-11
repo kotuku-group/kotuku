@@ -179,7 +179,7 @@ function resetUpstreamProxyState()
 end
 
 function upstreamProxyError(Error:table)
-   table.insert(glProxyErrors, Error)
+   glProxyErrors.insert(Error)
 end
 
 function stalledOriginIncoming(Server:obj, Client:obj)
@@ -621,7 +621,7 @@ end
          error('onRequest test failure')
       end,
       onError     = function(Error:table)
-         table.insert(errors, Error)
+         errors.insert(Error)
       end
    })
    defer hook_proxy.stop() end
@@ -646,7 +646,7 @@ end
          upstreamProxy = '127.0.0.1',
          verbose       = false,
          onError       = function(Error:table)
-            table.insert(errors, Error)
+            errors.insert(Error)
          end
       })
       bad_proxy.stop()
@@ -670,7 +670,7 @@ end
       recordFlows = false,
       verbose     = false,
       onError     = function(Error:table)
-         table.insert(errors, Error)
+         errors.insert(Error)
       end
    })
    defer timeout_proxy.stop() end

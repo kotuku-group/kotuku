@@ -1591,7 +1591,7 @@ gui.fileview = function(Options)
          self.view.clearView()
 
          if self.view.setColumns then
-            self.view.setColumns(defineViewColumns(self.path))
+            self.view.setColumns(self.view, defineViewColumns(self.path))
          end
 
          if self.showParent and self.path then

@@ -4923,6 +4923,85 @@ static bool test_builtin_method_registry(kt::Log &Log)
    return true;
 }
 
+static bool test_builtin_method_table_initialiser_rejection(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   auto expect_rejected = [&](std::string_view Source, std::string_view Name) {
+      if (not lua_load(L, Source, "builtin-method-table-shadow")) {
+         Log.error("bare function field '%.*s' compiled despite colliding with a table method",
+            int(Name.size()), Name.data());
+         lua_pop(L, 1);
+         return false;
+      }
+
+      std::string message = lua_tostring(L, -1) ? lua_tostring(L, -1) : "";
+      lua_pop(L, 1);
+      std::string named_method = std::format("built-in method '{}'", Name);
+      std::string bracketed_key = std::format("['{}']", Name);
+      if (message.find(named_method) IS std::string::npos or
+          message.find(bracketed_key) IS std::string::npos) {
+         Log.error("table method shadow diagnostic for '%.*s' omitted its name or bracketed escape: %s",
+            int(Name.size()), Name.data(), message.c_str());
+         return false;
+      }
+
+      bool invalid_assignment = false;
+      if (L->parser_diagnostics) {
+         for (const ParserDiagnostic &diagnostic : L->parser_diagnostics->entries()) {
+            if (diagnostic.code IS ParserErrorCode::InvalidAssignment) invalid_assignment = true;
+         }
+      }
+      if (not invalid_assignment) {
+         Log.error("table method shadow for '%.*s' did not report InvalidAssignment",
+            int(Name.size()), Name.data());
+         return false;
+      }
+      return true;
+   };
+
+   auto expect_accepted = [&](std::string_view Source, std::string_view Description) {
+      if (lua_load(L, Source, "builtin-method-table-shadow")) {
+         Log.error("%.*s was rejected: %s", int(Description.size()), Description.data(), lua_tostring(L, -1));
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+      return true;
+   };
+
+   constexpr std::array<std::string_view, 12> table_methods = {
+      "insert", "remove", "move", "concat", "sort", "empty", "kind", "size", "clear", "slice", "sortByKeys",
+      "toXML"
+   };
+   for (std::string_view method : table_methods) {
+      std::string source = std::format("local values = {{ {} = function(Value) end }}\n", method);
+      if (not expect_rejected(source, method)) return false;
+   }
+
+   if (not expect_rejected(
+       "local callback = function(Value) end\nlocal values = { insert = callback }\n", "insert") or
+       not expect_rejected(
+          "local values = { nested = { insert = function(Value) end } }\n", "insert") or
+       not expect_rejected(
+          "local mt = { insert = function(Value) end }\ndebug.setMetatable({}, mt)\n", "insert")) return false;
+
+   constexpr std::string_view accepted =
+      "local function build(Value:any):table\n"
+      "   return { insert = Value }\n"
+      "end\n"
+      "local values = { size = 1, insert = 1 }\n"
+      "local explicit = { ['insert'] = function(Value) end }\n"
+      "local ordinary = { callback = function(Value) end }\n"
+      "local array_only = { push = function(Value) end }\n"
+      "local interface_only = { new = function(Value) end }\n";
+   if (not expect_accepted(accepted, "legal table initialiser boundaries")) return false;
+
+   return true;
+}
+
 static bool test_builtin_method_static_classification(kt::Log &Log)
 {
    constexpr std::string_view source =
@@ -6865,7 +6944,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 60> tests = { {
+   constexpr std::array<TestCase, 61> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -6915,6 +6994,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "environment_store_boundary", test_environment_store_boundary },
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
       { "builtin_method_registry", test_builtin_method_registry },
+      { "builtin_method_table_initialiser_rejection", test_builtin_method_table_initialiser_rejection },
       { "builtin_method_static_classification", test_builtin_method_static_classification },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },
