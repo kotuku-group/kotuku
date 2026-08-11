@@ -580,6 +580,12 @@ static bool test_table_flags_initialise_clear(kt::Log& Log)
       return false;
    }
 
+   colocated->flags |= TAB_METHOD_COMPATIBLE;
+   if (not lj_tab_is_sequence(colocated) or (colocated->flags & TAB_NOT_SEQUENCE) != 0) {
+      Log.error("method-compatible metadata affected table classification");
+      return false;
+   }
+
    return true;
 }
 

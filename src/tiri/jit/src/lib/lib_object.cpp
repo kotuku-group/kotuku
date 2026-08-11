@@ -22,6 +22,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_tab.h"
@@ -112,6 +113,17 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
    lua_pushvalue(Lua, 1); // Duplicate the object reference
    lua_pushcclosure(Lua, (lua_CFunction)Function, 1); // C function to call, +1 value for the object reference
+}
+
+[[nodiscard]] static GCobject * object_method_receiver(lua_State *Lua)
+{
+   if (lua_isobject(Lua, 1)) return lj_get_object_fast(Lua, 1);
+   return object_context(Lua);
+}
+
+[[nodiscard]] static int object_method_argument(lua_State *Lua, int WrittenArgument)
+{
+   return lua_isobject(Lua, 1) ? WrittenArgument + 1 : WrittenArgument;
 }
 
 [[nodiscard]] static int stack_object_children(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_children); return 1; }
@@ -719,7 +731,7 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 
 static int object_state(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
 
    if (object_is_dead(def)) luaL_error(Lua, ERR::DoesNotExist, "Object dereferenced, unable to access state.");
 
@@ -741,17 +753,20 @@ static int object_state(lua_State *Lua)
 
 static int object_newchild(lua_State *Lua)
 {
-   auto parent = object_context(Lua);
+   auto parent = object_method_receiver(Lua);
+
+   int class_argument = object_method_argument(Lua, 1);
+   int initialiser_argument = object_method_argument(Lua, 2);
 
    CSTRING class_name;
    CLASSID class_id;
    NF objflags = NF::NIL;
-   int type = lua_type(Lua, 1);
+   int type = lua_type(Lua, class_argument);
    if (type IS LUA_TNUMBER) {
-      class_id = CLASSID(lua_tointeger(Lua, 1));
+      class_id = CLASSID(lua_tointeger(Lua, class_argument));
       class_name = nullptr;
    }
-   else if ((class_name = luaL_checkstring(Lua, 1))) {
+   else if ((class_name = luaL_checkstring(Lua, class_argument))) {
       class_id = CLASSID(strihash(class_name));
    }
    else luaL_error(Lua, ERR::Mismatch, "String or ID expected for class name, got '%s'.", lua_typename(Lua, type));
@@ -777,13 +792,13 @@ static int object_newchild(lua_State *Lua)
 
       lua_pop(Lua, 1);
 
-      if (lua_istable(Lua, 2)) {
+      if (lua_istable(Lua, initialiser_argument)) {
          ERR field_error = ERR::Okay;
          std::string_view field_name;
          const Field *failed_field = nullptr;
          auto failed_type = LUA_TNONE;
          lua_pushnil(Lua);
-         while (lua_next(Lua, 2) != 0) {
+         while (lua_next(Lua, initialiser_argument) != 0) {
             failed_field = nullptr;
             if (field_name = luaL_checkstring(Lua, -2); not field_name.empty()) {
                if (iequals("owner", field_name)) field_error = ERR::UnsupportedOwner; // Setting the owner field in this situation is illegal
@@ -827,11 +842,12 @@ static int object_children(lua_State *Lua)
 {
    kt::Log("obj.children").trace("");
 
-   GCobject *def = object_context(Lua);
+   GCobject *def = object_method_receiver(Lua);
+   int filter_argument = object_method_argument(Lua, 1);
 
    CLASSID class_id;
    CSTRING classfilter;
-   if ((classfilter = luaL_optstring(Lua, 1, nullptr)) and (classfilter[0])) {
+   if ((classfilter = luaL_optstring(Lua, filter_argument, nullptr)) and (classfilter[0])) {
       class_id = CLASSID(strihash(classfilter));
    }
    else class_id = CLASSID::NIL;
@@ -859,7 +875,7 @@ static int object_children(lua_State *Lua)
 
 static int object_detach(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
    if (not def->is_detached()) def->set_detached(true);
    return 0;
 }
@@ -869,7 +885,7 @@ static int object_detach(lua_State *Lua)
 
 static int object_exists(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
 
    if (object_is_dead(def)) {
       OBJECTPTR obj;
@@ -889,16 +905,19 @@ static int object_exists(lua_State *Lua)
 
 static int object_subscribe(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
+   int action_argument = object_method_argument(Lua, 1);
+   int function_argument = object_method_argument(Lua, 2);
+   int reference_argument = object_method_argument(Lua, 3);
 
    CSTRING action;
-   if (not (action = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Action name expected.");
-   if (not lua_isfunction(Lua, 2)) luaL_argerror(Lua, 2, "Function expected.");
+   if (not (action = lua_tostring(Lua, action_argument))) luaL_argerror(Lua, action_argument, "Action name expected.");
+   if (not lua_isfunction(Lua, function_argument)) luaL_argerror(Lua, function_argument, "Function expected.");
 
    const FunctionField *arglist;
    ACTIONID action_id = get_action_info(Lua, def->classptr->ClassID, action, &arglist);
 
-   if (action_id IS AC::NIL) luaL_argerror(Lua, 1, "Action/Method name is invalid.");
+   if (action_id IS AC::NIL) luaL_argerror(Lua, action_argument, "Action/Method name is invalid.");
 
    OBJECTPTR obj;
    if (auto error = access_object(def, obj); error != ERR::Okay) luaL_error(Lua, error);
@@ -911,13 +930,13 @@ static int object_subscribe(lua_State *Lua)
    if (auto error = SubscribeAction(obj, action_id, &callback); !error) {
       auto &acsub = Lua->script->ActionList.emplace_back();
 
-      if (not lua_isnil(Lua, 3)) {
-         lua_settop(Lua->script->Lua, 3);
+      if (not lua_isnil(Lua, reference_argument)) {
+         lua_pushvalue(Lua, reference_argument);
          acsub.Reference = luaL_ref(Lua, LUA_REGISTRYINDEX);
       }
       else acsub.Reference = 0;
 
-      lua_settop(Lua, 2);
+      lua_pushvalue(Lua, function_argument);
       acsub.Function = luaL_ref(Lua, LUA_REGISTRYINDEX);
       acsub.Object   = def;
       acsub.Args     = arglist;
@@ -939,15 +958,16 @@ static int object_unsubscribe(lua_State *Lua)
 {
    kt::Log log("unsubscribe");
 
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
+   int action_argument = object_method_argument(Lua, 1);
 
    CSTRING action;
-   if (not (action = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Action name expected.");
+   if (not (action = lua_tostring(Lua, action_argument))) luaL_argerror(Lua, action_argument, "Action name expected.");
 
    const FunctionField *arglist;
    ACTIONID action_id = get_action_info(Lua, def->classptr->ClassID, action, &arglist);
 
-   if (action_id IS AC::NIL) luaL_argerror(Lua, 1, "Action/Method name is invalid.");
+   if (action_id IS AC::NIL) luaL_argerror(Lua, action_argument, "Action/Method name is invalid.");
 
    log.trace("Object: %d, Action: %s", def->uid, action);
 
@@ -967,7 +987,7 @@ static int object_unsubscribe(lua_State *Lua)
 
 static int object_free(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
 
    def->flags |= GCOBJ_DETACHED; // Prevents a second object free at finalise.
 
@@ -994,7 +1014,7 @@ static int object_free(lua_State *Lua)
 
 static int object_init(lua_State *Lua)
 {
-   auto def = object_context(Lua);
+   auto def = object_method_receiver(Lua);
 
    OBJECTPTR obj;
    if (auto error = access_object(def, obj); error IS ERR::Okay) {
@@ -1006,6 +1026,18 @@ static int object_init(lua_State *Lua)
    else luaL_error(Lua, error);
    return 1;
 }
+
+LJLIB_CF(object_init) { return object_init(L); }
+LJLIB_CF(object_free) { return object_free(L); }
+LJLIB_CF(object_children) { return object_children(L); }
+LJLIB_CF(object_detach) { return object_detach(L); }
+LJLIB_CF(object_get) { return object_get(L); }
+LJLIB_CF(object_set) { return object_set(L); }
+LJLIB_CF(object_getKey) { return object_getkey(L); }
+LJLIB_CF(object_setKey) { return object_setkey(L); }
+LJLIB_CF(object_exists) { return object_exists(L); }
+LJLIB_CF(object_subscribe) { return object_subscribe(L); }
+LJLIB_CF(object_unsubscribe) { return object_unsubscribe(L); }
 
 //********************************************************************************************************************
 // __close metamethod handler for object auto-unlock.  Called automatically by scope exit for <close> variables.
@@ -1071,19 +1103,30 @@ extern "C" int luaopen_object(lua_State *L)
    // Register obj interface prototypes for compile-time type inference
    reg_iface_prototype("obj", "new", { TiriType::Object }, { TiriType::Str });
    reg_iface_prototype("obj", "find", { TiriType::Object }, { TiriType::Any });
-   reg_iface_prototype("obj", "class", { TiriType::Object }, { TiriType::Object });
-   reg_iface_prototype("obj", "init", { TiriType::Object }, { TiriType::Object });
-   reg_iface_prototype("obj", "free", { TiriType::Nil }, { TiriType::Object });
-   reg_iface_prototype("obj", "children", { TiriType::Table }, { TiriType::Object });
-   reg_iface_prototype("obj", "detach", { TiriType::Object }, { TiriType::Object });
-   reg_iface_prototype("obj", "get", { TiriType::Any }, { TiriType::Object, TiriType::Str });
-   reg_iface_prototype("obj", "set", { TiriType::Object }, { TiriType::Object, TiriType::Str, TiriType::Any });
-   reg_iface_prototype("obj", "getKey", { TiriType::Any }, { TiriType::Object, TiriType::Str });
-   reg_iface_prototype("obj", "setKey", { TiriType::Object }, { TiriType::Object, TiriType::Str, TiriType::Any });
-   reg_iface_prototype("obj", "delayCall", { TiriType::Nil }, { TiriType::Object, TiriType::Num, TiriType::Str }, FProtoFlags::Variadic);
-   reg_iface_prototype("obj", "exists", { TiriType::Bool }, { TiriType::Any });
-   reg_iface_prototype("obj", "subscribe", { TiriType::Object }, { TiriType::Object, TiriType::Str, TiriType::Func });
-   reg_iface_prototype("obj", "unsubscribe", { TiriType::Object }, { TiriType::Object, TiriType::Any });
+   reg_iface_method(L, "obj", "class", TiriType::Object, builtin_callable_id(FastFunc::object_class),
+      { TiriType::Object }, { TiriType::Object });
+   reg_iface_method(L, "obj", "init", TiriType::Object, builtin_callable_id(FastFunc::object_init),
+      { TiriType::Num }, { TiriType::Object });
+   reg_iface_method(L, "obj", "free", TiriType::Object, builtin_callable_id(FastFunc::object_free), {},
+      { TiriType::Object });
+   reg_iface_method(L, "obj", "children", TiriType::Object, builtin_callable_id(FastFunc::object_children),
+      { TiriType::Array }, { TiriType::Object, TiriType::Str });
+   reg_iface_method(L, "obj", "detach", TiriType::Object, builtin_callable_id(FastFunc::object_detach), {},
+      { TiriType::Object });
+   reg_iface_method(L, "obj", "get", TiriType::Object, builtin_callable_id(FastFunc::object_get),
+      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any });
+   reg_iface_method(L, "obj", "set", TiriType::Object, builtin_callable_id(FastFunc::object_set),
+      { TiriType::Num }, { TiriType::Object, TiriType::Str, TiriType::Any });
+   reg_iface_method(L, "obj", "getKey", TiriType::Object, builtin_callable_id(FastFunc::object_getKey),
+      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any });
+   reg_iface_method(L, "obj", "setKey", TiriType::Object, builtin_callable_id(FastFunc::object_setKey),
+      { TiriType::Num }, { TiriType::Object, TiriType::Str, TiriType::Any });
+   reg_iface_method(L, "obj", "exists", TiriType::Object, builtin_callable_id(FastFunc::object_exists),
+      { TiriType::Bool }, { TiriType::Object });
+   reg_iface_method(L, "obj", "subscribe", TiriType::Object, builtin_callable_id(FastFunc::object_subscribe), {},
+      { TiriType::Object, TiriType::Str, TiriType::Func, TiriType::Any });
+   reg_iface_method(L, "obj", "unsubscribe", TiriType::Object,
+      builtin_callable_id(FastFunc::object_unsubscribe), {}, { TiriType::Object, TiriType::Any });
 
    return 1;
 }

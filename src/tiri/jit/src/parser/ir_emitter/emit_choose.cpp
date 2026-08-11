@@ -86,7 +86,7 @@ ParserResult<ExpDesc> IrEmitter::emit_choose_expr(const ChooseExprPayload &Paylo
          // Use setbc_b to request exactly 'arity' results
          // B = arity + 1 means "expect arity results"
 
-         setbc_b(ir_bcptr(fs, &scrutinee_expr), int(arity) + 1);
+         set_call_result_count(fs, scrutinee_expr, int(arity) + 1);
 
          // Reserve registers for all return values
 

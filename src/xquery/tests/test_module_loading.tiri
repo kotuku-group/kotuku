@@ -47,7 +47,7 @@ end
    assert(err is ERR_Okay, 'Multiple function calls failed: ' .. tostring(xq.errorMsg))
    -- Result should be a sequence: "9:8" or similar representation
    result = tostring(xq.resultString)
-   assert(string.find(result, '9', 0, true) and string.find(result, '8', 0, true),
+   assert(result.find('9', 0, true) and string.find(result, '8', 0, true),
       'Should return both 3^2=9 and 2^3=8, got ' .. result)
 end
 
@@ -79,7 +79,7 @@ end
    assert(list, "Expected module functions to be accessible")
    math_count = 0
    for k,v in pairs(list) do
-      if (string.sub(v, 0, 5) is 'math:') then math_count++ end
+      if (v.sub(0, 5) is 'math:') then math_count++ end
    end
    assert(math_count >= 2, "Module variable 'math:pi' not found in variables list")
 
@@ -109,7 +109,7 @@ end
    err = xq.acActivate()
    assert(err is ERR_Okay, 'Multiple module imports failed: ' .. tostring(xq.errorMsg))
    result = tostring(xq.resultString)
-   assert(string.find(result, '16', 0, true) and string.find(result, 'HELLO', 0, true),
+   assert(result.find('16', 0, true) and string.find(result, 'HELLO', 0, true),
       'Should return both 16 and HELLO, got ' .. result)
 end
 
@@ -170,7 +170,7 @@ end
    err = xq.acActivate()
    assert(err != ERR_Okay, 'Should detect circular dependency')
    error_msg = string.lower(tostring(xq.errorMsg))
-   assert(string.find(error_msg, 'circular', 0, true), 'Error message should mention circular dependency, got ' .. tostring(xq.errorMsg))
+   assert(error_msg.find('circular', 0, true), 'Error message should mention circular dependency, got ' .. tostring(xq.errorMsg))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -203,7 +203,7 @@ end
    err = xq.acActivate()
    assert(err != ERR_Okay, 'Should detect namespace mismatch')
    error_msg = string.lower(tostring(xq.errorMsg))
-   assert(string.find(error_msg, 'namespace', 0, true) or string.find(error_msg, 'mismatch', 0, true),
+   assert(error_msg.find('namespace', 0, true) or string.find(error_msg, 'mismatch', 0, true),
       'Error message should mention namespace issue, got ' .. tostring(xq.errorMsg))
 end
 
@@ -221,6 +221,6 @@ end
    err = xq.acActivate()
    assert(err != ERR_Okay, 'Should reject non-library module')
    error_msg = string.lower(tostring(xq.errorMsg))
-   assert(string.find(error_msg, 'library', 0, true),
+   assert(error_msg.find('library', 0, true),
       'Error message should mention library module requirement, got ' .. tostring(xq.errorMsg))
 end

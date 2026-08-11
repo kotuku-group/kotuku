@@ -23,6 +23,7 @@
 #include "lualib.h"
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_buf.h"
@@ -542,8 +543,12 @@ static int fp_range_len(lua_State *L)
 
 static int fp_range_contains(lua_State *L)
 {
-   auto range = (tiri_range *)lua_touserdata(L, lua_upvalueindex(1));
-   int argument = lua_isuserdata(L, 1) ? 2 : 1;
+   auto range = check_range(L, 1);
+   int argument = 2;
+   if (not range) {
+      range = (tiri_range *)lua_touserdata(L, lua_upvalueindex(1));
+      argument = 1;
+   }
    if (not range or lua_type(L, argument) != LUA_TNUMBER) {
       lua_pushboolean(L, 0);
       return 1;
@@ -573,13 +578,25 @@ static int fp_range_contains(lua_State *L)
 
 static int fp_range_toarray(lua_State *L)
 {
-   auto range = (tiri_range *)lua_touserdata(L, lua_upvalueindex(1));
+   auto range = check_range(L, 1);
+   if (not range) range = (tiri_range *)lua_touserdata(L, lua_upvalueindex(1));
    if (not range) lj_err_caller(L, ErrMsg::BADVAL);
    size_t count = fp_range_count(L, range, true);
    GCarray *array = fp_range_materialise(L, range, count);
    setarrayV(L, L->top++, array);
    return 1;
 }
+
+LJLIB_CF(range_each) { return fp_range_each(L); }
+LJLIB_CF(range_filter) { return fp_range_filter(L); }
+LJLIB_CF(range_reduce) { return fp_range_reduce(L); }
+LJLIB_CF(range_map) { return fp_range_map(L); }
+LJLIB_CF(range_take) { return fp_range_take(L); }
+LJLIB_CF(range_any) { return fp_range_any(L); }
+LJLIB_CF(range_all) { return fp_range_all(L); }
+LJLIB_CF(range_find) { return fp_range_find(L); }
+LJLIB_CF(range_contains) { return fp_range_contains(L); }
+LJLIB_CF(range_toArray) { return fp_range_toarray(L); }
 
 LJLIB_ASM(range_iterator_next) LJLIB_REC(.)
 {
@@ -1049,16 +1066,26 @@ extern "C" int luaopen_range(lua_State *L)
    reg_iface_prototype("range", "new", { TiriType::Range },
       { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num });
    reg_iface_prototype("range", "slice", { TiriType::Any }, { TiriType::Any, TiriType::Range });
-   reg_iface_prototype("range", "each", { TiriType::Range }, { TiriType::Range, TiriType::Func });
-   reg_iface_prototype("range", "filter", { TiriType::Array }, { TiriType::Range, TiriType::Func });
-   reg_iface_prototype("range", "reduce", { TiriType::Any }, { TiriType::Range, TiriType::Any, TiriType::Func });
-   reg_iface_prototype("range", "map", { TiriType::Array }, { TiriType::Range, TiriType::Func });
-   reg_iface_prototype("range", "take", { TiriType::Array }, { TiriType::Range, TiriType::Num });
-   reg_iface_prototype("range", "any", { TiriType::Bool }, { TiriType::Range, TiriType::Func });
-   reg_iface_prototype("range", "all", { TiriType::Bool }, { TiriType::Range, TiriType::Func });
-   reg_iface_prototype("range", "find", { TiriType::Num }, { TiriType::Range, TiriType::Func });
-   reg_iface_prototype("range", "contains", { TiriType::Bool }, { TiriType::Range, TiriType::Num });
-   reg_iface_prototype("range", "toArray", { TiriType::Array }, { TiriType::Range });
+   reg_iface_method(L, "range", "each", TiriType::Range, builtin_callable_id(FastFunc::range_each),
+      { TiriType::Range }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "filter", TiriType::Range, builtin_callable_id(FastFunc::range_filter),
+      { TiriType::Array }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "reduce", TiriType::Range, builtin_callable_id(FastFunc::range_reduce),
+      { TiriType::Any }, { TiriType::Range, TiriType::Any, TiriType::Func });
+   reg_iface_method(L, "range", "map", TiriType::Range, builtin_callable_id(FastFunc::range_map),
+      { TiriType::Array }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "take", TiriType::Range, builtin_callable_id(FastFunc::range_take),
+      { TiriType::Array }, { TiriType::Range, TiriType::Num });
+   reg_iface_method(L, "range", "any", TiriType::Range, builtin_callable_id(FastFunc::range_any),
+      { TiriType::Bool }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "all", TiriType::Range, builtin_callable_id(FastFunc::range_all),
+      { TiriType::Bool }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "find", TiriType::Range, builtin_callable_id(FastFunc::range_find),
+      { TiriType::Num }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "contains", TiriType::Range, builtin_callable_id(FastFunc::range_contains),
+      { TiriType::Bool }, { TiriType::Range, TiriType::Num });
+   reg_iface_method(L, "range", "toArray", TiriType::Range, builtin_callable_id(FastFunc::range_toArray),
+      { TiriType::Array }, { TiriType::Range });
 
    return 1;
 }

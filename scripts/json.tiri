@@ -16,7 +16,7 @@ local rx_whitespace = regex.new("[^ \\t\\n\\r\\f\\v]")
 
 function escape_str(String:str!):str
    for i, c in in_char do
-      String = String:replace(c, '\\' .. out_char[i])
+      String = String.replace(c, '\\' .. out_char[i])
    end
    return String
 end
@@ -29,7 +29,7 @@ end
 function skip_delim(String:str!, Pos:num, Delimiter:str!, ThrowIfMissing:bool):<num, bool>
    Pos = rx_whitespace.findFirst(String, Pos)  -- Skip whitespace
    Pos ?= #String
-   if String:sub(Pos, Pos+1) != Delimiter then
+   if String.sub(Pos, Pos+1) != Delimiter then
       if ThrowIfMissing then
          error('Expected ' .. Delimiter .. ' near position ' .. Pos)
       end
@@ -45,12 +45,12 @@ function decode_str_val(String:str!, pos:num!, val:str):<any, num>
    val = val or ''
    early_end_error = 'End of input found while parsing string.'
    assert(pos < #String, early_end_error)
-   c = String:sub(pos, pos+1)
+   c = String.sub(pos, pos+1)
    if c is '"'  then return val, pos + 1 end
    if c != '\\' then return decode_str_val(String, pos + 1, val .. c) end
    -- We must have a \ character.
    esc_map = {b = '\b', f = '\f', n = '\n', r = '\r', t = '\t'}
-   nextc = String:sub(pos + 1, pos + 2)
+   nextc = String.sub(pos + 1, pos + 2)
    assert(nextc, early_end_error)
    return decode_str_val(String, pos + 2, val .. (esc_map[nextc] or nextc))
 end
@@ -59,7 +59,7 @@ end
 
 function decode_num_val(String:str!, pos:num!):<any, num>
    -- Search from position pos by using substring
-   local substr = String:sub(pos)
+   local substr = String.sub(pos)
    local matches = num_regex.search(substr)
 
    if matches then
@@ -104,27 +104,27 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
       if AsKey then
          ErrorCallback('Can\'t encode array as key.')
       else
-         s:push('[')
+         s.push('[')
          for i, val in ipairs(Value) do
-            if i > 0 then s:push(', ') end
-            s:push(json.encode(val, ErrorCallback))
+            if i > 0 then s.push(', ') end
+            s.push(json.encode(val, ErrorCallback))
          end
-         s:push(']')
+         s.push(']')
       end
-      return s:concat()
+      return s.concat()
    elseif kind is 'table' then
       s = array<string>
       if AsKey then
          ErrorCallback('Can\'t encode table as key.')
       else
-         s:push('{')
+         s.push('{')
          for k, v in pairs(Value) do
-            if #s > 1 then s:push(', ') end  -- More than just the opening brace
-            s:push(json.encode(k, ErrorCallback, true), ':', json.encode(v, ErrorCallback))
+            if #s > 1 then s.push(', ') end  -- More than just the opening brace
+            s.push(json.encode(k, ErrorCallback, true), ':', json.encode(v, ErrorCallback))
          end
-         s:push('}')
+         s.push('}')
       end
-      return s:concat()
+      return s.concat()
    elseif kind is 'string' then
       return '"' .. escape_str(Value) .. '"'
    elseif kind is 'number' then
@@ -166,7 +166,7 @@ json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
    if Pos >= #String then error('Reached unexpected end of input.') end
    Pos = rx_whitespace.findFirst(String, Pos)  -- Skip whitespace
    Pos ?= #String
-   first = String:sub(Pos, Pos+1)
+   first = String.sub(Pos, Pos+1)
    if first is '{' then  -- Parse an object.
       local map:table, key:any, delim_found = {}, true, true
       Pos++
@@ -185,7 +185,7 @@ json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
          val, Pos = json.decode(String, Pos, ']')
          if val is nil then return arr, Pos end
          if not delim_found then error('Comma missing between array items.') end
-         arr:push(val)
+         arr.push(val)
          Pos, delim_found = skip_delim(String, Pos, ',')
       end
    elseif first is '"' then  -- Parse a string.
@@ -198,8 +198,8 @@ json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
       literals = {['true'] = true, ['false'] = false, ['null'] = json.null}
       for lit_str, lit_val in pairs(literals) do
          lit_end = Pos + #lit_str
-         if String:sub(Pos, lit_end) is lit_str then return lit_val, lit_end end
+         if String.sub(Pos, lit_end) is lit_str then return lit_val, lit_end end
       end
-      error('Invalid json syntax starting at position ' .. Pos .. ': ' .. String:sub(Pos, Pos + 11))
+      error('Invalid json syntax starting at position ' .. Pos .. ': ' .. String.sub(Pos, Pos + 11))
    end
 end

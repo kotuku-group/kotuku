@@ -52,7 +52,7 @@ gui.window = function(Options:table!)
 
    lifecycle = setmetatable({ window=self, quit=self.quit }, { __mode='v' })
 
-   self.clientViewport = function(self:table!, Options:table):obj
+   self.clientViewport = function(Options:table):obj
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
 
@@ -68,7 +68,7 @@ gui.window = function(Options:table!)
       return self._clientViewport
    end
 
-   self.getSize = function(self:table!)
+   self.getSize = function()
       return {
          x      = self.surface.x - self.client.left,
          y      = self.surface.y - self.client.top,
@@ -77,7 +77,7 @@ gui.window = function(Options:table!)
       }
    end
 
-   self.getClientSize = function(self:table!)
+   self.getClientSize = function()
       return {
          x = self.surface.x, y = self.surface.y, width = self.surface.width, height = self.surface.height
       }
@@ -85,7 +85,7 @@ gui.window = function(Options:table!)
 
    -- Resize the window via the client area
 
-   self.resizeClientArea = function(self:table!, ClientWidth:num, ClientHeight:num)
+   self.resizeClientArea = function(ClientWidth:num, ClientHeight:num)
       ClientWidth ?= self.surface.width
       ClientHeight ?= self.surface.height
       self.surface.acResize(ClientWidth, ClientHeight, 0)
@@ -94,7 +94,7 @@ gui.window = function(Options:table!)
    -- Changes the size of the position of the window in relation to its parent.  All dimensions refer to the
    -- border of the window.
 
-   self.resize = function(self:table!, X:num, Y:num, Width:num, Height:num)
+   self.resize = function(X:num, Y:num, Width:num, Height:num)
       Width ?= self.surface.width
       Height ?= self.surface.height
 
@@ -107,7 +107,7 @@ gui.window = function(Options:table!)
 
    -- Define window sizing limits.
 
-   self.sizeHints = function(self:table!, MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
+   self.sizeHints = function(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
       if self.surface.display.mtSizeHints(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect) != ERR_Okay then
          self.surface.maxWidth  = MaxWidth
          self.surface.minWidth  = MinWidth
@@ -118,13 +118,13 @@ gui.window = function(Options:table!)
 
    -- Smart limits are used to prevent the window from moving completely outside of the visible display area.
 
-   self.applySmartLimits = function(self:table!)
+   self.applySmartLimits = function()
       self.smartLimitsEnabled = true
    end
 
    -- Run the minimise procedure for the window (environment dependent).
 
-   self.minimise = function(self:table!)
+   self.minimise = function()
       if self.MinimiseEnabled then
          self?.events?.minimise(self)
       end
@@ -136,7 +136,7 @@ gui.window = function(Options:table!)
    --
    -- If Toggle is true, the window is restored to its original position if the window is already maximised.
 
-   self.maximise = function(self:table, Toggle)
+   self.maximise = function(Toggle)
       if not self.maximiseEnabled then
          msg('Maximisation for this window is turned off.')
          return
@@ -151,20 +151,20 @@ gui.window = function(Options:table!)
       display.flags = display.flags | SCR_MAXIMISE
    end
 
-   self.moveToBack = function(self:table!)
+   self.moveToBack = function()
       self.surface.acMoveToBack()
    end
 
-   self.moveToFront = function(self:table!)
+   self.moveToFront = function()
       self.surface.acMoveToFront()
    end
 
-   self.parentSize = function(self:table!):<num, num>
+   self.parentSize = function():<num, num>
       err, info = mGfx.getDisplayInfo(self.surface.display)
       return info.monitorWidth, info.monitorHeight
    end
 
-   self.show = function(self:table!, Centre:bool)
+   self.show = function(Centre:bool)
       if Centre then
          x, y = (function()
             if self.surface.popOver then
@@ -216,13 +216,13 @@ gui.window = function(Options:table!)
       self.events?.show(self)
    end
 
-   self.hide = function(self:table!)
+   self.hide = function()
       self.visible = false
       self.surface.acHide()
       self.events?.hide(self)
    end
 
-   self.setTitle = function(self:table!, Title:str!)
+   self.setTitle = function(Title:str!)
       self.surface.display.title = Title
       self.title = Title
    end
@@ -260,7 +260,7 @@ gui.window = function(Options:table!)
       self.surface.display.flags = self.surface.display.flags | SCR_GRAB_CONTROLLERS
    end
 
-   parent_width, parent_height = self:parentSize()
+   parent_width, parent_height = self.parentSize()
    self.surface.x = Options.x ?? ((parent_width - self.surface.width) * 0.1)
    self.surface.y = Options.y ?? ((parent_height - self.surface.height) * 0.1)
 
@@ -373,7 +373,7 @@ gui.window = function(Options:table!)
       end
 
       local window = Lifecycle.window
-      if window then table.clear(window) end
+      if window then window.clear() end
    end, lifecycle)
 
    return self

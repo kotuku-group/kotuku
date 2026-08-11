@@ -154,7 +154,7 @@ end
       ]])
    except ex
       -- exec() doesn't preserve full error details, just check parsing failed
-      assert(ex.message:find("Parsing failed") or ex.message:find("not_a_field"),
+      assert(ex.message.find("Parsing failed") or ex.message.find("not_a_field"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
       error("Expected error when accessing invalid field")
@@ -164,7 +164,7 @@ end
    try
       t.timestamp = 1
    except ex
-      assert(ex.message:find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
+      assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
    success
       error("Expected error when writing a read-only field")
    end
@@ -177,7 +177,7 @@ end
       ]])
    except ex
       -- exec() doesn't preserve full error details, just check parsing failed
-      assert(ex.message:find("Parsing failed") or ex.message:find("does_not_exist"),
+      assert(ex.message.find("Parsing failed") or ex.message.find("does_not_exist"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
       error("Expected error when writing a non-existent field")
@@ -325,7 +325,7 @@ end
          count = wrong
       ]])
    except ex
-      assert(ex.message:find('Type mismatch') or ex.message:find('type contract failed'),
+      assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
          "Expected type mismatch error, got: " .. ex.message)
    success
       error("Expected type error when assigning str field to num variable")
@@ -343,7 +343,7 @@ end
          name = c.totalKeys
       ]])
    except ex
-      assert(ex.message:find('Type mismatch') or ex.message:find('type contract failed'),
+      assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
          "Expected type mismatch error, got: " .. ex.message)
    success
       error("Expected type error when assigning num field to str variable")
@@ -404,7 +404,7 @@ local value = obj.new('time')
 value = obj.new('file')
 ]])
    except ex
-      assert(ex.message:find('object class mismatch') != nil or ex.message:find('ObjectClassMismatch') != nil,
+      assert(ex.message.find('object class mismatch') != nil or ex.message.find('ObjectClassMismatch') != nil,
          'A visible cross-class assignment should retain its compile-time diagnostic: ' .. ex.message)
    success
       error('Expected a compile-time object class mismatch')

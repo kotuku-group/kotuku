@@ -15,7 +15,7 @@ end
    total = 5
    scripts = array<obj>
    for i in {1 into total} do
-      scripts:push(obj.new('tiri', { statement = "msg('WaitMultipleScripts: thread " .. i .. " running.')" }))
+      scripts.push(obj.new('tiri', { statement = "msg('WaitMultipleScripts: thread " .. i .. " running.')" }))
    end
 
    for script in values(scripts) do

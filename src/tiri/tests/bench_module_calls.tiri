@@ -19,8 +19,8 @@ local ACTIVATIONS <const> = tonumber(arg('activations', '200'))
 -- produced by scheduler preemption during a run.
 
 function median(Samples: array<double>): num
-   local ordered = Samples:clone()
-   ordered:sort()
+   local ordered = Samples.clone()
+   ordered.sort()
    local count = #ordered
    if count & 1 is 1 then return ordered[count >> 1] end
    return (ordered[(count >> 1) - 1] + ordered[count >> 1]) / 2
@@ -36,7 +36,7 @@ function measure(Name: str, Iterations: num, Workload: func)
    for _ in {0 to REPEATS} do
       local start = mCore.PreciseTime()
       sink += Workload(Iterations)
-      samples:push(mCore.PreciseTime() - start)
+      samples.push(mCore.PreciseTime() - start)
    end
 
    local elapsed = median(samples)
@@ -157,7 +157,7 @@ function measure_activation(Name: str, Source: str)
    for _ in {0 to REPEATS} do
       local start = mCore.PreciseTime()
       for _ in {0 to ACTIVATIONS} do exec(Source) end
-      samples:push(mCore.PreciseTime() - start)
+      samples.push(mCore.PreciseTime() - start)
    end
 
    local elapsed = median(samples)
@@ -168,7 +168,7 @@ end
 --********************************************************************************************************************
 
 print(f"Module call benchmark: {ITERATIONS} iterations, {REPEATS} repeats, JIT {tostring(jit.status())}")
-print(string.rep('-', 96))
+print('-'.rep(96))
 
 print('Steady state:')
 measure('  zero-arg scalar result', ITERATIONS, bench_zero_arg)

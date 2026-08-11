@@ -80,8 +80,8 @@ end
    </item>
 </root>]]
 
-   expected_lines = xml_content:count('\n')
-   if xml_content:sub(-1) != '\n' then
+   expected_lines = xml_content.count('\n')
+   if xml_content.sub(-1) != '\n' then
       expected_lines++
    end
 

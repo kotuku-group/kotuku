@@ -23,7 +23,7 @@ gui.button = function(Options)
 
    -- Change the active state of the button to disabled or enabled
 
-   self.disable = function(self)
+   self.disable = function()
       self.disabled = true
       self.viewport.acDisable()
       self.text?.opacity = 0.5
@@ -32,7 +32,7 @@ gui.button = function(Options)
       self.viewport.acDraw()
    end
 
-   self.enable = function(self)
+   self.enable = function()
       self.disabled = false
       self.viewport.acDisable()
       self.text?.opacity = 1.0

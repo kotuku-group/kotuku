@@ -132,7 +132,12 @@ static void libdef_func(BuildCtx* ctx, char* p, int arg)
       }
    }
    else if (ctx->mode == BUILD_ffdef) {
-      fprintf(ctx->fp, "FFDEF(%s)\n", p);
+      char canonical[256];
+      int i;
+      strcpy(canonical, p);
+      for (i = 1; canonical[i] and modname[i - 1]; i++)
+         if (canonical[i] IS '_') canonical[i] = '.';
+      fprintf(ctx->fp, "FFDEF(%s, \"%s\")\n", p, canonical);
    }
    else if (ctx->mode == BUILD_recdef) {
       if (strlen(p) > sizeof(funcname) - 1) {
@@ -387,6 +392,9 @@ void emit_lib(BuildCtx* ctx)
    if (ctx->mode == BUILD_ffdef) {
       fprintf(ctx->fp, "\n#undef FFDEF\n\n");
       fprintf(ctx->fp,
+         "/* Fast-function order is part of the private bytecode ABI for BC_BFUNC. */\n"
+         "/* Insertions or reordering require a BCDUMP_VERSION bump and fingerprint update. */\n\n"
+         "#define FFDEF_BFUNC_ABI 1\n\n"
          "#ifndef FF_NUM_ASMFUNC\n#define FF_NUM_ASMFUNC %d\n#endif\n\n",
          ffasmfunc);
    }
@@ -415,4 +423,3 @@ void emit_lib(BuildCtx* ctx)
       fprintf(ctx->fp, "\n};\n\n");
    }
 }
-

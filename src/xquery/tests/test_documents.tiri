@@ -31,7 +31,7 @@ function init(State)
    ensureFolder(glCollectionFolder)
    ensureFolder(glTextFolder)
 
-   writeFile(glBaseFolder .. 'primary.xml', table.concat({
+   local primary_lines = {
       '<?xml version="1.0"?>',
       '<library>',
          '<section id="A" idrefs="B">',
@@ -42,26 +42,30 @@ function init(State)
          '</section>',
          '<pointer href="secondary.xml"/>',
       '</library>'
-   }))
+   }
+   writeFile(glBaseFolder .. 'primary.xml', primary_lines.concat())
 
-   writeFile(glBaseFolder .. 'secondary.xml', table.concat({
+   local secondary_lines = {
       '<secondary>',
          '<item code="B">Beta</item>',
          '<item code="C">Gamma</item>',
       '</secondary>'
-   }))
+   }
+   writeFile(glBaseFolder .. 'secondary.xml', secondary_lines.concat())
 
-   writeFile(glCollectionFolder .. 'alpha.xml', table.concat({
+   local alpha_lines = {
       '<doc>',
          '<entry code="alpha"/>',
       '</doc>'
-   }))
+   }
+   writeFile(glCollectionFolder .. 'alpha.xml', alpha_lines.concat())
 
-   writeFile(glCollectionFolder .. 'beta.xml', table.concat({
+   local beta_lines = {
       '<doc>',
          '<entry code="beta"/>',
       '</doc>'
-   }))
+   }
+   writeFile(glCollectionFolder .. 'beta.xml', beta_lines.concat())
 
    writeFile(glTextFolder .. 'sample.txt', 'First line\r\nSecond line\nThird line')
 
@@ -110,7 +114,7 @@ end
 
 @Test function UriCollectionReturnsPaths()
    err, first = glPrimaryXML.mtEvaluate(f'uri-collection("{glCollectionFolder}")[1]')
-   assert(first:find('alpha.xml', 1, true), 'uri-collection() should return sorted file URIs, got ' .. tostring(first))
+   assert(first.find('alpha.xml', 1, true), 'uri-collection() should return sorted file URIs, got ' .. tostring(first))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -146,4 +150,3 @@ end
    err, refName = glPrimaryXML.mtEvaluate('name(idref("B")[1])')
    assert(refName is 'section', 'idref() should return the referencing section element, got ' .. tostring(refName))
 end
-

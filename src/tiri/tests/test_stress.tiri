@@ -11,7 +11,7 @@ function enforce_hotpath() end
       terms[index] = tostring(index)
    end
 
-   statement = table.concat(terms, ' + ')
+   statement = terms.concat(' + ')
    assert(statement, "Addition chain constructed successfully")
 end
 
@@ -237,16 +237,16 @@ end
    execution_order = {}
 
    function test_defer_scope()
-      table.insert(execution_order, 1)
+      execution_order.insert(1)
 
       defer
-         table.insert(execution_order, 4)
+         execution_order.insert(4)
       end
 
-      table.insert(execution_order, 2)
+      execution_order.insert(2)
 
       defer
-         table.insert(execution_order, 3)
+         execution_order.insert(3)
       end
    end
 

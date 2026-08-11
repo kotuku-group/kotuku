@@ -17,7 +17,7 @@ function positionToOffset(Content, Line, Character)
    current_line = 0
 
    while current_line < Line and offset < #Content do
-      c = Content:sub(offset, offset + 1)
+      c = Content.sub(offset, offset + 1)
       if c is '\n' then
          current_line++
       end
@@ -25,8 +25,8 @@ function positionToOffset(Content, Line, Character)
    end
 
    -- Add the byte offset within the line, converting the UTF-16 column to bytes.
-   line_end = Content:find('\n', offset) or (#Content + 1)
-   line_text = Content:sub(offset, line_end)
+   line_end = Content.find('\n', offset) or (#Content + 1)
+   line_text = Content.sub(offset, line_end)
    return offset + utf16ColToByteCol(line_text, Character)
 end
 
@@ -38,8 +38,8 @@ function applyTextEdit(Content, Range, NewText)
    end_offset = positionToOffset(Content, Range['end'].line, Range['end'].character)
 
    -- Build new content: before + new text + after
-   before = Content:sub(0, start_offset)
-   after = Content:sub(end_offset)
+   before = Content.sub(0, start_offset)
+   after = Content.sub(end_offset)
 
    return before .. NewText .. after
 end
@@ -53,19 +53,19 @@ global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
    len = #LineText
 
    if InBlockComment then
-      close_pos = LineText:find(']]')
+      close_pos = LineText.find(']]')
       if close_pos then
-         result ..= string.rep(' ', close_pos + 2)
+         result ..= ' '.rep(close_pos + 2)
          pos = close_pos + 2
          InBlockComment = false
       else
-         return string.rep(' ', len), true
+         return ' '.rep(len), true
       end
    end
 
    while pos < len do
-      c = LineText:sub(pos, pos + 1)
-      next_two = LineText:sub(pos, pos + 2)
+      c = LineText.sub(pos, pos + 1)
+      next_two = LineText.sub(pos, pos + 2)
 
       if c is '"' or c is "'" then
          quote = c
@@ -73,7 +73,7 @@ global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
          pos++
 
          while pos < len do
-            sc = LineText:sub(pos, pos + 1)
+            sc = LineText.sub(pos, pos + 1)
             if sc is '\\' and pos + 1 < len then
                result ..= '  '
                pos += 2
@@ -87,26 +87,26 @@ global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
             end
          end
       elseif next_two is '--' then
-         if LineText:sub(pos, pos + 4) is '--[[' then
-            close_pos = LineText:find(']]', pos + 4)
+         if LineText.sub(pos, pos + 4) is '--[[' then
+            close_pos = LineText.find(']]', pos + 4)
             if close_pos then
-               result ..= string.rep(' ', close_pos + 2 - pos)
+               result ..= ' '.rep(close_pos + 2 - pos)
                pos = close_pos + 2
             else
-               result ..= string.rep(' ', len - pos)
+               result ..= ' '.rep(len - pos)
                return result, true
             end
          else
-            result ..= string.rep(' ', len - pos)
+            result ..= ' '.rep(len - pos)
             return result, false
          end
       elseif next_two is '[[' then
-         close_pos = LineText:find(']]', pos + 2)
+         close_pos = LineText.find(']]', pos + 2)
          if close_pos then
-            result ..= string.rep(' ', close_pos + 2 - pos)
+            result ..= ' '.rep(close_pos + 2 - pos)
             pos = close_pos + 2
          else
-            result ..= string.rep(' ', len - pos)
+            result ..= ' '.rep(len - pos)
             return result, true
          end
       else
@@ -123,30 +123,30 @@ end
 global function resolveModuleCompletion(Doc:table, Position:table):array<table>
    local line_text = getLine(Doc, Position.line)
    local byte_col = utf16ColToByteCol(line_text, Position.character)
-   local before = line_text:sub(0, byte_col)
+   local before = line_text.sub(0, byte_col)
    local dot_pos
    for i in {#before - 1 into 0 by -1} do
-      if before:sub(i, i + 1) is '.' then dot_pos = i; break end
+      if before.sub(i, i + 1) is '.' then dot_pos = i; break end
    end
    if not dot_pos then return array<table> end
 
    local object_stop = dot_pos
    local object_start = object_stop
    while object_start > 0 do
-      local char = before:sub(object_start - 1, object_start)
+      local char = before.sub(object_start - 1, object_start)
       if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
             (char >= '0' and char <= '9') or char is '_') then break end
       object_start -= 1
    end
-   local object_name = before:sub(object_start, object_stop)
-   local member_prefix = before:sub(dot_pos + 1):lower()
+   local object_name = before.sub(object_start, object_stop)
+   local member_prefix = before.sub(dot_pos + 1).lower()
    local module_doc = moduleDocumentForNamespace(Doc, object_name)
    if not module_doc?.functions then return array<table> end
 
    local items = array<table>
    for function_name, function_doc in pairs(module_doc.functions) do
-      if member_prefix is '' or function_name:lower():startsWith(member_prefix) then
-         items:push({
+      if member_prefix is '' or function_name.lower().startsWith(member_prefix) then
+         items.push({
             label = function_name,
             kind = 3,
             detail = function_doc.prototype,
@@ -160,10 +160,10 @@ end
 
 global function resolveModuleRename(Doc:table, Position:table, NewName:str):table
    if not NewName or #NewName is 0 then return nil end
-   local first = NewName:sub(0, 1)
+   local first = NewName.sub(0, 1)
    if not ((first >= 'a' and first <= 'z') or (first >= 'A' and first <= 'Z') or first is '_') then return nil end
    for i in {1 to #NewName} do
-      local char = NewName:sub(i, i + 1)
+      local char = NewName.sub(i, i + 1)
       if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
             (char >= '0' and char <= '9') or char is '_') then return nil end
    end
@@ -175,9 +175,9 @@ global function resolveModuleRename(Doc:table, Position:table, NewName:str):tabl
    local edits = array<table>
    for token in values(tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))) do
       local line_text = getLine(Doc, token.line)
-      local text = line_text:sub(token.char, token.char + token.length)
+      local text = line_text.sub(token.char, token.char + token.length)
       if token.type is 10 and text is old_name and (token.modifiers & 8) is 0 then
-         edits:push({
+         edits.push({
             range = {
                start = { line=token.line, character=byteColToUtf16Col(line_text, token.char) },
                ['end'] = { line=token.line, character=byteColToUtf16Col(line_text, token.char + token.length) }

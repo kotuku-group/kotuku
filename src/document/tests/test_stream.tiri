@@ -100,10 +100,10 @@ end
       '<body/><page><p>5 &lt; 10 &amp; 3 &gt; 2 <a href="test.rpl" hint="A &lt; B &amp; &quot;quoted&quot;">link</a></p></page>')
    err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
    assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
-   assert(xml_str:find('&lt;'),  'XML output must contain &lt;, got: ' .. xml_str)
-   assert(xml_str:find('&gt;'),  'XML output must contain &gt;, got: ' .. xml_str)
-   assert(xml_str:find('&amp;'), 'XML output must contain &amp;, got: ' .. xml_str)
-   assert(xml_str:find('&quot;'), 'XML output must contain &quot; for escaped attribute values, got: ' .. xml_str)
+   assert(xml_str.find('&lt;'),  'XML output must contain &lt;, got: ' .. xml_str)
+   assert(xml_str.find('&gt;'),  'XML output must contain &gt;, got: ' .. xml_str)
+   assert(xml_str.find('&amp;'), 'XML output must contain &amp;, got: ' .. xml_str)
+   assert(xml_str.find('&quot;'), 'XML output must contain &quot; for escaped attribute values, got: ' .. xml_str)
 
    xml = parseXML(xml_str)
    assert(xpath(xml, 'string((/extract/stream//text)[1])') is '5 < 10 & 3 > 2 ', 'Escaped text content must round-trip after XML parse')
@@ -508,7 +508,7 @@ end
 
    err_text, text = doc.mtReadContent(DATA_TEXT, 0, 0x7fffffff)
    assert(err_text is ERR_Okay, 'ReadContent(DATA_TEXT) failed after InsertText(), got ' .. err_text)
-   assert(text:find('Inserted'), 'Inserted text was not present in the document text output')
+   assert(text.find('Inserted'), 'Inserted text was not present in the document text output')
 end
 
 @Test function StringViewRequiredInputErrors()

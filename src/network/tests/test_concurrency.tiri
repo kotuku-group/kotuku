@@ -64,11 +64,11 @@ end
          if err is ERR_Disconnected then return end
          assert(err is ERR_Okay, '[Server] Failed to read from client: ' .. mSys.GetErrorMsg(err))
 
-         local msg = buffer:sub(0, read_len)
+         local msg = buffer.sub(0, read_len)
          print('[Server] Received: ' .. msg)
 
          -- Track messages per client
-         glServerReceived:push(msg)
+         glServerReceived.push(msg)
 
          -- Echo back with server prefix
          response = 'SERVER_ECHO:' .. msg
@@ -103,20 +103,20 @@ end
             err, read_len = Socket.acRead(buffer)
             assert(err is ERR_Okay, '[Client ' .. data.id .. '] Failed to read: ' .. mSys.GetErrorMsg(err))
 
-            local msg = buffer:sub(0, read_len)
+            local msg = buffer.sub(0, read_len)
             data.messagesReceived++
 
             -- Store response for verification
-            glClientResponses:push(msg)
+            glClientResponses.push(msg)
 
-            if msg:startsWith('WELCOME:') then
+            if msg.startsWith('WELCOME:') then
                -- Send first test message
                test_msg = 'CLIENT_' .. data.id .. '_MSG_1'
                err, len = Socket.acWrite(test_msg)
                assert(err is ERR_Okay, '[Client ' .. data.id .. '] Failed to send: ' .. mSys.GetErrorMsg(err))
                data.messagesSent++
 
-            elseif msg:startsWith('SERVER_ECHO:') then
+            elseif msg.startsWith('SERVER_ECHO:') then
                -- Send next message or disconnect
                if data.messagesSent < glMessagesPerClient then
                   data.messagesSent++
@@ -223,9 +223,9 @@ end
 
    -- Initialize expected messages
    for i in {0 to clientCount} do
-      clientMessages:push(array<string>)
+      clientMessages.push(array<string>)
       for j in {0 to messagesPerClient} do
-         clientMessages[i]:push(f'ISOLATED_CLIENT_{i}_MESSAGE_{j}')
+         clientMessages[i].push(f'ISOLATED_CLIENT_{i}_MESSAGE_{j}')
       end
    end
 
@@ -242,7 +242,7 @@ end
       incoming = function(Socket, Client)
          buffer = string.alloc(1024)
          err, read_len = Client.acRead(buffer)
-         local msg = buffer:sub(0, read_len)
+         local msg = buffer.sub(0, read_len)
 
          print('[Server] Received isolated message: ' .. msg)
 
@@ -270,20 +270,20 @@ end
          incoming = function(Socket, Script)
             buffer = string.alloc(1024)
             err, read_len = Socket.acRead(buffer)
-            local msg = buffer:sub(0, read_len)
+            local msg = buffer.sub(0, read_len)
             clientId = i
 
             print(f'[Client {clientId}] Received: {msg}')
 
-            if (msg:startsWith('START:')) then
+            if (msg.startsWith('START:')) then
                -- Send first message
                test_msg = clientMessages[clientId][clients[i].messageIndex]
                print(f'[Client {clientId}] Sending: {test_msg}')
                Socket.acWrite(test_msg)
 
-            elseif (msg:find('ECHO_TO_CLIENT_' .. clientId)) then
+            elseif (msg.find('ECHO_TO_CLIENT_' .. clientId)) then
                -- Verify echo is for this client
-               assert(msg:find('CLIENT_' .. clientId), f'Client {clientId} received message for wrong client: {msg}')
+               assert(msg.find('CLIENT_' .. clientId), f'Client {clientId} received message for wrong client: {msg}')
 
                clients[i].messageIndex++
                if (clients[i].messageIndex < messagesPerClient) then

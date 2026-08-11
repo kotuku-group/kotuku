@@ -8,6 +8,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_tab.h"
@@ -539,6 +540,13 @@ static int struct_struct_size(lua_State *L)
    return 1;
 }
 
+LJLIB_CF(struct_structSize)
+{
+   auto *value = lj_lib_checkstruct(L, 1);
+   lua_pushnumber(L, value->structsize);
+   return 1;
+}
+
 void lj_struct_push_size_closure(lua_State *L, GCstruct *Struct)
 {
    setstructV(L, L->top, Struct);
@@ -812,8 +820,11 @@ extern "C" int luaopen_struct(lua_State *L)
    reg_iface_prototype("struct", "new", { TiriType::Struct }, { TiriType::Str, TiriType::Table });
    reg_iface_prototype("struct", "def", { TiriType::Func }, { TiriType::Str });
    reg_iface_prototype("struct", "size", { TiriType::Num }, { TiriType::Str });
-   reg_iface_prototype("struct", "structSize", { TiriType::Num }, { TiriType::Struct });
-   reg_iface_prototype("struct", "copy", { TiriType::Struct }, { TiriType::Struct, TiriType::Struct });
-   reg_iface_prototype("struct", "clone", { TiriType::Struct }, { TiriType::Struct });
+   reg_iface_method(L, "struct", "structSize", TiriType::Struct,
+      builtin_callable_id(FastFunc::struct_structSize), { TiriType::Num }, { TiriType::Struct });
+   reg_iface_method(L, "struct", "copy", TiriType::Struct, builtin_callable_id(FastFunc::struct_copy),
+      { TiriType::Struct }, { TiriType::Struct, TiriType::Struct });
+   reg_iface_method(L, "struct", "clone", TiriType::Struct, builtin_callable_id(FastFunc::struct_clone),
+      { TiriType::Struct }, { TiriType::Struct });
    return 1;
 }

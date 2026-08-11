@@ -657,10 +657,10 @@ end
       return 'static'
    end
 
-   function myTable:instanceMethod()
+   function myTable.instanceMethod(Self)
       return 'instance'
    end
 
    assert(myTable.staticMethod() is 'static', 'Static method should work')
-   assert(myTable:instanceMethod() is 'instance', 'Instance method should work')
+   assert(myTable.instanceMethod(myTable) is 'instance', 'Instance method should work')
 end

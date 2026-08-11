@@ -250,7 +250,7 @@ end
    except e
       assert(e.message != nil, 'Error message should not be nil')
       -- Verify the error message contains expected content
-      assert(string.find(e.message, 'Error in test context'), 'Error should contain context')
+      assert(e.message.find('Error in test context'), 'Error should contain context')
    success
       error('assert(false) should fail')
    end

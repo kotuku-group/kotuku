@@ -8,7 +8,7 @@ A file viewer for recognised documents like SVG and RIPL
 
    include 'svg', 'image'
 
-CLASSID_IMAGE <const> = 'Image':hash()
+CLASSID_IMAGE <const> = 'Image'.hash()
 
 glBody = [[<body fill="rgb(68 68 90)" font-fill="white" font-face="Noto Sans" font-size="12pt" margins="2em"/>]]
 
@@ -86,16 +86,16 @@ glIntroduction = [[
    file_ext = picmeta.fileExtension
    if file_ext then
       local save_ext:str
-      if file_ext:find('|') then
-         file_ext = file_ext:split('|')
+      if file_ext.find('|') then
+         file_ext = file_ext.split('|')
          save_ext = file_ext[0]
       else
          save_ext = file_ext
       end
       desc = picmeta.fileDescription
       if not desc then desc = picmeta.name .. ' Image' end
-      glOpenFilter:push({ name=desc, ext=file_ext })
-      glSaveFilter:push({ name=desc, ext=save_ext })
+      glOpenFilter.push({ name=desc, ext=file_ext })
+      glSaveFilter.push({ name=desc, ext=save_ext })
    end
 
    pic_classes = picmeta.subClasses
@@ -107,13 +107,13 @@ glIntroduction = [[
             file_ext = c.extension
             if file_ext then
                local save_ext:str
-               if file_ext:find('|') then
-                  file_ext = file_ext:split('|')
+               if file_ext.find('|') then
+                  file_ext = file_ext.split('|')
                   save_ext = file_ext[0]
                else
                   save_ext = file_ext
                end
-               glOpenFilter:push({ name=c.description ?? c.name .. ' Image', ext=file_ext, icon=c.icon })
+               glOpenFilter.push({ name=c.description ?? c.name .. ' Image', ext=file_ext, icon=c.icon })
             else
                print('No file extension for class ' .. c.name)
             end
@@ -240,14 +240,14 @@ function displayFile(Path:str)
    glStats = { } -- Status bar information
    glSaveRoutine = nil
 
-   lpath = Path:lower()
-   if lpath:endsWith('.png') then
+   lpath = Path.lower()
+   if lpath.endsWith('.png') then
       displayImage(Path)
-   elseif lpath:endsWith('.jpeg') or lpath:endsWith('.jpg') then
+   elseif lpath.endsWith('.jpeg') or lpath.endsWith('.jpg') then
       displayImage(Path)
-   elseif lpath:endsWith('.svg') then
+   elseif lpath.endsWith('.svg') then
       displaySVG(Path)
-   elseif lpath:endsWith('.ripl') or lpath:endsWith('.rpl') then
+   elseif lpath.endsWith('.ripl') or lpath.endsWith('.rpl') then
       displayDoc(Path)
    else -- File is unsupported
       displayError(f'<p>Unrecognised file "{Path}"</p>')
@@ -270,7 +270,7 @@ end
       borderless = true
    })
 
-   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    if glArgs.browser != true then
       glViewArea = glViewport.new('VectorViewport', {
@@ -301,7 +301,7 @@ end
             if glStats.width and glStats.height then
                title ..= f' [ {glStats.width} x {glStats.height} ]'
             end
-            glWindow:setTitle(title)
+            glWindow.setTitle(title)
          end
       })
 
@@ -390,6 +390,6 @@ end
 
    processing.collect()
 
-   glWindow:show(true)
+   glWindow.show(true)
 
    processing.sleep()

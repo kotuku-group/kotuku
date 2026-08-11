@@ -254,6 +254,7 @@ static ParserConfig make_parser_config(lua_State &State)
       // Cancel aborting on error and enable deeper log tracing.
       config.abort_on_error = false;
       config.max_diagnostics = 32;
+      config.warn_unresolved_methods = true;
    }
 
    return config;
@@ -324,6 +325,11 @@ extern GCproto * lj_parse(LexState *State)
    if ((L->script->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
 
    flush_non_fatal_errors(root_context);
+
+   if (not root_context.config().abort_on_error and not root_context.diagnostics().empty()) {
+      if (L->parser_diagnostics) delete (ParserDiagnostics*)L->parser_diagnostics;
+      L->parser_diagnostics = new ParserDiagnostics(root_context.diagnostics());
+   }
 
    if (profiler.enabled()) profiler.log_results(log);
 

@@ -869,31 +869,54 @@ extern int luaopen_string(lua_State *L)
 
    // Register string interface prototypes for compile-time type inference
    reg_iface_prototype("string", "alloc", { TiriType::Str }, { TiriType::Num });
-   reg_iface_prototype("string", "byte", { TiriType::Num }, { TiriType::Str, TiriType::Num }, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "cap", { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "byte", TiriType::Str, builtin_callable_id(FastFunc::string_byte),
+      { TiriType::Num }, { TiriType::Str, TiriType::Num }, FProtoFlags::Variadic);
+   reg_iface_method(L, "string", "cap", TiriType::Str, builtin_callable_id(FastFunc::string_cap),
+      { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "char", { TiriType::Str }, {}, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "contains", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "count", { TiriType::Num }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "decap", { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "contains", TiriType::Str, builtin_callable_id(FastFunc::string_contains),
+      { TiriType::Bool }, { TiriType::Str, TiriType::Str });
+   reg_iface_method(L, "string", "count", TiriType::Str, builtin_callable_id(FastFunc::string_count),
+      { TiriType::Num }, { TiriType::Str, TiriType::Str });
+   reg_iface_method(L, "string", "decap", TiriType::Str, builtin_callable_id(FastFunc::string_decap),
+      { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "dump", { TiriType::Str }, { TiriType::Func });
-   reg_iface_prototype("string", "endsWith", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "escXML", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "find", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str }, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "format", { TiriType::Str }, { TiriType::Str }, FProtoFlags::Variadic);
-   reg_iface_prototype("string", "hash", { TiriType::Num }, { TiriType::Str, TiriType::Bool });
-   reg_iface_prototype("string", "len", { TiriType::Num }, { TiriType::Str });
-   reg_iface_prototype("string", "lower", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "pop", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("string", "rep", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("string", "replace", { TiriType::Str, TiriType::Num }, { TiriType::Str, TiriType::Str, TiriType::Str, TiriType::Num });
-   reg_iface_prototype("string", "reverse", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "rtrim", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "split", { TiriType::Array }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "startsWith", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "sub", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("string", "trim", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "unescapeXML", { TiriType::Str }, { TiriType::Str });
-   reg_iface_prototype("string", "upper", { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "endsWith", TiriType::Str, builtin_callable_id(FastFunc::string_endsWith),
+      { TiriType::Bool }, { TiriType::Str, TiriType::Str });
+   reg_iface_method(L, "string", "escXML", TiriType::Str, builtin_callable_id(FastFunc::string_escXML),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "find", TiriType::Str, builtin_callable_id(FastFunc::string_find),
+      { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str }, FProtoFlags::Variadic);
+   reg_iface_method(L, "string", "format", TiriType::Str, builtin_callable_id(FastFunc::string_format),
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::Variadic);
+   reg_iface_method(L, "string", "hash", TiriType::Str, builtin_callable_id(FastFunc::string_hash),
+      { TiriType::Num }, { TiriType::Str, TiriType::Bool });
+   reg_iface_method(L, "string", "len", TiriType::Str, builtin_callable_id(FastFunc::string_len),
+      { TiriType::Num }, { TiriType::Str });
+   reg_iface_method(L, "string", "lower", TiriType::Str, builtin_callable_id(FastFunc::string_lower),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "pop", TiriType::Str, builtin_callable_id(FastFunc::string_pop),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num });
+   reg_iface_method(L, "string", "rep", TiriType::Str, builtin_callable_id(FastFunc::string_rep),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num });
+   reg_iface_method(L, "string", "replace", TiriType::Str, builtin_callable_id(FastFunc::string_replace),
+      { TiriType::Str, TiriType::Num }, { TiriType::Str, TiriType::Str, TiriType::Str, TiriType::Num });
+   reg_iface_method(L, "string", "reverse", TiriType::Str, builtin_callable_id(FastFunc::string_reverse),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "rtrim", TiriType::Str, builtin_callable_id(FastFunc::string_rtrim),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "split", TiriType::Str, builtin_callable_id(FastFunc::string_split),
+      { TiriType::Array }, { TiriType::Str, TiriType::Str });
+   reg_iface_method(L, "string", "startsWith", TiriType::Str, builtin_callable_id(FastFunc::string_startsWith),
+      { TiriType::Bool }, { TiriType::Str, TiriType::Str });
+   reg_iface_method(L, "string", "sub", TiriType::Str, builtin_callable_id(FastFunc::string_sub),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "string", "trim", TiriType::Str, builtin_callable_id(FastFunc::string_trim),
+      { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "unescapeXML", TiriType::Str,
+      builtin_callable_id(FastFunc::string_unescapeXML), { TiriType::Str }, { TiriType::Str });
+   reg_iface_method(L, "string", "upper", TiriType::Str, builtin_callable_id(FastFunc::string_upper),
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::NoNil);
 
    return 1;
 }

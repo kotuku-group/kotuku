@@ -70,7 +70,7 @@ end
       method     = 'GET',
       connectTimeout = 10,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -102,7 +102,7 @@ end
       flags      = HTF_NO_HEAD,
       contentLength = -1,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
          assert(testPostStringCompleted != true, 'This routine has been called a second time.')
@@ -144,7 +144,7 @@ end
       flags      = HTF_NO_HEAD,
       contentLength = -1,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
          assert(testPostStringCompleted != true, 'This routine has been called a second time.')
@@ -192,14 +192,14 @@ end
       contentType = 'text/plain',
       flags      = HTF_NO_HEAD,
       inputFile  = 'string:' .. outgoing_body,
-      size       = outgoing_body:len(),
+      size       = outgoing_body.len(),
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
             HTTP.acSignal()
          end
       end,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end
    })
 
@@ -379,7 +379,7 @@ end
          end
       end,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end
    })
 

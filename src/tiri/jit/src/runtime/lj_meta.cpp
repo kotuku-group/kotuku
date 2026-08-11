@@ -30,6 +30,8 @@
 #include "lib_range.h"
 #include "../../../defs.h"
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
 #include <string_view>
 
@@ -1305,6 +1307,10 @@ int lj_meta_close(lua_State *L, TValue *o, TValue *err)
    if (tvisnil(mo)) return 0;  // No __close metamethod, nothing to do.
 
    global_State *g = G(L);
+   const BCIns *saved_try_handler = L->try_handler_pc;
+   int saved_try_depth = L->try_stack.depth;
+   std::array<TryFrame, LJ_MAX_TRY_DEPTH> saved_try_frames;
+   std::copy_n(L->try_stack.frames, saved_try_depth, saved_try_frames.begin());
    uint8_t oldh = hook_save(g);
    int errcode;
    TValue *top;
@@ -1326,7 +1332,14 @@ int lj_meta_close(lua_State *L, TValue *o, TValue *err)
       L->top = top;
 
       // Call __close(obj, err) with protection. nres1=1 means 0 results expected.
+      // Suspend the caller's Tiri try handlers so an error from __close unwinds to this protected-call frame.
+      // The caller will then continue running any remaining close handlers with the replacement error.
+      L->try_stack.depth = 0;
+      L->try_handler_pc = nullptr;
       errcode = lj_vm_pcall(L, argbase, 1, -1);
+      std::copy_n(saved_try_frames.begin(), saved_try_depth, L->try_stack.frames);
+      L->try_stack.depth = saved_try_depth;
+      L->try_handler_pc = saved_try_handler;
    }  // GC threshold automatically restored here
 
    hook_restore(g, oldh);

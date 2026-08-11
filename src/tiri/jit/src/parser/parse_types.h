@@ -250,6 +250,7 @@ struct ExpDesc {
    StaticValueHandle static_value = 0;
    StaticResultSetHandle static_results = 0;
    uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
+   BCPOS alternate_call = NO_JMP; // Alternate call block used by runtime built-in method dispatch
    BCPOS t;        // True condition jump list.
    BCPOS f;        // False condition jump list.
 
@@ -312,6 +313,7 @@ struct ExpDesc {
       this->result_type = TiriType::Unknown;
       this->static_value = 0;
       this->static_results = 0;
+      this->alternate_call = NO_JMP;
       this->f = this->t = NO_JMP;
    }
 

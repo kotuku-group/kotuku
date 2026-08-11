@@ -27,7 +27,7 @@ function expect_jit_contract_failure(Callback:func, Expected:str)
       Callback()
    except e
       failed = true
-      assert(e.message:find(Expected) != nil,
+      assert(e.message.find(Expected) != nil,
          f"Expected contract diagnostic to contain '{Expected}', got '{e.message}'")
    end
    assert(failed, f"Expected a catchable contract failure for {Expected}")
@@ -141,7 +141,7 @@ end
    try
       callback(sequence)
    except e
-      failed = e.message:find('range') != nil
+      failed = e.message.find('range') != nil
    end
    registry['Tiri.range'] = saved_metatable
    assert(failed, 'Changing the registered range metatable should invalidate the compiled contract guard')
@@ -219,7 +219,7 @@ end
          local checked = accept_alpha(Value)
          return live_number + live_table.offset + checked.Value, live_text, false
       except e
-         return live_number + live_table.offset, live_text, e.message:find('JitContractAlpha') != nil
+         return live_number + live_table.offset, live_text, e.message.find('JitContractAlpha') != nil
       end
    end
 

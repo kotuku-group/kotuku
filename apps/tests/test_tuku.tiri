@@ -269,11 +269,11 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function quoteTaskParam(Param:str):str
-   if Param:find(' ') is nil and Param:find('"') is nil then
+   if Param.find(' ') is nil and Param.find('"') is nil then
       return Param
    end
 
-   return '"' .. Param:replace('"', '\\"') .. '"'
+   return '"' .. Param.replace('"', '\\"') .. '"'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -281,24 +281,24 @@ end
 function runTuku(Parameters:array<string>):table
    local output = ''
    local errors = ''
-   local task_params = array<string> { quoteTaskParam(glTukuPath:replace('\\', '/')) }
+   local task_params = array<string> { quoteTaskParam(glTukuPath.replace('\\', '/')) }
 
    for param in values(Parameters) do
-      task_params:push(quoteTaskParam(param))
+      task_params.push(quoteTaskParam(param))
    end
-   task_params:push('--log-warning')
-   task_params:push('--no-console')
+   task_params.push('--log-warning')
+   task_params.push('--no-console')
 
    local task = obj.new('task', {
       src = glOrigoPath,
-      args = task_params:concat(' '),
+      args = task_params.concat(' '),
       flags = TSF_WAIT|TSF_SHELL, -- The SHELL option keeps the DOS window from opening.
       timeout = 10,
       outputCallback = function(Task:obj, Buffer:array<byte>)
-         output ..= Buffer:getString()
+         output ..= Buffer.getString()
       end,
       errorCallback = function(Task:obj, Buffer:array<byte>)
-         errors ..= Buffer:getString()
+         errors ..= Buffer.getString()
       end
    })
 
@@ -318,14 +318,14 @@ end
    result = runTuku(array<string> { 'help' })
 
    assert(result.returnCode is 0, 'Help should return 0, got ' .. result.returnCode)
-   assert(result.text:find('headers'), 'Help should include response headers option')
-   assert(result.text:find('include'), 'Help should include include response headers option')
-   assert(result.text:find('follow'), 'Help should include redirect follow option')
-   assert(result.text:find('max-redirects'), 'Help should include redirect limit option')
-   assert(result.text:find('header=HEADER'), 'Help should include future header option')
-   assert(result.text:find('json=JSON'), 'Help should include future JSON option')
-   assert(result.text:find('multipart=MULTIPART'), 'Help should include multipart body option')
-   assert(result.text:find('debug-socket'), 'Help should include future socket debug option')
+   assert(result.text.find('headers'), 'Help should include response headers option')
+   assert(result.text.find('include'), 'Help should include include response headers option')
+   assert(result.text.find('follow'), 'Help should include redirect follow option')
+   assert(result.text.find('max-redirects'), 'Help should include redirect limit option')
+   assert(result.text.find('header=HEADER'), 'Help should include future header option')
+   assert(result.text.find('json=JSON'), 'Help should include future JSON option')
+   assert(result.text.find('multipart=MULTIPART'), 'Help should include multipart body option')
+   assert(result.text.find('debug-socket'), 'Help should include future socket debug option')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -338,7 +338,7 @@ end
    })
 
    assert(result.returnCode != 0, 'Incompatible body options should fail')
-   assert(result.text:find("Parameter 'data' excludes 'json'."),
+   assert(result.text.find("Parameter 'data' excludes 'json'."),
       'Unexpected body option error output: ' .. result.text)
 end
 
@@ -348,7 +348,7 @@ end
    result = runTuku(array<string> { 'timeout=abc' })
 
    assert(result.returnCode != 0, 'Parser-level argument errors should fail')
-   assert(result.text:find("Parameter 'timeout' requires a number."),
+   assert(result.text.find("Parameter 'timeout' requires a number."),
       'Unexpected parser error output: ' .. result.text)
 end
 
@@ -500,9 +500,9 @@ end
    })
 
    assert(result.returnCode != 0, 'Redirect loop should fail after the configured redirect limit')
-   assert(result.text:find('tuku: error: type=redirect status=302'),
+   assert(result.text.find('tuku: error: type=redirect status=302'),
       'Redirect loop should emit structured redirect error: ' .. result.text)
-   assert(result.text:find('Maximum redirects exceeded (2).'),
+   assert(result.text.find('Maximum redirects exceeded (2).'),
       'Redirect loop diagnostic mismatch: ' .. result.text)
 end
 
@@ -531,7 +531,7 @@ end
 
    assert(result.returnCode is 0, '301 redirect without follow should not fail: ' .. result.errors)
    assert(result.output is '301\n', '301 redirect without follow should report 301, got: ' .. result.text)
-   assert(result.text:find(f'tuku: header location=http://127.0.0.1:{SERVER_PORT}/chain-2'),
+   assert(result.text.find(f'tuku: header location=http://127.0.0.1:{SERVER_PORT}/chain-2'),
       '301 redirect without follow should expose Location header: ' .. result.text)
 end
 
@@ -621,7 +621,7 @@ end
 
    response = json.decode(result.output)
    assert(response.method is 'POST', 'Multipart body option should imply POST')
-   assert(response.contentType:find('multipart/form-data'), 'Multipart should set multipart/form-data content type')
+   assert(response.contentType.find('multipart/form-data'), 'Multipart should set multipart/form-data content type')
    assert(response.parsedBody.name is 'Ada', 'Multipart text field "name" should round-trip')
    assert(response.parsedBody.role is 'Engineer', 'Multipart text field "role" should round-trip')
 end
@@ -640,7 +640,7 @@ end
    assert(result.returnCode is 0, 'Multipart file POST should return 0: ' .. result.errors)
 
    response = json.decode(result.output)
-   assert(response.contentType:find('multipart/form-data'), 'File upload should set multipart/form-data content type')
+   assert(response.contentType.find('multipart/form-data'), 'File upload should set multipart/form-data content type')
    assert(response.parsedBody.doc.filename is 'tuku-test-upload.txt',
       'Multipart file field should preserve filename: ' .. tostring(response.parsedBody.doc.filename))
    assert(response.parsedBody.doc.value is 'uploaded file body',
@@ -658,7 +658,7 @@ end
    })
 
    assert(result.returnCode != 0, 'Multipart combined with another body option should fail')
-   assert(result.text:find("excludes 'multipart'.") or result.text:find("Parameter 'multipart' excludes"),
+   assert(result.text.find("excludes 'multipart'.") or result.text.find("Parameter 'multipart' excludes"),
       'Unexpected multipart exclusion error output: ' .. result.text)
 end
 
@@ -704,7 +704,7 @@ end
    })
 
    assert(head_result.returnCode is 0, 'HEAD should return 0: ' .. head_result.errors)
-   assert(head_result.text:trim() is '200', 'HEAD status should be 200, got ' .. head_result.text)
+   assert(head_result.text.trim() is '200', 'HEAD status should be 200, got ' .. head_result.text)
 
    options_result = runTuku(array<string> {
       f'url=http://127.0.0.1:{SERVER_PORT}/options',
@@ -714,7 +714,7 @@ end
    })
 
    assert(options_result.returnCode is 0, 'OPTIONS should return 0: ' .. options_result.errors)
-   assert(options_result.text:trim() is '200' or options_result.text:trim() is '204',
+   assert(options_result.text.trim() is '200' or options_result.text.trim() is '204',
       'OPTIONS status should be successful, got ' .. options_result.text)
 end
 
@@ -752,9 +752,9 @@ end
 
    assert(fail_result.returnCode != 0, 'HTTP 404 should fail when fail=true')
    assert(fail_result.output is '404\n', 'Failing HTTP status should still be printed predictably')
-   assert(fail_result.text:find('tuku: error: type=http status=404'),
+   assert(fail_result.text.find('tuku: error: type=http status=404'),
       'Structured HTTP error line missing: ' .. fail_result.text)
-   assert(fail_result.text:find('HTTP status 404'), 'HTTP failure message missing: ' .. fail_result.text)
+   assert(fail_result.text.find('HTTP status 404'), 'HTTP failure message missing: ' .. fail_result.text)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -769,20 +769,20 @@ end
 
    assert(result.returnCode is 0, 'Verbose GET should return 0: ' .. result.errors)
    assert(io.readAll(glOutputFile) is 'header-body', 'Verbose output file content mismatch')
-   assert(result.text:find('tuku: method=GET'), 'Verbose summary should include method: ' .. result.text)
-   assert(result.text:find(f'tuku: url=http://127.0.0.1:{SERVER_PORT}/headers'),
+   assert(result.text.find('tuku: method=GET'), 'Verbose summary should include method: ' .. result.text)
+   assert(result.text.find(f'tuku: url=http://127.0.0.1:{SERVER_PORT}/headers'),
       'Verbose summary should include URL: ' .. result.text)
-   assert(result.text:find('tuku: status=200'), 'Verbose summary should include status: ' .. result.text)
-   assert(result.text:find('tuku: bytes=11'), 'Verbose summary should include byte count: ' .. result.text)
-   assert(result.text:find('tuku: output=' .. glOutputFile), 'Verbose summary should include output target')
-   assert(result.text:find('tuku: transport=Okay'), 'Verbose summary should include transport status')
-   assert(result.text:find('tuku: header content-type='),
+   assert(result.text.find('tuku: status=200'), 'Verbose summary should include status: ' .. result.text)
+   assert(result.text.find('tuku: bytes=11'), 'Verbose summary should include byte count: ' .. result.text)
+   assert(result.text.find('tuku: output=' .. glOutputFile), 'Verbose summary should include output target')
+   assert(result.text.find('tuku: transport=Okay'), 'Verbose summary should include transport status')
+   assert(result.text.find('tuku: header content-type='),
       'Verbose summary should include content-type header: ' .. result.text)
-   assert(result.text:find('tuku: header content-length=11'),
+   assert(result.text.find('tuku: header content-length=11'),
       'Verbose summary should include content-length header: ' .. result.text)
-   assert(result.text:find('tuku: header location=/next'),
+   assert(result.text.find('tuku: header location=/next'),
       'Verbose summary should include location header: ' .. result.text)
-   assert(result.text:find('tuku: header x-tuku-list=yes'),
+   assert(result.text.find('tuku: header x-tuku-list=yes'),
       'Verbose summary should include enumerated custom response header: ' .. result.text)
 end
 
@@ -797,11 +797,11 @@ end
    })
 
    assert(result.returnCode is 0, 'Headers mode should return 0: ' .. result.errors)
-   assert(result.text:find('tuku: header content-length=11'),
+   assert(result.text.find('tuku: header content-length=11'),
       'Headers mode should include content-length: ' .. result.text)
-   assert(result.text:find('tuku: header location=/next'),
+   assert(result.text.find('tuku: header location=/next'),
       'Headers mode should include location: ' .. result.text)
-   assert(result.text:find('tuku: header x-tuku-list=yes'),
+   assert(result.text.find('tuku: header x-tuku-list=yes'),
       'Headers mode should include custom enumerated response header: ' .. result.text)
    assert(result.output is '200\n', 'Headers and status output should keep status on stdout: ' .. result.output)
 end
@@ -817,15 +817,15 @@ end
 
    assert(result.returnCode is 0, 'Include mode should return 0: ' .. result.errors)
 
-   status_pos = result.output:find('HTTP 200')
-   header_pos = result.output:find('content-length: 11')
-   body_pos = result.output:find('header-body')
+   status_pos = result.output.find('HTTP 200')
+   header_pos = result.output.find('content-length: 11')
+   body_pos = result.output.find('header-body')
 
    assert(status_pos != nil, 'Include output should start with HTTP status: ' .. result.output)
    assert(header_pos != nil, 'Include output should contain response headers: ' .. result.output)
    assert(body_pos != nil, 'Include output should contain response body: ' .. result.output)
    assert(status_pos < header_pos and header_pos < body_pos, 'Include output order mismatch: ' .. result.output)
-   assert(result.output:find('\n\nheader-body') != nil,
+   assert(result.output.find('\n\nheader-body') != nil,
       'Include output should separate headers from body with a blank line: ' .. result.output)
 end
 
@@ -842,10 +842,10 @@ end
    })
 
    assert(result.returnCode is 0, 'Include output file mode should return 0: ' .. result.errors)
-   assert(result.output:find('HTTP 200') != nil, 'Include output should contain HTTP status: ' .. result.output)
-   assert(result.output:find('content-length: 11') != nil,
+   assert(result.output.find('HTTP 200') != nil, 'Include output should contain HTTP status: ' .. result.output)
+   assert(result.output.find('content-length: 11') != nil,
       'Include output should contain response headers: ' .. result.output)
-   assert(result.output:find('header-body') is nil, 'Include output should not duplicate file body on stdout')
+   assert(result.output.find('header-body') is nil, 'Include output should not duplicate file body on stdout')
    assert(io.readAll(glOutputFile) is 'header-body', 'Include output file body mismatch')
 end
 
@@ -897,7 +897,7 @@ end
 
    assert(result.returnCode != 0, 'Resume should fail when the server ignores Range')
    assert(io.readAll(glOutputFile) is 'hello ', 'Resume should leave the partial output file unchanged')
-   assert(result.text:find('Resume request returned HTTP 200 instead of 206 Partial Content.'),
+   assert(result.text.find('Resume request returned HTTP 200 instead of 206 Partial Content.'),
       'Resume non-206 diagnostic mismatch: ' .. result.text)
 end
 
@@ -911,7 +911,7 @@ end
    })
 
    assert(no_output.returnCode != 0, 'Resume without output should fail')
-   assert(no_output.text:find("Parameter 'resume' requires 'output'."),
+   assert(no_output.text.find("Parameter 'resume' requires 'output'."),
       'Resume without output diagnostic mismatch: ' .. no_output.text)
 
    post_resume = runTuku(array<string> {
@@ -923,7 +923,7 @@ end
    })
 
    assert(post_resume.returnCode != 0, 'Resume with POST should fail')
-   assert(post_resume.text:find("Parameter 'resume' can only be used with method=get."),
+   assert(post_resume.text.find("Parameter 'resume' can only be used with method=get."),
       'Resume method diagnostic mismatch: ' .. post_resume.text)
 end
 
@@ -967,7 +967,7 @@ end
    })
 
    assert(missing_port.returnCode != 0, 'Proxy without port should fail')
-   assert(missing_port.text:find("Parameter 'proxy' must use host:port syntax."),
+   assert(missing_port.text.find("Parameter 'proxy' must use host:port syntax."),
       'Proxy missing port diagnostic mismatch: ' .. missing_port.text)
 
    bad_port = runTuku(array<string> {
@@ -977,7 +977,7 @@ end
    })
 
    assert(bad_port.returnCode != 0, 'Proxy with out-of-range port should fail')
-   assert(bad_port.text:find("Parameter 'proxy' requires a port between 1 and 65535."),
+   assert(bad_port.text.find("Parameter 'proxy' requires a port between 1 and 65535."),
       'Proxy bad port diagnostic mismatch: ' .. bad_port.text)
 end
 
@@ -994,8 +994,8 @@ end
    })
 
    assert(result.returnCode is 0, '303 HEAD redirect should return 0: ' .. result.errors)
-   assert(result.output:trim() is '200', '303 HEAD redirect should report final 200 status, got: ' .. result.output)
-   assert(result.text:find('x-request-method=HEAD'),
+   assert(result.output.trim() is '200', '303 HEAD redirect should report final 200 status, got: ' .. result.output)
+   assert(result.text.find('x-request-method=HEAD'),
       '303 redirect should preserve HEAD method: ' .. result.text)
 end
 

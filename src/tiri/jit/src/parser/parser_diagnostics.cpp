@@ -71,6 +71,7 @@ static CSTRING error_code_name(ParserErrorCode Code)
       case ParserErrorCode::ConstRequiresInitialiser:  return "Const requires initialiser";
       case ParserErrorCode::OverrideProtectedGlobal:   return "Override protected global";
       case ParserErrorCode::InvalidAssignment:         return "Invalid assignment";
+      case ParserErrorCode::UnresolvedMethodReceiver:  return "Unresolved method receiver";
       default: return "Unknown";
    }
 }

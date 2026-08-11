@@ -711,7 +711,7 @@ end
    local unionTitles = {}
    local unionErr = xml.mtSearch('/library/section[@name="fiction"]/book | /library/section[@name="technical"]/book', function(XML, TagID, Attrib)
       local titleErr, unionTitle = xml.mtGetAttrib(TagID, 'title')
-      table.insert(unionTitles, titleErr is ERR_Okay and unionTitle or '')
+      unionTitles.insert(titleErr is ERR_Okay and unionTitle or '')
    end)
    assert(unionErr is ERR_Okay, "Union operator should execute successfully")
    assert(#unionTitles >= 2, "Union should return at least two nodes, found " .. #unionTitles)

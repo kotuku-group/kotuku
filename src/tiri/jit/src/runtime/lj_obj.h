@@ -10,6 +10,7 @@
 #include "lua.h"
 #include "lj_def.h"
 #include "lj_arch.h"
+#include "lj_ffid.h"
 #include <array>
 #include <format>
 #include <vector>
@@ -71,6 +72,12 @@ class extTiri;
 
 using MSize = uint32_t;  // NB: Can't be changed - would affect offsets in GC objects
 using GCSize = uint64_t; // NB: Can't be changed - would affect offsets in GC objects
+
+// BC_BMETH helper results.  Non-negative values are canonical built-in callable indices; negative values select the
+// receiver-injecting or ordinary member-lookup call frame.
+
+#define LJ_BMETH_FIELD_CALL (-1)
+#define LJ_BMETH_COMPATIBLE_CALL (-2)
 
 enum class AstNodeKind : uint16_t {
    LiteralExpr,
@@ -561,7 +568,9 @@ struct fprototype {
    uint8_t result_count;     // Number of return values (0 to PROTO_MAX_RETURN_TYPES)
    uint8_t param_count;      // Number of parameters (0 to FPROTO_MAX_PARAMS)
    FProtoFlags flags;        // Optional flags
-   uint8_t _pad;             // Alignment padding
+   TiriType receiver_type;   // Concrete receiver for instance methods; Unknown for namespace functions
+   BuiltinCallableID builtin_callable_id; // Canonical callable identity for instance methods
+   uint16_t reserved;        // Reserved for future prototype metadata
    std::array<TiriType, PROTO_MAX_RETURN_TYPES> result_types;
 
    // Parameter types follow (accessed via param_types())
@@ -573,7 +582,15 @@ struct fprototype {
    inline TiriType first_result() const noexcept {
       return result_count > 0 ? result_types[0] : TiriType::Unknown;
    }
+
+   [[nodiscard]] inline bool is_method() const noexcept {
+      return receiver_type != TiriType::Unknown and builtin_callable_assigned(builtin_callable_id);
+   }
 };
+
+static_assert(FPROTO_MAX_PARAMS <= std::numeric_limits<uint8_t>::max());
+static_assert(PROTO_MAX_RETURN_TYPES <= std::numeric_limits<uint8_t>::max());
+static_assert(sizeof(fprototype) IS 16);
 
 // Lookup key for prototype registry (interface_hash=0 for globals)
 
@@ -1035,9 +1052,6 @@ typedef union GCfunc {
    GCfuncL l;
 } GCfunc;
 
-inline constexpr uint8_t FF_LUA = 0;
-inline constexpr uint8_t FF_C   = 1;
-
 [[nodiscard]] inline bool isluafunc(const GCfunc* fn) noexcept { return fn->c.ffid IS FF_LUA; }
 [[nodiscard]] inline bool iscfunc(const GCfunc* fn) noexcept { return fn->c.ffid IS FF_C; }
 [[nodiscard]] inline bool isffunc(const GCfunc* fn) noexcept { return fn->c.ffid > FF_C; }
@@ -1066,9 +1080,9 @@ typedef struct Node {
 
 static_assert(offsetof(Node, val) == 0);
 
-// GCtab::flags bits.  These record permanent facts about a table's usage history and are never cleared.
+// GCtab::flags bits.  These record permanent table metadata and are never cleared.
 //
-// Classification describes usage history rather than the table's current live shape.  Removing keys or calling
+// The classification bits describe usage history rather than the table's current live shape.  Removing keys or calling
 // table.clear() does not restore the 'sequence' classification.  The monotonic, one-way nature of these bits is what
 // allows the JIT to guard the observed state cheaply: the first offending store side-exits the trace.
 
@@ -1076,6 +1090,8 @@ inline constexpr uint32_t TAB_ASSOCIATIVE_BIT = 0;  // Bit index, for backends t
 inline constexpr uint8_t  TAB_ASSOCIATIVE = (uint8_t)(1u << TAB_ASSOCIATIVE_BIT); // Ever addressed by a non-numeric key
 inline constexpr uint32_t TAB_SPARSE_BIT = 1;       // Bit index, for backends that test single bits.
 inline constexpr uint8_t  TAB_SPARSE = (uint8_t)(1u << TAB_SPARSE_BIT); // Ever used with non-sequence numerical keys
+inline constexpr uint32_t TAB_METHOD_COMPATIBLE_BIT = 2; // Bit index for explicit-receiver userdata metatables.
+inline constexpr uint8_t  TAB_METHOD_COMPATIBLE = (uint8_t)(1u << TAB_METHOD_COMPATIBLE_BIT);
 
 // Either flag makes the sequence length meaningless, so '#' reports nil and sequence library functions refuse to
 // infer a boundary.  Backends test this composite mask in one operation.
@@ -1093,7 +1109,7 @@ typedef struct GCtab {
    GCHeader;
    uint8_t  nomm;      // Negative cache for fast metamethods.
    int8_t   colo;      // Array colocation.
-   uint8_t  flags;     // [12] Permanent table classification bits (TAB_*).  Never cleared once set.
+   uint8_t  flags;     // [12] Permanent table metadata bits (TAB_*).  Never cleared once set.
    uint8_t  _pad0[3];  // [13] Padding to align the array field.
    MRef     array;     // [16] Array part.
    GCRef    gclist;    // [24] GC list for marking (must match GCudata.gclist)
@@ -1124,13 +1140,15 @@ static_assert(offsetof(GCtab, global_contract_cache) IS 72);
 static_assert(sizeof(GCtab) == 80);
 static_assert((sizeof(GCtab) & 7) == 0);
 
-// The classification bits share the single 'flags' byte, so they must remain addressable as one 8-bit field by the
-// x64, ARM64 and PPC backends.
+// The metadata bits share the single 'flags' byte, so they must remain addressable as one 8-bit field by the x64,
+// ARM64 and PPC backends.  Classification consumers mask TAB_NOT_SEQUENCE and therefore ignore ABI metadata.
 
 static_assert(sizeof(GCtab::flags) IS 1);
 static_assert(TAB_NOT_SEQUENCE IS (TAB_ASSOCIATIVE | TAB_SPARSE));
 static_assert((1u << TAB_ASSOCIATIVE_BIT) IS TAB_ASSOCIATIVE);
 static_assert((1u << TAB_SPARSE_BIT) IS TAB_SPARSE);
+static_assert((1u << TAB_METHOD_COMPATIBLE_BIT) IS TAB_METHOD_COMPATIBLE);
+static_assert((TAB_METHOD_COMPATIBLE & TAB_NOT_SEQUENCE) IS 0);
 
 // Table classification helpers.  Every interpreter, library and C API path publishes classification through these so
 // that the semantics stay aligned; the JIT recorder mirrors them with equivalent IR.

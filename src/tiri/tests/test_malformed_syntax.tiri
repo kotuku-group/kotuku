@@ -60,7 +60,7 @@ end
    assert(diag.severity is 2, f"Expected error severity, got {diag.severity}")
    assert(diag.line is 0, f"Expected diagnostic on line 0, got {diag.line}")
    assert(diag.column is 6, f"Expected diagnostic on '=' at column 6, got {diag.column}")
-   assert(diag.message:find('inclusive range'), "Diagnostic should identify inclusive range syntax")
+   assert(diag.message.find('inclusive range'), "Diagnostic should identify inclusive range syntax")
 
    replacement = debug.validate("for i in {0 into 8} do print(i) end")
    assert(replacement.success is true, "Supported range loop should validate")

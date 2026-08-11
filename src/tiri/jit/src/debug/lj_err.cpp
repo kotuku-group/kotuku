@@ -146,6 +146,10 @@ extern "C" void lj_err_prepare_foreign_exception(lua_State *L, const char *Messa
 
 static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errobj)
 {
+   ptrdiff_t frame_offset = savestack(L, frame);
+   ptrdiff_t current_err_offset = errobj ? savestack(L, errobj) : 0;
+   bool has_current_err = errobj != nullptr;
+
    // Get the function from this frame
    GCfunc *fn = frame_func(frame);
 
@@ -174,14 +178,14 @@ static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errob
    // Call lj_meta_close for each slot with <close> attribute in LIFO order
    // Iterate from highest slot to lowest to match Lua 5.4 semantics
 
-   TValue *base = frame + 1;
-   TValue *current_err = errobj;
    uint64_t pending_slots = closeslots;
    while (pending_slots) {
       int slot = int(std::bit_width(pending_slots) - 1);
       pending_slots ^= uint64_t(1) << slot;
 
+      TValue *base = restorestack(L, frame_offset) + 1;
       TValue *o = base + slot;
+      TValue *current_err = has_current_err ? restorestack(L, current_err_offset) : nullptr;
       // Verify slot is within valid frame range: must be >= base and < L->top
       if (o >= base and o < L->top and !tvisnil(o) and !tvisfalse(o)) {
          int errcode = lj_meta_close(L, o, current_err);
@@ -190,6 +194,8 @@ static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errob
             // The new error is at L->top - 1 after the failed pcall.
             // Continue calling other __close handlers with the new error.
             current_err = L->top - 1;
+            current_err_offset = savestack(L, current_err);
+            has_current_err = true;
             // Update _G.__close_err with the new error
             if (env) {
                GCstr *key = lj_str_newlit(L, "__close_err");
@@ -201,7 +207,7 @@ static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errob
          }
       }
    }
-   return current_err;
+   return has_current_err ? restorestack(L, current_err_offset) : nullptr;
 }
 
 //********************************************************************************************************************
@@ -211,6 +217,10 @@ static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errob
 
 static TValue* unwind_close_try_block(lua_State *L, TValue* frame, TValue* errobj, int min_slot_index)
 {
+   ptrdiff_t frame_offset = savestack(L, frame);
+   ptrdiff_t current_err_offset = errobj ? savestack(L, errobj) : 0;
+   bool has_current_err = errobj != nullptr;
+
    GCfunc *fn = frame_func(frame);
    if (!isluafunc(fn)) return errobj;
 
@@ -242,7 +252,6 @@ static TValue* unwind_close_try_block(lua_State *L, TValue* frame, TValue* errob
    lj_assertL(frame >= tvref(L->stack) and frame < tvref(L->maxstack), "unwind_close_try_block: frame out of range (%p)", frame);
    lj_assertL(base >= tvref(L->stack) and base <= tvref(L->maxstack), "unwind_close_try_block: base out of range (%p)", base);
 
-   TValue *current_err = errobj;
    uint64_t pending_slots = closeslots;
    if (min_slot_index >= 64) pending_slots = 0;
    else if (min_slot_index > 0) pending_slots &= ~((uint64_t(1) << min_slot_index) - 1);
@@ -251,7 +260,9 @@ static TValue* unwind_close_try_block(lua_State *L, TValue* frame, TValue* errob
       int slot = int(std::bit_width(pending_slots) - 1);
       pending_slots ^= uint64_t(1) << slot;
 
+      base = restorestack(L, frame_offset) + 1;
       TValue *o = base + slot;
+      TValue *current_err = has_current_err ? restorestack(L, current_err_offset) : nullptr;
 
       // Only close if: slot is within valid stack range and not already nil/false
 
@@ -259,6 +270,8 @@ static TValue* unwind_close_try_block(lua_State *L, TValue* frame, TValue* errob
          int errcode = lj_meta_close(L, o, current_err);
          if (errcode != 0) {
             current_err = L->top - 1;
+            current_err_offset = savestack(L, current_err);
+            has_current_err = true;
             if (env) {
                GCstr *key = lj_str_newlit(L, "__close_err");
                TValue *slot_tv = lj_tab_setstr(L, env, key);
@@ -279,7 +292,7 @@ static TValue* unwind_close_try_block(lua_State *L, TValue* frame, TValue* errob
    }
 
    setnilV(&L->close_err);
-   return current_err;
+   return has_current_err ? restorestack(L, current_err_offset) : nullptr;
 }
 
 //********************************************************************************************************************
@@ -288,32 +301,43 @@ static TValue* unwind_close_try_block(lua_State *L, TValue* frame, TValue* errob
 
 static void unwind_close_all(lua_State *L, TValue *From, TValue *To)
 {
-   TValue *errobj = (L->top > To) ? L->top - 1 : nullptr;
-   TValue *frame = From;
+   ptrdiff_t frame_offset = savestack(L, From);
+   ptrdiff_t target_offset = savestack(L, To);
+   bool has_error = L->top > To;
+   ptrdiff_t error_offset = has_error ? savestack(L, L->top - 1) : 0;
    int count = 0;
 
    // Use LUAI_MAXCSTACK as the safety limit - this matches the maximum call depth
    // that LuaJIT enforces, so any valid frame chain should terminate well before this.
    // The limit guards against stack corruption causing infinite loops.
 
-   while (frame >= To and count < LUAI_MAXCSTACK) {
+   while (restorestack(L, frame_offset) >= restorestack(L, target_offset) and count < LUAI_MAXCSTACK) {
       count++;
 
       // unwind_close_handlers may return a different error if a __close threw
 
+      TValue *frame = restorestack(L, frame_offset);
+      TValue *errobj = has_error ? restorestack(L, error_offset) : nullptr;
       TValue *new_err = unwind_close_handlers(L, frame, errobj);
-      if (new_err != errobj and new_err != nullptr and errobj != nullptr) {
+      errobj = has_error ? restorestack(L, error_offset) : nullptr;
+      if (new_err != nullptr and errobj != nullptr and savestack(L, new_err) != error_offset) {
          // A __close handler threw - update the error at the original location
          copyTV(L, errobj, new_err);
+         new_err = errobj;
       }
 
-      errobj = new_err;  // Use the (possibly updated) error for subsequent handlers
+      if (new_err) {
+         error_offset = savestack(L, new_err);
+         has_error = true;
+      }
 
       // Move to previous frame based on type
 
+      frame = restorestack(L, frame_offset);
       int ftype = frame_type(frame);
       if (ftype IS FRAME_LUA or ftype IS FRAME_LUAP) frame = frame_prevl(frame);
       else frame = frame_prevd(frame);
+      frame_offset = savestack(L, frame);
    }
 
    // If we hit the limit, the frame chain is likely corrupt. Log an assertion
@@ -546,6 +570,8 @@ extern "C" void setup_try_handler(lua_State *L)
    // After unwind_close_all(), re-read the error from L->top - 1 as it may have been updated
    // by a __close handler that threw. unwind_close_all() updates the error in-place via copyTV().
 
+   saved_base = restorestack(L, try_frame->frame_base);
+   saved_top = restorestack(L, try_frame->saved_top);
    errobj = (L->top > saved_top) ? L->top - 1 : nullptr;
 
    // Now close <close> variables created inside the try block itself (in the try block's frame).
@@ -556,6 +582,8 @@ extern "C" void setup_try_handler(lua_State *L)
    int min_slot_index = int(try_frame->saved_nactvar);  // Slots >= this were created inside try
    TValue *final_err = unwind_close_try_block(L, try_frame_ptr, errobj, min_slot_index);
 
+   saved_base = restorestack(L, try_frame->frame_base);
+   saved_top = restorestack(L, try_frame->saved_top);
    lj_meta_multres_unwind(L, saved_base);
 
    // After all __close handlers have run, extract the final error message.

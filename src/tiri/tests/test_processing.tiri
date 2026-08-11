@@ -95,7 +95,7 @@ end
    -- Allocate some memory
    t = {}
    for i in {0 to 5000} do
-      t[i] = string.rep('x', 100)
+      t[i] = 'x'.rep(100)
    end
 
    before = processing.gcStats().memoryMB

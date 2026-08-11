@@ -16,15 +16,15 @@ end
 @Test function ToStringOutput()
    matcher = regex.new("words?", regex.ICASE)
    description = tostring(matcher)
-   assert(description:startsWith("regex(words?"), "Description should contain pattern, got: " .. description)
-   assert(description:find("flags="), "Description should include flag summary when flags are set")
+   assert(description.startsWith("regex(words?"), "Description should contain pattern, got: " .. description)
+   assert(description.find("flags="), "Description should include flag summary when flags are set")
 end
 
 @Test function InvalidPatternRaises()
    try
      regex.new("(broken")
    except ex
-      assert(ex.message:find("Regex compilation failed"), "Error message should mention compilation failure, got: " .. ex.message)
+      assert(ex.message.find("Regex compilation failed"), "Error message should mention compilation failure, got: " .. ex.message)
    success
       error("Invalid pattern should raise an exception")
    end

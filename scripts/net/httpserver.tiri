@@ -101,18 +101,18 @@ glMimeTypes <const> = {
 
 function escHTML(str:str):str
    str ?! return ''
-   str = str:replace('&', '&amp;')
-   str = str:replace('<', '&lt;')
-   str = str:replace('>', '&gt;')
-   str = str:replace('"', '&quot;')
-   str = str:replace("'", '&#39;')
+   str = str.replace('&', '&amp;')
+   str = str.replace('<', '&lt;')
+   str = str.replace('>', '&gt;')
+   str = str.replace('"', '&quot;')
+   str = str.replace("'", '&#39;')
    return str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 function timestamp():str
-   return tempus.now():toZonedDateTime(tempus.zone.local()):format('yyyy-MM-dd HH:mm:ss')
+   return tempus.now().toZonedDateTime(tempus.zone.local()).format('yyyy-MM-dd HH:mm:ss')
 end
 
 function logMessage(self:table!, message:str!)
@@ -136,15 +136,15 @@ end
 
 function urlDecode(String:str):str
    if String then
-      String = String:replace('+', ' ') -- Replace + with space
+      String = String.replace('+', ' ') -- Replace + with space
       local result = ''
       local last_stop = 0
       for start, stop, cap in rxPercentEncoded.findAll(String) do
-         if start > last_stop then result ..= String:sub(last_stop, start) end
+         if start > last_stop then result ..= String.sub(last_stop, start) end
          result ..= string.char(tonumber(cap[0], 16))
          last_stop = stop
       end
-      String = result .. String:sub(last_stop)
+      String = result .. String.sub(last_stop)
    end
    return String
 end
@@ -160,8 +160,8 @@ function canonicalizePath(self, Path:str):str
    Path = rxQueryFragment.extract(Path)  -- Remove query parameters and fragments
 
    -- Normalize slashes
-   Path = Path:replace('\\', '/') -- Backslashes -> forward slashes
-   Path = Path:replace('//', '/') -- Eliminate duplication
+   Path = Path.replace('\\', '/') -- Backslashes -> forward slashes
+   Path = Path.replace('//', '/') -- Eliminate duplication
 
    -- Split into components
    components = {}
@@ -172,13 +172,13 @@ function canonicalizePath(self, Path:str):str
          logMessage(self, 'Security: Blocked directory traversal attempt with ..')
          return
       elseif component != '.' and component != '' then
-         table.insert(components, component)
+         components.insert(component)
       end
    end
 
    -- Rebuild clean path
-   cleanPath = '/' .. table.concat(components, '/')
-   if Path:endsWith('/') and cleanPath != '/' then
+   cleanPath = '/' .. components.concat('/')
+   if Path.endsWith('/') and cleanPath != '/' then
       cleanPath ..= '/'
    end
 
@@ -190,7 +190,7 @@ end
 function getMimeType(Filename)
    extension = rxFileExtension.extract(Filename)
    if not extension then return 'application/octet-stream' end
-   return glMimeTypes[extension:lower()] or 'application/octet-stream'
+   return glMimeTypes[extension.lower()] or 'application/octet-stream'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -205,13 +205,13 @@ function processChunkedBody(State:table!, Server:table!):bool
    while #State.buffer > 0 do
       if State.chunk_state is 'SIZE' then
          -- Look for chunk size line ending with \r\n
-         line_end = State.buffer:find('\r\n')
+         line_end = State.buffer.find('\r\n')
          if not line_end then
             return false -- Need more data for chunk size line
          end
 
-         size_line = State.buffer:sub(0, line_end)
-         State.buffer = State.buffer:sub(line_end + 2) -- Remove \r\n
+         size_line = State.buffer.sub(0, line_end)
+         State.buffer = State.buffer.sub(line_end + 2) -- Remove \r\n
 
          -- Parse chunk size (ignore extensions after semicolon)
          hex_size = rxHexChunkSize.extract(size_line)
@@ -245,8 +245,8 @@ function processChunkedBody(State:table!, Server:table!):bool
          end
 
          to_take = math.min(available, needed)
-         State.request.body   = State.request.body .. State.buffer:sub(0, to_take)
-         State.buffer         = State.buffer:sub(to_take)
+         State.request.body   = State.request.body .. State.buffer.sub(0, to_take)
+         State.buffer         = State.buffer.sub(to_take)
          State.chunk_received = State.chunk_received + to_take
          State.body_received  = State.body_received + to_take
 
@@ -259,8 +259,8 @@ function processChunkedBody(State:table!, Server:table!):bool
          -- Expect \r\n after chunk data
          if #State.buffer < 2 then return false end -- Need more data
 
-         if State.buffer:startsWith('\r\n') then
-            State.buffer = State.buffer:sub(2)
+         if string.startsWith(State.buffer, '\r\n') then
+            State.buffer = State.buffer.sub(2)
             State.chunk_state = 'SIZE' -- Ready for next chunk
          else
             -- Be lenient - some clients might not send proper CRLF
@@ -270,9 +270,9 @@ function processChunkedBody(State:table!, Server:table!):bool
 
       elseif State.chunk_state is 'TRAILER' then
          -- Look for final \r\n (trailer headers are ignored for now)
-         trailer_end = State.buffer:find('\r\n')
+         trailer_end = State.buffer.find('\r\n')
          if trailer_end then
-            State.buffer = State.buffer:sub(trailer_end + 1)
+            State.buffer = State.buffer.sub(trailer_end + 1)
             return true -- Chunked reading complete
          else
             return false -- Need more data for trailer
@@ -309,7 +309,7 @@ function readChunkedRequestBody(Client:obj!, MaxSize:num!, TimeoutSeconds:num!):
       -- Read chunk size line (hexadecimal number followed by optional extensions and CRLF)
       chunkSizeLine = ''
       char = ''
-      while not chunkSizeLine:endsWith('\r\n') do
+      while not chunkSizeLine.endsWith('\r\n') do
          buffer = string.alloc(1)
          err, bytes_read = Client.acRead(buffer)
          if err != ERR_Okay then
@@ -336,7 +336,7 @@ function readChunkedRequestBody(Client:obj!, MaxSize:num!, TimeoutSeconds:num!):
             end
          end
 
-         chunkSizeLine ..= buffer:sub(0, 1)
+         chunkSizeLine ..= buffer.sub(0, 1)
 
          -- Prevent infinite line reading
          if #chunkSizeLine > 100 then
@@ -384,7 +384,7 @@ function readChunkedRequestBody(Client:obj!, MaxSize:num!, TimeoutSeconds:num!):
                -- Connection closed while reading chunk data
                -- Return what we have so far if it's valid
                if chunkRead > 0 then
-                  body ..= chunkData:sub(0, chunkRead)
+                  body ..= chunkData.sub(0, chunkRead)
                end
                if #body > 0 then
                   return body, nil, true  -- Mark as early termination
@@ -398,7 +398,7 @@ function readChunkedRequestBody(Client:obj!, MaxSize:num!, TimeoutSeconds:num!):
          if bytes_read is 0 then
             -- No more data - return what we have
             if chunkRead > 0 then
-               body ..= chunkData:sub(0, chunkRead)
+               body ..= chunkData.sub(0, chunkRead)
             end
 
             if #body > 0 then
@@ -407,7 +407,7 @@ function readChunkedRequestBody(Client:obj!, MaxSize:num!, TimeoutSeconds:num!):
                return nil, 'unexpected_end', false
             end
          end
-         chunkData ..= buffer:sub(0, bytes_read)
+         chunkData ..= buffer.sub(0, bytes_read)
          chunkRead += bytes_read
       end
 
@@ -439,7 +439,7 @@ function readChunkedRequestBody(Client:obj!, MaxSize:num!, TimeoutSeconds:num!):
             earlyTermination = true
             break
          end
-         crlf ..= buffer:sub(0, 1)
+         crlf ..= buffer.sub(0, 1)
       end
 
       -- Be lenient about CRLF validation - some clients may not send it properly
@@ -470,7 +470,7 @@ function parseQueryString(QueryString:str):table
             if type(query[key]) != 'table' then
                query[key] = { query[key] }
             end
-            table.insert(query[key], value)
+            query[key].insert(value)
          else
             query[key] = value
          end
@@ -506,10 +506,10 @@ end
 -- Remove the CRLF that precedes the next multipart boundary.
 
 function trimMultipartPartValue(Value:str!):str
-   if Value:endsWith('\r\n') then
-      return Value:sub(0, #Value - 2)
-   elseif Value:endsWith('\n') then
-      return Value:sub(0, #Value - 1)
+   if Value.endsWith('\r\n') then
+      return Value.sub(0, #Value - 2)
+   elseif Value.endsWith('\n') then
+      return Value.sub(0, #Value - 1)
    end
 
    return Value
@@ -523,39 +523,39 @@ function parseMultipartBody(Body:str, ContentType:str):table
    Body ?! return result
 
    boundary = rxMultipartBoundary.extract(ContentType ?? '')
-   if boundary is nil or boundary:trim() is '' then return result end
+   if boundary is nil or boundary.trim() is '' then return result end
 
-   marker = '--' .. boundary:trim()
-   for raw_part in values(Body:split(marker)) do
-      if raw_part is '' or raw_part:startsWith('--') then
+   marker = '--' .. boundary.trim()
+   for raw_part in values(Body.split(marker)) do
+      if raw_part is '' or raw_part.startsWith('--') then
          continue
       end
 
       part = raw_part
-      if part:startsWith('\r\n') then
-         part = part:sub(2)
-      elseif part:startsWith('\n') then
-         part = part:sub(1)
+      if part.startsWith('\r\n') then
+         part = part.sub(2)
+      elseif part.startsWith('\n') then
+         part = part.sub(1)
       end
 
-      header_end = part:find('\r\n\r\n', 0, true)
+      header_end = part.find('\r\n\r\n', 0, true)
       delimiter_size = 4
       if header_end is nil then
-         header_end = part:find('\n\n', 0, true)
+         header_end = part.find('\n\n', 0, true)
          delimiter_size = 2
       end
       if header_end is nil then continue end
 
-      header_text = part:sub(0, header_end):replace('\r\n', '\n')
-      value = trimMultipartPartValue(part:sub(header_end + delimiter_size))
+      header_text = part.sub(0, header_end).replace('\r\n', '\n')
+      value = trimMultipartPartValue(part.sub(header_end + delimiter_size))
       disposition = nil
 
-      for header_line in values(header_text:split('\n')) do
-         colon = header_line:find(':', 0, true)
+      for header_line in values(header_text.split('\n')) do
+         colon = header_line.find(':', 0, true)
          if colon is nil then continue end
 
-         header_name = header_line:sub(0, colon):trim():lower()
-         header_value = header_line:sub(colon + 1):trim()
+         header_name = header_line.sub(0, colon).trim().lower()
+         header_value = header_line.sub(colon + 1).trim()
 
          if header_name is 'content-disposition' then
             disposition = header_value
@@ -606,7 +606,7 @@ end
 function parseHttpRequest(Req)
    lines = {}
    for start, stop, cap in rxLineIterator.findAll(Req) do
-      table.insert(lines, cap[0])
+      lines.insert(cap[0])
    end
 
    if #lines is 0 then return nil end
@@ -628,7 +628,7 @@ function parseHttpRequest(Req)
       line = lines[i]
       name, value = rxHeaderLine.extract(line)
       if name and value then
-         headers[name:lower()] = value
+         headers[name.lower()] = value
       end
    end
 
@@ -756,7 +756,7 @@ function createResponseObject(self, Client)
    -- Set response header
    res.header = function(name, value)
       assert(not res._sent, 'Cannot set headers after response sent')
-      res._headers[name:lower()] = value
+      res._headers[name.lower()] = value
       return res
    end
 
@@ -795,7 +795,7 @@ function createResponseObject(self, Client)
          if type(existing) != 'table' then
             existing = { existing }
          end
-         table.insert(existing, cookieStr)
+         existing.insert(cookieStr)
          res._headers['set-cookie'] = existing
       else
          res._headers['set-cookie'] = cookieStr
@@ -879,7 +879,7 @@ end
 function parseByteRange(Header:str, FileSize:num!):table
    Header ?! return nil
 
-   captures = rxByteRange.match(Header:trim())
+   captures = rxByteRange.match(Header.trim())
    captures ?! return nil
 
    start_text = captures[1]
@@ -939,7 +939,7 @@ function streamFileBody(self:table!, ClientSocket:obj!, File:obj, Length:num!):b
       end
 
       if bytes_read > 0 then
-         err, written = ClientSocket.acWrite(buffer:sub(0, bytes_read))
+         err, written = ClientSocket.acWrite(buffer.sub(0, bytes_read))
          if err != ERR_Okay then
             logMessage(self, 'Error writing to ClientSocket: ' .. mSys.GetErrorMsg(err))
             closeHttpResponse(ClientSocket)
@@ -1044,7 +1044,7 @@ function serveFile(self:table!, ClientSocket:obj!, FilePath:str!, Request:table!
 
       sendHttpResponse(self, ClientSocket, 200, "OK", {
          ['content-type'] = mimeType
-      }, buffer:sub(0, bytes_read))
+      }, buffer.sub(0, bytes_read))
    end
 end
 
@@ -1065,7 +1065,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function printableTime(Time):str
-   return tempus.localDateTime(Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second):format(
+   return tempus.localDateTime(Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second).format(
       'yyyy-MM-dd HH:mm:ss')
 end
 
@@ -1117,7 +1117,7 @@ a:hover { text-decoration: underline; }
          name = info.Name
 
          -- Skip hidden files and system files for security
-         if not name:startsWith('.') then
+         if not name.startsWith('.') then
             isFolder = info.flags has RDF_FOLDER
             size     = isFolder ? '-' :> formatFileSize(info.size)
             modTime  = printableTime(info.modified)
@@ -1290,7 +1290,7 @@ function authMiddleware(options:table)
    tokenPrefix = options.prefix or 'Bearer '
 
    return function(request:table!, response:table!, next:func!)
-      authHeader = request.headers[tokenHeader:lower()]
+      authHeader = request.headers[tokenHeader.lower()]
 
       if not authHeader then
          response.status(401).json({ error = 'Missing authorization header' })
@@ -1298,8 +1298,8 @@ function authMiddleware(options:table)
       end
 
       token = authHeader
-      if tokenPrefix and authHeader:startsWith(tokenPrefix) then
-         token = authHeader:sub(#tokenPrefix)
+      if tokenPrefix and authHeader.startsWith(tokenPrefix) then
+         token = authHeader.sub(#tokenPrefix)
       end
 
       if not token or token is '' then
@@ -1327,7 +1327,7 @@ function addRoute(self:table, route:table)
    if not self._routes then self._routes = {} end
 
    if route.pattern and route.method and route.handler then
-      method = route.method:upper()
+      method = string.upper(route.method)
       pattern = tostring(route.pattern)
 
       if not self._routes[method] then self._routes[method] = {} end
@@ -1342,7 +1342,7 @@ function addRoute(self:table, route:table)
             end
          end
 
-         table.insert(self._routes[method], {
+         self._routes[method].insert({
             pattern        = pattern,
             callback       = route.handler,
             validateHeader = route.validateHeader,
@@ -1366,7 +1366,7 @@ function extractParams(pattern:str!, matchResults):table
    -- Extract parameter names from the original pattern
    paramNames = {}
    for start, stop, cap in rxRouteParam.findAll(pattern) do
-      table.insert(paramNames, cap[0])
+      paramNames.insert(cap[0])
    end
 
    -- Map parameter names to captured group values (skip index 1 which is full match)
@@ -1394,7 +1394,7 @@ function matchRoute(serverInstance, method, path):<table, table>
          -- :param becomes ([^/]+), * becomes (.*), escape regex special chars
 
          regexPattern = regex.escape(pattern)
-         regexPattern = regexPattern:replace('\\-', '-')
+         regexPattern = regexPattern.replace('\\-', '-')
          regexPattern = rxRouteParamSub.replace(regexPattern, '([^\\/]+)')   -- :param -> ([^/]+)
          regexPattern = rxEscapedWildcard.replace(regexPattern, '(.*)')    -- \* -> (.*)
 
@@ -1428,7 +1428,7 @@ function routeMatchesPath(route, path):bool
 
    if not route.compiledRegex then
       regexPattern = regex.escape(pattern)
-      regexPattern = regexPattern:replace('\\-', '-')
+      regexPattern = regexPattern.replace('\\-', '-')
       regexPattern = rxRouteParamSub.replace(regexPattern, '([^\\/]+)')
       regexPattern = rxEscapedWildcard.replace(regexPattern, '(.*)')
 
@@ -1447,13 +1447,13 @@ function allowedMethodsForPath(serverInstance, path):str
    for method, methodRoutes in pairs(serverInstance._routes) do
       for route in values(methodRoutes) do
          if routeMatchesPath(route, path) then
-            table.insert(methods, method)
+            methods.insert(method)
             break
          end
       end
    end
 
-   if #methods > 0 then return table.concat(methods, ', ') end
+   if #methods > 0 then return methods.concat(', ') end
    return nil
 end
 
@@ -1475,7 +1475,7 @@ function checkRateLimit(self:table, IP:str!):bool
          request_count = 0
          for timestamp in values(data.requests) do
             if timestamp > cutoff then
-               newRequests:push(timestamp)
+               newRequests.push(timestamp)
                request_count++
             end
          end
@@ -1501,7 +1501,7 @@ function checkRateLimit(self:table, IP:str!):bool
    request_count = 0
    for timestamp in values(clientData.requests) do
       if timestamp > cutoff then
-         recentRequests:push(timestamp)
+         recentRequests.push(timestamp)
          request_count++
       end
    end
@@ -1512,7 +1512,7 @@ function checkRateLimit(self:table, IP:str!):bool
    end
 
    -- Add current request
-   recentRequests:push(currentTime)
+   recentRequests.push(currentTime)
    clientData.requests = recentRequests
 
    return true
@@ -1585,7 +1585,7 @@ function serverIncoming(self, ClientSocket)
 
    -- Accumulate data
 
-   state.buffer ..= buffer:sub(0, bytes_read)
+   state.buffer ..= buffer.sub(0, bytes_read)
    if #state.buffer > self.maxRequestSize then
       errorBody = createErrorPage(413, 'Payload Too Large', 'Request exceeds maximum allowed size.', 'Maximum size: ' .. self.maxRequestSize .. ' bytes')
       sendHttpResponse(self, ClientSocket, 413, "Payload Too Large", {
@@ -1597,11 +1597,11 @@ function serverIncoming(self, ClientSocket)
    -- Read and parse headers
    if state.phase is 'READING_HEADERS' then
       -- Look for end of headers marker
-      header_end = state.buffer:find('\r\n\r\n')
+      header_end = state.buffer.find('\r\n\r\n')
       header_end ?! return -- Wait for more data
 
       -- Extract header section
-      header_section = state.buffer:sub(0, header_end + 3) -- Include the \r\n\r\n
+      header_section = state.buffer.sub(0, header_end + 3) -- Include the \r\n\r\n
       state.request = parseHttpRequest(header_section)
 
       if not state.request then
@@ -1640,7 +1640,7 @@ function serverIncoming(self, ClientSocket)
       end
 
       -- Remove processed headers from buffer
-      state.buffer = state.buffer:sub(header_end + 4) -- Remove \r\n\r\n as well
+      state.buffer = state.buffer.sub(header_end + 4) -- Remove \r\n\r\n as well
       state.headers_complete = true
 
       -- Call validateHeader callback if route has one
@@ -1697,7 +1697,7 @@ function serverIncoming(self, ClientSocket)
       end
 
       if state.request.method is 'POST' or state.request.method is 'PUT' or state.request.method is 'PATCH' then
-         if (state.transfer_encoding and state.transfer_encoding:lower():find('chunked')) or
+         if (state.transfer_encoding and string.lower(state.transfer_encoding).find('chunked')) or
             (state.content_length and state.content_length > 0) then
             -- Need to read body
             state.phase = 'READING_BODY'
@@ -1713,7 +1713,7 @@ function serverIncoming(self, ClientSocket)
 
    -- Read request body
    if state.phase is 'READING_BODY' then
-      if state.transfer_encoding and state.transfer_encoding:lower():find('chunked') then
+      if state.transfer_encoding and string.lower(state.transfer_encoding).find('chunked') then
          if not processChunkedBody(state, self) then
             return -- Still reading chunks or error occurred
          end
@@ -1724,8 +1724,8 @@ function serverIncoming(self, ClientSocket)
 
          if available > 0 then
             to_take = math.min(available, needed)
-            state.request.body = state.request.body .. state.buffer:sub(0, to_take)
-            state.buffer = state.buffer:sub(to_take)
+            state.request.body = state.request.body .. state.buffer.sub(0, to_take)
+            state.buffer = state.buffer.sub(to_take)
             state.body_received = state.body_received + to_take
 
             logMessage(self, 'Body progress: ' .. state.body_received .. '/' .. state.content_length .. ' bytes')
@@ -1739,13 +1739,13 @@ function serverIncoming(self, ClientSocket)
       -- Body reading complete, parse it
       if state.request.body then
          contentType = state.request.headers['content-type'] or ''
-         if contentType:find('application/json') then
+         if contentType.find('application/json') then
             logMessage(self, 'Parsing JSON encoded data')
             state.request.parsedBody = parseJsonBody(state.request.body)
-         elseif contentType:find('application/x-www-form-urlencoded') then
+         elseif contentType.find('application/x-www-form-urlencoded') then
             logMessage(self, 'Parsing URL-encoded form data')
             state.request.parsedBody = parseFormBody(state.request.body)
-         elseif contentType:find('multipart/form-data') then
+         elseif contentType.find('multipart/form-data') then
             logMessage(self, 'Parsing multipart form data')
             state.request.parsedBody = parseMultipartBody(state.request.body, contentType)
          else
@@ -1801,14 +1801,14 @@ function serverIncoming(self, ClientSocket)
          -- Add global middleware first
          if self._middleware then
             for middleware in values(self._middleware) do
-               middlewareChain:push(middleware)
+               middlewareChain.push(middleware)
             end
          end
 
          -- Add route-specific middleware
          if matchedRoute.middleware then
             for middleware in values(matchedRoute.middleware) do
-               middlewareChain:push(middleware)
+               middlewareChain.push(middleware)
             end
          end
 
@@ -1893,7 +1893,7 @@ function serverIncoming(self, ClientSocket)
 
       if fileType is LOC_FOLDER then
          -- Ensure directory URLs end with /
-         if not URIPath:endsWith('/') then
+         if not URIPath.endsWith('/') then
             sendHttpResponse(self, ClientSocket, 301, 'Moved Permanently', {
                ['location'] = URIPath .. '/'
             })
@@ -1939,7 +1939,7 @@ hslib.start = function(Options)
    if Options.folder then
       -- Validate folder input
       folder = Options.folder
-      if folder:find('..') or folder:startsWith('~') then
+      if folder.find('..') or string.startsWith(folder, '~') then
          error(f'Invalid folder path: security violation for: {folder}')
       end
 
@@ -1958,7 +1958,7 @@ hslib.start = function(Options)
       if type(Options.verbose) is 'bool' then
          self.verbose = Options.verbose
       else
-         verbose = tostring(Options.verbose):lower()
+         verbose = tostring(Options.verbose).lower()
          self.verbose = (verbose is 'true' or verbose is '1')
       end
    end
@@ -1994,7 +1994,7 @@ hslib.start = function(Options)
       if type(Options.autoIndex) is 'bool' then
          self.autoIndex = Options.autoIndex
       else
-         autoindex = tostring(Options.autoIndex):lower()
+         autoindex = tostring(Options.autoIndex).lower()
          self.autoIndex = (autoindex is 'true' or autoindex is '1')
       end
    end
@@ -2034,7 +2034,7 @@ hslib.start = function(Options)
          self._middleware = array<any> {}
          for middleware in values(Options.middleware) do
             if type(middleware) is 'function' then
-               self._middleware:push(middleware)
+               array.push(self._middleware, middleware)
                middlewareCount++
                logMessage(self, f'Global middleware configured at index {middlewareCount}')
             else
@@ -2076,7 +2076,7 @@ hslib.start = function(Options)
    msg(f'  File chunk size: {self.fileChunkSize} bytes')
    msg(f'  Timeout: {self.timeout} seconds')
    msg(f'  Verbose logging: {self.verbose}')
-   msg('  Index files: ' .. table.concat(self.indexFiles, ', '))
+   msg('  Index files: ' .. self.indexFiles.concat(', '))
    msg(f'  Auto-indexing: {self.autoIndex}')
    msg('  Rate limit: ' .. (self.rateLimit > 0 and (f'{self.rateLimit} requests per {self.rateLimitWindow} seconds') or 'disabled'))
    msg('  Security headers: ' .. (self.enableCSP and 'enabled' or 'disabled'))
@@ -2123,7 +2123,7 @@ hslib.start = function(Options)
       self._middleware ?= {}
 
       if type(middleware) is 'function' then
-         table.insert(self._middleware, middleware)
+         self._middleware.insert(middleware)
          logMessage(self, 'Global middleware added')
       else
          error('Middleware must be a function')

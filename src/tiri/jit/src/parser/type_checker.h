@@ -7,6 +7,8 @@
 #include "parser_diagnostics.h"
 #include "ast/nodes.h"
 
+class ParserContext;
+
 struct InferredType {
    TiriType primary = TiriType::Any;
    bool is_constant = false;
@@ -127,3 +129,5 @@ private:
 
    std::vector<VariableInfo> variables_{};
 };
+
+void run_type_analysis(ParserContext &Context, BlockStmt &Module);

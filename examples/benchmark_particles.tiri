@@ -60,7 +60,7 @@ function drawDirectVector(Surface:obj!, Bitmap:obj!)
       mVec.DrawPath(Bitmap, p.path, 0, nil, p.colour)
    end
 
-   glFrameStats.times:push(mSys.PreciseTime() - start)
+   glFrameStats.times.push(mSys.PreciseTime() - start)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -79,7 +79,7 @@ function drawPrimitive(Surface:obj!, Bitmap:obj!)
       end
    end
 
-   glFrameStats.times:push(mSys.PreciseTime() - start)
+   glFrameStats.times.push(mSys.PreciseTime() - start)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -223,7 +223,7 @@ function timer(Subscriber, Elapsed, Current)
    --glScene.surface.mtScheduleRedraw(60) -- Schedule a redraw based on frame rate
 
    -- The frame rate is based on the rendering time returned from the scene graph
-   if glScene.renderTime then glFrameStats.times:push(glScene.renderTime) end
+   if glScene.renderTime then glFrameStats.times.push(glScene.renderTime) end
 
    if math.round(Current / 1000000) % 2 is 0 then
       if not glPrinted then
@@ -253,7 +253,7 @@ function timer(Subscriber, Elapsed, Current)
 
             glFrameStats.avg = 0
             glFrameStats.best = 0
-            glFrameStats.times:clear()
+            glFrameStats.times.clear()
             glPrinted = true
          end
       end
@@ -279,7 +279,7 @@ function createWindow()
    })
 
    glSurface  = glWindow.surface
-   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
    glScene    = glViewport.scene
    glScene.flags = glScene.flags | VPF_RENDER_TIME
    --glViewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,255,255)' })
@@ -360,5 +360,5 @@ end
    -- Run at a high frequency to ensure that the CPU performance is not scaled back
    err, glTimerHandle = mSys.SubscribeTimer(0.001, timer)
 
-   glWindow:show()
+   glWindow.show()
    processing.sleep()

@@ -7,10 +7,10 @@
          flags  = TSF_SHELL,
          args   = "--help",
          outputCallback = function(Task, Data)
-            io.write(Data:getString())
+            io.write(Data.getString())
          end,
          errorCallback = function(Task, Data)
-            io.write(Data:getString())
+            io.write(Data.getString())
          end,
          exitCallback = function(Task)
             print("Detected child process exit.")

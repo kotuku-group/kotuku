@@ -19,6 +19,24 @@ struct BindingScope {
    std::vector<std::pair<GCstr *, StaticBindingID>> entries;
 };
 
+static bool is_builtin_interface_namespace(uint32_t Hash)
+{
+   switch (Hash) {
+      case kt::strhash("obj"):
+      case kt::strhash("string"):
+      case kt::strhash("math"):
+      case kt::strhash("table"):
+      case kt::strhash("bit"):
+      case kt::strhash("jit"):
+      case kt::strhash("debug"):
+      case kt::strhash("array"):
+      case kt::strhash("range"):
+         return true;
+      default:
+         return false;
+   }
+}
+
 class StaticDescriptorAnalyser {
 public:
    explicit StaticDescriptorAnalyser(ParserContext &Context, bool NativeCallsOnly = false)
@@ -67,6 +85,7 @@ private:
       binding.function_depth = this->function_depth_;
       binding.is_const = Name.has_const;
       binding.is_parameter = IsParameter;
+      binding.is_variant = Name.type IS TiriType::Any;
       StaticBindingID id = this->catalogue_.add_binding(binding);
       Name.binding_id = id;
       if (Name.symbol and not Name.is_blank) this->scopes_.back().entries.emplace_back(Name.symbol, id);
@@ -148,12 +167,6 @@ private:
             auto &payload = std::get<CallExprPayload>(Expression.data);
             if (auto *direct = std::get_if<DirectCallTarget>(&payload.target)) {
                if (direct->callable) this->discover_expression(*direct->callable);
-            }
-            else if (auto *method = std::get_if<MethodCallTarget>(&payload.target)) {
-               if (method->receiver) this->discover_expression(*method->receiver);
-            }
-            else if (auto *safe_method = std::get_if<SafeMethodCallTarget>(&payload.target)) {
-               if (safe_method->receiver) this->discover_expression(*safe_method->receiver);
             }
             for (auto &argument : payload.arguments) {
                if (argument) this->discover_expression(*argument);
@@ -302,8 +315,7 @@ private:
          }
          case AstNodeKind::FunctionStmt: {
             auto &payload = std::get<FunctionStmtPayload>(Statement.data);
-            bool local = not payload.name.is_explicit_global and payload.name.segments.size() IS 1 and
-               not payload.name.method.has_value();
+            bool local = not payload.name.is_explicit_global and payload.name.segments.size() IS 1;
             if (local) this->declare(payload.name.segments.front(), nullptr, 0, payload.function.get());
             else if (payload.name.is_explicit_global and not payload.name.segments.empty() and
                      payload.name.segments.front().symbol) {
@@ -674,15 +686,6 @@ private:
             member = payload.member.symbol;
          }
       }
-      else if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         receiver = method->receiver.get();
-         member = method->method.symbol;
-      }
-      else if (const auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         receiver = method->receiver.get();
-         member = method->method.symbol;
-      }
-
       if (not receiver or not member) return 0;
       StaticValueDescriptor base = this->descriptor_of(*receiver);
       if (base.primary IS TiriType::Object and base.proved()) {
@@ -752,6 +755,197 @@ private:
       }
 
       return 0;
+   }
+
+   void report_method_argument(SourceSpan Span, std::string Message)
+   {
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::TypeMismatchArgument;
+      diagnostic.message = std::move(Message);
+      diagnostic.token = Token::from_span(Span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
+   }
+
+   void reject_builtin_method_shadow(ExprNode &Target, const StaticValueDescriptor &Assigned)
+   {
+      if (Target.kind != AstNodeKind::MemberExpr or Assigned.primary != TiriType::Func) return;
+      auto &member = std::get<MemberExprPayload>(Target.data);
+      if (member.builtin_shadow_reported or not member.table or not member.member.symbol) return;
+
+      StaticValueDescriptor receiver = this->descriptor_of(*member.table);
+      if (not receiver.proved() or receiver.primary IS TiriType::Any or receiver.primary IS TiriType::Unknown or
+          not get_method_prototype_by_hash(receiver.primary, member.member.symbol->hash)) return;
+
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::InvalidAssignment;
+      diagnostic.message = std::format(
+         "cannot assign a function to built-in method '{}'; use ['{}'] to create an explicit shadowing field",
+         std::string_view(strdata(member.member.symbol), member.member.symbol->len),
+         std::string_view(strdata(member.member.symbol), member.member.symbol->len));
+      diagnostic.token = Token::from_span(Target.span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
+      member.builtin_shadow_reported = true;
+   }
+
+   void reject_builtin_method_shadow(TableField &Field)
+   {
+      if (Field.builtin_shadow_reported or not (Field.kind IS TableFieldKind::Record) or not Field.name or
+          not Field.name->symbol or not Field.value or
+          not (this->descriptor_of(*Field.value).primary IS TiriType::Func) or
+          not get_method_prototype_by_hash(TiriType::Table, Field.name->symbol->hash)) return;
+
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::InvalidAssignment;
+      diagnostic.message = std::format(
+         "cannot assign a function to built-in method '{}'; use ['{}'] to create an explicit shadowing field",
+         std::string_view(strdata(Field.name->symbol), Field.name->symbol->len),
+         std::string_view(strdata(Field.name->symbol), Field.name->symbol->len));
+      diagnostic.token = Token::from_span(Field.name->span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
+      Field.builtin_shadow_reported = true;
+   }
+
+   void validate_builtin_method_arguments(CallExprPayload &Call)
+   {
+      if (not Call.builtin_method or Call.builtin_method->arguments_validated) return;
+      const fprototype *prototype = Call.builtin_method->prototype;
+      if (not prototype or prototype->param_count IS 0) return;
+
+      const TiriType *parameters = prototype->param_types();
+      bool validation_complete = true;
+      for (size_t index = 0; index < Call.arguments.size(); ++index) {
+         size_t native_index = index + 1;
+         if (native_index >= prototype->param_count) break;
+         if (Call.arguments[index]->kind IS AstNodeKind::IdentifierExpr) {
+            const auto &reference = std::get<NameRef>(Call.arguments[index]->data);
+            if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) continue;
+         }
+         const StaticValueDescriptor actual = this->descriptor_of(*Call.arguments[index]);
+         TiriType expected = parameters[native_index];
+         if (actual.primary IS TiriType::Nil) {
+            if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
+               this->report_method_argument(Call.arguments[index]->span,
+                  std::format("required argument {} cannot be nil", index + 1));
+            }
+         }
+         else if (expected != TiriType::Any and not actual.proved()) validation_complete = false;
+         else if (expected != TiriType::Any and actual.primary != TiriType::Unknown and
+             actual.primary != TiriType::Any and actual.primary != expected and
+             not (expected IS TiriType::Func and actual.primary IS TiriType::Table)) {
+            this->report_method_argument(Call.arguments[index]->span,
+               std::format("argument {} expects {}, got {}", index + 1,
+                  type_name(expected), type_name(actual.primary)));
+         }
+      }
+
+      if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None and
+          Call.arguments.size() + 1 < prototype->param_count and not Call.forwards_multret) {
+         this->report_method_argument(Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span,
+            std::format("required argument {} is missing", Call.arguments.size() + 1));
+      }
+      if (Call.forwards_multret) validation_complete = false;
+      Call.builtin_method->arguments_validated = validation_complete;
+   }
+
+   void resolve_builtin_method(CallExprPayload &Call)
+   {
+      Call.runtime_builtin_method.reset();
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable or
+          (Call.argument_syntax != CallArgumentSyntax::Parenthesised and
+           Call.argument_syntax != CallArgumentSyntax::Synthetic) or direct->callable->is_grouped) {
+         Call.builtin_method.reset();
+         return;
+      }
+
+      ExprNode *receiver = nullptr;
+      GCstr *member = nullptr;
+      bool safe = false;
+      if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+         const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
+         receiver = payload.table.get();
+         member = payload.member.symbol;
+      }
+      else if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+         const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
+         receiver = payload.table.get();
+         member = payload.member.symbol;
+         safe = true;
+      }
+      else {
+         Call.builtin_method.reset();
+         return;
+      }
+
+      if (not receiver or not member) {
+         Call.builtin_method.reset();
+         return;
+      }
+      if (receiver->kind IS AstNodeKind::IdentifierExpr) {
+         const auto &reference = std::get<NameRef>(receiver->data);
+         if (not reference.binding_id and reference.identifier.symbol and
+             is_builtin_interface_namespace(reference.identifier.symbol->hash)) {
+            Call.builtin_method.reset();
+            return;
+         }
+         if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) {
+            Call.builtin_method.reset();
+            Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
+            this->report_unresolved_method(Call, *receiver, member);
+            return;
+         }
+      }
+      const StaticValueDescriptor descriptor = this->descriptor_of(*receiver);
+      TiriType receiver_type = descriptor.primary;
+      if (Call.argument_syntax IS CallArgumentSyntax::Synthetic and receiver->kind IS AstNodeKind::CallExpr) {
+         TiriType generated_type = std::get<CallExprPayload>(receiver->data).result_type;
+         if (generated_type != TiriType::Unknown and generated_type != TiriType::Any) receiver_type = generated_type;
+      }
+      if ((not descriptor.proved() and Call.argument_syntax != CallArgumentSyntax::Synthetic) or
+          receiver_type IS TiriType::Any or receiver_type IS TiriType::Unknown or
+          (descriptor.nullable and not safe and Call.argument_syntax != CallArgumentSyntax::Synthetic)) {
+         Call.builtin_method.reset();
+         if (Call.argument_syntax IS CallArgumentSyntax::Parenthesised) {
+            Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
+            this->report_unresolved_method(Call, *receiver, member);
+         }
+         return;
+      }
+
+      const fprototype *prototype = get_method_prototype_by_hash(receiver_type, member->hash);
+      if (not prototype) {
+         Call.builtin_method.reset();
+         if (receiver_type IS TiriType::Userdata and
+             Call.argument_syntax IS CallArgumentSyntax::Parenthesised) {
+            Call.runtime_builtin_method = CallExprPayload::RuntimeBuiltinMethodCall{ member, safe };
+         }
+         return;
+      }
+
+      bool already_validated = Call.builtin_method and Call.builtin_method->prototype IS prototype and
+         Call.builtin_method->arguments_validated;
+      Call.builtin_method = CallExprPayload::BuiltinMethodCall{
+         .prototype = prototype,
+         .callable = prototype->builtin_callable_id,
+         .receiver_type = receiver_type,
+         .safe = safe,
+         .arguments_validated = already_validated
+      };
+      this->validate_builtin_method_arguments(Call);
+   }
+
+   void report_unresolved_method(CallExprPayload &Call, const ExprNode &Receiver, GCstr *Member)
+   {
+      if (Call.unresolved_method_reported or not this->context_.config().warn_unresolved_methods) return;
+
+      this->context_.emit_warning(ParserErrorCode::UnresolvedMethodReceiver,
+         Token::from_span(Receiver.span, TokenKind::Identifier), std::format(
+         "cannot resolve the receiver type for dot-method '{}'; built-in method selection will occur at runtime",
+         std::string_view(strdata(Member), Member->len)));
+      Call.unresolved_method_reported = true;
    }
 
    void annotate_callables_expression(ExprNode &Expression)
@@ -854,7 +1048,13 @@ private:
 
    [[nodiscard]] StaticValueDescriptor call_descriptor(CallExprPayload &Call, bool Safe)
    {
-      if (this->native_calls_only_) {
+      this->resolve_builtin_method(Call);
+      if (Call.builtin_method) {
+         Call.results = this->catalogue_.add_results(
+            describe_native_prototype_results(Call.builtin_method->prototype));
+         Safe = Safe or Call.builtin_method->safe;
+      }
+      else if (this->native_calls_only_) {
          if (not Call.results) Call.results = this->native_call_results(Call);
       }
       else this->annotate_call(Call);
@@ -977,21 +1177,15 @@ private:
 
    [[nodiscard]] static std::optional<ArrayFilterCall> array_filter_call(CallExprPayload &Call)
    {
-      if (auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         if (method->receiver and method->method.symbol and
-             method->method.symbol->hash IS kt::strhash("filter") and not Call.arguments.empty()) {
-            return ArrayFilterCall{ method->receiver.get(), 0 };
-         }
-      }
-      else if (auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         if (method->receiver and method->method.symbol and
-             method->method.symbol->hash IS kt::strhash("filter") and not Call.arguments.empty()) {
-            return ArrayFilterCall{ method->receiver.get(), 0 };
-         }
-      }
-      else if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
+      if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
          if (array_interface_member(*direct, kt::strhash("filter")) and Call.arguments.size() > 1) {
             return ArrayFilterCall{ Call.arguments[0].get(), 1 };
+         }
+         if (direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr and not Call.arguments.empty()) {
+            auto &member = std::get<MemberExprPayload>(direct->callable->data);
+            if (member.table and member.member.symbol and member.member.symbol->hash IS kt::strhash("filter")) {
+               return ArrayFilterCall{ member.table.get(), 0 };
+            }
          }
       }
       return std::nullopt;
@@ -1002,15 +1196,7 @@ private:
       const ExprNode *source = nullptr;
       GCstr *operation = nullptr;
 
-      if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         source = method->receiver.get();
-         operation = method->method.symbol;
-      }
-      else if (const auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         source = method->receiver.get();
-         operation = method->method.symbol;
-      }
-      else if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
                direct and direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
          const auto &member = std::get<MemberExprPayload>(direct->callable->data);
          const auto *base = member.table and member.table->kind IS AstNodeKind::IdentifierExpr ?
@@ -1018,6 +1204,10 @@ private:
          if (base and not base->binding_id and base->identifier.symbol and
              base->identifier.symbol->hash IS kt::strhash("array") and not Call.arguments.empty()) {
             source = Call.arguments.front().get();
+            operation = member.member.symbol;
+         }
+         else {
+            source = member.table.get();
             operation = member.member.symbol;
          }
       }
@@ -1070,12 +1260,6 @@ private:
       if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
          if (direct->callable) this->propagate_expression(*direct->callable);
       }
-      else if (auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
-         if (method->receiver) this->propagate_expression(*method->receiver);
-      }
-      else if (auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
-         if (method->receiver) this->propagate_expression(*method->receiver);
-      }
 
       auto filter = array_filter_call(Call);
       for (size_t i = 0; i < Call.arguments.size(); ++i) {
@@ -1122,7 +1306,14 @@ private:
             break;
          }
          case AstNodeKind::TableExpr:
+            for (auto &field : std::get<TableExprPayload>(Expression.data).fields) {
+               this->reject_builtin_method_shadow(field);
+            }
             value.primary = TiriType::Table;
+            value.proof = StaticProof::Closed;
+            break;
+         case AstNodeKind::RangeExpr:
+            value.primary = TiriType::Range;
             value.proof = StaticProof::Closed;
             break;
          case AstNodeKind::FunctionExpr: {
@@ -1494,6 +1685,12 @@ private:
             auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->propagate_expression(*value);
             for (auto &target : payload.targets) if (target) this->propagate_expression(*target);
+            for (size_t i = 0; i < payload.targets.size() and not payload.values.empty(); ++i) {
+               if (not payload.targets[i]) continue;
+               size_t source = std::min(i, payload.values.size() - 1);
+               this->reject_builtin_method_shadow(
+                  *payload.targets[i], this->descriptor_of(*payload.values[source]));
+            }
             if (payload.op IS AssignmentOperator::Plain or payload.op IS AssignmentOperator::IfEmpty or
                 payload.op IS AssignmentOperator::IfNil) {
                for (size_t i = 0; i < payload.targets.size(); ++i) {
@@ -1640,6 +1837,14 @@ private:
             if (payload.body) this->propagate_block(*payload.body);
             break;
          }
+         case AstNodeKind::DeferStmt: {
+            auto &payload = std::get<DeferStmtPayload>(Statement.data);
+            for (auto &argument : payload.arguments) {
+               if (argument) this->propagate_expression(*argument);
+            }
+            if (payload.callable) this->propagate_function(*payload.callable);
+            break;
+         }
          default:
             this->walk_statement_expressions(Statement, [this](ExprNode &Expression) {
                this->propagate_expression(Expression);
@@ -1676,8 +1881,6 @@ private:
          case AstNodeKind::SafeCallExpr: {
             auto &p = std::get<CallExprPayload>(Expression.data);
             if (auto *d = std::get_if<DirectCallTarget>(&p.target)) visit(d->callable);
-            else if (auto *m = std::get_if<MethodCallTarget>(&p.target)) visit(m->receiver);
-            else if (auto *m = std::get_if<SafeMethodCallTarget>(&p.target)) visit(m->receiver);
             for (auto &v : p.arguments) visit(v);
             break;
          }
@@ -1820,6 +2023,11 @@ private:
          else if (statement->kind IS AstNodeKind::FunctionStmt) {
             auto &p = std::get<FunctionStmtPayload>(statement->data);
             if (p.function and p.function->body) this->walk_block_expressions(*p.function->body, Visit);
+         }
+         else if (statement->kind IS AstNodeKind::DeferStmt) {
+            auto &p = std::get<DeferStmtPayload>(statement->data);
+            for (auto &argument : p.arguments) if (argument) Visit(*argument);
+            if (p.callable and p.callable->body) this->walk_block_expressions(*p.callable->body, Visit);
          }
          else {
             this->walk_statement_expressions(*statement, Visit);

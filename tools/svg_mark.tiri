@@ -47,7 +47,7 @@ function createPreviewWindow(SvgPath)
       }
    })
 
-   viewport = previewWindow:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = previewWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    -- Create main container
    mainArea = viewport.new('VectorViewport', {
@@ -79,7 +79,7 @@ function createPreviewWindow(SvgPath)
       fontSize = 10
    })
 
-   previewWindow:show()
+   previewWindow.show()
 
    resultsListView.addItems({ { text = 'Initializing benchmark...' } })
 
@@ -103,11 +103,11 @@ end
 function saveMessage(message:any)
    if type(message) is 'string' then
       logMessage(message)
-      glLogFile:write(message .. '\n')
+      glLogFile.write(message .. '\n')
    elseif type(message) is 'array' then
       for s in values(message) do
          logMessage(s)
-         glLogFile:write(s .. '\n')
+         glLogFile.write(s .. '\n')
       end
    end
 end

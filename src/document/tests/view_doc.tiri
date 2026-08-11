@@ -8,15 +8,15 @@
 
    src_file = arg('file', 'test.rpl')
 
-   doc = win:clientViewport().new('document', {
+   doc = win.clientViewport().new('document', {
       path = glScript.workingPath .. src_file .. '#Index'
    })
 
    page_height = doc.pageHeight
-   if page_height < 800 then win:resizeClientArea(nil, doc.pageHeight) end
+   if page_height < 800 then win.resizeClientArea(nil, doc.pageHeight) end
 
    scrollbar = gui.scrollbar({
-      target = win:clientViewport(),
+      target = win.clientViewport(),
       view   = doc.view,
       page   = doc.page,
       direction = 'all'
@@ -25,5 +25,5 @@
    _, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
    print(xml_str)
 
-   win:show()
+   win.show()
    processing.sleep()

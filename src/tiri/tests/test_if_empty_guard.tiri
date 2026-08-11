@@ -43,7 +43,7 @@ end
    assert(describeString('hello') is 'value:hello', "Non-empty string should pass the shorthand guard")
 
    parts = array<string>
-   runtime_empty = parts:concat()
+   runtime_empty = parts.concat()
    assert(describeString(runtime_empty) is 'empty', "Runtime empty string should trigger shorthand return")
 end
 

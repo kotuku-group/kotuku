@@ -11,7 +11,7 @@ function assert_activation_fails(Statement:str, Message:str)
 
    assert(err != ERR_Okay, Message .. ' should fail activation')
    assert(script.error != ERR_Okay, Message .. ' should set a script error')
-   assert(string.find(script.errorMessage, 'cannot assign to constant') != nil,
+   assert(script.errorMessage.find('cannot assign to constant') != nil,
       Message .. ' should report the constant-assignment diagnostic, got: ' .. tostring(script.errorMessage))
 end
 

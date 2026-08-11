@@ -13,7 +13,7 @@ gui.tooltip = function(Options)
 
    self.free = function()
       self.surface.free()
-      table.clear(self)
+      self.clear()
    end
 
    local ptr = obj.find('systempointer')

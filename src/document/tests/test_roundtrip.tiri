@@ -61,7 +61,7 @@ end
    assert(text_count > 0, 'Plain text must produce at least one <text> element')
 
    content = xpath(xml, 'string((/extract/stream//text)[1])')
-   assert(content:find('Hello world'), 'Text content must survive round-trip, got: ' .. tostring(content))
+   assert(content.find('Hello world'), 'Text content must survive round-trip, got: ' .. tostring(content))
 end
 
 @Test function MultiParagraphText()
@@ -76,9 +76,9 @@ end
    text2 = xpath(xml, 'string((/extract/stream//text)[2])')
    text3 = xpath(xml, 'string((/extract/stream//text)[3])')
 
-   assert(text1:find('First'),  'Paragraph 1 text must survive, got: ' .. tostring(text1))
-   assert(text2:find('Second'), 'Paragraph 2 text must survive, got: ' .. tostring(text2))
-   assert(text3:find('Third'),  'Paragraph 3 text must survive, got: ' .. tostring(text3))
+   assert(text1.find('First'),  'Paragraph 1 text must survive, got: ' .. tostring(text1))
+   assert(text2.find('Second'), 'Paragraph 2 text must survive, got: ' .. tostring(text2))
+   assert(text3.find('Third'),  'Paragraph 3 text must survive, got: ' .. tostring(text3))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -127,9 +127,9 @@ end
 
    -- The second font byte-code carries the explicit fill (the first is the document default)
    fill = xpath(xml, 'string((/extract/stream//font[@fill="rgb(200,100,50)"]/@fill)[1])')
-   assert(fill:find('200'), 'Font fill colour must preserve red channel, got: ' .. tostring(fill))
-   assert(fill:find('100'), 'Font fill colour must preserve green channel, got: ' .. tostring(fill))
-   assert(fill:find('50'),  'Font fill colour must preserve blue channel, got: ' .. tostring(fill))
+   assert(fill.find('200'), 'Font fill colour must preserve red channel, got: ' .. tostring(fill))
+   assert(fill.find('100'), 'Font fill colour must preserve green channel, got: ' .. tostring(fill))
+   assert(fill.find('50'),  'Font fill colour must preserve blue channel, got: ' .. tostring(fill))
 end
 
 @Test function FontSizeUnits()
@@ -167,7 +167,7 @@ end
 
    -- The linked text must appear between link and link-end
    text = xpath(xml, 'string((/extract/stream//text)[1])')
-   assert(text:find('Click here'), 'Linked text must survive round-trip')
+   assert(text.find('Click here'), 'Linked text must survive round-trip')
 end
 
 @Test function HyperlinkHintAndFill()
@@ -179,7 +179,7 @@ end
    assert(hint is 'Tooltip text', 'Link hint must round-trip, got: ' .. tostring(hint))
 
    fill = xpath(xml, 'string((/extract/stream//link/@fill)[1])')
-   assert(fill:find('200'), 'Link fill colour must survive round-trip, got: ' .. tostring(fill))
+   assert(fill.find('200'), 'Link fill colour must survive round-trip, got: ' .. tostring(fill))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -278,10 +278,10 @@ end
    t2 = xpath(xml, 'string((/extract/stream//cell//text)[2])')
    t3 = xpath(xml, 'string((/extract/stream//cell//text)[3])')
    t4 = xpath(xml, 'string((/extract/stream//cell//text)[4])')
-   assert(t1:find('A'), 'Cell 1 text "A" must survive, got: ' .. tostring(t1))
-   assert(t2:find('B'), 'Cell 2 text "B" must survive, got: ' .. tostring(t2))
-   assert(t3:find('C'), 'Cell 3 text "C" must survive, got: ' .. tostring(t3))
-   assert(t4:find('D'), 'Cell 4 text "D" must survive, got: ' .. tostring(t4))
+   assert(t1.find('A'), 'Cell 1 text "A" must survive, got: ' .. tostring(t1))
+   assert(t2.find('B'), 'Cell 2 text "B" must survive, got: ' .. tostring(t2))
+   assert(t3.find('C'), 'Cell 3 text "C" must survive, got: ' .. tostring(t3))
+   assert(t4.find('D'), 'Cell 4 text "D" must survive, got: ' .. tostring(t4))
 end
 
 @Test function TableStyling()
@@ -293,24 +293,24 @@ end
 
    -- Table-level attributes
    tbl_fill = xpath(xml, 'string((/extract/stream//table/@fill)[1])')
-   assert(tbl_fill:find('255'), 'Table fill must survive, got: ' .. tostring(tbl_fill))
+   assert(tbl_fill.find('255'), 'Table fill must survive, got: ' .. tostring(tbl_fill))
 
    tbl_stroke = xpath(xml, 'string((/extract/stream//table/@stroke)[1])')
-   assert(tbl_stroke:find('128'), 'Table stroke must survive, got: ' .. tostring(tbl_stroke))
+   assert(tbl_stroke.find('128'), 'Table stroke must survive, got: ' .. tostring(tbl_stroke))
 
    tbl_align = xpath(xml, 'string((/extract/stream//table/@align)[1])')
    assert(tbl_align is 'center', 'Table align must be "center", got: ' .. tostring(tbl_align))
 
    -- Row fill
    row_fill = xpath(xml, 'string((/extract/stream//row/@fill)[1])')
-   assert(row_fill:find('240'), 'Row fill must survive, got: ' .. tostring(row_fill))
+   assert(row_fill.find('240'), 'Row fill must survive, got: ' .. tostring(row_fill))
 
    -- Cell attributes
    cell_border = xpath(xml, 'string((/extract/stream//cell/@border)[1])')
    assert(cell_border != '', 'Cell border attribute must survive round-trip')
 
    cell_fill = xpath(xml, 'string((/extract/stream//cell/@fill)[1])')
-   assert(cell_fill:find('200'), 'Cell fill must survive, got: ' .. tostring(cell_fill))
+   assert(cell_fill.find('200'), 'Cell fill must survive, got: ' .. tostring(cell_fill))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -329,7 +329,7 @@ end
    assert(list_type is 'ordered', 'List type must be "ordered", got: ' .. tostring(list_type))
 
    list_fill = xpath(xml, 'string((/extract/stream//list/@fill)[1])')
-   assert(list_fill:find('190'), 'List fill colour must survive, got: ' .. tostring(list_fill))
+   assert(list_fill.find('190'), 'List fill colour must survive, got: ' .. tostring(list_fill))
 
    -- List items produce paragraphs with list-item=true
    li_count = xpathNum(xml, 'count(/extract/stream//p[@list-item="true"])')
@@ -404,7 +404,7 @@ end
 
    -- Button text appears in the nested stream
    btn_text = xpath(xml, 'string((/extract/stream//button//text)[1])')
-   assert(btn_text:find('Click me'), 'Button text must survive, got: ' .. tostring(btn_text))
+   assert(btn_text.find('Click me'), 'Button text must survive, got: ' .. tostring(btn_text))
 end
 
 @Test function ComboboxWidget()
@@ -516,9 +516,9 @@ end
    xml = parseXML(xml_str)
 
    content = xpath(xml, 'string((/extract/stream//text)[1])')
-   assert(content:find('<'),  'Less-than must round-trip through XML escaping')
-   assert(content:find('>'),  'Greater-than must round-trip through XML escaping')
-   assert(content:find('&'),  'Ampersand must round-trip through XML escaping')
+   assert(content.find('<'),  'Less-than must round-trip through XML escaping')
+   assert(content.find('>'),  'Greater-than must round-trip through XML escaping')
+   assert(content.find('&'),  'Ampersand must round-trip through XML escaping')
 end
 
 @Test function SpecialCharsInAttributes()
@@ -527,11 +527,11 @@ end
    xml = parseXML(xml_str)
 
    ref = xpath(xml, 'string((/extract/stream//link/@ref)[1])')
-   assert(ref:find('&'), 'Ampersand in href must round-trip, got: ' .. tostring(ref))
+   assert(ref.find('&'), 'Ampersand in href must round-trip, got: ' .. tostring(ref))
 
    hint = xpath(xml, 'string((/extract/stream//link/@hint)[1])')
-   assert(hint:find('"'), 'Quotes in hint must round-trip, got: ' .. tostring(hint))
-   assert(hint:find('&'), 'Ampersand in hint must round-trip, got: ' .. tostring(hint))
+   assert(hint.find('"'), 'Quotes in hint must round-trip, got: ' .. tostring(hint))
+   assert(hint.find('&'), 'Ampersand in hint must round-trip, got: ' .. tostring(hint))
 end
 
 -----------------------------------------------------------------------------------------------------------------------

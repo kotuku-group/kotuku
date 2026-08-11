@@ -23,7 +23,7 @@ glImagePath = <{ glSVGFolder .. 'basics/sign.png' }>
 function saveScene(Scene:obj, Path:str):str
    svg = obj.new('svg', { target=Scene })
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
-   glFiles:push(Path)
+   glFiles.push(Path)
 
    check svg.acSaveToObject(file, 0)
    file = nil
@@ -31,7 +31,7 @@ function saveScene(Scene:obj, Path:str):str
 end
 
 function assertContains(Haystack:str, Needle:str, Message:str)
-   assert(string.find(Haystack, Needle, 0, true) != nil, Message)
+   assert(Haystack.find(Needle, 0, true) != nil, Message)
 end
 
 function assertNear(Actual, Expected, Message)
@@ -156,7 +156,7 @@ end
    assertContains(saved, 'xmlns:xlink="http://www.w3.org/1999/xlink"', 'Saved SVG should declare the xlink namespace')
    assertContains(saved, 'xlink:href=', 'VectorImage should export a source reference')
    assertContains(saved, 'sign.png', 'VectorImage should preserve an existing source path')
-   assert(string.find(saved, 'data:image/png;base64,', 0, true) is nil, 'Existing image paths should not be embedded')
+   assert(saved.find('data:image/png;base64,', 0, true) is nil, 'Existing image paths should not be embedded')
 end
 
 @Test function SavesVectorImageDefWithEmbeddedBitmapFallback()

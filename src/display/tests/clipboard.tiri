@@ -7,7 +7,7 @@ Manual test for confirming that the clibpoard works.
    win = gui.window({ title='Keyboard Example', insideWidth=400, insideHeight=200,
       maxWidth=600, maxHeight=300, minWidth=400, minHeight=200 })
 
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
    text = viewport.new('VectorText', {
       string='Push any key to test paste operations', face='Noto Sans', fontSize=20, y=50, x=10, fill='rgb(0,0,0)'
@@ -30,6 +30,6 @@ Manual test for confirming that the clibpoard works.
       viewport.acDraw()
    end)
 
-   win:show()
+   win.show()
    processing.sleep()
 

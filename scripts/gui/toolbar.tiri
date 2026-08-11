@@ -450,7 +450,7 @@ gui.toolbar = function(Options)
          end
 
          if type(Content) is 'string' then
-            if #Content > 1 then Content = Content:sub(0,1) end
+            if #Content > 1 then Content = Content.sub(0,1) end
          end
 
          font_size = sticker_size * 0.75

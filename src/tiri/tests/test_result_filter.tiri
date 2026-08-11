@@ -16,7 +16,7 @@ end
 
 -- Helper function with method syntax
 local obj = {
-   method = function(self)
+   method = function()
       return 10, 20, 30
    end
 }
@@ -79,7 +79,7 @@ end
 
 @Test function FilterWithMethodCalls()
    for i in {0 to 100} do -- JIT warmup
-      a = [_*]obj:method()
+      a = [_*]obj.method()
       assert(a is 20, "filter with method: expected 20, got " .. tostring(a))
    end
 end

@@ -162,11 +162,15 @@ elseif (NOT DISABLE_SSL AND (WIN32 OR OPENSSL_FOUND))
 endif ()
 
 set (NETWORK_TESTS
-   bind_address dns_parallel server_io client_server error_handling ipv6 concurrency iocp_pipeline
+   bind_address dns_parallel server_io client_server error_handling ipv6 concurrency
    performance keep_alive
    # UDP Tests
    udp_basic udp_ipv6 udp_broadcast_multicast udp_tcp_coexistence udp_performance
 )
+
+if (WIN32)
+   list (APPEND NETWORK_TESTS iocp_pipeline)
+endif ()
 
 if (NETWORK_SSL_TESTS_ENABLED)
    list (APPEND NETWORK_TESTS ssl)

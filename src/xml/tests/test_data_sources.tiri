@@ -131,10 +131,10 @@ end
    -- Generate large XML content
    parts = {'<largeRoot>'}
    for i in {0 to 500} do
-      table.insert(parts, '<item id="' .. i .. '">Content for item ' .. i .. '</item>')
+      parts.insert('<item id="' .. i .. '">Content for item ' .. i .. '</item>')
    end
-   table.insert(parts, '</largeRoot>')
-   largeXML = table.concat(parts)
+   parts.insert('</largeRoot>')
+   largeXML = parts.concat()
 
    -- Load large file
    xml = obj.new("xml", { statement = largeXML })

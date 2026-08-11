@@ -240,7 +240,7 @@ end
    xml_str = feedAndRead('<body/><page><p><print select="element em { \'CONSTRUCTED-NODE\' }"/></p></page>')
    assert(contains(xml_str, 'CONSTRUCTED-NODE'),
       'print@select must stringify constructed nodes instead of dropping their string value, got: ' .. xml_str)
-   assert((#xml_str:split('<em>CONSTRUCTED-NODE</em>') - 1) is 0,
+   assert((#xml_str.split('<em>CONSTRUCTED-NODE</em>') - 1) is 0,
       'print@select must not inject constructed-node markup, got: ' .. xml_str)
 end
 

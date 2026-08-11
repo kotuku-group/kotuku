@@ -3,6 +3,7 @@
 #define LUA_CORE
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_debug.h"
@@ -459,7 +460,13 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
       if (info.mode_a != BCMnone) append_operand(operands, "A", describe_operand_value(Proto, nullptr, info.mode_a, info.value_a, pc));
 
       if (bcmode_hasd(info.op)) {
-         if (info.mode_d != BCMnone) append_operand(operands, "D", describe_operand_value(Proto, nullptr, info.mode_d, info.value_d, pc));
+         if (info.op IS BC_BFUNC) {
+            const char *name = builtin_callable_name(BuiltinCallableID(info.value_d));
+            append_operand(operands, "D", name ? name : std::format("#{}<invalid>", info.value_d));
+         }
+         else if (info.mode_d != BCMnone) {
+            append_operand(operands, "D", describe_operand_value(Proto, nullptr, info.mode_d, info.value_d, pc));
+         }
       }
       else {
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(Proto, nullptr, info.mode_b, info.value_b, pc));
@@ -468,6 +475,9 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
       if (info.op IS BC_STGETF or info.op IS BC_STSETF) {
          uint32_t field_index = bc_p32(instruction);
          append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
+      }
+      else if (info.op IS BC_BMETH) {
+         append_operand(operands, "P", describe_operand_value(Proto, nullptr, BCMstr, bc_p32(instruction), pc));
       }
 
       BCLine line = get_proto_line(Proto, pc);
@@ -515,7 +525,13 @@ extern void dump_bytecode(FuncState &fs)
       if (info.mode_a != BCMnone) append_operand(operands, "A", describe_operand_value(nullptr, &fs, info.mode_a, info.value_a, pc));
 
       if (bcmode_hasd(info.op)) {
-         if (info.mode_d != BCMnone) append_operand(operands, "D", describe_operand_value(nullptr, &fs, info.mode_d, info.value_d, pc));
+         if (info.op IS BC_BFUNC) {
+            const char *name = builtin_callable_name(BuiltinCallableID(info.value_d));
+            append_operand(operands, "D", name ? name : std::format("#{}<invalid>", info.value_d));
+         }
+         else if (info.mode_d != BCMnone) {
+            append_operand(operands, "D", describe_operand_value(nullptr, &fs, info.mode_d, info.value_d, pc));
+         }
       }
       else {
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(nullptr, &fs, info.mode_b, info.value_b, pc));
@@ -524,6 +540,9 @@ extern void dump_bytecode(FuncState &fs)
       if (info.op IS BC_STGETF or info.op IS BC_STSETF) {
          uint32_t field_index = bc_p32(iline.ins);
          append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
+      }
+      else if (info.op IS BC_BMETH) {
+         append_operand(operands, "P", describe_operand_value(nullptr, &fs, BCMstr, bc_p32(iline.ins), pc));
       }
 
       format_bc_line(fs.L, iline.line, file_width, log_callback, "", pc, operands, nullptr, info, false, true);

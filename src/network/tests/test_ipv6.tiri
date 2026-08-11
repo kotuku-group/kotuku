@@ -28,7 +28,7 @@ glPort = 8089
       logOutput('Testing address: ' .. addr_str)
 
       -- Skip link-local with interface identifier for now
-      if not string.find(addr_str, '%') then
+      if not addr_str.find('%') then
          addr = struct.new('IPAddress')
          err = mNet.StrToAddress(addr_str, addr)
 
@@ -72,7 +72,7 @@ end
             local buffer = string.alloc(256)
             local err, bytes = Client.acRead(buffer)
             if err is ERR_Okay and bytes > 0 then
-               message = string.sub(buffer, 0, bytes)
+               message = buffer.sub(0, bytes)
                logOutput('[Server] Received from client: ' .. message)
 
                -- Echo back
@@ -101,7 +101,7 @@ end
          local buffer = string.alloc(256)
          local err, bytes = Socket.acRead(buffer)
          if err is ERR_Okay and bytes > 0 then
-            local response = string.sub(buffer, 0, bytes)
+            local response = buffer.sub(0, bytes)
             logOutput('[Client] Received response: ' .. response)
             server.acSignal()
          end

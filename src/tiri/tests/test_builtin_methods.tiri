@@ -1,0 +1,263 @@
+-- Cross-interface coverage for canonical dot built-in method calls.
+
+struct BuiltinMethodRecord
+   Value: int
+end
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function ArrayMethods()
+   local values = array<int> { 1, 2 }
+   values.push(3)
+   assert(values.contains(2) and #values is 3, 'Array query and mutation methods should use dot calls')
+
+   local mapped = values.map(Value => num: Value * 2)
+   assert(mapped[0] is 2 and mapped[2] is 6, 'Array map should retain its array result')
+   assert(values.reduce(0, (Total, Value) => num: Total + Value) is 6,
+      'Array reduce should return the accumulator result')
+
+   local clone = values.clone()
+   assert(#clone is 3 and clone[2] is 3, 'Array clone should return a separate array')
+end
+
+@Test function StringMethods()
+   local text = 'Hello World'
+   assert(text.upper() is 'HELLO WORLD', 'String transformations should use dot calls')
+   assert(text.contains('World') and text.startsWith('Hello'), 'String query methods should use dot calls')
+
+   local first, second = 'AB'.byte(0, 1)
+   assert(first is 65 and second is 66, 'Variadic string methods should preserve multiple results')
+   local parts = 'a,b,c'.split(',')
+   assert(#parts is 3 and parts[1] is 'b', 'String array results should retain their inferred type')
+end
+
+@Test function TableMethodsAndFieldPriority()
+   local values = {}
+   values.insert = 'field value'
+   values.insert('method value')
+   assert(values.insert is 'field value', 'Immediate method calls must not replace the same-named field')
+   assert(values[0] is 'method value', 'Registered table methods should own immediate dot-call position')
+
+   values.clear()
+   assert(values.empty(), 'Table clear and empty should compose through dot calls')
+
+   local sequence = { 'first', 'second' }
+   assert(sequence.concat(',') is 'first,second', 'Table concat should receive the implicit table receiver')
+   assert(sequence.remove() is 'second', 'Optional table method arguments should remain optional')
+end
+
+@Test function FieldCallEscapePaths()
+   local values = {}
+   values['insert'] = function(Value)
+      return 'grouped:' .. Value
+   end
+   assert((values.insert)('one') is 'grouped:one', 'Grouped member calls should retain field-call semantics')
+   assert(values['insert']('two') is 'grouped:two', 'Computed member calls should retain field-call semantics')
+end
+
+@Test function RuntimeFallbackShapes()
+   local body = { tests={} }
+   body.tests.insert({ name='chained' })
+   local tests = body.tests
+   tests.insert({ name='sticky' })
+
+   local function append(Values, Value)
+      Values.insert(Value)
+   end
+   append(tests, { name='parameter' })
+   assert(#tests is 3 and tests[2].name is 'parameter',
+      'Unproved chained, propagated and parameter receivers should resolve at runtime')
+
+   local holder = {
+      text='AB',
+      values=array<int> { 1 },
+      sequence={0 to 3},
+      record=struct<BuiltinMethodRecord> { Value=9 },
+      file=obj.new('file')
+   }
+   local first, second = holder.text.byte(0, 1)
+   holder.values.push(2)
+   local clone = holder.record.clone()
+   assert(first is 65 and second is 66 and holder.values[1] is 2 and holder.sequence.contains(2) and
+      clone.Value is 9 and holder.file.exists(),
+      'Runtime fallback should classify strings, arrays, ranges, structs and objects reached through table fields')
+   holder.file.free()
+end
+
+@Test function RuntimeBytecodePersistence()
+   local function factory():table
+      local body = { values={} }
+      body.values.insert(4)
+      return body.values
+   end
+   local restored = exec(string.dump(factory, true))
+   assert(#restored is 1 and restored[0] is 4,
+      'Runtime method dispatch should survive stripped bytecode serialisation')
+end
+
+@Test function RuntimePriorityAndEscapePaths()
+   local values = {}
+   values['insert'] = function(Value)
+      return 'field:' .. Value
+   end
+   local holder = { values=values }
+   holder.values.insert('built-in')
+   assert(values[0] is 'built-in', 'The runtime path should give the registered built-in priority')
+   assert((holder.values.insert)('grouped') is 'field:grouped',
+      'A grouped call should retain field-call semantics on an unproved receiver')
+   assert(holder.values['insert']('computed') is 'field:computed',
+      'A computed call should retain field-call semantics on an unproved receiver')
+end
+
+@Test function RuntimeFieldFallback()
+   local holder = {
+      value={
+         custom=function(Value)
+            return Value + 1
+         end
+      }
+   }
+   assert(holder.value.custom(6) is 7,
+      'An unregistered runtime method should fall back to an ordinary callable field')
+
+   local meta = {}
+   meta['__index'] = function(Self, Key)
+      if Key is 'custom' then return function(Value) return Value + 2 end end
+   end
+   holder.value = setmetatable({}, meta)
+   assert(holder.value.custom(5) is 7, 'Runtime field fallback should preserve __index lookup')
+end
+
+@Test function RuntimeSafePipeAndSingleEvaluation()
+   local holder = { values={} }
+   local calls = 0
+   local function receiver()
+      calls += 1
+      return holder.values
+   end
+   receiver().insert(1)
+   2 |> holder.values.insert()
+   assert(calls is 1 and #holder.values is 2 and holder.values[1] is 2,
+      'Runtime method receivers and pipe operands should execute once')
+
+   local maybe:any = nil
+   local argument_called = false
+   maybe?.insert(function() argument_called = true; return 3 end())
+   assert(not argument_called, 'A runtime safe call should skip its arguments for nil')
+end
+
+@Test function BuiltinShadowAssignmentRules()
+   local function expect_shadow_rejection(Source, Description)
+      local rejected = false
+      try
+         exec(Source)
+      except Error
+         local message = tostring(Error)
+         rejected = message.contains("built-in method 'insert'") and
+            message.contains("['insert']")
+      success
+         error(Description .. ' should be rejected')
+      end
+      assert(rejected, Description .. ' should recommend computed-key syntax')
+   end
+
+   expect_shadow_rejection("local values = {}; values.insert = function(Value) end",
+      'A direct function assignment colliding with table.insert')
+   expect_shadow_rejection("local values = { insert = function(Value) end }",
+      'A bare function-valued table field colliding with table.insert')
+   expect_shadow_rejection(
+      "local callback = function(Value) end; local values = { insert = callback }",
+      'A proved function alias in a colliding table field')
+
+   exec("local values = {}; values.insert = 1")
+   exec("local values = {}; values['insert'] = function(Value) end")
+   exec("local mt = {}; mt.push = function(Value) end")
+
+   local data = exec("return { size = 1, insert = 1 }")
+   assert(data.size is 1 and data.insert is 1,
+      'Non-function fields should retain names that collide with built-in methods')
+
+   local explicit = exec("return { ['insert'] = function(Value:any):any return Value end }")
+   assert(explicit['insert'](42) is 42,
+      'Computed-key syntax should preserve an intentional function shadow')
+
+   local ordinary = exec("return { callback = function(Value:any):any return Value end }")
+   assert(ordinary.callback(42) is 42, 'Non-colliding bare function fields should remain legal')
+end
+
+@Test function RangeMethods()
+   local values = {0 to 5}
+   assert(values.contains(3), 'Range contains should use the canonical range callable')
+   assert(values.reduce(0, (Total, Value) => num: Total + Value) is 10,
+      'Range reduce should preserve its native argument order')
+
+   local mapped = values.map(Value => num: Value + 1)
+   local materialised = values.toArray()
+   assert(mapped[0] is 1 and mapped[4] is 5, 'Range map should return an array')
+   assert(#materialised is 5 and materialised[4] is 4, 'Range toArray should materialise every value')
+end
+
+@Test function IterationPipes()
+   local total = 0
+   {0 to 4} |> (Value => do total += Value end)
+   local values = array<int> { 1, 2, 3 }
+   values |> (Value => do total += Value end)
+   assert(total is 12, 'Compiler-generated range and array iteration should use canonical each methods')
+end
+
+@Test function StructMethods()
+   local source = struct<BuiltinMethodRecord> { Value=42 }
+   assert(source.structSize() > 0, 'Struct size should be available as a canonical method')
+
+   local clone = source.clone()
+   assert(clone.Value is 42, 'Struct clone should retain the payload')
+   local destination = struct<BuiltinMethodRecord> { Value=1 }
+   destination.copy(source)
+   assert(destination.Value is 42, 'Struct copy should use the destination as receiver')
+end
+
+@Test function ObjectMethods()
+   local file = obj.new('file')
+   assert(file.exists(), 'Object exists should use a canonical object method')
+   assert(file.set('path', 'temp:builtin-methods.txt') is ERR_Okay, 'Object set should return its error code')
+   assert(file.get('path') is 'temp:builtin-methods.txt', 'Object get should return the requested field')
+   file.free()
+end
+
+@Test function SafeMethods()
+   local values:table = nil
+   local called = false
+   local function argument():num
+      called = true
+      return 1
+   end
+   local result = values?.insert(argument())
+   assert(result is nil and not called, 'A nil safe receiver should skip written arguments')
+
+   values = {}
+   values?.insert(3)
+   assert(values[0] is 3, 'A non-nil safe receiver should invoke the canonical method')
+end
+
+@Test function MethodNameOverlap()
+   local array_values = array<int> { 1 }
+   local table_values = {}
+   array_values.insert(1, 2)
+   table_values.insert(3)
+   assert(array_values[1] is 2 and table_values[0] is 3,
+      'The insert method name should resolve independently for array and table receivers')
+
+   assert(array_values.contains(1), 'Array contains should resolve against the array interface')
+   assert('abc'.contains('b'), 'String contains should resolve against the string interface')
+   assert(({0 to 3}).contains(2), 'Range contains should resolve against the range interface')
+end
+
+@Test function NamespaceRebindingDoesNotRedirectMethods()
+   local original = table.insert
+   local values = {}
+   table.insert = nil
+   values.insert(7)
+   table.insert = original
+   assert(values[0] is 7, 'Compiled instance calls should ignore later public namespace rebinding')
+end

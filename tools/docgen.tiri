@@ -24,13 +24,13 @@ function resolveSDKPath(Path:str)
       search_path = 'CMakeLists.txt'
       limit = 5
       while (err != ERR_Okay) and (limit > 0) do
-         search_list:push(search_path)
+         search_list.push(search_path)
          err, sdk_path = mSys.ResolvePath(search_path)
          search_path = '../' .. search_path
          limit -= 1
       end
    else
-      search_list:push(Path .. '/CMakeLists.txt')
+      search_list.push(Path .. '/CMakeLists.txt')
       err, sdk_path = mSys.ResolvePath(Path .. '/CMakeLists.txt')
    end
 
@@ -67,8 +67,8 @@ end
       nameFilter = regex.new([[^.*\.xml$]]),
       matchFeedback = function(Path:str, FileName:str, File)
          src_path = Path .. FileName
-         output_path = src_path:replace('/xml/', '/html/')
-         output_path = output_path:replace('.xml', '.html')
+         output_path = src_path.replace('/xml/', '/html/')
+         output_path = output_path.replace('.xml', '.html')
 
          err, res_output_path = mSys.ResolvePath(output_path, RSF_NO_FILE_CHECK)
          assert(err is ERR_Okay, f'Failed to resolve path {output_path}')
@@ -97,7 +97,7 @@ end
 
    if platform is 'Windows' then
       output_path ??= 'temp:docgen.bat'
-      cmdlist = cmdlist:replace('\\','\\\\')
+      cmdlist = cmdlist.replace('\\','\\\\')
    else
       output_path ??= 'temp:docgen.sh'
       cmdlist = '#!/bin/bash\n' .. cmdlist
@@ -113,7 +113,7 @@ end
       task = obj.new('task', {
          src     = output_path,
          outputCallback = function(Task, Buffer)
-            print(Buffer:getString())
+            print(Buffer.getString())
          end,
          flags   = TSF_WAIT,
          timeout = 20

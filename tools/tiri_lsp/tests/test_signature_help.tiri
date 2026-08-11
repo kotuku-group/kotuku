@@ -36,13 +36,13 @@ function makeDoc(Content:str):table
 end
 
 function makeDocAtMarker(Content:str):<table,table>
-   marker_pos = Content:find('|', 0, true)
+   marker_pos = Content.find('|', 0, true)
    assert(marker_pos, 'Test source must include a cursor marker.')
 
    line = 0
    character = 0
    for i in {0 to marker_pos} do
-      c = Content:sub(i, i + 1)
+      c = Content.sub(i, i + 1)
       if c is '\n' then
          line++
          character = 0
@@ -51,7 +51,7 @@ function makeDocAtMarker(Content:str):<table,table>
       end
    end
 
-   doc = makeDoc(Content:sub(0, marker_pos) .. Content:sub(marker_pos + 1))
+   doc = makeDoc(Content.sub(0, marker_pos) .. Content.sub(marker_pos + 1))
    return doc, { line = line, character = character }
 end
 
@@ -66,7 +66,7 @@ function firstSignature(SignatureHelp:table):table
 end
 
 function assertContains(Text:str, Needle:str, Message:str)
-   assert(Text and Text:find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
+   assert(Text and Text.find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
 end
 
 @Test function HandlerAdvertisesSignatureHelp()
@@ -237,6 +237,7 @@ end
 
 @Test function UnknownAndOutsideCallReturnNil()
    assert(not signatureAt('unknown(|)\n'), 'Unknown calls should not return signature help.')
+   assert(not signatureAt('value:upper(|)\n'), 'Removed colon calls should not receive signature help.')
    assert(not signatureAt('value = 42\n|'), 'Positions outside calls should not return signature help.')
 end
 

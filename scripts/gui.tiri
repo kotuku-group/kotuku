@@ -52,22 +52,22 @@ gui.fontList = thunk():table
 
       if entry.Alias then font.alias = entry.Alias end
       if entry.Styles then
-         font.styles = entry.Styles:split(',')
+         font.styles = entry.Styles.split(',')
       else
          font.styles = array<string> { 'Regular' }
       end
 
       if entry.Points then
          local sizes = array<int>
-         for point in values(entry.Points:split(',')) do
-            local size = tonumber(point:trim())
-            if size then sizes:push(size) end
+         for point in values(entry.Points.split(',')) do
+            local size = tonumber(point.trim())
+            if size then sizes.push(size) end
          end
          if #sizes > 0 then font.sizes = sizes end
       end
 
-      font.hidden = (entry.Hidden ?? ''):lower() is 'yes'
-      font.scalable = (entry.Scalable ?? ''):lower() is 'yes'
+      font.hidden = (entry.Hidden ?? '').lower() is 'yes'
+      font.scalable = (entry.Scalable ?? '').lower() is 'yes'
       fonts[name] = font
    end
 
@@ -103,20 +103,20 @@ gui.hsv = function(H:num, S:num, V:num, A:num):table -- HSV values
    return setmetatable({ h = H, s = S, v = V, a = A }, gui.mtHSV)
 end
 
-function gui.mtHSV:interpolate(New:table!, Ratio:num):table
+function gui.mtHSV.interpolate(Self, New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
-      a = self.a + ((New.a - self.a) * Ratio),
-      h = self.h + ((New.h - self.h) * Ratio),
-      s = self.s + ((New.s - self.s) * Ratio),
-      v = self.v + ((New.v - self.v) * Ratio)
+      a = Self.a + ((New.a - Self.a) * Ratio),
+      h = Self.h + ((New.h - Self.h) * Ratio),
+      s = Self.s + ((New.s - Self.s) * Ratio),
+      v = Self.v + ((New.v - Self.v) * Ratio)
    }, gui.mtHSV)
 end
 
-function gui.mtHSV:toRGB():table
-   h = self.h / 60
-   s = self.s
-   v = self.v
+function gui.mtHSV.toRGB(Self):table
+   h = Self.h / 60
+   s = Self.s
+   v = Self.v
    i = math.floor(h)
    f = h - i
    if (i & 1) is 0 then f = 1 - f end
@@ -124,19 +124,19 @@ function gui.mtHSV:toRGB():table
    n = v * (1 - s * f)
 
    if i is 6 or i is 0 then
-      return setmetatable({ r = v, g = n, b = m, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = v, g = n, b = m, a = Self.a }, gui.mtRGB)
    elseif i is 1 then
-      return setmetatable({ r = n, g = v, b = m, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = n, g = v, b = m, a = Self.a }, gui.mtRGB)
    elseif i is 2 then
-      return setmetatable({ r = m, g = v, b = n, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = m, g = v, b = n, a = Self.a }, gui.mtRGB)
    elseif i is 3 then
-      return setmetatable({ r = m, g = n, b = v, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = m, g = n, b = v, a = Self.a }, gui.mtRGB)
    elseif i is 4 then
-      return setmetatable({ r = n, g = m, b = v, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = n, g = m, b = v, a = Self.a }, gui.mtRGB)
    elseif i is 5 then
-      return setmetatable({ r = v, g = m, b = n, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = v, g = m, b = n, a = Self.a }, gui.mtRGB)
    else
-      return setmetatable({ r = 0, g = 0, b = 0, a = self.a }, gui.mtRGB)
+      return setmetatable({ r = 0, g = 0, b = 0, a = Self.a }, gui.mtRGB)
    end
 end
 
@@ -184,35 +184,35 @@ gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table -- Normalised
    return setmetatable(result, gui.mtRGB)
 end
 
-function gui.mtRGB:interpolate(New:table!, Ratio:num):table
+function gui.mtRGB.interpolate(Self, New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
-      a = self.a + ((New.a - self.a) * Ratio),
-      r = self.r + ((New.r - self.r) * Ratio),
-      g = self.g + ((New.g - self.g) * Ratio),
-      b = self.b + ((New.b - self.b) * Ratio)
+      a = Self.a + ((New.a - Self.a) * Ratio),
+      r = Self.r + ((New.r - Self.r) * Ratio),
+      g = Self.g + ((New.g - Self.g) * Ratio),
+      b = Self.b + ((New.b - Self.b) * Ratio)
    }, gui.mtRGB)
 end
 
-function gui.mtRGB:toHSV():table -- Normalised HSV
-   max = self:brightness()
+function gui.mtRGB.toHSV(Self):table -- Normalised HSV
+   max = Self.brightness(Self)
    hsv = { v = max }
    if max > 0 then
-      min = self.b
-      if self.g < min then min = self.g end
-      if self.r < min then min = self.r end
+      min = Self.b
+      if Self.g < min then min = Self.g end
+      if Self.r < min then min = Self.r end
 
       delta = max - min
       hsv.s = delta / max
       if hsv.s is 0 then
          hsv.h = 0
       else
-         if self.r >= max then
-            hsv.h = (self.g - self.b) / delta
-         elseif self.g >= max then
-            hsv.h = 2.0 + (self.b - self.r) / delta
+         if Self.r >= max then
+            hsv.h = (Self.g - Self.b) / delta
+         elseif Self.g >= max then
+            hsv.h = 2.0 + (Self.b - Self.r) / delta
          else
-            hsv.h = 4.0 + (self.r - self.g) / delta
+            hsv.h = 4.0 + (Self.r - Self.g) / delta
          end
          hsv.h = hsv.h * 60
          if hsv.h < 0 then hsv.h = hsv.h + 360 end
@@ -226,32 +226,32 @@ end
 
 -- Return the light value of an RGB colour (i.e. the V in HSV)
 
-function gui.mtRGB:brightness():num
-   local max:num = self.b
-   if self.g > max then max = self.g end
-   if self.r > max then max = self.r end
+function gui.mtRGB.brightness(Self):num
+   local max:num = Self.b
+   if Self.g > max then max = Self.g end
+   if Self.r > max then max = Self.r end
    return max
 end
 
-function gui.mtRGB:withAlpha(Alpha:num!):table
-   return setmetatable({ r = self.r, g = self.g, b = self.b, a = self.a * Alpha }, gui.mtRGB)
+function gui.mtRGB.withAlpha(Self, Alpha:num!):table
+   return setmetatable({ r = Self.r, g = Self.g, b = Self.b, a = Self.a * Alpha }, gui.mtRGB)
 end
 
-function gui.mtRGB:linearise():table
+function gui.mtRGB.linearise(Self):table
    function lineariseRGB(u)
       return (u <= 0.04045) ? (u / 12.92) :> (((u + 0.055) / 1.055) ** 2.4)
    end
 
-   return { r = lineariseRGB(self.r), g = lineariseRGB(self.g), b = lineariseRGB(self.b), a = self.a }
+   return { r = lineariseRGB(Self.r), g = lineariseRGB(Self.g), b = lineariseRGB(Self.b), a = Self.a }
 end
 
 -- Convert RGB table { r, g, b, a } (0-1) to HSL table { h, s, l }
 -- h is hue in degrees [0,360), s and l are in [0,1].
 
-function gui.mtRGB:toHSL():table
-   local r:num = self.r
-   local g:num = self.g
-   local b:num = self.b
+function gui.mtRGB.toHSL(Self):table
+   local r:num = Self.r
+   local g:num = Self.g
+   local b:num = Self.b
 
    local max:num = r
    if g > max then max = g end
@@ -286,16 +286,16 @@ end
 -- Return the relative luminance of the colour per WCAG 2.x (BT.709 coefficients).
 -- Result is in [0,1] where 0 is black and 1 is white.
 
-function gui.mtRGB:luminance():num
-   local linear = self:linearise()
+function gui.mtRGB.luminance(Self):num
+   local linear = Self.linearise(Self)
    return (0.2126 * linear.r) + (0.7152 * linear.g) + (0.0722 * linear.b)
 end
 
 -- Convert RGB table { r, g, b, a } (0-255) to Display P3 table { r, g, b }
 -- Values are in [0,1].  Out-of-gamut sRGB colours may produce values outside [0,1].
 
-function gui.mtRGB:toDisplayP3():table
-   local linear = self:linearise()
+function gui.mtRGB.toDisplayP3(Self):table
+   local linear = Self.linearise(Self)
 
    -- sRGB linear → XYZ D65
    local x =  0.4124564 * linear.r + 0.3575761 * linear.g + 0.1804375 * linear.b
@@ -316,8 +316,8 @@ end
 -- Convert RGB table { r, g, b, a } (0-255) to OKLab table { okl, oka, okb, a }
 -- okl is lightness in [0,1], oka is green-red axis, okb is blue-yellow axis (both typically -0.5 to 0.5).
 
-function gui.mtRGB:toOKLab():table
-   local linear = self:linearise()
+function gui.mtRGB.toOKLab(Self):table
+   local linear = Self.linearise(Self)
 
    -- Linear sRGB → LMS (OKLab M1 matrix)
    lms_l = 0.4122214708 * linear.r + 0.5363325363 * linear.g + 0.0514459929 * linear.b
@@ -334,19 +334,19 @@ function gui.mtRGB:toOKLab():table
       okl = 0.2104542553 * lms_l + 0.7936177850 * lms_m - 0.0040720468 * lms_s,
       oka = 1.9779984951 * lms_l - 2.4285922050 * lms_m + 0.4505937099 * lms_s,
       okb = 0.0259040371 * lms_l + 0.7827717662 * lms_m - 0.8086757660 * lms_s,
-      a   = self.a
+      a   = Self.a
    }
 end
 
 -- Convert RGB table { r, g, b, a } (0-255) to OKLCH table { okl, okc, okh, a }
 -- okl is lightness in [0,1], okc is chroma (unbounded, typically 0-0.4), okh is hue in degrees [0,360).
 
-function gui.mtRGB:toOKLCH():table
-   local lab = self:toOKLab()
+function gui.mtRGB.toOKLCH(Self):table
+   local lab = Self.toOKLab(Self)
    local c = math.sqrt(lab.oka * lab.oka + lab.okb * lab.okb)
    local h = math.deg(math.atan2(lab.okb, lab.oka))
    if h < 0 then h = h + 360 end
-   return setmetatable({ okl = lab.okl, okc = c, okh = h, a = self.a },
+   return setmetatable({ okl = lab.okl, okc = c, okh = h, a = Self.a },
       { __tostring = (Self) => Self.a is 1 ?
          string.format('oklch(%.3f %.3f %.3f)', Self.okl, Self.okc, Self.okh) :>
          string.format('oklch(%.3f %.3f %.3f / %.3f)', Self.okl, Self.okc, Self.okh, Self.a)
@@ -416,7 +416,7 @@ gui.rgbToIconTheme = function(Value:any!):str
       Value = gui.strToRGB(Value)
    end
 
-   return (Value:brightness() > 0.5) ? 'pearl' :> 'carbon'
+   return (Value.brightness(Value) > 0.5) ? 'pearl' :> 'carbon'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -458,8 +458,8 @@ gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:n
       colours = Colours
    else
       colours = array<table>
-      colours:push(Colours.first)
-      colours:push(Colours.last)
+      colours.push(Colours.first)
+      colours.push(Colours.last)
    end
 
    assert(#colours > 1, 'At least two colours are required to create a gradient.')
@@ -473,7 +473,7 @@ gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:n
       vc.rgb.green = col.g
       vc.rgb.blue  = col.b
       vc.rgb.alpha = col.a ? col.a :> 1.0
-      table.insert(stops, vc)
+      stops.insert(vc)
       i++
    end
 
@@ -523,7 +523,7 @@ gui.createIcon = function(Scene:obj!, Path:str!, Size:num, Theme:any!, Name:str)
          error(f'gui.createIcon() theme {Theme} not recognised.')
       end
 
-      Name ??= Theme:lower() .. '/' .. Path:lower()
+      Name ??= Theme.lower() .. '/' .. Path.lower()
    else
       error('Invalid Theme specified.')
    end
@@ -536,7 +536,7 @@ gui.createIcon = function(Scene:obj!, Path:str!, Size:num, Theme:any!, Name:str)
 
    icon.pattern  = Scene.new('VectorPattern', { pageWidth=Size, pageHeight=Size, spreadMethod=VSPREAD_PAD })
    icon.gradient = gui.simpleGradient(icon.pattern.scene, gname, { lGradient.first, lGradient.last }, 0, 0, 0, 1, 'boundingbox', true)
-   if not Path:startsWith('icons:') then
+   if not Path.startsWith('icons:') then
       Path = f'icons:{Path}.svg'
    end
    icon.svg = obj.new('svg', { target=icon.pattern.viewport, path=Path })
@@ -565,7 +565,7 @@ end
 -- Negative positions, including -0.0, are interpreted as offsets from the end
 
 gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any, MarginB:any):num
-   local o = Orientation:sub(0, 1)
+   local o = Orientation.sub(0, 1)
    local options = { fill=tostring(gui.getTheme(Viewport).window.stroke) }
 
    if o is 'h' or o is 'H' then
@@ -674,7 +674,7 @@ function modifyAlpha(Colour:str!, Alpha:num!):str
    mVec.ReadPainter(nil, Colour, glPainter)
    nrgb = glPainter.Colour
    rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)
-   return tostring(rgb:withAlpha(Alpha))
+   return tostring(rgb.withAlpha(rgb, Alpha))
 end
 
 ----------------------------------------------------------------------------------------------------------------------

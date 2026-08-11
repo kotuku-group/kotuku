@@ -34,7 +34,7 @@ end
 @Test function ArrowWithEach()
    sum = 0
    r = {1 to 6}
-   r:each(i => do sum += i end)
+   r.each(i => do sum += i end)
    assert(sum is 15)
 end
 
@@ -52,7 +52,7 @@ end
 
 @Test function ArrowComparison()
    items = {3, 1, 2}
-   table.sort(items, (a, b) => a < b)
+   items.sort((a, b) => a < b)
    assert(items[0] is 1)
    assert(items[1] is 2)
    assert(items[2] is 3)

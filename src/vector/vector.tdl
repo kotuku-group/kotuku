@@ -458,7 +458,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
    }
   ]])
 
-  // Pre-defined tags for VectorMatrix
+  -- Pre-defined tags for VectorMatrix
 
   hash("MTAG", "0x%s",
      "ANIMATE-MOTION",
@@ -474,7 +474,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int Descent      # Height from the baseline to the bottom of the font (gutter)
   ]])
 
-  // Use SET_VECTOR_COLOUR() to configure the RGB values in VectorColour
+  -- Use SET_VECTOR_COLOUR() to configure the RGB values in VectorColour
 
   klass("VectorColour", {
     src="painters/colour.cpp",
@@ -791,7 +791,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~int(VIJ) InnerJoin
   ]])
 
-  // VectorPath method ID's start high enough to give a cushion from inherited Vector methods.
+  -- VectorPath method ID's start high enough to give a cushion from inherited Vector methods.
 
   methods('VectorPath', 'VP', {
     { id=30, name='AddCommand' },
@@ -805,7 +805,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~array(struct(PathCommand)) Commands
   ]])
 
-  // VectorText method ID's start high enough to give a cushion from inherited Vector methods.
+  -- VectorText method ID's start high enough to give a cushion from inherited Vector methods.
 
   methods('VectorText', 'VT', {
     { id=30, name='DeleteLine' }

@@ -32,9 +32,9 @@ function expect_object_contract_failure(Callback:func, Boundary:str)
       Callback()
    except e
       failed = true
-      assert(e.message:find('expected obj<Time>') != nil,
+      assert(e.message.find('expected obj<Time>') != nil,
          'The message should identify the expected Time class: ' .. e.message)
-      assert(e.message:find('got obj<File>') != nil or e.message:find('got obj<invalid>') != nil,
+      assert(e.message.find('got obj<File>') != nil or e.message.find('got obj<invalid>') != nil,
          'The message should identify the actual object class: ' .. e.message)
    end
    assert(failed, 'Expected a catchable ' .. Boundary .. ' object-class contract failure')
@@ -46,9 +46,9 @@ function expect_diagnostic_failure(Callback:func)
       Callback()
    except e
       failed = true
-      assert(e.message:find('parameter 1') != nil, 'The message should identify parameter 1: ' .. e.message)
-      assert(e.message:find('expected num') != nil, 'The message should identify the expected type: ' .. e.message)
-      assert(e.message:find('got string') != nil, 'The message should identify the actual type: ' .. e.message)
+      assert(e.message.find('parameter 1') != nil, 'The message should identify parameter 1: ' .. e.message)
+      assert(e.message.find('expected num') != nil, 'The message should identify the expected type: ' .. e.message)
+      assert(e.message.find('got string') != nil, 'The message should identify the actual type: ' .. e.message)
    end
    assert(failed, 'Expected a diagnostic contract failure')
 end
@@ -59,9 +59,9 @@ function expect_batched_contract_failure(Callback:func, Boundary:str, Position:n
       Callback()
    except e
       failed = true
-      assert(e.message:find(Boundary .. ' ' .. Position) != nil,
+      assert(e.message.find(Boundary .. ' ' .. Position) != nil,
          'The message should identify the failing contract position: ' .. e.message)
-      assert(e.message:find("('" .. Label .. "')") != nil,
+      assert(e.message.find("('" .. Label .. "')") != nil,
          'The message should identify the failing contract label: ' .. e.message)
    end
    assert(failed, 'Expected a batched contract failure')
@@ -73,9 +73,9 @@ function expect_userdata_diagnostic(Callback:func, Actual:str)
       Callback()
    except e
       failed = true
-      assert(e.message:find('expected userdata') != nil,
+      assert(e.message.find('expected userdata') != nil,
          'The message should identify the userdata contract: ' .. e.message)
-      assert(e.message:find('got ' .. Actual) != nil,
+      assert(e.message.find('got ' .. Actual) != nil,
          'The message should identify the actual type: ' .. e.message)
    end
    assert(failed, 'Expected a userdata diagnostic contract failure')
@@ -87,9 +87,9 @@ function expect_array_contract_failure(Callback:func, Expected:str, Actual:str)
       Callback()
    except e
       failed = true
-      assert(e.message:find('expected array<' .. Expected .. '>') != nil,
+      assert(e.message.find('expected array<' .. Expected .. '>') != nil,
          'The message should identify the expected array member: ' .. e.message)
-      assert(e.message:find('got array<' .. Actual .. '>') != nil,
+      assert(e.message.find('got array<' .. Actual .. '>') != nil,
          'The message should identify the actual array member: ' .. e.message)
    end
    assert(failed, 'Expected an array member contract failure')
@@ -224,7 +224,7 @@ target.acRefresh()
 
    check script.acActivate()
    assert(script.error != ERR_Okay, 'The native callback parameter contract should fail')
-   assert(script.errorMessage:startsWith("[script:2:0] type contract failed for parameter 1 ('Window')"),
+   assert(script.errorMessage.startsWith("[script:2:0] type contract failed for parameter 1 ('Window')"),
       'A native callback contract failure should report its Tiri source and line with an unavailable column: ' ..
       script.errorMessage)
 end
@@ -234,7 +234,7 @@ end
    local sources = debug.fileSources()
    for i in {0 to #sources} do
       if sources[i].filename is 'test_type_contracts.tiri' then
-         launcher_path = sources[i].path:replace(
+         launcher_path = sources[i].path.replace(
             'test_type_contracts.tiri', 'type_contract_callback_launcher.tiri')
          break
       end
@@ -245,7 +245,7 @@ end
 
    check script.acActivate()
    assert(script.error != ERR_Okay, 'The imported native callback parameter contract should fail')
-   assert(script.errorMessage:startsWith(
+   assert(script.errorMessage.startsWith(
       "[type_contract_callback_fixture.tiri:3:0] type contract failed for parameter 1 ('Window')"),
       'An imported native callback contract failure should report the imported source file: ' .. script.errorMessage)
 end
@@ -287,7 +287,7 @@ end
       try
          exec(Source)
       except e
-         assert(e.message:find(Message) != nil, 'Unexpected required-annotation diagnostic: ' .. e.message)
+         assert(e.message.find(Message) != nil, 'Unexpected required-annotation diagnostic: ' .. e.message)
       success
          error('Expected required annotation syntax to be rejected')
       end
@@ -320,7 +320,7 @@ end
 
    local values = array<any> { 'wrong' }
    function native_callback(Value:num) return Value end
-   expect_contract_failure(function() values:each(native_callback) end, 'parameter')
+   expect_contract_failure(function() values.each(native_callback) end, 'parameter')
 end
 
 @Test function SpecialParameterForms()
@@ -329,9 +329,9 @@ end
    expect_contract_failure(function() blank_alias(dynamic_value('wrong')) end, 'parameter')
 
    local methods = {}
-   function methods:typed(Value:num) return Value end
+   function methods.typed(Self, Value:num) return Value end
    local method_alias:any = methods.typed
-   assert(methods:typed(8) is 8, 'Method self and typed argument should pass')
+   assert(methods.typed(methods, 8) is 8, 'Method Self and typed argument should pass')
    expect_contract_failure(function() method_alias(methods, 'wrong') end, 'parameter')
 
    function recurse(Value:num):num
@@ -569,9 +569,9 @@ end
       checked_refined(alpha, dynamic_value(bravo_values), time_object)
    except e
       refined_failed = true
-      assert(e.message:find('parameter 2') != nil and e.message:find("('Values')") != nil,
+      assert(e.message.find('parameter 2') != nil and e.message.find("('Values')") != nil,
          'A cached refined diagnostic should preserve its position and label: ' .. e.message)
-      assert(e.message:find('array<struct<ContractAlpha>>') != nil,
+      assert(e.message.find('array<struct<ContractAlpha>>') != nil,
          'A cached refined diagnostic should preserve its exact expected type: ' .. e.message)
    end
    assert(refined_failed, 'A cached refined array contract should reject the wrong structure member type')
@@ -1046,7 +1046,7 @@ global function glContractReducedForward(Value:str):str return Value end
 ]])
    except e
       reduced_forward_failed = true
-      assert(e.message:find("signature for global function 'glContractReducedForward'") != nil,
+      assert(e.message.find("signature for global function 'glContractReducedForward'") != nil,
          'The failed reduced declaration must preserve the forward-signature diagnostic: ' .. e.message)
    end
    assert(reduced_forward_failed,
@@ -1174,7 +1174,7 @@ end
       global glContractReducedConflict = 'wrong'
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'The conflicting declaration should raise a global contract error: ' .. tostring(e.message))
    end
    assert(trapped, 'An incompatible declaration inside try must remain catchable')
@@ -1356,8 +1356,8 @@ end
    script.acQuery()
    script.acActivate()
    local _, disassembly = script.mtDebugLog('disasm')
-   local guard = disassembly:find('CONTRACT')
-   local access = disassembly:find('AGET')
+   local guard = disassembly.find('CONTRACT')
+   local access = disassembly.find('AGET')
    assert(guard != nil and access != nil and guard < access,
       'CONTRACT must precede specialised array access, got:\n' .. disassembly)
 end

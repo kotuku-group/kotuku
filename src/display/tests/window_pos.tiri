@@ -7,7 +7,7 @@
    win = gui.window({ title='Keyboard Example', insideWidth=400, insideHeight=200,
       maxWidth=600, maxHeight=300, minWidth=400, minHeight=200 })
 
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
    tx_display = viewport.new('VectorText', {
       string='', face='Inconsolata', fontStyle='bold', fontSize=18, y=20, x=10, fill='rgb(0,0,0)'
@@ -40,6 +40,6 @@ end
       win.surface.mtScheduleRedraw()
    end)
 
-   win:show()
+   win.show()
    get_display_info()
    processing.sleep()

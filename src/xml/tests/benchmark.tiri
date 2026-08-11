@@ -354,8 +354,8 @@ function benchmarkTokenLongPath()
    if not glTokenLongPathCached then
       glTokenLongPathCached = true
       local parts = {}
-      for i in {0 to 60} do table.insert(parts, 'catalog') end
-      local path = '/' .. table.concat(parts, '/')
+      for i in {0 to 60} do parts.insert('catalog') end
+      local path = '/' .. parts.concat('/')
       glXQuery.statement = path
    end
    local err = glXQuery.mtEvaluate(glXML)
@@ -533,7 +533,7 @@ end
    local sortedResults = {}
    for testName, result in pairs(benchmarkResults) do
       if result != -1 then
-         table.insert(sortedResults, {
+         sortedResults.insert({
             name = testName,
             avg_time = result.avg_time,
             total_time = result.total_time,
@@ -544,7 +544,7 @@ end
       end
    end
 
-   table.sort(sortedResults, function(a, b) return a.name < b.name end)
+   sortedResults.sort(function(a, b) return a.name < b.name end)
 
    local grandTotalTime = 0
    local fastestGrandTotal = 0

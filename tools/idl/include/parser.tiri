@@ -73,8 +73,8 @@ function parseTags(Tags:str, Context:str):array<string>
    result = array<string>
    Tags ?! return result
 
-   for item in values(Tags:replace('\n', ','):split(',')) do
-      local tag = item:trim()
+   for item in values(Tags.replace('\n', ',').split(',')) do
+      local tag = item.trim()
       if tag?? then
          if glOfficialTags[tag] then
             result = addTag(result, tag)
@@ -98,7 +98,7 @@ global function addTag(Tags:array<string>, Tag:str):array<string>
       if existing_tag is Tag then return Tags end
    end
 
-   Tags:push(Tag)
+   Tags.push(Tag)
    return Tags
 end
 
@@ -149,13 +149,13 @@ end
 -- Parse the -CLASS- documentation header and attach it to the class definition.
 
 global function parseClassHeader(Class:table, Extract:str)
-   Extract = f'-CLASS-\n{Extract:trim()}\n-END-\n'
+   Extract = f'-CLASS-\n{Extract.trim()}\n-END-\n'
 
    local name
    name, Class.comment = rx_doc_combo.extract(Extract)
    Class.status = rx_doc_status.extract(Extract)
 
-   assert(name:lower() is Class.name:lower(), f"The name specified in the -CLASS- header '{name}' does not match the name specified in the class() call '{Class.name}'")
+   assert(name.lower() is Class.name.lower(), f"The name specified in the -CLASS- header '{name}' does not match the name specified in the class() call '{Class.name}'")
 
    Class.description = rx_doc_desc.extract(Extract)
 end
@@ -164,7 +164,7 @@ end
 -- Parse an -ACTION- documentation block and attach the extracted details to the class action.
 
 global function parseAction(Class:table, Extract:str)
-   Extract = '-ACTION-\n' .. Extract:trim() .. '\n-END-\n'
+   Extract = '-ACTION-\n' .. Extract.trim() .. '\n-END-\n'
 
    local name:str = rx_doc_name.extract(Extract)
    local comment:str = rx_doc_comment.extract(Extract)
@@ -182,21 +182,21 @@ global function parseAction(Class:table, Extract:str)
       local error_list = glCoreConstants['ERR']
       action.results = { }
 
-      for line in values(errors:split('\n')) do
+      for line in values(errors.split('\n')) do
          line ?! break -- A double line-break forces a premature end to error processing.
 
          local ecode:str, emsg:str = rx_ecode_comment.extract(line)
          if ecode then
-            table.insert(action.results, { code = error_list[ecode], codeName = ecode, msg = emsg })
+            action.results.insert({ code = error_list[ecode], codeName = ecode, msg = emsg })
          else
             ecode = rx_ecode_only.extract(line)
             if ecode then
-               table.insert(action.results, { code = error_list[ecode], codeName = ecode, msg = mSys.GetErrorMsg(error_list[ecode]) })
+               action.results.insert({ code = error_list[ecode], codeName = ecode, msg = mSys.GetErrorMsg(error_list[ecode]) })
             end
         end
       end
 
-      table.sort(action.results, function(a,b) return a.code < b.code end)
+      action.results.sort(function(a,b) return a.code < b.code end)
    end
 
    local tags:str = rx_tags_section.extract(Extract)
@@ -209,7 +209,7 @@ end
 -- Parse a -FIELD- documentation block and attach the extracted details to the matching class field.
 
 global function parseField(Class:table, Extract:str)
-   Extract = '-FIELD-\n' .. Extract:trim() .. '\n-END-\n'
+   Extract = '-FIELD-\n' .. Extract.trim() .. '\n-END-\n'
 
    local lookup:str = rx_doc_lookup.extract(Extract)
    local status:str = rx_doc_status.extract(Extract)
@@ -254,9 +254,9 @@ global function parseParameterString(Parameter:str):table
    local type:str, name:str, comment:str = rx_param.extract(Parameter)
    if type then
       return {
-         type = type:trim(),
-         name = name:trim(),
-         comment = comment:trim()
+         type = type.trim(),
+         name = name.trim(),
+         comment = comment.trim()
       }
    end
 end
@@ -265,7 +265,7 @@ end
 -- Parse a -METHOD- documentation block and attach the extracted details to the registered class method.
 
 global function parseMethod(Class:table, Extract:str)
-   Extract = f'-METHOD-\n{Extract:trim()}\n-END-\n'
+   Extract = f'-METHOD-\n{Extract.trim()}\n-END-\n'
 
    local name:str = rx_doc_name.extract(Extract)
    local comment:str = rx_doc_comment.extract(Extract)
@@ -277,8 +277,8 @@ global function parseMethod(Class:table, Extract:str)
    local status = rx_doc_status.extract(Extract)
    local description = rx_doc_desc.extract(Extract)
 
-   if name and name:endsWith('()') then
-      name = name:pop(2)
+   if name and name.endsWith('()') then
+      name = name.pop(2)
    end
 
    assert(name??, 'Failed to extract a name tag from -METHOD- definition.')
@@ -307,34 +307,34 @@ global function parseMethod(Class:table, Extract:str)
       local error_list = glCoreConstants['ERR']
       method.results = { }
 
-      for line in values(errors:split('\n')) do
+      for line in values(errors.split('\n')) do
          line ?! break -- A double line-break forces a premature end to error processing.
 
          local ecode:str, emsg:str = rx_ecode_comment.extract(line)
          if ecode then
-            table.insert(method.results, { code = error_list[ecode], codeName = ecode, msg = emsg })
+            method.results.insert({ code = error_list[ecode], codeName = ecode, msg = emsg })
          else
             ecode = rx_ecode_only.extract(line)
             if ecode then
-               table.insert(method.results, { code = error_list[ecode], codeName = ecode, msg = mSys.GetErrorMsg(error_list[ecode]) })
+               method.results.insert({ code = error_list[ecode], codeName = ecode, msg = mSys.GetErrorMsg(error_list[ecode]) })
             end
          end
       end
 
-      table.sort(method.results, function(a,b) return (a.code ?? -1) < (b.code ?? -1) end)
+      method.results.sort(function(a,b) return (a.code ?? -1) < (b.code ?? -1) end)
    end
 
    if input?? then
-      for content in values(input:split('\n')) do
+      for content in values(input.split('\n')) do
          local param = parseParameterString(content)
          if param then
             cType(param, f'Method:{Class.name}.{name}')
-            table.insert(method.params, param)
+            method.params.insert(param)
 
             if param.lookup then
                Class.references['TYPE:' .. param.lookup] = 'method:' .. name
             end
-         elseif content:trim()?? then
+         elseif content.trim()?? then
             error("Unable to process line '" .. (content ?? "NULL") .. "' for method '" .. name .. "'")
          end
       end
@@ -382,7 +382,7 @@ function classStorageOrigin(Class:table):num
             'base class metadata is unavailable.')
       end
 
-      Class.storageOffsetSymbol = 'CLASS_OFFSET_' .. base.className:upper()
+      Class.storageOffsetSymbol = 'CLASS_OFFSET_' .. base.className.upper()
       return (base.publicSize != 0) ? base.publicSize :> base.size
    end
 
@@ -457,14 +457,14 @@ global function parseClassFields(Class:table, ClientSpec:str)
                else
                   def.virtual = true
                   def.fullType = glTypes.void -- Dummy
-                  table.insert(newFields, def)
+                  newFields.insert(def)
                end
             end
          end
       end
 
       for f in values(newFields) do
-         table.insert(Class.fields, f)
+         Class.fields.insert(f)
       end
    end
 
@@ -550,7 +550,7 @@ global function parseSourceFiles()
 
       local idlExtract
       local content = io.readAll(path)
-      content = '\n' .. content:replace('\r\n', '\n')
+      content = '\n' .. content.replace('\r\n', '\n')
       for start, len, cap in rx_idl_section.findAll(content) do
          idlExtract = (idlExtract ?? '') .. cap[0]
       end
@@ -577,7 +577,7 @@ global function parseSourceFiles()
       -- Parse each line individually
 
       local currentExtract, proc
-      for line in values(content:split('\n')) do
+      for line in values(content.split('\n')) do
          if line?? then
             line = rx_strip_ws.extract(line) ?? '' -- Capture non-whitespace
             if (line is '-CATEGORY-') or (line is '-FUNCTION-') then
@@ -607,7 +607,7 @@ end
 -- Parse a -CATEGORY- documentation block and make it the active function category.
 
 global function parseCategory(Extract:str)
-   Extract = f'-CATEGORY-\n{Extract:trim()}\n-END-\n'
+   Extract = f'-CATEGORY-\n{Extract.trim()}\n-END-\n'
    global glCategory = rx_doc_name.extract(Extract)
    glCategories[glCategory] = { name=glCategory }
 end
@@ -618,7 +618,7 @@ end
 global function parseFunction(Extract:str)
    Extract ?! return
 
-   Extract = f'-FUNCTION-\n{Extract:trim()}\n-END-\n'
+   Extract = f'-FUNCTION-\n{Extract.trim()}\n-END-\n'
 
    local name:str, comment:str = rx_doc_combo.extract(Extract)
    local status      = rx_doc_status.extract(Extract)
@@ -627,8 +627,8 @@ global function parseFunction(Extract:str)
    local attrib      = rx_doc_attrib.extract(Extract)
    local description = rx_doc_desc.extract(Extract)
 
-   if name and name:endsWith('()') then
-      name = name:pop(2)
+   if name and name.endsWith('()') then
+      name = name.pop(2)
    end
 
    assert(name??, 'Failed to extract a name tag from -FUNCTION- definition.')
@@ -650,7 +650,7 @@ global function parseFunction(Extract:str)
       local error_list = glCoreConstants['ERR']
       def.result = cType({ type="error", values={ }, isFunction=true }, f'Function:{name}')
 
-      for line in values(errors:split('\n')) do
+      for line in values(errors.split('\n')) do
          line ?! break -- A double line-break forces a premature end to error processing.
 
          local ecode:str, emsg:str = rx_ecode_comment.extract(line)
@@ -659,7 +659,7 @@ global function parseFunction(Extract:str)
             if not code_value then
                print(f'Error code "{ecode}" referenced in function {name}() is invalid.')
             else
-               table.insert(def.result.values, { code = code_value, codeName = ecode, msg = emsg })
+               def.result.values.insert({ code = code_value, codeName = ecode, msg = emsg })
             end
          else
             ecode = rx_ecode_only.extract(line)
@@ -668,19 +668,19 @@ global function parseFunction(Extract:str)
                if not code_value then
                   print(f'Error code "{ecode}" referenced in function {name}() is invalid.')
                else
-                  table.insert(def.result.values, { code = code_value, codeName = ecode, msg = mSys.GetErrorMsg(code_value) })
+                  def.result.values.insert({ code = code_value, codeName = ecode, msg = mSys.GetErrorMsg(code_value) })
                end
             end
          end
       end
 
-      table.sort(def.result.values, function(a,b) return a.code < b.code end)
+      def.result.values.sort(function(a,b) return a.code < b.code end)
    else
       local result = rx_result_section.extract(Extract)
       if result?? then
          local ext_type, res_comment = rx_result_type.extract(result)
          assert(ext_type, f"Incorrectly defined result section in function '{name}'")
-         def.result = cType({ type=ext_type, comment=res_comment:trim(), isFunction=true, isReturn=true }, f'Function:{name}')
+         def.result = cType({ type=ext_type, comment=res_comment.trim(), isFunction=true, isReturn=true }, f'Function:{name}')
       end
    end
 

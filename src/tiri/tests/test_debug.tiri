@@ -336,7 +336,7 @@ end
 @Test function HookCallEvents()
    events = {}
    function myHook(Event, Line)
-      table.insert(events, Event)
+      events.insert(Event)
    end
 
    debug.setHook(myHook, "c")  -- Hook on call events
@@ -351,9 +351,9 @@ end
    debug.setHook(function() end, "crl")
    hook, mask, count = debug.getHook()
    -- Mask should contain all three characters (order may vary)
-   assert(mask:find('c'), "Mask should contain 'c'")
-   assert(mask:find('r'), "Mask should contain 'r'")
-   assert(mask:find('l'), "Mask should contain 'l'")
+   assert(mask.find('c'), "Mask should contain 'c'")
+   assert(mask.find('r'), "Mask should contain 'r'")
+   assert(mask.find('l'), "Mask should contain 'l'")
    debug.setHook()
 end
 
@@ -377,7 +377,7 @@ end
 @Test function TracebackWithMessage()
    tb = debug.traceback("my error")
    assert(type(tb) is 'string', "traceback should return a string")
-   assert(tb:find("my error"), "traceback should contain the message")
+   assert(tb.find("my error"), "traceback should contain the message")
 end
 
 @Test function TracebackWithLevel()
@@ -386,7 +386,7 @@ end
    end
    tb = inner()
    assert(type(tb) is 'string', "traceback should return a string")
-   assert(tb:find("from inner"), "traceback should contain the message")
+   assert(tb.find("from inner"), "traceback should contain the message")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -423,7 +423,7 @@ end
 function hasDiagnosticMessage(Result, Message)
    if not Result.diagnostics then return false end
    for diagnostic in values(Result.diagnostics) do
-      if diagnostic.message and diagnostic.message:find(Message) then return true end
+      if diagnostic.message and diagnostic.message.find(Message) then return true end
    end
    return false
 end

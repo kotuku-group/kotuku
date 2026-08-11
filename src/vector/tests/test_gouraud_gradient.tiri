@@ -35,8 +35,8 @@ end
 
 function rampStops()
    local stops = { }
-   table.insert(stops, stop(0.0, 0.0, 0.0, 0.0))
-   table.insert(stops, stop(1.0, 1.0, 1.0, 1.0))
+   stops.insert(stop(0.0, 0.0, 0.0, 0.0))
+   stops.insert(stop(1.0, 1.0, 1.0, 1.0))
    return stops
 end
 
@@ -58,9 +58,9 @@ function newTriangleScene()
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, vertex(10, 10, 1.0, 0.0, 0.0))
-   table.insert(vertices, vertex(90, 10, 0.0, 1.0, 0.0))
-   table.insert(vertices, vertex(10, 90, 0.0, 0.0, 1.0))
+   vertices.insert(vertex(10, 10, 1.0, 0.0, 0.0))
+   vertices.insert(vertex(90, 10, 0.0, 1.0, 0.0))
+   vertices.insert(vertex(10, 90, 0.0, 0.0, 1.0))
 
    local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
@@ -80,10 +80,10 @@ function newQuadScene()
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, vertex(0,   0,   1.0, 0.0, 0.0)) -- 0: top-left  = red
-   table.insert(vertices, vertex(100, 0,   0.0, 1.0, 0.0)) -- 1: top-right = green
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0)) -- 2: bot-left  = blue
-   table.insert(vertices, vertex(100, 100, 1.0, 1.0, 0.0)) -- 3: bot-right = yellow
+   vertices.insert(vertex(0,   0,   1.0, 0.0, 0.0)) -- 0: top-left  = red
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0)) -- 1: top-right = green
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0)) -- 2: bot-left  = blue
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 0.0)) -- 3: bot-right = yellow
 
    local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
@@ -105,12 +105,12 @@ function newEllipseScene()
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, vertex(0,   0,   1.0, 0.0, 0.0))
-   table.insert(vertices, vertex(100, 0,   0.0, 1.0, 0.0))
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
-   table.insert(vertices, vertex(100, 0,   0.0, 1.0, 0.0))
-   table.insert(vertices, vertex(100, 100, 1.0, 1.0, 0.0))
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
+   vertices.insert(vertex(0,   0,   1.0, 0.0, 0.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
 
    local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
@@ -130,12 +130,12 @@ function newStrokeScene()
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, vertex(0,   0,   1.0, 0.0, 0.0))
-   table.insert(vertices, vertex(100, 0,   0.0, 1.0, 0.0))
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
-   table.insert(vertices, vertex(100, 0,   0.0, 1.0, 0.0))
-   table.insert(vertices, vertex(100, 100, 1.0, 1.0, 0.0))
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 1.0))
+   vertices.insert(vertex(0,   0,   1.0, 0.0, 0.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
 
    local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
@@ -158,12 +158,12 @@ function newClipMaskScene()
    local clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=VUNIT_USERSPACE })
 
    local vertices = { }
-   table.insert(vertices, vertex(0,  0,   1.0, 1.0, 1.0))
-   table.insert(vertices, vertex(50, 0,   1.0, 1.0, 1.0))
-   table.insert(vertices, vertex(0,  100, 1.0, 1.0, 1.0))
-   table.insert(vertices, vertex(50, 0,   1.0, 1.0, 1.0))
-   table.insert(vertices, vertex(50, 100, 1.0, 1.0, 1.0))
-   table.insert(vertices, vertex(0,  100, 1.0, 1.0, 1.0))
+   vertices.insert(vertex(0,  0,   1.0, 1.0, 1.0))
+   vertices.insert(vertex(50, 0,   1.0, 1.0, 1.0))
+   vertices.insert(vertex(0,  100, 1.0, 1.0, 1.0))
+   vertices.insert(vertex(50, 0,   1.0, 1.0, 1.0))
+   vertices.insert(vertex(50, 100, 1.0, 1.0, 1.0))
+   vertices.insert(vertex(0,  100, 1.0, 1.0, 1.0))
 
    local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
@@ -195,12 +195,12 @@ function newRampScene(ColourSpace)
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, vertex(0,   0,   0.0, 0.0, 0.0)) -- top-left  = black
-   table.insert(vertices, vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
-   table.insert(vertices, vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
-   table.insert(vertices, vertex(100, 100, 1.0, 1.0, 1.0)) -- bot-right = white
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
+   vertices.insert(vertex(0,   0,   0.0, 0.0, 0.0)) -- top-left  = black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 1.0)) -- bot-right = white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
 
    local gradient = scene.new('GradientGouraud', {
       units       = VUNIT_USERSPACE,
@@ -221,12 +221,12 @@ function newResolutionRampScene(Resolution)
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, vertex(0,   0,   0.0, 0.0, 0.0)) -- black
-   table.insert(vertices, vertex(100, 0,   1.0, 1.0, 1.0)) -- white
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 0.0)) -- black
-   table.insert(vertices, vertex(100, 0,   1.0, 1.0, 1.0)) -- white
-   table.insert(vertices, vertex(100, 100, 1.0, 1.0, 1.0)) -- white
-   table.insert(vertices, vertex(0,   100, 0.0, 0.0, 0.0)) -- black
+   vertices.insert(vertex(0,   0,   0.0, 0.0, 0.0)) -- black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- white
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 1.0)) -- white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- black
 
    local gradient = scene.new('GradientGouraud', {
       units      = VUNIT_USERSPACE,
@@ -400,9 +400,9 @@ end
 
    -- Recolour the mesh entirely (red/green/blue -> white/grey/black) by assigning a fresh vertices array.
    local recoloured = { }
-   table.insert(recoloured, vertex(10, 10, 1.0, 1.0, 1.0))
-   table.insert(recoloured, vertex(90, 10, 0.5, 0.5, 0.5))
-   table.insert(recoloured, vertex(10, 90, 0.0, 0.0, 0.0))
+   recoloured.insert(vertex(10, 10, 1.0, 1.0, 1.0))
+   recoloured.insert(vertex(90, 10, 0.5, 0.5, 0.5))
+   recoloured.insert(vertex(10, 90, 0.0, 0.0, 0.0))
    gradient.vertices = recoloured
 
    local after = drawHash(scene, bmp)
@@ -482,10 +482,10 @@ function newTranslucentQuadScene()
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, translucentVertex(0,   0,   1.0, 0.0, 0.0, 0.5))
-   table.insert(vertices, translucentVertex(100, 0,   1.0, 0.0, 0.0, 0.5))
-   table.insert(vertices, translucentVertex(0,   100, 1.0, 0.0, 0.0, 0.5))
-   table.insert(vertices, translucentVertex(100, 100, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(0,   0,   1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(100, 0,   1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(0,   100, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(100, 100, 1.0, 0.0, 0.0, 0.5))
 
    local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,
@@ -507,12 +507,12 @@ function newOverlappingTranslucentScene()
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
 
    local vertices = { }
-   table.insert(vertices, translucentVertex(10, 10, 1.0, 0.0, 0.0, 0.5))
-   table.insert(vertices, translucentVertex(90, 10, 1.0, 0.0, 0.0, 0.5))
-   table.insert(vertices, translucentVertex(50, 90, 1.0, 0.0, 0.0, 0.5))
-   table.insert(vertices, translucentVertex(10, 90, 0.0, 0.0, 1.0, 0.5))
-   table.insert(vertices, translucentVertex(50, 10, 0.0, 0.0, 1.0, 0.5))
-   table.insert(vertices, translucentVertex(90, 90, 0.0, 0.0, 1.0, 0.5))
+   vertices.insert(translucentVertex(10, 10, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(90, 10, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(50, 90, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(10, 90, 0.0, 0.0, 1.0, 0.5))
+   vertices.insert(translucentVertex(50, 10, 0.0, 0.0, 1.0, 0.5))
+   vertices.insert(translucentVertex(90, 90, 0.0, 0.0, 1.0, 0.5))
 
    local gradient = scene.new('GradientGouraud', {
       units    = VUNIT_USERSPACE,

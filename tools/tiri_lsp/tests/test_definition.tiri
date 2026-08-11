@@ -30,8 +30,8 @@ end
 
 function assertUriContains(Locations:array<table>, Needle:str, Message:str)
    assert(Locations and #Locations > 0, Message .. ': expected at least one location.')
-   uri = Locations[0].uri:replace('\\', '/'):lower()
-   assert(uri:find(Needle:lower(), 0, true), f'{Message}: expected URI to contain {Needle}, got {Locations[0].uri}')
+   uri = Locations[0].uri.replace('\\', '/').lower()
+   assert(uri.find(Needle.lower(), 0, true), f'{Message}: expected URI to contain {Needle}, got {Locations[0].uri}')
 end
 
 @Test function CurrentDocumentFunction()

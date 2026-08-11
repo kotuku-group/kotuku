@@ -166,7 +166,7 @@ local x <const> = 1
 x = 2
 ]])
    except ex
-      assert(ex.message:find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
+      assert(ex.message.find('cannot assign to const local'), f'Error should mention const local: {ex.message}')
       return -- Happy path
    end
    error('Reassigning const local should fail to compile')
@@ -182,7 +182,7 @@ global X <const> = 1
 X = 2
 ]])
    except ex
-      assert(ex.message:find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
+      assert(ex.message.find('cannot assign to const global'), f'Error should mention const global: {ex.message}')
       return -- Happy path
    end
    error('Reassigning const global should fail to compile')
@@ -197,7 +197,7 @@ function expect_const_global_failure(Store:func, Message:str)
       Store()
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'cannot assign to const global') != nil,
+      assert(tostring(e.message).find('cannot assign to const global') != nil,
          Message .. ' should raise a const-global error, got: ' .. tostring(e.message))
    end
    assert(trapped, Message .. ' should raise')
@@ -287,7 +287,7 @@ end
       exec(f"global {global_name} <const>:num = _G['{source_name}']")
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'The incoming const contract should reject its mismatched initial value: ' .. tostring(e.message))
    end
 
@@ -316,7 +316,7 @@ end
       exec(f"global {global_name} <const>:num = _G['{source_name}']")
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'The existing environment contract should reject an incompatible transition: ' .. tostring(e.message))
    end
 
@@ -355,7 +355,7 @@ end
       exec(f"global {global_name} <const>:num ?= 1")
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          'The retained value should be checked against the const declaration: ' .. tostring(e.message))
    end
 
@@ -376,7 +376,7 @@ end
       exec(f"global {global_name} <const> = 'first'")
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'blocked const store') != nil,
+      assert(tostring(e.message).find('blocked const store') != nil,
          'The failed initialisation should preserve the store error')
    end
    setmetatable(_G, previous_metatable)
@@ -395,7 +395,7 @@ end
    try
       exec([[local x <const>]])
    except ex
-      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
    error('Local const without initialiser should fail to compile')
@@ -408,7 +408,7 @@ end
    try
       exec([[global X <const>]])
    except ex
-      assert(ex.message:find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
+      assert(ex.message.find('requires an initialiser'), 'Error should mention initialiser: {ex.message}')
       return -- Happy path
    end
    error('Global const without initialiser should fail to compile')

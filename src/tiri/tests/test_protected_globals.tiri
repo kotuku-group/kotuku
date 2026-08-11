@@ -10,7 +10,7 @@ function assert_activation_fails(Statement:str, Message:str)
    -- Compile-time rejections fail the action itself; runtime boundary rejections surface through script.error.
    assert((err != ERR_Okay) or (script.error != ERR_Okay), Message .. ' should fail activation')
    assert(script.error != ERR_Okay, Message .. ' should set a script error')
-   assert(string.find(script.errorMessage, 'cannot override built-in') != nil,
+   assert(script.errorMessage.find('cannot override built-in') != nil,
       Message .. ' should report the protected-global diagnostic, got: ' .. tostring(script.errorMessage))
 end
 
@@ -22,7 +22,7 @@ function assert_activation_succeeds(Statement:str, Message:str)
 end
 
 function clear_table(Target:table)
-   table.clear(Target)
+   Target.clear()
 end
 
 function expect_environment_clear_failure(Target:table, Message:str)
@@ -31,7 +31,7 @@ function expect_environment_clear_failure(Target:table, Message:str)
       clear_table(Target)
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'cannot clear a global environment') != nil,
+      assert(tostring(e.message).find('cannot clear a global environment') != nil,
          Message .. ' should report the environment-clear diagnostic, got: ' .. tostring(e.message))
    end
    assert(trapped, Message .. ' should raise')
@@ -174,7 +174,7 @@ end
    for i in {1 into 200} do
       local ordinary = { value = i }
       clear_table(ordinary)
-      assert(table.empty(ordinary), 'table.clear should continue to clear ordinary tables')
+      assert(ordinary.empty(), 'table.clear should continue to clear ordinary tables')
    end
 
    local alias = _G
@@ -187,7 +187,7 @@ function expect_global_contract_failure(Store:func, Message:str)
       Store()
    except e
       trapped = true
-      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+      assert(tostring(e.message).find('type contract failed for global') != nil,
          Message .. ' should raise a global contract error, got: ' .. tostring(e.message))
    end
    assert(trapped, Message .. ' should raise')

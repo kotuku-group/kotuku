@@ -23,13 +23,13 @@ function resolveSDKPath(Path:str)
       search_path = 'CMakeLists.txt'
       limit = 5
       while (err != ERR_Okay) and (limit > 0) do
-         search_list:push(search_path)
+         search_list.push(search_path)
          err, sdk_path = mSys.ResolvePath(search_path)
          search_path = '../' .. search_path
          limit -= 1
       end
    else
-      search_list:push(Path .. '/CMakeLists.txt')
+      search_list.push(Path .. '/CMakeLists.txt')
       err, sdk_path = mSys.ResolvePath(Path .. '/CMakeLists.txt')
    end
 

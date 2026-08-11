@@ -19,7 +19,7 @@
    err, xstr = xq.mtInspectFunctions("local:square")
    assert(err is ERR_Okay, f"Inspection of 'local:square' failed: {xq.errorMsg}")
    print(f'Found: {xstr}')
-   assert(string.find(xstr, "<name>local:square</name>"), "Inspection output should include function name")
+   assert(xstr.find("<name>local:square</name>"), "Inspection output should include function name")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -114,7 +114,7 @@ concat(local:adder(2, 3), ":", local:adder(1, 2, 3))
    err, xstr = xq.mtInspectFunctions("local:*")
    assert(err is ERR_Okay, "Inspection of 'local:adder' failed: " .. tostring(xq.errorMsg))
    print('Found: ' .. xstr)
-   assert(string.find(xstr, "<name>local:adder</name>"), "Inspection output should include function name")
+   assert(xstr.find("<name>local:adder</name>"), "Inspection output should include function name")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -172,9 +172,9 @@ end
    message = tostring(xq.errorMsg)
    assert(err != ERR_Okay, 'Module import should fail without loader')
    -- Loader now emits a structured error with code and attempted locations
-   assert(string.find(message, 'XQST0059', 0, true)
-      and string.find(message, 'Cannot load module for namespace', 0, true)
-      and string.find(message, 'urn:math', 0, true),
+   assert(message.find('XQST0059', 0, true)
+      and message.find('Cannot load module for namespace', 0, true)
+      and message.find('urn:math', 0, true),
       'Module import should record structural diagnostic, got ' .. message)
 end
 
@@ -201,7 +201,7 @@ end
    xq = obj.new('xquery', { statement = 'import module namespace math = "urn:math\\library"; math:square(2)' })
    assert(xq.acActivate() != ERR_Okay, 'Module import with escaped namespace should fail without loader')
    message = tostring(xq.errorMsg)
-   assert(message:find('urn:math/library'), f'Module import namespaces should be normalised, got {message}')
+   assert(message.find('urn:math/library'), f'Module import namespaces should be normalised, got {message}')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

@@ -55,7 +55,7 @@ SERVER_PORT <const> = 18940
                end
 
                local token = regex.new('Bearer\\s+(.+)').extract(auth)
-               if not token or not token:find('admin') then
+               if not token or not token.find('admin') then
                   return { status = 403, statusText = 'Forbidden',
                            message = 'Admin access required',
                            details = 'This endpoint requires admin privileges' }
@@ -73,7 +73,7 @@ SERVER_PORT <const> = 18940
             method = 'POST',
             validateHeader = function(headers):any
                local contentType = headers['content-type']
-               if not contentType or not contentType:find('application/json') then
+               if not contentType or not contentType.find('application/json') then
                   return { status = 415, statusText = 'Unsupported Media Type',
                            message = 'JSON content type required',
                            details = 'This endpoint only accepts application/json' }
@@ -123,7 +123,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD | HTF_NO_DIALOG,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -238,7 +238,7 @@ end
       flags       = HTF_NO_HEAD | HTF_NO_DIALOG,
       contentType = 'application/xml',
       inputFile   = 'string:' .. xml_data,
-      size        = xml_data:len(),
+      size        = xml_data.len(),
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
             HTTP.acSignal()
@@ -292,7 +292,7 @@ end
       method   = 'GET',
       flags    = HTF_NO_HEAD | HTF_NO_DIALOG,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

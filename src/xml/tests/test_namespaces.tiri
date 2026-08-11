@@ -155,7 +155,7 @@ end
    assert(string.len(serialized) > 0, "Serialized string should not be empty")
 
    -- Check that namespace declarations are preserved
-   assert(string.find(serialized, 'xmlns:ns="http://example.com/ns"'), "Namespace declaration should be preserved")
+   assert(serialized.find('xmlns:ns="http://example.com/ns"'), "Namespace declaration should be preserved")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

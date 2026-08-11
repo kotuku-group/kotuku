@@ -5,7 +5,7 @@
    rx_file_tag = regex.new('<file.*?\\/>')
 
 @Test function Basic()
-   item = table.toXML({
+   local item_source = {
       file = {
          icon = 'my_icon',
          name = 'my_name',
@@ -17,17 +17,19 @@
            permissions = { 'RWX' }
          }
       }
-   })
+   }
+   item = item_source.toXML()
+
 
    -- <file icon="my_icon" name="my_name">filename.jpg<owner>123</><size sort=123>123</><group/>
    --   <date sort="F456">ABC</><permissions>RWX</></>
 
    assert(regex.new('^<file.*>filename\\.jpg.+</>$').test(item), 'The file tag does not match the expected pattern.')
-   assert(string.find(item, '<owner>123</>'), 'The owner tag is not defined correctly.')
-   assert(string.find(item, '<size sort=123>123</>'), 'The size tag is not defined correctly.')
-   assert(string.find(item, '<group/>'), 'The group tag is not defined correctly.')
-   assert(string.find(item, '<date sort="F456">ABC</>'), 'The date tag is not defined correctly.')
-   assert(string.find(item, '<permissions>RWX</>'), 'The date tag is not defined correctly.')
+   assert(item.find('<owner>123</>'), 'The owner tag is not defined correctly.')
+   assert(item.find('<size sort=123>123</>'), 'The size tag is not defined correctly.')
+   assert(item.find('<group/>'), 'The group tag is not defined correctly.')
+   assert(item.find('<date sort="F456">ABC</>'), 'The date tag is not defined correctly.')
+   assert(item.find('<permissions>RWX</>'), 'The date tag is not defined correctly.')
 
    print(item .. '\n')
 end
@@ -36,7 +38,7 @@ end
 -- as seen in this test.
 
 @Test function Duplicates()
-   files = table.toXML({
+   local files_source = {
       receipt = {
          totalitems = 2,
          id = 'my_files',
@@ -44,7 +46,8 @@ end
          'random receipt content',
          { file = { path='volume:file2.txt' } }
       }
-   })
+   }
+   files = files_source.toXML()
 
    -- <receipt totalitems=2 id="my_files"><file path="volume:file"/><file path="volume:file2.txt"/></>
 

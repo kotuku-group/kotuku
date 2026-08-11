@@ -5,6 +5,7 @@
 #define LUA_CORE
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lj_err.h"
 #include "lj_debug.h"
 #include "filesource.h"
@@ -295,6 +296,9 @@ restart:
          case BC_UGET:
             *name = lj_debug_uvname(pt, bc_d(ins));
             return "upvalue";
+         case BC_BFUNC:
+            *name = builtin_callable_name(BuiltinCallableID(bc_d(ins)));
+            return *name ? "builtin" : nullptr;
          default:
             return nullptr;
          }

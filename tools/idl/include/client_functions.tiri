@@ -26,7 +26,7 @@ rx_comment_chars   = <{ r'[`!@#]' }>
 ]])
 global function c_include(...)
    for v in values({...}) do
-      if v:startsWith('<') and v:endsWith('>') then
+      if v.startsWith('<') and v.endsWith('>') then
          priority('#include ' .. v)
       else
          priority('#include "' .. v .. '"')
@@ -44,12 +44,12 @@ end
 global function cpp_include(...)
    priority('#ifdef __cplusplus')
    for v in values({...}) do
-      if v:startsWith('<') and v:endsWith('>') then
+      if v.startsWith('<') and v.endsWith('>') then
          local inc:str = rx_kotuku_include.extract(v)
 
          if inc then
             inc = rx_path_chars.replace(inc, '_')
-            priority('#ifndef ' .. inc:upper())
+            priority('#ifndef ' .. inc.upper())
             priority('#include ' .. v)
             priority('#endif')
             priority()
@@ -88,18 +88,18 @@ end
 global function outputLookup(Name:str, List):str
    sorted = { }
    for v in values(List) do
-      table.insert(sorted, v)
+      sorted.insert(v)
    end
 
-   table.sort(sorted, function(a,b)
+   sorted.sort(function(a,b)
       return (a.value is b.value) ? a.name < b.name :> a.value < b.value
    end)
 
    list = ''
    for v in values(sorted) do
-      if (v.name:upper() != 'PRIVATE') and (v.name:upper() != 'END') then
+      if (v.name.upper() != 'PRIVATE') and (v.name.upper() != 'END') then
          -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
-         hash_id = '0x' .. string.format('%08x', v.value):sub(-8)
+         hash_id = '0x' .. string.format('%08x', v.value).sub(-8)
          if rx_high_hex.test(hash_id) then hash_id = '(int)' .. hash_id end
          list ..= f"   {{ \"{shortName(v.name)}\", {hash_id} }},\n"
       end
@@ -115,7 +115,7 @@ global function moduleTimestamp()
    tm.acQuery()
    local timestamp = string.format('%04d%02d%02d', tm.year, tm.month, tm.day)
 
-   priority(f'#define {glModule.name:upper()}_BUILD_DATE {timestamp}')
+   priority(f'#define {glModule.name.upper()}_BUILD_DATE {timestamp}')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -142,7 +142,7 @@ global function module(Options:table, Function:func)
       error('No "name" field specified in module() call.')
    end
 
-   priority(f'// Name:      {glModule.name:lower()}.h')
+   priority(f'// Name:      {glModule.name.lower()}.h')
 
    if Options['copyright']?? then
       priority(f'// Copyright: {Options["copyright"]}')
@@ -154,7 +154,7 @@ global function module(Options:table, Function:func)
    priority()
 
    if glModule.version?? then
-      priority(f'#define MODVERSION_{glModule.name:upper()} ({glModule.version})')
+      priority(f'#define MODVERSION_{glModule.name.upper()} ({glModule.version})')
       priority()
    end
 
@@ -164,7 +164,7 @@ global function module(Options:table, Function:func)
       else
          fixed_path = array<string>
          for path in values(glModule.src) do
-            fixed_path:push(glTDLFolder .. path)
+            fixed_path.push(glTDLFolder .. path)
          end
          glModule.src = fixed_path
       end
@@ -180,9 +180,9 @@ global function module(Options:table, Function:func)
 
       for i, src in ipairs(glModule.src) do
          content = io.readAll(src)
-         if content:find('-MODULE-') then break end
+         if content.find('-MODULE-') then break end
       end
-      content = content:replace('\r\n', '\n')
+      content = content.replace('\r\n', '\n')
 
       -- Extract possible content from within comments so that we don't get interference from the code while parsing.
 
@@ -199,7 +199,7 @@ global function module(Options:table, Function:func)
 
          if not name then
             error(f'The -MODULE- header for {glModule.name} is incorrectly defined.')
-         elseif (name:lower() != glModule.name:lower()) then
+         elseif (name.lower() != glModule.name.lower()) then
             error(f"The name specified in the -MODULE- header '{name}' does not match the name specified in the module() call '{glModule.name}'")
          end
       end
@@ -225,7 +225,7 @@ global function header(Options:table, Function:func)
    if glHeaderPath?? then
       priority('#pragma once')
       priority()
-      priority(f'// Name:      {glHeaderPath:lower()}.h')
+      priority(f'// Name:      {glHeaderPath.lower()}.h')
    else
       priority('#pragma once')
       priority()
@@ -257,24 +257,24 @@ global function flags(Prefix, Options:table, ...)
    out = array<string>
    sortedFlags = { }
    if Options.comment?? then
-      out:push('// ' .. Options.comment)
-      out:push('')
+      out.push('// ' .. Options.comment)
+      out.push('')
    end
 
    function outputFlagDef(Options:table, Prefix:str, flag_name:str, val:any)
       if not Options.weak then
          if Options.bits is 16 then
-            table.insert(sortedFlags, { value = val, define = f'   {flag_name} = 0x{string.format("%.4x",val)},' } )
+            sortedFlags.insert({ value = val, define = f'   {flag_name} = 0x{string.format("%.4x",val)},' } )
          else
-            hash_id = string.format('%08x', val):sub(-8)
-            table.insert(sortedFlags, { value = val, define = f'   {flag_name} = 0x{hash_id},' } )
+            hash_id = string.format('%08x', val).sub(-8)
+            sortedFlags.insert({ value = val, define = f'   {flag_name} = 0x{hash_id},' } )
          end
       elseif Options.bits is 16 then
-         table.insert(sortedFlags, { value = val, define = string.format('#define %s_%s 0x%.4x', Prefix, flag_name, val) })
+         sortedFlags.insert({ value = val, define = string.format('#define %s_%s 0x%.4x', Prefix, flag_name, val) })
       else
          -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
-         hash_id = string.format('%08x', val):sub(-8)
-         table.insert(sortedFlags, { value = val, define = string.format('#define %s_%s 0x%s', Prefix, flag_name, hash_id) } )
+         hash_id = string.format('%08x', val).sub(-8)
+         sortedFlags.insert({ value = val, define = string.format('#define %s_%s 0x%s', Prefix, flag_name, hash_id) } )
       end
    end
 
@@ -285,8 +285,8 @@ global function flags(Prefix, Options:table, ...)
          8  -> 'uint8_t'
          else -> 'uint32_t'
       end
-      out:push(string.format('enum class %s : ' .. type_size .. ' {', Prefix))
-      out:push('   NIL = 0,')
+      out.push(string.format('enum class %s : ' .. type_size .. ' {', Prefix))
+      out.push('   NIL = 0,')
    end
 
    lookup = { }
@@ -297,7 +297,7 @@ global function flags(Prefix, Options:table, ...)
          local key:str, comment:str = rx_key_comment.extract(flags[a])
          key ??= flags[a]
 
-         for flag_name in values(key:split('|')) do
+         for flag_name in values(key.split('|')) do
             val = 1 << f
             outputFlagDef(Options, Prefix, flag_name, val)
             lookup[flag_name] = { name=flag_name, value=val, comment=comment }
@@ -321,11 +321,11 @@ global function flags(Prefix, Options:table, ...)
             if type(key) is 'number' then
                val = key
             else -- Process named reference(s) to other flags
-               for v in values(key:split('|')) do
+               for v in values(key.split('|')) do
                   assert(lookup[v], f"Failed to lookup flag reference '{v}' for {Prefix}_{flag_name}")
                   val = val | lookup[v].value
                end
-               comment ??= f'Synonym for `{key:replace("|", " | ")}`'
+               comment ??= f'Synonym for `{key.replace("|", " | ")}`'
             end
             outputFlagDef(Options, Prefix, flag_name, val)
             lookup[flag_name] = { name=flag_name, value=val, comment=comment }
@@ -337,22 +337,22 @@ global function flags(Prefix, Options:table, ...)
       f++
    end
 
-   table.sort(sortedFlags, function(a,b) return a.value < b.value end)
+   sortedFlags.sort(function(a,b) return a.value < b.value end)
    for flag in values(sortedFlags) do
-      out:push(flag.define)
+      out.push(flag.define)
    end
 
    if not Options.weak then
-      out:push('};')
-      out:push('')
-      out:push('DEFINE_ENUM_FLAG_OPERATORS(' .. Prefix .. ')')
+      out.push('};')
+      out.push('')
+      out.push('DEFINE_ENUM_FLAG_OPERATORS(' .. Prefix .. ')')
    end
 
-   out:push('')
-   if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+   out.push('')
+   if Options.module?? and (Options.module.lower() != glModule.name.lower()) then
       -- Do nothing, module restriction imposed.
    elseif not glRestrict then
-      for v in values(out) do table.insert(glConstants, v) end
+      for v in values(out) do glConstants.insert(v) end
    end
 
    glCustomTypes[Prefix] = {
@@ -387,7 +387,7 @@ global function calcFieldHash(String:str):num
    out = array<char>
    k = 0
    while (k < #String) and (String[k] >= 'A') and (String[k] <= 'Z') do
-      out:push(String[k]:lower():byte())
+      out.push(String[k].lower().byte())
       k++
       if k >= #String then break end
       if not ((k + 1 >= #String) or ((String[k+1] >= 'A') and (String[k+1] <= 'Z'))) then
@@ -396,11 +396,11 @@ global function calcFieldHash(String:str):num
    end
 
    while k < #String do
-      out:push(String[k]:byte())
+      out.push(String[k].byte())
       k++
    end
 
-   return out:getString():hash(true)
+   return out.getString().hash(true)
 end
 
 @Doc(text=[[
@@ -415,7 +415,7 @@ global function fieldHash(Prefix:str, Format:str, ...)
       v_hash = calcFieldHash(v)
 
       -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
-      hash_id = string.format('%08x', v_hash):sub(-8)
+      hash_id = string.format('%08x', v_hash).sub(-8)
       output(f'#define {Prefix}_{hash_name} {string.format(Format, hash_id)}')
    end
    output()
@@ -434,7 +434,7 @@ global function typedHash(Prefix:str, Type:str, ...)
    for v in values({...}) do
       local hash_name = rx_non_word.replace(v, '_')
       -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
-      local hash_id = string.format('%08x', v:hash()):sub(-8)
+      local hash_id = string.format('%08x', v.hash()).sub(-8)
       output(f'   {hash_name} = {string.format("0x%sUL", hash_id)},')
    end
    output('};')
@@ -451,7 +451,7 @@ global function hash(Prefix:str, Format:str, ...)
    for v in values({...}) do
       hash_name = rx_non_word.replace(v, '_')
       -- Note: This unusual formatting solution helps to resolve output problems on 64-bit Linux
-      hash_id = string.format('%08x', v:hash()):sub(-8)
+      hash_id = string.format('%08x', v.hash()).sub(-8)
       output(f'#define {Prefix}_{hash_name} {string.format(Format, hash_id)}')
    end
    output()
@@ -473,30 +473,30 @@ global function constants(Prefix:str, Options:table, ...)
 
    out = array<string>
    if Options.comment?? then
-      out:push(f'// {Options.comment}')
-      out:push('')
+      out.push(f'// {Options.comment}')
+      out.push('')
    end
 
    if Options.type then -- Strong typing enabled, convert via cType()
       Options.type = cType({ type=Options.type }, Prefix)
-      out:push(f'enum class {Prefix} : {Options.type.type} {{')
-      out:push('   NIL = 0,')
+      out.push(f'enum class {Prefix} : {Options.type.type} {{')
+      out.push('   NIL = 0,')
    end
 
    list = { }
    for va in values({...}) do
       if type(va) is 'string' then
          local key = rx_key_comment.extract(va) ?? va
-         for v in values(key:split('|')) do
-            out:push(f'#define {Prefix}_{v}')
+         for v in values(key.split('|')) do
+            out.push(f'#define {Prefix}_{v}')
          end
       elseif type(va) is 'table' then
          sorted = { }
          for name, value in pairs(va) do
-            table.insert(sorted, { name = name, value = value })
+            sorted.insert({ name = name, value = value })
          end
 
-         table.sort(sorted, function(a,b)
+         sorted.sort(function(a,b)
             if a.value is b.value then
                return a.name < b.name
             elseif type(a.value) is 'number' and type(b.value) is 'number' then
@@ -514,12 +514,12 @@ global function constants(Prefix:str, Options:table, ...)
             val ?= v.value
 
             if Options.type then
-               out:push(f'   {v.name} = {val},')
+               out.push(f'   {v.name} = {val},')
             else
-               out:push(f'#define {Prefix}_{v.name} {val}')
+               out.push(f'#define {Prefix}_{v.name} {val}')
             end
 
-            table.insert(list, { name=v.name, value=val, comment=comment })
+            list.insert({ name=v.name, value=val, comment=comment })
          end
       else
          error(f'Invalid const type for "{Prefix}", expected string, got "{type(va)}"')
@@ -527,15 +527,15 @@ global function constants(Prefix:str, Options:table, ...)
    end
 
    if Options.type then
-      out:push('};')
+      out.push('};')
    end
 
-   out:push('')
+   out.push('')
 
-   if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+   if Options.module?? and (Options.module.lower() != glModule.name.lower()) then
      -- Do nothing, module restriction imposed.
    elseif not glRestrict then
-      for v in values(out) do table.insert(glConstants, v) end
+      for v in values(out) do glConstants.insert(v) end
    end
 
    glCustomTypes[Prefix] = {
@@ -561,14 +561,14 @@ global function enums(Prefix:str, Options:table, ...)
 
    out = array<string>
    if Options.comment?? then
-      out:push(f'// {Options.comment}')
-      out:push('')
+      out.push(f'// {Options.comment}')
+      out.push('')
    end
 
    if Options.type then -- Strong typing enabled, convert via cType()
       Options.type = cType({ type=Options.type }, Prefix)
-      out:push(f'enum class {Prefix} : {Options.type.type} {{')
-      out:push('   NIL = 0,')
+      out.push(f'enum class {Prefix} : {Options.type.type} {{')
+      out.push('   NIL = 0,')
    end
 
    list = { }
@@ -578,16 +578,16 @@ global function enums(Prefix:str, Options:table, ...)
          local key:str, comment:str = rx_key_comment.extract(va)
          key ?= va
          synonym = false
-         for name in values(key:split('|')) do
+         for name in values(key.split('|')) do
             if Options.type then
-               out:push(f'   {name} = {inc},')
+               out.push(f'   {name} = {inc},')
             elseif Options.bits is 64 then
-               out:push(f'#define {Prefix}_{name} {inc}LL')
+               out.push(f'#define {Prefix}_{name} {inc}LL')
             else
-               out:push(f'#define {Prefix}_{name} {inc}')
+               out.push(f'#define {Prefix}_{name} {inc}')
             end
 
-            table.insert(list, { name=name, value=inc, comment=comment, synonym=synonym })
+            list.insert({ name=name, value=inc, comment=comment, synonym=synonym })
             synonym = true
          end
 
@@ -597,14 +597,14 @@ global function enums(Prefix:str, Options:table, ...)
             assert(type(client_val) is 'number', f'Client-provided enum values must be numeric, got {client_val}')
 
             if Options.type then
-               out:push(f'   {name} = {client_val},')
+               out.push(f'   {name} = {client_val},')
             elseif Options.bits is 64 then
-               out:push(f'#define {Prefix}_{name} {client_val}LL')
+               out.push(f'#define {Prefix}_{name} {client_val}LL')
             else
-               out:push(f'#define {Prefix}_{name} {client_val}')
+               out.push(f'#define {Prefix}_{name} {client_val}')
             end
 
-            table.insert(list, { name=name, value=client_val })
+            list.insert({ name=name, value=client_val })
          end
       else
          error('Invalid enum type for "' .. Prefix .. '", expected string, got "' .. type(va) .. '"')
@@ -612,15 +612,15 @@ global function enums(Prefix:str, Options:table, ...)
    end
 
    if Options.type then
-      out:push('};')
+      out.push('};')
    end
 
-   out:push('')
+   out.push('')
 
-   if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+   if Options.module?? and (Options.module.lower() != glModule.name.lower()) then
      -- Do nothing, module restriction imposed.
    elseif not glRestrict then
-      for v in values(out) do table.insert(glConstants, v) end
+      for v in values(out) do glConstants.insert(v) end
    end
 
    glCustomTypes[Prefix] = {
@@ -648,16 +648,16 @@ global function platform(Platform:str, Function:func)
    global glOutput = array<string>
 
    local define
-   if (Platform:lower() is 'windows') then
+   if (Platform.lower() is 'windows') then
       define = '_WIN32'
       Function()
-   elseif (Platform:lower() is 'linux') then
+   elseif (Platform.lower() is 'linux') then
       define = '__linux__'
       Function()
-   elseif (Platform:lower() is 'x11') then
+   elseif (Platform.lower() is 'x11') then
       define = '__xwindows__'
       Function()
-   --elseif (Platform:lower() is 'osx') then
+   --elseif (Platform.lower() is 'osx') then
    --   define = '__APPLE__'
    --   Function()
    else
@@ -711,15 +711,15 @@ global function structdef(Name:str, Options:table, Def:str, Append:str)
       out = array<string>
       full_name = Name
       if Options.version then
-         out:push(f'#define VER_{Name:upper()} {string.format("%f", Options.version)}')
-         out:push('')
+         out.push(f'#define VER_{Name.upper()} {string.format("%f", Options.version)}')
+         out.push('')
          full_name = Name .. 'V' .. Options.version
       end
 
       if not Options.type then
-         out:push(f'struct {full_name} {{')
+         out.push(f'struct {full_name} {{')
       else
-         out:push(f'typedef struct {full_name} {{')
+         out.push(f'typedef struct {full_name} {{')
       end
 
       fields = extractFields(Def, full_name)
@@ -729,16 +729,16 @@ global function structdef(Name:str, Options:table, Def:str, Append:str)
       type_max = 0
       for f in values(fields) do
          field_name = cName(f, true)
-         if field_name:len() > name_len then name_len = field_name:len() end
+         if field_name.len() > name_len then name_len = field_name.len() end
 
-         if f.type:len() > type_len then
-            if f.type:len() < 10 then
-               type_len = f.type:len()
+         if f.type.len() > type_len then
+            if f.type.len() < 10 then
+               type_len = f.type.len()
             end
          end
 
-         if f.type:len() + field_name:len() > type_max then
-            type_max = f.type:len() + 2 + field_name:len()
+         if f.type.len() + field_name.len() > type_max then
+            type_max = f.type.len() + 2 + field_name.len()
          end
       end
 
@@ -759,30 +759,30 @@ global function structdef(Name:str, Options:table, Def:str, Append:str)
 
          if f.comment?? then
             clean_comment = rx_comment_chars.replace(f.comment, '')
-            out:push(string.format('%-' .. max_len .. 's // %s', left, clean_comment))
+            out.push(string.format('%-' .. max_len .. 's // %s', left, clean_comment))
          else
             print('WARN: ' .. full_name .. '.' .. f.name .. ' requires a comment.')
-            out:push(left)
+            out.push(left)
          end
       end
 
       if Append then
-         out:push(Append:rtrim())
+         out.push(Append.rtrim())
       end
 
       if not Options.type then
-         out:push('};')
-         out:push('')
+         out.push('};')
+         out.push('')
       else
-         Options.type = Options.type:upper()
-         out:push('} ' .. Options.type .. ';')
-         out:push('')
+         Options.type = Options.type.upper()
+         out.push('} ' .. Options.type .. ';')
+         out.push('')
       end
 
-      if Options.module?? and (Options.module:lower() != glModule.name:lower()) then
+      if Options.module?? and (Options.module.lower() != glModule.name.lower()) then
         -- Do nothing, module restriction imposed.
       elseif not glRestrict then
-         for v in values(out) do glOutput:push(v) end
+         for v in values(out) do glOutput.push(v) end
       end
 
       glStructures[Name] = {
@@ -805,13 +805,13 @@ end
 @input True when generating a C structure field name
 @result Generated field name
 ]])
-global function cName(Field, CStruct)
+global function cName(Field, CStruct):str
    if Field.isFunctionPtr then return '' end -- Functions have their name embedded in the type.
 
    name = Field.name
    if CStruct then
       if (Field.type is 'OBJECTID') or (Field.type is 'MEMORYID') then
-         if name:sub(-2) != 'ID' then
+         if name.sub(-2) != 'ID' then
             name ..= 'ID'
          end
       end
@@ -871,7 +871,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
    if not forward_declared then
       output(f'// {Name} class definition')
       output()
-      output(f'#define VER_{Name:upper()} ({string.format("%f", Options.version ?? 1.0)})')
+      output(f'#define VER_{Name.upper()} ({string.format("%f", Options.version ?? 1.0)})')
       output()
 
       if mSys.GetSystemState().StaticBuild is 0 then
@@ -879,21 +879,21 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
          -- compiled, so the meta information may only be used for phase 2 output (i.e. documentation).
 
          if mSys.AnalysePath('~modules:' .. glModule.name) is ERR_Okay then
-            cl.meta = mSys.FindClass(Name:hash(), 0)
+            cl.meta = mSys.FindClass(Name.hash(), 0)
          else
             if glFeedback is 'verbose' then
                print(f'Module {glModule.name} not compiled, class documentation will not be produced.')
             end
          end
       else
-         cl.meta = mSys.FindClass(Name:hash(), 0)
+         cl.meta = mSys.FindClass(Name.hash(), 0)
       end
 
       -- Process methods and fields defined in the source code (if available)
 
       cdef = parseClassFields(cl, Spec)
 
-      if not table.empty(Options.references) then
+      if Options.references?? then
          for v in values(Options.references) do
             if glCustomTypes[v]?? then
                cdef = cdef .. outputLookup(cl.name .. v, glCustomTypes[v].list)
@@ -923,14 +923,14 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
             end
 
             content = io.readAll(glTDLFolder .. path)
-            content = content:replace('\r\n', '\n')
+            content = content.replace('\r\n', '\n')
 
             -- Look for C/C++ action declarations, in the format: ERR CLASS_Action(...).  This will create a series
             -- of dummy action entries that can be overwritten with -ACTION- sections.
 
             local rx_patterns = {
-               regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(obj[^\\)]*\\)'),
-               regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(ext[^\\)]*\\)')
+               regex.new('ERR\\s*' .. Name.upper() .. '_([A-Za-z]+)\\(obj[^\\)]*\\)'),
+               regex.new('ERR\\s*' .. Name.upper() .. '_([A-Za-z]+)\\(ext[^\\)]*\\)')
             }
 
             for rx in values(rx_patterns) do
@@ -955,7 +955,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
             -- Parse each line individually
 
             local current_entry, proc
-            for line in values(extracted_content:split('\n')) do
+            for line in values(extracted_content.split('\n')) do
                if line?? then
                   line = rx_trailing_space.extract(line)
                   if (line is '-CLASS-') or (line is '-METHOD-') or (line is '-ACTION-') or (line is '-FIELD-') then
@@ -1012,9 +1012,9 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
          elseif Param.type is 'std::string_view' then
             Param.byRef = true
             return 'const std::string_view &'
-         elseif Param.resultValue and Param.mutable and Param.type:endsWith('*') then
+         elseif Param.resultValue and Param.mutable and Param.type.endsWith('*') then
             Param.byRef = true
-            return Param.type:sub(0,-2) .. '&'
+            return Param.type.sub(0,-2) .. '&'
          elseif Param.isSpan then
             return Param.type .. ' '
          elseif Param.isComplex then
@@ -1027,7 +1027,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
 
       if cl.methods then
          pfx  = cl.methodPrefix
-         lpfx = pfx:lower()
+         lpfx = pfx.lower()
 
          if glFeedback is 'verbose' then
             print('Generating ' .. #cl.methods .. ' methods.')
@@ -1036,13 +1036,13 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
          for k, method in ipairs(cl.methods) do
             if method.input?? then
                method.params = { }
-               for _,v in ipairs(method.input:split(';')) do
-                  v = v:trim()
+               for _,v in ipairs(method.input.split(';')) do
+                  v = v.trim()
                   if v?? then
                      local param = { }
                      param.type, param.name = rx_type_name.extract(v)
                      cType(param, f'Method:{Name}.{method.name}')
-                     table.insert(method.params, param)
+                     method.params.insert(param)
                   end
                end
             end
@@ -1060,7 +1060,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
             function pName(Param:table):str
                name = Param.name
                if (Param.type is 'OBJECTID') or (Param.type is 'MEMORYID') then
-                  if name:sub(-2) != 'ID' then
+                  if name.sub(-2) != 'ID' then
                      name ..= 'ID'
                   end
                end
@@ -1076,7 +1076,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
                   local storage_type = actionStorageType(param)
 
                   struct_params ..= storage_type
-                  if not (storage_type:endsWith('*') or storage_type:endsWith('&')) then
+                  if not (storage_type.endsWith('*') or storage_type.endsWith('&')) then
                      struct_params ..= ' '
                   end
                   struct_params ..= pName(param) .. '; '
@@ -1113,12 +1113,12 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
 
             action_support = f'static const AC id = AC(-{method.id}); ERR call(OBJECTPTR Object) {{ return Action(id, Object, this); }}'
             if method.params and #method.params > 0 then
-               cl.methods[k].struct = f'struct {method.name} {{ {struct_params:trim()} {action_support} }};'
+               cl.methods[k].struct = f'struct {method.name} {{ {struct_params.trim()} {action_support} }};'
             else
                cl.methods[k].struct = f'struct {method.name} {{ {action_support} }};'
             end
 
-            name = method.name:decap()
+            name = method.name.decap()
             if name is 'delete' then name = 'del' end -- C++ keyword check
 
             inline = f'   inline ERR {name}({params}) noexcept {{\n'
@@ -1151,7 +1151,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
             cl.methods[k].nestedInline = inline
          end
 
-         output('// ' .. Name:cap() .. ' methods')
+         output('// ' .. Name.cap() .. ' methods')
          output()
 
          if lpfx?? then
@@ -1174,11 +1174,11 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
 
       cl.sortedActions = { }
       for a in values(cl.actions) do
-         table.insert(cl.sortedActions, a)
+         cl.sortedActions.insert(a)
       end
 
-      if not table.empty(cl.sortedActions) then
-         table.sort(cl.sortedActions, function(a,b) return a.name < b.name end)
+      if not cl.sortedActions.empty() then
+         cl.sortedActions.sort(function(a,b) return a.name < b.name end)
       end
 
       outputClassHeader(cl, Private, Custom)
@@ -1187,9 +1187,9 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
 
       if Options.output?? then
          mdef = ''
-         if not table.empty(cl.methods) then
+         if cl.methods and not cl.methods.empty() then
             for m in values(cl.methods) do
-               if not table.empty(m.params) then
+               if not m.params.empty() then
                   mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params, true)} }};\n'
                end
             end
@@ -1198,34 +1198,34 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
             mdef ..= f'static const struct MethodEntry cl{Name}Methods[] = {{\n'
             for m in values(cl.methods) do
                local structSize
-               if table.empty(m.params) then
-                  mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", 0, 0 }},\n'
+               if m.params.empty() then
+                  mdef ..= f'   {{ AC(-{m.id}), (APTR){Name.upper()}_{m.funcName}, "{m.name}", 0, 0 }},\n'
                else
-                  structSize = f'sizeof(struct {cl.methodPrefix:lower()}::{m.name})'
-                  mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", ma{m.name}, {structSize} }},\n'
+                  structSize = f'sizeof(struct {cl.methodPrefix.lower()}::{m.name})'
+                  mdef ..= f'   {{ AC(-{m.id}), (APTR){Name.upper()}_{m.funcName}, "{m.name}", ma{m.name}, {structSize} }},\n'
                end
             end
             mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
          end
 
          if cl.actions.New then
-            mdef ..= f'static ERR {Name:upper()}_New({cl.cppName} *Self) {{\n'
+            mdef ..= f'static ERR {Name.upper()}_New({cl.cppName} *Self) {{\n'
             mdef ..= f'   new (Self) {cl.cppName}(Self->Class, Self->UID);\n'
             mdef ..= f'   return ERR::Okay;\n'
             mdef ..= '}\n\n'
          end
 
          if cl.actions.Free then
-            mdef ..= f'static ERR {Name:upper()}_Free({cl.cppName} *Self) {{\n'
+            mdef ..= f'static ERR {Name.upper()}_Free({cl.cppName} *Self) {{\n'
             mdef ..= f'   Self->~{cl.cppName}();\n'
             mdef ..= f'   return ERR::Okay;\n'
             mdef ..= '}\n\n'
          end
 
-         if not table.empty(cl.sortedActions) then
+         if not cl.sortedActions.empty() then
             mdef ..= f"static const struct ActionArray cl{Name}Actions[] = {{\n"
             for action in values(cl.sortedActions) do
-               mdef ..= f"   {{ AC::{action.name}, {Name:upper()}_{action.name} }},\n"
+               mdef ..= f"   {{ AC::{action.name}, {Name.upper()}_{action.name} }},\n"
             end
             mdef ..= "   { AC::NIL, nullptr }\n};\n\n"
          end
@@ -1258,14 +1258,14 @@ global function functionNames(Prefix:str, ...)
          name  = fname,
          def   = f'   void (*_{fname})(void);',
          macro = function() -- Default macro, to be overridden by documented function
-            return f'template <typename... Args> inline ERR {glFunctionPrefix:lower()}{fname}(Args... pArgs) noexcept {{ return {glModule.name}Base->_{fname}(pArgs...); }}'
+            return f'template <typename... Args> inline ERR {glFunctionPrefix.lower()}{fname}(Args... pArgs) noexcept {{ return {glModule.name}Base->_{fname}(pArgs...); }}'
          end,
          staticMacro = function()
-            return f'template <typename... Args> ERR {glFunctionPrefix:lower()}{fname}(Args... pArgs);'
+            return f'template <typename... Args> ERR {glFunctionPrefix.lower()}{fname}(Args... pArgs);'
          end
       }
 
-      table.insert(glFunctions, func)
+      glFunctions.insert(func)
       glFunctionLookup[fname] = func
    end
 

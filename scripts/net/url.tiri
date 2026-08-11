@@ -61,15 +61,15 @@ url.encode = function(String:str, ExtraChars:str):str
    -- Simple character-by-character encoding to avoid pattern issues
    result = array<string>
    for i in {0 to #String} do
-      c = String:sub(i, i+1)
-      if chars_to_encode:find(c, 0, true) then
-         result:push(string.format('%%%02X', string.byte(c)))
+      c = String.sub(i, i+1)
+      if chars_to_encode.find(c, 0, true) then
+         result.push(string.format('%%%02X', string.byte(c)))
       else
-         result:push(c)
+         result.push(c)
       end
    end
 
-   return result:concat()
+   return result.concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -85,7 +85,7 @@ url.encodePlus = function(String:str, ExtraChars:str):str
 
    encoded = url.encode(String, ExtraChars)
    if encoded then
-      encoded = encoded:replace('%20', '+')
+      encoded = encoded.replace('%20', '+')
    end
 
    return encoded
@@ -104,12 +104,12 @@ url.decode = function(String:str):str
    result = ''
    last_stop = 0
    for start, stop, cap in rxPercentEncoded.findAll(String) do
-      if start > last_stop then result ..= String:sub(last_stop, start) end
+      if start > last_stop then result ..= String.sub(last_stop, start) end
       local hex = cap[0]
       result ..= string.char(tonumber(hex, 16))
       last_stop = stop
    end
-   result ..= String:sub(last_stop)
+   result ..= String.sub(last_stop)
 
    return result
 end
@@ -123,7 +123,7 @@ end
 ]])
 url.decodePlus = function(String:str):str
    String ?! return ''
-   decoded = String:replace('+', ' ')
+   decoded = String.replace('+', ' ')
    return url.decode(decoded)
 end
 
@@ -161,7 +161,7 @@ url.parseQuery = function(Query:str):table
             if type(params[key]) != 'table' then
                params[key] = { params[key] }
             end
-            table.insert(params[key], value)
+            params[key].insert(value)
          else
             params[key] = value
          end
@@ -192,11 +192,11 @@ url.parseQueryList = function(Query:str):array<table>
       if key then
          key   = url.decodePlus(key)
          value = url.decodePlus(value)
-         params:push({ key = key, value = value })
+         params.push({ key = key, value = value })
       else
          -- Handle key without value
          key = url.decodePlus(pair)
-         params:push({ key = key, value = '' })
+         params.push({ key = key, value = '' })
       end
    end
 
@@ -217,7 +217,7 @@ url.buildQuery = function(Params:any):str
 
    if type(Params) is 'array' then
       for param in values(Params) do
-         parts:push(url.encodePlus(tostring(param.key)) .. '=' .. url.encodePlus(tostring(param.value or '')))
+         parts.push(url.encodePlus(tostring(param.key)) .. '=' .. url.encodePlus(tostring(param.value or '')))
       end
    else
       -- Hash-like table
@@ -227,16 +227,16 @@ url.buildQuery = function(Params:any):str
             -- Handle multiple values for same key
             for _, v in ipairs(value) do
                encodedValue = url.encodePlus(tostring(v))
-               parts:push(key .. '=' .. encodedValue)
+               parts.push(key .. '=' .. encodedValue)
             end
          else
             encodedValue = url.encodePlus(tostring(value))
-            parts:push(key .. '=' .. encodedValue)
+            parts.push(key .. '=' .. encodedValue)
          end
       end
    end
 
-   return parts:concat('&')
+   return parts.concat('&')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -274,38 +274,38 @@ url.parse = function(URL:str):<table, str>
 
    remaining = URL
 
-   frag_pos = remaining:find('#')
+   frag_pos = remaining.find('#')
    if frag_pos then
-      components.fragment = remaining:sub(frag_pos + 1)
-      remaining = frag_pos is 0 ? '' :> remaining:sub(0, frag_pos)
+      components.fragment = remaining.sub(frag_pos + 1)
+      remaining = frag_pos is 0 ? '' :> remaining.sub(0, frag_pos)
    end
 
-   query_pos = remaining:find('?', 0, true)
+   query_pos = remaining.find('?', 0, true)
    if query_pos then
-      components.query = remaining:sub(query_pos + 1)
-      remaining = query_pos is 0 ? '' :> remaining:sub(0, query_pos)
+      components.query = remaining.sub(query_pos + 1)
+      remaining = query_pos is 0 ? '' :> remaining.sub(0, query_pos)
    end
 
    scheme_match = rxScheme.extract(remaining)
    if scheme_match then
-      components.scheme = scheme_match:lower()
+      components.scheme = scheme_match.lower()
       remaining = rxSchemeOnly.extract(remaining)
    end
 
    -- Handle authority (//host:port or //user:pass@host:port)
-   if remaining:sub(0, 2) is '//' then
-      remaining = remaining:sub(2) -- Remove //
+   if remaining.sub(0, 2) is '//' then
+      remaining = remaining.sub(2) -- Remove //
 
       -- Find the end of authority (next /, ?, #, or end of string)
-      pathStart = remaining:find('/') or #remaining
-      authority = remaining:sub(0, pathStart)
-      remaining = remaining:sub(pathStart)
+      pathStart = remaining.find('/') or #remaining
+      authority = remaining.sub(0, pathStart)
+      remaining = remaining.sub(pathStart)
 
       -- Extract auth (user:pass@)
-      authEnd = authority:find('@')
+      authEnd = authority.find('@')
       if authEnd then
-         components.auth = authority:sub(0, authEnd)
-         authority = authority:sub(authEnd + 1)
+         components.auth = authority.sub(0, authEnd)
+         authority = authority.sub(authEnd + 1)
       end
 
       -- Handle IPv6 addresses [host]:port
@@ -318,10 +318,10 @@ url.parse = function(URL:str):<table, str>
          end
       else
          -- Handle regular host:port
-         colonPos = authority:find(':', 0, true)
+         colonPos = authority.find(':', 0, true)
          if colonPos then
-            components.host = authority:sub(0, colonPos)
-            portStr = authority:sub(colonPos + 1)
+            components.host = authority.sub(0, colonPos)
+            portStr = authority.sub(colonPos + 1)
             if portStr != '' then
                components.port = tonumber(portStr)
             end
@@ -338,10 +338,10 @@ url.parse = function(URL:str):<table, str>
    end
 
    if components.path then
-      paramPos = components.path:find(';')
+      paramPos = components.path.find(';')
       if paramPos then
-         components.params = components.path:sub(paramPos + 1)
-         components.path = components.path:sub(0, paramPos)
+         components.params = components.path.sub(paramPos + 1)
+         components.path = components.path.sub(0, paramPos)
       end
    end
 
@@ -360,28 +360,28 @@ url.unparse = function(Components:table):str
 
    parts = array<string>
 
-   if Components.scheme then parts:push(Components.scheme .. ':') end
+   if Components.scheme then parts.push(Components.scheme .. ':') end
 
    if Components.host then
-      parts:push('//')
+      parts.push('//')
 
-      if Components.auth then parts:push(Components.auth .. '@') end
+      if Components.auth then parts.push(Components.auth .. '@') end
 
-      if Components.host:find(':') then
-         parts:push('[' .. Components.host .. ']')
+      if Components.host.find(':') then
+         parts.push('[' .. Components.host .. ']')
       else
-         parts:push(Components.host)
+         parts.push(Components.host)
       end
 
-      if Components.port then parts:push(':' .. Components.port) end
+      if Components.port then parts.push(':' .. Components.port) end
    end
 
-   if Components.path then parts:push(Components.path) end
-   if Components.params then parts:push(';' .. Components.params) end
-   if Components.query then parts:push('?' .. Components.query) end
-   if Components.fragment then parts:push('#' .. Components.fragment) end
+   if Components.path then parts.push(Components.path) end
+   if Components.params then parts.push(';' .. Components.params) end
+   if Components.query then parts.push('?' .. Components.query) end
+   if Components.fragment then parts.push('#' .. Components.fragment) end
 
-   return parts:concat()
+   return parts.concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -414,12 +414,12 @@ end
 url.unsplit = function(Components:table):str
    Components ?! return ''
    parts = array<string>
-   if Components.scheme then parts:push(Components.scheme .. ':') end
-   if Components.netloc then parts:push('//' .. Components.netloc) end
-   if Components.path then parts:push(Components.path) end
-   if Components.query then parts:push('?' .. Components.query) end
-   if Components.fragment then parts:push('#' .. Components.fragment) end
-   return parts:concat()
+   if Components.scheme then parts.push(Components.scheme .. ':') end
+   if Components.netloc then parts.push('//' .. Components.netloc) end
+   if Components.path then parts.push(Components.path) end
+   if Components.query then parts.push('?' .. Components.query) end
+   if Components.fragment then parts.push('#' .. Components.fragment) end
+   return parts.concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -432,14 +432,14 @@ end
 url._buildNetloc = function(Components:table!):str
    Components.host ?! return nil
    netloc = array<string>
-   if Components.auth then netloc:push(Components.auth .. '@') end
-   if Components.host:find(':') then
-      netloc:push('[' .. Components.host .. ']')
+   if Components.auth then netloc.push(Components.auth .. '@') end
+   if Components.host.find(':') then
+      netloc.push('[' .. Components.host .. ']')
    else
-      netloc:push(Components.host)
+      netloc.push(Components.host)
    end
-   if Components.port then netloc:push(':' .. Components.port) end
-   return netloc:concat()
+   if Components.port then netloc.push(':' .. Components.port) end
+   return netloc.concat()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -453,10 +453,10 @@ end
 url.defrag = function(URL:str):<str, str>
    URL ?! return nil, nil
 
-   frag_pos = URL:find('#')
+   frag_pos = URL.find('#')
    if frag_pos then
-      base = frag_pos is 0 ? '' :> URL:sub(0, frag_pos)
-      fragment = URL:sub(frag_pos + 1)
+      base = frag_pos is 0 ? '' :> URL.sub(0, frag_pos)
+      fragment = URL.sub(frag_pos + 1)
       return base, fragment
    end
 
@@ -480,14 +480,14 @@ url.join = function(BaseURL:str, RelativeURL:str):str
    if not base then return RelativeURL end
 
    -- Handle fragment-only URLs
-   if RelativeURL:sub(0, 1) is '#' then
-      base.fragment = RelativeURL:sub(1)
+   if RelativeURL.sub(0, 1) is '#' then
+      base.fragment = RelativeURL.sub(1)
       return url.unparse(base)
    end
 
    -- Handle query-only URLs
-   if RelativeURL:sub(0, 1) is '?' then
-      base.query = RelativeURL:sub(1)
+   if RelativeURL.sub(0, 1) is '?' then
+      base.query = RelativeURL.sub(1)
       base.fragment = nil
       return url.unparse(base)
    end
@@ -508,13 +508,13 @@ url.join = function(BaseURL:str, RelativeURL:str):str
    rel.auth = base.auth
 
    -- Handle absolute path
-   if rel.path and rel.path:sub(0, 1) is '/' then
+   if rel.path and rel.path.sub(0, 1) is '/' then
       return url.unparse(rel)
    end
 
    -- Handle relative path
    basePath = base.path or '/'
-   if basePath:sub(-1) != '/' then
+   if basePath.sub(-1) != '/' then
       basePath = rxBasePath.extract(basePath) or '/'
    end
 
@@ -535,26 +535,26 @@ url.normalize = function(Path:str):str
    Path ?! return ''
 
    segments = array<string>
-   isAbsolute = Path:sub(0, 1) is '/'
+   isAbsolute = Path.sub(0, 1) is '/'
 
    for start, stop, cap in rxPathSegment.findAll(Path) do
       local segment = cap[0]
       if segment is '..' then
          if #segments > 0 and segments[#segments - 1] != '..' then
-            segments:pop()
+            segments.pop()
          elseif not isAbsolute then
-            segments:push('..')
+            segments.push('..')
          end
       elseif segment != '.' and segment != '' then
-         segments:push(segment)
+         segments.push(segment)
       end
    end
 
-   result = segments:concat('/')
+   result = segments.concat('/')
    if isAbsolute then result = '/' .. result end
 
    -- Preserve trailing slash
-   if Path:sub(-1) is '/' and result:sub(-1) != '/' and result != '' then
+   if Path.sub(-1) is '/' and result.sub(-1) != '/' and result != '' then
       result = result .. '/'
    end
 
@@ -642,10 +642,10 @@ url.sameOrigin = function(A:str, B:str):bool
    if not a or not b then return false end
    if not a.scheme or not a.host or not b.scheme or not b.host then return false end
 
-   if a.scheme:lower() != b.scheme:lower() then return false end
-   if a.host:lower() != b.host:lower() then return false end
+   if a.scheme.lower() != b.scheme.lower() then return false end
+   if a.host.lower() != b.host.lower() then return false end
 
-   port_a = a.port or DEFAULT_PORTS[a.scheme:lower()]
-   port_b = b.port or DEFAULT_PORTS[b.scheme:lower()]
+   port_a = a.port or DEFAULT_PORTS[a.scheme.lower()]
+   port_b = b.port or DEFAULT_PORTS[b.scheme.lower()]
    return port_a is port_b
 end

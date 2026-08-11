@@ -866,6 +866,7 @@ void register_io_class(lua_State *Lua)
 
    // Create file handle metatable
    luaL_newmetatable(Lua, "Tiri.file");
+   lj_bmeth_mark_method_compatible(tabV(Lua->top - 1));
    lua_pushstring(Lua, "__index");
    lua_pushvalue(Lua, -2);  // pushes the metatable
    lua_settable(Lua, -3);   // metatable.__index = metatable

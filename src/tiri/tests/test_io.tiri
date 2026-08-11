@@ -19,7 +19,7 @@ function createTestFile(name, content):str
    file = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
    content and file.acWrite(content)
 
-   glTestFiles:push(path)
+   glTestFiles.push(path)
    return path
 end
 
@@ -33,7 +33,7 @@ function readFileContent(path)
    buffer = string.alloc(4096)
    err, bytes = file.acRead(buffer)
    if err is ERR_Okay and bytes > 0 then
-      return buffer:sub(0, bytes)
+      return buffer.sub(0, bytes)
    end
    return nil
 end
@@ -47,22 +47,22 @@ end
    file = io.open(test_path, 'r')
    assert(file, 'Failed to open file for reading')
    assert(io.type(file) is 'file', "io.type should return 'file'")
-   file:close()
+   file.close()
 
    -- Test opening a new file for writing
    write_path = glTestFolder .. 'test_write.txt'
    file = io.open(write_path, 'w')
    assert(file, 'Failed to open file for writing')
-   file:write('Test content')
-   file:close()
-   glTestFiles:push(write_path)
+   file.write('Test content')
+   file.close()
+   glTestFiles.push(write_path)
    assert(fileExists(write_path), 'File should exist after writing')
 
    -- Test append mode
    file = io.open(write_path, 'a')
    assert(file, 'Failed to open file for appending')
-   file:write(' - appended')
-   file:close()
+   file.write(' - appended')
+   file.close()
 
    content = readFileContent(write_path)
    assert(content is 'Test content - appended', 'Append mode should add to end of file')
@@ -72,9 +72,9 @@ end
    mSys.DeleteFile(append_path)
    file = io.open(append_path, 'a')
    assert(file, 'Failed to create a missing file in append mode')
-   file:write('New append content')
-   file:close()
-   glTestFiles:push(append_path)
+   file.write('New append content')
+   file.close()
+   glTestFiles.push(append_path)
 
    content = readFileContent(append_path)
    assert(content is 'New append content', 'Append mode should create and write a missing file')
@@ -105,7 +105,7 @@ end
 @Test(labels=['io', 'file', 'defaults']) function IOCloseDefaultOutput()
    output_path = glTestFolder .. 'test_close_default_output.txt'
    output_file = io.output(output_path)
-   glTestFiles:push(output_path)
+   glTestFiles.push(output_path)
 
    io.write('closed default output')
    result = io.close()
@@ -133,7 +133,7 @@ end
    assert(file_type is 'file', "Should return 'file' for open file, got " .. tostring(file_type))
    assert(io.type('not a file') is nil, 'Should return nil for non-file object')
 
-   file:close()
+   file.close()
    file_type = io.type(file)
    assert(file_type is 'closed file', 'Should return "closed file" for closed file, got ' .. tostring(file_type))
 end
@@ -146,10 +146,10 @@ end
    assert(io.type(tmpfile) is 'file', 'Temporary file should be a valid file object')
 
    -- Test writing and reading from tmpfile
-   tmpfile:write('temporary data')
-   tmpfile:seek('set', 0)
-   -- Note: file:read() may not be fully implemented yet, so we'll test what we can
-   tmpfile:close()
+   tmpfile.write('temporary data')
+   tmpfile.seek('set', 0)
+   -- Note: file.read() may not be fully implemented yet, so we'll test what we can
+   tmpfile.close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -159,20 +159,71 @@ end
    test_path = glTestFolder .. 'test_file_write.txt'
    file = io.open(test_path, 'w')
    assert(file, 'Failed to open file for writing')
-   glTestFiles:push(test_path)
+   glTestFiles.push(test_path)
 
    -- Test single string write
-   result = file:write('Hello')
+   result = file.write('Hello')
    assert(result is file, 'file:write should return the file handle')
 
    -- Test multiple string writes
-   result = file:write(' ', 'World', '!')
+   result = file.write(' ', 'World', '!')
    assert(result is file, 'file:write should handle multiple arguments')
 
-   file:close()
+   file.close()
 
    content = readFileContent(test_path)
    assert(content is 'Hello World!', 'Written content should match expected')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(labels=['io', 'file', 'methods']) function FileMethodCallForms()
+   test_path = glTestFolder .. 'test_file_method_calls.txt'
+   file = io.open(test_path, 'w')
+   glTestFiles.push(test_path)
+
+   file.write('a').write('b');
+   'c' |> file.write();
+
+   callback = file.write
+   callback(file, 'd');
+   (file.write)(file, 'e');
+   file['write'](file, 'f');
+
+   local argument_called = false
+   local function argument():str
+      argument_called = true
+      return 'unexpected'
+   end
+   local maybe:userdata = nil
+   maybe?.write(argument())
+   assert(argument_called is false, 'Safe file method calls should not evaluate arguments for nil receivers')
+
+   try
+      (file.write)('missing receiver')
+   except err
+      assert(tostring(err).find('Tiri.file expected'), 'Grouped calls without an explicit receiver should fail')
+   success
+      error('Grouped file method calls should remain unbound')
+   end
+
+   file.close()
+   assert(readFileContent(test_path) is 'abcdef', 'All supported file method call forms should preserve argument order')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(labels=['io', 'file', 'jit']) function FileMethodHotLoop()
+   test_path = glTestFolder .. 'test_file_method_hot_loop.txt'
+   file = io.open(test_path, 'w')
+   glTestFiles.push(test_path)
+
+   for i in {0 to 200} do
+      file.write('x')
+   end
+   file.close()
+
+   assert(#readFileContent(test_path) is 200, 'Hot file method calls should retain receiver injection under the JIT')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -185,40 +236,40 @@ end
    assert(file, 'Failed to open file for reading')
 
    -- Test reading a line (default behavior)
-   line = file:read()
+   line = file.read()
    assert(line is '123', 'Should read first line: "123", got "' .. tostring(line) .. '"')
 
    -- Test reading a number
-   num = file:read('*n')
+   num = file.read('*n')
    assert(num is 456.789, 'Should read number 456.789, got ' .. tostring(num))
 
    -- Test reading specific number of bytes
-   file:seek('set', 0) -- Reset to start
-   bytes = file:read(3)
+   file.seek('set', 0) -- Reset to start
+   bytes = file.read(3)
    assert(bytes is '123', 'Should read 3 bytes: "123", got "' .. tostring(bytes) .. '"')
 
    -- Test reading entire file
-   file:seek('set', 0) -- Reset to start
-   all = file:read('*a')
+   file.seek('set', 0) -- Reset to start
+   all = file.read('*a')
    assert(all is test_content, 'Should read entire file content')
 
    -- Test reading line with *l format
-   file:seek('set', 0) -- Reset to start
-   line_l = file:read('*l')
+   file.seek('set', 0) -- Reset to start
+   line_l = file.read('*l')
    assert(line_l is '123', 'Should read line with *l format')
 
    -- Test multiple read operations
-   file:seek('set', 0) -- Reset to start
-   first, second = file:read('*l', '*l')
+   file.seek('set', 0) -- Reset to start
+   first, second = file.read('*l', '*l')
    assert(first is '123', 'First line should be "123"')
    assert(second is '456.789', 'Second line should be "456.789"')
 
    -- Test reading at end of file
-   file:seek('end', 0)
-   eof = file:read()
+   file.seek('end', 0)
+   eof = file.read()
    assert(eof is nil, 'Should return nil when reading at end of file')
 
-   file:close()
+   file.close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -229,22 +280,22 @@ end
    assert(file, 'Failed to open file for seeking')
 
    -- Test seeking to start
-   pos = file:seek('set', 0)
+   pos = file.seek('set', 0)
    assert(pos is 0, 'Should return position 0 when seeking to start')
 
    -- Test seeking to specific position
-   pos = file:seek('set', 5)
+   pos = file.seek('set', 5)
    assert(pos is 5, 'Should return position 5 when seeking to offset 5')
 
    -- Test seeking to end
-   pos = file:seek('end', 0)
+   pos = file.seek('end', 0)
    assert(pos is 10, 'Should return file size when seeking to end')
 
    -- Test relative seeking
-   pos = file:seek('cur', -2)
+   pos = file.seek('cur', -2)
    assert(pos is 8, 'Should return position 8 when seeking back 2 from end')
 
-   file:close()
+   file.close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -253,26 +304,26 @@ end
    test_path = glTestFolder .. 'test_flush.txt'
    file = io.open(test_path, 'w')
    assert(file, 'Failed to open file for flushing')
-   glTestFiles:push(test_path)
+   glTestFiles.push(test_path)
 
-   file:write('test data')
-   result = file:flush()
+   file.write('test data')
+   result = file.flush()
    assert(result is true, 'file:flush should return true')
 
-   file:close()
+   file.close()
 end
 
 @Test(labels=['io', 'file']) function FileFlushClosedHandle()
    test_path = glTestFolder .. 'test_flush_closed.txt'
    file = io.open(test_path, 'w')
    assert(file, 'Failed to open file for closed flush test')
-   glTestFiles:push(test_path)
+   glTestFiles.push(test_path)
 
-   file:close()
+   file.close()
    try
-      file:flush()
+      file.flush()
    success
-      error('file:flush() on a closed handle should throw an error')
+      error('file.flush() on a closed handle should throw an error')
    end
 end
 
@@ -289,7 +340,7 @@ end
    collected_lines = array<string>
    for line in io.lines(test_path) do
       line_count++
-      collected_lines:push(line)
+      collected_lines.push(line)
    end
 
    assert(line_count is 3, 'Should read 3 lines, got ' .. line_count)
@@ -317,9 +368,9 @@ end
 
    line_count = 0
    collected_lines = array<string>
-   for line in file:lines() do
+   for line in file.lines() do
       line_count++
-      collected_lines:push(line)
+      collected_lines.push(line)
    end
 
    assert(line_count is 3, 'Should read 3 lines from file handle')
@@ -327,7 +378,7 @@ end
    assert(collected_lines[1] is 'Second', 'Second line should be "Second"')
    assert(collected_lines[2] is 'Third', 'Third line should be "Third"')
 
-   file:close()
+   file.close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -346,7 +397,7 @@ end
    -- Test setting default output
    output_path = glTestFolder .. 'test_output.txt'
    output_file = io.output(output_path)
-   glTestFiles:push(output_path)
+   glTestFiles.push(output_path)
    assert(output_file, 'io.output should return file handle when setting')
 
    -- Test getting current default output
@@ -355,12 +406,12 @@ end
 
    -- Test that we can use io.write with default output
    io.write('Default output test')
-   io.output():close()
+   io.output().close()
 
    content = readFileContent(output_path)
    assert(content is 'Default output test', 'Default output should work with io.write')
 
-   io.input():close()
+   io.input().close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -393,17 +444,17 @@ end
    -- Test operations on closed file
    test_path = createTestFile('test_closed.txt', 'test')
    file = io.open(test_path, 'r')
-   file:close()
+   file.close()
 
    try
-      file:write('should fail') -- Expect failure
+      file.write('should fail') -- Expect failure
       error('SUCCESS')
    except e
       assert(e.message != 'SUCCESS', 'Writing to closed file should fail')
    end
 
    try
-      file:seek('set', 0) -- Expect failure
+      file.seek('set', 0) -- Expect failure
       error('SUCCESS')
    except e
       assert(e.message != 'SUCCESS', 'Seeking in closed file should fail')
@@ -441,7 +492,7 @@ end
 @Test(labels=['io', 'writeAll']) function IOWriteAll()
    -- Test writing content to a new file
    write_path = glTestFolder .. 'test_writeall.txt'
-   glTestFiles:push(write_path)
+   glTestFiles.push(write_path)
 
    io.writeAll(write_path, 'writeAll test data')
    content = readFileContent(write_path)
@@ -543,7 +594,7 @@ end
    line2 = io.read('*l')
    assert(line2 is 'second line', 'Should read second line from default input')
 
-   io.input():close()
+   io.input().close()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -556,14 +607,14 @@ end
    -- Write the data
    write_file = io.open(test_path, 'w')
    assert(write_file, 'Failed to open file for integration test')
-   write_file:write(test_data)
-   write_file:close()
-   glTestFiles:push(test_path)
+   write_file.write(test_data)
+   write_file.close()
+   glTestFiles.push(test_path)
 
    -- Read it back and verify
    lines_read = array<string>
    for line in io.lines(test_path) do
-      lines_read:push(line)
+      lines_read.push(line)
    end
 
    assert(#lines_read is 3, 'Should read exactly 3 lines')
@@ -573,27 +624,27 @@ end
 
    -- Test seek and read operations with file_read() implementation
    read_file = io.open(test_path, 'r')
-   read_file:seek('set', 6) -- Skip "First "
+   read_file.seek('set', 6) -- Skip "First "
 
-   partial = read_file:read(4) -- Read "line"
+   partial = read_file.read(4) -- Read "line"
    assert(partial is 'line', 'Should read 4 bytes after seek, got "' .. tostring(partial) .. '"')
 
    -- Test reading entire remaining content
-   read_file:seek('set', 0)
-   all_content = read_file:read('*a')
+   read_file.seek('set', 0)
+   all_content = read_file.read('*a')
    assert(all_content is test_data, 'Should read entire file content')
 
-   read_file:close()
+   read_file.close()
 
    -- Test number reading
    number_path = createTestFile('test_numbers.txt', '42\n3.14159\n')
    num_file = io.open(number_path, 'r')
 
-   int_num = num_file:read('*n')
+   int_num = num_file.read('*n')
    assert(int_num is 42, 'Should read integer 42, got ' .. tostring(int_num))
 
-   float_num = num_file:read('*n')
+   float_num = num_file.read('*n')
    assert(math.abs(float_num - 3.14159) < 0.00001, 'Should read float 3.14159, got ' .. tostring(float_num))
 
-   num_file:close()
+   num_file.close()
 end
