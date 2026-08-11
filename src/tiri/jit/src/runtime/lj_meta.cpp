@@ -1303,6 +1303,14 @@ void lj_meta_call(lua_State *L, TValue *func, TValue *top)
 
 int lj_meta_close(lua_State *L, TValue *o, TValue *err)
 {
+   const ptrdiff_t object_offset = savestack(L, o);
+   const bool has_error = err != nullptr;
+   const ptrdiff_t error_offset = has_error ? savestack(L, err) : 0;
+
+   lj_state_checkstack(L, 4);
+   o = restorestack(L, object_offset);
+   err = has_error ? restorestack(L, error_offset) : nullptr;
+
    cTValue *mo = lj_meta_lookup(L, o, MM_close);
    if (tvisnil(mo)) return 0;  // No __close metamethod, nothing to do.
 

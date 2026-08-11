@@ -11,6 +11,7 @@
 **   - mapofs: Offset into snapmap where this snapshot's entries begin
 **   - nent:   Number of slot entries (NOT including frame links)
 **   - ref:    IR reference at which this snapshot was created
+**   - context_ref/context_owner_slot: Virtual contextual activation materialised on exit
 **   - nslots: Total number of stack slots
 **   - topslot: Top slot for stack sizing
 **
@@ -170,9 +171,20 @@ static void snapshot_stack(jit_State* J, SnapShot* snap, MSize nsnapmap)
    nent += snapshot_framelinks(J, p + nent, &snap->topslot);
    snap->mapofs = (uint32_t)nsnapmap;
    snap->ref = (IRRef1)J->cur.nins;
+   snap->context_ref = 0;
+   snap->context_owner_slot = 0;
    snap->mcofs = 0;
    snap->nslots = (uint8_t)nslots;
    snap->count = 0;
+   if (J->context_virtual_slot >= 0) {
+      int32_t function_slot = J->context_virtual_slot;
+      TRef receiver = J->context_call_receiver[function_slot];
+      lj_assertJ(tref_istab(receiver), "snapshot virtual context is not a table");
+      snap->context_ref = IRRef1(tref_ref(receiver));
+      snap->context_owner_slot = uint16_t(function_slot + 1 + LJ_FR2);
+      // Side traces cannot inherit virtual VM state. A guard exit materialises it and resumes in the interpreter.
+      snap->count = SNAPCOUNT_DONE;
+   }
    J->cur.nsnapmap = (uint32_t)(nsnapmap + nent);
 }
 
@@ -316,14 +328,29 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
             if (!(op IS BC_ISTC or op IS BC_ISFC)) DEF_SLOT(bc_a(ins));
             break;
          case BCMbase:
-            if (bc_is_call_or_iter(op)) {
-               BCREG top = (op IS BC_CALLM or op IS BC_CALLMT or bc_c(ins) IS 0) ?
+            if (op IS BC_CTXLEAVE) {
+               BCIns call_ins = pc[-2];
+               lj_assertJ(bc_op(call_ins) IS BC_CTXCALL or bc_op(call_ins) IS BC_CTXCALLM,
+                  "CTXLEAVE does not follow an ordinary contextual call");
+               BCREG call_base = bc_a(ins);
+               BCREG available_results = call_base < maxslot ? maxslot - call_base : 0;
+               BCREG result_count = bc_b(call_ins) ? bc_b(call_ins) - 1 : available_results;
+               if (result_count > available_results) result_count = available_results;
+               BCREG result_shift = bc_d(ins) ? bc_d(ins) : 1;
+               lj_assertJ(result_shift <= call_base, "CTXLEAVE result shift exceeds the call base");
+               for (s = call_base; s < call_base + result_count; s++) USE_SLOT(s);
+               for (s = call_base - result_shift; s < call_base - result_shift + result_count; s++) DEF_SLOT(s);
+            }
+            else if (bc_is_call_or_iter(op) or op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXCALLT) {
+               bool contextual_call = op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXCALLT;
+               BCREG top = (op IS BC_CALLM or op IS BC_CALLMT or op IS BC_CTXCALLM or bc_c(ins) IS 0) ?
                   maxslot : (bc_a(ins) + bc_c(ins) + LJ_FR2);
                DEF_SLOT(bc_a(ins) + 1);
-               s = bc_a(ins) - ((op IS BC_ITERC or op IS BC_ITERN or op IS BC_ITERA) ? 3 : 0);
+               s = bc_a(ins) - ((op IS BC_ITERC or op IS BC_ITERN or op IS BC_ITERA) ? 3 :
+                  (contextual_call ? 1 : 0));
                for (; s < top; s++) USE_SLOT(s);
                for (; s < maxslot; s++) DEF_SLOT(s);
-               if (op IS BC_CALLT or op IS BC_CALLMT) {
+               if (op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT) {
                   for (s = 0; s < bc_a(ins); s++) DEF_SLOT(s);
                   return 0;
                }
@@ -916,6 +943,33 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
    L->base += base_adj;
    lj_assertJ(map + nent IS flinks, "inconsistent frames in snapshot");
 
+   if (snap->context_ref) {
+      TValue context;
+      TValue *context_owner = frame + snap->context_owner_slot;
+      // A root trace may be reused beneath an inherited context, and a deeper inlined activation may have been
+      // materialised after this snapshot. Preserve owners below this activation and discard owners abandoned by the
+      // restored frames before installing (or de-duplicating) the snapshot activation.
+      lj_context_unwind(L, context_owner);
+      IRIns *context_ir = &T->ir[snap->context_ref];
+      if (context_ir->r IS RID_SUNK) {
+         bool restored_slot = false;
+         for (n = 0; n < nent; n++) {
+            SnapEntry sn = map[n];
+            if (snap_ref(sn) IS snap->context_ref and not (sn & SNAP_NORESTORE)) {
+               copyTV(L, &context, &frame[snap_slot(sn)]);
+               restored_slot = true;
+               break;
+            }
+         }
+         if (not restored_slot) snap_unsink(J, T, ex, snapno, rfilt, context_ir, &context);
+      }
+      else {
+         snap_restoreval(J, T, ex, snapno, rfilt, snap->context_ref, &context);
+      }
+      lj_assertJ(tvistab(&context), "virtual context snapshot did not restore a table");
+      lj_context_enter_jit(L, tabV(&context), context_owner);
+   }
+
    // Compute current stack top.
    BCOp op = bc_op(*pc);
    switch (op) {
@@ -923,7 +977,7 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
       if (bc_is_func_header(op)) L->top = frame + snap->nslots;
       else L->top = curr_topL(L);
       break;
-   case BC_CALLM: case BC_CALLMT: case BC_RETM: case BC_TSETM:
+   case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM: case BC_CTXLEAVE: case BC_RETM: case BC_TSETM:
       L->top = frame + snap->nslots;
       break;
    }

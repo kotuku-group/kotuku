@@ -323,9 +323,23 @@ static void gc_mark_start(global_State *g)
    setgcrefnull(g->gc.weak);
    gc_markobj(g, mainthread(g));
    gc_markobj(g, tabref(mainthread(g)->env));
+   for (const lua_State::ContextFrame &context : mainthread(g)->context_stack) {
+      GCtab *table = tabref(context.table);
+      lj_assertG(table, "context stack contains a non-table root");
+      gc_markobj(g, table);
+   }
    gc_marktv(g, &g->registrytv);
    gc_mark_gcroot(g);
    g->gc.state = (GCPhase::Propagate);
+}
+
+//********************************************************************************************************************
+// Preserve a context override installed after the running thread was traversed in the current mark phase.
+
+void lj_gc_barriercontext(lua_State *L, GCtab *Table)
+{
+   global_State *g = G(L);
+   if (g->gc.state IS GCPhase::Propagate or g->gc.state IS GCPhase::Atomic) gc_markobj(g, Table);
 }
 
 //********************************************************************************************************************
@@ -675,6 +689,11 @@ static void gc_traverse_thread(global_State *g, lua_State* th)
          setnilV(o);
    }
    gc_markobj(g, tabref(th->env));
+   for (const lua_State::ContextFrame &context : th->context_stack) {
+      GCtab *table = tabref(context.table);
+      lj_assertG(table, "context stack contains a non-table root");
+      gc_markobj(g, table);
+   }
    if (th->pending_trace) {
       CapturedStackTrace *trace = th->pending_trace;
       for (uint16_t i = 0; i < trace->frame_count; i++) {

@@ -661,16 +661,18 @@ end
    jit.opt.start('hotloop=3', 'hotexit=1', 'minstitch=0')
 
    local keys = array<string> { 'alpha', 'missing', 'bravo', 'missing' }
+   local mismatch = ''
    for iteration in {0 to 500} do
       local key = keys[iteration % #keys]
       local expected = key is 'alpha' ? 'keyword' :> key is 'bravo' ? 'annotation' :> 'missing'
       local result = resolve_safe_index_join(key)
       if result != expected then
-         assert(false,
-            f'Safe-index join failed at iteration {iteration}: key={key}, expected={expected}, result={result}')
+         mismatch = f'Safe-index join failed at iteration {iteration}: key={key}, expected={expected}, result={result}'
+         break
       end
    end
 
+   assert(mismatch is '', mismatch)
    assert(count_jit_traces(30) > 0, 'Alternating safe-index branches should execute through a compiled trace')
    jit.opt.start()
 end
@@ -1134,13 +1136,16 @@ function jit_try_forced_materialisation_probe(Count)
 end
 
 function build_try_materialisation_trace()
-   jit.on()
+   jit.off()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+   jit.on()
 
-   for i in {0 to 100} do
+   local i = 0
+   while i < 100 do
       local result = jit_try_forced_materialisation_probe(i)
       assert(result is "entry", f"Expected materialisation probe to return entry local, got '{result}'")
+      i++
    end
 
    for trace_no in {0 to 30} do
@@ -1167,7 +1172,7 @@ jit.off(build_try_materialisation_trace)
       f"Expected at least {info.tryStores} XSTORE instructions, found {xstore_count}")
 end
 
-@Test(hotpath=80) function JITTryMaterialisationTraceSnapshotsStayBounded()
+@Test function JITTryMaterialisationTraceSnapshotsStayBounded()
    local trace_no, info = build_try_materialisation_trace()
 
    assert(info.nexit > 0, "Try materialisation trace should expose snapshots")

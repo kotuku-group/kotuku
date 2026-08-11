@@ -82,6 +82,7 @@ using GCSize = uint64_t; // NB: Can't be changed - would affect offsets in GC ob
 enum class AstNodeKind : uint16_t {
    LiteralExpr,
    IdentifierExpr,
+   CurrentContextExpr,
    VarArgExpr,
    UnaryExpr,
    BinaryExpr,
@@ -1608,6 +1609,21 @@ struct lua_State {
    bool   pending_exception_valid = false;      // True if pending exception metadata is current
    bool   pending_collection = false;           // A garbage collection cycle is pending
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
+
+   struct ContextFrame {
+      GCRef table;                 // GC-visible context override owned by this state.
+      ptrdiff_t owner_base = 0;    // Stack-relative activation base; survives stack relocation.
+      bool tail_transfer = false;  // Recorded terminal returns must restore transferred frame ownership.
+   };
+
+   // An empty stack is the permanent root sentinel and resolves dynamically through env.  Contextual calls append
+   // table-only overrides; direct and non-table calls do not need an entry.
+   std::vector<ContextFrame> context_stack;
+   uint8_t context_active = 0; // Fast VM return gate; indicates a visible override above the active root floor.
+
+   // An asynchronous root boundary hides, but does not remove, suspended overrides. Keeping them in context_stack
+   // ensures that the collector continues to trace their tables while a callback runs and performs collection.
+   std::vector<size_t> context_root_floors;
 
    struct SavedMultresFrame {
       ptrdiff_t frame_base = 0;

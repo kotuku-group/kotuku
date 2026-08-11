@@ -21,6 +21,7 @@
 #include "lj_dispatch.h"
 #include "lj_vm.h"
 #include "lj_prng.h"
+#include "../bytecode/lj_bc.h"
 #include "../parser/lexer.h"
 #include "../parser/parser_diagnostics.h"
 #include "../parser/parser_symbols.h"
@@ -174,6 +175,215 @@ void lj_state_growstack1(lua_State *L)
 }
 
 //********************************************************************************************************************
+// Table context management.  Stack-relative activation ownership avoids retaining TValue pointers across stack moves.
+
+static bool context_has_visible_override(const lua_State *L) noexcept
+{
+   size_t floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   return L->context_stack.size() > floor;
+}
+
+GCtab * lj_context_current(lua_State *L) noexcept
+{
+   lj_assertL(L, "missing state for context lookup");
+   size_t floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   GCtab *context = L->context_stack.size() IS floor ?
+      tabref(L->env) : tabref(L->context_stack.back().table);
+   lj_assertL(context, "current context is not a table");
+   return context;
+}
+
+extern "C" void lj_context_load(lua_State *L, TValue *Destination) noexcept
+{
+   lj_assertL(Destination >= tvref(L->stack) and Destination < tvref(L->maxstack),
+      "context destination is outside the state stack");
+   settabV(L, Destination, lj_context_current(L));
+}
+
+extern "C" GCtab * lj_context_current_jit(lua_State *L) noexcept
+{
+   return lj_context_current(L);
+}
+
+extern "C" void lj_context_enter_jit(lua_State *L, GCtab *Table, TValue *OwnerBase)
+{
+   lj_assertL(L and Table and OwnerBase, "invalid recorded contextual activation");
+   ptrdiff_t owner_base = savestack(L, OwnerBase);
+   if (not L->context_stack.empty() and L->context_stack.back().owner_base IS owner_base) {
+      lj_assertL(tabref(L->context_stack.back().table) IS Table,
+         "recorded context does not match the active activation");
+      return;
+   }
+   lj_context_push(L, Table, OwnerBase);
+}
+
+extern "C" void lj_context_leave_jit(lua_State *L, TValue *OwnerBase) noexcept
+{
+   lj_assertL(L and OwnerBase, "invalid recorded contextual activation owner");
+   ptrdiff_t owner_base = savestack(L, OwnerBase);
+   if (not L->context_stack.empty() and L->context_stack.back().owner_base IS owner_base) {
+      lj_context_pop(L, OwnerBase);
+   }
+}
+
+extern "C" void lj_context_tail_jit(
+   lua_State *L, GCtab *Table, TValue *PreparedOwner, TValue *OutgoingOwner)
+{
+   lj_assertL(L and Table and PreparedOwner and OutgoingOwner, "invalid recorded contextual tail transfer");
+   ptrdiff_t prepared_owner = savestack(L, PreparedOwner);
+   ptrdiff_t outgoing_owner = savestack(L, OutgoingOwner);
+   lj_assertL(not L->context_stack.empty() and L->context_stack.back().owner_base IS prepared_owner,
+      "recorded contextual tail call has no prepared activation");
+   if (L->context_stack.empty() or L->context_stack.back().owner_base != prepared_owner) return;
+   lj_assertL(tabref(L->context_stack.back().table) IS Table,
+      "recorded tail context does not match the prepared activation");
+
+   L->context_stack.pop_back();
+   if (not L->context_stack.empty() and L->context_stack.back().owner_base IS outgoing_owner) {
+      L->context_stack.pop_back();
+   }
+   lj_context_push(L, Table, OutgoingOwner);
+   L->context_stack.back().tail_transfer = true;
+}
+
+extern "C" void lj_context_enter_call(lua_State *L, uint32_t CallBase)
+{
+   ptrdiff_t owner_base = savestack(L, L->base + CallBase + 1 + LJ_FR2);
+   if (not L->context_stack.empty() and L->context_stack.back().owner_base IS owner_base) return;
+
+   TValue *receiver = L->base + CallBase - 1;
+   if (tvistab(receiver)) lj_context_push(L, tabV(receiver), L->base + CallBase + 1 + LJ_FR2);
+}
+
+extern "C" uint32_t lj_context_prepare_call(lua_State *L, uint32_t CallBase, uint32_t ArgumentCount)
+{
+   TValue *receiver = L->base + CallBase - 1;
+   if (tvistab(receiver)) {
+      lj_context_enter_call(L, CallBase);
+   }
+   return ArgumentCount;
+}
+
+extern "C" void lj_context_leave_call(
+   lua_State *L, uint32_t CallBase, const BCIns *CallInstruction, uint32_t ResultCountWithSentinel) noexcept
+{
+   ptrdiff_t owner_base = savestack(L, L->base + CallBase + 1 + LJ_FR2);
+   if (not L->context_stack.empty() and L->context_stack.back().owner_base IS owner_base) {
+      L->context_stack.pop_back();
+      L->context_active = context_has_visible_override(L);
+   }
+
+   uint32_t encoded_results = bc_b(*CallInstruction);
+   lj_assertL(encoded_results or ResultCountWithSentinel,
+      "dynamic contextual call lost its result-count sentinel");
+   uint32_t result_count = encoded_results ? encoded_results - 1 :
+      (ResultCountWithSentinel ? ResultCountWithSentinel - 1 : 0);
+   // D records every receiver/lookup temporary removed from the expression result layout. Older contextual chunks
+   // encoded zero and used the original single retained-receiver slot.
+   uint32_t result_shift = bc_d(CallInstruction[1]);
+   if (result_shift IS 0) result_shift = 1;
+   TValue *results = L->base + CallBase;
+   for (uint32_t i = 0; i < result_count; i++) copyTV(L, results + i - result_shift, results + i);
+}
+
+extern "C" uint32_t lj_context_prepare_tail_call(lua_State *L, uint32_t CallBase, uint32_t ArgumentCount)
+{
+   TValue *receiver = L->base + CallBase - 1;
+   if (not tvistab(receiver)) return ArgumentCount;
+
+   ptrdiff_t prepared_owner = savestack(L, L->base + CallBase + 1 + LJ_FR2);
+   lj_assertL(not L->context_stack.empty() and L->context_stack.back().owner_base IS prepared_owner,
+      "contextual tail call has no prepared activation");
+   if (L->context_stack.empty() or L->context_stack.back().owner_base != prepared_owner) return ArgumentCount;
+
+   GCtab *context = tabref(L->context_stack.back().table);
+   lj_assertL(tabV(receiver) IS context, "tail context does not match its receiver");
+   L->context_stack.pop_back();
+
+   ptrdiff_t outgoing_owner = savestack(L, L->base);
+   if (not L->context_stack.empty() and L->context_stack.back().owner_base IS outgoing_owner) {
+      L->context_stack.pop_back();
+   }
+   lj_context_push(L, context, L->base);
+   L->context_stack.back().tail_transfer = true;
+   return ArgumentCount;
+}
+
+void lj_context_push(lua_State *L, GCtab *Table, const TValue *OwnerBase)
+{
+   lj_assertL(L and Table and OwnerBase, "invalid contextual activation");
+   // Initial entries take Table from L's guarded operand stack; transfers take it from L's rooted context stack.
+   lj_assertL(Table->gct IS ~LJ_TTAB, "context is not a table");
+   TValue *stack = tvref(L->stack);
+   // A call frame base may temporarily occupy LuaJIT's reserved stack area before the function header grows the
+   // soft stack limit. Context owners are offsets only and remain valid throughout that interval.
+   TValue *stack_end = stack + L->stacksize;
+   lj_assertL(OwnerBase >= stack and OwnerBase < stack_end, "context owner is outside the state stack allocation");
+
+   lua_State::ContextFrame frame;
+   setgcref(frame.table, obj2gco(Table));
+   frame.owner_base = savestack(L, OwnerBase);
+   L->context_stack.push_back(frame);
+   L->context_active = 1;
+   lj_gc_barriercontext(L, Table);
+}
+
+void lj_context_pop(lua_State *L, const TValue *OwnerBase) noexcept
+{
+   lj_assertL(L and OwnerBase, "invalid contextual activation owner");
+   lj_assertL(not L->context_stack.empty(), "attempt to pop the permanent root context");
+   if (L->context_stack.empty()) return;
+
+   ptrdiff_t owner_base = savestack(L, OwnerBase);
+   lj_assertL(L->context_stack.back().owner_base IS owner_base, "unbalanced contextual activation");
+   if (L->context_stack.back().owner_base IS owner_base) {
+      L->context_stack.pop_back();
+      L->context_active = context_has_visible_override(L);
+   }
+}
+
+extern "C" uint32_t lj_context_leave_frame(
+   lua_State *L, TValue *FrameBase, uint32_t ReturnState) noexcept
+{
+   lj_assertL(L and FrameBase, "invalid contextual activation frame");
+   ptrdiff_t frame_base = savestack(L, FrameBase);
+   if (not L->context_stack.empty() and L->context_stack.back().owner_base IS frame_base) {
+      L->context_stack.pop_back();
+      L->context_active = context_has_visible_override(L);
+   }
+   return ReturnState;
+}
+
+extern "C" uint32_t lj_context_leave_native_frame(
+   lua_State *L, TValue *FrameBase, uint32_t ReturnState) noexcept
+{
+   ptrdiff_t frame_base = savestack(L, FrameBase);
+   if (not L->context_stack.empty() and L->context_stack.back().tail_transfer and
+      L->context_stack.back().owner_base IS frame_base) {
+      return lj_context_leave_frame(L, FrameBase, ReturnState);
+   }
+   return lj_context_leave_frame(L, FrameBase + 1 + LJ_FR2, ReturnState);
+}
+
+void lj_context_unwind(lua_State *L, const TValue *SurvivingBase) noexcept
+{
+   lj_assertL(L and SurvivingBase, "invalid contextual unwind boundary");
+   ptrdiff_t surviving_base = savestack(L, SurvivingBase);
+   size_t floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   while (L->context_stack.size() > floor and L->context_stack.back().owner_base > surviving_base) {
+      L->context_stack.pop_back();
+   }
+   L->context_active = context_has_visible_override(L);
+}
+
+size_t lj_context_depth(const lua_State *L) noexcept
+{
+   if (not L) return 0;
+   size_t floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   return L->context_stack.size() - floor + 1;
+}
+
+//********************************************************************************************************************
 // Allocate basic stack for new state.
 
 static void stack_init(lua_State *L1, lua_State *L)
@@ -216,6 +426,10 @@ static TValue * cpluaopen(lua_State *Lua, lua_CFunction dummy, void* ud)
 static void close_state(lua_State *L)
 {
    global_State *g = G(L);
+   // Teardown also covers states terminated while an activation or asynchronous root boundary is still live.
+   L->context_stack.clear();
+   L->context_active = 0;
+   L->context_root_floors.clear();
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
@@ -362,6 +576,8 @@ void lj_state_free(global_State* g, lua_State *L)
 {
    lj_assertG(L != mainthread(g), "free of main thread");
    if (obj2gco(L) IS gcref(g->cur_L)) setgcrefnull(g->cur_L);
+   lj_assertG(L->context_stack.empty(), "state freed with active contextual activations");
+   lj_assertG(L->context_root_floors.empty(), "state freed with active asynchronous root boundaries");
 
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }

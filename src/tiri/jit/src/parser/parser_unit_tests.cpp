@@ -127,7 +127,7 @@ struct AstHarnessResult {
 //********************************************************************************************************************
 
 static AstHarnessResult build_ast_from_source(std::string_view source, bool Diagnose = false,
-   bool EnableTypeAnalysis = true)
+   bool EnableTypeAnalysis = true, bool RejectLegacyMemberSyntax = false)
 {
    AstHarnessResult result;
    result.state = std::make_unique<LuaStateHolder>();
@@ -147,6 +147,7 @@ static AstHarnessResult build_ast_from_source(std::string_view source, bool Diag
    config.abort_on_error = false;
    config.max_diagnostics = 32;
    config.enable_type_analysis = EnableTypeAnalysis;
+   config.reject_legacy_member_syntax = RejectLegacyMemberSyntax;
    ParserSession session(context, config);
 
    lex.next();
@@ -429,7 +430,7 @@ static bool test_global_callable_contract_without_type_analysis(kt::Log &Log)
    constexpr std::string_view source =
       "global function glParserContract() end\n"
       "global thunk glParserThunk():num end\n";
-   auto result = build_ast_from_source(source, false, false);
+   auto result = build_ast_from_source(source, false, true);
    if (not result.chunk.ok()) {
       Log.error("failed to parse global callable declarations with type analysis disabled");
       log_diagnostics(result.diagnostics, Log);
@@ -3766,6 +3767,196 @@ return value * 3
    return true;
 }
 
+static bool test_contextual_member_ast_foundations(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      ".value = 1\n"
+      ".value += 2\n"
+      "local read = .child.name\n"
+      ".refresh(3, 4)\n"
+      "receiver.member(5)\n"
+      "receiver[key](6)\n"
+      "receiver?.member(7);\n"
+      "receiver?[key](8);\n"
+      "(receiver.member)(8)\n"
+      "local alias = receiver.member\n"
+      "alias(9)\n";
+
+   auto result = build_ast_from_source(source, false, false);
+   if (not result.chunk.ok() or result.chunk.value_ref()->statements.size() != 11) {
+      Log.error("failed to parse contextual member AST fixture (ok=%d, statements=%" PRId64 ")",
+         int(result.chunk.ok()), int64_t(result.chunk.ok() ? result.chunk.value_ref()->statements.size() : 0));
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   BlockStmt &block = *result.chunk.value_ref();
+   for (size_t i = 0; i < 2; ++i) {
+      const auto *assignment = std::get_if<AssignmentStmtPayload>(&block.statements[i]->data);
+      const auto *member = assignment and not assignment->targets.empty() ?
+         std::get_if<MemberExprPayload>(&assignment->targets.front()->data) : nullptr;
+      if (not member or not member->table or member->table->kind != AstNodeKind::CurrentContextExpr) {
+         Log.error("leading-dot assignment did not retain an explicit current-context receiver");
+         return false;
+      }
+      if (infer_expression_type(*member->table) != TiriType::Table) {
+         Log.error("current-context expression was not inferred as a table");
+         return false;
+      }
+   }
+
+   const auto &first_assignment = std::get<AssignmentStmtPayload>(block.statements[0]->data);
+   const auto &first_member = std::get<MemberExprPayload>(first_assignment.targets.front()->data);
+   if (first_member.table->span.line != first_member.member.span.line or
+       first_member.table->span.offset >= first_member.member.span.offset) {
+      Log.error("leading-dot access did not retain distinct context and member source spans");
+      return false;
+   }
+
+   const auto &read = std::get<LocalDeclStmtPayload>(block.statements[2]->data);
+   const auto *outer_member = read.values.empty() ? nullptr : std::get_if<MemberExprPayload>(&read.values[0]->data);
+   const auto *inner_member = outer_member and outer_member->table ?
+      std::get_if<MemberExprPayload>(&outer_member->table->data) : nullptr;
+   if (not inner_member or not inner_member->table or
+       inner_member->table->kind != AstNodeKind::CurrentContextExpr) {
+      Log.error("chained leading-dot access lost its current-context root");
+      return false;
+   }
+
+   constexpr std::array<CallDispatch, 7> expected_dispatch = {
+      CallDispatch::MemberNamed,
+      CallDispatch::MemberNamed,
+      CallDispatch::MemberComputed,
+      CallDispatch::SafeMemberNamed,
+      CallDispatch::SafeMemberComputed,
+      CallDispatch::MemberNamed,
+      CallDispatch::Direct
+   };
+   constexpr std::array<size_t, 7> statement_indices = { 3, 4, 5, 6, 7, 8, 10 };
+   constexpr std::array<size_t, 7> argument_counts = { 2, 1, 1, 1, 1, 1, 1 };
+   constexpr std::array<AstNodeKind, 7> target_kinds = {
+      AstNodeKind::MemberExpr,
+      AstNodeKind::MemberExpr,
+      AstNodeKind::IndexExpr,
+      AstNodeKind::SafeMemberExpr,
+      AstNodeKind::SafeIndexExpr,
+      AstNodeKind::MemberExpr,
+      AstNodeKind::IdentifierExpr
+   };
+
+   for (size_t i = 0; i < statement_indices.size(); ++i) {
+      const auto &statement = std::get<ExpressionStmtPayload>(block.statements[statement_indices[i]]->data);
+      const auto *call = statement.expression ? std::get_if<CallExprPayload>(&statement.expression->data) : nullptr;
+      const auto *target = call ? std::get_if<DirectCallTarget>(&call->target) : nullptr;
+      if (not call or call->dispatch != expected_dispatch[i] or call->arguments.size() != argument_counts[i] or
+          not target or not target->callable or target->callable->kind != target_kinds[i]) {
+         Log.error("contextual call AST lost dispatch or written-argument metadata at fixture index %" PRId64,
+            int64_t(i));
+         return false;
+      }
+   }
+
+   const auto &computed_statement = std::get<ExpressionStmtPayload>(block.statements[5]->data);
+   const auto &computed_call = std::get<CallExprPayload>(computed_statement.expression->data);
+   const auto &computed_target = std::get<DirectCallTarget>(computed_call.target);
+   const auto &computed_index = std::get<IndexExprPayload>(computed_target.callable->data);
+   if (not computed_index.table or not computed_index.index) {
+      Log.error("computed contextual call did not retain separate receiver and key evaluation components");
+      return false;
+   }
+
+   const auto &grouped_statement = std::get<ExpressionStmtPayload>(block.statements[8]->data);
+   const auto &grouped_call = std::get<CallExprPayload>(grouped_statement.expression->data);
+   const auto &grouped_target = std::get<DirectCallTarget>(grouped_call.target);
+   if (not grouped_target.callable or not grouped_target.callable->is_grouped) {
+      Log.error("parenthesised member call did not preserve its contextual association");
+      return false;
+   }
+
+   constexpr std::string_view multiline_source =
+      "receiver.member()\n"
+      "   .next()\n"
+      ".contextual()\n";
+   auto multiline = build_ast_from_source(multiline_source, false, false);
+   if (not multiline.chunk.ok() or multiline.chunk.value_ref()->statements.size() != 2) {
+      Log.error("multi-line member chain was split into contextual statements");
+      log_diagnostics(multiline.diagnostics, Log);
+      return false;
+   }
+
+   const auto &multiline_statement =
+      std::get<ExpressionStmtPayload>(multiline.chunk.value_ref()->statements[0]->data);
+   const auto *multiline_call = multiline_statement.expression ?
+      std::get_if<CallExprPayload>(&multiline_statement.expression->data) : nullptr;
+   const auto *multiline_target = multiline_call ? std::get_if<DirectCallTarget>(&multiline_call->target) : nullptr;
+   const auto *multiline_member = multiline_target and multiline_target->callable ?
+      std::get_if<MemberExprPayload>(&multiline_target->callable->data) : nullptr;
+   if (not multiline_member or not multiline_member->table or
+       multiline_member->table->kind != AstNodeKind::CallExpr) {
+      Log.error("indented multi-line member suffix did not retain the preceding call as its receiver");
+      return false;
+   }
+
+   const auto &contextual_statement =
+      std::get<ExpressionStmtPayload>(multiline.chunk.value_ref()->statements[1]->data);
+   const auto *contextual_call = contextual_statement.expression ?
+      std::get_if<CallExprPayload>(&contextual_statement.expression->data) : nullptr;
+   const auto *contextual_target = contextual_call ? std::get_if<DirectCallTarget>(&contextual_call->target) : nullptr;
+   const auto *contextual_member = contextual_target and contextual_target->callable ?
+      std::get_if<MemberExprPayload>(&contextual_target->callable->data) : nullptr;
+   if (not contextual_member or not contextual_member->table or
+       contextual_member->table->kind != AstNodeKind::CurrentContextExpr) {
+      Log.error("same-indent leading dot did not remain a contextual statement after a multi-line chain");
+      return false;
+   }
+
+   const auto &alias_decl = std::get<LocalDeclStmtPayload>(block.statements[9]->data);
+   if (alias_decl.values.empty() or alias_decl.values[0]->kind != AstNodeKind::MemberExpr) {
+      Log.error("member extraction did not remain an unbound member expression");
+      return false;
+   }
+
+   constexpr std::array<std::string_view, 2> invalid_context_sources = {
+      "local value = .\n",
+      "local value = .(123)\n"
+   };
+   for (std::string_view invalid_source : invalid_context_sources) {
+      auto invalid = build_ast_from_source(invalid_source, false, false);
+      bool found_leading_dot_diagnostic = false;
+      for (const ParserDiagnostic &diagnostic : invalid.diagnostics) {
+         if (diagnostic.code IS ParserErrorCode::ExpectedIdentifier and
+             diagnostic.message.find("leading '.' context access") != std::string::npos) {
+            found_leading_dot_diagnostic = true;
+         }
+      }
+      if (not found_leading_dot_diagnostic) {
+         Log.error("invalid leading-dot access did not produce its targeted diagnostic");
+         return false;
+      }
+   }
+
+   constexpr std::array<std::string_view, 2> legacy_sources = {
+      "receiver:member()\n",
+      "function receiver:member() end\n"
+   };
+   for (std::string_view legacy_source : legacy_sources) {
+      auto legacy = build_ast_from_source(legacy_source, false, false, true);
+      bool found_cutover_diagnostic = false;
+      for (const ParserDiagnostic &diagnostic : legacy.diagnostics) {
+         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax and
+             diagnostic.message.find("receiver.member") != std::string::npos) {
+            found_cutover_diagnostic = true;
+         }
+      }
+      if (not found_cutover_diagnostic) {
+         Log.error("colon syntax cut-over gate did not produce a dot-qualified replacement diagnostic");
+         return false;
+      }
+   }
+
+   return true;
+}
+
 static bool test_ast_call_lowering(kt::Log &log)
 {
    constexpr const char* source = R"(
@@ -7025,7 +7216,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 62> tests = { {
+   constexpr std::array<TestCase, 63> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7048,6 +7239,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "return_lowering", test_return_lowering },
       { "tail_call_eligibility", test_tail_call_eligibility },
       { "multres_save_unwind", test_multres_save_unwind },
+      { "contextual_member_ast_foundations", test_contextual_member_ast_foundations },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },

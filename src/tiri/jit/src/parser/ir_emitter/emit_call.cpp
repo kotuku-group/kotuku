@@ -640,7 +640,11 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 
    ExpDesc callee;
    auto base = BCReg(0);
+   auto context_result_base = BCReg(0);
    bool is_safe_callable = false;
+   bool is_contextual_call = false;
+   bool uses_specialised_member_dispatch = false;
+   ControlFlowEdge receiver_nil_jump;
    TiriType callee_return_type = TiriType::Unknown;  // First return type of callee (if known)
    CLASSID callee_object_class_id = CLASSID::NIL;  // CLASSID if return type is Object
    struct_record *callee_struct_def = nullptr;
@@ -676,9 +680,86 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       is_safe_callable = (direct->callable->kind IS AstNodeKind::SafeMemberExpr) or
                          (direct->callable->kind IS AstNodeKind::SafeIndexExpr);
 
-      auto callee_result = this->emit_expression(*direct->callable);
-      if (not callee_result.ok()) return callee_result;
-      callee = callee_result.value_ref();
+      const ExprNode *receiver_node = nullptr;
+      const ExprNode *index_node = nullptr;
+      GCstr *member_name = nullptr;
+
+      if (const auto *member = std::get_if<MemberExprPayload>(&direct->callable->data)) {
+         receiver_node = member->table.get();
+         member_name = member->member.symbol;
+      }
+      else if (const auto *member = std::get_if<SafeMemberExprPayload>(&direct->callable->data)) {
+         receiver_node = member->table.get();
+         member_name = member->member.symbol;
+      }
+      else if (const auto *index = std::get_if<IndexExprPayload>(&direct->callable->data)) {
+         receiver_node = index->table.get();
+         index_node = index->index.get();
+      }
+      else if (const auto *index = std::get_if<SafeIndexExprPayload>(&direct->callable->data)) {
+         receiver_node = index->table.get();
+         index_node = index->index.get();
+      }
+
+      is_contextual_call = receiver_node != nullptr;
+      bool proved_specialised_receiver = false;
+      if (is_contextual_call and receiver_node->static_value) {
+         const auto &descriptor = this->ctx.descriptors().value(receiver_node->static_value);
+         if (descriptor.proved() and descriptor.primary != TiriType::Unknown and
+             descriptor.primary != TiriType::Any and descriptor.primary != TiriType::Table) {
+            is_contextual_call = false;
+            proved_specialised_receiver = descriptor.primary IS TiriType::Str or
+               descriptor.primary IS TiriType::Array or descriptor.primary IS TiriType::Range;
+         }
+      }
+
+      if (is_contextual_call) {
+         auto receiver_result = this->emit_expression(*receiver_node);
+         if (not receiver_result.ok()) return receiver_result;
+         ExpDesc receiver = receiver_result.value_ref();
+         this->materialise_to_next_reg(receiver, "contextual call receiver");
+         auto receiver_reg = BCReg(receiver.u.s.info);
+         context_result_base = receiver_reg;
+
+         if (is_safe_callable) {
+            ExpDesc nil_value(ExpKind::Nil);
+            bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, receiver_reg, const_pri(&nil_value)));
+            receiver_nil_jump = this->control_flow.make_unconditional(
+               BCPos(bcemit_jmp(&this->func_state)));
+         }
+
+         if (member_name) {
+            ExpDesc key(member_name);
+            auto call_base = this->func_state.free_reg();
+            bcreg_reserve(&this->func_state, 1);
+            bcemit_tgets(
+               &this->func_state, call_base.raw(), receiver_reg.raw(), const_str(&this->func_state, &key));
+            callee.init(ExpKind::NonReloc, call_base.raw());
+         }
+         else {
+            if (not index_node) return this->unsupported_expr(AstNodeKind::CallExpr, direct->callable->span);
+            auto retained_receiver_reg = this->func_state.free_reg();
+            bcreg_reserve(&this->func_state, 1);
+            bcemit_AD(&this->func_state, BC_MOV, retained_receiver_reg, receiver_reg);
+
+            auto key_result = this->emit_expression(*index_node);
+            if (not key_result.ok()) return key_result;
+            ExpDesc key = key_result.value_ref();
+            ExpressionValue key_value(&this->func_state, key);
+            key_value.to_val();
+            key = key_value.legacy();
+            ExpDesc lookup(ExpKind::NonReloc, receiver_reg.raw());
+            lookup.static_value = receiver.static_value;
+            expr_index(&this->func_state, &lookup, &key);
+            this->materialise_to_next_reg(lookup, "contextual call callee");
+            callee = lookup;
+         }
+      }
+      else {
+         auto callee_result = this->emit_expression(*direct->callable);
+         if (not callee_result.ok()) return callee_result;
+         callee = callee_result.value_ref();
+      }
 
       // TEMPORARY: If the callee is IndexedObject or IndexedStruct, downgrade to Indexed.
       // Currently object methods and struct helpers are resolved via metamethods (__index), so we need
@@ -734,10 +815,12 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
          }
       }
 
-      this->materialise_to_next_reg(callee, "call callee");
-      // Reserve register for frame link
-      RegisterAllocator allocator(&this->func_state);
-      allocator.reserve(BCReg(1));
+      if (not uses_specialised_member_dispatch) {
+         if (not is_contextual_call) this->materialise_to_next_reg(callee, "call callee");
+         // Reserve register for frame link
+         RegisterAllocator allocator(&this->func_state);
+         allocator.reserve(BCReg(1));
+      }
       base = BCReg(callee.u.s.info);
    }
    else return this->unsupported_expr(AstNodeKind::CallExpr, SourceSpan{});
@@ -752,6 +835,8 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
    }
 
+   if (is_contextual_call) bcemit_INS(&this->func_state, BCINS_AD(BC_CTXENTER, base, 0));
+
    // Evaluate arguments only after the nil check, so if callable is nil we skip argument evaluation
    auto arg_count = BCReg(0);
    ExpDesc args(ExpKind::Void);
@@ -765,11 +850,13 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    bool forward_tail = Payload.forwards_multret and (args.k IS ExpKind::Call);
    if (forward_tail) {
       set_call_result_count(&this->func_state, args, 0);
-      ins = BCINS_ABC(BC_CALLM, base, 2, args.u.s.aux - base - 1  - 1);
+      ins = BCINS_ABC(is_contextual_call ? BC_CTXCALLM : BC_CALLM,
+         base, 2, args.u.s.aux - base - 1  - 1);
    }
    else {
       if (not (args.k IS ExpKind::Void)) this->materialise_to_next_reg(args, "call arguments");
-      ins = BCINS_ABC(BC_CALL, base, 2, this->func_state.freereg - base  - 1);
+      ins = BCINS_ABC(is_contextual_call ? BC_CTXCALL : BC_CALL,
+         base, 2, this->func_state.freereg - base - 1);
    }
 
    // Restore the saved line number so the CALL instruction gets the correct line
@@ -777,6 +864,10 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    this->lex_state.lastline = call_line;
 
    auto call_pc = BCPos(bcemit_INS(&this->func_state, ins));
+   if (is_contextual_call) {
+      bcemit_INS(&this->func_state,
+         BCINS_AD(BC_CTXLEAVE, base, BCREG(base.raw() - context_result_base.raw())));
+   }
 
    // For safe callable: emit the nil path and patch jumps
 
@@ -785,19 +876,20 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 
       BCPos nil_path = BCPos(this->func_state.pc);
       nil_jump.patch_to(nil_path);
-      bcemit_nil(&this->func_state, base.raw(), 1);
+      if (not receiver_nil_jump.empty()) receiver_nil_jump.patch_to(nil_path);
+      bcemit_nil(&this->func_state, is_contextual_call ? context_result_base.raw() : base.raw(), 1);
 
       skip_nil.patch_to(BCPos(this->func_state.pc));
    }
 
    ExpDesc result;
    result.init(ExpKind::Call, call_pc);
-   result.u.s.aux = base;
+   result.u.s.aux = is_contextual_call ? context_result_base.raw() : base.raw();
    result.result_type = callee_return_type;  // Propagate known return type
    result.object_class_id = callee_object_class_id;  // Propagate object class ID for Object types
    result.struct_def = callee_struct_def;
    result.static_results = Payload.results;
-   this->func_state.freereg = base + 1;
+   this->func_state.freereg = is_contextual_call ? base : base + 1;
    return ParserResult<ExpDesc>::success(result);
 }
 

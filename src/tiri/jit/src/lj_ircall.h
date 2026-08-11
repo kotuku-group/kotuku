@@ -227,6 +227,11 @@ typedef struct CCallInfo {
   /* Try-except exception handling */ \
   _(ANY,        lj_try_enter,      4,  FS, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_try_leave,      1,  FS, NIL, CCI_L) \
+  /* State-local table context */ \
+  _(ANY,        lj_context_current_jit,  1, FS, TAB, CCI_L) \
+  _(ANY,        lj_context_enter_jit,    3,  S, NIL, CCI_L) \
+  _(ANY,        lj_context_leave_jit,    2,  S, NIL, CCI_L) \
+  _(ANY,        lj_context_tail_jit,     4,  S, NIL, CCI_L) \
   /* Native object field access */ \
   _(ANY,        bc_object_getfield, 5, S, NIL, CCI_L|CCI_T) \
   _(ANY,        bc_object_setfield, 5, S, NIL, CCI_L|CCI_T) \

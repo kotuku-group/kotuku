@@ -1311,11 +1311,152 @@ static void rec_call_setup(jit_State *J, BCREG func, ptrdiff_t nargs)
    J->maxslot = (BCREG)nargs;
 }
 
+// Record an ordinary contextual activation. The table reference remains live in IR and the owner address is derived
+// from REF_BASE, so stack relocation cannot invalidate context ownership. Guards at CTXENTER resume before entry;
+// guards in the call or callee resume with the activation already installed; guards after CTXLEAVE see it restored.
+
+static bool rec_context_is_tail_call(jit_State *J, BCREG CallBase)
+{
+   GCproto *current_proto = curr_proto(J->L);
+   const BCIns *limit = proto_bc(current_proto) + current_proto->sizebc;
+   for (const BCIns *pc = J->pc + 1; pc < limit; pc++) {
+      BCOp op = bc_op(*pc);
+      if ((op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXCALLT) and bc_a(*pc) IS CallBase) {
+         return op IS BC_CTXCALLT;
+      }
+   }
+   return false;
+}
+
+static TRef rec_context_current(jit_State *J)
+{
+   for (int32_t slot = int32_t(J->baseslot) - 1; slot >= 0; slot--) {
+      if (J->context_call_receiver[slot]) return J->context_call_receiver[slot];
+   }
+   return lj_ir_call(J, IRCALL_lj_context_current_jit);
+}
+
+enum : uint8_t {
+   CONTEXT_CALL_NONE,
+   CONTEXT_CALL_VIRTUAL,
+   CONTEXT_CALL_MATERIALISED
+};
+
+static bool rec_context_has_activation(jit_State *J)
+{
+   for (uint8_t state : J->context_call_state) {
+      if (state != CONTEXT_CALL_NONE) return true;
+   }
+   return false;
+}
+
+static void rec_context_materialise(jit_State *J)
+{
+   int32_t function_slot = J->context_virtual_slot;
+   if (function_slot < 0) return;
+
+   TRef receiver = J->context_call_receiver[function_slot];
+   lj_assertJ(tref_istab(receiver), "virtual context receiver is not a table");
+   lj_assertJ(J->context_call_state[function_slot] IS CONTEXT_CALL_VIRTUAL,
+      "virtual context slot has inconsistent state");
+
+   IRBuilder ir(J);
+   int32_t owner_slot = function_slot + 1 + LJ_FR2;
+   TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+   lj_ir_call(J, IRCALL_lj_context_enter_jit, receiver, owner_base);
+   J->context_call_state[function_slot] = CONTEXT_CALL_MATERIALISED;
+   J->context_virtual_slot = -1;
+   // Guards emitted later in the same bytecode must not reuse a snapshot that still describes virtual state.
+   lj_snap_add(J);
+}
+
+static void rec_context_enter(jit_State *J, BCREG CallBase)
+{
+   cTValue *callable = &J->L->base[CallBase];
+   bool tail_call = rec_context_is_tail_call(J, CallBase);
+   bool native_target = (not tvisfunc(callable) or not isluafunc(funcV(callable))) and not tail_call;
+
+   TRef receiver = getslot(J, int32_t(CallBase) - 1);
+   if (not tref_istab(receiver)) {
+      return;
+   }
+
+   if (tail_call or native_target) rec_context_materialise(J);
+
+   int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
+   J->context_call_func[function_slot] = getslot(J, CallBase);
+   if (native_target) return;
+
+   if (not tail_call) {
+      J->context_call_receiver[function_slot] = receiver;
+      if (not J->L->context_active and not rec_context_has_activation(J)) {
+         J->context_call_state[function_slot] = CONTEXT_CALL_VIRTUAL;
+         J->context_virtual_slot = function_slot;
+         J->needsnap = 1;
+         return;
+      }
+      rec_context_materialise(J);
+      J->context_call_state[function_slot] = CONTEXT_CALL_MATERIALISED;
+   }
+   IRBuilder ir(J);
+   int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
+   TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+   lj_ir_call(J, IRCALL_lj_context_enter_jit, receiver, owner_base);
+   J->needsnap = 1;
+}
+
+// Restore an ordinary contextual activation and model the interpreter's removal of receiver/lookup temporaries from
+// the result layout. CTXLEAVE always follows CTXCALL/CTXCALLM, so the preceding call instruction defines result arity.
+
+static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc)
+{
+   int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
+   if (not J->context_call_func[function_slot]) {
+      lj_record_stop(J, TraceLink::INTERP, 0);
+      return;
+   }
+   uint8_t context_state = J->context_call_state[function_slot];
+   if (context_state IS CONTEXT_CALL_VIRTUAL) {
+      lj_assertJ(J->context_virtual_slot IS function_slot, "virtual context leave has inconsistent owner");
+      J->context_virtual_slot = -1;
+   }
+   else {
+      IRBuilder ir(J);
+      int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
+      TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+      lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+   }
+   J->context_call_state[function_slot] = CONTEXT_CALL_NONE;
+
+   BCIns call_ins = LeavePc[-1];
+   lj_assertJ(bc_op(call_ins) IS BC_CTXCALL or bc_op(call_ins) IS BC_CTXCALLM,
+      "CTXLEAVE does not follow an ordinary contextual call");
+   ptrdiff_t result_count = bc_b(call_ins) ? ptrdiff_t(bc_b(call_ins)) - 1 :
+      ptrdiff_t(J->maxslot) - ptrdiff_t(CallBase);
+   int32_t result_shift = int32_t(bc_d(*LeavePc));
+   if (result_shift IS 0) result_shift = 1;
+   SlotView slots(J);
+   BCREG old_maxslot = slots.maxslot();
+   for (ptrdiff_t i = 0; i < result_count; i++) {
+      int32_t result_slot = int32_t(CallBase) + int32_t(i);
+      J->context_call_result[int32_t(J->baseslot) + result_slot] = getslot(J, result_slot);
+   }
+   if (result_count > 0) {
+      slots.copy(int32_t(CallBase) - result_shift, CallBase, result_count);
+   }
+   BCREG new_maxslot = BCREG(int32_t(CallBase) - result_shift + result_count);
+   if (old_maxslot > new_maxslot) slots.clear_range(new_maxslot, old_maxslot - new_maxslot);
+   slots.set_maxslot(new_maxslot);
+   J->needsnap = 1;
+}
+
 //********************************************************************************************************************
 // Record call.
 
 void lj_record_call(jit_State *J, BCREG func, ptrdiff_t nargs)
 {
+   cTValue *callable = &J->L->base[func];
+   if (not tvisfunc(callable) or not isluafunc(funcV(callable))) rec_context_materialise(J);
    rec_call_setup(J, func, nargs);
    FrameManager fm(J);
    // Bump frame.
@@ -1327,25 +1468,54 @@ void lj_record_call(jit_State *J, BCREG func, ptrdiff_t nargs)
 //********************************************************************************************************************
 // Record tail call.
 
-void lj_record_tailcall(jit_State *J, BCREG func, ptrdiff_t nargs)
+static void rec_tailcall_compact(jit_State *J, BCREG Func)
 {
-   rec_call_setup(J, func, nargs);
    FrameManager fm(J);
    if (frame_isvarg(J->L->base - 1)) {
       BCREG cbase = (BCREG)frame_delta(J->L->base - 1);
       if (FRC::dec_depth(J) < 0) lj_trace_err(J, LJ_TRERR_NYIRETL);
       fm.pop_delta_frame(cbase);
-      func += cbase;
+      Func += cbase;
    }
 
    // Move func + args down.
 
-   if (fm.at_root_baseslot()) J->base[func + 1] = TREF_FRAME;
-   fm.compact_tailcall(func, J->maxslot);
+   if (fm.at_root_baseslot()) J->base[Func + 1] = TREF_FRAME;
+   fm.compact_tailcall(Func, J->maxslot);
 
    // Note: the new TREF_FRAME is now at J->base[-1] (even for slot #0).
    // Tailcalls can form a loop, so count towards the loop unroll limit.
    if (++J->tailcalled > J->loopunroll) lj_trace_err(J, LJ_TRERR_LUNROLL);
+}
+
+void lj_record_tailcall(jit_State *J, BCREG func, ptrdiff_t nargs)
+{
+   rec_context_materialise(J);
+   rec_call_setup(J, func, nargs);
+   rec_tailcall_compact(J, func);
+}
+
+static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t ArgumentCount)
+{
+   rec_context_materialise(J);
+   cTValue *callable = &J->L->base[CallBase];
+   if (not tvisfunc(callable)) {
+      lj_trace_err(J, LJ_TRERR_NYIBC);
+   }
+
+   TRef receiver = getslot(J, int32_t(CallBase) - 1);
+   rec_call_setup(J, CallBase, ArgumentCount);
+
+   if (tref_istab(receiver)) {
+      IRBuilder ir(J);
+      int32_t prepared_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
+      TRef prepared_owner = rec_stack_slot_addr(J, ir, prepared_slot);
+      TRef outgoing_owner = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_context_tail_jit, receiver, prepared_owner, outgoing_owner);
+      J->needsnap = 1;
+   }
+
+   rec_tailcall_compact(J, CallBase);
 }
 
 //********************************************************************************************************************
@@ -1381,6 +1551,14 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
    ptrdiff_t i;
    FrameManager fm(J);
    SlotView slots(J);
+
+   if (not J->L->context_stack.empty() and J->L->context_stack.back().tail_transfer and
+         J->L->context_stack.back().owner_base IS savestack(J->L, J->L->base)) {
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+   }
+
    for (i = 0; i < gotresults; i++) (void)getslot(J, rbase + i);  //  Ensure all results have a reference.
 
    while (frame_ispcall(frame)) {  // Immediately resolve pcall() returns.
@@ -1395,9 +1573,17 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       J->needsnap = 1;  //  Stop catching on-trace errors.
    }
 
-   // Return to lower frame via interpreter for unhandled cases.
+   bool contextual_caller = false;
+   if (frame_islua(frame)) {
+      BCOp caller_op = bc_op(*(frame_pc(frame) - 1));
+      contextual_caller = caller_op IS BC_CTXCALL or caller_op IS BC_CTXCALLM;
+   }
+
+   // A return-root trace has no CTXENTER metadata for a contextual caller below its root. Let the interpreter perform
+   // that return so it can restore the caller activation and compact the result slots before tracing resumes.
    if (FRC::at_root_depth(J) and J->pt and bc_isret(bc_op(*J->pc)) and
-      (not frame_islua(frame) or (J->parent IS 0 and J->exitno IS 0 and !bc_isret(bc_op(J->cur.startins))))) {
+      (not frame_islua(frame) or contextual_caller or
+       (J->parent IS 0 and J->exitno IS 0 and !bc_isret(bc_op(J->cur.startins))))) {
       // NYI: specialise to frame type and return directly, not via RET*.
       slots.clear_range(0, rbase);  //  Purge dead slots.
       slots.set_maxslot(rbase + (BCREG)gotresults);
@@ -4348,12 +4534,37 @@ void lj_record_ins(jit_State *J)
       lj_record_call(J, ra, (ptrdiff_t)rc - 1);
       break;
 
+   case BC_CTXCALLM:
+      rc = (BCREG)(J->L->top - J->L->base) - ra - 1;
+      [[fallthrough]];
+
+   case BC_CTXCALL: {
+      lj_record_call(J, ra, (ptrdiff_t)rc - 1);
+      break;
+   }
+
    case BC_CALLMT:
       rc = (BCREG)(J->L->top - J->L->base) - ra - 1;
       [[fallthrough]];
 
    case BC_CALLT:
       lj_record_tailcall(J, ra, (ptrdiff_t)rc - 1);
+      break;
+
+   case BC_CTXCALLT:
+      rec_context_tailcall(J, ra, (ptrdiff_t)rc - 1);
+      break;
+
+   case BC_CTXGET:
+      rc = rec_context_current(J);
+      break;
+
+   case BC_CTXENTER:
+      rec_context_enter(J, ra);
+      break;
+
+   case BC_CTXLEAVE:
+      rec_context_leave(J, ra, pc);
       break;
 
    case BC_VARG:
@@ -4468,9 +4679,8 @@ void lj_record_ins(jit_State *J)
    case BC_CHECK:
    case BC_RAISE:
    case BC_MODACT:
-      // These bytecodes throw exceptions or materialise GC closures and cannot be compiled into traces.
-      // Exit to interpreter to handle them. This avoids trace abort and ensures
-      // clean handoff without corrupting interpreter state.
+      // These bytecodes throw, materialise GC closures or access VM state not yet represented by the recorder.
+      // Exit to the interpreter so the handoff cannot corrupt interpreter state.
       lj_snap_add(J);
       lj_record_stop(J, TraceLink::INTERP, 0);
       break;
@@ -4606,6 +4816,11 @@ static const BCIns *rec_setup_root(jit_State *J)
          // No bytecode range check for stitched traces.
          pc++;
          break;
+      case BC_CTXCALLM:
+      case BC_CTXCALL: {
+         pc++;
+         break;
+      }
       default:
          lj_assertJ(0, "bad root trace start bytecode %d", bc_op(ins));
          break;
@@ -4622,6 +4837,11 @@ void lj_record_setup(jit_State *J)
 
    // Initialise state related to current trace.
    memset(J->slot, 0, sizeof(J->slot));
+   memset(J->context_call_func, 0, sizeof(J->context_call_func));
+   memset(J->context_call_receiver, 0, sizeof(J->context_call_receiver));
+   memset(J->context_call_result, 0, sizeof(J->context_call_result));
+   memset(J->context_call_state, 0, sizeof(J->context_call_state));
+   J->context_virtual_slot = -1;
    memset(J->trymat, 0, sizeof(J->trymat));
    memset(J->chain, 0, sizeof(J->chain));
    J->try_stores = 0;

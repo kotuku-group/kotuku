@@ -210,7 +210,13 @@ enum class LoopStyle : uint8_t {
 
 enum class CallDispatch : uint8_t {
    Direct,
-   Method
+   // Member forms retain their receiver.  Runtime context management is gated on that receiver being a table.
+   MemberNamed,
+   MemberComputed,
+   SafeMemberNamed,
+   SafeMemberComputed,
+   LegacyMethod,
+   LegacySafeMethod
 };
 
 enum class CallArgumentSyntax : uint8_t {
@@ -326,6 +332,7 @@ struct DirectCallTarget {
 
 using CallTarget = std::variant<DirectCallTarget>;
 
+struct CurrentContextExprPayload {};
 struct VarArgExprPayload {};
 
 struct UnaryExprPayload {
@@ -417,6 +424,7 @@ struct CallExprPayload {
    CallExprPayload(CallExprPayload&&) noexcept = default;
    CallExprPayload& operator=(CallExprPayload&&) noexcept = default;
    CallTarget target;
+   CallDispatch dispatch = CallDispatch::Direct;
    ExprNodeList arguments;
    CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic;
    bool forwards_multret = false;
@@ -653,7 +661,7 @@ struct ExprNode {
    bool is_grouped = false;
    mutable StaticValueHandle static_value = 0;
    mutable StaticResultSetHandle static_results = 0;
-   std::variant<LiteralValue, NameRef, VarArgExprPayload, UnaryExprPayload,
+   std::variant<LiteralValue, NameRef, CurrentContextExprPayload, VarArgExprPayload, UnaryExprPayload,
       UpdateExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,
       IndexExprPayload, SafeMemberExprPayload, SafeIndexExprPayload,
@@ -1097,6 +1105,7 @@ struct BlockStmt {
 
 ExprNodePtr make_literal_expr(SourceSpan span, const LiteralValue& literal);
 ExprNodePtr make_identifier_expr(SourceSpan span, const NameRef& reference);
+ExprNodePtr make_current_context_expr(SourceSpan span);
 ExprNodePtr make_vararg_expr(SourceSpan span);
 ExprNodePtr make_unary_expr(SourceSpan span, AstUnaryOperator op, ExprNodePtr operand);
 ExprNodePtr make_update_expr(SourceSpan span, AstUpdateOperator op, bool is_postfix, ExprNodePtr target);

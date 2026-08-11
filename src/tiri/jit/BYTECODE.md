@@ -748,6 +748,72 @@ validity, so every name is revalidated against the registry at resolution.
 The process-wide ownership, publication and lock contract is documented in
 [MODULE_REGISTRY.md](../MODULE_REGISTRY.md).
 
+#### Current Table Context
+
+| Opcode | Format | Description |
+|--------|--------|-------------|
+| `CTXGET` | A | Load the state-local current table context into R(A) |
+| `CTXENTER` | A | Enter the table receiver retained in R(A-1), if present, before argument evaluation |
+| `CTXCALL` | ABC | Invoke a contextual fixed-argument call with the ordinary `CALL` B/C layout |
+| `CTXCALLM` | ABC | Invoke a contextual multiple-argument call with the ordinary `CALLM` B/C layout |
+| `CTXLEAVE` | A | Restore the inherited context and normalise results after a contextual call |
+| `CTXCALLT` | AD | Transfer context ownership and invoke a fixed-argument tail call |
+
+`CTXGET` is appended to the opcode set so existing opcode numbers remain stable. An empty physical context stack is
+the permanent root sentinel and resolves dynamically through `L->env`; consequently a supported environment
+replacement is visible to the next `CTXGET`. Leading-dot access lowers to `CTXGET` followed by ordinary `TGET*` or
+`TSET*` operations. Root writes therefore cross the same marked-environment mutation boundary as `_G` writes and
+cannot bypass protected-global, const or sticky-type contracts.
+
+Phase 2 deliberately stops recording a trace at `CTXGET`; Phase 5 will model context in recorder state and snapshots.
+
+##### Context Ownership Layout (Gate B)
+
+Each `lua_State` owns an explicit vector of non-root overrides. An entry stores a `GCRef` to a table and the owning
+activation base as a stack-relative byte offset. Current-context lookup is constant time from the final entry. The
+relative owner survives stack relocation, the GC traverses all entries, and state destruction releases the vector.
+The root is never stored or popped and is always resolved from `L->env`.
+
+This layout was selected over frame annotations because it does not change the architecture-specific frame layout,
+keeps root environment replacement dynamic, and gives later error unwinding and tail transfer an explicit ownership
+boundary.
+
+##### Contextual Call Layout (Gate C)
+
+Current-context access uses the dedicated `CTXGET` opcode. Table member calls use appended contextual variants of the
+existing call family. Their register layout reserves the slot immediately before the ordinary call base for the
+original receiver; the callable and written arguments otherwise retain the `CALL`/`CALLM` layout. `CTXENTER` performs
+the runtime table gate after member lookup and before argument evaluation. `CTXCALL` repeats the gate idempotently at
+the activation boundary, and `CTXLEAVE` restores the inherited context after a normal return. It shifts returned
+values down over the retained receiver slot so expression result allocation remains identical to an ordinary member
+call.
+
+Named and computed lookup continue to use the appropriate existing `TGET*` operation while retaining the original
+receiver. Safe calls branch around lookup, entry and argument evaluation on their `nil` path. Statically proved
+strings, arrays, ranges, structures and objects retain their specialised receiver dispatch without emitting context
+operations. Dynamically typed receivers use the contextual variants, whose runtime gate leaves non-table values and
+their visible argument layout unchanged. `CTXCALLT` transfers a prepared receiver from the discarded activation to
+the reused tail frame, replacing an override owned by that frame where necessary. Direct tail calls naturally retain
+their existing frame owner. Variable-argument contextual calls retain the ordinary call-and-return form so their
+multiple-result state does not cross a context helper boundary. Direct calls and compiler-managed module namespace
+calls retain their existing bytecode and overhead.
+
+Dedicated contextual call variants were selected because lowering through an ordinary call frame would lose the
+receiver association before activation ownership can be established. The Phase 3 opcodes occupy values 122 through
+125 after `CTXGET`; Phase 4 appends `CTXCALLT` at value 126, preserving all earlier opcode numbers.
+
+##### Restoration and Tail Ownership (Gate D)
+
+Fixed, zero and fixed-multiple returns release an override owned by the returning VM frame. `CTXLEAVE` remains
+responsible for result normalisation and is idempotent with that release. Error unwinding prunes overrides above the
+surviving activation and restores each owning frame before its `<close>` handlers run. Protected calls therefore
+retain their caller context while abandoned callees cannot leak a receiver into a handler.
+
+Asynchronous callback entry may suspend the interrupted context stack and expose the dynamic `L->env` root for the
+callback's duration. Synchronous `lua_call()` and `lua_pcall()` re-entry does not use this boundary and inherits the
+active context. Fixed-argument contextual tail calls use `CTXCALLT`; direct and variable-argument calls preserve their
+existing tail or call-and-return paths respectively.
+
 ## 11. Testing, Debugging, and Tooling
 
 ### 11.1 Using Flute and Tiri Tests

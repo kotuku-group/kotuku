@@ -165,6 +165,7 @@ extern "C" void lj_gc_barrierf(global_State* g, GCobj* o, GCobj* v);
 extern "C" void lj_gc_barrieruv(global_State* g, TValue* tv);
 extern "C" void lj_gc_closeuv(global_State* g, GCupval* uv);
 extern "C" void lj_gc_barriertrace(global_State* g, uint32_t traceno);
+LJ_FUNC void lj_gc_barriercontext(lua_State *L, GCtab *Table);
 
 // Move the GC propagation frontier back for tables (make it gray again).
 static LJ_AINLINE void lj_gc_barrierback(global_State* g, GCtab* t)

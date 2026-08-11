@@ -319,6 +319,25 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       if (op IS BC_MRSAVE or op IS BC_MRRESTORE) {
          pt->flags |= PROTO_NOJIT;
       }
+      else if (op IS BC_CTXENTER or op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXLEAVE or
+               op IS BC_CTXCALLT) {
+         BCREG call_base = bc_a(bc[i]);
+         if (call_base IS 0 or call_base >= pt->framesize) bcread_error(State, ErrMsg::BCBAD);
+
+         if (op IS BC_CTXCALL or op IS BC_CTXCALLM) {
+            if (i + 1 >= sizebc or bc_op(bc[i + 1]) != BC_CTXLEAVE or bc_a(bc[i + 1]) != call_base) {
+               bcread_error(State, ErrMsg::BCBAD);
+            }
+         }
+         else if (op IS BC_CTXLEAVE) {
+            if (i IS 1 or (bc_op(bc[i - 1]) != BC_CTXCALL and bc_op(bc[i - 1]) != BC_CTXCALLM) or
+                bc_a(bc[i - 1]) != call_base) {
+               bcread_error(State, ErrMsg::BCBAD);
+            }
+            BCREG result_shift = bc_d(bc[i]);
+            if (result_shift > call_base) bcread_error(State, ErrMsg::BCBAD);
+         }
+      }
    }
 }
 

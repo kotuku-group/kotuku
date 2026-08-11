@@ -1178,24 +1178,34 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       if (count IS 1 and last.k IS ExpKind::Call) {
          BCIns* ip = ir_bcptr(&this->func_state, &last);
          BCOp call_op = bc_op(*ip);
-         bool has_post_call_control_flow = last.u.s.info + 1 != this->func_state.pc;
+         bool has_context_leave = (call_op IS BC_CTXCALL or call_op IS BC_CTXCALLM) and
+            bc_op(this->func_state.bcbase[last.u.s.info + 1].ins) IS BC_CTXLEAVE;
+         auto expected_end = last.u.s.info + (has_context_leave ? 2 : 1);
+         bool has_post_call_control_flow = expected_end != this->func_state.pc;
          bool has_user_cleanup = cleanup_temp_regs > 0;
          bool forwards_current_contract = tail_call_forwards_current_contract(
             this->ctx, this->current_callable, *Payload.values.back());
+         bool direct_tail_call = call_op IS BC_CALL or call_op IS BC_CALLM;
+         bool contextual_tail_call = has_context_leave and call_op IS BC_CTXCALL;
          bool tail_call_eligible = this->func_state.try_depth IS 0 and not has_post_call_control_flow and
-            not has_user_cleanup and (call_op IS BC_CALL or call_op IS BC_CALLM) and
+            not has_user_cleanup and (direct_tail_call or contextual_tail_call) and
             (forwards_current_contract or (not truncate_return_results and not has_return_contract));
          if (tail_call_eligible) {
             return_contract_forwarded = forwards_current_contract;
-            lj_assertX(last.u.s.info + 1 IS this->func_state.pc,
+            lj_assertX(last.u.s.info + (contextual_tail_call ? 2 : 1) IS this->func_state.pc,
                "tail call is not the final expression instruction");
-            this->func_state.pc--;
-            if (last.alternate_call != NO_JMP) {
-               BCIns *alternate = &this->func_state.bcbase[last.alternate_call].ins;
-               *alternate = BCINS_AD(
-                  bc_op(*alternate) - BC_CALL + BC_CALLT, bc_a(*alternate), bc_c(*alternate));
+            this->func_state.pc -= contextual_tail_call ? 2 : 1;
+            if (contextual_tail_call) {
+               ins = BCINS_AD(BC_CTXCALLT, bc_a(*ip), bc_c(*ip));
             }
-            ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
+            else {
+               if (last.alternate_call != NO_JMP) {
+                  BCIns *alternate = &this->func_state.bcbase[last.alternate_call].ins;
+                  *alternate = BCINS_AD(
+                     bc_op(*alternate) - BC_CALL + BC_CALLT, bc_a(*alternate), bc_c(*alternate));
+               }
+               ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
+            }
          }
          else if (truncate_return_results) {
             BCREG result_count = this->func_state.return_declared_count;
@@ -2614,6 +2624,9 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
       case AstNodeKind::IdentifierExpr:
          result = this->emit_identifier_expr(std::get<NameRef>(expr.data));
          break;
+      case AstNodeKind::CurrentContextExpr:
+         result = this->emit_current_context_expr();
+         break;
       case AstNodeKind::VarArgExpr:
          result = this->emit_vararg_expr();
          break;
@@ -2728,6 +2741,17 @@ ParserResult<ExpDesc> IrEmitter::emit_literal_expr(const LiteralValue& literal)
       case LiteralKind::Number:  expr = ExpDesc(literal.number_value); break;
       case LiteralKind::String:  expr = ExpDesc(literal.string_value); break;
    }
+   return ParserResult<ExpDesc>::success(expr);
+}
+
+//********************************************************************************************************************
+// Load the state-local table context.  The runtime resolves an empty override stack through the current L->env.
+
+ParserResult<ExpDesc> IrEmitter::emit_current_context_expr()
+{
+   ExpDesc expr;
+   expr.init(ExpKind::Relocable, bcemit_AD(&this->func_state, BC_CTXGET, 0, 0));
+   expr.result_type = TiriType::Table;
    return ParserResult<ExpDesc>::success(expr);
 }
 
