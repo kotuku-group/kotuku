@@ -1,0 +1,958 @@
+-- Flute regression tests for table-gated contextual member calls.
+
+import 'json'
+
+@Test function NamedAndComputedTableCallsEstablishContext()
+   local point = { name = 'point', value = 0 }
+
+   function point.set(Value:num):num
+      .value = Value
+      return .value
+   end
+
+   function point.read():str
+      return .name
+   end
+
+   function point.describe():<table, num>
+      return { name = .name, value = .value }, 2
+   end
+
+   assert(point.set(17) is 17, 'A named table call should pass only its written arguments')
+   assert(point.value is 17, 'A named table call should expose its receiver through leading-dot access')
+
+   local key = 'read'
+   assert(point[key]() is 'point', 'A computed table call should establish the original receiver as context')
+
+   key = 'describe'
+   local description, result_count = point[key]()
+   assert(description.name is 'point' and description.value is 17 and result_count is 2,
+      'A computed contextual call should compact table and multiple results into the expression destination')
+end
+
+@Test function DirectCallsInheritAndNestedTableCallsRestoreContext()
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+
+   function read_context_name():str
+      return .name
+   end
+
+   function inner.read():str
+      return read_context_name()
+   end
+
+   function outer.read_nested():<str, str>
+      local nested_name = inner.read()
+      return nested_name, read_context_name()
+   end
+
+   function outer.forward_nested():str
+      return inner.read()
+   end
+
+   local nested_name, restored_name = outer.read_nested()
+   assert(nested_name is 'inner', 'A nested table call should replace the inherited context')
+   assert(restored_name is 'outer', 'A completed nested table call should restore its caller context')
+   assert(outer.forward_nested() is 'inner',
+      'A returned contextual call should complete restoration before returning to its caller')
+end
+
+@Test function ReturnAritiesRestoreContext()
+   local receiver = { name = 'receiver' }
+
+   function receiver.return_none()
+      assert(.name is 'receiver', 'A zero-result call should execute in its receiver context')
+   end
+
+   function receiver.return_one():str
+      return .name
+   end
+
+   function receiver.return_many():<str, num, bool>
+      return .name, 17, true
+   end
+
+   receiver.return_none()
+   assert(.receiver is nil, 'A zero-result return should restore the root context')
+   assert(receiver.return_one() is 'receiver', 'A fixed-result return should retain its value')
+   assert(.receiver is nil, 'A fixed-result return should restore the root context')
+
+   local name, value, enabled = receiver.return_many()
+   assert(name is 'receiver' and value is 17 and enabled is true,
+      'A multiple-result return should retain all returned values')
+   assert(.receiver is nil, 'A multiple-result return should restore the root context')
+end
+
+@Test function VariableResultReturnsRestoreContext()
+   local receiver = { name = 'variable receiver' }
+
+   function receiver.forward(...):<any, ...>
+      assert(.name is 'variable receiver', 'A variable-result callee should observe its receiver context')
+      return ...
+   end
+
+   local first, second, third = receiver.forward('first', 42, true)
+   assert(first is 'first' and second is 42 and third is true,
+      'A contextual variable-result return should preserve every returned value')
+
+   local empty = receiver.forward()
+   assert(empty is nil, 'A zero-value contextual variable-result return should produce nil in a fixed result slot')
+   assert(.name is nil, 'Variable-result returns should restore the root context')
+end
+
+@Test function ErrorsAndProtectedReentryRestoreContext()
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+
+   function inner.fail()
+      assert(.name is 'inner', 'The failing function should observe its receiver context')
+      error('context failure')
+   end
+
+   function outer.catch_inner():str
+      try
+         inner.fail()
+      except e
+         assert(e.message.find('context failure') != nil, 'The expected nested error should be caught')
+         return .name
+      end
+      return 'uncaught'
+   end
+
+   function outer.exec_in_context():str
+      return exec([[return .name]])
+   end
+
+   function outer.exec_native_tail():num
+      return exec([[function forward():num return math.abs(-19) end; return forward()]])
+   end
+
+   assert(outer.catch_inner() is 'outer', 'A caught error should restore the handler activation context')
+   assert(outer.exec_in_context() is 'outer', 'Synchronous lua_pcall re-entry should inherit the active context')
+   assert(outer.exec_native_tail() is 19,
+      'A protected re-entry ending in a native contextual tail call should preserve its result')
+   assert(.name is nil, 'Protected calls should restore the root context after returning')
+end
+
+@Test function ErrorCleanupHandlersObserveOwningContexts()
+   local observed = {}
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+
+   function make_resource(Label:str):table
+      return setmetatable({}, {
+         __close = function()
+            observed[#observed] = Label .. ':' .. .name
+         end
+      })
+   end
+
+   function inner.fail()
+      local resource <close> = make_resource('inner')
+      error('cleanup failure')
+   end
+
+   function outer.run()
+      local resource <close> = make_resource('outer')
+      inner.fail()
+   end
+
+   try
+      outer.run()
+   except e
+      assert(e.message.find('cleanup failure') != nil, 'The cleanup fixture should preserve the original error')
+   end
+
+   assert(observed[0] is 'inner:inner', 'An inner error cleanup should retain the inner activation context')
+   assert(observed[1] is 'outer:outer', 'An outer error cleanup should restore the outer activation context')
+   assert(.name is nil, 'Error cleanup should finish in the root context')
+end
+
+@Test function DelayedCallbacksAreUnbound()
+   .glDelayedContextName = 'root'
+   .glDelayedObservedContext = nil
+   local receiver = { glDelayedContextName = 'receiver' }
+
+   function receiver.schedule()
+      processing.delayedCall(function()
+         .glDelayedObservedContext = .glDelayedContextName
+         processing.signal()
+      end)
+   end
+
+   receiver.schedule()
+   check processing.sleep(1.0)
+   assert(.glDelayedObservedContext is 'root',
+      'A delayed callback should begin unbound in the state root context')
+   .glDelayedContextName = nil
+   .glDelayedObservedContext = nil
+end
+
+@Test function ContextualTailCallsTransferOwnership()
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+   local recursive = { name = 'recursive' }
+
+   function inherited_helper(Value:num):<str, num>
+      return .name, Value
+   end
+
+   function outer.to_direct(Value:num):<str, num>
+      return inherited_helper(Value)
+   end
+
+   function outer.to_same():str
+      return outer.read()
+   end
+
+   function outer.read():str
+      return .name
+   end
+
+   function outer.to_different():str
+      return inner.read()
+   end
+
+   function inner.read():str
+      return .name
+   end
+
+   function recursive.read(Count:num):str
+      if Count <= 0 then return .name end
+      return recursive.read(Count - 1)
+   end
+
+   local inherited_name, inherited_value = outer.to_direct(31)
+   assert(inherited_name is 'outer' and inherited_value is 31,
+      'A direct tail helper should retain the outgoing activation context')
+   assert(outer.to_same() is 'outer', 'A same-receiver tail call should retain its receiver')
+   assert(outer.to_different() is 'inner', 'A different-receiver tail call should replace its receiver')
+   assert(recursive.read(40) is 'recursive', 'Contextual tail recursion should retain context ownership')
+   assert(.name is nil, 'Completed contextual tail calls should restore the root context')
+end
+
+@Test function DirectCallerContextualTailCallRestoresRoot()
+   local script = obj.new('tiri', { statement = [[
+local target = { name = 'tail target' }
+
+function target.read()
+   return .name
+end
+
+function forward():<any, ...>
+   return target.read()
+end
+
+assert(forward() is 'tail target', 'The contextual tail target should retain its receiver')
+assert(.name is nil, 'A contextual tail call from a direct function should restore the root context')
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   assert(disassembly.find('CTXCALLT') != nil,
+      'An eligible fixed-argument contextual return should emit ownership-transferring tail bytecode')
+end
+
+@Test function ComputedVariadicAndNativeTailCallsRestoreContext()
+   local outer = { name = 'outer' }
+   local target = { name = 'target' }
+
+   function target.collect(...):str
+      local first = ...
+      return .name .. ':' .. tostring(first)
+   end
+
+   function outer.forward(Key:str, ...):str
+      return target[Key](...)
+   end
+
+   function outer.native_tail():<any, ...>
+      return math.abs(-12)
+   end
+
+   assert(outer.forward('collect', 7, 'eight') is 'target:7',
+      'A computed variadic contextual call should preserve its receiver and forwarded arguments')
+   assert(outer.native_tail() is 12, 'A contextual tail call into a native namespace should preserve its result')
+   assert(.name is nil, 'Native and variadic contextual tail calls should restore the root context')
+end
+
+@Test function ReceiverKeyAndArgumentsPreserveEvaluationOrder()
+   local events = {}
+   local target = { name = 'ordered' }
+
+   function target.invoke(Value:num):num
+      events[#events] = 'call'
+      assert(.name is 'ordered', 'The callable should observe the original receiver')
+      return Value
+   end
+
+   function evaluate_receiver():table
+      events[#events] = 'receiver'
+      return target
+   end
+
+   function evaluate_key():str
+      events[#events] = 'key'
+      return 'invoke'
+   end
+
+   function evaluate_argument():num
+      events[#events] = 'argument'
+      assert(.name is 'ordered', 'Arguments should be evaluated after contextual entry')
+      return 23
+   end
+
+   assert(evaluate_receiver()[evaluate_key()](evaluate_argument()) is 23,
+      'A computed contextual call should return the callable result')
+   assert(#events is 4, 'Receiver, key, argument and callable should each be evaluated exactly once')
+   assert(events[0] is 'receiver' and events[1] is 'key' and events[2] is 'argument' and events[3] is 'call',
+      'Contextual calls should preserve receiver, key, argument and invocation order')
+end
+
+@Test function MetatableLookupKeepsOriginalReceiver()
+   local implementation = function():str
+      return .name
+   end
+   local prototype = { inherited = implementation }
+   local receiver = setmetatable({ name = 'receiver' }, { __index = prototype })
+
+   assert(receiver.inherited() is 'receiver',
+      'A callable returned through __index should retain the original table receiver as context')
+end
+
+@Test function SafeContextualCallsShortCircuitAndEstablishContext()
+   local key_calls = 0
+   local argument_calls = 0
+   local missing = nil
+
+   function evaluate_key():str
+      key_calls += 1
+      return 'invoke'
+   end
+
+   function evaluate_argument():num
+      argument_calls += 1
+      return 5
+   end
+
+   local result = missing?[evaluate_key()](evaluate_argument())
+   assert(result is nil, 'A safe computed call should return nil for a nil receiver')
+   assert(key_calls is 0 and argument_calls is 0,
+      'A safe computed call should not evaluate its key or arguments on the nil path')
+
+   local receiver = { name = 'safe' }
+   function receiver.invoke():str
+      return .name
+   end
+
+   assert(receiver?.invoke() is 'safe', 'A safe named table call should establish context on its non-nil path')
+end
+
+@Test function ExtractedMembersRemainUnbound()
+   .glContextualExtractionName = 'root'
+   local receiver = { glContextualExtractionName = 'receiver' }
+
+   function receiver.read():str
+      return .glContextualExtractionName
+   end
+
+   local callback = receiver.read
+   assert(callback() is 'root', 'An extracted member should inherit invocation-time context without binding its table')
+   .glContextualExtractionName = nil
+end
+
+@Test function StaticStructureMemberCallsBypassContextBytecode()
+   local script = obj.new('tiri', { statement = [[
+struct ContextualDisassemblyRecord
+   Value: int
+end
+
+function call_structure_member(Value:struct<ContextualDisassemblyRecord>)
+   Value.probe()
+end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   assert(disassembly.find('CTXENTER') is nil and disassembly.find('CTXCALL') is nil,
+      'A statically known structure receiver should not emit contextual call bytecode')
+end
+
+@Test function NonTableReceiversDoNotReplaceContext()
+   .glContextualExemption = 'root'
+
+   function context_argument(Value:any):any
+      assert(.glContextualExemption is 'root', 'A non-table member call should leave argument context unchanged')
+      return Value
+   end
+
+   local text:str = 'needle stack'
+   local values:array<any> = array<string> { 'needle' }
+   local indexes:range = {0 to 3}
+   assert(text.startsWith(context_argument('needle')) is true,
+      'String member dispatch should retain its existing behaviour')
+   assert(values.contains(context_argument('needle')) is true,
+      'Array member dispatch should retain its existing behaviour')
+   assert(indexes.contains(2) is true, 'Range member dispatch should retain its existing behaviour')
+
+   local script = obj.find('self')
+   local err, state = script.mtDebugLog(context_argument('state'))
+   assert(err is ERR_Okay and state != nil, 'Object member dispatch should retain its visible argument layout')
+
+   local probe = function(Value:any):any
+      assert(.glContextualExemption is 'root', 'A non-table metatable function should inherit the current context')
+      return Value
+   end
+
+   local callable = function() end
+   local callable_metatable = debug.getMetatable(callable)
+   debug.setMetatable(callable, { __index = { probe = probe } })
+   assert(callable.probe(context_argument('callable')) is 'callable',
+      'Callable member dispatch should not replace the current table context')
+   debug.setMetatable(callable, callable_metatable)
+
+   local scalar:num = 9
+   local scalar_metatable = debug.getMetatable(scalar)
+   debug.setMetatable(scalar, { __index = { probe = probe } })
+   assert(scalar.probe(context_argument('scalar')) is 'scalar',
+      'Scalar member dispatch should not replace the current table context')
+   debug.setMetatable(scalar, scalar_metatable)
+   .glContextualExemption = nil
+end
+
+@Test(hotpath=80) function JITHotNestedContextsAndSideExitsMatchInterpreter()
+   local outer = { name = 'jit outer' }
+   local inner = { name = 'jit inner', alternate = false }
+
+   function inner.read(Value:num):str
+      if .alternate then return .name .. ':alternate:' .. tostring(Value) end
+      return .name .. ':primary:' .. tostring(Value)
+   end
+
+   function outer.run(Target:table, Count:num):str
+      local result = ''
+      for i in {0 to Count} do
+         if i is 24 then Target.alternate = true end
+         result = Target.read(i)
+         assert(.name is 'jit outer', 'A recorded contextual return should restore its caller context')
+      end
+      return result
+   end
+
+   jit.off()
+   inner.alternate = false
+   local interpreted = outer.run(inner, 64)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   inner.alternate = false
+   local recorded = outer.run(inner, 64)
+   jit.off()
+   local trace_count = 0
+   for trace_no in {1 into 40} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.opt.start()
+
+   assert(recorded is interpreted,
+      'Recorded nested contexts and their forced branch side exit should match the interpreter')
+   assert(trace_count > 0, 'The contextual hot workload should produce at least one recorded trace')
+   assert(.name is nil, 'A completed recorded contextual workload should restore the root context')
+end
+
+@Test(hotpath=80) function JITAlternatingReceiversUseRecordedContext()
+   local first = { value = 3 }
+   local second = { value = 7 }
+
+   function read_value():num
+      return .value
+   end
+
+   first.read = read_value
+   second.read = read_value
+
+   function run(Count:num):num
+      local total = 0
+      for i in {0 to Count} do
+         local target = i % 2 is 0 ? first :> second
+         total += target.read()
+      end
+      return total
+   end
+
+   jit.off()
+   local interpreted = run(200)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run(200)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted and recorded is 1000,
+      'A recorded contextual call should use the loop-selected receiver rather than a retained earlier table')
+   assert(.value is nil, 'Alternating recorded receivers should restore the root context')
+end
+
+@Test function JITVirtualContextRestoresAllocatedReceiverOnExit()
+   function read_allocated():num
+      if .alternate then return .value + 1 end
+      return .value
+   end
+
+   function run(Count:num):num
+      local total = 0
+      for i in {0 to Count} do
+         local target = { value = i, alternate = i is 24, read = read_allocated }
+         total += target.read()
+      end
+      return total
+   end
+
+   jit.off()
+   local interpreted = run(64)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run(64)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted,
+      'A virtual context side exit should restore a receiver allocated by the recorded loop')
+   assert(.value is nil, 'An allocated virtual receiver should no longer be current after contextual restoration')
+end
+
+@Test function JITVirtualExitPreservesMaterialisedCallerContext()
+   local outer = { name = 'materialised outer' }
+   local target = { value = 3, alternate = false }
+
+   function target.read():num
+      if .alternate then return .value + 1 end
+      return .value
+   end
+
+   function run(Target:table, Count:num):num
+      local total = 0
+      for _ in {0 to Count} do total += Target.read() end
+      return total
+   end
+
+   function outer.invoke(Target:table, Count:num):<num, str>
+      local total = run(Target, Count)
+      return total, .name
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local root_total = run(target, 64)
+   target.alternate = true
+   local nested_total, restored_name = outer.invoke(target, 64)
+   jit.off()
+   jit.opt.start()
+
+   assert(root_total is 192 and nested_total is 256,
+      'A reused virtual trace should preserve receiver results on both guarded paths')
+   assert(restored_name is 'materialised outer',
+      'A virtual side exit should preserve the materialised context inherited by the reused trace')
+   assert(.name is nil, 'The reused trace should restore the root context after its caller returns')
+end
+
+@Test(hotpath=80) function JITContextualResultAritiesAndNestedRestorationMatchInterpreter()
+   local outer = { name = 'arity outer' }
+   local target = { name = 'arity target', calls = 0, alternate = false }
+
+   function target.zero()
+      .calls++
+   end
+
+   function target.fixed(Value:num):str
+      if .alternate then return .name .. ':alternate:' .. tostring(Value) end
+      return .name .. ':primary:' .. tostring(Value)
+   end
+
+   function target.multiple(Value:num):<str, num>
+      return .name, Value
+   end
+
+   function outer.run(Target:table, Count:num):str
+      local result = ''
+      for i in {0 to Count} do
+         Target.zero()
+         if i is 24 then Target.alternate = true end
+         local fixed = Target.fixed(i)
+         local name, value = Target.multiple(i)
+         result = fixed .. ':' .. name .. ':' .. tostring(value)
+         assert(.name is 'arity outer', 'Every contextual result arity should restore the outer context')
+      end
+      return result
+   end
+
+   jit.off()
+   target.calls = 0
+   target.alternate = false
+   local interpreted = outer.run(target, 64)
+   local interpreted_calls = target.calls
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   target.calls = 0
+   target.alternate = false
+   local recorded = outer.run(target, 64)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted,
+      'Recorded zero, fixed and multiple-result contextual calls should match the interpreter')
+   assert(target.calls is interpreted_calls,
+      'A recorded zero-result contextual call should execute exactly once per source invocation')
+   assert(.name is nil, 'Recorded contextual result arities should finish in the root context')
+end
+
+@Test function JITContextualVariableResultsMatchInterpreter()
+   local outer = { name = 'variable outer' }
+   local target = { name = 'variable target' }
+
+   function target.forward(...):<any, ...>
+      return ...
+   end
+
+   function outer.run(Target:table, Count:num):num
+      local result = 0
+      for i in {0 to Count} do
+         local first, second = Target.forward(i, i + 1)
+         result = first + second
+         assert(.name is 'variable outer', 'A contextual RETM return should restore its recorded caller context')
+      end
+      return result
+   end
+
+   jit.off()
+   local interpreted = outer.run(target, 64)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = outer.run(target, 64)
+   jit.off()
+
+   local trace_count = 0
+   for trace_no in {1 into 40} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.opt.start()
+
+   assert(recorded is interpreted, 'Recorded contextual variable-result returns should match the interpreter')
+   assert(trace_count > 0, 'The contextual variable-result workload should produce at least one recorded trace')
+   assert(.name is nil, 'Recorded contextual variable-result returns should finish in the root context')
+end
+
+@Test function JITComputedContextualResultsMatchInterpreter()
+   local outer = { name = 'computed outer' }
+   local target = { name = 'computed target' }
+
+   function target.describe(Value:num):<table, num>
+      return { name = .name, value = Value }, Value + 1
+   end
+
+   function outer.run(Target:table, Count:num):num
+      local result = 0
+      local key = 'describe'
+      for i in {0 to Count} do
+         local description, next_value = Target[key](i)
+         result = description.value + next_value
+         assert(description.name is 'computed target',
+            'A recorded computed contextual call should preserve its table result')
+         assert(.name is 'computed outer',
+            'A recorded computed contextual call should restore its caller context')
+      end
+      return result
+   end
+
+   jit.off()
+   local interpreted = outer.run(target, 64)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = outer.run(target, 64)
+   jit.off()
+
+   local trace_count = 0
+   for trace_no in {1 into 40} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.opt.start()
+
+   assert(recorded is interpreted, 'Recorded computed contextual results should match the interpreter')
+   assert(trace_count > 0, 'The computed contextual result workload should produce at least one recorded trace')
+   assert(.name is nil, 'Recorded computed contextual calls should finish in the root context')
+end
+
+@Test function JITNativeContextualResultsRemainLoopCarried()
+   local methods = { decode = array.getString }
+   local bytes = array<byte> { 65, 66, 67 }
+   local expected = { [0] = 'A', [1] = 'B', [2] = 'C' }
+
+   function run(Count:num):str
+      local result = ''
+      for i in {0 to Count} do
+         local index = i % 3
+         result = methods.decode(bytes, index, 1)
+         assert(result is expected[index],
+            'A recorded native contextual result should change with its loop-carried arguments')
+      end
+      return result
+   end
+
+   jit.off()
+   local interpreted = run(97)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run(97)
+   jit.off()
+
+   local trace_count = 0
+   for trace_no in {1 into 40} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.opt.start()
+
+   assert(recorded is interpreted, 'A recorded native contextual result should match the interpreter')
+   assert(trace_count > 0, 'The native contextual result workload should produce at least one recorded trace')
+   assert(.decode is nil, 'Recorded native contextual calls should finish in the root context')
+end
+
+@Test function JITNestedContextualReturnRootsPreserveCallerArguments()
+   local payload = {
+      start = { line = 0, character = 0 },
+      ['end'] = { line = 0, character = 3 }
+   }
+
+   jit.off()
+   local interpreted = json.encode(payload)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local recorded
+   for _ in {0 to 8} do recorded = json.encode(payload) end
+   jit.off()
+
+   local trace_count = 0
+   for trace_no in {1 into 40} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.opt.start()
+
+   assert(recorded is interpreted,
+      'A nested return trace below a contextual caller should preserve recursive arguments and results')
+   assert(trace_count > 0, 'The nested contextual return workload should produce at least one recorded trace')
+   assert(.start is nil, 'Nested contextual return roots should finish in the root context')
+end
+
+@Test(hotpath=80) function JITContextualTailTransferMatchesInterpreter()
+   local receiver = { name = 'jit tail' }
+   local target = { name = 'jit target' }
+
+   function target.read():str
+      return .name
+   end
+
+   function receiver.forward():str
+      return target.read()
+   end
+
+   function run_tail_workload(Count:num):str
+      local result = ''
+      for i in {0 to Count} do result = receiver.forward() end
+      return result
+   end
+
+   jit.off()
+   local interpreted = run_tail_workload(80)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run_tail_workload(80)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted and recorded is 'jit target',
+      'A recorded contextual tail transfer should preserve the transferred receiver')
+   assert(.name is nil, 'A completed contextual tail transfer should restore the root context')
+end
+
+@Test(hotpath=80) function JITContextualTailTransferCoversOwnershipAndSideExits()
+   local outer = { name = 'tail outer' }
+   local target = { name = 'tail target', alternate = false }
+
+   function target.read(Value:num):str
+      assert(.name is 'tail target', 'A transferred tail context should be visible in the target')
+      if .alternate then return .name .. ':alternate:' .. tostring(Value) end
+      return .name .. ':primary:' .. tostring(Value)
+   end
+
+   function outer.read(Value:num):str
+      assert(.name is 'tail outer', 'A same-receiver tail transfer should retain its context')
+      return .name .. ':' .. tostring(Value)
+   end
+
+   function outer.forward(Target:table, Value:num):str
+      return Target.read(Value)
+   end
+
+   function outer.same(Value:num):str
+      return outer.read(Value)
+   end
+
+   function direct_forward(Target:table, Value:num):str
+      return Target.read(Value)
+   end
+
+   function run_tail_transfers(Count:num):str
+      local result = ''
+      for i in {0 to Count} do
+         if i is 24 then target.alternate = true end
+         result = outer.forward(target, i)
+      end
+      return result
+   end
+
+   function run_same_tail_transfers(Count:num):str
+      local result = ''
+      for i in {0 to Count} do result = outer.same(i) end
+      return result
+   end
+
+   function run_direct_tail_transfers(Count:num):str
+      local result = ''
+      for i in {0 to Count} do result = direct_forward(target, i) end
+      return result
+   end
+
+   jit.off()
+   target.alternate = false
+   local interpreted = run_tail_transfers(64)
+   local interpreted_same = run_same_tail_transfers(64)
+   local interpreted_direct = run_direct_tail_transfers(64)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   target.alternate = false
+   local recorded = run_tail_transfers(64)
+   local recorded_same = run_same_tail_transfers(64)
+   local recorded_direct = run_direct_tail_transfers(64)
+   jit.off()
+
+   local trace_count = 0
+   for trace_no in {1 into 60} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.opt.start()
+
+   assert(recorded is interpreted, 'Recorded contextual tail transfers should match the interpreter')
+   assert(recorded_same is interpreted_same, 'Recorded same-receiver tail transfers should match the interpreter')
+   assert(recorded_direct is interpreted_direct,
+      'A recorded contextual tail transfer from a direct caller should match the interpreter')
+   assert(trace_count > 0, 'Contextual tail transfers should produce at least one recorded trace')
+   assert(.name is nil, 'All recorded contextual tail transfers should restore the root context')
+end
+
+@Test(hotpath=80) function JITNativeContextualTailTransferRestoresContext()
+   local native_target = { absolute = math.abs }
+   local native_forwarder = { name = 'native forwarder' }
+
+   function native_forwarder.run():num
+      return native_target.absolute(-7)
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local native_result = 0
+   for _ in {0 to 80} do
+      native_result = native_forwarder.run()
+   end
+   jit.off()
+   jit.opt.start()
+
+   assert(native_result is 7, 'A recorded native contextual tail transfer should preserve its result')
+   assert(.name is nil, 'The native contextual tail transfer should restore the root context')
+end
+
+@Test(hotpath=80) function JITRecursiveContextualTailTransferHandlesAbortsAndSideExits()
+   local recursive = { name = 'recursive tail', visits = 0, alternate = false }
+
+   function recursive.run(Count:num):<any, ...>
+      .visits++
+      if Count <= 0 then
+         if .alternate then return .name .. ':alternate:' .. tostring(.visits) end
+         return .name .. ':primary:' .. tostring(.visits)
+      end
+      return recursive.run(Count - 1)
+   end
+
+   function run_recursive(Depth:num):<any, ...>
+      recursive.visits = 0
+      return recursive.run(Depth)
+   end
+
+   jit.off()
+   recursive.alternate = false
+   local interpreted = run_recursive(12)
+   local exhausted_interpreted = run_recursive(20)
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0', 'loopunroll=2')
+   jit.attach(trace_event, 'trace')
+
+   local result:any = nil
+   for _ in {0 to 40} do result = run_recursive(20) end
+   local exhausted_recorded = result
+
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0', 'loopunroll=30')
+   for _ in {0 to 80} do
+      recursive.alternate = false
+      result = run_recursive(12)
+   end
+   local primary_recorded = result
+
+   recursive.alternate = true
+   for _ in {0 to 30} do result = run_recursive(12) end
+   local alternate_recorded = result
+
+   jit.attach(trace_event)
+   jit.off()
+   jit.opt.start()
+
+   assert(exhausted_recorded is exhausted_interpreted,
+      'Recorder unroll exhaustion should preserve recursive contextual tail results')
+   assert(primary_recorded is interpreted,
+      'Recorded self-recursive contextual tail completion should match the interpreter')
+   assert(alternate_recorded is 'recursive tail:alternate:13',
+      'A forced side exit should retain the recursive receiver, result and visit count')
+   assert(aborted > 0, 'A low tail unroll limit should exercise recorder abort cleanup')
+   assert(compiled > 0, 'Retrying with a sufficient tail unroll limit should compile recursive traces')
+   assert(.name is nil, 'Recursive tail completion, aborts and side exits should restore the root context')
+end
