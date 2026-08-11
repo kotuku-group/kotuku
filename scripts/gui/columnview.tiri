@@ -271,7 +271,7 @@ function bannerZoneClick(View, Col, X, Y, Value)
 
    View._sort.icon.x = Col.align is 'right' ? MARGIN :> Col.px_width - MARGIN - glIconSize
 
-   View.sortColumn(Col, View._sort.ascending)
+   View.sortColumn(View, Col, View._sort.ascending)
    View.viewport.acDraw()
 end
 
