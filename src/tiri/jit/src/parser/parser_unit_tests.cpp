@@ -44,6 +44,7 @@
 #include "type_checker.h"
 #include "parser.h"
 #include "static_descriptor_analysis.h"
+#include "table_ownership.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
@@ -7291,11 +7292,424 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+// Phase 1 of the opt-in table context plan: positive runtime contextuality metadata.
+
+// Marks its table argument contextual through the internal helper and returns it.  This stands in for the source
+// designation mechanisms that Phase 2 adds; no public API equivalent exists.
+static int unit_mark_contextual(lua_State *L)
+{
+   // Kotuku's C API is 0-based, so the first argument is the function's base slot.
+   if (L->top <= L->base or not tvistab(L->base)) return 0;
+   lj_tab_mark_contextual(tabV(L->base));
+   lua_settop(L, 1);
+   return 1;
+}
+
+static bool test_contextual_table_flag(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   // A freshly allocated table is ordinary, because contextuality is opt-in.  Every table below is rooted on the
+   // stack for the duration of the test so that an intervening collection cannot free it.
+   lua_createtable(L, 0, 0);
+   GCtab *ordinary = tabV(L->top - 1);
+   if (lj_tab_is_contextual(ordinary)) {
+      Log.error("a newly allocated table was contextual by default");
+      return false;
+   }
+
+   TValue receiver;
+   settabV(L, &receiver, ordinary);
+   if (lj_context_receiver_establishes(&receiver)) {
+      Log.error("an ordinary table established call context");
+      return false;
+   }
+
+   // Designation is one-way and permanent.
+   lj_tab_mark_contextual(ordinary);
+   if (not lj_tab_is_contextual(ordinary) or not lj_context_receiver_establishes(&receiver)) {
+      Log.error("a designated table did not establish call context");
+      return false;
+   }
+
+   // Ordinary mutation must never clear the flag: the JIT relies on its monotonicity to guard the bit cheaply.
+   // Route the mutation through the public API so the GC barriers and stack rooting match ordinary script behaviour.
+   settabV(L, L->top++, ordinary);
+   lua_pushstring(L, "field");
+   lua_pushinteger(L, 1);
+   lua_rawset(L, -3);
+   lua_createtable(L, 0, 0);
+   lua_setmetatable(L, -2);
+   lua_pushnil(L);
+   lua_setmetatable(L, -2);
+   lua_pop(L, 1);
+   lj_tab_clear(ordinary);
+   if (not lj_tab_is_contextual(ordinary)) {
+      Log.error("table mutation, clearing or metatable replacement cleared contextuality");
+      return false;
+   }
+
+   // The classification bits share one flags byte and must stay independent.
+   if ((TAB_CONTEXTUAL & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) != 0) {
+      Log.error("the contextual bit overlapped an existing classification bit");
+      return false;
+   }
+
+   // lj_tab_inherit_contextual() propagates from a declared structural source and otherwise leaves the result alone.
+   lua_createtable(L, 0, 0);
+   GCtab *from_ordinary = tabV(L->top - 1);
+   lua_createtable(L, 0, 0);
+   GCtab *source_ordinary = tabV(L->top - 1);
+   lj_tab_inherit_contextual(from_ordinary, source_ordinary);
+   if (lj_tab_is_contextual(from_ordinary)) {
+      Log.error("an ordinary source marked a derived table contextual");
+      return false;
+   }
+   lj_tab_inherit_contextual(from_ordinary, ordinary);
+   if (not lj_tab_is_contextual(from_ordinary)) {
+      Log.error("a contextual source did not propagate to a derived table");
+      return false;
+   }
+
+   // Template duplication carries the flag, which is how contextual table literals materialise.
+   lua_createtable(L, 0, 1);
+   GCtab *template_table = tabV(L->top - 1);
+   lj_tab_mark_contextual(template_table);
+   GCtab *duplicate = lj_tab_dup(L, template_table);
+   settabV(L, L->top++, duplicate);
+   if (not lj_tab_is_contextual(duplicate)) {
+      Log.error("lj_tab_dup() lost contextuality when materialising a template");
+      return false;
+   }
+
+   lua_createtable(L, 0, 1);
+   GCtab *ordinary_template = tabV(L->top - 1);
+   GCtab *ordinary_duplicate = lj_tab_dup(L, ordinary_template);
+   settabV(L, L->top++, ordinary_duplicate);
+   if (lj_tab_is_contextual(ordinary_duplicate)) {
+      Log.error("lj_tab_dup() invented contextuality from an ordinary template");
+      return false;
+   }
+
+   lua_settop(L, 0);
+   return true;
+}
+
+static bool test_contextual_runtime_semantics(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   lua_pushcfunction(L, unit_mark_contextual);
+   lua_setglobal(L, "designate");
+
+   // Designation happens in place so that each receiver remains a plain local, which is the shape the compiler still
+   // lowers through the runtime contextual gate.  Phase 2 replaces this helper with real source syntax.
+   constexpr std::string_view source =
+      "local ordinary = { name = 'ordinary' }\n"
+      "local designated = { name = 'designated' }\n"
+      "designate(designated)\n"
+      "local outer = { name = 'outer' }\n"
+      "designate(outer)\n"
+      "function readName():str return .name end\n"
+      "function ordinary.read():str return readName() end\n"
+      "function designated.read():str return readName() end\n"
+      "function outer.viaOrdinary():str return ordinary.read() end\n"
+      "function outer.viaDesignated():str return designated.read() end\n"
+      "function outer.own():str return .name end\n"
+      "return ordinary.read(), designated.read(), outer.viaOrdinary(), outer.viaDesignated(), outer.own()\n";
+
+   if (lua_load(L, source, "contextual-runtime")) {
+      Log.error("failed to compile contextual runtime fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 5, 0)) {
+      Log.error("contextual runtime fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   // An ordinary table inherits the root context, so the leading-dot lookup resolves no name.
+   if (not lua_isnil(L, -5)) {
+      Log.error("an ordinary table established context for its member call");
+      return false;
+   }
+
+   struct NameCase {
+      int slot;
+      const char *expected;
+      const char *description;
+   };
+
+   constexpr std::array<NameCase, 4> names = { {
+      { -4, "designated", "a designated table did not establish context for its member call" },
+      { -3, "outer",      "an ordinary nested call did not inherit the caller context" },
+      { -2, "designated", "a designated nested call did not replace the inherited context" },
+      { -1, "outer",      "a designated receiver did not restore its own context after a nested call" }
+   } };
+
+   for (const auto &entry : names) {
+      const char *actual = lua_tostring(L, entry.slot);
+      if (not actual or strcmp(actual, entry.expected) != 0) {
+         Log.error("%s (got '%s')", entry.description, actual ? actual : "nil");
+         return false;
+      }
+   }
+   lua_pop(L, 5);
+
+   // Slice results carry contextuality from their declared source table, including the empty-slice exits.
+   constexpr std::string_view slice_source =
+      "local designated = { 10, 20, 30 }\n"
+      "designate(designated)\n"
+      "local ordinary = { 10, 20, 30 }\n"
+      "return designated[{0 to 1}], designated[{5 to 4}], range.slice(designated, {0 to 1}),\n"
+      "   table.slice(designated, {0 to 1}), ordinary[{0 to 1}], ordinary[{5 to 4}]\n";
+
+   if (lua_load(L, slice_source, "contextual-slice")) {
+      Log.error("failed to compile contextual slice fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 6, 0)) {
+      Log.error("contextual slice fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   struct SliceCase {
+      int slot;
+      bool contextual;
+      const char *description;
+   };
+
+   constexpr std::array<SliceCase, 6> slices = { {
+      { -6, true,  "range-index syntax on a contextual source" },
+      { -5, true,  "an empty slice of a contextual source" },
+      { -4, true,  "range.slice() on a contextual source" },
+      { -3, true,  "table.slice() on a contextual source" },
+      { -2, false, "range-index syntax on an ordinary source" },
+      { -1, false, "an empty slice of an ordinary source" }
+   } };
+
+   for (const auto &entry : slices) {
+      const TValue *result = L->top + entry.slot;
+      if (not tvistab(result)) {
+         Log.error("%s did not produce a table", entry.description);
+         return false;
+      }
+      if (lj_tab_is_contextual(tabV(result)) != entry.contextual) {
+         Log.error("%s produced the wrong contextuality", entry.description);
+         return false;
+      }
+   }
+   lua_pop(L, 6);
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Phase 0 of the opt-in table context plan: allocation-site ownership of a contextual designation target.
+
+static bool test_contextual_designation_ownership(kt::Log &Log)
+{
+   // Each `mark(...)` call stands in for the designation target of a future contextual setmetatable().  Ownership is
+   // classified from the argument expression alone, so the helper does not need to exist.
+   constexpr std::string_view source =
+      "local literal = {}\n"
+      "mark(literal);\n"                        // 1  owned: plain literal allocation
+      "mark({ value = 1 });\n"                  // 2  owned: inline literal
+      "local used = {}\n"
+      "used.field = 1\n"
+      "local alias = used\n"
+      "helper(used);\n"
+      "mark(used);\n"                           // 7  owned: prior mutation, aliasing and call use
+      "mark(alias);\n"                          // 8  owned: alias of an owned allocation
+      "local merged = {}\n"
+      "if flag then merged = { a = 1 } else merged = { a = 2 } end\n"
+      "mark(merged);\n"                         // 10 owned: merge of owned literals
+      "local tainted = {}\n"
+      "if flag then tainted = makeTable() end\n"
+      "mark(tainted);\n"                        // 13 rejected: merge with unknown provenance
+      "local produced = makeTable()\n"
+      "mark(produced);\n"                       // 15 rejected: unresolved call result
+      "mark(makeTable());\n"                    // 16 rejected: direct call result
+      "mark(registry);\n"                       // 17 rejected: global
+      "mark(container.nested);\n"               // 18 rejected: field of another table
+      "local overwritten = makeTable()\n"
+      "overwritten = {}\n"
+      "mark(overwritten);\n"                    // 21 owned: latest definite assignment replaces foreign provenance
+      "local assigned_later = {}\n"
+      "mark(assigned_later);\n"                 // 23 owned: a later assignment cannot reach this designation
+      "assigned_later = makeTable()\n"
+      "local foreign_source = makeTable()\n"
+      "local foreign_alias = foreign_source\n"
+      "foreign_source = {}\n"
+      "mark(foreign_alias);\n"                  // 27 rejected: alias retains the foreign value captured earlier
+      "local owned_source = {}\n"
+      "local owned_alias = owned_source\n"
+      "owned_source = makeTable()\n"
+      "mark(owned_alias);\n"                    // 31 owned: later source reassignment does not alter the alias
+      "local captured = {}\n"
+      "function replace_captured()\n"
+      "   captured = makeTable()\n"
+      "end\n"
+      "replace_captured()\n"
+      "mark(captured);\n"                       // 38 rejected: a closure can replace the owned allocation
+      "local read_capture = {}\n"
+      "function read_captured() return read_capture end\n"
+      "read_capture = {}\n"
+      "mark(read_capture);\n"                   // 42 owned: a read-only capture does not obscure local writes
+      "local outer = {}\n"
+      "function nested()\n"
+      "   mark(outer);\n"
+      "end\n"
+      "function promote(Target)\n"
+      "   mark(Target);\n"                      //    rejected: parameter (checked separately)
+      "end\n";
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(L, unit_reader, &reader, "designation-ownership", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserAllocator allocator = ParserAllocator::from(L);
+   ParserContext context = ParserContext::from(lex, fs, allocator);
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Log.error("designation ownership fixture did not parse");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+
+   BlockStmt &module = *chunk.value_ref();
+
+   // Recover the sole argument of every `mark(...)` expression statement, in source order.  Collecting them by scan
+   // keeps the expectations below independent of statements that do not contribute a designation target.
+   auto collect_marks = [](const BlockStmt &Block, std::vector<const ExprNode *> &Targets) {
+      for (const auto &statement : Block.statements) {
+         if (not statement) continue;
+         const auto *expression = std::get_if<ExpressionStmtPayload>(&statement->data);
+         if (not expression or not expression->expression) continue;
+         const auto *call = std::get_if<CallExprPayload>(&expression->expression->data);
+         if (not call or call->arguments.size() != 1) continue;
+         const auto *direct = std::get_if<DirectCallTarget>(&call->target);
+         if (not direct or not direct->callable or
+             direct->callable->kind != AstNodeKind::IdentifierExpr) continue;
+         const GCstr *name = std::get<NameRef>(direct->callable->data).identifier.symbol;
+         if (not name or name->hash != kt::strhash("mark")) continue;
+         Targets.push_back(call->arguments.front().get());
+      }
+   };
+
+   std::vector<const ExprNode *> marks;
+   collect_marks(module, marks);
+
+   struct OwnershipCase {
+      bool owned;
+      const char *description;
+   };
+
+   // One entry per `mark(...)` in the module fixture, in source order.
+   constexpr std::array<OwnershipCase, 16> cases = { {
+      { true,  "a literal bound to a local" },
+      { true,  "an inline table literal" },
+      { true,  "an owned allocation after mutation, aliasing and call use" },
+      { true,  "an alias of an owned allocation" },
+      { true,  "a control-flow merge of two owned literals" },
+      { false, "a merge with unknown provenance" },
+      { false, "an unresolved call result" },
+      { false, "a direct call result" },
+      { false, "a global" },
+      { false, "a field of another table" },
+      { true,  "an owned allocation that supersedes earlier foreign provenance" },
+      { true,  "an owned allocation followed by a later foreign assignment" },
+      { false, "an alias that retained an earlier foreign value" },
+      { true,  "an alias that retained an earlier owned allocation" },
+      { false, "an owned binding that a closure can replace" },
+      { true,  "a reassigned owned binding captured only for reading" }
+   } };
+
+   if (marks.size() != cases.size()) {
+      Log.error("designation fixture produced %u targets, expected %u",
+         unsigned(marks.size()), unsigned(cases.size()));
+      return false;
+   }
+
+   for (size_t i = 0; i < cases.size(); ++i) {
+      TableOwnershipProof proof = classify_table_ownership(context, *marks[i], 0, &module);
+      if (proof.owned() != cases[i].owned) {
+         Log.error("%s was classified %s", cases[i].description, proof.owned() ? "owned" : "foreign");
+         return false;
+      }
+   }
+
+   // Locate a named function declaration in the module fixture.
+   auto function_body = [&](uint32_t NameHash) -> BlockStmt * {
+      for (const auto &statement : module.statements) {
+         if (not statement) continue;
+         const auto *declaration = std::get_if<FunctionStmtPayload>(&statement->data);
+         if (not declaration or declaration->name.segments.size() != 1) continue;
+         const GCstr *name = declaration->name.segments.front().symbol;
+         if (not name or name->hash != NameHash) continue;
+         if (declaration->function) return declaration->function->body.get();
+      }
+      return nullptr;
+   };
+
+   // A local of the enclosing function is an upvalue inside a nested function, so its allocation is not visible.
+   BlockStmt *nested_body = function_body(kt::strhash("nested"));
+   std::vector<const ExprNode *> nested_marks;
+   if (nested_body) collect_marks(*nested_body, nested_marks);
+   if (nested_marks.size() != 1) {
+      Log.error("designation fixture nested function did not contain one designation target");
+      return false;
+   }
+   TableOwnershipProof nested_proof = classify_table_ownership(context, *nested_marks.front(), 1, nested_body);
+   if (nested_proof.owned() or nested_proof.foreign_source != ForeignTableSource::Upvalue) {
+      Log.error("an enclosing function's local was accepted as owned inside a nested function");
+      return false;
+   }
+
+   // A parameter belongs to the caller, so its designation must be rejected inside the declaring function.
+   const StmtNode *declaration = module.statements.back().get();
+   const auto *function_statement = declaration ?
+      std::get_if<FunctionStmtPayload>(&declaration->data) : nullptr;
+   if (not function_statement or not function_statement->function or not function_statement->function->body) {
+      Log.error("designation fixture did not end with a function declaration");
+      return false;
+   }
+   BlockStmt &body = *function_statement->function->body;
+   std::vector<const ExprNode *> parameter_marks;
+   collect_marks(body, parameter_marks);
+   if (parameter_marks.size() != 1) {
+      Log.error("designation fixture function body did not contain one designation target");
+      return false;
+   }
+
+   TableOwnershipProof parameter_proof = classify_table_ownership(context, *parameter_marks.front(), 1, &body);
+   if (parameter_proof.owned() or parameter_proof.foreign_source != ForeignTableSource::Parameter) {
+      Log.error("a parameter was accepted as an owned designation target");
+      return false;
+   }
+
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 65> tests = { {
+   constexpr std::array<TestCase, 68> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7360,7 +7774,10 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "safe_index_bytecode_selection", test_safe_index_bytecode_selection },
       { "type_guided_emission", test_type_guided_emission },
-      { "builtin_callable_bytecode", test_builtin_callable_bytecode }
+      { "builtin_callable_bytecode", test_builtin_callable_bytecode },
+      { "contextual_designation_ownership", test_contextual_designation_ownership },
+      { "contextual_table_flag", test_contextual_table_flag },
+      { "contextual_runtime_semantics", test_contextual_runtime_semantics }
    } };
 
    // A dummy object is required to manage state.

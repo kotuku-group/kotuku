@@ -860,13 +860,16 @@ static int range_slice_impl(lua_State *L)
          if (effective_stop < 0) effective_stop = 0;
       }
 
-      // Check for empty/invalid ranges
+      // Check for empty/invalid ranges.  An empty slice still derives structurally from its source table, so it
+      // inherits contextuality like any other result.
       if (forward and start > effective_stop) {
          lua_createtable(L, 0, 0);
+         lj_tab_inherit_contextual(tabV(L->top - 1), t);
          return 1;
       }
       if (not forward and start < effective_stop) {
          lua_createtable(L, 0, 0);
+         lj_tab_inherit_contextual(tabV(L->top - 1), t);
          return 1;
       }
 
@@ -877,6 +880,7 @@ static int range_slice_impl(lua_State *L)
 
       // Create result table
       lua_createtable(L, result_size, 0);
+      lj_tab_inherit_contextual(tabV(L->top - 1), t);
       int result_table_idx = lua_gettop(L);
       int32_t result_idx = 0;
 

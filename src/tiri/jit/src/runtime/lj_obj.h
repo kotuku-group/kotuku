@@ -1093,8 +1093,8 @@ inline constexpr uint32_t TAB_SPARSE_BIT = 1;       // Bit index, for backends t
 inline constexpr uint8_t  TAB_SPARSE = (uint8_t)(1u << TAB_SPARSE_BIT); // Ever used with non-sequence numerical keys
 inline constexpr uint32_t TAB_METHOD_COMPATIBLE_BIT = 2; // Bit index for explicit-receiver userdata metatables.
 inline constexpr uint8_t  TAB_METHOD_COMPATIBLE = (uint8_t)(1u << TAB_METHOD_COMPATIBLE_BIT);
-inline constexpr uint32_t TAB_CONTEXT_EXEMPT_BIT = 3; // Bit index for internal namespace tables.
-inline constexpr uint8_t  TAB_CONTEXT_EXEMPT = (uint8_t)(1u << TAB_CONTEXT_EXEMPT_BIT);
+inline constexpr uint32_t TAB_CONTEXTUAL_BIT = 3; // Bit index for permanently designated contextual tables.
+inline constexpr uint8_t  TAB_CONTEXTUAL = (uint8_t)(1u << TAB_CONTEXTUAL_BIT);
 
 // Either flag makes the sequence length meaningless, so '#' reports nil and sequence library functions refuse to
 // infer a boundary.  Backends test this composite mask in one operation.
@@ -1152,8 +1152,8 @@ static_assert((1u << TAB_ASSOCIATIVE_BIT) IS TAB_ASSOCIATIVE);
 static_assert((1u << TAB_SPARSE_BIT) IS TAB_SPARSE);
 static_assert((1u << TAB_METHOD_COMPATIBLE_BIT) IS TAB_METHOD_COMPATIBLE);
 static_assert((TAB_METHOD_COMPATIBLE & TAB_NOT_SEQUENCE) IS 0);
-static_assert((1u << TAB_CONTEXT_EXEMPT_BIT) IS TAB_CONTEXT_EXEMPT);
-static_assert((TAB_CONTEXT_EXEMPT & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) IS 0);
+static_assert((1u << TAB_CONTEXTUAL_BIT) IS TAB_CONTEXTUAL);
+static_assert((TAB_CONTEXTUAL & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) IS 0);
 
 // Table classification helpers.  Every interpreter, library and C API path publishes classification through these so
 // that the semantics stay aligned; the JIT recorder mirrors them with equivalent IR.
@@ -1168,15 +1168,30 @@ static_assert((TAB_CONTEXT_EXEMPT & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) 
    return (Table->flags & TAB_SPARSE) != 0;
 }
 
-// Internal namespace tables inherit their caller's context.  This flag is set once during library registration and
-// never cleared, so the interpreter and JIT can treat it as an invariant of the table identity.
+// Every table is ordinary by default; contextuality is a positive, opt-in capability of the table identity.  A
+// designated table establishes itself as the current context when one of its members is called.
+//
+// The flag is permanent for the lifetime of the table: table.clear(), metatable replacement, field removal and every
+// other ordinary mutation must leave it set.  That monotonicity is what lets the interpreter and JIT guard the bit
+// cheaply, and prevents behaviour from changing halfway through a call sequence.
 
-[[nodiscard]] inline bool lj_tab_is_context_exempt(const GCtab *Table) noexcept
+[[nodiscard]] inline bool lj_tab_is_contextual(const GCtab *Table) noexcept
 {
-   return (Table->flags & TAB_CONTEXT_EXEMPT) != 0;
+   return (Table->flags & TAB_CONTEXTUAL) != 0;
 }
 
-inline void lj_tab_mark_context_exempt(GCtab *Table) noexcept { Table->flags |= TAB_CONTEXT_EXEMPT; }
+// One-way designation.  Internal native creation paths and tests use this; there is no public API counterpart.
+
+inline void lj_tab_mark_contextual(GCtab *Table) noexcept { Table->flags |= TAB_CONTEXTUAL; }
+
+// Propagate contextuality from a declared structural source to a newly derived table, per the derived-table contract.
+// Multiple-source operations call this once per declared source, making inheritance an any-source rule.  Allocation
+// alone has no source, so this must never be folded into lj_tab_new() or lua_createtable().
+
+inline void lj_tab_inherit_contextual(GCtab *Destination, const GCtab *Source) noexcept
+{
+   if (Source and lj_tab_is_contextual(Source)) lj_tab_mark_contextual(Destination);
+}
 
 // True when the table's usage history remains inside the non-negative integral sequence domain.  This does not prove
 // that every index below the numerical boundary is currently populated: positive holes deliberately remain legal.

@@ -1382,11 +1382,21 @@ static void rec_context_enter(jit_State *J, BCREG CallBase)
       return;
    }
 
-   // Internal namespaces inherit the caller's context.  Record the exemption before the callable overwrites its
-   // receiver slot so CTXLEAVE can still perform result compaction without attempting to restore an activation.
-   if (lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]))) {
-      J->context_call_state[int32_t(J->baseslot) + int32_t(CallBase)] = CONTEXT_CALL_EXEMPT;
-      return;
+   // An ordinary table inherits the caller's context.  Record that before the callable overwrites its receiver slot so
+   // CTXLEAVE can still perform result compaction without attempting to restore an activation.
+   //
+   // Contextuality is a monotonic bit in the shared flags byte, so guarding the observed state is sufficient: a table
+   // designated later side-exits the trace and the recompilation specialises to the contextual path.
+   {
+      IRBuilder ir(J);
+      TRef flags = ir.fload(receiver, IRFL_TAB_FLAGS, IRT_U8);
+      TRef designated = ir.emit_int(IR_BAND, flags, ir.kint(TAB_CONTEXTUAL));
+      if (not lj_tab_is_contextual(tabV(&J->L->base[CallBase - 1]))) {
+         ir.guard_eq_int(designated, ir.kint(0));
+         J->context_call_state[int32_t(J->baseslot) + int32_t(CallBase)] = CONTEXT_CALL_EXEMPT;
+         return;
+      }
+      ir.guard_ne_int(designated, ir.kint(0));
    }
 
    if (tail_call or native_target) rec_context_materialise(J);
@@ -1523,11 +1533,22 @@ static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t Argumen
    }
 
    TRef receiver = getslot(J, int32_t(CallBase) - 1);
-   bool exempt_receiver = tvistab(&J->L->base[CallBase - 1]) and
-      lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]));
+   bool contextual_receiver = tvistab(&J->L->base[CallBase - 1]) and
+      lj_tab_is_contextual(tabV(&J->L->base[CallBase - 1]));
+
+   // Guard the monotonic designation bit before the callable overwrites the receiver slot, so that a trace
+   // specialised to one receiver class cannot be reused for the other.
+   if (tref_istab(receiver)) {
+      IRBuilder ir(J);
+      TRef flags = ir.fload(receiver, IRFL_TAB_FLAGS, IRT_U8);
+      TRef designated = ir.emit_int(IR_BAND, flags, ir.kint(TAB_CONTEXTUAL));
+      if (contextual_receiver) ir.guard_ne_int(designated, ir.kint(0));
+      else ir.guard_eq_int(designated, ir.kint(0));
+   }
+
    rec_call_setup(J, CallBase, ArgumentCount);
 
-   if (tref_istab(receiver) and not exempt_receiver) {
+   if (tref_istab(receiver) and contextual_receiver) {
       IRBuilder ir(J);
       int32_t prepared_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
       TRef prepared_owner = rec_stack_slot_addr(J, ir, prepared_slot);
