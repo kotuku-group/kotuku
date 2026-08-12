@@ -390,9 +390,11 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
    }
    if (context_entry_depth != 0) bcread_error(State, ErrMsg::BCBAD);
 
-   // Propagate the lexical block stack through the control-flow graph.  A program point may only be reached with one
-   // exact descriptor stack, which rejects jumps into a block and exits that bypass their matching CTXEND.  Multiple
-   // CTXEND instructions for return/break/continue paths are valid because only the selected edge reaches each copy.
+   // Propagate the lexical block stack through every control-flow component.  A program point may only be reached with
+   // one exact descriptor stack, which rejects jumps into a block and exits that bypass their matching CTXEND.
+   // Unreachable components are seeded with their lexical descriptor stack because the emitter retains valid source
+   // after a terminator.  Multiple CTXEND instructions for return/break/continue paths remain valid because only the
+   // selected edge reaches each copy.
    std::vector<std::vector<uint16_t>> block_states(sizebc);
    std::vector<uint8_t> state_seen(sizebc, 0);
    std::vector<uint8_t> begin_seen(context_blocks.size(), 0);
@@ -412,42 +414,57 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       else if (block_states[target] != Stack) bcread_error(State, ErrMsg::BCBAD);
    };
 
-   while (not worklist.empty()) {
-      MSize pc = worklist.back();
-      worklist.pop_back();
-      BCOp op = bc_op(bc[pc]);
-      std::vector<uint16_t> stack = block_states[pc];
+   while (true) {
+      while (not worklist.empty()) {
+         MSize pc = worklist.back();
+         worklist.pop_back();
+         BCOp op = bc_op(bc[pc]);
+         std::vector<uint16_t> stack = block_states[pc];
 
-      if (op IS BC_CTXBEGIN) {
-         uint16_t descriptor = uint16_t(bc_d(bc[pc]));
-         stack.push_back(descriptor);
-         begin_seen[descriptor] = 1;
-      }
-      else if (op IS BC_CTXEND) {
-         uint16_t descriptor = uint16_t(bc_d(bc[pc]));
-         if (stack.empty() or stack.back() != descriptor) bcread_error(State, ErrMsg::BCBAD);
-         stack.pop_back();
-         end_seen[descriptor] = 1;
+         if (op IS BC_CTXBEGIN) {
+            uint16_t descriptor = uint16_t(bc_d(bc[pc]));
+            stack.push_back(descriptor);
+            begin_seen[descriptor] = 1;
+         }
+         else if (op IS BC_CTXEND) {
+            uint16_t descriptor = uint16_t(bc_d(bc[pc]));
+            if (stack.empty() or stack.back() != descriptor) bcread_error(State, ErrMsg::BCBAD);
+            stack.pop_back();
+            end_seen[descriptor] = 1;
+         }
+
+         if (op IS BC_RET or op IS BC_RET0 or op IS BC_RET1 or op IS BC_RETM or
+             op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT or op IS BC_RAISE) {
+            if (not stack.empty()) bcread_error(State, ErrMsg::BCBAD);
+            continue;
+         }
+
+         if (op IS BC_JMP) {
+            enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
+         }
+         else if (bcmode_d(op) IS BCMjump) {
+            enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
+            if (pc + 1 < sizebc) enqueue(pc + 1, stack);
+         }
+         else if (op <= BC_ISFALSEY) {
+            if (pc + 1 < sizebc) enqueue(pc + 1, stack);
+            if (pc + 2 < sizebc) enqueue(pc + 2, stack);
+         }
+         else if (pc + 1 < sizebc) enqueue(pc + 1, stack);
       }
 
-      if (op IS BC_RET or op IS BC_RET0 or op IS BC_RET1 or op IS BC_RETM or
-          op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT or op IS BC_RAISE) {
-         if (not stack.empty()) bcread_error(State, ErrMsg::BCBAD);
-         continue;
-      }
+      MSize root = 1;
+      while (root < sizebc and state_seen[root]) root++;
+      if (root >= sizebc) break;
 
-      if (op IS BC_JMP) {
-         enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
+      std::vector<uint16_t> stack;
+      for (uint16_t descriptor = 0; descriptor < context_blocks.size(); ++descriptor) {
+         const ProtoContextBlockDesc &block = context_blocks[descriptor];
+         if (block.begin_pc < root and root <= block.end_pc) stack.push_back(descriptor);
       }
-      else if (bcmode_d(op) IS BCMjump) {
-         enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
-         if (pc + 1 < sizebc) enqueue(pc + 1, stack);
-      }
-      else if (op <= BC_ISFALSEY) {
-         if (pc + 1 < sizebc) enqueue(pc + 1, stack);
-         if (pc + 2 < sizebc) enqueue(pc + 2, stack);
-      }
-      else if (pc + 1 < sizebc) enqueue(pc + 1, stack);
+      state_seen[root] = 1;
+      block_states[root] = std::move(stack);
+      worklist.push_back(root);
    }
 
    for (size_t i = 0; i < context_blocks.size(); ++i) {

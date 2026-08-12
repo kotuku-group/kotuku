@@ -176,3 +176,19 @@ end
    assert(receiver.total is 120)
    assert(.total is nil, 'Recorded block exits should restore the root context')
 end
+
+@Test function UnreachableBlocksSurviveBytecodeRoundTrips()
+   local function unreachable_context():num
+      return 41
+      local receiver = { value = 42 }
+      context receiver do
+         return .value
+      end
+   end
+
+   for stripped in values({ false, true }) do
+      local restored = exec(string.dump(unreachable_context, stripped))
+      assert(restored is 41,
+         'Structurally valid context blocks after a terminator should survive bytecode serialisation')
+   end
+end
