@@ -101,6 +101,8 @@ static bool statement_contains_try(const StmtNode &Statement)
          return contains(std::get<GenericForStmtPayload>(Statement.data).body);
       case AstNodeKind::DoStmt:
          return contains(std::get<DoStmtPayload>(Statement.data).block);
+      case AstNodeKind::ContextStmt:
+         return contains(std::get<ContextStmtPayload>(Statement.data).block);
       case AstNodeKind::ConditionalShorthandStmt: {
          const auto &body = std::get<ConditionalShorthandStmtPayload>(Statement.data).body;
          return body and statement_contains_try(*body);
@@ -551,6 +553,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::ReturnStmt:     return "ReturnStmt";
       case AstNodeKind::DeferStmt:      return "DeferStmt";
       case AstNodeKind::DoStmt:         return "DoStmt";
+      case AstNodeKind::ContextStmt:    return "ContextStmt";
       case AstNodeKind::ConditionalShorthandStmt: return "ConditionalShorthandStmt";
       case AstNodeKind::TryExceptStmt: return "TryExceptStmt";
       case AstNodeKind::RaiseStmt:     return "RaiseStmt";
@@ -946,6 +949,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       if (payload.block) return this->emit_block(*payload.block, FuncScopeFlag::None);
       return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
    }
+   case AstNodeKind::ContextStmt: {
+      return this->emit_context_stmt(std::get<ContextStmtPayload>(stmt.data));
+   }
    case AstNodeKind::ConditionalShorthandStmt: {
       const auto &payload = std::get<ConditionalShorthandStmtPayload>(stmt.data);
       return this->emit_conditional_shorthand_stmt(payload);
@@ -973,6 +979,56 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
    default:
       return this->unsupported_stmt(stmt.kind, stmt.span);
    }
+}
+
+//********************************************************************************************************************
+// Enter a materialised temporary context for one lexical block.  The hidden local roots the reference and ensures
+// that member/index paths are evaluated only once.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_context_stmt(const ContextStmtPayload &Payload)
+{
+   if (not Payload.reference or not Payload.block) {
+      return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "incomplete context block"));
+   }
+
+   FuncState *fs = &this->func_state;
+   FuncScope scope;
+   ScopeGuard guard(fs, &scope, FuncScopeFlag::None);
+   LocalBindingScope binding_scope(this->binding_table);
+
+   this->lex_state.var_new(0, NAME_BLANK);
+   auto reference = this->emit_expression(*Payload.reference);
+   if (not reference.ok()) return ParserResult<IrEmitUnit>::failure(reference.error_ref());
+
+   BCReg slot = fs->free_reg();
+   ExpDesc value = reference.value_ref();
+   this->materialise_to_reg(value, slot, "context block reference");
+   RegisterAllocator allocator(fs);
+   allocator.reserve(BCReg(1));
+   this->lex_state.var_add(1);
+   fs->reset_freereg();
+
+   uint16_t block_index = uint16_t(fs->context_blocks.size());
+   if (block_index IS UINT16_MAX) {
+      return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+         "too many temporary context blocks"));
+   }
+   fs->context_blocks.push_back(ProtoContextBlockDesc{
+      .begin_pc = fs->pc,
+      .end_pc = 0,
+      .entry_slots = BCREG(slot.raw() + 1)
+   });
+   scope.context_block = block_index;
+   bcemit_AD(fs, BC_CTXBEGIN, slot.raw(), block_index);
+
+   for (const StmtNode &stmt : Payload.block->view()) {
+      auto status = this->emit_statement(stmt);
+      if (not status.ok()) return status;
+      this->ensure_register_balance(describe_node_kind(stmt.kind));
+   }
+
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }
 
 //********************************************************************************************************************
@@ -1302,8 +1358,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    if (preserve_multres) this->func_state.freereg = BCREG(this->func_state.varmap.size());
    // Both __close and defer handlers must run before returning from function.
    // Order: closes before defers (LIFO - most recently declared runs first).
-   execute_closes(&this->func_state, 0);
-   execute_defers(&this->func_state, 0);
+   execute_scope_cleanups(&this->func_state, 0);
 
    // Emit BC_TRYLEAVE for each try scope we're exiting with this return.
    // A return from inside a try block must pop all pending try frames to prevent
@@ -1431,6 +1486,23 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
    this->lex_state.var_add(nvars);
    auto base = BCReg(this->func_state.varmap.size() - nvars.raw());
 
+   // The initialiser values are now resident in their local slots.  Arm close locals before runtime contract checks so
+   // a rejected annotation still unwinds an already-created resource.
+   for (auto i = BCReg(0); i < nvars; ++i) {
+      const Identifier& identifier = Payload.names[i.raw()];
+      if (not identifier.has_close) continue;
+
+      uint8_t slot = uint8_t(base.raw() + i.raw());
+      if (slot >= 64) {
+         return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
+            "Too many local variables with <close> attribute (max 64 slots)"));
+      }
+
+      VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
+      info->info |= VarInfoFlag::Close;
+      bcemit_AD(&this->func_state, BC_CLOSEARM, base.raw() + i.raw(), 0);
+   }
+
    // Declaration initialisers are placed directly into their local slots, so they do not pass through
    // bcemit_store().  Validate every concrete annotation after result-count adjustment and before publishing the
    // binding's checked metadata.  This also covers values supplied by calls, varargs and result filters.
@@ -1472,21 +1544,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       });
    }
    bcemit_contracts(&this->func_state, local_contracts);
-
-   for (auto i = BCReg(0); i < nvars; ++i) {
-      const Identifier& identifier = Payload.names[i.raw()];
-      if (not identifier.has_close) continue;
-
-      // Check slot limit for closeslots bitmap (max 64 slots supported)
-      uint8_t slot = uint8_t(base.raw() + i.raw());
-      if (slot >= 64) {
-         return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-            "Too many local variables with <close> attribute (max 64 slots)"));
-      }
-
-      VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
-      info->info |= VarInfoFlag::Close;
-   }
 
    // Handle <const> attribute - mark local variables that cannot be reassigned
    for (auto i = BCReg(0); i < nvars; ++i) {
@@ -2458,6 +2515,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       bcemit_AD(fs, BC_MOV, call_base, lock_fn_reg);
       bcemit_AD(fs, BC_MOV, call_base + 1 + LJ_FR2, obj_reg);
       bcemit_ABC(fs, BC_CALL, call_base, 1, 2);  // 0 results, 1 arg
+      bcemit_AD(fs, BC_CLOSEARM, obj_reg.raw(), 0);
 
       fs->reset_freereg(); // Release the temporary registers
    }
@@ -2490,8 +2548,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_break_stmt(const BreakStmtPayload&)
    // Both __close and defer handlers must run when jumping out of scope via break.
    // Order: closes before defers (LIFO - most recently declared runs first).
 
-   execute_closes(&this->func_state, loop.defer_base);
-   execute_defers(&this->func_state, loop.defer_base);
+   execute_scope_cleanups(&this->func_state, loop.defer_base);
 
    // Emit BC_TRYLEAVE for each try scope we're exiting with this break.
    // The try_depth tracks how deep we are in try blocks; when breaking out of
@@ -2523,8 +2580,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_continue_stmt(const ContinueStmtPayload
    // Both __close and defer handlers must run when jumping out of scope via continue.
    // Order: closes before defers (LIFO - most recently declared runs first).
 
-   execute_closes(&this->func_state, loop.defer_base);
-   execute_defers(&this->func_state, loop.defer_base);
+   execute_scope_cleanups(&this->func_state, loop.defer_base);
 
    // Emit BC_TRYLEAVE for each try scope we're exiting with this continue.
    // The try_depth tracks how deep we are in try blocks; when continuing

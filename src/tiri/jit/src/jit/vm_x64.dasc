@@ -5804,6 +5804,51 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_CTXBEGIN:
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2d, RAd
+    |  mov CARG3d, RDd
+    |  mov L:CARG1, L:RB
+    |  call extern lj_context_begin_block
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_CTXEND:
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2d, RDd
+    |  mov L:CARG1, L:RB
+    |  call extern lj_context_end_block
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_CLOSEARM:
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2d, RAd
+    |  mov L:CARG1, L:RB
+    |  call extern lj_close_arm
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_CLOSE:
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2d, RAd
+    |  mov L:CARG1, L:RB
+    |  call extern lj_close_consume
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

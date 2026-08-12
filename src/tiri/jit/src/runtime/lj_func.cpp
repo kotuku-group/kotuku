@@ -23,6 +23,9 @@ void lj_func_freeproto(global_State *g, GCproto *pt)
    // Free try-except metadata if present
    if (pt->try_blocks) lj_mem_free(g, pt->try_blocks, pt->try_block_count * sizeof(TryBlockDesc));
    if (pt->try_handlers) lj_mem_free(g, pt->try_handlers, pt->try_handler_count * sizeof(TryHandlerDesc));
+   if (pt->context_blocks) {
+      lj_mem_free(g, pt->context_blocks, pt->context_block_count * sizeof(ProtoContextBlockDesc));
+   }
 
    // The resolved dependency sidecar holds non-owning pointers into the global module registry, so releasing it must
    // not touch the records themselves.  The registry outlives every Tiri state by contract (see expunge_modules()).

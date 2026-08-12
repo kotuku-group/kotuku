@@ -4612,6 +4612,23 @@ void lj_record_ins(jit_State *J)
       J->needsnap = 1;
       break;
 
+   case BC_CTXBEGIN:
+      if (not tref_istab(ra)) lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      lj_ir_call(J, IRCALL_lj_context_begin_block_jit, ra, lj_ir_kint(J, int32_t(bc_d(*pc))),
+         lj_ir_kint(J, int32_t(bc_a(*pc)) + 1));
+      J->needsnap = 1;
+      break;
+
+   case BC_CTXEND:
+      lj_ir_call(J, IRCALL_lj_context_end_block_jit, lj_ir_kint(J, int32_t(bc_d(*pc))));
+      J->needsnap = 1;
+      break;
+
+   case BC_CLOSEARM:
+   case BC_CLOSE:
+      lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      break;
+
    case BC_CTXLEAVE:
       rec_context_leave(J, ra, pc);
       break;

@@ -7863,6 +7863,68 @@ static bool test_contextual_metatable_designation(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+// Phase 3 temporary context block syntax, lowering and dump reconstruction.
+
+static bool test_temporary_context_blocks(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   constexpr std::string_view source =
+      "local receiver = { value = 37 }\n"
+      "local result = 0\n"
+      "context receiver do result = .value end\n"
+      "local select_value = function(Flag)\n"
+      "   context receiver do if Flag then return .value end end\n"
+      "   return 0\n"
+      "end\n"
+      "return result, select_value(true), select_value(false), .value\n";
+
+   if (lua_load(L, source, "temporary-context")) {
+      Log.error("failed to compile a temporary context block: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *prototype = funcproto(funcV(L->top - 1));
+   if (prototype->context_block_count != 1 or not prototype->context_blocks) {
+      Log.error("temporary context descriptor was not attached to the prototype");
+      return false;
+   }
+   bool found_begin = false;
+   bool found_end = false;
+   for (MSize i = 1; i < prototype->sizebc; ++i) {
+      found_begin |= bc_op(proto_bc(prototype)[i]) IS BC_CTXBEGIN;
+      found_end |= bc_op(proto_bc(prototype)[i]) IS BC_CTXEND;
+   }
+   if (not found_begin or not found_end) {
+      Log.error("temporary context block did not lower to CTXBEGIN/CTXEND");
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump a temporary context block");
+      return false;
+   }
+   lua_settop(L, 0);
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "temporary-context")) {
+      Log.error("failed to reload a temporary context block: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 4, 0)) {
+      Log.error("reloaded temporary context block failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_tonumber(L, -4) != 37 or lua_tonumber(L, -3) != 37 or lua_tonumber(L, -2) != 0 or
+       not lua_isnil(L, -1)) {
+      Log.error("temporary context block did not restore the root after reload");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
 // Phase 0 of the opt-in table context plan: allocation-site ownership of a contextual designation target.
 
 static bool test_contextual_designation_ownership(kt::Log &Log)
@@ -8063,7 +8125,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 71> tests = { {
+   constexpr std::array<TestCase, 72> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8134,7 +8196,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "contextual_table_flag", test_contextual_table_flag },
       { "contextual_runtime_semantics", test_contextual_runtime_semantics },
       { "contextual_designation_syntax", test_contextual_designation_syntax },
-      { "contextual_metatable_designation", test_contextual_metatable_designation }
+      { "contextual_metatable_designation", test_contextual_metatable_designation },
+      { "temporary_context_blocks", test_temporary_context_blocks }
    } };
 
    // A dummy object is required to manage state.

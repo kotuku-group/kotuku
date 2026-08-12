@@ -77,6 +77,8 @@ void collect_assignments(
          return block_writes(std::get<GenericForStmtPayload>(Statement.data).body, InspectAssignments);
       case AstNodeKind::DoStmt:
          return block_writes(std::get<DoStmtPayload>(Statement.data).block, InspectAssignments);
+      case AstNodeKind::ContextStmt:
+         return block_writes(std::get<ContextStmtPayload>(Statement.data).block, InspectAssignments);
       case AstNodeKind::TryExceptStmt: {
          const auto &payload = std::get<TryExceptPayload>(Statement.data);
          if (block_writes(payload.try_block, InspectAssignments)) return true;
@@ -180,6 +182,9 @@ void collect_statement_assignments(
          return;
       case AstNodeKind::DoStmt:
          visit_block(std::get<DoStmtPayload>(Statement.data).block, false);
+         return;
+      case AstNodeKind::ContextStmt:
+         visit_block(std::get<ContextStmtPayload>(Statement.data).block, false);
          return;
       case AstNodeKind::TryExceptStmt: {
          const auto &payload = std::get<TryExceptPayload>(Statement.data);

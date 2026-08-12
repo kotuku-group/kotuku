@@ -18,6 +18,8 @@
 #include "lj_strfmt.h"
 #include "lj_meta.h"
 
+#include <vector>
+
 // Reuse some lexer fields for our own purposes.
 
 #define bcread_flags(State)    State->level
@@ -294,9 +296,12 @@ static void bcread_knum(LexState *State, GCproto *pt, MSize sizekn)
 
 static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
 {
+   if (sizebc < 2) bcread_error(State, ErrMsg::BCBAD);
+
    BCIns* bc = proto_bc(pt);
    BCREG context_entries[BCMAX_A + 1];
    MSize context_entry_depth = 0;
+   std::vector<ProtoContextBlockDesc> context_blocks;
    bc[0] = BCINS_AD((pt->flags & PROTO_VARARG) ? BC_FUNCV : BC_FUNCF,
       pt->framesize, 0);
    bcread_block(State, bc + 1, (sizebc - 1) * (MSize)sizeof(BCIns));
@@ -333,6 +338,10 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
             bcread_error(State, ErrMsg::BCBAD);
          }
       }
+      else if (op IS BC_CLOSEARM or op IS BC_CLOSE) {
+         BCREG slot = bc_a(bc[i]);
+         if (slot >= pt->framesize or slot >= 64) bcread_error(State, ErrMsg::BCBAD);
+      }
       else if (op IS BC_CTXENTER or op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXLEAVE or
                op IS BC_CTXCALLT) {
          BCREG call_base = bc_a(bc[i]);
@@ -363,8 +372,96 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
             if (result_shift > call_base) bcread_error(State, ErrMsg::BCBAD);
          }
       }
+      else if (op IS BC_CTXBEGIN) {
+         uint16_t descriptor = uint16_t(bc_d(bc[i]));
+         BCREG slot = bc_a(bc[i]);
+         if (slot >= pt->framesize or descriptor != context_blocks.size()) bcread_error(State, ErrMsg::BCBAD);
+         context_blocks.push_back(ProtoContextBlockDesc{
+            .begin_pc = i,
+            .end_pc = 0,
+            .entry_slots = BCREG(slot + 1)
+         });
+      }
+      else if (op IS BC_CTXEND) {
+         uint16_t descriptor = uint16_t(bc_d(bc[i]));
+         if (descriptor >= context_blocks.size() or bc_a(bc[i]) != 0) bcread_error(State, ErrMsg::BCBAD);
+         if (i > context_blocks[descriptor].end_pc) context_blocks[descriptor].end_pc = i;
+      }
    }
    if (context_entry_depth != 0) bcread_error(State, ErrMsg::BCBAD);
+
+   // Propagate the lexical block stack through the control-flow graph.  A program point may only be reached with one
+   // exact descriptor stack, which rejects jumps into a block and exits that bypass their matching CTXEND.  Multiple
+   // CTXEND instructions for return/break/continue paths are valid because only the selected edge reaches each copy.
+   std::vector<std::vector<uint16_t>> block_states(sizebc);
+   std::vector<uint8_t> state_seen(sizebc, 0);
+   std::vector<uint8_t> begin_seen(context_blocks.size(), 0);
+   std::vector<uint8_t> end_seen(context_blocks.size(), 0);
+   std::vector<MSize> worklist;
+   state_seen[1] = 1;
+   worklist.push_back(1);
+
+   auto enqueue = [&](ptrdiff_t Target, const std::vector<uint16_t> &Stack) {
+      if (Target <= 0 or Target >= ptrdiff_t(sizebc)) bcread_error(State, ErrMsg::BCBAD);
+      MSize target = MSize(Target);
+      if (not state_seen[target]) {
+         state_seen[target] = 1;
+         block_states[target] = Stack;
+         worklist.push_back(target);
+      }
+      else if (block_states[target] != Stack) bcread_error(State, ErrMsg::BCBAD);
+   };
+
+   while (not worklist.empty()) {
+      MSize pc = worklist.back();
+      worklist.pop_back();
+      BCOp op = bc_op(bc[pc]);
+      std::vector<uint16_t> stack = block_states[pc];
+
+      if (op IS BC_CTXBEGIN) {
+         uint16_t descriptor = uint16_t(bc_d(bc[pc]));
+         stack.push_back(descriptor);
+         begin_seen[descriptor] = 1;
+      }
+      else if (op IS BC_CTXEND) {
+         uint16_t descriptor = uint16_t(bc_d(bc[pc]));
+         if (stack.empty() or stack.back() != descriptor) bcread_error(State, ErrMsg::BCBAD);
+         stack.pop_back();
+         end_seen[descriptor] = 1;
+      }
+
+      if (op IS BC_RET or op IS BC_RET0 or op IS BC_RET1 or op IS BC_RETM or
+          op IS BC_CALLT or op IS BC_CALLMT or op IS BC_CTXCALLT or op IS BC_RAISE) {
+         if (not stack.empty()) bcread_error(State, ErrMsg::BCBAD);
+         continue;
+      }
+
+      if (op IS BC_JMP) {
+         enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
+      }
+      else if (bcmode_d(op) IS BCMjump) {
+         enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
+         if (pc + 1 < sizebc) enqueue(pc + 1, stack);
+      }
+      else if (op <= BC_ISFALSEY) {
+         if (pc + 1 < sizebc) enqueue(pc + 1, stack);
+         if (pc + 2 < sizebc) enqueue(pc + 2, stack);
+      }
+      else if (pc + 1 < sizebc) enqueue(pc + 1, stack);
+   }
+
+   for (size_t i = 0; i < context_blocks.size(); ++i) {
+      if (not begin_seen[i] or not end_seen[i] or context_blocks[i].end_pc <= context_blocks[i].begin_pc) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+   }
+
+   if (not context_blocks.empty()) {
+      size_t byte_size = context_blocks.size() * sizeof(ProtoContextBlockDesc);
+      pt->context_blocks = (ProtoContextBlockDesc *)lj_mem_new(State->L, byte_size);
+      memcpy(pt->context_blocks, context_blocks.data(), byte_size);
+      pt->context_block_count = uint16_t(context_blocks.size());
+   }
 }
 
 //********************************************************************************************************************

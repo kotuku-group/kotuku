@@ -402,6 +402,12 @@ private:
             if (payload.block) this->discover_block(*payload.block);
             break;
          }
+         case AstNodeKind::ContextStmt: {
+            auto &payload = std::get<ContextStmtPayload>(Statement.data);
+            if (payload.reference) this->discover_expression(*payload.reference);
+            if (payload.block) this->discover_block(*payload.block);
+            break;
+         }
          case AstNodeKind::ConditionalShorthandStmt: {
             auto &payload = std::get<ConditionalShorthandStmtPayload>(Statement.data);
             if (payload.condition) this->discover_expression(*payload.condition);
@@ -2204,6 +2210,9 @@ private:
          case AstNodeKind::WithStmt:
             for (auto &v : std::get<WithStmtPayload>(Statement.data).objects) visit(v);
             break;
+         case AstNodeKind::ContextStmt:
+            visit(std::get<ContextStmtPayload>(Statement.data).reference);
+            break;
          case AstNodeKind::ExpressionStmt: visit(std::get<ExpressionStmtPayload>(Statement.data).expression); break;
          default: break;
       }
@@ -2223,6 +2232,7 @@ private:
          case AstNodeKind::RangeForStmt: visit(std::get<RangeForStmtPayload>(Statement.data).body); break;
          case AstNodeKind::GenericForStmt: visit(std::get<GenericForStmtPayload>(Statement.data).body); break;
          case AstNodeKind::DoStmt: visit(std::get<DoStmtPayload>(Statement.data).block); break;
+         case AstNodeKind::ContextStmt: visit(std::get<ContextStmtPayload>(Statement.data).block); break;
          case AstNodeKind::TryExceptStmt: {
             auto &p = std::get<TryExceptPayload>(Statement.data);
             visit(p.try_block);

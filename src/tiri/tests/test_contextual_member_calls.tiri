@@ -259,6 +259,65 @@ end
    assert(.name is nil, 'Error cleanup should finish in the root context')
 end
 
+@Test function NormalExitDefersObserveOwningContexts()
+   local observed = {}
+   local outer = context { name = 'defer outer' }
+   local inner = context { name = 'defer inner' }
+
+   function inner.run():str
+      defer
+         observed[#observed] = 'inner:' .. .name
+      end
+      return .name
+   end
+
+   function outer.run():<str, str>
+      defer
+         observed[#observed] = 'outer:' .. .name
+      end
+      local inner_name = inner.run()
+      return inner_name, .name
+   end
+
+   local inner_name, outer_name = outer.run()
+   assert(inner_name is 'defer inner' and outer_name is 'defer outer',
+      'Nested contextual calls should retain their receivers through normal returns')
+   assert(observed[0] is 'inner:defer inner' and observed[1] is 'outer:defer outer',
+      'Normal-exit defers should observe their owning contextual calls in restoration order')
+   assert(.name is nil, 'Normal-exit defer cleanup should finish in the root context')
+end
+
+@Test function ActiveContextsSurviveStackGrowthAndFullCollection()
+   local outer = context { name = 'stack outer' }
+   local inner = context { name = 'stack inner' }
+
+   function recurse(Count:num):str
+      if Count <= 0 then
+         processing.collect('full')
+         return .name
+      end
+      local observed = recurse(Count - 1)
+      assert(.name is 'stack inner', 'Stack contraction should retain the inherited context')
+      return observed
+   end
+
+   function inner.run():str
+      return recurse(192)
+   end
+
+   function outer.run():<str, str>
+      local inner_name = inner.run()
+      return inner_name, .name
+   end
+
+   jit.off()
+   local inner_name, outer_name = outer.run()
+   jit.on()
+   assert(inner_name is 'stack inner' and outer_name is 'stack outer',
+      'Stack relocation and full collection should preserve every active contextual receiver')
+   assert(.name is nil, 'Stack and collection lifecycle work should restore the root context')
+end
+
 @Test function DelayedCallbacksAreUnbound()
    .glDelayedContextName = 'root'
    .glDelayedObservedContext = nil
@@ -1121,4 +1180,77 @@ end
    assert(aborted > 0, 'A low tail unroll limit should exercise recorder abort cleanup')
    assert(compiled > 0, 'Retrying with a sufficient tail unroll limit should compile recursive traces')
    assert(.name is nil, 'Recursive tail completion, aborts and side exits should restore the root context')
+end
+
+@Test(hotpath=80) function JITTraceFlushInsideContextPreservesLifecycle()
+   local target = context { name = 'flush target' }
+
+   function target.read(Flush:bool):str
+      if Flush then jit.flush() end
+      return .name
+   end
+
+   function run(Count:num, FlushAt:num):str
+      local result = ''
+      for i in {0 to Count} do result = target.read(i is FlushAt) end
+      return result
+   end
+
+   jit.off()
+   local interpreted = run(96, -1)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run(96, 48)
+   local after_flush = run(96, -1)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted and after_flush is interpreted,
+      'Flushing traces from an active contextual call should preserve current and subsequent results')
+   assert(.name is nil, 'Trace flushing from an active contextual call should restore the root context')
+end
+
+@Test(hotpath=80) function JITBlacklistedContextualCalleeRestoresContext()
+   local target = context { name = 'blacklisted target' }
+
+   function target.read():str
+      return .name
+   end
+
+   function run(Count:num):str
+      local result = ''
+      for _ in {0 to Count} do result = target.read() end
+      return result
+   end
+
+   jit.off(target.read, true)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local aborted = 0
+   local blacklisted = 0
+   local last_reason:any = nil
+   local function trace_event(Event, TraceNo, Function, BytecodePosition, Reason)
+      if Event != 'abort' then return end
+      aborted++
+      last_reason = Reason
+      -- LJ_TRERR_BLACKL is the append-only trace error value 5.
+      if Reason is 5 then blacklisted++ end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = run(256)
+   jit.attach(trace_event)
+   jit.off()
+   jit.opt.start()
+
+   assert(result is 'blacklisted target',
+      'A contextual call into a blacklisted callee should continue correctly in the interpreter')
+   assert(aborted > 0 and blacklisted > 0,
+      f'The contextual workload should exercise the recorder blacklisting abort path ' ..
+      f'(aborted={aborted}, reason={last_reason})')
+   assert(.name is nil, 'A blacklisted contextual callee should restore the root context')
 end

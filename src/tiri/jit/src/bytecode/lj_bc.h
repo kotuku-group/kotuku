@@ -289,7 +289,12 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(CTXENTER,  base, ___, ___, ___) \
   _(CTXCALLT,  base, ___, lit, call) \
   /* Permanent contextual designation of a freshly materialised table in A. */ \
-  _(TCTX,      var,  ___, ___, ___)
+  _(TCTX,      var,  ___, ___, ___) \
+  /* Materialised temporary context blocks. */ \
+  _(CTXBEGIN,  var,  ___, lit, ___) \
+  _(CTXEND,    ___,  ___, lit, ___) \
+  _(CLOSEARM,  var,  ___, ___, ___) \
+  _(CLOSE,     var,  ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -461,8 +466,12 @@ typedef enum {
 
    // Permanent contextual table designation
    BC_TCTX   = 129,
+   BC_CTXBEGIN = 130,
+   BC_CTXEND = 131,
+   BC_CLOSEARM = 132,
+   BC_CLOSE = 133,
 
-   BC__MAX   = 130
+   BC__MAX   = 134
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

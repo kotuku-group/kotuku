@@ -333,6 +333,7 @@ struct FuncScope {
    MSize vstart;           // Start of block-local variables.
    uint8_t nactvar;        // Number of active vars outside the scope.
    FuncScopeFlag flags;    // Scope flags.
+   uint16_t context_block; // Temporary context descriptor, or UINT16_MAX.
 };
 
 // Type-safe special variable names to replace legacy sentinel pointers.

@@ -121,6 +121,7 @@ enum class AstNodeKind : uint16_t {
    ReturnStmt,
    DeferStmt,
    DoStmt,
+   ContextStmt,
    ConditionalShorthandStmt,
    TryExceptStmt,  // try...except...end exception handling
    RaiseStmt,      // raise error_code [, message] or raise message
@@ -631,6 +632,12 @@ struct TryBlockDesc {
    uint8_t  flags;           // Bit 0 = TRY_FLAG_TRACE (capture stack trace on exception)
 };
 
+struct ProtoContextBlockDesc {
+   BCPOS begin_pc = 0;
+   BCPOS end_pc = 0;
+   BCREG entry_slots = 0;
+};
+
 // Flags for TryBlockDesc.flags
 
 inline constexpr uint8_t TRY_FLAG_TRACE = 0x01;  // Capture stack trace on exception
@@ -790,6 +797,8 @@ struct TryFrame {
    uint16_t  try_block_index;  // Index into GCproto::try_blocks
    uint8_t   flags;            // Copy of TryBlockDesc.flags (e.g. TRY_FLAG_TRACE)
    BCREG     saved_nactvar;    // Active slot count at try entry (first free register)
+   size_t    context_depth;     // Absolute context-stack depth at try entry
+   size_t    context_floor;     // Active asynchronous root floor at try entry
 };
 
 // Stack of try frames for exception unwinding
@@ -830,6 +839,8 @@ typedef struct GCproto {
    TryHandlerDesc *try_handlers;      // Array of handler descriptors (nullptr if none)
    uint16_t        try_block_count;   // Number of try blocks
    uint16_t        try_handler_count; // Number of handlers
+   ProtoContextBlockDesc *context_blocks; // Temporary context block descriptors
+   uint16_t        context_block_count;
    // Module dependency metadata.  'dependencies' is a colocated portable descriptor block containing canonical names
    // only; 'resolved_dependencies' is a separately allocated sidecar of non-owning pointers to the global registry's
    // callable records, built on first activation and freed with the prototype.
@@ -946,6 +957,8 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->try_handlers = nullptr;
    Proto->try_block_count = 0;
    Proto->try_handler_count = 0;
+   Proto->context_blocks = nullptr;
+   Proto->context_block_count = 0;
    setmref(Proto->dependencies, nullptr);
    Proto->resolved_dependencies = nullptr;
    Proto->resolved_count = 0;
@@ -1640,8 +1653,12 @@ struct lua_State {
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
 
    struct ContextFrame {
+      enum class OwnerKind : uint8_t { Call, Block };
       GCRef table;                 // GC-visible context override owned by this state.
       ptrdiff_t owner_base = 0;    // Stack-relative activation base; survives stack relocation.
+      OwnerKind owner_kind = OwnerKind::Call;
+      uint16_t block_index = UINT16_MAX;
+      BCREG entry_slots = 0;
       bool tail_transfer = false;  // Recorded terminal returns must restore transferred frame ownership.
    };
 
@@ -1653,6 +1670,12 @@ struct lua_State {
    // An asynchronous root boundary hides, but does not remove, suspended overrides. Keeping them in context_stack
    // ensures that the collector continues to trace their tables while a callback runs and performs collection.
    std::vector<size_t> context_root_floors;
+
+   struct CloseFrameState {
+      ptrdiff_t owner_base = 0;
+      uint64_t armed_slots = 0;
+   };
+   std::vector<CloseFrameState> close_frames;
 
    struct SavedMultresFrame {
       ptrdiff_t frame_base = 0;

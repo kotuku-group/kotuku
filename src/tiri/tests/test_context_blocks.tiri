@@ -1,0 +1,178 @@
+-- Flute coverage for temporary `context Reference do ... end` activation.
+
+@BeforeEach(hotpath=40)
+function enforce_hotpath() end
+
+@Test function TemporaryContextDoesNotDesignateAndEvaluatesReferenceOnce()
+   local lookups = 0
+   local values = { { name = 'temporary' } }
+
+   function index():num
+      lookups++
+      return 0
+   end
+
+   values[0].read = function():str
+      return .name
+   end
+   function read():str
+      return .name
+   end
+
+   context values[index()] do
+      assert(.name is 'temporary', 'The selected table should be active inside the block')
+      assert(read() is 'temporary', 'Direct calls should inherit a temporary block context')
+   end
+
+   assert(lookups is 1, 'The context reference must be evaluated exactly once')
+   assert(values[0].read() is nil, 'Temporary activation must not permanently designate the table')
+end
+
+@Test function NestedBlocksRestoreInStackOrder()
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+
+   context outer do
+      assert(.name is 'outer')
+      context inner do
+         assert(.name is 'inner')
+      end
+      assert(.name is 'outer', 'Leaving an inner block should restore its outer block')
+   end
+   assert(.name is nil, 'Leaving the outer block should restore the dynamic root')
+end
+
+@Test function NormalCleanupRunsCloseThenDeferBeforeLeavingContext()
+   local receiver = { name = 'cleanup' }
+   local events = {}
+   local mt = {
+      __close = function()
+         events.insert('close:' .. .name)
+      end
+   }
+
+   context receiver do
+      defer
+         events.insert('defer:' .. .name)
+      end
+      local resource <close> = setmetatable({}, mt)
+   end
+
+   assert(events[0] is 'close:cleanup' and events[1] is 'defer:cleanup',
+      'Normal cleanup should run close then defer under the lexical block context')
+end
+
+@Test function ReturnBreakAndContinueLeaveEveryCrossedBlock()
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+
+   function return_from_blocks():str
+      context outer do
+         context inner do
+            return .name
+         end
+      end
+      return 'unreachable'
+   end
+
+   assert(return_from_blocks() is 'inner')
+   assert(.name is nil, 'A return should remove every crossed block activation')
+
+   local observations = {}
+   for i in {0 to 3} do
+      context outer do
+         if i is 0 then continue end
+         observations.insert(.name)
+         break
+      end
+   end
+   assert(observations[0] is 'outer')
+   assert(.name is nil, 'Loop exits should leave crossed temporary contexts')
+end
+
+@Test function ErrorCleanupUsesLexicalContextAndSkipsDefers()
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+   local events = {}
+   local mt = {
+      __close = function(Self, Error)
+         events.insert('close:' .. .name)
+         assert(Error != nil, 'Error cleanup should pass the active error to __close')
+      end
+   }
+
+   context outer do
+      try
+         context inner do
+            defer
+               events.insert('defer')
+            end
+            local resource <close> = setmetatable({}, mt)
+            error('block failure')
+         end
+      except e
+         assert(.name is 'outer', 'The handler should resume in the surviving outer context')
+      end
+   end
+
+   assert(events[0] is 'close:inner' and #events is 1,
+      'Error cleanup should run close under the block context and retain unsupported defer semantics')
+   assert(.name is nil)
+end
+
+@Test function RaisingCloseDoesNotLeakOrRunTwice()
+   local outer = { name = 'outer' }
+   local inner = { name = 'inner' }
+   local closes = 0
+   local mt = {
+      __close = function()
+         closes++
+         error('close failure')
+      end
+   }
+
+   context outer do
+      try
+         context inner do
+            local resource <close> = setmetatable({}, mt)
+         end
+      except e
+         assert(e.message.find('close failure') != nil)
+         assert(.name is 'outer', 'A raising close must still remove the abandoned inner activation')
+      end
+   end
+
+   assert(closes is 1, 'A consumed close slot must not run twice during replacement-error unwinding')
+   assert(.name is nil)
+end
+
+@Test function ClosuresDoNotCaptureTemporaryContext()
+   local receiver = { name = 'ephemeral' }
+   local callback = nil
+
+   context receiver do
+      callback = function():any
+         return .name
+      end
+      assert(callback() is 'ephemeral', 'A synchronous direct call should inherit the active context')
+   end
+
+   assert(callback() is nil, 'A closure created in a context block must not retain that activation')
+end
+
+@Test function RecordedBlocksRemainMaterialisedAcrossSideExits()
+   local receiver = { total = 0 }
+   function add(Value:num)
+      .total += Value
+   end
+
+   for i in {0 to 120} do
+      context receiver do
+         add(1)
+         if i is 93 then assert(.total is 94) end
+      end
+   end
+
+   assert(receiver.total is 120)
+   assert(.total is nil, 'Recorded block exits should restore the root context')
+end

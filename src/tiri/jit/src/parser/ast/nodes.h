@@ -897,6 +897,18 @@ struct DoStmtPayload {
    ~DoStmtPayload();
 };
 
+struct ContextStmtPayload {
+   ContextStmtPayload(ExprNodePtr Reference, std::unique_ptr<BlockStmt> Block)
+      : reference(std::move(Reference)), block(std::move(Block)) {}
+   ContextStmtPayload(const ContextStmtPayload&) = delete;
+   ContextStmtPayload& operator=(const ContextStmtPayload&) = delete;
+   ContextStmtPayload(ContextStmtPayload&&) noexcept = default;
+   ContextStmtPayload& operator=(ContextStmtPayload&&) noexcept = default;
+   ExprNodePtr reference;
+   std::unique_ptr<BlockStmt> block;
+   ~ContextStmtPayload();
+};
+
 struct ConditionalShorthandStmtPayload {
    ConditionalShorthandStmtPayload(ExprNodePtr condition, StmtNodePtr body)
       : condition(std::move(condition)), body(std::move(body)) {}
@@ -1030,7 +1042,7 @@ struct StmtNode {
       ExternDeclStmtPayload, LocalFunctionStmtPayload, FunctionStmtPayload, IfStmtPayload,
       LoopStmtPayload, NumericForStmtPayload, RangeForStmtPayload, GenericForStmtPayload,
       ReturnStmtPayload, BreakStmtPayload, ContinueStmtPayload, DeferStmtPayload,
-      DoStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
+      DoStmtPayload, ContextStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
       RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, WithStmtPayload,
       ExpressionStmtPayload>
       data;

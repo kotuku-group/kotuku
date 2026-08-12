@@ -872,6 +872,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
 {
    Token current = this->ctx.tokens().current();
 
+   if (current.kind() IS TokenKind::Identifier and token_identifier_is(current, "context") and
+       this->is_context_block_ahead()) {
+      return this->parse_context();
+   }
+
    if (current.kind() IS TokenKind::Identifier and current.identifier() and
          std::string_view(strdata(current.identifier()), current.identifier()->len) IS "struct" and
          this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier) {
@@ -939,6 +944,35 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
 
       default:
          return this->parse_expression_stmt();
+   }
+}
+
+bool AstBuilder::is_context_block_ahead() const
+{
+   size_t position = 1;
+   if (this->ctx.tokens().peek(position).kind() != TokenKind::Identifier) return false;
+   position++;
+
+   while (true) {
+      TokenKind kind = this->ctx.tokens().peek(position).kind();
+      if (kind IS TokenKind::Dot) {
+         if (this->ctx.tokens().peek(position + 1).kind() != TokenKind::Identifier) return false;
+         position += 2;
+         continue;
+      }
+      if (kind IS TokenKind::LeftBracket) {
+         int depth = 1;
+         position++;
+         while (depth > 0) {
+            kind = this->ctx.tokens().peek(position).kind();
+            if (kind IS TokenKind::EndOfFile) return false;
+            if (kind IS TokenKind::LeftBracket) depth++;
+            else if (kind IS TokenKind::RightBracket) depth--;
+            position++;
+         }
+         continue;
+      }
+      return kind IS TokenKind::DoToken;
    }
 }
 

@@ -288,7 +288,7 @@ end
 
 @Test function FunctionMethodCalls()
    -- Create object-like tables with methods
-   local Counter = {
+   local Counter = context {
       value = 0,
       increment = function():num
          .value++
@@ -310,7 +310,7 @@ end
       end
    }
 
-   local Point = {
+   local Point = context {
       x = 0,
       y = 0,
       set = function(x, y)
@@ -342,7 +342,7 @@ end
       local d = Point.distance()
 
       -- Create new instances
-      local instance = { value = 0 }
+      local instance = context { value = 0 }
       setmetatable(instance, { __index = Counter })
       instance.increment()
       instance.add(10)

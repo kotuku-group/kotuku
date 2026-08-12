@@ -44,9 +44,10 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // mod['\31dependency'] activation call with BC_MODACT.  Version 0x88 adds BC_BFUNC and makes generated fast-function
 // ordering part of the private bytecode ABI.  Version 0x8a adds BC_BMETH runtime method dispatch.  Version 0x8c adds
 // BC_TCTX contextual table designation and cuts over to opt-in table context, which changes the meaning of every
-// existing contextual call sequence.  Older chunks are rejected rather than retaining compatibility shims.
+// existing contextual call sequence.  Version 0x8d adds materialised temporary context blocks and consuming close
+// activation bytecodes.  Older chunks are rejected rather than retaining compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x8c;
+constexpr uint8_t BCDUMP_VERSION = 0x8d;
 
 // Compatibility flags.
 
