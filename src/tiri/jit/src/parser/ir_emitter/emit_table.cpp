@@ -5,7 +5,7 @@
 //********************************************************************************************************************
 // Emit bytecode for a table constructor expression ({key=value, [expr]=value, value}), optimising constant fields.
 
-ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload)
+ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload, bool AssociateFunctions)
 {
    FuncState* fs = &this->func_state;
    GCtab* template_table = nullptr;
@@ -68,7 +68,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
       if (field.kind != TableFieldKind::Array and field.value->kind IS AstNodeKind::FunctionExpr) {
          this->lex_state.lastline = field.value->span.line;
          value_result = this->emit_function_expr(
-            std::get<FunctionExprPayload>(field.value->data), nullptr, true);
+            std::get<FunctionExprPayload>(field.value->data), nullptr, AssociateFunctions);
       }
       else value_result = this->emit_expression(*field.value);
       if (not value_result.ok()) return value_result;

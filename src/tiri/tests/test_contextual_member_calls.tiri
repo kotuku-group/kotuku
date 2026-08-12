@@ -1,6 +1,7 @@
 -- Flute regression tests for table-gated contextual member calls.
 
 import 'json'
+import './context_namespace_fixture'
 module core as mCore
 
 @Test function NamedAndComputedTableCallsEstablishContext()
@@ -594,6 +595,29 @@ end
       'A function literal assigned to a computed table field should be associated with that table')
 
    .glContextualAssociationName = nil
+end
+
+@Test function ScriptNamespaceExportsInheritTheirCallerContext()
+   .glContextualNamespaceName = 'root context'
+
+   assert(context_namespace_fixture.initialised() is 'root context',
+      'A script namespace export created in its table initialiser should not establish namespace context')
+   assert(context_namespace_fixture.assigned() is 'root context',
+      'A directly assigned script namespace export should not establish the namespace as context')
+   assert(context_namespace_fixture.declared() is 'root context',
+      'A declared script namespace export should not establish the namespace as context')
+   assert(context_namespace_fixture.computed() is 'root context',
+      'A computed script namespace export should not establish the namespace as context')
+   assert(context_namespace_fixture.client.initialised() is 'client table',
+      'A nested client method created in a namespace table initialiser should remain table-associated')
+   assert(context_namespace_fixture.direct_client.initialised() is 'direct client table',
+      'A client table assigned to a namespace export should retain associated functions from its initialiser')
+   assert(context_namespace_fixture.client.assigned() is 'client table',
+      'A nested client method assigned within a namespace library should remain table-associated')
+   assert(context_namespace_fixture.client.declared() is 'client table',
+      'A nested client method declared within a namespace library should remain table-associated')
+
+   .glContextualNamespaceName = nil
 end
 
 @Test function StaticStructureMemberCallsBypassContextBytecode()

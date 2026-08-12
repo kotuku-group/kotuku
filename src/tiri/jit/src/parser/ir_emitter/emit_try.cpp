@@ -396,7 +396,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
 
       // Mark as const
       VarInfo* info = &fs->var_get(fs->varmap.size() - 1);
-      info->info |= VarInfoFlag::Const;
+      info->info |= VarInfoFlag::Const | VarInfoFlag::ScriptNamespace;
 
       // Update binding table
       this->update_local_binding(ns_id.symbol, BCReg(fs->varmap.size() - 1));

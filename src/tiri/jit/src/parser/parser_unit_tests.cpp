@@ -1923,6 +1923,51 @@ static bool test_table_association_metadata_roundtrip(kt::Log &Log)
    return verify("reloaded");
 }
 
+static bool test_script_namespace_function_association(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   lua_newtable(lua);
+   lua_setglobal(lua, "_LIB");
+   constexpr std::string_view source =
+      "namespace 'association_fixture'\n"
+      "_LIB[_NS] = function() end\n"
+      "local registry_callable = _LIB[_NS]\n"
+      "_LIB[_NS] = { initialised = function() end, client = { initialised = function() end } }\n"
+      "exports = _LIB[_NS]\n"
+      "exports.assigned = function() end\n"
+      "function exports.declared() end\n"
+      "local key = 'computed'\n"
+      "exports[key] = function() end\n"
+      "exports.direct_client = { initialised = function() end }\n"
+      "exports.client.assigned = function() end\n"
+      "function exports.client.declared() end\n"
+      "return registry_callable, exports.initialised, exports.assigned, exports.declared, exports.computed, "
+         "exports.client.initialised, exports.direct_client.initialised, exports.client.assigned, "
+         "exports.client.declared\n";
+
+   if (lua_load(lua, source, "@script-namespace-association.tiri") or lua_pcall(lua, 0, 9, 0)) {
+      Log.error("failed to execute script namespace association fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   bool valid = true;
+   for (int i = 0; i < 9; ++i) valid = valid and tvisfunc(lua->top - 9 + i);
+   std::array<bool, 9> associated;
+   for (int i = 0; i < 9; ++i) associated[i] = func_is_table_associated(funcV(lua->top - 9 + i));
+   for (int i = 0; i < 5; ++i) valid = valid and not associated[i];
+   for (int i = 5; i < 9; ++i) valid = valid and associated[i];
+   lua_pop(lua, 9);
+
+   if (not valid) {
+      Log.error("script namespace association metadata was registry=%d initialised=%d assigned=%d declared=%d "
+         "computed=%d nested-initialised=%d direct-client=%d nested-assigned=%d nested-declared=%d", int(associated[0]),
+         int(associated[1]), int(associated[2]), int(associated[3]), int(associated[4]), int(associated[5]),
+         int(associated[6]), int(associated[7]), int(associated[8]));
+   }
+   return valid;
+}
+
 static bool test_malformed_signature_rejected(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -7347,7 +7392,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 65> tests = { {
+   constexpr std::array<TestCase, 66> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7375,6 +7420,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
       { "table_association_metadata_roundtrip", test_table_association_metadata_roundtrip },
+      { "script_namespace_function_association", test_script_namespace_function_association },
       { "forward_declaration_signature_validation", test_forward_declaration_signature_validation },
       { "old_bytecode_versions_rejected", test_old_bytecode_versions_rejected },
       { "unmatched_context_entry_rejected", test_unmatched_context_entry_rejected },

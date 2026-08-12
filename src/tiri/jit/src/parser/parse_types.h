@@ -79,7 +79,8 @@ enum class VarInfoFlag : uint8_t {
    Defer = 0x08u,
    DeferArg = 0x10u,
    Close = 0x20u,
-   Const = 0x40u  // Variable is const (cannot be reassigned)
+   Const = 0x40u,  // Variable is const (cannot be reassigned)
+   ScriptNamespace = 0x80u // Local binding loaded from the script namespace registry
 };
 
 // Transient parser-side form of a runtime contract.  The raw structure definition is used only while compiling;

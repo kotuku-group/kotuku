@@ -24,9 +24,34 @@ static bool contains_safe_nav_target(const ExprNode& Expr)
    }
 }
 
-static bool emit_identifier_name_is(GCstr *Name, std::string_view Text)
+static bool emit_identifier_is_script_namespace(LexState &State, GCstr *Name)
 {
-   return Name and std::string_view(strdata(Name), Name->len) IS Text;
+   if (not Name) return false;
+
+   ExpDesc resolved;
+   State.var_lookup_symbol(Name, &resolved);
+   return resolved.k IS ExpKind::Local and has_flag(State.vstack[resolved.u.s.aux].info,
+      VarInfoFlag::ScriptNamespace);
+}
+
+static bool emit_target_is_script_namespace_export(LexState &State, const ExprNode &Target)
+{
+   const ExprNode *receiver = emit_assignment_direct_receiver(Target);
+   if (not receiver or receiver->kind != AstNodeKind::IdentifierExpr) return false;
+
+   const auto *reference = std::get_if<NameRef>(&receiver->data);
+   if (not reference or not reference->identifier.symbol) return false;
+   return emit_identifier_name_is(reference->identifier.symbol, "_LIB") or
+      emit_identifier_is_script_namespace(State, reference->identifier.symbol);
+}
+
+static bool emit_target_initialises_script_namespace(const ExprNode &Target)
+{
+   const ExprNode *receiver = emit_assignment_direct_receiver(Target);
+   if (not receiver or receiver->kind != AstNodeKind::IdentifierExpr) return false;
+
+   const auto *reference = std::get_if<NameRef>(&receiver->data);
+   return reference and emit_identifier_name_is(reference->identifier.symbol, "_LIB");
 }
 
 static GCstr * emit_literal_string_key(const ExprNode &Expr)
@@ -287,6 +312,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
             this->lex_state.lastline = node->span.line;
             value = this->emit_function_expr(std::get<FunctionExprPayload>(node->data), nullptr, true);
          }
+         else if (i < targets.size() and targets[i].initialises_script_namespace and
+            node->kind IS AstNodeKind::TableExpr) {
+            value = this->emit_table_expr(std::get<TableExprPayload>(node->data), false);
+         }
          else value = this->emit_expression(*node);
 
          if (not value.ok()) return value;
@@ -378,6 +407,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
          if (target.pending_symbol) {
             this->update_local_binding(target.pending_symbol, base + i);
 
+            if (i.raw() < values.size() and emit_expression_is_script_namespace_lookup(*values[i.raw()])) {
+               this->func_state.var_get(base.raw() + i.raw()).info |= VarInfoFlag::ScriptNamespace;
+            }
+
             if (i.raw() < values.size()) {
                this->apply_inferred_local_type(base + i, *values[i.raw()]);
             }
@@ -395,6 +428,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       auto list = emit_assignment_values(nexps);
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
       tail = list.value_ref();
+   }
+
+   for (size_t i = 0; i < targets.size() and i < values.size(); ++i) {
+      if (targets[i].storage.k != ExpKind::Local) continue;
+      VarInfo &info = this->lex_state.vstack[targets[i].storage.u.s.aux];
+      if (emit_expression_is_script_namespace_lookup(*values[i])) info.info |= VarInfoFlag::ScriptNamespace;
+      else clear_flag(info.info, VarInfoFlag::ScriptNamespace);
    }
 
    RegisterAllocator allocator(&this->func_state);
@@ -441,6 +481,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
          if (target.needs_var_add and target.pending_symbol) {
             // Create new local for this undeclared variable
             BCReg local_slot = this->finalise_pending_local_assignment(target);
+
+            if (i < values.size() and emit_expression_is_script_namespace_lookup(*values[i])) {
+               this->func_state.var_get(local_slot.raw()).info |= VarInfoFlag::ScriptNamespace;
+            }
 
             // Retain expression inference only when semantic analysis did not publish a binding result.
             if (this->func_state.var_get(local_slot.raw()).fixed_type IS TiriType::Unknown and
@@ -872,7 +916,11 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
       if (not lvalue.ok()) return ParserResult<std::vector<PreparedAssignment>>::failure(lvalue.error_ref());
 
       ExpDesc slot = lvalue.value_ref();
-      prepared.associates_function_literal = slot.k IS ExpKind::Indexed;
+      bool script_namespace_export = this->is_root_chunk and
+         emit_target_is_script_namespace_export(this->lex_state, *node);
+      prepared.initialises_script_namespace = this->is_root_chunk and
+         emit_target_initialises_script_namespace(*node);
+      prepared.associates_function_literal = slot.k IS ExpKind::Indexed and not script_namespace_export;
 
       // Check if this is an Unscoped variable that needs a new local
       // Keep it as Unscoped and defer local creation until after expression evaluation

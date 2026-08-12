@@ -827,8 +827,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
    auto target_result = this->emit_function_lvalue(Payload.name);
    if (not target_result.ok()) return ParserResult<IrEmitUnit>::failure(target_result.error_ref());
    // Pass the function name for tostring() support
+   bool direct_namespace_export = this->is_root_chunk and Payload.name.segments.size() IS 2 and
+      (emit_identifier_name_is(Payload.name.segments.front().symbol, "_LIB") or
+       emit_identifier_is_script_namespace(this->lex_state, Payload.name.segments.front().symbol));
    auto function_value = this->emit_function_expr(
-      *Payload.function, funcname, Payload.name.segments.size() > 1);
+      *Payload.function, funcname, Payload.name.segments.size() > 1 and not direct_namespace_export);
    if (not function_value.ok()) return ParserResult<IrEmitUnit>::failure(function_value.error_ref());
 
    ExpDesc target = target_result.value_ref();

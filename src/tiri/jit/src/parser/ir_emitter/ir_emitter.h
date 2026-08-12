@@ -119,6 +119,7 @@ struct PreparedAssignment {
    bool newly_created = false;   // True if a new local was created for an undeclared variable
    bool needs_var_add = false;   // True if var_add() must be called after expression evaluation
    bool associates_function_literal = false; // True when a direct function literal is stored in a table field
+   bool initialises_script_namespace = false; // True when a table constructor is assigned directly into _LIB
    GCstr* pending_symbol = nullptr;  // Symbol name for deferred var_add
    StaticBindingID binding_id = 0;
    BCLine pending_line = 0;      // Line number for deferred variable declaration
@@ -221,7 +222,7 @@ private:
    ParserResult<ExpDesc> emit_runtime_builtin_method_pipe(
       const PipeExprPayload& payload, const CallExprPayload& call);
    ParserResult<ExpDesc> emit_result_filter_expr(const ResultFilterPayload& payload);
-   ParserResult<ExpDesc> emit_table_expr(const TableExprPayload& payload);
+   ParserResult<ExpDesc> emit_table_expr(const TableExprPayload& payload, bool AssociateFunctions = true);
    ParserResult<ExpDesc> emit_range_expr(const RangeExprPayload& payload);
    ParserResult<ExpDesc> emit_choose_expr(const ChooseExprPayload& payload);
    ParserResult<ExpDesc> emit_function_expr(const FunctionExprPayload& payload, GCstr* FuncName = nullptr,

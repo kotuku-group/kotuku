@@ -1,0 +1,42 @@
+namespace 'context_namespace_fixture'
+
+_LIB[_NS] = {
+   initialised = function():str
+      return .glContextualNamespaceName
+   end,
+   client = {
+      glContextualNamespaceName = 'client table',
+      initialised = function():str
+         return .glContextualNamespaceName
+      end
+   }
+}
+local namespace_exports = _LIB[_NS]
+
+namespace_exports.assigned = function():str
+   return .glContextualNamespaceName
+end
+
+function namespace_exports.declared():str
+   return .glContextualNamespaceName
+end
+
+local computed_name = 'computed'
+namespace_exports[computed_name] = function():str
+   return .glContextualNamespaceName
+end
+
+namespace_exports.direct_client = {
+   glContextualNamespaceName = 'direct client table',
+   initialised = function():str
+      return .glContextualNamespaceName
+   end
+}
+
+namespace_exports.client.assigned = function():str
+   return .glContextualNamespaceName
+end
+
+function namespace_exports.client.declared():str
+   return .glContextualNamespaceName
+end

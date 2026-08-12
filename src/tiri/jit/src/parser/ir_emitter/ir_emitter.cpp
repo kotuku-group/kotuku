@@ -40,6 +40,29 @@ inline const TiriConstant * lookup_constant(const GCstr *Name)
 
 static bool is_named_external_global(GCstr *Name);
 
+static bool emit_identifier_name_is(GCstr *Name, std::string_view Text)
+{
+   return Name and std::string_view(strdata(Name), Name->len) IS Text;
+}
+
+static const ExprNode * emit_assignment_direct_receiver(const ExprNode &Target)
+{
+   if (Target.kind IS AstNodeKind::MemberExpr) return std::get<MemberExprPayload>(Target.data).table.get();
+   if (Target.kind IS AstNodeKind::IndexExpr) return std::get<IndexExprPayload>(Target.data).table.get();
+   if (Target.kind IS AstNodeKind::SafeMemberExpr) return std::get<SafeMemberExprPayload>(Target.data).table.get();
+   if (Target.kind IS AstNodeKind::SafeIndexExpr) return std::get<SafeIndexExprPayload>(Target.data).table.get();
+   return nullptr;
+}
+
+static bool emit_expression_is_script_namespace_lookup(const ExprNode &Expression)
+{
+   const ExprNode *receiver = emit_assignment_direct_receiver(Expression);
+   if (not receiver or receiver->kind != AstNodeKind::IdentifierExpr) return false;
+
+   const auto *reference = std::get_if<NameRef>(&receiver->data);
+   return reference and emit_identifier_name_is(reference->identifier.symbol, "_LIB");
+}
+
 //********************************************************************************************************************
 // Determine whether a constant integer range can use its visible value as the numeric loop induction variable.
 
@@ -1510,6 +1533,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
       info->binding_id = identifier.binding_id;
       info->static_value = identifier.static_value;
+      if (i.raw() < Payload.values.size() and
+          emit_expression_is_script_namespace_lookup(*Payload.values[i.raw()])) {
+         info->info |= VarInfoFlag::ScriptNamespace;
+      }
       if (identifier.binding_id) {
          const auto &binding = this->ctx.descriptors().binding(identifier.binding_id);
          info->static_callable = binding.callable;
