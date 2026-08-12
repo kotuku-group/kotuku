@@ -59,6 +59,26 @@ end
       'A returned contextual call should complete restoration before returning to its caller')
 end
 
+@Test function DynamicBuiltinFallbackCallsUseTheRuntimeTableGate()
+   local holder = {
+      target = context { total = 0 }
+   }
+
+   function holder.target.add(Value:num):num
+      .total += Value
+      return .total
+   end
+
+   assert(holder.target.add(4) is 4,
+      'A dynamic built-in fallback should establish a contextual field receiver')
+   assert(5 |> holder.target.add() is 9,
+      'A piped dynamic built-in fallback should preserve contextual results')
+
+   local maybe:any = holder.target
+   assert(maybe?.add(3) is 12,
+      'A safe dynamic built-in fallback should use the runtime table gate on its non-nil path')
+end
+
 @Test function CurrentContextMemberCallsUseOrdinaryCallBytecode()
    .glCurrentContextCallName = 'root'
    .glCurrentContextCallRead = function(Value:str):str

@@ -188,16 +188,12 @@ end
    -- Section 3.4: all three slice spellings share one implementation and must propagate identically, including
    -- when the result is empty.
    --
-   -- Each result is bound through an explicit `:table` annotation so the receiver classifies as a table.  Without
-   -- it, `range.slice()` declares a non-table result and the compiler suppresses the contextual call shape, which is
-   -- a static call-emission concern for Phase 4 rather than a failure of the runtime propagation asserted here.
-
-   local from_index:table = designated[{0 to 1}]
-   local from_range:table = range.slice(designated, {0 to 1})
-   local from_table:table = table.slice(designated, {0 to 1})
-   local empty_index:table = designated[{5 to 4}]
-   local empty_range:table = range.slice(designated, {5 to 4})
-   local empty_table:table = table.slice(designated, {5 to 4})
+   local from_index = designated[{0 to 1}]
+   local from_range = range.slice(designated, {0 to 1})
+   local from_table = table.slice(designated, {0 to 1})
+   local empty_index = designated[{5 to 4}]
+   local empty_range = range.slice(designated, {5 to 4})
+   local empty_table = table.slice(designated, {5 to 4})
 
    local spellings = {
       from_index, from_range, from_table, empty_index, empty_range, empty_table
@@ -211,10 +207,10 @@ end
    end
 
    local ordinary = { 10, 20, 30 }
-   local ordinary_index:table = ordinary[{0 to 1}]
-   local ordinary_range:table = range.slice(ordinary, {0 to 1})
-   local ordinary_table:table = table.slice(ordinary, {0 to 1})
-   local ordinary_empty:table = ordinary[{5 to 4}]
+   local ordinary_index = ordinary[{0 to 1}]
+   local ordinary_range = range.slice(ordinary, {0 to 1})
+   local ordinary_table = table.slice(ordinary, {0 to 1})
+   local ordinary_empty = ordinary[{5 to 4}]
 
    local ordinary_spellings = {
       ordinary_index, ordinary_range, ordinary_table, ordinary_empty
@@ -239,11 +235,8 @@ end
    local container = { inner = designated, name = 'container', read = probe_name }
    assert(container.read() is nil, 'A contextual element should not mark the table that contains it')
 
-   -- The nested table keeps its own designation.  It is bound to a typed local first because a chained
-   -- `container.inner.read()` receiver has no proved table classification, so the compiler suppresses the contextual
-   -- call shape; that static specialisation is Phase 4 work rather than a runtime propagation failure.
-   local nested:table = container.inner
-   assert(nested.read() is 'source', 'The nested contextual table should retain its own designation')
+   -- A chained field receiver has unknown static contextuality and therefore retains the runtime table gate.
+   assert(container.inner.read() is 'source', 'The nested contextual table should retain its own designation')
 
    -- A JSON round trip has no live table as its structural source.
    local decoded = json.decode(json.encode({ name = 'decoded', value = 1 }))

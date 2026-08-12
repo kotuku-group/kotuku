@@ -444,6 +444,9 @@ struct CallExprPayload {
    // Set when this is a direct call to the unshadowed built-in setmetatable() whose target the author owns.
    // Only an authorised call may promote an ordinary table to contextual; every other spelling raises at runtime instead.
    mutable bool authorised_contextual_designation = false;
+   // Static contextuality of the table returned by an authorised designation.  An unresolved metatable deliberately
+   // leaves this Unknown unless the target was already contextual.
+   mutable StaticContextuality contextual_designation_result = StaticContextuality::Unknown;
    mutable bool unresolved_method_reported = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object

@@ -1196,6 +1196,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                "tail call is not the final expression instruction");
             this->func_state.pc -= contextual_tail_call ? 2 : 1;
             if (contextual_tail_call) {
+               if (last.alternate_call != NO_JMP) {
+                  BCIns *alternate = &this->func_state.bcbase[last.alternate_call].ins;
+                  lj_assertX(bc_op(*alternate) IS BC_CALL,
+                     "contextual runtime method tail branch is not a fixed ordinary call");
+                  *alternate = BCINS_AD(BC_CALLT, bc_a(*alternate), bc_c(*alternate));
+               }
                ins = BCINS_AD(BC_CTXCALLT, bc_a(*ip), bc_c(*ip));
             }
             else {

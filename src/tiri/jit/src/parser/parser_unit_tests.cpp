@@ -1558,7 +1558,7 @@ static bool test_unmatched_context_entry_rejected(kt::Log &Log)
    LuaStateHolder state;
    lua_State *lua = state.get();
    constexpr std::string_view source =
-      "local receiver = { name='receiver', read=function():str return .name end }\n"
+      "local receiver = context { name='receiver', read=function():str return .name end }\n"
       "local value = receiver.read()\n"
       "return value\n";
    if (lua_load(lua, source, "unmatched-context-entry")) {
@@ -5533,8 +5533,10 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
       "local body = { values={} }\nbody.values.insert(1)\nreturn body.values[0]\n", true, error);
    const BCIns *dynamic_dispatch = dynamic ? find_opcode(*dynamic, BC_BMETH) : nullptr;
    if (not dynamic or not dynamic_dispatch or count_opcode(*dynamic, BC_BMETH) != 1 or
-       count_opcode(*dynamic, BC_CALL) != 2 or count_opcode(*dynamic, BC_JMP) != 1 or
-       count_opcode(*dynamic, BC_BFUNC) != 0 or bc_j(*dynamic_dispatch) <= 0) {
+       count_opcode(*dynamic, BC_CALL) != 1 or count_opcode(*dynamic, BC_CTXCALL) != 1 or
+       count_opcode(*dynamic, BC_CTXENTER) != 1 or count_opcode(*dynamic, BC_CTXLEAVE) != 1 or
+       count_opcode(*dynamic, BC_JMP) != 1 or count_opcode(*dynamic, BC_BFUNC) != 0 or
+       bc_j(*dynamic_dispatch) <= 0) {
       Log.error("unproved dot call did not emit the two-branch runtime method shape: %s", error.c_str());
       return false;
    }
@@ -5543,16 +5545,19 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto userdata = compile_snapshot(L,
       "local function use(Handle:userdata)\nHandle.write('x')\nHandle.close()\nend\n", true, error);
    if (not userdata or count_opcode_tree(*userdata, BC_BMETH) != 2 or
-       count_opcode_tree(*userdata, BC_CALL) != 4) {
+       count_opcode_tree(*userdata, BC_CALL) != 4 or count_opcode_tree(*userdata, BC_CTXCALL) != 0 or
+       count_opcode_tree(*userdata, BC_CTXENTER) != 0 or count_opcode_tree(*userdata, BC_CTXLEAVE) != 0) {
       Log.error("proved userdata calls did not emit runtime method dispatch: %s", error.c_str());
       return false;
    }
 
    error.clear();
    auto dynamic_tail = compile_snapshot(L,
-      "local Values:any = {}\nreturn Values.insert(1)\n", true, error);
+      "local Values:any = {}\nlocal function forward():<any, ...> return Values.insert(1) end\nreturn forward()\n",
+      true, error);
    if (not dynamic_tail or count_opcode_tree(*dynamic_tail, BC_BMETH) != 1 or
-       count_opcode_tree(*dynamic_tail, BC_CALLT) != 2) {
+       count_opcode_tree(*dynamic_tail, BC_CALLT) != 2 or count_opcode_tree(*dynamic_tail, BC_CTXCALLT) != 1 or
+       count_opcode_tree(*dynamic_tail, BC_CTXENTER) != 1) {
       Log.error("runtime built-in method tail branches did not both use CALLT: %s", error.c_str());
       return false;
    }
@@ -5561,7 +5566,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_forwarded = compile_snapshot(L,
       "local function item():num return 2 end\nlocal Values:any = {}\nValues.insert(item())\n", true, error);
    if (not dynamic_forwarded or count_opcode(*dynamic_forwarded, BC_BMETH) != 1 or
-       count_opcode(*dynamic_forwarded, BC_CALLM) != 2) {
+       count_opcode(*dynamic_forwarded, BC_CALLM) != 1 or
+       count_opcode(*dynamic_forwarded, BC_CTXCALLM) != 1) {
       Log.error("runtime built-in method argument forwarding lost either CALLM branch: %s", error.c_str());
       return false;
    }
@@ -5570,16 +5576,18 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_thunk = compile_snapshot(L,
       "local Values:any = {}\nValues.insert(thunk():num return 1 end)\n", true, error);
    if (not dynamic_thunk or count_opcode(*dynamic_thunk, BC_BMETH) != 1 or
-       count_opcode(*dynamic_thunk, BC_CALL) != 2) {
+       count_opcode(*dynamic_thunk, BC_CALL) != 2 or count_opcode(*dynamic_thunk, BC_CALLM) != 1 or
+       count_opcode(*dynamic_thunk, BC_CTXCALLM) != 1) {
       Log.error("runtime built-in method could not emit a thunk argument for both branches: %s", error.c_str());
       return false;
    }
 
    error.clear();
    auto dynamic_safe = compile_snapshot(L,
-      "local maybe:any = nil\nmaybe?.insert(1)\nreturn maybe\n", true, error);
-   if (not dynamic_safe or count_opcode(*dynamic_safe, BC_BMETH) != 1 or
-       count_opcode(*dynamic_safe, BC_ISEQP) != 2 or count_opcode(*dynamic_safe, BC_CALL) != 2) {
+      "local function use(Maybe:any) Maybe?.insert(1) end\n", true, error);
+   if (not dynamic_safe or count_opcode_tree(*dynamic_safe, BC_BMETH) != 1 or
+       count_opcode_tree(*dynamic_safe, BC_ISEQP) != 2 or count_opcode_tree(*dynamic_safe, BC_CALL) != 1 or
+       count_opcode_tree(*dynamic_safe, BC_CTXCALL) != 1) {
       Log.error("unproved safe dot call lost runtime dispatch or nil short-circuiting: %s", error.c_str());
       return false;
    }
@@ -5588,7 +5596,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_pipe = compile_snapshot(L,
       "local body = { values={} }\n1 |> body.values.insert()\nreturn body.values[0]\n", true, error);
    if (not dynamic_pipe or count_opcode(*dynamic_pipe, BC_BMETH) != 1 or
-       count_opcode(*dynamic_pipe, BC_CALL) != 2) {
+       count_opcode(*dynamic_pipe, BC_CALL) != 1 or count_opcode(*dynamic_pipe, BC_CTXCALL) != 1 or
+       count_opcode(*dynamic_pipe, BC_CTXENTER) != 1 or count_opcode(*dynamic_pipe, BC_CTXLEAVE) != 1) {
       Log.error("unproved piped dot call did not emit both runtime call frames: %s", error.c_str());
       return false;
    }
@@ -5623,6 +5632,67 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    return true;
 }
 
+// Phase 4 of the opt-in table context plan: specialise member-call bytecode from positive table contextuality.
+
+static bool test_contextual_call_specialisation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   lua_protect_globals(L);
+   std::string error;
+
+   auto ordinary = compile_snapshot(L,
+      "local target = { run = function():num return 1 end }\ntarget.run()\n", true, error);
+   if (not ordinary or count_opcode(*ordinary, BC_CALL) != 1 or count_opcode(*ordinary, BC_CTXENTER) != 0 or
+       count_opcode(*ordinary, BC_CTXCALL) != 0 or count_opcode(*ordinary, BC_CTXLEAVE) != 0) {
+      Log.error("a known ordinary table call retained contextual bytecode: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto contextual = compile_snapshot(L,
+      "local target = context { run = function():num return 1 end }\ntarget.run()\n", true, error);
+   if (not contextual or count_opcode(*contextual, BC_CTXENTER) != 1 or
+       count_opcode(*contextual, BC_CTXCALL) != 1 or count_opcode(*contextual, BC_CTXLEAVE) != 1) {
+      Log.error("a known contextual table call lost contextual bytecode: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto unknown = compile_snapshot(L,
+      "local function invoke(Target:any) Target.run() end\n", true, error);
+   if (not unknown or count_opcode_tree(*unknown, BC_CTXENTER) != 1 or
+       count_opcode_tree(*unknown, BC_CTXCALL) != 1 or count_opcode_tree(*unknown, BC_CTXLEAVE) != 1) {
+      Log.error("an unknown receiver lost its runtime contextual gate: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto derived = compile_snapshot(L,
+      "local source = context { 1 }\n"
+      "local sliced = range.slice(source, {0 to 1})\n"
+      "sliced.run = function():num return 1 end\nsliced.run()\n", true, error);
+   if (not derived or count_opcode(*derived, BC_CTXENTER) != 2 or
+       count_opcode(*derived, BC_CTXCALL) != 2 or count_opcode(*derived, BC_CTXLEAVE) != 2) {
+      Log.error("a statically derived contextual table lost contextual call lowering: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto designated = compile_snapshot(L,
+      "local mt = { __context = true }\n"
+      "local target = setmetatable({ run = function():num return 1 end }, mt)\n"
+      "target.run()\n", true, error);
+   if (not designated or count_opcode(*designated, BC_CTXENTER) != 1 or
+       count_opcode(*designated, BC_CTXCALL) != 1 or count_opcode(*designated, BC_CTXLEAVE) != 1) {
+      Log.error("a statically designated setmetatable result lost contextual call lowering: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_contextual_tail_call_bytecode_emission(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -5630,7 +5700,7 @@ static bool test_contextual_tail_call_bytecode_emission(kt::Log &Log)
    luaL_openlibs(lua);
    std::string error;
    constexpr std::string_view target =
-      "local target = { run = function():num return 1 end }\n";
+      "local target = context { run = function():num return 1 end }\n";
 
    auto root = compile_snapshot(lua, std::string(target) + "return target.run()\n", true, error);
    if (not root or count_opcode(*root, BC_CTXCALLT) != 0 or count_opcode(*root, BC_CTXCALL) != 1 or
@@ -7407,14 +7477,12 @@ static bool test_contextual_runtime_semantics(kt::Log &Log)
    lua_pushcfunction(L, unit_mark_contextual);
    lua_setglobal(L, "designate");
 
-   // Designation happens in place so that each receiver remains a plain local, which is the shape the compiler still
-   // lowers through the runtime contextual gate.  Phase 2 replaces this helper with real source syntax.
+   // The internal helper's result is intentionally unresolved to the compiler, so this Phase 1 runtime test exercises
+   // the dynamic positive flag gate rather than Phase 4's source-level designation proof.
    constexpr std::string_view source =
       "local ordinary = { name = 'ordinary' }\n"
-      "local designated = { name = 'designated' }\n"
-      "designate(designated)\n"
-      "local outer = { name = 'outer' }\n"
-      "designate(outer)\n"
+      "local designated = designate({ name = 'designated' })\n"
+      "local outer = designate({ name = 'outer' })\n"
       "function readName():str return .name end\n"
       "function ordinary.read():str return readName() end\n"
       "function designated.read():str return readName() end\n"
@@ -7610,14 +7678,14 @@ static bool test_contextual_designation_syntax(kt::Log &Log)
       return false;
    }
 
-   std::vector<uint8_t> dump;
+   std::string dump;
    if (lua_dump(L, bytecode_writer, &dump) != 0) {
       Log.error("failed to dump the contextual round-trip fixture");
       return false;
    }
    lua_settop(L, 0);
 
-   if (lua_load(L, std::string_view((const char *)dump.data(), dump.size()), "contextual-roundtrip")) {
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "contextual-roundtrip")) {
       Log.error("failed to reload the contextual round-trip fixture: %s", lua_tostring(L, -1));
       return false;
    }
@@ -7628,7 +7696,7 @@ static bool test_contextual_designation_syntax(kt::Log &Log)
    cTValue *value = tvistab(L->top - 1) ?
       lj_tab_getstr(tabV(L->top - 1), lj_str_newlit(L, "value")) : nullptr;
    if (not tvistab(L->top - 1) or not lj_tab_is_contextual(tabV(L->top - 1)) or
-       not value or not tvisint(value) or intV(value) != 7) {
+       not value or not tvisnumber(value) or numberVnum(value) != 7) {
       Log.error("the reloaded contextual constructor lost its designation or dynamic field value");
       return false;
    }
@@ -7995,7 +8063,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 70> tests = { {
+   constexpr std::array<TestCase, 71> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8051,6 +8119,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_static_classification", test_builtin_method_static_classification },
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
+      { "contextual_call_specialisation", test_contextual_call_specialisation },
       { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },
       { "object_call_result_descriptors", test_object_call_result_descriptors },

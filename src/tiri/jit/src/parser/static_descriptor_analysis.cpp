@@ -1075,7 +1075,14 @@ private:
       if (Call.results) {
          result = this->catalogue_.results(Call.results).value_at(0);
       }
-      if (auto array_type = this->array_constructor_type(Call)) {
+      if (Call.authorised_contextual_designation and not Call.arguments.empty()) {
+         result = this->descriptor_of(*Call.arguments.front());
+         result.primary = TiriType::Table;
+         result.proof = StaticProof::Closed;
+         result.nullable = false;
+         result.contextuality = Call.contextual_designation_result;
+      }
+      else if (auto array_type = this->array_constructor_type(Call)) {
          auto element = describe_array_element(array_type->first, &this->context_.lua());
          if (element) {
             result.primary = TiriType::Array;
@@ -1241,6 +1248,37 @@ private:
       }
    }
 
+   [[nodiscard]] StaticValueDescriptor table_derivation_call_descriptor(const CallExprPayload &Call) const
+   {
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr or
+          Call.arguments.empty()) return {};
+
+      const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+      const auto *base = member.table and member.table->kind IS AstNodeKind::IdentifierExpr ?
+         std::get_if<NameRef>(&member.table->data) : nullptr;
+      if (not base or base->binding_id or not base->identifier.symbol or not member.member.symbol or
+          member.member.symbol->hash != kt::strhash("slice")) return {};
+
+      uint32_t interface_hash = base->identifier.symbol->hash;
+      if (interface_hash != kt::strhash("range") and interface_hash != kt::strhash("table")) return {};
+
+      StaticValueDescriptor source = this->descriptor_of(*Call.arguments.front());
+      if (source.primary IS TiriType::Table or source.contextuality != StaticContextuality::Unknown or
+          interface_hash IS kt::strhash("table")) {
+         source.primary = TiriType::Table;
+         source.proof = source.proved() ? source.proof : StaticProof::Trusted;
+         source.nullable = false;
+         return source;
+      }
+      if (source.primary IS TiriType::Str) {
+         source.proof = source.proved() ? source.proof : StaticProof::Trusted;
+         source.nullable = false;
+         return source;
+      }
+      return {};
+   }
+
    [[nodiscard]] static StaticValueDescriptor array_element_value(
       const ArrayElementDescriptor &Element)
    {
@@ -1338,6 +1376,41 @@ private:
 
       if (proof.owned()) {
          Call.authorised_contextual_designation = true;
+         StaticContextuality target_contextuality = this->descriptor_of(target).contextuality;
+         if (marker_known) Call.contextual_designation_result = StaticContextuality::Contextual;
+         else if (metatable) Call.contextual_designation_result = target_contextuality;
+         else if (target_contextuality IS StaticContextuality::Contextual) {
+            Call.contextual_designation_result = StaticContextuality::Contextual;
+         }
+
+         // A known true or unresolved marker can change an owned allocation after earlier ordinary calls.  Invalidate
+         // other ordinary bindings conservatively because aliases share the same identity, then publish the precise
+         // post-call state on a direct target binding.  Literals allocated after this point are classified normally.
+         if (marker_known or not metatable) {
+            for (size_t id = 1; id < this->catalogue_.binding_count(); ++id) {
+               auto &binding = this->catalogue_.binding(StaticBindingID(id));
+               StaticValueDescriptor value = this->catalogue_.value(binding.value);
+               if (value.contextuality != StaticContextuality::Ordinary) continue;
+               value.contextuality = StaticContextuality::Unknown;
+               binding.value = this->add_value(value);
+            }
+
+            if (target.kind IS AstNodeKind::IdentifierExpr) {
+               auto &mutable_target = const_cast<ExprNode &>(target);
+               auto &reference = std::get<NameRef>(mutable_target.data);
+               if (reference.binding_id) {
+                  StaticValueDescriptor value = this->descriptor_of(target);
+                  value.primary = TiriType::Table;
+                  value.proof = StaticProof::Closed;
+                  value.nullable = false;
+                  value.contextuality = Call.contextual_designation_result;
+                  auto &binding = this->catalogue_.binding(reference.binding_id);
+                  binding.value = this->add_value(value);
+                  reference.identifier.static_value = binding.value;
+                  mutable_target.static_value = binding.value;
+               }
+            }
+         }
          return;
       }
 
@@ -1407,8 +1480,13 @@ private:
             break;
          case AstNodeKind::IdentifierExpr: {
             const auto &reference = std::get<NameRef>(Expression.data);
-            if (reference.binding_id) value = this->catalogue_.value(
-               this->catalogue_.binding(reference.binding_id).value);
+            if (reference.binding_id) {
+               const auto &binding = this->catalogue_.binding(reference.binding_id);
+               value = this->catalogue_.value(binding.value);
+               if (binding.function_depth != this->function_depth_) {
+                  value.contextuality = StaticContextuality::Unknown;
+               }
+            }
             else value = this->global_value(reference.identifier.symbol);
             break;
          }
@@ -1443,6 +1521,11 @@ private:
                transferred.nullable = value.nullable;
                value = transferred;
             }
+            StaticValueDescriptor derived_table = this->table_derivation_call_descriptor(call);
+            if (derived_table.primary != TiriType::Unknown) {
+               derived_table.nullable = value.nullable;
+               value = derived_table;
+            }
             results = call.results;
             break;
          }
@@ -1472,12 +1555,33 @@ private:
          case AstNodeKind::IndexExpr:
          case AstNodeKind::SafeIndexExpr: {
             ExprNode *base = nullptr;
+            ExprNode *index = nullptr;
             bool safe = Expression.kind IS AstNodeKind::SafeIndexExpr;
-            if (safe) base = std::get<SafeIndexExprPayload>(Expression.data).table.get();
-            else base = std::get<IndexExprPayload>(Expression.data).table.get();
+            if (safe) {
+               auto &payload = std::get<SafeIndexExprPayload>(Expression.data);
+               base = payload.table.get();
+               index = payload.index.get();
+            }
+            else {
+               auto &payload = std::get<IndexExprPayload>(Expression.data);
+               base = payload.table.get();
+               index = payload.index.get();
+            }
             if (base) {
                StaticValueDescriptor base_value = this->descriptor_of(*base);
-               if (base_value.primary IS TiriType::Array and base_value.array_element.known and
+               if (index and index->kind IS AstNodeKind::RangeExpr and
+                   (base_value.primary IS TiriType::Table or
+                    base_value.contextuality != StaticContextuality::Unknown)) {
+                  value = base_value;
+                  value.primary = TiriType::Table;
+                  value.nullable = safe;
+               }
+               else if (index and index->kind IS AstNodeKind::RangeExpr and
+                        base_value.primary IS TiriType::Str) {
+                  value = base_value;
+                  value.nullable = safe;
+               }
+               else if (base_value.primary IS TiriType::Array and base_value.array_element.known and
                    base_value.proved()) {
                   value = this->array_element_value(base_value.array_element);
                   value.nullable = value.nullable or safe;
@@ -1595,6 +1699,7 @@ private:
       if (Name.type != TiriType::Unknown and Name.type != TiriType::Any) {
          value = this->declared_descriptor(
             Name.type, Name.struct_def, Name.array_element, StaticProof::Checked);
+         if (Initialiser) value.contextuality = this->descriptor_of(*Initialiser).contextuality;
       }
       else if (binding.function) {
          value.primary = TiriType::Func;
@@ -1606,6 +1711,10 @@ private:
          }
          else value = this->descriptor_of(*Initialiser);
       }
+
+      // An explicit `any` binding may later receive a different table identity, including one designated elsewhere.
+      // Preserve useful value-shape information but never bake the initial table's contextuality into member calls.
+      if (Name.type IS TiriType::Any) value.contextuality = StaticContextuality::Unknown;
 
       if (value.module and not binding.immutable) value.module = nullptr;
       if (not binding.immutable) binding.callable = 0;
