@@ -249,7 +249,7 @@ end
 
 @Test function ScopeLocal()
    local acc = 0
-   for i in {0 to 20000} do
+   for i in {0 to 800000} do
       -- Declare local variables
       local a = 10
       local b = 20
@@ -370,7 +370,7 @@ end
    local d <const> = 40
    local e <const> = 50
    local acc = 0
-   for i in {0 to 20000} do
+   for i in {0 to 3000000} do
       -- Read operations (const can only be read, not written)
       local r1 = a
       local r2 = b
@@ -464,7 +464,7 @@ end
    end
 
    local acc = 0
-   for i in {0 to 20000} do
+   for i in {0 to 800000} do
       -- Reset upvalues
       a = 10
       b = 20
@@ -497,7 +497,7 @@ end
    local nil_val = nil
 
    local acc = 0
-   for i in {0 to 500} do
+   for i in {0 to 10000} do
       -- Check type of numbers
       local t1 = type(num_int)
       local t2 = type(num_float)
@@ -567,7 +567,7 @@ end
    local str_mixed = "123abc"
 
    local acc = 0
-   for i in {0 to 1000} do
+   for i in {0 to 4000} do
       -- Convert integer strings
       local n1 = tonumber(str_int)
       local n2 = tonumber(str_neg)

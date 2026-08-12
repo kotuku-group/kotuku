@@ -774,8 +774,10 @@ static TRef rec_range_number(jit_State *J, BCREG Slot, int LoadMode = 0)
 {
    if (not tvisnumber(&J->L->base[Slot])) lj_trace_err(J, LJ_TRERR_BADTYPE);
    TRef current = J->base[Slot];
+   // Preserve a RANGEPREP alias to another slot; only replace a load of the hidden slot itself.
    if (LoadMode and (not current or
        (not tref_isk(current) and IR(tref_ref(current))->o IS IR_SLOAD and
+        IR(tref_ref(current))->op1 IS J->baseslot + Slot and
         not (IR(tref_ref(current))->op2 & IRSLOAD_INHERIT)))) {
       return fori_load(J, Slot, IRT_NUM, LoadMode);
    }
