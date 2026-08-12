@@ -72,9 +72,29 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
    Options.hotLoop ?= 5 -- Low threshold to trigger JIT sooner
    Options.warmupCalls ?= 0
 
+   -- Target duration in microseconds for a single timed block.  PreciseTime() resolves to 1us, so timing one call
+   -- of a sub-microsecond operation yields a 1-or-2 tick reading dominated by quantisation and by the cost of the
+   -- two clock reads themselves.  Measuring a batch of calls and dividing amortises both away.  1ms of work is
+   -- ~1000 ticks, which puts the resolution error near 0.1%.  Set to 0 to disable batching entirely.
+
+   Options.batchTarget ?= 1000
+
+   -- Ceiling on the calibrated batch size, so a benchmark that is optimised away entirely cannot spin indefinitely.
+
+   Options.maxBatch ??= 100000
+
+   -- Samples to collect when batching is active.  Enough for a stable median and a meaningful p99 without extending
+   -- the run unduly; duration still caps the total time regardless.
+
+   Options.minSamples ??= 30
+
    assert(Options.duration > 0 and Options.duration <= 300, 'Options.duration must be between 0 and 300.')
    assert(Options.warmupCalls >= 0 and Options.warmupCalls <= 1000, 'Options.warmupCalls be between 0 and 1000.')
    assert(Options.feedbackRate > 0, 'Options.feedbackRate must be greater than zero.')
+   assert(Options.maxCalls >= 1, 'Options.maxCalls must be at least 1.')
+   assert(Options.batchTarget >= 0, 'Options.batchTarget must be zero or greater.')
+   assert(Options.maxBatch >= 1, 'Options.maxBatch must be at least 1.')
+   assert(Options.minSamples >= 1, 'Options.minSamples must be at least 1.')
 
    jit.opt.start(f"hotloop={Options.hotLoop}")
 
@@ -137,56 +157,103 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
    local start_time = mSys.PreciseTime()
    local end_time   = start_time + (Options.duration * 1000000)
    local feedback_mem_adjust = 0
-   local call_limit = Options.maxCalls + Options.warmupCalls
 
    -- Preset these values - they will be updated at the right time if warmup is enabled
    benchmarkStartTime    = mSys.PreciseTime()
    results.initialMemory = mSys.GetResource(RES_MEMORY_USAGE)
    results.peakMemory    = results.initialMemory
 
-   msg(f'Starting benchmark loop for {Callback}()')
-   while mSys.PreciseTime() < end_time and results.totalCalls < call_limit do
-      op_start = mSys.PreciseTime()
+   -- Warmup runs unbatched.  Its purpose is to reach the JIT hot loop threshold and settle caches, and the timings
+   -- are discarded, so there is nothing to be gained from batching it.
+
+   msg(f'Warming up {Callback}() for {Options.warmupCalls} calls')
+   while results.warmupCount < Options.warmupCalls and mSys.PreciseTime() < end_time do
       Callback()
+      processing.collect()
+      results.totalCalls++
+      results.warmupCount++
+   end
+
+   if results.warmupCount < Options.warmupCalls then
+      error('Failed to complete warmup phase within the allotted duration.')
+   end
+
+   if Options.warmupCalls > 0 and Options.showProgress then
+      Feedback(string.format('Warmup completed (%d calls). Calibrating benchmark...', Options.warmupCalls))
+   end
+
+   -- Calibrate the batch size so that one timed block spans at least Options.batchTarget microseconds.  The batch
+   -- grows by the observed shortfall, with a floor of 2x so that a block that reads as 0us still makes progress.
+   -- Slow benchmarks reach the target on a single call and stay unbatched, leaving their behaviour unchanged.
+   -- Calibration calls are counted separately from the measurement budget, so that maxCalls continues to govern how
+   -- many calls are actually measured rather than being consumed by probing.
+
+   local batch_size = 1
+   local calibration_calls = 0
+   if Options.batchTarget > 0 then
+      while batch_size < Options.maxBatch do
+         local probe_start = mSys.PreciseTime()
+         for i in {0 to batch_size} do Callback() end
+         local probe_elapsed = mSys.PreciseTime() - probe_start
+
+         calibration_calls += batch_size
+         if probe_elapsed >= Options.batchTarget then break end
+         if mSys.PreciseTime() >= end_time then break end
+
+         local growth = probe_elapsed > 0 and math.ceil(Options.batchTarget / probe_elapsed) or 2
+         if growth < 2 then growth = 2 end
+         batch_size *= growth
+      end
+      if batch_size > Options.maxBatch then batch_size = Options.maxBatch end
+   end
+   results.calibrationCalls = calibration_calls
+
+   -- Preserve both the measured-call limit and the requested minimum sample count.  If the calibrated batch would
+   -- consume the call budget in too few samples, reduce it to the largest batch that can satisfy both constraints.
+
+   local sample_batch_limit = math.max(1, math.floor(Options.maxCalls / Options.minSamples))
+   if batch_size > sample_batch_limit then batch_size = sample_batch_limit end
+
+   results.batchSize = batch_size
+   msg(f'Calibrated batch size for {Callback}() is {batch_size}')
+
+   -- Each iteration times a block of batch_size calls and records the mean cost of one call.  maxCalls continues to
+   -- bound the number of calls made, so a batched run performs the same amount of work as an unbatched one.
+   -- Percentiles are meaningless over a couple of samples, so the sample count is the primary control rather than a
+   -- by-product of dividing maxCalls by the batch size.  minSamples keeps a heavily batched benchmark statistically
+   -- useful; duration remains the outer bound, so a slow benchmark still stops on time rather than chasing a quota.
+
+   local sample_limit:num = math.floor(Options.maxCalls / batch_size)
+   if sample_limit > RESERVOIR_SIZE then sample_limit = RESERVOIR_SIZE end
+   if sample_limit < 1 then sample_limit = 1 end
+
+   -- Calibration is deliberately excluded from the reported benchmark rate and memory figures.
+
+   local post_calibration_mem = mSys.GetResource(RES_MEMORY_USAGE)
+   benchmarkStartTime         = mSys.PreciseTime()
+   results.initialMemory      = post_calibration_mem
+   results.peakMemory         = post_calibration_mem
+
+   msg(f'Starting benchmark loop for {Callback}()')
+   while mSys.PreciseTime() < end_time and #reservoir < sample_limit do
+      op_start = mSys.PreciseTime()
+      for i in {0 to batch_size} do Callback() end
       op_end = mSys.PreciseTime()
 
       processing.collect()
 
-      results.totalCalls++
-      callTime = (op_end - op_start) / 1000.0 -- Convert to milliseconds
-      callsPerSecond = 1000.0 / callTime
+      results.totalCalls += batch_size
+      callTime = ((op_end - op_start) / batch_size) / 1000.0 -- Mean cost of one call, in milliseconds
+      callsPerSecond = callTime > 0 and (1000.0 / callTime) or 0
 
-      -- Determine if this is a warmup cycle or benchmark cycle
-      if results.warmupCount < Options.warmupCalls then
-         results.warmupCount++
-         if results.warmupCount is Options.warmupCalls then
-            -- Warmup complete, reset timing and memory baseline
-            local mem_usage       = mSys.GetResource(RES_MEMORY_USAGE)
-            benchmarkStartTime    = mSys.PreciseTime()
-            results.initialMemory = mem_usage
-            results.peakMemory    = results.initialMemory
-            if Options.showProgress then
-               Feedback(string.format('Warmup completed (%d calls). Starting benchmark measurement...', Options.warmupCalls))
-            end
-            feedback_mem_adjust += mem_usage - results.initialMemory
-         end
-      else -- This is a benchmark call, include in statistics
-         if #reservoir < RESERVOIR_SIZE then
-            reservoir.push(callTime)
-         else
-            break
-         end
-      end
+      reservoir.push(callTime)
 
       -- Track memory usage periodically to avoid performance impact
-      if results.totalCalls % (callsPerSecond/10) is 0 and #mem_usage < MAX_MEMORY_SAMPLES then
+      if callsPerSecond > 0 and results.totalCalls % (callsPerSecond/10) is 0 and #mem_usage < MAX_MEMORY_SAMPLES then
          local cmem = mSys.GetResource(RES_MEMORY_USAGE)
-         if results.warmupCount >= Options.warmupCalls then
-            -- Only track memory during actual benchmark phase
-            mem_usage.push(cmem)
-            if cmem > results.peakMemory then
-               results.peakMemory = cmem
-            end
+         mem_usage.push(cmem)
+         if cmem > results.peakMemory then
+            results.peakMemory = cmem
          end
       end
 
@@ -195,17 +262,12 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
       if results.totalCalls % Options.feedbackRate is 0 then
          elapsed    = (mSys.PreciseTime() - start_time) / 1000000
          currentMem = mSys.GetResource(RES_MEMORY_USAGE)
-         status     = results.warmupCount < Options.warmupCalls and "Warmup" or "Benchmark"
          if Options.showProgress then
-            Feedback(string.format('%s: %d calls in %.1f seconds (%.1f calls/sec) | Memory: %.1f MB',
-               status, results.totalCalls, elapsed, results.totalCalls / elapsed, currentMem / (1024*1024)))
+            Feedback(string.format('Benchmark: %d calls in %.1f seconds (%.1f calls/sec) | Memory: %.1f MB',
+               results.totalCalls, elapsed, results.totalCalls / elapsed, currentMem / (1024*1024)))
             feedback_mem_adjust += mSys.GetResource(RES_MEMORY_USAGE) - currentMem
          end
       end
-   end
-
-   if results.warmupCount < Options.warmupCalls then
-      error('Failed to complete warmup phase within the allotted duration.')
    end
 
    processing.collect()
@@ -213,8 +275,10 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
    results.totalMemoryGrowth = results.finalMemory - results.initialMemory
    results.totalTime         = (mSys.PreciseTime() - start_time) / 1000000
    results.benchmarkTime     = (mSys.PreciseTime() - benchmarkStartTime) / 1000000
-   results.benchmarkCalls    = #reservoir
-   results.callsPerSecond    = results.benchmarkCalls / results.benchmarkTime
+   -- Each reservoir entry is the mean of a batch, so the measured call count is scaled by the batch size.
+   results.benchmarkCalls    = #reservoir * batch_size
+   results.benchmarkSamples  = #reservoir
+   results.callsPerSecond    = results.benchmarkTime > 0 and (results.benchmarkCalls / results.benchmarkTime) or 0
 
    -- Pass streaming statistics to stats function
    results.stats = bmark.stats(reservoir)
@@ -241,10 +305,11 @@ bmark.stats = function(Values:any!):table
       return { min = 0, max = 0, median = 0, p95 = 0, p99 = 0, stddev = 0, mean = 0, n = 0 }
    end
 
-   -- Sort values for percentile calculations
+   -- Sort values for percentile calculations.  Only nil is excluded; a zero timing is a valid sample produced when
+   -- a call completes inside the clock's resolution, and discarding those would bias every statistic upwards.
    sorted_sample = {}
    for value in values(Values) do
-      if value?? then sorted_sample.insert(value) end
+      if value != nil then sorted_sample.insert(value) end
    end
    sorted_sample.sort()
 
@@ -270,21 +335,27 @@ bmark.stats = function(Values:any!):table
    variance /= n
    stddev = math.sqrt(variance)
 
-   -- Percentile calculation from sorted sample (inversed since the lower values are better)
-   function getPercentile(SortedValues:table!, Percentile:num!):num
-      local sample_n = #SortedValues
-      if sample_n is 0 then return 0 end
-      local index = math.ceil(Percentile * sample_n / 100) - 1
-      index = math.clamp(index, 0, sample_n - 1)
-      return SortedValues[sample_n-index]
+   -- Percentile calculation from the sorted sample.  Timings are sorted ascending and lower is better, so the Nth
+   -- percentile is the value that N% of calls came in at or under, indexed from the fast end.  p99 therefore
+   -- reports the slow tail, which is the value of interest when judging worst-case behaviour.
+
+   local function getPercentile(SortedValues:table!, Percentile:num!):num
+      local value_count = #SortedValues
+      if value_count is 0 then return 0 end
+      local index = math.ceil(Percentile * value_count / 100) - 1
+      index = math.clamp(index, 0, value_count - 1)
+      return SortedValues[index]
    end
 
-   -- Median
+   -- Median over the full sorted sample.  The trimmed sample_n governs the reported maximum only; using it here
+   -- would index the untrimmed array with a trimmed count and report roughly the 40th percentile instead.
+
    local median:num
-   if sample_n % 2 is 0 then
-      median = (sorted_sample[sample_n/2 - 1] + sorted_sample[sample_n/2]) / 2
+   local median_n = #sorted_sample
+   if median_n % 2 is 0 then
+      median = (sorted_sample[median_n/2 - 1] + sorted_sample[median_n/2]) / 2
    else
-      median = sorted_sample[math.floor(sample_n/2)]
+      median = sorted_sample[math.floor(median_n/2)]
    end
 
    local p95 = getPercentile(sorted_sample, 95)

@@ -203,6 +203,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
    IrEmitter child_emitter(child_ctx);
    child_emitter.current_callable = Payload.callable;
+   child_emitter.is_root_chunk = false;
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
       if (param.name.is_blank or param.name.symbol IS nullptr) continue;

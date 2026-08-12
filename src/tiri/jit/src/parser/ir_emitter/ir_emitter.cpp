@@ -1186,7 +1186,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          bool forwards_current_contract = tail_call_forwards_current_contract(
             this->ctx, this->current_callable, *Payload.values.back());
          bool direct_tail_call = call_op IS BC_CALL or call_op IS BC_CALLM;
-         bool contextual_tail_call = has_context_leave and call_op IS BC_CTXCALL;
+         bool contextual_tail_call = not this->is_root_chunk and has_context_leave and call_op IS BC_CTXCALL;
          bool tail_call_eligible = this->func_state.try_depth IS 0 and not has_post_call_control_flow and
             not has_user_cleanup and (direct_tail_call or contextual_tail_call) and
             (forwards_current_contract or (not truncate_return_results and not has_return_contract));

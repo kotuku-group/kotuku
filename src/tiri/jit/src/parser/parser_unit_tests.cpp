@@ -5622,6 +5622,33 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    return true;
 }
 
+static bool test_contextual_tail_call_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   luaL_openlibs(lua);
+   std::string error;
+   constexpr std::string_view target =
+      "local target = { run = function():num return 1 end }\n";
+
+   auto root = compile_snapshot(lua, std::string(target) + "return target.run()\n", true, error);
+   if (not root or count_opcode(*root, BC_CTXCALLT) != 0 or count_opcode(*root, BC_CTXCALL) != 1 or
+       count_opcode(*root, BC_CTXLEAVE) != 1) {
+      Log.error("root contextual return transferred ownership outside a callable frame: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto nested = compile_snapshot(lua, std::string(target) +
+      "local function forward():<any, ...> return target.run() end\nreturn forward()\n", true, error);
+   if (not nested or count_opcode_tree(*nested, BC_CTXCALLT) != 1 or
+       count_opcode_tree(*nested, BC_CTXCALL) != 0 or count_opcode_tree(*nested, BC_CTXLEAVE) != 0) {
+      Log.error("nested contextual return did not transfer ownership within its callable frame: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
 static int test_method_compatible_echo(lua_State *L)
 {
    if (not lua_isuserdata(L, 1) or not lua_isstring(L, 2)) {
@@ -7268,7 +7295,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 64> tests = { {
+   constexpr std::array<TestCase, 65> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7324,6 +7351,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_static_classification", test_builtin_method_static_classification },
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
+      { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "module_call_result_descriptors", test_module_call_result_descriptors },
