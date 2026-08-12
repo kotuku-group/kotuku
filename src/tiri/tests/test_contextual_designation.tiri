@@ -1,7 +1,7 @@
 -- Flute regression tests for opt-in contextual table designation.
 --
--- Contextuality is observed through a leading-dot probe: a designated receiver establishes itself as the current
--- context for its member call, so `.name` resolves; an ordinary receiver inherits the caller context instead and the
+-- Contextuality is observed through an ampersand-prefixed probe: a designated receiver establishes itself as the
+-- current context for its member call, so `&name` resolves; an ordinary receiver inherits the caller context and the
 -- same probe resolves to nil.  This is the observable contract, so the tests assert on it rather than on metadata.
 
 import 'json'
@@ -9,7 +9,7 @@ import 'json'
 -- Shared probe stored in ordinary and contextual tables alike.  Contract item 3 puts contextuality on the table
 -- identity rather than on the function, so one implementation serves every receiver in this file.
 function probe_name():any
-   return .name
+   return &name
 end
 
 @Test function DesignatedConstructorsEstablishContextAndOrdinaryOnesDoNot()
@@ -285,7 +285,7 @@ end
    jit.opt.start()
 
    assert(recorded is interpreted, 'A recorded designation should match the interpreter')
-   assert(.name is nil, 'A completed recorded designation workload should restore the root context')
+   assert(&name is nil, 'A completed recorded designation workload should restore the root context')
 end
 
 @Test(hotpath=80) function LateDesignationRespecialisesLiveTraces()
@@ -315,5 +315,5 @@ end
 
    assert(before is 0, 'Calls made before designation should not establish context')
    assert(after is 200, 'Calls made after designation should establish context on a respecialised trace')
-   assert(.name is nil, 'Late designation should finish in the root context')
+   assert(&name is nil, 'Late designation should finish in the root context')
 end

@@ -299,6 +299,13 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          continue;
       }
 
+      // An ampersand-prefixed name on a later line begins a current-context expression.  Whitespace after `&` keeps
+      // a leading binary bitwise-AND operator available for conventional multi-line expression continuation.
+      if (next.kind() IS TokenKind::Ampersand and next.span().line != left.value_ref()->span.line) {
+         const Token member = this->ctx.tokens().peek(1);
+         if (member.kind() IS TokenKind::Identifier and member.span().offset IS next.span().offset + 1) break;
+      }
+
       // Membership operator: expr in range
       // Transform `lhs in rhs` into the canonical `rhs.contains(lhs)` built-in method call.
 
@@ -557,18 +564,18 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          break;
       }
 
-      case TokenKind::Dot: {
-         Token dot_token = current;
+      case TokenKind::Ampersand: {
+         Token context_token = current;
          this->ctx.tokens().advance();
          Token member_token = this->ctx.tokens().current();
          auto name_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
-         if (not name_token.ok()) {
+         if (not name_token.ok() or name_token.value_ref().span().offset != context_token.span().offset + 1) {
             return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedIdentifier, member_token,
-               "expected a member name after leading '.' context access");
+               "expected a member name immediately after '&' context access");
          }
 
-         ExprNodePtr context = make_current_context_expr(dot_token.span());
-         node = make_member_expr(span_from(dot_token, name_token.value_ref()), std::move(context),
+         ExprNodePtr context = make_current_context_expr(context_token.span());
+         node = make_member_expr(span_from(context_token, name_token.value_ref()), std::move(context),
             make_identifier(name_token.value_ref()));
          break;
       }
@@ -1106,15 +1113,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_arrow_function(ExprNodeList paramete
 
 ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
 {
-   const BCLine base_line = base->span.line;
-   const BCLine base_column = base->span.column;
    while (true) {
       Token token = this->ctx.tokens().current();
       if (token.kind() IS TokenKind::Dot) {
-         // A dot on a later line at or before the base expression's indentation starts a contextual statement.
-         // A more deeply indented dot remains available for conventional multi-line member chaining.
-         if ((token.span().line != base_line) and (token.span().column <= base_column)) break;
-
          this->ctx.tokens().advance();
          auto name_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
          if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());

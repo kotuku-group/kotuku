@@ -83,6 +83,7 @@ static int token_starts_expression(LexToken tok)
       case '-':
       case '~':
       case '#':
+      case '&':
          return 1;
       default:
          return 0;

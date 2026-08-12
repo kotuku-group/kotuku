@@ -13,14 +13,14 @@ function enforce_hotpath() end
    end
 
    values[0].read = function():str
-      return .name
+      return &name
    end
    function read():str
-      return .name
+      return &name
    end
 
    context values[index()] do
-      assert(.name is 'temporary', 'The selected table should be active inside the block')
+      assert(&name is 'temporary', 'The selected table should be active inside the block')
       assert(read() is 'temporary', 'Direct calls should inherit a temporary block context')
    end
 
@@ -33,13 +33,13 @@ end
    local inner = { name = 'inner' }
 
    context outer do
-      assert(.name is 'outer')
+      assert(&name is 'outer')
       context inner do
-         assert(.name is 'inner')
+         assert(&name is 'inner')
       end
-      assert(.name is 'outer', 'Leaving an inner block should restore its outer block')
+      assert(&name is 'outer', 'Leaving an inner block should restore its outer block')
    end
-   assert(.name is nil, 'Leaving the outer block should restore the dynamic root')
+   assert(&name is nil, 'Leaving the outer block should restore the dynamic root')
 end
 
 @Test function NormalCleanupRunsCloseThenDeferBeforeLeavingContext()
@@ -47,13 +47,13 @@ end
    local events = {}
    local mt = {
       __close = function()
-         events.insert('close:' .. .name)
+         events.insert('close:' .. &name)
       end
    }
 
    context receiver do
       defer
-         events.insert('defer:' .. .name)
+         events.insert('defer:' .. &name)
       end
       local resource <close> = setmetatable({}, mt)
    end
@@ -69,25 +69,25 @@ end
    function return_from_blocks():str
       context outer do
          context inner do
-            return .name
+            return &name
          end
       end
       return 'unreachable'
    end
 
    assert(return_from_blocks() is 'inner')
-   assert(.name is nil, 'A return should remove every crossed block activation')
+   assert(&name is nil, 'A return should remove every crossed block activation')
 
    local observations = {}
    for i in {0 to 3} do
       context outer do
          if i is 0 then continue end
-         observations.insert(.name)
+         observations.insert(&name)
          break
       end
    end
    assert(observations[0] is 'outer')
-   assert(.name is nil, 'Loop exits should leave crossed temporary contexts')
+   assert(&name is nil, 'Loop exits should leave crossed temporary contexts')
 end
 
 @Test function ErrorCleanupUsesLexicalContextAndSkipsDefers()
@@ -96,7 +96,7 @@ end
    local events = {}
    local mt = {
       __close = function(Self, Error)
-         events.insert('close:' .. .name)
+         events.insert('close:' .. &name)
          assert(Error != nil, 'Error cleanup should pass the active error to __close')
       end
    }
@@ -111,13 +111,13 @@ end
             error('block failure')
          end
       except e
-         assert(.name is 'outer', 'The handler should resume in the surviving outer context')
+         assert(&name is 'outer', 'The handler should resume in the surviving outer context')
       end
    end
 
    assert(events[0] is 'close:inner' and #events is 1,
       'Error cleanup should run close under the block context and retain unsupported defer semantics')
-   assert(.name is nil)
+   assert(&name is nil)
 end
 
 @Test function RaisingCloseDoesNotLeakOrRunTwice()
@@ -138,12 +138,12 @@ end
          end
       except e
          assert(e.message.find('close failure') != nil)
-         assert(.name is 'outer', 'A raising close must still remove the abandoned inner activation')
+         assert(&name is 'outer', 'A raising close must still remove the abandoned inner activation')
       end
    end
 
    assert(closes is 1, 'A consumed close slot must not run twice during replacement-error unwinding')
-   assert(.name is nil)
+   assert(&name is nil)
 end
 
 @Test function ClosuresDoNotCaptureTemporaryContext()
@@ -152,7 +152,7 @@ end
 
    context receiver do
       callback = function():any
-         return .name
+         return &name
       end
       assert(callback() is 'ephemeral', 'A synchronous direct call should inherit the active context')
    end
@@ -163,18 +163,18 @@ end
 @Test function RecordedBlocksRemainMaterialisedAcrossSideExits()
    local receiver = { total = 0 }
    function add(Value:num)
-      .total += Value
+      &total += Value
    end
 
    for i in {0 to 120} do
       context receiver do
          add(1)
-         if i is 93 then assert(.total is 94) end
+         if i is 93 then assert(&total is 94) end
       end
    end
 
    assert(receiver.total is 120)
-   assert(.total is nil, 'Recorded block exits should restore the root context')
+   assert(&total is nil, 'Recorded block exits should restore the root context')
 end
 
 @Test function UnreachableBlocksSurviveBytecodeRoundTrips()
@@ -182,7 +182,7 @@ end
       return 41
       local receiver = { value = 42 }
       context receiver do
-         return .value
+         return &value
       end
    end
 

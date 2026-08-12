@@ -1558,7 +1558,7 @@ static bool test_unmatched_context_entry_rejected(kt::Log &Log)
    LuaStateHolder state;
    lua_State *lua = state.get();
    constexpr std::string_view source =
-      "local receiver = context { name='receiver', read=function():str return .name end }\n"
+      "local receiver = context { name='receiver', read=function():str return &name end }\n"
       "local value = receiver.read()\n"
       "return value\n";
    if (lua_load(lua, source, "unmatched-context-entry")) {
@@ -3823,10 +3823,10 @@ return value * 3
 static bool test_contextual_member_ast_foundations(kt::Log &Log)
 {
    constexpr std::string_view source =
-      ".value = 1\n"
-      ".value += 2\n"
-      "local read = .child.name\n"
-      ".refresh(3, 4)\n"
+      "&value = 1\n"
+      "&value += 2\n"
+      "local read = &child.name\n"
+      "&refresh(3, 4)\n"
       "receiver.member(5)\n"
       "receiver[key](6)\n"
       "receiver?.member(7);\n"
@@ -3849,7 +3849,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       const auto *member = assignment and not assignment->targets.empty() ?
          std::get_if<MemberExprPayload>(&assignment->targets.front()->data) : nullptr;
       if (not member or not member->table or member->table->kind != AstNodeKind::CurrentContextExpr) {
-         Log.error("leading-dot assignment did not retain an explicit current-context receiver");
+         Log.error("ampersand-prefixed assignment did not retain an explicit current-context receiver");
          return false;
       }
       if (infer_expression_type(*member->table) != TiriType::Table) {
@@ -3862,7 +3862,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
    const auto &first_member = std::get<MemberExprPayload>(first_assignment.targets.front()->data);
    if (first_member.table->span.line != first_member.member.span.line or
        first_member.table->span.offset >= first_member.member.span.offset) {
-      Log.error("leading-dot access did not retain distinct context and member source spans");
+      Log.error("ampersand-prefixed access did not retain distinct context and member source spans");
       return false;
    }
 
@@ -3872,7 +3872,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       std::get_if<MemberExprPayload>(&outer_member->table->data) : nullptr;
    if (not inner_member or not inner_member->table or
        inner_member->table->kind != AstNodeKind::CurrentContextExpr) {
-      Log.error("chained leading-dot access lost its current-context root");
+      Log.error("chained context access lost its current-context root");
       return false;
    }
 
@@ -3928,8 +3928,8 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
 
    constexpr std::string_view multiline_source =
       "receiver.member()\n"
-      "   .next()\n"
-      ".contextual()\n";
+      ".next()\n"
+      "&contextual()\n";
    auto multiline = build_ast_from_source(multiline_source, false, false);
    if (not multiline.chunk.ok() or multiline.chunk.value_ref()->statements.size() != 2) {
       Log.error("multi-line member chain was split into contextual statements");
@@ -3946,7 +3946,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       std::get_if<MemberExprPayload>(&multiline_target->callable->data) : nullptr;
    if (not multiline_member or not multiline_member->table or
        multiline_member->table->kind != AstNodeKind::CallExpr) {
-      Log.error("indented multi-line member suffix did not retain the preceding call as its receiver");
+      Log.error("multi-line member suffix did not retain the preceding call as its receiver");
       return false;
    }
 
@@ -3959,7 +3959,13 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       std::get_if<MemberExprPayload>(&contextual_target->callable->data) : nullptr;
    if (not contextual_member or not contextual_member->table or
        contextual_member->table->kind != AstNodeKind::CurrentContextExpr) {
-      Log.error("same-indent leading dot did not remain a contextual statement after a multi-line chain");
+      Log.error("ampersand-prefixed access did not start a contextual statement after a multi-line chain");
+      return false;
+   }
+
+   auto multiline_bitwise = build_ast_from_source("local value = 7\n   & 3\n", false, false);
+   if (not multiline_bitwise.chunk.ok() or multiline_bitwise.chunk.value_ref()->statements.size() != 1) {
+      Log.error("a spaced ampersand did not remain available for multi-line bitwise-AND continuation");
       return false;
    }
 
@@ -3969,23 +3975,30 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       return false;
    }
 
-   constexpr std::array<std::string_view, 2> invalid_context_sources = {
-      "local value = .\n",
-      "local value = .(123)\n"
+   constexpr std::array<std::string_view, 3> invalid_context_sources = {
+      "local value = &\n",
+      "local value = &(123)\n",
+      "local value = & member\n"
    };
    for (std::string_view invalid_source : invalid_context_sources) {
       auto invalid = build_ast_from_source(invalid_source, false, false);
-      bool found_leading_dot_diagnostic = false;
+      bool found_context_diagnostic = false;
       for (const ParserDiagnostic &diagnostic : invalid.diagnostics) {
          if (diagnostic.code IS ParserErrorCode::ExpectedIdentifier and
-             diagnostic.message.find("leading '.' context access") != std::string::npos) {
-            found_leading_dot_diagnostic = true;
+             diagnostic.message.find("'&' context access") != std::string::npos) {
+            found_context_diagnostic = true;
          }
       }
-      if (not found_leading_dot_diagnostic) {
-         Log.error("invalid leading-dot access did not produce its targeted diagnostic");
+      if (not found_context_diagnostic) {
+         Log.error("invalid ampersand-prefixed access did not produce its targeted diagnostic");
          return false;
       }
+   }
+
+   auto legacy_context = build_ast_from_source(".value = 1\n", false, false);
+   if (legacy_context.diagnostics.empty()) {
+      Log.error("leading-dot context access remained accepted after the prefix change");
+      return false;
    }
 
    constexpr std::array<std::string_view, 2> legacy_sources = {
@@ -7483,12 +7496,12 @@ static bool test_contextual_runtime_semantics(kt::Log &Log)
       "local ordinary = { name = 'ordinary' }\n"
       "local designated = designate({ name = 'designated' })\n"
       "local outer = designate({ name = 'outer' })\n"
-      "function readName():str return .name end\n"
+      "function readName():str return &name end\n"
       "function ordinary.read():str return readName() end\n"
       "function designated.read():str return readName() end\n"
       "function outer.viaOrdinary():str return ordinary.read() end\n"
       "function outer.viaDesignated():str return designated.read() end\n"
-      "function outer.own():str return .name end\n"
+      "function outer.own():str return &name end\n"
       "return ordinary.read(), designated.read(), outer.viaOrdinary(), outer.viaDesignated(), outer.own()\n";
 
    if (lua_load(L, source, "contextual-runtime")) {
@@ -7500,7 +7513,7 @@ static bool test_contextual_runtime_semantics(kt::Log &Log)
       return false;
    }
 
-   // An ordinary table inherits the root context, so the leading-dot lookup resolves no name.
+   // An ordinary table inherits the root context, so the ampersand-prefixed lookup resolves no name.
    if (not lua_isnil(L, -5)) {
       Log.error("an ordinary table established context for its member call");
       return false;
@@ -7874,12 +7887,12 @@ static bool test_temporary_context_blocks(kt::Log &Log)
    constexpr std::string_view source =
       "local receiver = { value = 37 }\n"
       "local result = 0\n"
-      "context receiver do result = .value end\n"
+      "context receiver do result = &value end\n"
       "local select_value = function(Flag)\n"
-      "   context receiver do if Flag then return .value end end\n"
+      "   context receiver do if Flag then return &value end end\n"
       "   return 0\n"
       "end\n"
-      "return result, select_value(true), select_value(false), .value\n";
+      "return result, select_value(true), select_value(false), &value\n";
 
    if (lua_load(L, source, "temporary-context")) {
       Log.error("failed to compile a temporary context block: %s", lua_tostring(L, -1));

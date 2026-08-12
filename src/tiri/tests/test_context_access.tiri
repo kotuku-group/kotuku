@@ -7,36 +7,36 @@ function activate_context_statement(Statement:str):obj
 end
 
 @Test function RootContextReadsAndWritesGlobalEnvironment()
-   .glContextAccessValue = 11
-   assert(.glContextAccessValue is 11, 'Leading-dot reads should resolve through the root environment')
-   assert(_G.glContextAccessValue is 11, 'Leading-dot writes should update the root environment')
+   &glContextAccessValue = 11
+   assert(&glContextAccessValue is 11, 'Context-prefixed reads should resolve through the root environment')
+   assert(_G.glContextAccessValue is 11, 'Context-prefixed writes should update the root environment')
 
-   .glContextAccessValue += 4
-   assert(glContextAccessValue is 15, 'Leading-dot compound assignment should use ordinary environment storage')
-   .glContextAccessValue = nil
+   &glContextAccessValue += 4
+   assert(glContextAccessValue is 15, 'Context-prefixed compound assignment should use ordinary environment storage')
+   &glContextAccessValue = nil
 end
 
 @Test function ChainedContextAccessUsesTheLoadedTable()
-   .glContextAccessTree = { child = { value = 27 } }
-   assert(.glContextAccessTree.child.value is 27,
-      'Chained leading-dot access should continue from the table loaded from current context')
-   .glContextAccessTree.child.value = 31
+   &glContextAccessTree = { child = { value = 27 } }
+   assert(&glContextAccessTree.child.value is 27,
+      'Chained context access should continue from the table loaded from current context')
+   &glContextAccessTree.child.value = 31
    assert(glContextAccessTree.child.value is 31, 'Chained context stores should update the selected child table')
-   .glContextAccessTree = nil
+   &glContextAccessTree = nil
 end
 
 @Test function DirectFunctionsInheritRootContext()
-   .glContextAccessInherited = 'root'
+   &glContextAccessInherited = 'root'
    function read_context_value()
-      return .glContextAccessInherited
+      return &glContextAccessInherited
    end
 
    assert(read_context_value() is 'root', 'An ordinary direct call should inherit the root context')
-   .glContextAccessInherited = nil
+   &glContextAccessInherited = nil
 end
 
 @Test function ContextStoreCannotOverrideProtectedGlobal()
-   local script = activate_context_statement([[.tostring = 5]])
+   local script = activate_context_statement([[&tostring = 5]])
    assert(script.error != ERR_Okay, 'A root context store should reject a protected global')
    assert(string.find(script.errorMessage, 'cannot override built-in') != nil,
       'A rejected context store should report the protected-global diagnostic: ' .. script.errorMessage)
@@ -46,7 +46,7 @@ end
    local script = activate_context_statement([[
 global glContextContract:num = 3
 local replacement:any = 'wrong'
-.glContextContract = replacement
+&glContextContract = replacement
 ]])
    assert(script.error != ERR_Okay, 'A root context store should reject a value that violates a global contract')
    assert(string.find(script.errorMessage, 'expected num') != nil,
