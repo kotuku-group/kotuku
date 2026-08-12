@@ -73,7 +73,7 @@ end
    local border = 2
    local total = 0
 
-   for index in {0 to 100000} do
+   for index in {0 to 2000000} do
       local scale = 1 + ((index % 4) * 0.25)
       local width = (base_width * scale) + (padding * 2) + (border * 2)
       local height = (base_height * scale) + (padding * 2) + (border * 2)
@@ -90,7 +90,7 @@ end
    local border <const> = 2
    local total = 0
 
-   for index in {0 to 100000} do
+   for index in {0 to 2000000} do
       local scale = 1 + ((index % 4) * 0.25)
       local width = (base_width * scale) + (padding * 2) + (border * 2)
       local height = (base_height * scale) + (padding * 2) + (border * 2)

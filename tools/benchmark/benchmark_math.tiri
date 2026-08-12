@@ -34,7 +34,7 @@ end
    local e <const> = 2.71828182845905
    local phi <const> = 1.61803398874989
 
-   for i in {0 to 100000} do
+   for i in {0 to 3000000} do
       a = i * pi
       b = a / e
       c = b + phi
@@ -60,7 +60,7 @@ end
 
 @Test function MathBitwiseOperations()
    local a, b, c, d = 0xFF, 0xAA, 0x55, 0x0F
-   for i in {0 to 100000} do
+   for i in {0 to 1500000} do
       -- Basic bitwise operations
       a = i & 0xFF          -- AND
       b = i | 0xF0          -- OR
@@ -143,7 +143,7 @@ end
 @Test function MathCompoundOperators()
    local a, b, c, d, e = 1.0, 100.0, 1000.0, 10000.0, 50000.0
    local checksum = 0.0
-   for i in {0 to 100000} do
+   for i in {0 to 300000} do
       -- Compound assignment operators
       a += 1.5
       b -= 0.7

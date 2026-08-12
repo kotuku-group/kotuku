@@ -777,6 +777,42 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function NestedRuntimeRangeTraceLinksMaterialiseHiddenState()
+   defer
+      jit.flush()
+      jit.opt.start()
+   end
+
+   local function nested_range_count():num
+      local sum = 0
+      local start = 0
+      for outer in {0 to 50} do
+         for value in {start into 50} do
+            sum++
+         end
+      end
+      return sum + start
+   end
+
+   jit.off()
+   local expected = nested_range_count()
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=5', 'hotexit=1', 'minstitch=0')
+
+   for repetition in {0 to 10} do
+      local result = nested_range_count()
+      assert(result is expected,
+         f'Nested runtime range call {repetition} should produce {expected}, got {result}')
+      processing.collect()
+   end
+
+   assert(count_jit_traces(20) > 0, 'Nested runtime ranges should compile at least one trace')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test(hotpath=100) function ExplicitRangeObjectTraceStability()
    local source = range.new(0, 100, false, 2)
    local function range_object_sum():num

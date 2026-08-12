@@ -5,7 +5,7 @@
 
 @Test function TableCreateEmpty()
    local checksum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 4000} do
       -- Create empty tables
       local t1 = {}
       local t2 = {}
@@ -93,7 +93,7 @@ end
    }
    local checksum = 0
 
-   for i in {0 to 100000} do
+   for i in {0 to 700000} do
       -- Deep property access
       local v1 = data.level1.level2.level3.value
       local v2 = data.level1.level2.level3.items.a
@@ -118,7 +118,7 @@ end
 
 @Test function TableInsertRemove()
    local checksum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 2000} do
       local t = { 1, 2, 3, 4, 5 }
 
       -- Insert at end

@@ -110,7 +110,7 @@ end
 
 @Test function ControlTernaryOperator()
    local acc = 0
-   for i in {0 to 100000} do
+   for i in {0 to 400000} do
       local x = i % 100
       local result = 0
 
@@ -234,7 +234,7 @@ end
    local sum = 0
    local start = 0
    local finish = 0
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       start = i % 10
       finish = start + 50
       for j in {0 into 50} do
@@ -249,7 +249,7 @@ end
    local sum = 0
    local start = 0
    local finish = 50
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       for j in {start into finish} do
          sum += 1
       end
@@ -262,7 +262,7 @@ end
    local sum = 0
    local start = 0
    local finish = 50
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       for j in {0 into 50} do
          sum += 1
       end
@@ -275,7 +275,7 @@ end
    local sum = 0
    local start = 0
    local finish = 50
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       local j = start
       while j <= finish do
          sum += 1
@@ -290,7 +290,7 @@ end
    local sum = 0
    local start = 0
    local finish = 0
-   for i in {0 to 1000} do
+   for i in {0 to 40000} do
       start = i % 10
       finish = start + 50
       for j in {start into finish} do
@@ -305,7 +305,7 @@ end
    local sum = 0
    local start = 0
    local finish = 0
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       start = i % 10
       finish = start + 50
       local j = start
@@ -325,7 +325,7 @@ end
    local sum = 0
    local start = 0
    local finish = 0
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       if i % 2 is 0 then
          start = 0
          finish = 50
@@ -346,7 +346,7 @@ end
    local sum = 0
    local start = 0
    local finish = 0
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       if i % 2 is 0 then
          start = 0
          finish = 50
@@ -381,7 +381,7 @@ end
    local start = 0.0
    local finish = 10.0
    local step = 0.25
-   for i in {0 to 1000} do
+   for i in {0 to 15000} do
       for j in {start into finish by step} do
          sum += 1
       end
@@ -395,7 +395,7 @@ end
    local start = 0.0
    local finish = 10.0
    local step = 0.25
-   for i in {0 to 1000} do
+   for i in {0 to 50000} do
       local j = start
       while j <= finish do
          sum += 1
@@ -413,7 +413,7 @@ end
 
 @Test function ControlForDescendingImplicit()
    local sum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 30000} do
       for j in {99 into 0} do
          sum += j
       end
@@ -424,7 +424,7 @@ end
 
 @Test function ControlForDescendingLoop()
    local sum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 30000} do
       for j in {99 into 0 by -1} do
          sum += j
       end
@@ -435,7 +435,7 @@ end
 
 @Test function ControlForDescendingWhile()
    local sum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 25000} do
       local j = 99
       while j >= 0 do
          sum += j
@@ -448,7 +448,7 @@ end
 
 @Test function ControlForDescendingStride()
    local sum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 150000} do
       for j in {100 into 0 by -5} do
          sum += j
       end
@@ -459,7 +459,7 @@ end
 
 @Test function ControlForDescendingStrideWhile()
    local sum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 150000} do
       local j = 100
       while j >= 0 do
          sum += j
@@ -509,7 +509,7 @@ end
 @Test function ControlForRangeObject()
    local sum = 0
    local nr = range.new(0, 100, false, 2)
-   for i in {0 to 1000} do
+   for i in {0 to 1500} do
       for j in nr() do
          sum += j
       end
@@ -520,7 +520,7 @@ end
 @Test function ControlForBareRangeObject()
    local sum = 0
    local nr = range.new(0, 100, false, 2)
-   for i in {0 to 1000} do
+   for i in {0 to 1500} do
       for j in nr do
          sum += j
       end
@@ -537,7 +537,7 @@ end
 
 @Test function ControlForNonNegativeRange()
    local sum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 150000} do
       for j in {0 to 20} do
          sum += 1
       end
@@ -547,7 +547,7 @@ end
 
 @Test function ControlForNegativeRange()
    local sum = 0
-   for i in {0 to 1000} do
+   for i in {0 to 150000} do
       for j in {-10 to 10} do
          sum += 1
       end
@@ -756,7 +756,7 @@ end
    local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
 
    local acc = 0
-   for i in {0 to 1000000} do
+   for i in {0 to 3000000} do
       local v1 = obj.name
       local v2 = obj.addr.city
       local v3 = obj.addr.geo.lat
@@ -770,7 +770,7 @@ end
    local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
 
    local acc = 0
-   for i in {0 to 1000000} do
+   for i in {0 to 3000000} do
       -- Safe access on valid paths (should behave like direct access)
       local v1 = obj?.name
       local v2 = obj?.addr?.city
@@ -785,7 +785,7 @@ end
    local arr = { 10, 20, 30, 40, 50 }
 
    local acc = 0
-   for i in {0 to 1000000} do
+   for i in {0 to 3000000} do
       local v1 = arr[0]
       local v2 = arr[2]
       acc += v1 + v2
@@ -798,7 +798,7 @@ end
    local arr = { 10, 20, 30, 40, 50 }
 
    local acc = 0
-   for i in {0 to 1000000} do
+   for i in {0 to 3000000} do
       local v1 = arr?[0]
       local v2 = arr?[2]
       acc += v1 + v2
