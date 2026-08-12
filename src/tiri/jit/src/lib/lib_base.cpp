@@ -455,14 +455,46 @@ LJLIB_ASM_(getmetatable)   LJLIB_REC(.)
 //********************************************************************************************************************
 // Recycle the lj_lib_checkany(L, 1) from assert.
 
-LJLIB_CF(setmetatable)
+// Shared implementation of setmetatable().  `Authorised` is true only for the compiler-emitted variant whose target
+// carried a valid ownership proof.
+//
+// The `__context` marker is a one-way designation input sampled here, never a live reflection of the target's state.
+// It is read raw and shallow: `__index` is not consulted and neither is a metatable of the supplied metatable.
+// Promotion of an ordinary table requires compiler authorisation, so an extracted, shadowed or native call cannot
+// designate a table the author does not own.  A target that is already contextual accepts any metatable, because
+// contextuality is permanent and no promotion is taking place.
+//
+// The rejection is atomic: it is raised before the metatable is installed, so a refused call leaves the target's
+// metatable and finaliser state untouched.
+
+static int setmetatable_impl(lua_State *L, bool Authorised)
 {
-   lj_lib_checktab(L, 1);
+   GCtab *target = lj_lib_checktab(L, 1);
    lj_lib_checktabornil(L, 2);
    if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) lj_err_caller(L, ErrMsg::PROTMT);
    L->top = L->base + 2;
+
+   bool designate = false;
+   if (tvistab(L->base + 1)) {
+      cTValue *marker = lj_tab_getstr(tabV(L->base + 1), lj_str_newlit(L, "__context"));
+      if (marker and tvistrue(marker)) {
+         if (not Authorised and not lj_tab_is_contextual(target)) {
+            lj_err_callermsg(L,
+               "setmetatable() cannot designate a contextual table here; the target must be an allocation owned by "
+               "this function and the call must be a direct call to the built-in setmetatable()");
+         }
+         designate = true;
+      }
+   }
+
    lua_setmetatable(L, 1);
+   if (designate) lj_tab_mark_contextual(target);
    return 1;
+}
+
+LJLIB_CF(setmetatable)
+{
+   return setmetatable_impl(L, false);
 }
 
 //********************************************************************************************************************
@@ -1047,6 +1079,19 @@ LJLIB_CF(ltr)
    return 1;
 }
 
+//********************************************************************************************************************
+// Compiler-authorised setmetatable().  The parser emits this variant in place of setmetatable() only when the
+// designation target is proven to be an allocation owned by the designating function, so it alone may promote an
+// ordinary table to contextual through a raw `__context = true` marker.
+//
+// Appended at the end of the base library because fast-function ordering is part of the private bytecode ABI for
+// BC_BFUNC; inserting it beside setmetatable() would renumber every later fast function.
+
+LJLIB_CF(__setmetatable_ctx)
+{
+   return setmetatable_impl(L, true);
+}
+
 #include "lj_libdef.h"
 
 //********************************************************************************************************************
@@ -1071,6 +1116,12 @@ extern int luaopen_base(lua_State* L)
    lua_pushliteral(L, "5.4");  //  top-3. // Lua version number, set as _VERSION
    newproxy_weaktable(L);  //  top-2.
    LJ_LIB_REG(L, "_G", base);
+
+   // Registration gives every fast function a canonical state-local identity for BC_BFUNC.  The authorised
+   // setmetatable variant is compiler-private, so remove its temporary global binding while retaining that canonical
+   // identity.  Compiler-emitted calls load it directly by fast-function ID.
+   lua_pushnil(L);
+   lua_setglobal(L, "__setmetatable_ctx");
 
    // Register function prototypes for compile-time type inference
    reg_func_prototype("print", { }, {}, FProtoFlags::Variadic);

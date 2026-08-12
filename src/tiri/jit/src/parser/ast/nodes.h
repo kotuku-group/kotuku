@@ -441,6 +441,9 @@ struct CallExprPayload {
       bool safe = false;
    };
    mutable std::optional<RuntimeBuiltinMethodCall> runtime_builtin_method;
+   // Set when this is a direct call to the unshadowed built-in setmetatable() whose target the author owns.
+   // Only an authorised call may promote an ordinary table to contextual; every other spelling raises at runtime instead.
+   mutable bool authorised_contextual_designation = false;
    mutable bool unresolved_method_reported = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
@@ -551,6 +554,9 @@ struct TableExprPayload {
    TableExprPayload& operator=(TableExprPayload&&) noexcept = default;
    std::vector<TableField> fields;
    bool has_array_part = false;
+   // Set by the `context { ... }` prefix designation form.  The constructed table is permanently contextual, and the
+   // emitter appends the uniform table-marking operation after the constructor has been materialised.
+   bool contextual = false;
    ~TableExprPayload();
 };
 

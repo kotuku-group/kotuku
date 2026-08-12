@@ -17,6 +17,12 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
    uint32_t nhash = 0;
    auto freg = fs->free_reg();
    BCPos pc = BCPos(bcemit_AD(fs, BC_TNEW, freg, 0));
+   // The contextual marker immediately follows its matching constructor so the bytecode reader can prove that the
+   // destination is a newly allocated table.  Constant-field analysis may later rewrite TNEW to TDUP in place without
+   // disturbing that adjacency.  Marking before field initialisation is safe because the unfinished result cannot be
+   // referenced by source code until the constructor expression completes.
+   if (Payload.contextual) bcemit_AD(fs, BC_TCTX, freg, 0);
+
    ExpDesc table;
    table.init(ExpKind::NonReloc, freg);
    RegisterAllocator allocator(fs);
@@ -78,6 +84,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
          if (not template_table) {
             BCReg kidx;
             template_table = lj_tab_new(fs->L, needarr ? narr : 0, hsize2hbits(nhash));
+            if (Payload.contextual) lj_tab_mark_contextual(template_table);
             kidx = BCReg(const_gc(fs, obj2gco(template_table), LJ_TTAB));
             fs->bcbase[pc.raw()].ins = BCINS_AD(BC_TDUP, freg - BCREG(1), kidx);
          }

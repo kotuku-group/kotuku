@@ -4,7 +4,7 @@ import 'json'
 module core as mCore
 
 @Test function NamedAndComputedTableCallsEstablishContext()
-   local point = { name = 'point', value = 0 }
+   local point = context { name = 'point', value = 0 }
 
    function point.set(Value:num):num
       .value = Value
@@ -32,8 +32,8 @@ module core as mCore
 end
 
 @Test function DirectCallsInheritAndNestedTableCallsRestoreContext()
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
+   local outer = context { name = 'outer' }
+   local inner = context { name = 'inner' }
 
    function read_context_name():str
       return .name
@@ -70,7 +70,7 @@ end
    .glCurrentContextCallRead = nil
    .glCurrentContextCallName = nil
 
-   local receiver = { name = 'receiver' }
+   local receiver = context { name = 'receiver' }
 
    function receiver.read(Value:str):str
       assert(.name is 'receiver', 'An inherited current-context call should retain its receiver')
@@ -85,7 +85,7 @@ end
       'A leading-dot member call should inherit the active context without re-entering it')
 
    local script = obj.new('tiri', { statement = [[
-local receiver = {}
+local receiver = context {}
 
 function receiver.read(Value:str):str
    return Value
@@ -111,7 +111,7 @@ end
 end
 
 @Test function InternalNamespacesInheritCurrentContext()
-   local outer = { name = 'namespace outer' }
+   local outer = context { name = 'namespace outer' }
 
    function read_namespace_argument():num
       assert(.name is 'namespace outer', 'Namespace argument evaluation should inherit the caller context')
@@ -129,7 +129,7 @@ end
 end
 
 @Test function ReturnAritiesRestoreContext()
-   local receiver = { name = 'receiver' }
+   local receiver = context { name = 'receiver' }
 
    function receiver.return_none()
       assert(.name is 'receiver', 'A zero-result call should execute in its receiver context')
@@ -155,7 +155,7 @@ end
 end
 
 @Test function VariableResultReturnsRestoreContext()
-   local receiver = { name = 'variable receiver' }
+   local receiver = context { name = 'variable receiver' }
 
    function receiver.forward(...):<any, ...>
       assert(.name is 'variable receiver', 'A variable-result callee should observe its receiver context')
@@ -172,8 +172,8 @@ end
 end
 
 @Test function ErrorsAndProtectedReentryRestoreContext()
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
+   local outer = context { name = 'outer' }
+   local inner = context { name = 'inner' }
 
    function inner.fail()
       assert(.name is 'inner', 'The failing function should observe its receiver context')
@@ -207,8 +207,8 @@ end
 
 @Test function ErrorCleanupHandlersObserveOwningContexts()
    local observed = {}
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
+   local outer = context { name = 'outer' }
+   local inner = context { name = 'inner' }
 
    function make_resource(Label:str):table
       return setmetatable({}, {
@@ -242,7 +242,7 @@ end
 @Test function DelayedCallbacksAreUnbound()
    .glDelayedContextName = 'root'
    .glDelayedObservedContext = nil
-   local receiver = { glDelayedContextName = 'receiver' }
+   local receiver = context { glDelayedContextName = 'receiver' }
 
    function receiver.schedule()
       processing.delayedCall(function()
@@ -262,7 +262,7 @@ end
 @Test function ActionCallbacksAreUnbound()
    .glActionContextName = 'root'
    .glActionObservedContext = nil
-   local receiver = { glActionContextName = 'receiver' }
+   local receiver = context { glActionContextName = 'receiver' }
    local file = obj.new('file')
    local timer
    local file_freed = false
@@ -295,9 +295,9 @@ end
 end
 
 @Test function ContextualTailCallsTransferOwnership()
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
-   local recursive = { name = 'recursive' }
+   local outer = context { name = 'outer' }
+   local inner = context { name = 'inner' }
+   local recursive = context { name = 'recursive' }
 
    function inherited_helper(Value:num):<str, num>
       return .name, Value
@@ -339,7 +339,7 @@ end
 
 @Test function DirectCallerContextualTailCallRestoresRoot()
    local script = obj.new('tiri', { statement = [[
-local target = { name = 'tail target' }
+local target = context { name = 'tail target' }
 
 function target.read()
    return .name
@@ -360,8 +360,8 @@ assert(.name is nil, 'A contextual tail call from a direct function should resto
 end
 
 @Test function ComputedVariadicAndNativeTailCallsRestoreContext()
-   local outer = { name = 'outer' }
-   local target = { name = 'target' }
+   local outer = context { name = 'outer' }
+   local target = context { name = 'target' }
 
    function target.collect(...):str
       local first = ...
@@ -384,7 +384,7 @@ end
 
 @Test function ReceiverKeyAndArgumentsPreserveEvaluationOrder()
    local events = {}
-   local target = { name = 'ordered' }
+   local target = context { name = 'ordered' }
 
    function target.invoke(Value:num):num
       events[#events] = 'call'
@@ -420,10 +420,14 @@ end
       return .name
    end
    local prototype = { inherited = implementation }
-   local receiver = setmetatable({ name = 'receiver' }, { __index = prototype })
+   -- The metatable designates the receiver contextual, so this also covers the `__context` designation path with an
+   -- inline literal target.
+   local receiver = setmetatable({ name = 'receiver' }, { __index = prototype, __context = true })
 
    assert(receiver.inherited() is 'receiver',
       'A callable returned through __index should retain the original table receiver as context')
+   assert(prototype.inherited() is nil,
+      'The ordinary table holding an inherited callable should not replace the receiver')
 end
 
 @Test function SafeContextualCallsShortCircuitAndEstablishContext()
@@ -446,7 +450,7 @@ end
    assert(key_calls is 0 and argument_calls is 0,
       'A safe computed call should not evaluate its key or arguments on the nil path')
 
-   local receiver = { name = 'safe' }
+   local receiver = context { name = 'safe' }
    function receiver.invoke():str
       return .name
    end
@@ -456,7 +460,7 @@ end
 
 @Test function ExtractedMembersRemainUnbound()
    .glContextualExtractionName = 'root'
-   local receiver = { glContextualExtractionName = 'receiver' }
+   local receiver = context { glContextualExtractionName = 'receiver' }
 
    function receiver.read():str
       return .glContextualExtractionName
@@ -527,8 +531,8 @@ end
 end
 
 @Test(hotpath=80) function JITHotNestedContextsAndSideExitsMatchInterpreter()
-   local outer = { name = 'jit outer' }
-   local inner = { name = 'jit inner', alternate = false }
+   local outer = context { name = 'jit outer' }
+   local inner = context { name = 'jit inner', alternate = false }
 
    function inner.read(Value:num):str
       if .alternate then return .name .. ':alternate:' .. tostring(Value) end
@@ -568,8 +572,8 @@ end
 end
 
 @Test(hotpath=80) function JITAlternatingReceiversUseRecordedContext()
-   local first = { value = 3 }
-   local second = { value = 7 }
+   local first = context { value = 3 }
+   local second = context { value = 7 }
 
    function read_value():num
       return .value
@@ -610,7 +614,7 @@ end
    function run(Count:num):num
       local total = 0
       for i in {0 to Count} do
-         local target = { value = i, alternate = i is 24, read = read_allocated }
+         local target = context { value = i, alternate = i is 24, read = read_allocated }
          total += target.read()
       end
       return total
@@ -632,7 +636,7 @@ end
 
 @Test function JITFreshContextualClosuresReusePrototypeTrace()
    function run_factory(Offset:num, Count:num):num
-      local target = {
+      local target = context {
          value = 3,
          read = function():num return .value + Offset end
       }
@@ -668,8 +672,8 @@ end
 end
 
 @Test function JITVirtualExitPreservesMaterialisedCallerContext()
-   local outer = { name = 'materialised outer' }
-   local target = { value = 3, alternate = false }
+   local outer = context { name = 'materialised outer' }
+   local target = context { value = 3, alternate = false }
 
    function target.read():num
       if .alternate then return .value + 1 end
@@ -704,8 +708,8 @@ end
 end
 
 @Test(hotpath=80) function JITContextualResultAritiesAndNestedRestorationMatchInterpreter()
-   local outer = { name = 'arity outer' }
-   local target = { name = 'arity target', calls = 0, alternate = false }
+   local outer = context { name = 'arity outer' }
+   local target = context { name = 'arity target', calls = 0, alternate = false }
 
    function target.zero()
       .calls++
@@ -756,8 +760,8 @@ end
 end
 
 @Test function JITContextualVariableResultsMatchInterpreter()
-   local outer = { name = 'variable outer' }
-   local target = { name = 'variable target' }
+   local outer = context { name = 'variable outer' }
+   local target = context { name = 'variable target' }
 
    function target.forward(...):<any, ...>
       return ...
@@ -794,8 +798,8 @@ end
 end
 
 @Test function JITComputedContextualResultsMatchInterpreter()
-   local outer = { name = 'computed outer' }
-   local target = { name = 'computed target' }
+   local outer = context { name = 'computed outer' }
+   local target = context { name = 'computed target' }
 
    function target.describe(Value:num):<table, num>
       return { name = .name, value = Value }, Value + 1
@@ -836,7 +840,7 @@ end
 end
 
 @Test function JITNativeContextualResultsRemainLoopCarried()
-   local methods = { decode = array.getString }
+   local methods = context { decode = array.getString }
    local bytes = array<byte> { 65, 66, 67 }
    local expected = { [0] = 'A', [1] = 'B', [2] = 'C' }
 
@@ -901,8 +905,8 @@ end
 end
 
 @Test(hotpath=80) function JITContextualTailTransferMatchesInterpreter()
-   local receiver = { name = 'jit tail' }
-   local target = { name = 'jit target' }
+   local receiver = context { name = 'jit tail' }
+   local target = context { name = 'jit target' }
 
    function target.read():str
       return .name
@@ -934,8 +938,8 @@ end
 end
 
 @Test(hotpath=80) function JITContextualTailTransferCoversOwnershipAndSideExits()
-   local outer = { name = 'tail outer' }
-   local target = { name = 'tail target', alternate = false }
+   local outer = context { name = 'tail outer' }
+   local target = context { name = 'tail target', alternate = false }
 
    function target.read(Value:num):str
       assert(.name is 'tail target', 'A transferred tail context should be visible in the target')
@@ -1011,8 +1015,8 @@ end
 end
 
 @Test(hotpath=80) function JITNativeContextualTailTransferRestoresContext()
-   local native_target = { absolute = math.abs }
-   local native_forwarder = { name = 'native forwarder' }
+   local native_target = context { absolute = math.abs }
+   local native_forwarder = context { name = 'native forwarder' }
 
    function native_forwarder.run():num
       return native_target.absolute(-7)
@@ -1034,7 +1038,7 @@ end
 end
 
 @Test(hotpath=80) function JITRecursiveContextualTailTransferHandlesAbortsAndSideExits()
-   local recursive = { name = 'recursive tail', visits = 0, alternate = false }
+   local recursive = context { name = 'recursive tail', visits = 0, alternate = false }
 
    function recursive.run(Count:num):<any, ...>
       .visits++

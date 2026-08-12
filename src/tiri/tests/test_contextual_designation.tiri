@@ -1,0 +1,326 @@
+-- Flute regression tests for opt-in contextual table designation.
+--
+-- Contextuality is observed through a leading-dot probe: a designated receiver establishes itself as the current
+-- context for its member call, so `.name` resolves; an ordinary receiver inherits the caller context instead and the
+-- same probe resolves to nil.  This is the observable contract, so the tests assert on it rather than on metadata.
+
+import 'json'
+
+-- Shared probe stored in ordinary and contextual tables alike.  Contract item 3 puts contextuality on the table
+-- identity rather than on the function, so one implementation serves every receiver in this file.
+function probe_name():any
+   return .name
+end
+
+@Test function DesignatedConstructorsEstablishContextAndOrdinaryOnesDoNot()
+   local ordinary = { name = 'ordinary', read = probe_name }
+   local designated = context { name = 'designated', read = probe_name }
+
+   assert(ordinary.read() is nil, 'An ordinary table must not establish context for a member call')
+   assert(designated.read() is 'designated', 'A designated table should establish itself as the current context')
+end
+
+@Test function DesignationAcceptsTriviaBetweenItsTokens()
+   local spaced = context   { name = 'spaced', read = probe_name }
+   local tabbed = context	{ name = 'tabbed', read = probe_name }
+   local commented = context --[[ designation ]] { name = 'commented', read = probe_name }
+   local broken = context
+   {
+      name = 'broken',
+      read = probe_name
+   }
+
+   assert(spaced.read() is 'spaced', 'Spaces between the designation tokens should be accepted')
+   assert(tabbed.read() is 'tabbed', 'A tab between the designation tokens should be accepted')
+   assert(commented.read() is 'commented', 'A comment between the designation tokens should be accepted')
+   assert(broken.read() is 'broken', 'A line break between the designation tokens should be accepted')
+end
+
+@Test function ContextRemainsAnOrdinaryIdentifierOutsideTheDesignationForm()
+   -- The designation rule deliberately displaces the same-line table-argument call shorthand, so a callable named
+   -- `context` must be invoked with parenthesised call syntax.
+   local function context(Table:table):num
+      return Table.value * 2
+   end
+
+   local context_variable = 5
+   local holder = { context = 7 }
+
+   assert(context({ value = 21 }) is 42, 'A parenthesised call of a value named context should remain a call')
+   assert(context_variable is 5, 'An identifier beginning with context should remain an ordinary identifier')
+   assert(holder.context is 7, 'A field named context should remain an ordinary field')
+end
+
+@Test function DesignationIsPermanentAndDoesNotNest()
+   local designated = context {
+      name = 'permanent',
+      read = probe_name,
+      nested = { name = 'nested', read = probe_name }
+   }
+
+   assert(designated.nested.read() is nil,
+      'A nested table should not inherit contextuality from its containing table')
+
+   -- Contract item 4: no ordinary mutation may clear the designation.
+   designated.name = 'mutated'
+   assert(designated.read() is 'mutated', 'Field mutation should not clear a permanent designation')
+
+   setmetatable(designated, { __index = function() return 'inherited' end })
+   assert(designated.read() is 'mutated', 'A metatable change should not clear a permanent designation')
+
+   setmetatable(designated, nil)
+   assert(designated.read() is 'mutated', 'Clearing a metatable should not clear a permanent designation')
+end
+
+@Test function AliasesAndExtractedMembersFollowTheReceiver()
+   local designated = context { name = 'aliased', read = probe_name }
+   local alias = designated
+
+   assert(alias.read() is 'aliased', 'An alias refers to the same table identity and behaves identically')
+
+   -- Contract item 7: an extracted function has no receiver, so it inherits the caller context.
+   local extracted = designated.read
+   assert(extracted() is nil, 'An extracted member call should be unbound')
+
+   -- Contract item 10: one function behaves according to the receiver used for each call.
+   local ordinary = { name = 'ordinary', read = designated.read }
+   assert(ordinary.read() is nil, 'Storing a callable in an ordinary table must not activate that table')
+end
+
+@Test function MetatableDesignationMarksOwnedTargets()
+   local contextual_metatable = { __context = true }
+
+   local inline = setmetatable({ name = 'inline', read = probe_name }, contextual_metatable)
+   assert(inline.read() is 'inline', 'An inline literal target should be designated by a true __context marker')
+
+   -- Section 5.2.1: prior ordinary use of an owned allocation never blocks designation.
+   local owned = {}
+   owned.name = 'owned'
+   owned.read = probe_name
+   local before = owned
+   assert(owned.read() is nil, 'A call made before designation should not establish context')
+
+   setmetatable(owned, contextual_metatable)
+   assert(owned.read() is 'owned', 'An owned local should remain eligible after ordinary use')
+   assert(before.read() is 'owned', 'An alias taken before designation should observe the designation')
+end
+
+@Test function MetatableDesignationAcceptsIdiomaticConstructors()
+   local contextual_metatable = { __context = true }
+
+   function make_colour(Red:num):table
+      local value = { name = 'colour', red = Red, read = probe_name }
+      return setmetatable(value, contextual_metatable)
+   end
+
+   assert(make_colour(3).read() is 'colour', 'The idiomatic constructor shape should be accepted')
+
+   -- A merge of two owned literals remains an owned allocation on both paths.
+   function make_merged(Flag:bool):table
+      local value
+      if Flag then value = { name = 'first', read = probe_name }
+      else value = { name = 'second', read = probe_name }
+      end
+      return setmetatable(value, contextual_metatable)
+   end
+
+   assert(make_merged(true).read() is 'first', 'A merge of owned literals should be designated on the true path')
+   assert(make_merged(false).read() is 'second', 'A merge of owned literals should be designated on the false path')
+end
+
+@Test function OrdinaryMetatablesAndInexactMarkersDoNotDesignate()
+   local ordinary_metatable = { __index = function() return 'inherited' end }
+   local plain = setmetatable({ name = 'plain', read = probe_name }, ordinary_metatable)
+   assert(plain.read() is nil, 'An ordinary metatable should not designate its target')
+
+   -- Only an exactly true marker designates; the raw value is not coerced.
+   local falsey = setmetatable({ name = 'falsey', read = probe_name }, { __context = false })
+   assert(falsey.read() is nil, 'A false __context marker should not designate its target')
+
+   local numeric = setmetatable({ name = 'numeric', read = probe_name }, { __context = 1 })
+   assert(numeric.read() is nil, 'A non-boolean __context marker should not designate its target')
+end
+
+@Test function UnauthorisedPromotionIsRejectedAtomically()
+   local extracted_setmetatable = setmetatable
+   local contextual_metatable = { __context = true }
+   local target = { name = 'target', read = probe_name }
+
+   local rejected = false
+   try
+      extracted_setmetatable(target, contextual_metatable)
+   except e
+      rejected = true
+   end
+
+   assert(rejected, 'An extracted setmetatable() must not promote an ordinary table')
+   assert(getmetatable(target) is nil, 'A rejected designation should leave the target metatable unchanged')
+   assert(target.read() is nil, 'A rejected designation should leave the target ordinary')
+
+   -- An already contextual target accepts any metatable, because no promotion is taking place.
+   local designated = context { name = 'designated', read = probe_name }
+   local accepted = true
+   try
+      extracted_setmetatable(designated, contextual_metatable)
+   except e
+      accepted = false
+   end
+
+   assert(accepted, 'An already contextual target should accept a later metatable change')
+   assert(designated.read() is 'designated', 'A later metatable change should not disturb an existing designation')
+
+   -- An ordinary metatable change through an extracted call is unaffected by the designation gate.
+   local plain = { value = 1 }
+   local plain_ok = true
+   try
+      extracted_setmetatable(plain, { __index = function() return 2 end })
+   except e
+      plain_ok = false
+   end
+   assert(plain_ok, 'An ordinary metatable change should still work through an extracted call')
+end
+
+@Test function TableSlicesPropagateContextualityFromTheirSource()
+   -- The source must stay a pure sequence, because slicing rejects an associative table.  Contextuality is read back
+   -- from each result by adding the probe to the result rather than the source.
+   local designated = context { 10, 20, 30 }
+
+   -- Section 3.4: all three slice spellings share one implementation and must propagate identically, including
+   -- when the result is empty.
+   --
+   -- Each result is bound through an explicit `:table` annotation so the receiver classifies as a table.  Without
+   -- it, `range.slice()` declares a non-table result and the compiler suppresses the contextual call shape, which is
+   -- a static call-emission concern for Phase 4 rather than a failure of the runtime propagation asserted here.
+
+   local from_index:table = designated[{0 to 1}]
+   local from_range:table = range.slice(designated, {0 to 1})
+   local from_table:table = table.slice(designated, {0 to 1})
+   local empty_index:table = designated[{5 to 4}]
+   local empty_range:table = range.slice(designated, {5 to 4})
+   local empty_table:table = table.slice(designated, {5 to 4})
+
+   local spellings = {
+      from_index, from_range, from_table, empty_index, empty_range, empty_table
+   }
+
+   for index in {0 to 5} do
+      local slice:table = spellings[index]
+      slice.name = 'slice'
+      slice.read = probe_name
+      assert(slice.read() is 'slice', 'Every table-slice spelling should propagate contextuality from its source')
+   end
+
+   local ordinary = { 10, 20, 30 }
+   local ordinary_index:table = ordinary[{0 to 1}]
+   local ordinary_range:table = range.slice(ordinary, {0 to 1})
+   local ordinary_table:table = table.slice(ordinary, {0 to 1})
+   local ordinary_empty:table = ordinary[{5 to 4}]
+
+   local ordinary_spellings = {
+      ordinary_index, ordinary_range, ordinary_table, ordinary_empty
+   }
+
+   for index in {0 to 3} do
+      local slice:table = ordinary_spellings[index]
+      slice.name = 'slice'
+      slice.read = probe_name
+      assert(slice.read() is nil, 'A slice of an ordinary source should remain ordinary')
+   end
+end
+
+@Test function NonDerivationOperationsDoNotPropagateContextuality()
+   local designated = context { name = 'source', read = probe_name, value = 7 }
+
+   -- Manual copying is not a declared derivation, so the result is an ordinary literal.
+   local copied = { name = 'copied', read = probe_name, value = designated.value }
+   assert(copied.read() is nil, 'A manually populated literal should remain ordinary')
+
+   -- A contextual table nested merely as an element does not mark the outer table.
+   local container = { inner = designated, name = 'container', read = probe_name }
+   assert(container.read() is nil, 'A contextual element should not mark the table that contains it')
+
+   -- The nested table keeps its own designation.  It is bound to a typed local first because a chained
+   -- `container.inner.read()` receiver has no proved table classification, so the compiler suppresses the contextual
+   -- call shape; that static specialisation is Phase 4 work rather than a runtime propagation failure.
+   local nested:table = container.inner
+   assert(nested.read() is 'source', 'The nested contextual table should retain its own designation')
+
+   -- A JSON round trip has no live table as its structural source.
+   local decoded = json.decode(json.encode({ name = 'decoded', value = 1 }))
+   decoded.read = probe_name
+   assert(decoded.read() is nil, 'A JSON round trip should produce an ordinary table')
+
+   -- table.move() does not create its destination, so a caller-supplied ordinary destination stays ordinary and a
+   -- contextual destination stays contextual because the flag is permanent.
+   local ordinary_destination = { name = 'destination', read = probe_name }
+   table.move(designated, 0, 0, 0, ordinary_destination)
+   assert(ordinary_destination.read() is nil, 'table.move() should not promote a caller-supplied destination')
+
+   local contextual_destination = context { name = 'contextual destination', read = probe_name }
+   table.move({ 1 }, 0, 0, 0, contextual_destination)
+   assert(contextual_destination.read() is 'contextual destination',
+      'A contextual destination should remain contextual after table.move()')
+end
+
+@Test(hotpath=80) function DesignatedReceiversMatchInterpreterUnderRecording()
+   function make_counter(Start:num):table
+      return context {
+         name = 'counter',
+         value = Start,
+         read = probe_name
+      }
+   end
+
+   function run(Count:num):num
+      local total = 0
+      for i in {0 to Count} do
+         local counter = make_counter(i)
+         assert(counter.read() is 'counter', 'A recorded designated constructor should establish its receiver')
+         total += counter.value
+      end
+      return total
+   end
+
+   jit.off()
+   local interpreted = run(64)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run(64)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted, 'A recorded designation should match the interpreter')
+   assert(.name is nil, 'A completed recorded designation workload should restore the root context')
+end
+
+@Test(hotpath=80) function LateDesignationRespecialisesLiveTraces()
+   -- Section 5.2.2 and 6.2: a trace specialised to an ordinary receiver guards TAB_CONTEXTUAL, so designation
+   -- side-exits it and recompilation specialises to the contextual path.
+   local contextual_metatable = { __context = true }
+   local late = { name = 'late', read = probe_name }
+
+   function run(Count:num):num
+      local seen = 0
+      for _ in {0 to Count} do
+         if late.read() != nil then seen++ end
+      end
+      return seen
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local before = run(200)
+   setmetatable(late, contextual_metatable)
+   local after = run(200)
+
+   jit.off()
+   jit.opt.start()
+
+   assert(before is 0, 'Calls made before designation should not establish context')
+   assert(after is 200, 'Calls made after designation should establish context on a respecialised trace')
+   assert(.name is nil, 'Late designation should finish in the root context')
+end

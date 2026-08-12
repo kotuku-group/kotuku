@@ -760,6 +760,17 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
             callee = lookup;
          }
       }
+      else if (Payload.authorised_contextual_designation) {
+         // The descriptor pass proved this is a direct call to the unshadowed built-in setmetatable() whose target is
+         // an allocation owned by this function.  Load the authorised variant through its private canonical callable
+         // rather than a global name, so scripts cannot extract it and bypass the ownership proof.  Every other
+         // spelling - shadowed, extracted, piped or native - keeps the ordinary built-in and raises instead.
+
+         BCReg call_base = this->func_state.free_reg();
+         callee = bcemit_builtin_callable(&this->func_state,
+            builtin_callable_id(FastFunc::__setmetatable_ctx), call_base.raw());
+         bcreg_reserve(&this->func_state, 1);
+      }
       else {
          auto callee_result = this->emit_expression(*direct->callable);
          if (not callee_result.ok()) return callee_result;

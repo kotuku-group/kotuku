@@ -7509,6 +7509,292 @@ static bool test_contextual_runtime_semantics(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+// Phase 2 of the opt-in table context plan: the `context { ... }` prefix designation form.
+//
+// Recognition is a parser-level token sequence rather than a reserved word or a lexer compound token, so `context`
+// must remain an ordinary identifier in every other position.  The token stream has already removed trivia, which is
+// why spaces, tabs, comments and line breaks between the two tokens all reach the same designation.
+
+static bool test_contextual_designation_syntax(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   struct DesignationCase {
+      const char *source;
+      bool contextual;
+      const char *description;
+   };
+
+   constexpr std::array<DesignationCase, 9> cases = { {
+      { "return context { value = 1 }", true, "a designated constructor" },
+      { "return context    { value = 1 }", true, "spaces between the tokens" },
+      { "return context\t{ value = 1 }", true, "a tab between the tokens" },
+      { "return context --[[ mark ]] { value = 1 }", true, "a comment between the tokens" },
+      { "return context\n{ value = 1 }", true, "a line break between the tokens" },
+      { "return context {}", true, "an empty designated constructor" },
+      { "return context { nested = { value = 1 } }", true, "a designated outer constructor" },
+      { "local t = context { nested = { value = 1 } }\nreturn t.nested", false,
+        "a nested constructor inside a designated table" },
+      { "return { value = 1 }", false, "an undesignated constructor" }
+   } };
+
+   for (const auto &entry : cases) {
+      if (lua_load(L, entry.source, "contextual-designation")) {
+         Log.error("failed to compile %s: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      if (lua_pcall(L, 0, 1, 0)) {
+         Log.error("%s failed to run: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      const TValue *result = L->top - 1;
+      if (not tvistab(result)) {
+         Log.error("%s did not produce a table", entry.description);
+         return false;
+      }
+      if (lj_tab_is_contextual(tabV(result)) != entry.contextual) {
+         Log.error("%s produced the wrong contextuality", entry.description);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // `context` remains an ordinary identifier outside the complete designation form, and the parenthesised call is
+   // the replacement for the table-argument shorthand this grammar rule deliberately displaces.
+   constexpr std::string_view ordinary_source =
+      "local function context(Table:table):num return Table.value * 2 end\n"
+      "local context_variable = 5\n"
+      "local holder = { context = 7 }\n"
+      "return context({ value = 21 }), context_variable, holder.context\n";
+
+   if (lua_load(L, ordinary_source, "contextual-identifier")) {
+      Log.error("failed to compile the ordinary identifier fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 3, 0)) {
+      Log.error("the ordinary identifier fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_tonumber(L, -3) != 42 or lua_tonumber(L, -2) != 5 or lua_tonumber(L, -1) != 7) {
+      Log.error("'context' did not behave as an ordinary identifier outside the designation form");
+      return false;
+   }
+   lua_pop(L, 3);
+
+   // A malformed or unterminated constructor after `context` is a designation diagnostic.  Falling back to an
+   // ordinary identifier expression here would silently resurrect the displaced call shorthand.
+   constexpr std::array<const char *, 2> malformed = {
+      "return context { value = 1",
+      "return context { value = }"
+   };
+
+   for (const char *source : malformed) {
+      if (not lua_load(L, source, "contextual-malformed")) {
+         Log.error("a malformed designation compiled instead of producing a diagnostic");
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // TCTX must remain adjacent to its allocation even when dynamic fields require later initialisation bytecode, so
+   // a valid contextual constructor survives the bytecode reader's ownership validation after dumping and reloading.
+   constexpr std::string_view roundtrip_source =
+      "local dynamic = 7\n"
+      "return context { value = dynamic }\n";
+
+   if (lua_load(L, roundtrip_source, "contextual-roundtrip")) {
+      Log.error("failed to compile the contextual round-trip fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::vector<uint8_t> dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump the contextual round-trip fixture");
+      return false;
+   }
+   lua_settop(L, 0);
+
+   if (lua_load(L, std::string_view((const char *)dump.data(), dump.size()), "contextual-roundtrip")) {
+      Log.error("failed to reload the contextual round-trip fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0)) {
+      Log.error("the reloaded contextual round-trip fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   cTValue *value = tvistab(L->top - 1) ?
+      lj_tab_getstr(tabV(L->top - 1), lj_str_newlit(L, "value")) : nullptr;
+   if (not tvistab(L->top - 1) or not lj_tab_is_contextual(tabV(L->top - 1)) or
+       not value or not tvisint(value) or intV(value) != 7) {
+      Log.error("the reloaded contextual constructor lost its designation or dynamic field value");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Phase 2 of the opt-in table context plan: `__context` designation through an authorised setmetatable().
+
+static bool test_contextual_metatable_designation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   lua_getglobal(L, "__setmetatable_ctx");
+   if (not lua_isnil(L, -1)) {
+      Log.error("the compiler-private contextual setmetatable callable is visible through the global environment");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   // Authorisation requires proof that `setmetatable` still names the built-in.  That proof comes from the protected
+   // global marker, so the fixture must protect globals exactly as a script state does.
+   lua_protect_globals(L);
+
+   struct DesignationCase {
+      const char *source;
+      bool contextual;
+      const char *description;
+   };
+
+   constexpr std::array<DesignationCase, 6> cases = { {
+      { "local mt = { __context = true }\n"
+        "return setmetatable({ value = 1 }, mt)", true, "an inline literal target" },
+
+      { "local mt = { __context = true }\n"
+        "local value = {}\n"
+        "value.field = 1\n"
+        "local alias = value\n"
+        "return setmetatable(value, mt)", true, "an owned local after prior ordinary use" },
+
+      { "local mt = { __context = true }\n"
+        "local function make():table local v = { r = 1 } return setmetatable(v, mt) end\n"
+        "return make()", true, "an idiomatic constructor" },
+
+      { "local mt = { __context = true }\n"
+        "local value\n"
+        "if 1 < 2 then value = { a = 1 } else value = { a = 2 } end\n"
+        "return setmetatable(value, mt)", true, "a merge of two owned literals" },
+
+      { "local mt = { __index = function() return 1 end }\n"
+        "return setmetatable({ value = 1 }, mt)", false, "an ordinary metatable" },
+
+      { "local mt = { __context = false }\n"
+        "return setmetatable({ value = 1 }, mt)", false, "a marker that is not exactly true" }
+   } };
+
+   for (const auto &entry : cases) {
+      if (lua_load(L, entry.source, "contextual-metatable")) {
+         Log.error("failed to compile %s: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      if (lua_pcall(L, 0, 1, 0)) {
+         Log.error("%s failed to run: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      const TValue *result = L->top - 1;
+      if (not tvistab(result)) {
+         Log.error("%s did not produce a table", entry.description);
+         return false;
+      }
+      if (lj_tab_is_contextual(tabV(result)) != entry.contextual) {
+         Log.error("%s produced the wrong contextuality", entry.description);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // A statically known marker on a foreign target is a compile-time error, because designation would permanently
+   // alter a table belonging to another author.
+   constexpr std::array<const char *, 3> rejected = {
+      "local mt = { __context = true }\n"
+      "local function promote(Target:table) setmetatable(Target, mt) end\n"
+      "promote({})",
+
+      "local mt = { __context = true }\n"
+      "setmetatable(registry, mt)",
+
+      "local mt = { __context = true }\n"
+      "local function make():table return {} end\n"
+      "setmetatable(make(), mt)"
+   };
+
+   for (const char *source : rejected) {
+      if (not lua_load(L, source, "contextual-foreign")) {
+         Log.error("a foreign designation target compiled instead of producing a diagnostic");
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // An unauthorised call cannot promote an ordinary table, and the rejection is atomic: the target keeps the
+   // metatable it had.  An already contextual target remains eligible for later metatable changes.
+   constexpr std::string_view unauthorised_source =
+      "local smt = setmetatable\n"
+      "local mt = { __context = true }\n"
+      "local target = {}\n"
+      "local rejected = false\n"
+      "try\n   smt(target, mt)\nexcept e\n   rejected = true\nend\n"
+      "local designated = context {}\n"
+      "local accepted = true\n"
+      "try\n   smt(designated, mt)\nexcept e\n   accepted = false\nend\n"
+      "return rejected, getmetatable(target) is nil, accepted\n";
+
+   if (lua_load(L, unauthorised_source, "contextual-unauthorised")) {
+      Log.error("failed to compile the unauthorised fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 3, 0)) {
+      Log.error("the unauthorised fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (not lua_toboolean(L, -3)) {
+      Log.error("an extracted setmetatable() promoted an ordinary table");
+      return false;
+   }
+   if (not lua_toboolean(L, -2)) {
+      Log.error("a rejected contextual designation was not atomic");
+      return false;
+   }
+   if (not lua_toboolean(L, -1)) {
+      Log.error("an already contextual target was refused a later metatable change");
+      return false;
+   }
+   lua_pop(L, 3);
+
+   // Designation is permanent: no mutation, clear or metatable change may clear the flag.
+   constexpr std::string_view permanence_source =
+      "local designated = context { value = 1 }\n"
+      "designated.value = nil\n"
+      "table.clear(designated)\n"
+      "setmetatable(designated, nil)\n"
+      "return designated\n";
+
+   if (lua_load(L, permanence_source, "contextual-permanence")) {
+      Log.error("failed to compile the permanence fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0)) {
+      Log.error("the permanence fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (not tvistab(L->top - 1) or not lj_tab_is_contextual(tabV(L->top - 1))) {
+      Log.error("mutation, clearing or a metatable change cleared a permanent designation");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   return true;
+}
+
+//********************************************************************************************************************
 // Phase 0 of the opt-in table context plan: allocation-site ownership of a contextual designation target.
 
 static bool test_contextual_designation_ownership(kt::Log &Log)
@@ -7709,7 +7995,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 68> tests = { {
+   constexpr std::array<TestCase, 70> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7777,7 +8063,9 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_callable_bytecode", test_builtin_callable_bytecode },
       { "contextual_designation_ownership", test_contextual_designation_ownership },
       { "contextual_table_flag", test_contextual_table_flag },
-      { "contextual_runtime_semantics", test_contextual_runtime_semantics }
+      { "contextual_runtime_semantics", test_contextual_runtime_semantics },
+      { "contextual_designation_syntax", test_contextual_designation_syntax },
+      { "contextual_metatable_designation", test_contextual_metatable_designation }
    } };
 
    // A dummy object is required to manage state.

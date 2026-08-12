@@ -246,6 +246,26 @@ extern "C" void lj_context_tail_jit(
    L->context_stack.back().tail_transfer = true;
 }
 
+// Permanently designate the table in a register as contextual.  The parser only emits BC_TCTX against a freshly
+// materialised table constructor, so the slot is a table by construction; the assertion documents that contract for
+// hand-written or malformed bytecode, which the reader rejects separately.
+
+extern "C" void lj_tab_designate_contextual(lua_State *L, uint32_t Slot)
+{
+   TValue *target = L->base + Slot;
+   lj_assertL(tvistab(target), "contextual designation applied to a non-table register");
+   if (tvistab(target)) lj_tab_mark_contextual(tabV(target));
+}
+
+// Recorded form of the designation above.  The recorder already holds the constructor's table reference, so no stack
+// slot is involved and the helper never reallocates or raises.
+
+extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept
+{
+   lj_assertX(Table, "contextual designation of a null table");
+   lj_tab_mark_contextual(Table);
+}
+
 extern "C" void lj_context_enter_call(lua_State *L, uint32_t CallBase)
 {
    ptrdiff_t owner_base = savestack(L, L->base + CallBase + 1 + LJ_FR2);

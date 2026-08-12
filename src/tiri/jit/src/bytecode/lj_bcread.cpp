@@ -321,6 +321,18 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       if (op IS BC_MRSAVE or op IS BC_MRRESTORE) {
          pt->flags |= PROTO_NOJIT;
       }
+      else if (op IS BC_TCTX) {
+         // Contextual designation only ever applies to a table the compiler has just materialised in A.  Requiring the
+         // preceding instruction to be the matching constructor rejects a marker retargeted at a foreign table and
+         // makes a duplicated marker impossible, because the second copy no longer follows a constructor.
+         BCREG slot = bc_a(bc[i]);
+         if (slot >= pt->framesize) bcread_error(State, ErrMsg::BCBAD);
+         if (i IS 1) bcread_error(State, ErrMsg::BCBAD);
+         BCOp previous = bc_op(bc[i - 1]);
+         if ((previous != BC_TNEW and previous != BC_TDUP) or bc_a(bc[i - 1]) != slot) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
+      }
       else if (op IS BC_CTXENTER or op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXLEAVE or
                op IS BC_CTXCALLT) {
          BCREG call_base = bc_a(bc[i]);

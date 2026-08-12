@@ -52,6 +52,7 @@ extern "C" LJ_FUNC void lj_context_enter_jit(lua_State *L, GCtab *Table, TValue 
 extern "C" LJ_FUNC void lj_context_leave_jit(lua_State *L, TValue *OwnerBase) noexcept;
 extern "C" LJ_FUNC void lj_context_tail_jit(
    lua_State *L, GCtab *Table, TValue *PreparedOwner, TValue *OutgoingOwner);
+extern "C" LJ_FUNC void lj_tab_designate_contextual(lua_State *L, uint32_t Slot);
 extern "C" LJ_FUNC void lj_context_enter_call(lua_State *L, uint32_t CallBase);
 extern "C" LJ_FUNC uint32_t lj_context_prepare_call(lua_State *L, uint32_t CallBase, uint32_t ArgumentCount);
 extern "C" LJ_FUNC void lj_context_leave_call(

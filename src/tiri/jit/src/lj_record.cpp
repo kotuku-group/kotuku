@@ -4605,6 +4605,13 @@ void lj_record_ins(jit_State *J)
       rec_context_enter(J, ra);
       break;
 
+   case BC_TCTX:
+      // Designation is a runtime side effect on the constructor result, not speculative IR: a side exit taken after
+      // this point must observe the already-marked table.  Snapshotting after the call gives the exit that state.
+      lj_ir_call(J, IRCALL_lj_tab_mark_contextual_jit, ra);
+      J->needsnap = 1;
+      break;
+
    case BC_CTXLEAVE:
       rec_context_leave(J, ra, pc);
       break;

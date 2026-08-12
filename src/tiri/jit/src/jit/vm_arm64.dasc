@@ -4792,6 +4792,16 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_TCTX:
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2w, RAw
+    |  bl extern lj_tab_designate_contextual
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

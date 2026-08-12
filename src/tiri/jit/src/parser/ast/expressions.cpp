@@ -478,6 +478,36 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       }
 
       case TokenKind::Identifier: {
+         // Contextual designation: `context { ... }` permanently marks the constructed table.  Recognition is a
+         // parser-level token sequence rather than a lexer compound token or a reserved word, so `context` stays an
+         // ordinary identifier everywhere else.  Trivia between the two tokens has already been removed by the token
+         // stream, so no lookahead over whitespace, comments or line breaks is required.
+         //
+         // This deliberately takes precedence over the same-line table-argument call shorthand: after the cut-over
+         // `context { ... }` is always a designation, and calling a value named `context` needs `context({ ... })`.
+
+         if (token_identifier_is(current, "context") and
+             this->ctx.tokens().peek(1).kind() IS TokenKind::LeftBrace) {
+            Token context_token = current;
+            this->ctx.tokens().advance();
+
+            // A malformed or unterminated constructor after `context` is a designation diagnostic.  Falling back to
+            // an ordinary identifier expression here would silently resurrect the displaced call shorthand.
+            auto table = this->parse_table_literal(false);
+            if (not table.ok()) return table;
+
+            auto *payload = std::get_if<TableExprPayload>(&table.value_ref()->data);
+            if (not payload) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, context_token,
+                  "'context' must be followed by a table constructor to designate a contextual table");
+            }
+
+            payload->contextual = true;
+            table.value_ref()->span = combine_spans(context_token.span(), table.value_ref()->span);
+            node = std::move(table.value_ref());
+            break;
+         }
+
          if (const ModuleNamespaceSymbol *module_symbol = this->resolve_module_namespace(current.identifier())) {
             this->ctx.tokens().advance();
             Token suffix = this->ctx.tokens().current();
