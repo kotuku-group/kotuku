@@ -871,6 +871,7 @@ set (TIRI_TESTS
    object_pinning import_type_analysis global_types type_contracts thunk_contract_argument type_signature_dumps
    type_guided_emission type_guided_jit_signatures
    context_access contextual_member_calls contextual_designation context_blocks
+   stack_growth
 )
 
 foreach (TEST_NAME ${TIRI_TESTS})

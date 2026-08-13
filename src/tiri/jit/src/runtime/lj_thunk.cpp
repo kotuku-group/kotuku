@@ -192,10 +192,24 @@ static int thunk_tostring(lua_State *L);
 
 // Helper: Get number value from TValue, handling integer and number types
 
-inline lua_Number getnumvalue(TValue *o)
+inline lua_Number getnumvalue(cTValue *o)
 {
    if (tvisint(o)) return (lua_Number)intV(o);
    return numV(o);
+}
+
+// Resolve both operands without retaining pointers into the Lua stack across either deferred call.  The original
+// stack slots keep any copied GC values rooted while thunk resolution executes arbitrary Tiri code.
+
+static void resolve_binary_operands(lua_State *L, TValue &FirstCopy, TValue &SecondCopy,
+   cTValue *&First, cTValue *&Second)
+{
+   copyTV(L, &FirstCopy, L->base);
+   copyTV(L, &SecondCopy, L->base + 1);
+   First = &FirstCopy;
+   Second = &SecondCopy;
+   if (lj_is_thunk(First)) First = lj_thunk_resolve(L, udataV(First));
+   if (lj_is_thunk(Second)) Second = lj_thunk_resolve(L, udataV(Second));
 }
 
 //********************************************************************************************************************
@@ -203,8 +217,9 @@ inline lua_Number getnumvalue(TValue *o)
 
 static int thunk_add(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) + getnumvalue(b);
@@ -218,8 +233,9 @@ static int thunk_add(lua_State *L)
 
 static int thunk_sub(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) - getnumvalue(b);
@@ -233,8 +249,9 @@ static int thunk_sub(lua_State *L)
 
 static int thunk_mul(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) * getnumvalue(b);
@@ -248,8 +265,9 @@ static int thunk_mul(lua_State *L)
 
 static int thunk_div(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) / getnumvalue(b);
@@ -263,8 +281,9 @@ static int thunk_div(lua_State *L)
 
 static int thunk_mod(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number na = getnumvalue(a);
@@ -280,8 +299,9 @@ static int thunk_mod(lua_State *L)
 
 static int thunk_pow(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = pow(getnumvalue(a), getnumvalue(b));
@@ -313,8 +333,9 @@ static int thunk_unm(lua_State *L)
 
 static int thunk_concat(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
    lj_assertL(a != nullptr, "Invalid LHS (null)");
    lj_assertL(b != nullptr, "Invalid RHS (null)");
    copyTV(L, L->top, a);
@@ -332,8 +353,9 @@ static int thunk_concat(lua_State *L)
 
 static int thunk_eq(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    // Same pointer means equal
 
@@ -387,8 +409,9 @@ static int thunk_eq(lua_State *L)
 
 static int thunk_lt(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    int result;
    if (tvisnumber(a) and tvisnumber(b)) {
@@ -415,8 +438,9 @@ static int thunk_lt(lua_State *L)
 // Less than or equal - compares resolved values
 static int thunk_le(lua_State *L)
 {
-   TValue *a = resolve_at(L, 0);
-   TValue *b = resolve_at(L, 1);
+   TValue a_copy, b_copy;
+   cTValue *a, *b;
+   resolve_binary_operands(L, a_copy, b_copy, a, b);
 
    int result;
    if (tvisnumber(a) and tvisnumber(b)) {
