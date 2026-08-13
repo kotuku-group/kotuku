@@ -4,7 +4,7 @@ import 'json'
 module core as mCore
 
 @Test function NamedAndComputedTableCallsEstablishContext()
-   local point = context { name = 'point', value = 0 }
+   local point = entity { name = 'point', value = 0 }
 
    function point.set(Value:num):num
       &value = Value
@@ -32,8 +32,8 @@ module core as mCore
 end
 
 @Test function DirectCallsInheritAndNestedTableCallsRestoreContext()
-   local outer = context { name = 'outer' }
-   local inner = context { name = 'inner' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
 
    function read_context_name():str
       return &name
@@ -61,7 +61,7 @@ end
 
 @Test function DynamicBuiltinFallbackCallsUseTheRuntimeTableGate()
    local holder = {
-      target = context { total = 0 }
+      target = entity { total = 0 }
    }
 
    function holder.target.add(Value:num):num
@@ -90,7 +90,7 @@ end
    &glCurrentContextCallRead = nil
    &glCurrentContextCallName = nil
 
-   local receiver = context { name = 'receiver' }
+   local receiver = entity { name = 'receiver' }
 
    function receiver.read(Value:str):str
       assert(&name is 'receiver', 'An inherited current-context call should retain its receiver')
@@ -105,7 +105,7 @@ end
       'A context member call should inherit the active context without re-entering it')
 
    local script = obj.new('tiri', { statement = [[
-local receiver = context {}
+local receiver = entity {}
 
 function receiver.read(Value:str):str
    return Value
@@ -131,7 +131,7 @@ end
 end
 
 @Test function InternalNamespacesInheritCurrentContext()
-   local outer = context { name = 'namespace outer' }
+   local outer = entity { name = 'namespace outer' }
 
    function read_namespace_argument():num
       assert(&name is 'namespace outer', 'Namespace argument evaluation should inherit the caller context')
@@ -149,7 +149,7 @@ end
 end
 
 @Test function ReturnAritiesRestoreContext()
-   local receiver = context { name = 'receiver' }
+   local receiver = entity { name = 'receiver' }
 
    function receiver.return_none()
       assert(&name is 'receiver', 'A zero-result call should execute in its receiver context')
@@ -175,7 +175,7 @@ end
 end
 
 @Test function VariableResultReturnsRestoreContext()
-   local receiver = context { name = 'variable receiver' }
+   local receiver = entity { name = 'variable receiver' }
 
    function receiver.forward(...):<any, ...>
       assert(&name is 'variable receiver', 'A variable-result callee should observe its receiver context')
@@ -192,8 +192,8 @@ end
 end
 
 @Test function ErrorsAndProtectedReentryRestoreContext()
-   local outer = context { name = 'outer' }
-   local inner = context { name = 'inner' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
 
    function inner.fail()
       assert(&name is 'inner', 'The failing function should observe its receiver context')
@@ -227,8 +227,8 @@ end
 
 @Test function ErrorCleanupHandlersObserveOwningContexts()
    local observed = {}
-   local outer = context { name = 'outer' }
-   local inner = context { name = 'inner' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
 
    function make_resource(Label:str):table
       return setmetatable({}, {
@@ -261,8 +261,8 @@ end
 
 @Test function NormalExitDefersObserveOwningContexts()
    local observed = {}
-   local outer = context { name = 'defer outer' }
-   local inner = context { name = 'defer inner' }
+   local outer = entity { name = 'defer outer' }
+   local inner = entity { name = 'defer inner' }
 
    function inner.run():str
       defer
@@ -288,8 +288,8 @@ end
 end
 
 @Test function ActiveContextsSurviveStackGrowthAndFullCollection()
-   local outer = context { name = 'stack outer' }
-   local inner = context { name = 'stack inner' }
+   local outer = entity { name = 'stack outer' }
+   local inner = entity { name = 'stack inner' }
 
    function recurse(Count:num):str
       if Count <= 0 then
@@ -321,7 +321,7 @@ end
 @Test function DelayedCallbacksAreUnbound()
    &glDelayedContextName = 'root'
    &glDelayedObservedContext = nil
-   local receiver = context { glDelayedContextName = 'receiver' }
+   local receiver = entity { glDelayedContextName = 'receiver' }
 
    function receiver.schedule()
       processing.delayedCall(function()
@@ -341,7 +341,7 @@ end
 @Test function ActionCallbacksAreUnbound()
    &glActionContextName = 'root'
    &glActionObservedContext = nil
-   local receiver = context { glActionContextName = 'receiver' }
+   local receiver = entity { glActionContextName = 'receiver' }
    local file = obj.new('file')
    local timer
    local file_freed = false
@@ -374,9 +374,9 @@ end
 end
 
 @Test function ContextualTailCallsTransferOwnership()
-   local outer = context { name = 'outer' }
-   local inner = context { name = 'inner' }
-   local recursive = context { name = 'recursive' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
+   local recursive = entity { name = 'recursive' }
 
    function inherited_helper(Value:num):<str, num>
       return &name, Value
@@ -418,7 +418,7 @@ end
 
 @Test function DirectCallerContextualTailCallRestoresRoot()
    local script = obj.new('tiri', { statement = [[
-local target = context { name = 'tail target' }
+local target = entity { name = 'tail target' }
 
 function target.read()
    return &name
@@ -439,8 +439,8 @@ assert(&name is nil, 'A contextual tail call from a direct function should resto
 end
 
 @Test function ComputedVariadicAndNativeTailCallsRestoreContext()
-   local outer = context { name = 'outer' }
-   local target = context { name = 'target' }
+   local outer = entity { name = 'outer' }
+   local target = entity { name = 'target' }
 
    function target.collect(...):str
       local first = ...
@@ -463,7 +463,7 @@ end
 
 @Test function ReceiverKeyAndArgumentsPreserveEvaluationOrder()
    local events = {}
-   local target = context { name = 'ordered' }
+   local target = entity { name = 'ordered' }
 
    function target.invoke(Value:num):num
       events[#events] = 'call'
@@ -529,7 +529,7 @@ end
    assert(key_calls is 0 and argument_calls is 0,
       'A safe computed call should not evaluate its key or arguments on the nil path')
 
-   local receiver = context { name = 'safe' }
+   local receiver = entity { name = 'safe' }
    function receiver.invoke():str
       return &name
    end
@@ -539,7 +539,7 @@ end
 
 @Test function ExtractedMembersRemainUnbound()
    &glContextualExtractionName = 'root'
-   local receiver = context { glContextualExtractionName = 'receiver' }
+   local receiver = entity { glContextualExtractionName = 'receiver' }
 
    function receiver.read():str
       return &glContextualExtractionName
@@ -610,8 +610,8 @@ end
 end
 
 @Test(hotpath=80) function JITHotNestedContextsAndSideExitsMatchInterpreter()
-   local outer = context { name = 'jit outer' }
-   local inner = context { name = 'jit inner', alternate = false }
+   local outer = entity { name = 'jit outer' }
+   local inner = entity { name = 'jit inner', alternate = false }
 
    function inner.read(Value:num):str
       if &alternate then return &name .. ':alternate:' .. tostring(Value) end
@@ -651,8 +651,8 @@ end
 end
 
 @Test(hotpath=80) function JITAlternatingReceiversUseRecordedContext()
-   local first = context { value = 3 }
-   local second = context { value = 7 }
+   local first = entity { value = 3 }
+   local second = entity { value = 7 }
 
    function read_value():num
       return &value
@@ -693,7 +693,7 @@ end
    function run(Count:num):num
       local total = 0
       for i in {0 to Count} do
-         local target = context { value = i, alternate = i is 24, read = read_allocated }
+         local target = entity { value = i, alternate = i is 24, read = read_allocated }
          total += target.read()
       end
       return total
@@ -715,7 +715,7 @@ end
 
 @Test function JITFreshContextualClosuresReusePrototypeTrace()
    function run_factory(Offset:num, Count:num):num
-      local target = context {
+      local target = entity {
          value = 3,
          read = function():num return &value + Offset end
       }
@@ -751,8 +751,8 @@ end
 end
 
 @Test function JITVirtualExitPreservesMaterialisedCallerContext()
-   local outer = context { name = 'materialised outer' }
-   local target = context { value = 3, alternate = false }
+   local outer = entity { name = 'materialised outer' }
+   local target = entity { value = 3, alternate = false }
 
    function target.read():num
       if &alternate then return &value + 1 end
@@ -787,8 +787,8 @@ end
 end
 
 @Test(hotpath=80) function JITContextualResultAritiesAndNestedRestorationMatchInterpreter()
-   local outer = context { name = 'arity outer' }
-   local target = context { name = 'arity target', calls = 0, alternate = false }
+   local outer = entity { name = 'arity outer' }
+   local target = entity { name = 'arity target', calls = 0, alternate = false }
 
    function target.zero()
       &calls++
@@ -839,8 +839,8 @@ end
 end
 
 @Test function JITContextualVariableResultsMatchInterpreter()
-   local outer = context { name = 'variable outer' }
-   local target = context { name = 'variable target' }
+   local outer = entity { name = 'variable outer' }
+   local target = entity { name = 'variable target' }
 
    function target.forward(...):<any, ...>
       return ...
@@ -877,8 +877,8 @@ end
 end
 
 @Test function JITComputedContextualResultsMatchInterpreter()
-   local outer = context { name = 'computed outer' }
-   local target = context { name = 'computed target' }
+   local outer = entity { name = 'computed outer' }
+   local target = entity { name = 'computed target' }
 
    function target.describe(Value:num):<table, num>
       return { name = &name, value = Value }, Value + 1
@@ -919,7 +919,7 @@ end
 end
 
 @Test function JITNativeContextualResultsRemainLoopCarried()
-   local methods = context { decode = array.getString }
+   local methods = entity { decode = array.getString }
    local bytes = array<byte> { 65, 66, 67 }
    local expected = { [0] = 'A', [1] = 'B', [2] = 'C' }
 
@@ -984,8 +984,8 @@ end
 end
 
 @Test(hotpath=80) function JITContextualTailTransferMatchesInterpreter()
-   local receiver = context { name = 'jit tail' }
-   local target = context { name = 'jit target' }
+   local receiver = entity { name = 'jit tail' }
+   local target = entity { name = 'jit target' }
 
    function target.read():str
       return &name
@@ -1017,8 +1017,8 @@ end
 end
 
 @Test(hotpath=80) function JITContextualTailTransferCoversOwnershipAndSideExits()
-   local outer = context { name = 'tail outer' }
-   local target = context { name = 'tail target', alternate = false }
+   local outer = entity { name = 'tail outer' }
+   local target = entity { name = 'tail target', alternate = false }
 
    function target.read(Value:num):str
       assert(&name is 'tail target', 'A transferred tail context should be visible in the target')
@@ -1094,8 +1094,8 @@ end
 end
 
 @Test(hotpath=80) function JITNativeContextualTailTransferRestoresContext()
-   local native_target = context { absolute = math.abs }
-   local native_forwarder = context { name = 'native forwarder' }
+   local native_target = entity { absolute = math.abs }
+   local native_forwarder = entity { name = 'native forwarder' }
 
    function native_forwarder.run():num
       return native_target.absolute(-7)
@@ -1117,7 +1117,7 @@ end
 end
 
 @Test(hotpath=80) function JITRecursiveContextualTailTransferHandlesAbortsAndSideExits()
-   local recursive = context { name = 'recursive tail', visits = 0, alternate = false }
+   local recursive = entity { name = 'recursive tail', visits = 0, alternate = false }
 
    function recursive.run(Count:num):<any, ...>
       &visits++
@@ -1183,7 +1183,7 @@ end
 end
 
 @Test(hotpath=80) function JITTraceFlushInsideContextPreservesLifecycle()
-   local target = context { name = 'flush target' }
+   local target = entity { name = 'flush target' }
 
    function target.read(Flush:bool):str
       if Flush then jit.flush() end
@@ -1213,7 +1213,7 @@ end
 end
 
 @Test(hotpath=80) function JITBlacklistedContextualCalleeRestoresContext()
-   local target = context { name = 'blacklisted target' }
+   local target = entity { name = 'blacklisted target' }
 
    function target.read():str
       return &name

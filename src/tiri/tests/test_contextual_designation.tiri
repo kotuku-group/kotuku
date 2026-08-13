@@ -14,17 +14,17 @@ end
 
 @Test function DesignatedConstructorsEstablishContextAndOrdinaryOnesDoNot()
    local ordinary = { name = 'ordinary', read = probe_name }
-   local designated = context { name = 'designated', read = probe_name }
+   local designated = entity { name = 'designated', read = probe_name }
 
    assert(ordinary.read() is nil, 'An ordinary table must not establish context for a member call')
    assert(designated.read() is 'designated', 'A designated table should establish itself as the current context')
 end
 
 @Test function DesignationAcceptsTriviaBetweenItsTokens()
-   local spaced = context   { name = 'spaced', read = probe_name }
-   local tabbed = context	{ name = 'tabbed', read = probe_name }
-   local commented = context --[[ designation ]] { name = 'commented', read = probe_name }
-   local broken = context
+   local spaced = entity   { name = 'spaced', read = probe_name }
+   local tabbed = entity	{ name = 'tabbed', read = probe_name }
+   local commented = entity --[[ designation ]] { name = 'commented', read = probe_name }
+   local broken = entity
    {
       name = 'broken',
       read = probe_name
@@ -52,7 +52,7 @@ end
 end
 
 @Test function DesignationIsPermanentAndDoesNotNest()
-   local designated = context {
+   local designated = entity {
       name = 'permanent',
       read = probe_name,
       nested = { name = 'nested', read = probe_name }
@@ -73,7 +73,7 @@ end
 end
 
 @Test function AliasesAndExtractedMembersFollowTheReceiver()
-   local designated = context { name = 'aliased', read = probe_name }
+   local designated = entity { name = 'aliased', read = probe_name }
    local alias = designated
 
    assert(alias.read() is 'aliased', 'An alias refers to the same table identity and behaves identically')
@@ -158,7 +158,7 @@ end
    assert(target.read() is nil, 'A rejected designation should leave the target ordinary')
 
    -- An already contextual target accepts any metatable, because no promotion is taking place.
-   local designated = context { name = 'designated', read = probe_name }
+   local designated = entity { name = 'designated', read = probe_name }
    local accepted = true
    try
       extracted_setmetatable(designated, contextual_metatable)
@@ -183,7 +183,7 @@ end
 @Test function TableSlicesPropagateContextualityFromTheirSource()
    -- The source must stay a pure sequence, because slicing rejects an associative table.  Contextuality is read back
    -- from each result by adding the probe to the result rather than the source.
-   local designated = context { 10, 20, 30 }
+   local designated = entity { 10, 20, 30 }
 
    -- Section 3.4: all three slice spellings share one implementation and must propagate identically, including
    -- when the result is empty.
@@ -225,7 +225,7 @@ end
 end
 
 @Test function NonDerivationOperationsDoNotPropagateContextuality()
-   local designated = context { name = 'source', read = probe_name, value = 7 }
+   local designated = entity { name = 'source', read = probe_name, value = 7 }
 
    -- Manual copying is not a declared derivation, so the result is an ordinary literal.
    local copied = { name = 'copied', read = probe_name, value = designated.value }
@@ -249,7 +249,7 @@ end
    table.move(designated, 0, 0, 0, ordinary_destination)
    assert(ordinary_destination.read() is nil, 'table.move() should not promote a caller-supplied destination')
 
-   local contextual_destination = context { name = 'contextual destination', read = probe_name }
+   local contextual_destination = entity { name = 'contextual destination', read = probe_name }
    table.move({ 1 }, 0, 0, 0, contextual_destination)
    assert(contextual_destination.read() is 'contextual destination',
       'A contextual destination should remain contextual after table.move()')
@@ -257,7 +257,7 @@ end
 
 @Test(hotpath=80) function DesignatedReceiversMatchInterpreterUnderRecording()
    function make_counter(Start:num):table
-      return context {
+      return entity {
          name = 'counter',
          value = Start,
          read = probe_name

@@ -1558,7 +1558,7 @@ static bool test_unmatched_context_entry_rejected(kt::Log &Log)
    LuaStateHolder state;
    lua_State *lua = state.get();
    constexpr std::string_view source =
-      "local receiver = context { name='receiver', read=function():str return &name end }\n"
+      "local receiver = entity { name='receiver', read=function():str return &name end }\n"
       "local value = receiver.read()\n"
       "return value\n";
    if (lua_load(lua, source, "unmatched-context-entry")) {
@@ -5665,7 +5665,7 @@ static bool test_contextual_call_specialisation(kt::Log &Log)
 
    error.clear();
    auto contextual = compile_snapshot(L,
-      "local target = context { run = function():num return 1 end }\ntarget.run()\n", true, error);
+      "local target = entity { run = function():num return 1 end }\ntarget.run()\n", true, error);
    if (not contextual or count_opcode(*contextual, BC_CTXENTER) != 1 or
        count_opcode(*contextual, BC_CTXCALL) != 1 or count_opcode(*contextual, BC_CTXLEAVE) != 1) {
       Log.error("a known contextual table call lost contextual bytecode: %s", error.c_str());
@@ -5683,7 +5683,7 @@ static bool test_contextual_call_specialisation(kt::Log &Log)
 
    error.clear();
    auto derived = compile_snapshot(L,
-      "local source = context { 1 }\n"
+      "local source = entity { 1 }\n"
       "local sliced = range.slice(source, {0 to 1})\n"
       "sliced.run = function():num return 1 end\nsliced.run()\n", true, error);
    if (not derived or count_opcode(*derived, BC_CTXENTER) != 2 or
@@ -5713,7 +5713,7 @@ static bool test_contextual_tail_call_bytecode_emission(kt::Log &Log)
    luaL_openlibs(lua);
    std::string error;
    constexpr std::string_view target =
-      "local target = context { run = function():num return 1 end }\n";
+      "local target = entity { run = function():num return 1 end }\n";
 
    auto root = compile_snapshot(lua, std::string(target) + "return target.run()\n", true, error);
    if (not root or count_opcode(*root, BC_CTXCALLT) != 0 or count_opcode(*root, BC_CTXCALL) != 1 or
@@ -7590,9 +7590,9 @@ static bool test_contextual_runtime_semantics(kt::Log &Log)
 }
 
 //********************************************************************************************************************
-// Phase 2 of the opt-in table context plan: the `context { ... }` prefix designation form.
+// Phase 2 of the opt-in table context plan: the `entity { ... }` prefix designation form.
 //
-// Recognition is a parser-level token sequence rather than a reserved word or a lexer compound token, so `context`
+// Recognition is a parser-level token sequence rather than a reserved word or a lexer compound token, so `entity`
 // must remain an ordinary identifier in every other position.  The token stream has already removed trivia, which is
 // why spaces, tabs, comments and line breaks between the two tokens all reach the same designation.
 
@@ -7609,14 +7609,14 @@ static bool test_contextual_designation_syntax(kt::Log &Log)
    };
 
    constexpr std::array<DesignationCase, 9> cases = { {
-      { "return context { value = 1 }", true, "a designated constructor" },
-      { "return context    { value = 1 }", true, "spaces between the tokens" },
-      { "return context\t{ value = 1 }", true, "a tab between the tokens" },
-      { "return context --[[ mark ]] { value = 1 }", true, "a comment between the tokens" },
-      { "return context\n{ value = 1 }", true, "a line break between the tokens" },
-      { "return context {}", true, "an empty designated constructor" },
-      { "return context { nested = { value = 1 } }", true, "a designated outer constructor" },
-      { "local t = context { nested = { value = 1 } }\nreturn t.nested", false,
+      { "return entity { value = 1 }", true, "a designated constructor" },
+      { "return entity    { value = 1 }", true, "spaces between the tokens" },
+      { "return entity\t{ value = 1 }", true, "a tab between the tokens" },
+      { "return entity --[[ mark ]] { value = 1 }", true, "a comment between the tokens" },
+      { "return entity\n{ value = 1 }", true, "a line break between the tokens" },
+      { "return entity {}", true, "an empty designated constructor" },
+      { "return entity { nested = { value = 1 } }", true, "a designated outer constructor" },
+      { "local t = entity { nested = { value = 1 } }\nreturn t.nested", false,
         "a nested constructor inside a designated table" },
       { "return { value = 1 }", false, "an undesignated constructor" }
    } };
@@ -7642,33 +7642,36 @@ static bool test_contextual_designation_syntax(kt::Log &Log)
       lua_pop(L, 1);
    }
 
-   // `context` remains an ordinary identifier outside the complete designation form, and the parenthesised call is
-   // the replacement for the table-argument shorthand this grammar rule deliberately displaces.
+   // `entity` remains an ordinary identifier outside the complete designation form, and the parenthesised call is
+   // the replacement for the table-argument shorthand this grammar rule deliberately displaces.  `context` has no
+   // special table-constructor meaning and retains the ordinary shorthand.
    constexpr std::string_view ordinary_source =
-      "local function context(Table:table):num return Table.value * 2 end\n"
-      "local context_variable = 5\n"
-      "local holder = { context = 7 }\n"
-      "return context({ value = 21 }), context_variable, holder.context\n";
+      "local function entity(Table:table):num return Table.value * 2 end\n"
+      "local function context(Table:table):num return Table.value * 3 end\n"
+      "local entity_variable = 5\n"
+      "local holder = { entity = 7 }\n"
+      "return entity({ value = 21 }), context { value = 14 }, entity_variable, holder.entity\n";
 
    if (lua_load(L, ordinary_source, "contextual-identifier")) {
       Log.error("failed to compile the ordinary identifier fixture: %s", lua_tostring(L, -1));
       return false;
    }
-   if (lua_pcall(L, 0, 3, 0)) {
+   if (lua_pcall(L, 0, 4, 0)) {
       Log.error("the ordinary identifier fixture failed: %s", lua_tostring(L, -1));
       return false;
    }
-   if (lua_tonumber(L, -3) != 42 or lua_tonumber(L, -2) != 5 or lua_tonumber(L, -1) != 7) {
-      Log.error("'context' did not behave as an ordinary identifier outside the designation form");
+   if (lua_tonumber(L, -4) != 42 or lua_tonumber(L, -3) != 42 or lua_tonumber(L, -2) != 5 or
+       lua_tonumber(L, -1) != 7) {
+      Log.error("'entity' or 'context' did not behave as an ordinary identifier where required");
       return false;
    }
-   lua_pop(L, 3);
+   lua_pop(L, 4);
 
-   // A malformed or unterminated constructor after `context` is a designation diagnostic.  Falling back to an
+   // A malformed or unterminated constructor after `entity` is a designation diagnostic.  Falling back to an
    // ordinary identifier expression here would silently resurrect the displaced call shorthand.
    constexpr std::array<const char *, 2> malformed = {
-      "return context { value = 1",
-      "return context { value = }"
+      "return entity { value = 1",
+      "return entity { value = }"
    };
 
    for (const char *source : malformed) {
@@ -7684,7 +7687,7 @@ static bool test_contextual_designation_syntax(kt::Log &Log)
    // a valid contextual constructor survives the bytecode reader's ownership validation after dumping and reloading.
    constexpr std::string_view roundtrip_source =
       "local dynamic = 7\n"
-      "return context { value = dynamic }\n";
+      "return entity { value = dynamic }\n";
 
    if (lua_load(L, roundtrip_source, "contextual-roundtrip")) {
       Log.error("failed to compile the contextual round-trip fixture: %s", lua_tostring(L, -1));
@@ -7823,7 +7826,7 @@ static bool test_contextual_metatable_designation(kt::Log &Log)
       "local target = {}\n"
       "local rejected = false\n"
       "try\n   smt(target, mt)\nexcept e\n   rejected = true\nend\n"
-      "local designated = context {}\n"
+      "local designated = entity {}\n"
       "local accepted = true\n"
       "try\n   smt(designated, mt)\nexcept e\n   accepted = false\nend\n"
       "return rejected, getmetatable(target) is nil, accepted\n";
@@ -7852,7 +7855,7 @@ static bool test_contextual_metatable_designation(kt::Log &Log)
 
    // Designation is permanent: no mutation, clear or metatable change may clear the flag.
    constexpr std::string_view permanence_source =
-      "local designated = context { value = 1 }\n"
+      "local designated = entity { value = 1 }\n"
       "designated.value = nil\n"
       "table.clear(designated)\n"
       "setmetatable(designated, nil)\n"

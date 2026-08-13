@@ -557,7 +557,7 @@ struct TableExprPayload {
    TableExprPayload& operator=(TableExprPayload&&) noexcept = default;
    std::vector<TableField> fields;
    bool has_array_part = false;
-   // Set by the `context { ... }` prefix designation form.  The constructed table is permanently contextual, and the
+   // Set by the `entity { ... }` prefix designation form.  The constructed table is permanently contextual, and the
    // emitter appends the uniform table-marking operation after the constructor has been materialised.
    bool contextual = false;
    ~TableExprPayload();
