@@ -18,7 +18,7 @@ MIN_ZONE_YEAR <const> = 1601
 MAX_ZONE_YEAR <const> = 9999
 ZONE_PROBE_YEAR <const> = 2024
 
-TYPE_NAMES = array<string> {
+TYPE_NAMES = array<str> {
    'Instant',
    'Duration',
    'Offset',

@@ -605,7 +605,7 @@ end
    local filename = "document.txt"
    local path = "/home/user/documents/file.pdf"
    local url = "https://www.example.com/page"
-   local extensions = array<string> {".txt", ".pdf", ".doc", ".csv"}
+   local extensions = array<str> {".txt", ".pdf", ".doc", ".csv"}
    local checksum = 0
 
    for i in {0 to 20000} do

@@ -2,7 +2,7 @@
 -- Flute tests for the Lua IO library
 
 glTestFolder = 'temp:'
-glTestFiles = array<string>
+glTestFiles = array<str>
 
 @AfterAll function cleanup()
    for path in values(glTestFiles) do
@@ -337,7 +337,7 @@ end
 
    -- Test io.lines with filename
    line_count = 0
-   collected_lines = array<string>
+   collected_lines = array<str>
    for line in io.lines(test_path) do
       line_count++
       collected_lines.push(line)
@@ -367,7 +367,7 @@ end
    assert(file, 'Failed to open file for line iteration')
 
    line_count = 0
-   collected_lines = array<string>
+   collected_lines = array<str>
    for line in file.lines() do
       line_count++
       collected_lines.push(line)
@@ -612,7 +612,7 @@ end
    glTestFiles.push(test_path)
 
    -- Read it back and verify
-   lines_read = array<string>
+   lines_read = array<str>
    for line in io.lines(test_path) do
       lines_read.push(line)
    end

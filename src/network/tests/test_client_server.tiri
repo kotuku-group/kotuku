@@ -28,7 +28,7 @@ end
 -- Test address validation and error handling
 
 @Test function StrToAddress()
-   invalidAddresses = array<string> {
+   invalidAddresses = array<str> {
       'gggg::1',           -- Invalid hex digits
       '1::2::3',           -- Double double-colon
       '1:2:3:4:5:6:7:8:9', -- Too many groups
@@ -40,7 +40,7 @@ end
       assert(mNet.StrToAddress(addr, dest) != ERR_Okay, 'StrToAddress should fail for invalid IPv6 address: ' .. addr)
    end
 
-   validAddresses = array<string> {
+   validAddresses = array<str> {
       '::1',                   -- Loopback
       '::',                    -- Any address
       '2001:db8::1',           -- Documentation prefix
@@ -272,7 +272,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function ConnectionStates()
-   stateChanges = array<string> {}
+   stateChanges = array<str> {}
 
    glPort++
 

@@ -56,19 +56,19 @@ Examples:
            end
          },
          -- MITM Disabled until available in the proxyserver library
-         --{ names = array<string> { 'mitm', 'enableMITM', 'enable-mitm' }, kind = 'flag', default = false,
+         --{ names = array<str> { 'mitm', 'enableMITM', 'enable-mitm' }, kind = 'flag', default = false,
          --  group = 'HTTPS', comment = 'Enable MITM mode for HTTPS interception.' },
-         --{ names = array<string> { 'cacert', 'caCert', 'ca-cert' }, type = 'file', exists = true, group = 'HTTPS',
+         --{ names = array<str> { 'cacert', 'caCert', 'ca-cert' }, type = 'file', exists = true, group = 'HTTPS',
          --  comment = 'CA certificate file for MITM mode.' },
-         --{ names = array<string> { 'cakey', 'caKey', 'ca-key' }, type = 'file', exists = true, group = 'HTTPS',
+         --{ names = array<str> { 'cakey', 'caKey', 'ca-key' }, type = 'file', exists = true, group = 'HTTPS',
          --  comment = 'CA private key file for MITM mode.' },
-         --{ names = array<string> { 'capass', 'caPassword', 'ca-password' }, type = 'str', group = 'HTTPS',
+         --{ names = array<str> { 'capass', 'caPassword', 'ca-password' }, type = 'str', group = 'HTTPS',
          --  comment = 'Password for the CA private key.' },
-         { names = array<string> { 'upstream', 'upstreamProxy', 'upstream-proxy' }, type = 'str', group = 'Server',
+         { names = array<str> { 'upstream', 'upstreamProxy', 'upstream-proxy' }, type = 'str', group = 'Server',
            comment = 'Upstream proxy server in host:port form.' },
-         { names = array<string> { 'record', 'recordFlows', 'record-flows' }, kind = 'flag', default = true,
+         { names = array<str> { 'record', 'recordFlows', 'record-flows' }, kind = 'flag', default = true,
            group = 'Recording', comment = 'Enable flow recording.' },
-         { names = array<string> { 'maxflows', 'maxFlows', 'max-flows' }, type = 'int', default = 1000,
+         { names = array<str> { 'maxflows', 'maxFlows', 'max-flows' }, type = 'int', default = 1000,
            group = 'Recording', comment = 'Maximum number of flows to keep in memory.',
            exec = function(Parser:table, ArgName:str!, Value:any!, Param:table)
               if Value < 1 then
@@ -76,9 +76,9 @@ Examples:
               end
            end
          },
-         { names = array<string> { 'exportFile', 'export', 'export-file' }, type = 'path', group = 'Recording',
+         { names = array<str> { 'exportFile', 'export', 'export-file' }, type = 'path', group = 'Recording',
            comment = 'Export recorded flows to a JSON file on shutdown.' },
-         { names = array<string> { 'importFile', 'import', 'import-file' }, type = 'file', exists = true,
+         { names = array<str> { 'importFile', 'import', 'import-file' }, type = 'file', exists = true,
            group = 'Recording', comment = 'Import flows from a JSON file on startup.' }
       }
    })

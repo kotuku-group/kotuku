@@ -4,7 +4,7 @@
    include 'vector'
 
 local glSVGFolder
-local glFiles = array<string>
+local glFiles = array<str>
 
 @BeforeAll function setup(State:table)
    glSVGFolder = State.folder

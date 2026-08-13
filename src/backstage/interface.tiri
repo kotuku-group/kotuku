@@ -370,7 +370,7 @@ function path_to_regex(Route:table):str
    param_name = ''
    in_param = false
 
-   Route.params = array<string> { }
+   Route.params = array<str> { }
 
    for i in {0 to #Route.path} do
       ch = Route.path.sub(i, i + 1)
@@ -441,8 +441,8 @@ function bool_literal(Value:any):str
    return Value ? 'true' :> 'false'
 end
 
-function sorted_field_names(Fields:table):array<string>
-   names = array<string> { }
+function sorted_field_names(Fields:table):array<str>
+   names = array<str> { }
    if not Fields then return names end
 
    for name, _ in pairs(Fields) do
@@ -453,7 +453,7 @@ function sorted_field_names(Fields:table):array<string>
    return names
 end
 
-function route_param_array(Name:str, Names:array<string>, Fields:table):str
+function route_param_array(Name:str, Names:array<str>, Fields:table):str
    out = f"static constexpr std::array<BackstageParam, {#Names}> {Name} = {{"
 
    if #Names > 0 then
@@ -562,7 +562,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
    glIncludes = {}
-   glIncludeList = array<string> { }
+   glIncludeList = array<str> { }
    meta = ''
 
    for _, route in glRoutes do

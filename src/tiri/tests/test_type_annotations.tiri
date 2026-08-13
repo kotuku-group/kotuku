@@ -133,7 +133,7 @@ end
    end
 
    local values:array<int> = array<int> { 3, 5 }
-   global glAnnotatedWords:array<string> = array<string> { 'one' }
+   global glAnnotatedWords:array<str> = array<str> { 'one' }
    assert(accept_ints(values)[1] is 5, 'Concrete array annotations should work in parameters, locals and results')
    assert(glAnnotatedWords[0] is 'one', 'Concrete array annotations should work for globals')
 
@@ -147,9 +147,10 @@ end
    end
 
    assert_rejected('function invalid(Value:array) end', 'element type')
+   assert_rejected('function invalid(Value:array<string>) end', 'Unknown array element type')
    assert_rejected('function invalid(Value:array<missing>) end', 'Unknown array element type')
    assert_rejected('function invalid(Value:array<pointer>) end', 'Unknown array element type')
-   assert_rejected('function invalid(Value:array<array<string>>) end', 'Nested array specialisation')
+   assert_rejected('function invalid(Value:array<array<str>>) end', 'Nested array specialisation')
    assert_rejected('function invalid(Value:array<int, 4>) end', 'cannot declare a size')
 end
 

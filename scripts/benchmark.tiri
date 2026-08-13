@@ -25,9 +25,9 @@ end
 
 -- Generate a text report from benchmark statistics
 
-bmark.textReport = function(Results:table!):array<string>
+bmark.textReport = function(Results:table!):array<str>
    assert(Results, "Results are required")
-   local msg = array<string>
+   local msg = array<str>
    msg.push('=== BENCHMARK RESULTS ===')
    msg.push(string.format('Total calls:    %d (%d warmup + %d benchmark)', Results.totalCalls, Results.warmupCount ?? 0, Results.benchmarkCalls))
    msg.push(string.format('Total time:     %.2f seconds', Results.totalTime))
@@ -603,10 +603,10 @@ end
 
 -- Generate an ASCII histogram representation for console output.
 
-bmark.histogramText = function(Histogram:table!, Width:num):array<string>
+bmark.histogramText = function(Histogram:table!, Width:num):array<str>
    Width ??= 40
 
-   local msg = array<string>
+   local msg = array<str>
    msg.push('=== DISTRIBUTION HISTOGRAM ===')
    msg.push(string.format('Total samples: %d', Histogram.total))
    msg.push(string.format('Range: %.3f - %.3f (bin width: %.3f)', Histogram.min, Histogram.max, Histogram.binWidth))
@@ -790,8 +790,8 @@ end
 
 -- Generate a text report from a comparison result
 
-bmark.comparisonReport = function(Comparison:table!):array<string>
-   local msg = array<string>
+bmark.comparisonReport = function(Comparison:table!):array<str>
+   local msg = array<str>
 
    local function formatChange(Change:num!, Improved:bool):str
       local sign = Change >= 0 and '+' or ''

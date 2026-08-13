@@ -42,7 +42,7 @@ end
    assert(describeString('') is 'empty', "Empty string should trigger shorthand return")
    assert(describeString('hello') is 'value:hello', "Non-empty string should pass the shorthand guard")
 
-   parts = array<string>
+   parts = array<str>
    runtime_empty = parts.concat()
    assert(describeString(runtime_empty) is 'empty', "Runtime empty string should trigger shorthand return")
 end
@@ -138,11 +138,11 @@ end
       visited = true
    end
 
-   empty = array<string>
+   empty = array<str>
    visitArray(empty)
    assert(visited is false, "Empty array should trigger bare shorthand return")
 
-   filled = array<string> { '' }
+   filled = array<str> { '' }
    visitArray(filled)
    assert(visited is true, "Array containing an empty string should not trigger shorthand return")
 end

@@ -34,14 +34,14 @@ Examples:
 ]],
       args        = array<table> {
          { name = 'mode', type = 'enum', default = 'vector',
-           choices = array<string> { 'primitive', 'directvector', 'vector' },
+           choices = array<str> { 'primitive', 'directvector', 'vector' },
            comment = 'Drawing mode to benchmark.' },
          { name = 'shape', type = 'enum', default = 'ellipse',
-           choices = array<string> { 'ellipse', 'star' },
+           choices = array<str> { 'ellipse', 'star' },
            comment = 'Particle shape for vector and direct vector modes.' },
          { name = 'scale', type = 'num', default = 1.0,
            comment = 'Particle radius scale; 1.0 leaves particles at their default size.' },
-         { names = array<string> { 'maxParticles', 'maxparticles' }, type = 'int', default = 500,
+         { names = array<str> { 'maxParticles', 'maxparticles' }, type = 'int', default = 500,
            comment = 'Number of particles to simulate; values below 100 are raised to 100.' }
       }
    })

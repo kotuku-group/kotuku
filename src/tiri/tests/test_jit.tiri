@@ -660,7 +660,7 @@ end
    jit.flush()
    jit.opt.start('hotloop=3', 'hotexit=1', 'minstitch=0')
 
-   local keys = array<string> { 'alpha', 'missing', 'bravo', 'missing' }
+   local keys = array<str> { 'alpha', 'missing', 'bravo', 'missing' }
    local mismatch = ''
    for iteration in {0 to 500} do
       local key = keys[iteration % #keys]
@@ -2775,17 +2775,17 @@ end
 
    local failed = false
    try
-      checked_member(array<string> { 'wrong' })
+      checked_member(array<str> { 'wrong' })
    except e
       failed = true
-      assert(e.message.find('expected array<int>') != nil and e.message.find('got array<string>') != nil,
+      assert(e.message.find('expected array<int>') != nil and e.message.find('got array<str>') != nil,
          'A hot member mismatch should report both array identities: ' .. e.message)
    end
    assert(failed, 'Changing only the array member type at a hot contract site should raise')
 end
 
 @Test(hotpath=50) function JITStringArrayBindingMemberContract()
-   function checked_string_member(Value:array<string>):str
+   function checked_string_member(Value:array<str>):str
       return Value[0]
    end
 
@@ -2793,7 +2793,7 @@ end
    jit.flush()
    jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
 
-   local strings = array<string> { 'kept' }
+   local strings = array<str> { 'kept' }
    for _ in {1 into 100} do
       assert(checked_string_member(strings) is 'kept', 'The hot string-array contract should pass')
    end
@@ -2804,7 +2804,7 @@ end
       checked_string_member(array<int> { 7 })
    except e
       failed = true
-      assert(e.message.find('expected array<string>') != nil and e.message.find('got array<int>') != nil,
+      assert(e.message.find('expected array<str>') != nil and e.message.find('got array<int>') != nil,
          'A hot string member mismatch should report both array identities: ' .. e.message)
    end
    assert(failed, 'A hot string-array contract should reject a numeric member type')

@@ -78,8 +78,8 @@ rx_css_colour <const> = regex.new(
 ----------------------------------------------------------------------------------------------------------------------
 -- Build the canonical name and alias list for a parameter definition.
 
-function normalise_names(Definition:table!):array<string>
-   names = array<string>
+function normalise_names(Definition:table!):array<str>
+   names = array<str>
    seen = {}
 
    if Definition.name then
@@ -221,8 +221,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert an existing array or table into an array of strings.
 
-function string_array(Value:any!):array<string>
-   result = array<string>
+function string_array(Value:any!):array<str>
+   result = array<str>
 
    for item in values(Value) do
       result.push(tostring(item))
@@ -234,7 +234,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a comma-separated string into an array of trimmed strings.
 
-function convert_csv(Value:any!, Param:table!):array<string>
+function convert_csv(Value:any!, Param:table!):array<str>
    if type(Value) is 'array' or type(Value) is 'table' then
       return string_array(Value)
    end
@@ -243,7 +243,7 @@ function convert_csv(Value:any!, Param:table!):array<string>
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a comma-separated string."
    end
 
-   result = array<string>
+   result = array<str>
    for item in values(string.split(Value, ',')) do
       result.push(item.trim())
    end
@@ -254,7 +254,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a raw value into an array of strings.
 
-function convert_array(Value:any!, Param:table!):array<string>
+function convert_array(Value:any!, Param:table!):array<str>
    if type(Value) is 'array' or type(Value) is 'table' then
       return string_array(Value)
    end
@@ -723,8 +723,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Remove launcher options and the script path from ordered task parameters.
 
-function get_script_arguments(Parameters:array<string>!):array<string>
-   result = array<string>
+function get_script_arguments(Parameters:array<str>!):array<str>
+   result = array<str>
    index = 0
    script_seen = false
 
@@ -757,7 +757,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Read ordered arguments from the active task, or return nil if they are unavailable.
 
-function get_task_parameters(Options:table):array<string>
+function get_task_parameters(Options:table):array<str>
    if Options and Options.taskParameters != nil then
       assert(type(Options.taskParameters) is 'array', 'Options.taskParameters must be an array.')
       return Options.taskParameters
@@ -776,7 +776,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse ordered command-line tokens, preserving the order of named and positional input.
 
-function parse_ordered_input(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Input:array<string>!)
+function parse_ordered_input(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Input:array<str>!)
    -- Parse one ordered command-line token and apply it to the result table.
 
    function parse_ordered_token(Parser:table!, Result:table!, ArgNames:table!, Presence:table!, Token:str!,
@@ -935,7 +935,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Join prepared text lines into one help string.
 
-function append_help_line(Output:array<string>, Line:str!)
+function append_help_line(Output:array<str>, Line:str!)
    if Line.trim() is '' then
       if #Output > 0 and Output[#Output - 1] != '' then
          Output.push('')
@@ -947,8 +947,8 @@ function append_help_line(Output:array<string>, Line:str!)
    Output.push(Line.rtrim())
 end
 
-function line_list(Lines:array<string>!):str
-   output = array<string>
+function line_list(Lines:array<str>!):str
+   output = array<str>
 
    for line in values(Lines) do
       text = tostring(line)
@@ -1056,7 +1056,7 @@ end
 -- Format default and required annotations for normal help.
 
 function param_annotations(Param:table!):str
-   annotations = array<string>
+   annotations = array<str>
 
    if Param.required then
       annotations.push('required')
@@ -1073,7 +1073,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Append parser metadata fields to help output.
 
-function append_metadata(Lines:array<string>!, Parser:table!)
+function append_metadata(Lines:array<str>!, Parser:table!)
    if Parser.epilog then
       Lines.push('')
       Lines.push(Parser.epilog)
@@ -1172,7 +1172,7 @@ end
 -- Generate normal parser help.
 
 function build_normal_help(Parser:table!):str
-   lines = array<string>
+   lines = array<str>
 
    lines.push(Parser.name)
    if Parser.description then
@@ -1183,7 +1183,7 @@ function build_normal_help(Parser:table!):str
    lines.push('')
    lines.push(build_usage(Parser))
 
-   groups = array<string>
+   groups = array<str>
    seen_groups = {}
 
    for param in values(Parser._params) do
@@ -1210,7 +1210,7 @@ function build_normal_help(Parser:table!):str
       end
    end
 
-   command_groups = array<string>
+   command_groups = array<str>
    seen_command_groups = {}
 
    for command in values(Parser._commands) do
@@ -1250,7 +1250,7 @@ function build_param_help(Parser:table!, Topic:str!):str
       raise ERR_ParameterUnknown, f"Unknown help topic '{Topic}'."
    end
 
-   lines = array<string>
+   lines = array<str>
 
    lines.push(f"{param.name}:")
    if param.comment then
@@ -1305,7 +1305,7 @@ function build_command_help(Parser:table!, Topic:str!):str
       raise ERR_ParameterUnknown, f"Unknown help topic '{Topic}'."
    end
 
-   lines = array<string>
+   lines = array<str>
 
    lines.push(f"{command.name}:")
    if command.comment then
@@ -1330,7 +1330,7 @@ function build_command_help(Parser:table!, Topic:str!):str
    end
 
    if #command._params > 0 then
-      groups = array<string>
+      groups = array<str>
       seen_groups = {}
 
       for param in values(command._params) do
@@ -1527,8 +1527,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Normalise a relationship field to an array of canonical parameter names.
 
-function relationship_names(Parser:table!, Param:table!, Field:str!, Value:any!):array<string>
-   names = array<string>
+function relationship_names(Parser:table!, Param:table!, Field:str!, Value:any!):array<str>
+   names = array<str>
 
    if type(Value) is 'string' then
       item = Parser._lookup[Value]
@@ -1872,7 +1872,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse a non-command parser context from explicit ordered input.
 
-function parse_context_ordered_input(Parser:table!, Input:array<string>!):table
+function parse_context_ordered_input(Parser:table!, Input:array<str>!):table
    input_result = {}
    input_arg_names = {}
    input_presence = {}
@@ -1932,9 +1932,9 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse ordered input for a parser that defines subcommands.
 
-function parse_command_ordered_input(Parser:table, Input:array<string>!):table
-   global_input = array<string>
-   command_input = array<string>
+function parse_command_ordered_input(Parser:table, Input:array<str>!):table
+   global_input = array<str>
+   command_input = array<str>
    command = nil
    index = 0
 
@@ -2408,7 +2408,7 @@ create_parser = function(Config:table):table
    API intended for tests and advanced callers: parse failures are returned as standard exception tables instead of
    being raised through the default failure path.
 
-   Input may be an array of command-line tokens such as `array<string> { 'scene.svg', 'verbose' }`, a table of keyed
+   Input may be an array of command-line tokens such as `array<str> { 'scene.svg', 'verbose' }`, a table of keyed
    values, or `nil`.  When `Input` is `nil`, parsing reads ordered arguments from the active task parameters after the
    script path.  Explicit arrays
    and tables bypass task input.  Named options use `name=value` syntax unless a default allows a bare option token.
@@ -2455,7 +2455,7 @@ create_parser = function(Config:table):table
    normal scripts: successful parses return the typed argument table, while parse failures are raised as normal Tiri
    errors after any configured `onError` recovery has been applied.
 
-   Input may be an array of command-line tokens such as `array<string> { 'scene.svg', 'verbose' }`, a table of keyed
+   Input may be an array of command-line tokens such as `array<str> { 'scene.svg', 'verbose' }`, a table of keyed
    values, or `nil`.  When `Input` is `nil`, parsing reads ordered arguments from the active task parameters after the
    script path.  Explicit arrays
    and tables bypass task input.  Named options use `name=value` syntax unless a default allows a bare option token.

@@ -384,7 +384,7 @@ function serializeTable(Tbl:any, Indent):str
       end
    end
 
-   parts = array<string>
+   parts = array<str>
    for k, v in pairs(Tbl) do
       keyStr = type(k) is 'string' and "['" .. k .. "']" or '[' .. tostring(k) .. ']'
       valStr = serializeTable(v, nextIndent)

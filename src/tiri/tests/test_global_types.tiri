@@ -46,7 +46,7 @@ end
    try
       exec([[
 if false then global glGTBootstrapArray:array<int> = array<int> { 1 } end
-local dynamic:any = array<string> { 'wrong' }
+local dynamic:any = array<str> { 'wrong' }
 glGTBootstrapArray = dynamic
 ]])
    except e
@@ -125,7 +125,7 @@ end
    end
 
    function redeclare_variant()
-      global glGTJitVariantOverride:array<any> = array<string> { 'open' }
+      global glGTJitVariantOverride:array<any> = array<str> { 'open' }
    end
 
    jit.on()
@@ -432,16 +432,16 @@ end
    writer(array<int> { 9 })
    assert(glGTMemberArray[0] is 9, 'A matching member identity should cross an environment alias')
    try
-      writer(array<string> { 'wrong' })
+      writer(array<str> { 'wrong' })
       error('A different array member identity should be rejected')
    except e
-      assert(e.message.find('expected array<int>') != nil and e.message.find('got array<string>') != nil,
+      assert(e.message.find('expected array<int>') != nil and e.message.find('got array<str>') != nil,
          'The global member diagnostic should include both array identities: ' .. e.message)
    end
    assert(glGTMemberArray[0] is 9, 'A rejected cross-chunk array store should preserve the previous value')
 
    exec([[global glGTWildcardArray:array<any> = array<int> { 1 }]])
-   exec([[global glGTWildcardArray:array<any> = array<string> { 'open' }]])
+   exec([[global glGTWildcardArray:array<any> = array<str> { 'open' }]])
    assert(glGTWildcardArray[0] is 'open', 'array<any> should remain an explicit global member wildcard')
 end
 

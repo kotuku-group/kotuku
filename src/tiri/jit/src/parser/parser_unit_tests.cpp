@@ -4104,6 +4104,19 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       }
    }
 
+   auto interpolated_context = build_ast_from_source("local value = f'{&name}'\n", false, false);
+   if (not interpolated_context.chunk.ok()) {
+      Log.error("ampersand-prefixed context access failed inside f-string interpolation");
+      log_diagnostics(interpolated_context.diagnostics, Log);
+      return false;
+   }
+
+   auto spaced_interpolated_context = build_ast_from_source("local value = f'{& name}'\n", false, false);
+   if (spaced_interpolated_context.diagnostics.empty()) {
+      Log.error("spaced ampersand-prefixed context access was accepted inside f-string interpolation");
+      return false;
+   }
+
    auto legacy_context = build_ast_from_source(".value = 1\n", false, false);
    if (legacy_context.diagnostics.empty()) {
       Log.error("leading-dot context access remained accepted after the prefix change");
@@ -4727,7 +4740,7 @@ static bool test_static_descriptor_model(kt::Log &Log)
       { "int64", AET::INT64, TiriType::Num },
       { "float", AET::FLOAT, TiriType::Num },
       { "double", AET::DOUBLE, TiriType::Num },
-      { "string", AET::STR_GC, TiriType::Str },
+      { "str", AET::STR_GC, TiriType::Str },
       { "table", AET::TABLE, TiriType::Table },
       { "array", AET::ARRAY, TiriType::Array },
       { "object", AET::OBJECT, TiriType::Object },

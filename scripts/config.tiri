@@ -116,7 +116,7 @@ end
 @result Config text
 ]])
 config.encode = function(Value:table!):str
-   local output = array<string>
+   local output = array<str>
    local group_count = 0
 
    for group_name, group in Value.sortByKeys() do

@@ -9,7 +9,7 @@ Tuku: A small HTTP/HTTPS client for Tiri command-line workflows.  Documented in 
 
 TUKU_VERSION <const> = '2026.5.7'
 TUKU_USER_AGENT <const> = 'Tuku/1.0 Kotuku'
-glResponseHeaderNames = array<string> { 'content-type', 'content-length', 'location' }
+glResponseHeaderNames = array<str> { 'content-type', 'content-length', 'location' }
 glReportedError = false
 glSilent = false
 
@@ -17,7 +17,7 @@ glOptionDefs = array<table> {
    { name = 'url', type = 'str', group = 'Core',
      comment = 'Target HTTP or HTTPS URL.' },
    { name = 'method', type = 'enum',
-     choices = array<string> { 'get', 'head', 'delete', 'options', 'post', 'put', 'patch' },
+     choices = array<str> { 'get', 'head', 'delete', 'options', 'post', 'put', 'patch' },
      group = 'Core', comment = 'HTTP method to use.' },
    { name = 'version', kind = 'flag', group = 'Core', comment = 'Print the Tuku version.' },
 
@@ -27,7 +27,7 @@ glOptionDefs = array<table> {
      comment = 'Print the numeric HTTP status.' },
    { name = 'headers', kind = 'flag', group = 'Output',
      comment = 'Print all response headers as key=value lines.' },
-   { name = 'include', names = array<string> { 'include', 'with-headers' }, kind = 'flag', group = 'Output',
+   { name = 'include', names = array<str> { 'include', 'with-headers' }, kind = 'flag', group = 'Output',
      comment = 'Print response headers before the response body.' },
    { name = 'silent', kind = 'flag', group = 'Output',
      comment = 'Suppress non-body output.' },
@@ -37,19 +37,19 @@ glOptionDefs = array<table> {
      comment = 'Treat HTTP 4xx and 5xx statuses as failures.' },
 
    { name = 'data', type = 'str', group = 'Request Body',
-     excludes = array<string> { 'datafile', 'json', 'form', 'multipart' },
+     excludes = array<str> { 'datafile', 'json', 'form', 'multipart' },
      comment = 'Send a string request body.' },
    { name = 'datafile', type = 'file', exists = true, group = 'Request Body',
-     excludes = array<string> { 'data', 'json', 'form', 'multipart' },
+     excludes = array<str> { 'data', 'json', 'form', 'multipart' },
      comment = 'Read the request body from a file.' },
    { name = 'json', type = 'str', group = 'Request Body',
-     excludes = array<string> { 'data', 'datafile', 'form', 'multipart' },
+     excludes = array<str> { 'data', 'datafile', 'form', 'multipart' },
      comment = 'Send a JSON request body.' },
    { name = 'form', type = 'array', group = 'Request Body',
-     excludes = array<string> { 'data', 'datafile', 'json', 'multipart' },
+     excludes = array<str> { 'data', 'datafile', 'json', 'multipart' },
      comment = 'Send form fields as name=value entries.' },
    { name = 'multipart', type = 'array', group = 'Request Body',
-     excludes = array<string> { 'data', 'datafile', 'json', 'form' },
+     excludes = array<str> { 'data', 'datafile', 'json', 'form' },
      comment = 'Send multipart/form-data fields as name=value or name=@path entries.' },
    { name = 'contenttype', type = 'str', group = 'Request Body',
      comment = 'Request Content-Type header.' },
@@ -103,7 +103,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Converts an array of name=value form arguments into application/x-www-form-urlencoded request content.
 
-function encodeFormBody(Form:array<string>!):str
+function encodeFormBody(Form:array<str>!):str
    params = array<table>
 
    for field in values(Form) do
@@ -132,7 +132,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Converts an array of name=value or name=@file arguments into multipart/form-data request content.
 
-function buildMultipartBody(Fields:array<string>!):<str, str>
+function buildMultipartBody(Fields:array<str>!):<str, str>
    boundary = '----TukuBoundary' .. tostring(math.floor(mSys.PreciseTime())) .. string.format('%08x', math.random(0, 0x7FFFFFFF))
    crlf <const> = '\r\n'
    body = ''
@@ -554,8 +554,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Returns available response header names, falling back to the phase 3 common keys on older HTTP builds.
 
-function readResponseHeaderNames(HTTP:obj!):array<string>
-   names = array<string>
+function readResponseHeaderNames(HTTP:obj!):array<str>
+   names = array<str>
    seen = {}
 
    if HTTP.responseKeys != nil then
@@ -627,8 +627,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Removes sensitive headers (Authorization, Cookie) from a custom header array.
 
-function filterSensitiveHeaders(Headers:array<string>!):array<string>
-   result = array<string>
+function filterSensitiveHeaders(Headers:array<str>!):array<str>
+   result = array<str>
    for header in values(Headers) do
       name = tostring(header)
       colon = name.find(':')

@@ -38,7 +38,7 @@ end
    assert(value is "Second", "Safe index should return stored element when present, got " .. tostring(value))
 
    -- Test with native Tiri array (use separate variable since array != table)
-   arr_container = array<string> { "First", "Second" }
+   arr_container = array<str> { "First", "Second" }
    value = arr_container?[1]
    assert(value is "Second", "Safe index should return stored element when present, got " .. tostring(value))
 
@@ -410,7 +410,7 @@ end
 
 @Test function testTiriArraySafeIndexVariable()
    -- Test safe navigation with variable indices
-   arr = array<string> { "zero", "one", "two", "three" }
+   arr = array<str> { "zero", "one", "two", "three" }
 
    idx = 0
    assert(arr?[idx] is "zero", "Safe index with variable index 0 should work")
@@ -479,7 +479,7 @@ end
 
 @Test function testTiriArraySafeIndexWithFallback()
    -- Test safe array navigation combined with ?? operator
-   arr = array<string> { "first", "second" }
+   arr = array<str> { "first", "second" }
 
    v = arr?[0] ?? "default"
    assert(v is "first", "Safe index with fallback should return value when present")
@@ -518,7 +518,7 @@ end
    emptyInt = array.new(0, 'int')
    assert(emptyInt?[0] is nil, "Safe index on empty array should return nil")
 
-   emptyStr = array.new(0, 'string')
+   emptyStr = array.new(0, 'str')
    assert(emptyStr?[0] is nil, "Safe index on empty string array should return nil")
 end
 

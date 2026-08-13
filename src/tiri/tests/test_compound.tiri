@@ -544,7 +544,7 @@ end
 end
 
 @Test function ArrayConcatAssignmentNonByteArrayPushesSingleConcatResult()
-   result = array<string>
+   result = array<str>
 
    result ..= 'a' .. 'b'
 

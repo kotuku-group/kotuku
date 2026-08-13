@@ -5,7 +5,7 @@ Tests for resolving server names in parallel.
    include 'network'
    module network as mNet
 
-glDomains = array<string> { 'google.com', 'kotuku.dev', 'amazon.co.uk', 'stackoverflow.com', 'theguardian.com', 'www.bbc.co.uk' }
+glDomains = array<str> { 'google.com', 'kotuku.dev', 'amazon.co.uk', 'stackoverflow.com', 'theguardian.com', 'www.bbc.co.uk' }
 glTotalResolved = 0
 local proc, signal
 
@@ -68,7 +68,7 @@ end
 @Test; @Requires(network=true) function Duplication()
    resolved = 0
 
-   domains = array<string> { 'google.com', 'reddit.com' }
+   domains = array<str> { 'google.com', 'reddit.com' }
    function duplicate_resolved(NetLookup, Error)
       assert(Error is ERR_Okay, 'Failed to resolve ' .. NetLookup.hostName .. ', error ' ..mSys.GetErrorMsg(Error))
       logOutput('Resolved: ' .. NetLookup.hostName)

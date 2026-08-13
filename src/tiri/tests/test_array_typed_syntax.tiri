@@ -19,9 +19,9 @@ end
 end
 
 @Test function ArrayTypedBasicString()
-   arr = array<string>
-   assert(#arr is 0, "Empty array<string> should have length 0")
-   assert(arr.type() is 'string', "Type should be 'string'")
+   arr = array<str>
+   assert(#arr is 0, "Empty array<str> should have length 0")
+   assert(arr.type() is 'str', "Type should be 'str'")
 end
 
 @Test function ArrayTypedBasicTable()
@@ -62,9 +62,9 @@ end
 end
 
 @Test function ArrayTypedWithSizeString()
-   arr = array<string, 10>
+   arr = array<str, 10>
    assert(#arr is 10, "Pre-allocated string array should have length 10")
-   assert(arr.type() is 'string', "Type should be 'string'")
+   assert(arr.type() is 'str', "Type should be 'str'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -87,7 +87,7 @@ end
 end
 
 @Test function ArrayTypedWithStringValues()
-   arr = array<string> { 'hello', 'world', 'test' }
+   arr = array<str> { 'hello', 'world', 'test' }
    assert(#arr is 3, "String array should have 3 elements")
    assert(arr[0] is 'hello', "First element should be 'hello'")
    assert(arr[1] is 'world', "Second element should be 'world'")
@@ -127,8 +127,8 @@ end
    double_arr = array<double>
    assert(double_arr.type() is 'double', "double should be 'double'")
 
-   string_arr = array<string>
-   assert(string_arr.type() is 'string', "string should be 'string'")
+   string_arr = array<str>
+   assert(string_arr.type() is 'str', "string should be 'string'")
 
    table_arr = array<table>
    assert(table_arr.type() is 'table', "table should be 'table'")
@@ -146,7 +146,7 @@ end
 
 @Test function ArrayTypedWhitespaceWithValues()
    -- Whitespace with initialiser
-   arr = array< string > { 'a', 'b', 'c' }
+   arr = array< str > { 'a', 'b', 'c' }
    assert(#arr is 3, "Whitespace with values should work")
    assert(arr[0] is 'a', "First element should be 'a'")
 end
@@ -400,7 +400,7 @@ end
    -- Array as table field
    data = {
       numbers = array<int> { 1, 2, 3 },
-      names = array<string> { 'a', 'b', 'c' }
+      names = array<str> { 'a', 'b', 'c' }
    }
    assert(#data.numbers is 3, "Nested int array should have 3 elements")
    assert(#data.names is 3, "Nested string array should have 3 elements")
@@ -460,7 +460,7 @@ end
    -- Multiple array declarations (separate statements)
    a = array<int, 3>
    b = array<double, 2>
-   c = array<string> { 'x' }
+   c = array<str> { 'x' }
 
    assert(#a is 3, "First array should have 3 elements")
    assert(#b is 2, "Second array should have 2 elements")
@@ -510,7 +510,7 @@ end
 
 @Test function ArrayTypedSizeLargerThanValuesString()
    -- Test with string type - padded elements should be nil
-   arr = array<string, 5> { 'hello', 'world' }
+   arr = array<str, 5> { 'hello', 'world' }
    assert(#arr is 5, "Array should have length 5, got " .. #arr)
    assert(arr[0] is 'hello', "First element should be 'hello'")
    assert(arr[1] is 'world', "Second element should be 'world'")
@@ -604,7 +604,7 @@ end
 
 @Test function ArrayResizeStringArray()
    -- Test array.resize() with string array
-   arr = array<string> { 'a', 'b' }
+   arr = array<str> { 'a', 'b' }
    array.resize(arr, 5)
    assert(#arr is 5, "Length should be 5")
    assert(arr[0] is 'a', "First element preserved")
@@ -685,7 +685,7 @@ end
 @Test function ArrayInitialiserConsecutiveFormattedStrings()
    -- Separator handling must not peek into the buffered tokens produced by an interpolated string.
    local port = 18952
-   local args = array<string> { f'url=http://127.0.0.1:{port}/echo', f'proxy=127.0.0.1:{port}', 'timeout=5' }
+   local args = array<str> { f'url=http://127.0.0.1:{port}/echo', f'proxy=127.0.0.1:{port}', 'timeout=5' }
    assert(#args is 3, "Formatted string values should yield 3 elements, got " .. #args)
    assert(args[0] is 'url=http://127.0.0.1:18952/echo', "First formatted string should parse intact")
    assert(args[1] is 'proxy=127.0.0.1:18952', "Second formatted string should parse intact")
