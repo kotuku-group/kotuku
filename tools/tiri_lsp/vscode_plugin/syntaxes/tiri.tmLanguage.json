@@ -260,6 +260,10 @@
                "match": "(<<|>>)"
             },
             {
+               "name": "keyword.operator.context.tiri",
+               "match": "&&"
+            },
+            {
                "name": "keyword.operator.bitwise.tiri",
                "match": "[&|~]"
             },

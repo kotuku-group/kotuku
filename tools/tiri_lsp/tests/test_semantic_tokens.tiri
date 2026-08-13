@@ -42,6 +42,26 @@ function assertNoToken(Tokens:array<table>, Line:num, Char:num, Text:str, Messag
    assert(not token, Message)
 end
 
+@Test function CurrentContextReceivesOneSemanticToken()
+   source = 'local current = &&\n' ..
+      'local field = &name\n' ..
+      'local masked = flags & mask\n'
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 16, '&&',
+      'Current-context syntax should be highlighted as one two-character operator.')
+   assertOperatorToken(tokens, 1, 14, '&',
+      'Context-prefixed field access should retain its single-character operator token.')
+   assertOperatorToken(tokens, 2, 21, '&',
+      'Bitwise AND should retain its single-character operator token.')
+   assertNoToken(tokens, 0, 16, '&',
+      'Current-context syntax should not be emitted as two unrelated ampersand tokens.')
+
+   doc = makeDoc('local current = &&\nreturn current\n')
+   result = computeDiagnostics(doc)
+   assert(#result.diagnostics is 0, 'LSP diagnostics should accept current-context materialisation.')
+end
+
 @Test function ParserAnnotationsReceiveSemanticTokens()
    source = 'value = @SourceFile\n' ..
       'line = @SourceLine\n' ..

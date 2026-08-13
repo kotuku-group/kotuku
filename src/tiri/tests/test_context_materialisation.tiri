@@ -8,6 +8,39 @@ function reset_context_counters():bool
    return counters != nil and counters.enabled is true
 end
 
+@Test function StandaloneCurrentContextSurvivesRecordedSideExit()
+   if not reset_context_counters() then return end
+   local worker = entity {
+      name = 'worker',
+      read = function(Exit:bool):str
+         local current = &&
+         if Exit then return current.name .. ':exit' end
+         return current.name
+      end
+   }
+
+   function workload():<str, str>
+      local result = ''
+      local exit_result = ''
+      for i in {0 to 300} do
+         local exit = i is 93
+         result = worker.read(exit)
+         if exit then exit_result = result end
+      end
+      return result, exit_result
+   end
+
+   local result, exit_result = workload()
+   assert(result is 'worker', 'The normal path should retain the current-context receiver identity')
+   assert(exit_result is 'worker:exit',
+      'A standalone context value should retain receiver identity across a recorded side exit')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0 and counters.sideExits > 0,
+      'The standalone current-context fixture should compile and exercise a recorded side exit')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Standalone materialisation should leave physical context ownership balanced')
+end
+
 @Test function NestedLuaContextsRemainVirtual()
    if not reset_context_counters() then return end
    local inner = entity {
