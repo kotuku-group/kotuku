@@ -580,6 +580,18 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          break;
       }
 
+      case TokenKind::CurrentContext: {
+         const Token following = this->ctx.tokens().peek(1);
+         if ((following.kind() IS TokenKind::Identifier or following.kind() IS TokenKind::Ampersand) and
+             following.span().offset IS current.span().offset + 2) {
+            return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, following,
+               "invalid token adjacent to '&&' current-context access");
+         }
+         node = make_current_context_expr(current.span());
+         this->ctx.tokens().advance();
+         break;
+      }
+
       case TokenKind::Dots:
          node = make_vararg_expr(current.span());
          this->ctx.tokens().advance();

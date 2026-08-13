@@ -838,10 +838,16 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             pos++
             col++
          end
-      elseif c is '&' then -- & bitwise AND
-         addToken(line, col, 1, 1, 0)
-         pos++
-         col++
+      elseif c is '&' then
+         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '&' then
+            addToken(line, col, 2, 1, 0) -- && current context
+            pos += 2
+            col += 2
+         else
+            addToken(line, col, 1, 1, 0) -- & bitwise AND or context field prefix
+            pos++
+            col++
+         end
       elseif c is '~' then -- ~ bitwise NOT
          addToken(line, col, 1, 1, 0)
          pos++

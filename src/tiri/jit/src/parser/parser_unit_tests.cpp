@@ -3969,6 +3969,81 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view materialisation_source =
+      "local current = &&\n"
+      "consume(&&, &value)\n"
+      "local member = &&.value\n"
+      "local indexed = &&['value']\n"
+      "local optional = &&?.value\n";
+   auto materialisation = build_ast_from_source(materialisation_source, false, false);
+   if (not materialisation.chunk.ok() or materialisation.chunk.value_ref()->statements.size() != 5) {
+      Log.error("failed to parse standalone current-context expressions");
+      log_diagnostics(materialisation.diagnostics, Log);
+      return false;
+   }
+
+   const auto &current_decl =
+      std::get<LocalDeclStmtPayload>(materialisation.chunk.value_ref()->statements[0]->data);
+   if (current_decl.values.size() != 1 or current_decl.values[0]->kind != AstNodeKind::CurrentContextExpr or
+       infer_expression_type(*current_decl.values[0]) != TiriType::Table) {
+      Log.error("standalone current-context materialisation did not retain its table-valued AST node");
+      return false;
+   }
+
+   const auto &consume_statement =
+      std::get<ExpressionStmtPayload>(materialisation.chunk.value_ref()->statements[1]->data);
+   const auto *consume_call = consume_statement.expression ?
+      std::get_if<CallExprPayload>(&consume_statement.expression->data) : nullptr;
+   if (not consume_call or consume_call->arguments.size() != 2 or
+       consume_call->arguments[0]->kind != AstNodeKind::CurrentContextExpr) {
+      Log.error("a standalone current-context call argument was not preserved");
+      return false;
+   }
+
+   constexpr std::array<AstNodeKind, 3> suffix_kinds = {
+      AstNodeKind::MemberExpr,
+      AstNodeKind::IndexExpr,
+      AstNodeKind::SafeMemberExpr
+   };
+   for (size_t i = 0; i < suffix_kinds.size(); ++i) {
+      const auto &declaration =
+         std::get<LocalDeclStmtPayload>(materialisation.chunk.value_ref()->statements[i + 2]->data);
+      if (declaration.values.size() != 1 or declaration.values[0]->kind != suffix_kinds[i]) {
+         Log.error("current-context suffix fixture %" PRId64 " produced the wrong AST node", int64_t(i));
+         return false;
+      }
+   }
+
+   const auto &materialised_member = std::get<MemberExprPayload>(
+      std::get<LocalDeclStmtPayload>(materialisation.chunk.value_ref()->statements[2]->data).values[0]->data);
+   const auto &materialised_index = std::get<IndexExprPayload>(
+      std::get<LocalDeclStmtPayload>(materialisation.chunk.value_ref()->statements[3]->data).values[0]->data);
+   const auto &materialised_safe_member = std::get<SafeMemberExprPayload>(
+      std::get<LocalDeclStmtPayload>(materialisation.chunk.value_ref()->statements[4]->data).values[0]->data);
+   if (not materialised_member.table or
+       materialised_member.table->kind != AstNodeKind::CurrentContextExpr or
+       not materialised_index.table or materialised_index.table->kind != AstNodeKind::CurrentContextExpr or
+       not materialised_safe_member.table or
+       materialised_safe_member.table->kind != AstNodeKind::CurrentContextExpr) {
+      Log.error("a current-context suffix did not retain its standalone context receiver");
+      return false;
+   }
+
+   auto spaced_context_operand = build_ast_from_source("local value = 7 & &glProbe\n", false, false);
+   if (not spaced_context_operand.chunk.ok()) {
+      Log.error("spaced bitwise-AND with a context-prefixed right operand stopped parsing");
+      log_diagnostics(spaced_context_operand.diagnostics, Log);
+      return false;
+   }
+
+   for (std::string_view invalid_source : { "local value = &&name\n", "local value = &&&name\n" }) {
+      auto invalid = build_ast_from_source(invalid_source, false, false);
+      if (invalid.diagnostics.empty()) {
+         Log.error("an invalid adjacent current-context expression was accepted");
+         return false;
+      }
+   }
+
    const auto &alias_decl = std::get<LocalDeclStmtPayload>(block.statements[9]->data);
    if (alias_decl.values.empty() or alias_decl.values[0]->kind != AstNodeKind::MemberExpr) {
       Log.error("member extraction did not remain an unbound member expression");
@@ -4680,6 +4755,31 @@ static bool test_static_result_set_model(kt::Log &Log)
 
 static size_t count_opcode_tree(const BytecodeSnapshot &, BCOp);
 static size_t count_opcode(const BytecodeSnapshot &, BCOp);
+
+static bool test_current_context_materialisation_bytecode(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   std::string error;
+
+   auto standalone = compile_snapshot(L, "return &&\n", true, error);
+   if (not standalone or count_opcode(*standalone, BC_CTXGET) != 1 or
+       count_opcode(*standalone, BC_TGETS) != 0 or count_opcode(*standalone, BC_TGETV) != 0) {
+      Log.error("standalone current-context materialisation emitted unexpected bytecode: %s", error.c_str());
+      return false;
+   }
+
+   auto prefixed = compile_snapshot(L, "return &value\n", true, error);
+   auto suffixed = compile_snapshot(L, "return &&.value\n", true, error);
+   if (not prefixed or not suffixed or count_opcode(*prefixed, BC_CTXGET) != 1 or
+       count_opcode(*suffixed, BC_CTXGET) != 1 or count_opcode(*prefixed, BC_TGETS) != 1 or
+       count_opcode(*suffixed, BC_TGETS) != 1) {
+      Log.error("equivalent current-context member spellings emitted different bytecode: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
 
 static int envstore_protected_attempt(lua_State *L)
 {
@@ -8165,7 +8265,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 72> tests = { {
+   constexpr std::array<TestCase, 73> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8189,6 +8289,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "tail_call_eligibility", test_tail_call_eligibility },
       { "multres_save_unwind", test_multres_save_unwind },
       { "contextual_member_ast_foundations", test_contextual_member_ast_foundations },
+      { "current_context_materialisation_bytecode", test_current_context_materialisation_bytecode },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
