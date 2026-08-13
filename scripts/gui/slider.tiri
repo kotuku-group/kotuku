@@ -19,7 +19,7 @@ local lStyle = thunk():str
 end
 
 gui.slider = function(Options:table!)
-   self = { -- Public variables
+   self = entity { -- Public interface
       min    = Options.min ?? 0,
       max    = Options.max ?? 1,
       value  = Options.value ?? Options.min + ((Options.max - Options.min) * 0.5),
@@ -28,107 +28,109 @@ gui.slider = function(Options:table!)
       viewport = nil
    }
 
-   function setValue(Value)
-      self.value = Value
-      self.events?.activate(self, Value)
-      self.viewport.scene.surface.mtScheduleRedraw()
-   end
-
-   self.setRange = function(Min:num!, Max:num!)
-      assert(Max > Min, 'The min/max values are invalid.')
-      self.min = Min
-      self.max = Max
-      if self.value < self.min then setValue(self.min) end
-      if self.value > self.max then setValue(self.max) end
-   end
-
-   -- Main entry point
-
-   target = Options.target
-   assert(target, 'A target viewport is required.')
-   assert(self.max > self.min, 'The min/max values are invalid.')
-
-   self._theme = gui.getTheme(target)
-   self.orientation = (Options.orientation is 'vertical') ? 'V' :> 'H'
-   self._labelSize = 0
-
-   if self.orientation is 'V' then
-      self.viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, height = (Options.size ?? 100), width = BOX_SIZE })
-
-      self._sliderHostVP = self.viewport.new('VectorViewport', { y = 0, width = '100%', yOffset = 0 })
-      lStyle.background(self, self._sliderHostVP, self._theme)
-
-      self._sliderVP = self._sliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
-
-      self._sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
-         max_size = self._sliderHostVP.height - BOX_SIZE
-         Y = math.clamp(Y, 0, max_size)
-         if Viewport.y is Y then return end
-
-         Viewport.y = Y
-         setValue(self.min + (self.max - self.min) * ((max_size - Y) / max_size))
+   using self do -- Switch context to 'self'
+      function setValue(Value)
+         self.value = Value
+         self.events?.activate(self, Value)
+         self.viewport.scene.surface.mtScheduleRedraw()
       end
 
-      max_size = self._sliderHostVP.height - BOX_SIZE
-      self._sliderVP.y = max_size - ((self.value - self.min) / ((self.max - self.min) / max_size))
-   else
-      self.viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, width = (Options.size ?? 100), height = BOX_SIZE })
-
-      if self.label then
-         self.labelText = self.viewport.new('VectorText', {
-            name      = 'Label',
-            x         = 0,
-            y         = math.round(FONT_HEIGHT + math.floor((BOX_SIZE - FONT_HEIGHT) * 0.5)),
-            face      = gui.fonts.label.face,
-            fontSize  = string.format('%.2fpt', gui.fonts.label.size),
-            fontStyle = gui.fonts.label.style,
-            fill      = self._theme.window.text,
-            string    = self.label,
-            lineLimit = 1
-         })
-
-         self._labelSize = self.labelText.textWidth + MARGIN
-         self.viewport.width = self.viewport.width + self._labelSize
+      &setRange = function(Min:num!, Max:num!)
+         assert(Max > Min, 'The min/max values are invalid.')
+         &min = Min
+         &max = Max
+         if &value < &min then setValue(&min) end
+         if &value > &max then setValue(&max) end
       end
 
-      self._sliderHostVP = self.viewport.new('VectorViewport', { x = self._labelSize, height = '100%', xOffset = 0 })
-      lStyle.background(self, self._sliderHostVP, self._theme)
+      -- Main entry point
 
-      self._sliderVP = self._sliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
+      target = Options.target
+      assert(target, 'A target viewport is required.')
+      assert(&max > &min, 'The min/max values are invalid.')
 
-      self._sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
-         max_size  = self._sliderHostVP.width - BOX_SIZE
-         X = math.clamp(X, 0, max_size)
-         if Viewport.x is X then return end
+      &_theme = gui.getTheme(target)
+      &orientation = (Options.orientation is 'vertical') ? 'V' :> 'H'
+      &_labelSize = 0
 
-         Viewport.x = X
-         setValue(self.min + (self.max - self.min) * (X / max_size))
+      if &orientation is 'V' then
+         &viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, height = (Options.size ?? 100), width = BOX_SIZE })
+
+         &_sliderHostVP = &viewport.new('VectorViewport', { y = 0, width = '100%', yOffset = 0 })
+         lStyle.background(self, &_sliderHostVP, &_theme)
+
+         &_sliderVP = &_sliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
+
+         &_sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
+            max_size = self._sliderHostVP.height - BOX_SIZE
+            Y = math.clamp(Y, 0, max_size)
+            if Viewport.y is Y then return end
+
+            Viewport.y = Y
+            setValue(self.min + (self.max - self.min) * ((max_size - Y) / max_size))
+         end
+
+         max_size = &_sliderHostVP.height - BOX_SIZE
+         &_sliderVP.y = max_size - ((&value - &min) / ((&max - &min) / max_size))
+      else
+         &viewport = target.new('VectorViewport', { x = Options.x, y = Options.y, width = (Options.size ?? 100), height = BOX_SIZE })
+
+         if &label then
+            &labelText = &viewport.new('VectorText', {
+               name      = 'Label',
+               x         = 0,
+               y         = math.round(FONT_HEIGHT + math.floor((BOX_SIZE - FONT_HEIGHT) * 0.5)),
+               face      = gui.fonts.label.face,
+               fontSize  = string.format('%.2fpt', gui.fonts.label.size),
+               fontStyle = gui.fonts.label.style,
+               fill      = &_theme.window.text,
+               string    = &label,
+               lineLimit = 1
+            })
+
+            &_labelSize = &labelText.textWidth + MARGIN
+            &viewport.width = &viewport.width + &_labelSize
+         end
+
+         &_sliderHostVP = &viewport.new('VectorViewport', { x = &_labelSize, height = '100%', xOffset = 0 })
+         lStyle.background(self, &_sliderHostVP, &_theme)
+
+         &_sliderVP = &_sliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
+
+         &_sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
+            max_size  = self._sliderHostVP.width - BOX_SIZE
+            X = math.clamp(X, 0, max_size)
+            if Viewport.x is X then return end
+
+            Viewport.x = X
+            setValue(self.min + (self.max - self.min) * (X / max_size))
+         end
+
+         &_sliderVP.x = (&value - &min) / ((&max - &min) / (&_sliderHostVP.width - BOX_SIZE))
       end
 
-      self._sliderVP.x = (self.value - self.min) / ((self.max - self.min) / (self._sliderHostVP.width - BOX_SIZE))
-   end
+      lStyle.slider(self, &_sliderVP, &_theme)
 
-   lStyle.slider(self, self._sliderVP, self._theme)
-
-   self._sliderHostVP.mtSubscribeInput(JTYPE_BUTTON,
-      function(Viewport:obj!, Msg)
-         repeat
-            if (Msg.type is JET_LMB) and (Msg.value > 0) then
-               if self.orientation is 'V' then
-                  new_value = self.min + ((Msg.y / self._sliderHostVP.height) * (self.max - self.min))
-                  self._sliderVP.y = (new_value - self.min) / ((self.max - self.min) / (self._sliderHostVP.height - BOX_SIZE))
-                  setValue(new_value)
-               else
-                  new_value = self.min + ((Msg.x / self._sliderHostVP.width) * (self.max - self.min))
-                  self._sliderVP.x = (new_value - self.min) / ((self.max - self.min) / (self._sliderHostVP.width - BOX_SIZE))
-                  setValue(new_value)
+      &_sliderHostVP.mtSubscribeInput(JTYPE_BUTTON,
+         function(Viewport:obj!, Msg)
+            repeat
+               if (Msg.type is JET_LMB) and (Msg.value > 0) then
+                  if self.orientation is 'V' then
+                     new_value = self.min + ((Msg.y / self._sliderHostVP.height) * (self.max - self.min))
+                     self._sliderVP.y = (new_value - self.min) / ((self.max - self.min) / (self._sliderHostVP.height - BOX_SIZE))
+                     setValue(new_value)
+                  else
+                     new_value = self.min + ((Msg.x / self._sliderHostVP.width) * (self.max - self.min))
+                     self._sliderVP.x = (new_value - self.min) / ((self.max - self.min) / (self._sliderHostVP.width - BOX_SIZE))
+                     setValue(new_value)
+                  end
                end
-            end
-            Msg = Msg.next
-         until Msg is nil
-      end)
+               Msg = Msg.next
+            until Msg is nil
+         end)
 
-   self.events?.show(self)
+      &events?.show(self)
+   end
 
    return self
 end
