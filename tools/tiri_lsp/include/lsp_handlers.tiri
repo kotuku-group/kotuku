@@ -227,12 +227,12 @@ global function registerCoreHandlers(Self)
                hoverProvider = true,
                -- Go to Definition
                definitionProvider = true,
-               completionProvider = { triggerCharacters = array<string> { '.' } },
+               completionProvider = { triggerCharacters = array<str> { '.' } },
                renameProvider = true,
                -- Signature Help
                signatureHelpProvider = {
-                  triggerCharacters = array<string> { '(', ',' },
-                  retriggerCharacters = array<string> { ',' }
+                  triggerCharacters = array<str> { '(', ',' },
+                  retriggerCharacters = array<str> { ',' }
                }
             },
             serverInfo = {

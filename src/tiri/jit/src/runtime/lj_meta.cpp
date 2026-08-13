@@ -782,7 +782,7 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
          case AET::DOUBLE: member = "double"; break;
          case AET::CSTR:
          case AET::STR_CPP:
-         case AET::STR_GC: member = "string"; break;
+         case AET::STR_GC: member = "str"; break;
          case AET::TABLE:  member = "table"; break;
          case AET::ARRAY:  member = "array"; break;
          case AET::PTR:    member = "pointer"; break;

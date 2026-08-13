@@ -1621,7 +1621,7 @@ function serverIncoming(self, ClientSocket)
       end
 
       -- Check if method is supported
-      supportedMethods = array<string> { 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS' }
+      supportedMethods = array<str> { 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS' }
       methodSupported = false
       for method in values(supportedMethods) do
          if state.request.method is method then

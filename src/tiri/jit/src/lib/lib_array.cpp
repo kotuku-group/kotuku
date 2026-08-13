@@ -47,7 +47,7 @@ constexpr auto HASH_INT16   = kt::strhash("int16");
 constexpr auto HASH_INT64   = kt::strhash("int64");
 constexpr auto HASH_FLOAT   = kt::strhash("float");
 constexpr auto HASH_DOUBLE  = kt::strhash("double");
-constexpr auto HASH_STRING  = kt::strhash("string");
+constexpr auto HASH_STR     = kt::strhash("str");
 constexpr auto HASH_STRUCT  = kt::strhash("struct");
 constexpr auto HASH_POINTER = kt::strhash("pointer");
 constexpr auto HASH_OBJECT  = kt::strhash("object");
@@ -150,7 +150,7 @@ static CSTRING elemtype_name(AET Type)
       case AET::OBJECT:     return "object";
       case AET::CSTR:
       case AET::STR_GC:
-      case AET::STR_CPP:    return "string";
+      case AET::STR_CPP:    return "str";
       case AET::ANY:        return "any";
       default: return "unknown";
    }
@@ -234,12 +234,12 @@ static void append_integer(std::string &Result, int64_t Value)
 }
 
 //********************************************************************************************************************
-// Usage: array.new(size, type) or array.new('string')
+// Usage: array.new(size, type) or array.new('str')
 //
 // Creates a new array of the specified size and element type.
 //
 //   size: number of elements (must be non-negative)
-//   type: element type string ("char", "int16", "int", "int64", "float", "double", "string", "StructName")
+//   type: element type string ("char", "int16", "int", "int64", "float", "double", "str", "StructName")
 
 LJLIB_CF(array_new)      LJLIB_REC(.)
 {
@@ -283,10 +283,10 @@ LJLIB_CF(array_new)      LJLIB_REC(.)
 //
 // Creates a new array populated with the given values.
 //
-//   type: element type string ("char", "int16", "int", "int64", "float", "double", "string")
+//   type: element type string ("char", "int16", "int", "int64", "float", "double", "str")
 //   value1, value2, ...: values to populate the array with
 //
-// Example: array.of('string', 'google.com', 'kotuku.dev', 'amazon.co.uk')
+// Example: array.of('str', 'google.com', 'kotuku.dev', 'amazon.co.uk')
 // Example: array.of('int', 1, 2, 3, 4, 5)
 
 LJLIB_CF(array_of)

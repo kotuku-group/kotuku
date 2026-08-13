@@ -162,7 +162,7 @@ global function module(Options:table, Function:func)
       if type(glModule.src) is 'string' then
          glModule.src = { glTDLFolder .. glModule.src }
       else
-         fixed_path = array<string>
+         fixed_path = array<str>
          for path in values(glModule.src) do
             fixed_path.push(glTDLFolder .. path)
          end
@@ -254,7 +254,7 @@ global function flags(Prefix, Options:table, ...)
 
    Options ?= {}
 
-   out = array<string>
+   out = array<str>
    sortedFlags = { }
    if Options.comment?? then
       out.push('// ' .. Options.comment)
@@ -471,7 +471,7 @@ global function constants(Prefix:str, Options:table, ...)
 
    Options ?= {}
 
-   out = array<string>
+   out = array<str>
    if Options.comment?? then
       out.push(f'// {Options.comment}')
       out.push('')
@@ -559,7 +559,7 @@ global function enums(Prefix:str, Options:table, ...)
 
    Options ?= {}
 
-   out = array<string>
+   out = array<str>
    if Options.comment?? then
       out.push(f'// {Options.comment}')
       out.push('')
@@ -644,8 +644,8 @@ end
 global function platform(Platform:str, Function:func)
    saveHeader = glHeader
    saveOutput = glOutput
-   global glHeader = array<string>
-   global glOutput = array<string>
+   global glHeader = array<str>
+   global glOutput = array<str>
 
    local define
    if (Platform.lower() is 'windows') then
@@ -708,7 +708,7 @@ global function structdef(Name:str, Options:table, Def:str, Append:str)
    try
       Options ?= {}
 
-      out = array<string>
+      out = array<str>
       full_name = Name
       if Options.version then
          out.push(f'#define VER_{Name.upper()} {string.format("%f", Options.version)}')

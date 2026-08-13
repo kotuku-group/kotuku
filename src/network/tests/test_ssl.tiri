@@ -262,7 +262,7 @@ end
 
 @Test(priority=30); @Requires(ssl=true)
 function SSLDataIntegrity()
-   test_messages = array<string> {
+   test_messages = array<str> {
       'Binary data: ' .. string.char(0, 1, 2, 3, 255, 254, 253),
       'Large SSL message '.rep(500), -- ~9KB message
       'Special chars: àáâãäåæçèéêë',

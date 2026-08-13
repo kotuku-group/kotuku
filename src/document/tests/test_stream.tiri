@@ -81,7 +81,7 @@ end
 @Test function WellFormed()
    -- For several .rpl files the output must parse cleanly as an XML document, proving it is well formed
    -- and the escape helper is correct.
-   files = array<string> { 'paragraphs.rpl', 'tables.rpl', 'lists.rpl', 'fonts.rpl', 'links.rpl' }
+   files = array<str> { 'paragraphs.rpl', 'tables.rpl', 'lists.rpl', 'fonts.rpl', 'links.rpl' }
    for path in values(files) do
       err, xml_str = loadXML(path)
       assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. path .. ', err=' .. err)

@@ -37,7 +37,7 @@ struct DeclaredVectorFields
    Bool: array<bool>, Char: array<char>, Byte: array<byte>, Int8: array<int8>, UInt8: array<uint8>,
    Int16: array<int16>, UInt16: array<uint16>, Int: array<int>, UInt: array<uint>,
    Int32: array<int>, UInt32: array<uint>, Int64: array<int64>, UInt64: array<uint64>,
-   Float: array<float>, Double: array<double>, String: array<string>,
+   Float: array<float>, Double: array<double>, String: array<str>,
    Points: array<struct<DeclaredVectorElement>>
 end
 
@@ -365,7 +365,7 @@ end
 @Test function NativeStructVectorRoundTrips()
    local value = struct<DeclaredVectorFields> {
       Int=array<int> { 1, 2, 3 },
-      String=array<string> { 'alpha', 'beta' }
+      String=array<str> { 'alpha', 'beta' }
    }
 
    value.Bool = array<byte> { 0, 1 }
@@ -402,7 +402,7 @@ end
    local copy = struct<DeclaredVectorFields> { }
    struct.copy(copy, value)
    value.Int = array<int> { 99 }
-   value.String = array<string> { 'changed' }
+   value.String = array<str> { 'changed' }
    assert(clone.Int is array<int> { 8, 9, 10, 11, 12 } and copy.Int is array<int> { 8, 9, 10, 11, 12 },
       'copy() and clone() should deep-copy scalar vectors')
    local clone_strings = clone.String
@@ -443,7 +443,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function NativeStructVectorDeclarationErrors()
-   for statement in values(array<string> {
+   for statement in values(array<str> {
       'struct BadCStrVector Values: array<cstr> end',
       'struct BadObjectVector Values: array<obj> end',
       'struct BadPointerVector Values: array<ptr> end',
@@ -769,7 +769,7 @@ end
 @Test function StructPairsAndToString()
    MAKESTRUCT('IterableRecord', 'lCount,zsName,bEnabled')
    local value = struct.new('IterableRecord', { count=7, name='sample', enabled=1 })
-   local fields = array<string>
+   local fields = array<str>
    local values = array<any>
 
    for name, field_value in pairs(value) do
@@ -777,7 +777,7 @@ end
       values.push(field_value)
    end
 
-   assert(fields is array<string> { 'count', 'name', 'enabled' }, 'pairs() should preserve declaration order')
+   assert(fields is array<str> { 'count', 'name', 'enabled' }, 'pairs() should preserve declaration order')
    assert(values[0] is 7 and values[1] is 'sample' and values[2] is 1, 'pairs() should return live field values')
    assert(tostring(value).startsWith('IterableRecord: 0x'), 'tostring() should include the struct definition name')
 end
@@ -800,14 +800,14 @@ end
    value.dynamic = array<int> { 8, 9, 10, 11 }
    assert(value.dynamic is array<int> { 8, 9, 10, 11 }, 'C++ vector assignment should resize and copy elements')
 
-   value.names = array<string> { 'alpha', 'beta' }
+   value.names = array<str> { 'alpha', 'beta' }
    local names = value.names
    assert(#names is 2 and names[0] is 'alpha' and names[1] is 'beta',
       'C++ string vector assignment should copy strings')
 
    local clone = struct.clone(value)
    value.dynamic = array<int> { 99 }
-   value.names = array<string> { 'changed' }
+   value.names = array<str> { 'changed' }
    assert(clone.dynamic is array<int> { 8, 9, 10, 11 }, 'clone() should deep-copy C++ primitive vectors')
    local clone_names = clone.names
    assert(#clone_names is 2 and clone_names[0] is 'alpha' and clone_names[1] is 'beta',

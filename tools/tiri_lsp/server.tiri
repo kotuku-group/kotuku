@@ -18,7 +18,7 @@ rx_sdk_path <const> = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
 function resolveSDKPath(Path:str)
    local sdk_path
    err = ERR_Failed
-   search_list = array<string>
+   search_list = array<str>
    if not Path then
       search_path = 'CMakeLists.txt'
       limit = 5
@@ -99,7 +99,7 @@ IDE Integration:
            comment = 'Path to generated XML documentation for hover support.' },
          { name = 'sdk', type = 'path', group = 'Paths',
            comment = 'Path to the Kotuku SDK folder; otherwise searched from the current directory.' },
-         { names = array<string> { 'requestLog', 'request-log' }, type = 'path', group = 'Diagnostics',
+         { names = array<str> { 'requestLog', 'request-log' }, type = 'path', group = 'Diagnostics',
            comment = 'Path to a log file for request/response debugging.' },
          { name = 'help', kind = 'flag', hidden = true,
            exec = function(Parser:table)

@@ -48,9 +48,9 @@ Examples:
               end
            end
          },
-         { names = array<string> { 'autoIndex', 'autoindex' }, kind = 'flag', default = true, group = 'Behaviour',
+         { names = array<str> { 'autoIndex', 'autoindex' }, kind = 'flag', default = true, group = 'Behaviour',
            comment = 'Enable automatic directory listing.' },
-         { names = array<string> { 'rateLimit', 'ratelimit' }, type = 'int', group = 'Behaviour',
+         { names = array<str> { 'rateLimit', 'ratelimit' }, type = 'int', group = 'Behaviour',
            comment = 'Maximum requests per rate-limit window; 0 disables rate limiting.',
            exec = function(Parser:table, ArgName:str, Value:any!, Param:table)
               if Value < 0 or Value > 1000 then
@@ -58,7 +58,7 @@ Examples:
               end
            end
          },
-         { names = array<string> { 'rateLimitWindow', 'ratelimitwindow' }, type = 'int', group = 'Behaviour',
+         { names = array<str> { 'rateLimitWindow', 'ratelimitwindow' }, type = 'int', group = 'Behaviour',
            comment = 'Rate-limit window in seconds.' }
       }
    })

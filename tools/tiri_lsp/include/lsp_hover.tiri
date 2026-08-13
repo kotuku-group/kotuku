@@ -272,7 +272,7 @@ function hoverSymbolMatches(Symbol:table, TokenInfo:table):bool
 end
 
 function hoverAppendParamSection(Markdown:str, Params:any):str
-   lines = array<string>
+   lines = array<str>
 
    for param in values(Params or array<table>) do
       if hoverTextHasContent(param.doc) then
@@ -293,7 +293,7 @@ function hoverAppendParamSection(Markdown:str, Params:any):str
 end
 
 function hoverAppendResultSection(Markdown:str, Results:any):str
-   lines = array<string>
+   lines = array<str>
 
    for result in values(Results or array<table>) do
       if hoverTextHasContent(result.type) or hoverTextHasContent(result.doc) then
@@ -312,7 +312,7 @@ function hoverAppendResultSection(Markdown:str, Results:any):str
 end
 
 function hoverAppendErrorSection(Markdown:str, Errors:any):str
-   lines = array<string>
+   lines = array<str>
 
    for err in values(Errors or array<table>) do
       if hoverTextHasContent(err.code) or hoverTextHasContent(err.doc) then
@@ -331,7 +331,7 @@ function hoverAppendErrorSection(Markdown:str, Errors:any):str
 end
 
 function hoverAppendFieldSection(Markdown:str, Fields:any):str
-   lines = array<string>
+   lines = array<str>
 
    for field in values(Fields or array<table>) do
       label = field.name or ''

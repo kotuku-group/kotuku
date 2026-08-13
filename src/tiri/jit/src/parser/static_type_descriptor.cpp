@@ -87,7 +87,7 @@ std::string array_element_name(const ArrayElementDescriptor &Element)
       case AET::INT64:  name = "int64"; break;
       case AET::FLOAT:  name = "float"; break;
       case AET::DOUBLE: name = "double"; break;
-      case AET::STR_GC: name = "string"; break;
+      case AET::STR_GC: name = "str"; break;
       case AET::TABLE:  name = "table"; break;
       case AET::ARRAY:  name = "array"; break;
       case AET::OBJECT: name = "object"; break;
@@ -616,7 +616,7 @@ std::optional<ArrayElementDescriptor> describe_array_element(std::string_view Na
    else if (Name IS "int64") result = { AET::INT64, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "float") result = { AET::FLOAT, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "double") result = { AET::DOUBLE, TiriType::Num, CLASSID::NIL, nullptr, true };
-   else if (Name IS "string") result = { AET::STR_GC, TiriType::Str, CLASSID::NIL, nullptr, true };
+   else if (Name IS "str") result = { AET::STR_GC, TiriType::Str, CLASSID::NIL, nullptr, true };
    else if (Name IS "table") result = { AET::TABLE, TiriType::Table, CLASSID::NIL, nullptr, true };
    else if (Name IS "array") result = { AET::ARRAY, TiriType::Array, CLASSID::NIL, nullptr, true };
    else if (Name IS "object") result = { AET::OBJECT, TiriType::Object, CLASSID::NIL, nullptr, true };

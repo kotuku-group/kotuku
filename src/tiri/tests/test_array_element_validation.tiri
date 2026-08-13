@@ -22,7 +22,7 @@ function expect_failure(Action:func, Description:str)
 end
 
 @Test function NumericStringsAreNeverElements()
-   local element_types = array<string> { 'byte', 'int16', 'int', 'int64', 'float', 'double' }
+   local element_types = array<str> { 'byte', 'int16', 'int', 'int64', 'float', 'double' }
 
    for _, element_type in element_types do
       local indexed = array.new(1, element_type)
@@ -49,14 +49,15 @@ end
 end
 
 @Test function StringArraysRejectNumbers()
-   local indexed = array<string, 1>
+   local indexed = array<str, 1>
    expect_failure(() => do indexed[0] = 12 end, 'String indexed store accepted a number')
    expect_failure(() => do indexed.push(12) end, 'String push accepted a number')
    expect_failure(() => do indexed.insert(0, 12) end, 'String insert accepted a number')
    expect_failure(() => do indexed.fill(12) end, 'String fill accepted a number')
-   expect_failure(() => do array.of('string', 12) end, 'String constructor accepted a number')
+   expect_failure(() => do array.of('str', 12) end, 'String constructor accepted a number')
    expect_failure(() => do indexed.copy({ [0]=12 }) end, 'String table copy accepted a number')
    expect_failure(() => do indexed.map(Value => num: 12) end, 'String map accepted a number')
+   expect_failure(() => do array.new(0, 'string') end, "Legacy 'string' element name was accepted")
 end
 
 @Test function ReferenceCategoriesAreExact()
@@ -81,7 +82,7 @@ end
 end
 
 @Test function NilUsesTheTypedEmptyValue()
-   local numeric_types = array<string> { 'byte', 'int16', 'int', 'int64', 'float', 'double' }
+   local numeric_types = array<str> { 'byte', 'int16', 'int', 'int64', 'float', 'double' }
    for _, element_type in numeric_types do
       local values = array.new(1, element_type)
       values[0] = 9
@@ -89,7 +90,7 @@ end
       assert(values[0] is 0, element_type .. ' nil store did not produce zero')
    end
 
-   local strings = array<string> { 'value' }
+   local strings = array<str> { 'value' }
    local tables = array<table> { {} }
    local arrays = array<array> { array<int> { 1 } }
    strings.fill(nil)

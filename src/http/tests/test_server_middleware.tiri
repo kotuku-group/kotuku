@@ -16,19 +16,19 @@ SERVER_PORT <const> = 18947
 
    -- Create middleware functions
    function loggingMiddleware(req, res, next)
-      if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
       req.middlewareOrder.push('logging')
       next()
    end
 
    function authMiddleware(req, res, next)
-      if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
       req.middlewareOrder.push('auth')
       next()
    end
 
    function timingMiddleware(req, res, next)
-      if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
       req.middlewareOrder.push('timing')
       next()
    end

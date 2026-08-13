@@ -38,6 +38,17 @@ module core as mCore
       'An extracted ordinary function should materialise its inherited context rather than capture its source entity')
 end
 
+@Test function FStringInterpolationSupportsContextAccess()
+   local receiver = entity { name = 'interpolated' }
+
+   function receiver.describe():str
+      return f'context: {&name}; explicit: {&&.name}'
+   end
+
+   assert(receiver.describe() is 'context: interpolated; explicit: interpolated',
+      'F-string interpolation should support shorthand and explicit current-context access')
+end
+
 @Test function NamedAndComputedTableCallsEstablishContext()
    local point = entity { name = 'point', value = 0 }
 
@@ -661,7 +672,7 @@ end
    end
 
    local text:str = 'needle stack'
-   local values:array<any> = array<string> { 'needle' }
+   local values:array<any> = array<str> { 'needle' }
    local indexes:range = {0 to 3}
    assert(text.startsWith(context_argument('needle')) is true,
       'String member dispatch should retain its existing behaviour')

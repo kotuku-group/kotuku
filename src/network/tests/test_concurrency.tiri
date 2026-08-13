@@ -21,8 +21,8 @@ unique messages to verify proper isolation and delivery.
    glActiveClients = 0
    glMaxSockets = 5
    glMessagesPerClient = 3
-   glClientResponses = array<string>
-   glServerReceived = array<string>
+   glClientResponses = array<str>
+   glServerReceived = array<str>
 
 @AfterAll function cleanup()
    glActiveClients = 0
@@ -217,13 +217,13 @@ end
 
 @Test function ConnectionIsolation()
    clientCount = 3
-   clientMessages = array<array<string>>
+   clientMessages = array<array<str>>
    messagesPerClient = 2
    glPort++
 
    -- Initialize expected messages
    for i in {0 to clientCount} do
-      clientMessages.push(array<string>)
+      clientMessages.push(array<str>)
       for j in {0 to messagesPerClient} do
          clientMessages[i].push(f'ISOLATED_CLIENT_{i}_MESSAGE_{j}')
       end

@@ -569,7 +569,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          this->ctx.tokens().advance();
          Token member_token = this->ctx.tokens().current();
          auto name_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
-         if (not name_token.ok() or name_token.value_ref().span().offset != context_token.span().offset + 1) {
+         if (not name_token.ok() or name_token.value_ref().span().line != context_token.span().line or
+             name_token.value_ref().span().column != context_token.span().column + 1) {
             return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedIdentifier, member_token,
                "expected a member name immediately after '&' context access");
          }

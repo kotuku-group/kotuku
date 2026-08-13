@@ -739,9 +739,9 @@ bool fstring_scan_expression(LexState *State, size_t Offset, bool &NeedConcat) {
       LexState::BufferedToken bt;
       bt.token = tok;
       copyTV(State->L, &bt.value, &expr_tv);
-      bt.line = State->current_token_line;
-      bt.column = State->current_token_column;
-      bt.offset = State->current_token_offset;
+      bt.line = State->pending_token_line;
+      bt.column = State->pending_token_column;
+      bt.offset = State->pending_token_offset;
       State->buffered_tokens.push_back(bt);
    }
 

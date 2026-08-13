@@ -222,7 +222,7 @@ glValidPNG = array<table> {
    { src='data/z09n2c08.png', crc=0x33610a6e }
 }
 
-glInvalidPNG = array<string> {
+glInvalidPNG = array<str> {
    'data/xc1n0g08.png',
    'data/xc9n2c08.png',
    'data/xcrn0g04.png',
@@ -265,8 +265,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test global function ValidPNGHashes()
-   missing = array<string> { }
-   mismatches = array<string> { }
+   missing = array<str> { }
+   mismatches = array<str> { }
 
    for entry in values(glValidPNG) do
       local hash, bmp, pic
@@ -318,7 +318,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test global function InvalidPNGsFailToLoad()
-   failures = array<string> { }
+   failures = array<str> { }
 
    for entry in values(glInvalidPNG) do
       try

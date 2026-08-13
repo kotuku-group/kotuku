@@ -34,7 +34,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function ConnectionFailures()
-   results = array<string> {}
+   results = array<str> {}
    glPort++
 
    -- Test 1: Invalid IP address
@@ -101,7 +101,7 @@ end
    processing.halt(1.0) -- Allow time for async operations
 
    -- Verify error handling results
-   expected_results = array<string> { 'invalid_ip_rejected', 'closed_port_rejected', 'port_conflict_detected' }
+   expected_results = array<str> { 'invalid_ip_rejected', 'closed_port_rejected', 'port_conflict_detected' }
    for expected in values(expected_results) do
       found = false
       for result in values(results) do

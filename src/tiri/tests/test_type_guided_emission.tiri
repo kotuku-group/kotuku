@@ -85,7 +85,7 @@ end
 
 @Test function ArrayLogicalElementTypes()
    local numbers = array<int> { 3, 7 }
-   local strings = array<string> { 'a', 'b' }
+   local strings = array<str> { 'a', 'b' }
    local tables = array<table> { { value=11 } }
    local nested = array<array> { array<int> { 19 } }
    local points = array<struct<EmissionPoint>> { struct<EmissionPoint> { Value=29 } }
@@ -93,7 +93,7 @@ end
    local objects = array<obj> { clock }
 
    assert(numbers[1] is 7, 'array<int> indexing should return a number')
-   assert(strings[0] is 'a', 'array<string> indexing should return a string')
+   assert(strings[0] is 'a', 'array<str> indexing should return a string')
    assert(tables[0].value is 11, 'array<table> indexing should retain table behaviour')
    assert(nested[0][0] is 19, 'array<array> indexing should retain nested array behaviour')
    assert(points[0].Value is 29, 'named struct-array indexing should retain its layout')
@@ -144,7 +144,7 @@ end
 
 @Test function ArrayDescriptorInvalidation()
    local values:array<any> = array<int> { 1 }
-   values = array<string> { 'changed' }
+   values = array<str> { 'changed' }
    assert(values[0] is 'changed', 'Conflicting array reassignment must not retain a stale numeric descriptor')
 
    local branch_values:array<any> = array<int> { 2 }

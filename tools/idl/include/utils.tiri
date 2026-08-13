@@ -83,7 +83,7 @@ end
 global function priority(Input:any)
    if type(Input) is 'function' then
       saveOutput = glOutput
-      glOutput = array<string>
+      glOutput = array<str>
       Input()
       for v in values(glOutput) do
          glHeader.push(v)
@@ -247,7 +247,7 @@ end
 global function resolveSDKPath(Path:str)
    local sdk_path
    err = ERR_Failed
-   search_list = array<string>
+   search_list = array<str>
    if not Path then
       search_path = 'CMakeLists.txt'
       limit = 5
