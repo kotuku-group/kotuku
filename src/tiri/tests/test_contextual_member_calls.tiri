@@ -114,6 +114,56 @@ end
       'A safe dynamic built-in fallback should use the runtime table gate on its non-nil path')
 end
 
+@Test function DynamicFallbackObjectReadsSurviveStackGrowth()
+   local holder:any = {
+      func = function()
+         local file = obj.new('file')
+         file.path = 'temp:contextual_stack_growth.txt'
+         local value_00, value_01, value_02, value_03, value_04, value_05, value_06, value_07 =
+            0, 1, 2, 3, 4, 5, 6, 7
+         local value_08, value_09, value_10, value_11, value_12, value_13, value_14, value_15 =
+            8, 9, 10, 11, 12, 13, 14, 15
+         local value_16, value_17, value_18, value_19, value_20, value_21, value_22, value_23 =
+            16, 17, 18, 19, 20, 21, 22, 23
+         local value_24, value_25, value_26, value_27, value_28, value_29, value_30, value_31 =
+            24, 25, 26, 27, 28, 29, 30, 31
+         local value_32, value_33, value_34, value_35, value_36, value_37, value_38, value_39 =
+            32, 33, 34, 35, 36, 37, 38, 39
+         local value_40, value_41, value_42, value_43, value_44, value_45, value_46, value_47 =
+            40, 41, 42, 43, 44, 45, 46, 47
+         local value_48, value_49, value_50, value_51, value_52, value_53, value_54, value_55 =
+            48, 49, 50, 51, 52, 53, 54, 55
+         local value_56, value_57, value_58, value_59, value_60, value_61, value_62, value_63 =
+            56, 57, 58, 59, 60, 61, 62, 63
+         local value_64, value_65, value_66, value_67, value_68, value_69, value_70, value_71 =
+            64, 65, 66, 67, 68, 69, 70, 71
+         local value_72, value_73, value_74, value_75, value_76, value_77, value_78, value_79 =
+            72, 73, 74, 75, 76, 77, 78, 79
+         local value_80, value_81, value_82, value_83, value_84, value_85, value_86, value_87 =
+            80, 81, 82, 83, 84, 85, 86, 87
+         local value_88, value_89, value_90, value_91, value_92, value_93, value_94, value_95 =
+            88, 89, 90, 91, 92, 93, 94, 95
+         local value_96, value_97, value_98, value_99, value_100, value_101, value_102, value_103 =
+            96, 97, 98, 99, 100, 101, 102, 103
+         local value_104, value_105, value_106, value_107, value_108, value_109, value_110, value_111 =
+            104, 105, 106, 107, 108, 109, 110, 111
+         local value_112, value_113, value_114, value_115, value_116, value_117, value_118, value_119 =
+            112, 113, 114, 115, 116, 117, 118, 119
+         local value_120, value_121, value_122, value_123, value_124, value_125, value_126, value_127 =
+            120, 121, 122, 123, 124, 125, 126, 127
+         local value_128, value_129, value_130, value_131, value_132, value_133 = 128, 129, 130, 131, 132, 133
+         local path = file.path
+
+         assert(value_00 is 0 and value_31 is 31 and value_63 is 63 and value_95 is 95 and value_133 is 133,
+            'The object field read should preserve every live register across stack growth')
+         return path
+      end
+   }
+
+   assert(holder.func() is 'temp:contextual_stack_growth.txt',
+      'A dynamic fallback should preserve a native object field result when its callee grows the stack')
+end
+
 @Test function CurrentContextMemberCallsUseOrdinaryCallBytecode()
    &glCurrentContextCallName = 'root'
    &glCurrentContextCallRead = function(Value:str):str
