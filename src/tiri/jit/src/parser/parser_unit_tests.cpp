@@ -7880,6 +7880,30 @@ static bool test_contextual_metatable_designation(kt::Log &Log)
 
 static bool test_temporary_context_blocks(kt::Log &Log)
 {
+   auto legacy = build_ast_from_source("local receiver = {}\ncontext receiver do end\n", false, false);
+   if (legacy.diagnostics.empty()) {
+      Log.error("legacy context block syntax remained accepted after the using cut-over");
+      return false;
+   }
+
+   constexpr std::array<std::string_view, 2> invalid_references = {
+      "using make_receiver() do end\n",
+      "using {} do end\n"
+   };
+   for (std::string_view invalid_source : invalid_references) {
+      auto invalid = build_ast_from_source(invalid_source, false, false);
+      bool found_reference_diagnostic = false;
+      for (const ParserDiagnostic &diagnostic : invalid.diagnostics) {
+         if (diagnostic.message.find("using block requires") != std::string::npos) {
+            found_reference_diagnostic = true;
+         }
+      }
+      if (not found_reference_diagnostic) {
+         Log.error("invalid using block reference did not produce its targeted diagnostic");
+         return false;
+      }
+   }
+
    LuaStateHolder state;
    lua_State *L = state.get();
    luaL_openlibs(L);
@@ -7887,9 +7911,9 @@ static bool test_temporary_context_blocks(kt::Log &Log)
    constexpr std::string_view source =
       "local receiver = { value = 37 }\n"
       "local result = 0\n"
-      "context receiver do result = &value end\n"
+      "using receiver do result = &value end\n"
       "local select_value = function(Flag)\n"
-      "   context receiver do if Flag then return &value end end\n"
+      "   using receiver do if Flag then return &value end end\n"
       "   return 0\n"
       "end\n"
       "return result, select_value(true), select_value(false), &value\n";

@@ -1005,7 +1005,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_do()
 // Parses a temporary table-context block.  The reference grammar deliberately excludes calls and safe access so the
 // receiver is a stable identifier/member/index path evaluated exactly once at entry.
 
-ParserResult<StmtNodePtr> AstBuilder::parse_context()
+ParserResult<StmtNodePtr> AstBuilder::parse_using()
 {
    Token token = this->ctx.tokens().current();
    this->ctx.tokens().advance();
@@ -1029,7 +1029,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_context()
 
    if (not is_reference(reference.value_ref().get(), is_reference)) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, token,
-         "context block requires an identifier, member or index reference");
+         "using block requires an identifier, member or index reference");
    }
 
    this->ctx.consume(TokenKind::DoToken, ParserErrorCode::ExpectedToken);

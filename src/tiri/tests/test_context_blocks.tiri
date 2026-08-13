@@ -1,7 +1,12 @@
--- Flute coverage for temporary `context Reference do ... end` activation.
+-- Flute coverage for temporary `using Reference do ... end` activation.
 
 @BeforeEach(hotpath=40)
 function enforce_hotpath() end
+
+@Test function UsingRemainsAvailableAsAMemberName()
+   local value = { using = 'member' }
+   assert(value.using is 'member', 'The using keyword should remain available as a member name')
+end
 
 @Test function TemporaryContextDoesNotDesignateAndEvaluatesReferenceOnce()
    local lookups = 0
@@ -19,7 +24,7 @@ function enforce_hotpath() end
       return &name
    end
 
-   context values[index()] do
+   using values[index()] do
       assert(&name is 'temporary', 'The selected table should be active inside the block')
       assert(read() is 'temporary', 'Direct calls should inherit a temporary block context')
    end
@@ -32,9 +37,9 @@ end
    local outer = { name = 'outer' }
    local inner = { name = 'inner' }
 
-   context outer do
+   using outer do
       assert(&name is 'outer')
-      context inner do
+      using inner do
          assert(&name is 'inner')
       end
       assert(&name is 'outer', 'Leaving an inner block should restore its outer block')
@@ -51,7 +56,7 @@ end
       end
    }
 
-   context receiver do
+   using receiver do
       defer
          events.insert('defer:' .. &name)
       end
@@ -67,8 +72,8 @@ end
    local inner = { name = 'inner' }
 
    function return_from_blocks():str
-      context outer do
-         context inner do
+      using outer do
+         using inner do
             return &name
          end
       end
@@ -80,7 +85,7 @@ end
 
    local observations = {}
    for i in {0 to 3} do
-      context outer do
+      using outer do
          if i is 0 then continue end
          observations.insert(&name)
          break
@@ -101,9 +106,9 @@ end
       end
    }
 
-   context outer do
+   using outer do
       try
-         context inner do
+         using inner do
             defer
                events.insert('defer')
             end
@@ -131,9 +136,9 @@ end
       end
    }
 
-   context outer do
+   using outer do
       try
-         context inner do
+         using inner do
             local resource <close> = setmetatable({}, mt)
          end
       except e
@@ -150,7 +155,7 @@ end
    local receiver = { name = 'ephemeral' }
    local callback = nil
 
-   context receiver do
+   using receiver do
       callback = function():any
          return &name
       end
@@ -167,7 +172,7 @@ end
    end
 
    for i in {0 to 120} do
-      context receiver do
+      using receiver do
          add(1)
          if i is 93 then assert(&total is 94) end
       end
@@ -181,7 +186,7 @@ end
    local function unreachable_context():num
       return 41
       local receiver = { value = 42 }
-      context receiver do
+      using receiver do
          return &value
       end
    end

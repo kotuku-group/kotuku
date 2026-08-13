@@ -148,7 +148,7 @@ private:
    ParserResult<ExprNodePtr> parse_scanned_range_in_braces(
       bool HasStep, bool HasBareStringOperand);
    ParserResult<StmtNodePtr> parse_do();
-   ParserResult<StmtNodePtr> parse_context();
+   ParserResult<StmtNodePtr> parse_using();
    ParserResult<StmtNodePtr> parse_with();
    ParserResult<StmtNodePtr> parse_defer();
    ParserResult<StmtNodePtr> parse_return();
@@ -220,7 +220,6 @@ private:
    [[nodiscard]] std::optional<BinaryOpInfo> match_binary_operator(const Token &) const;
    [[nodiscard]] bool is_choose_relational_pattern(size_t) const;
    [[nodiscard]] bool is_extended_ternary_ahead() const;
-   [[nodiscard]] bool is_context_block_ahead() const;
    [[nodiscard]] const ModuleNamespaceSymbol *find_module_namespace(GCstr *) const;
    [[nodiscard]] const ModuleNamespaceSymbol *resolve_module_namespace(GCstr *);
    [[nodiscard]] bool is_module_namespace_name(GCstr *) const;

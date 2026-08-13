@@ -873,8 +873,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
    Token current = this->ctx.tokens().current();
 
    if (current.kind() IS TokenKind::Identifier and token_identifier_is(current, "context") and
-       this->is_context_block_ahead()) {
-      return this->parse_context();
+       this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::DeprecatedSyntax, current,
+         "temporary context blocks use 'using Reference do ... end'");
    }
 
    if (current.kind() IS TokenKind::Identifier and current.identifier() and
@@ -905,6 +906,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
       case TokenKind::For:           return this->parse_for();
       case TokenKind::DoToken:       return this->parse_do();
       case TokenKind::WithToken:     return this->parse_with();
+      case TokenKind::UsingToken:    return this->parse_using();
       case TokenKind::DeferToken:    return this->parse_defer();
       case TokenKind::ReturnToken:   return this->parse_return();
       case TokenKind::TryToken:      return this->parse_try();
@@ -947,36 +949,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
    }
 }
 
-bool AstBuilder::is_context_block_ahead() const
-{
-   size_t position = 1;
-   if (this->ctx.tokens().peek(position).kind() != TokenKind::Identifier) return false;
-   position++;
-
-   while (true) {
-      TokenKind kind = this->ctx.tokens().peek(position).kind();
-      if (kind IS TokenKind::Dot) {
-         if (this->ctx.tokens().peek(position + 1).kind() != TokenKind::Identifier) return false;
-         position += 2;
-         continue;
-      }
-      if (kind IS TokenKind::LeftBracket) {
-         int depth = 1;
-         position++;
-         while (depth > 0) {
-            kind = this->ctx.tokens().peek(position).kind();
-            if (kind IS TokenKind::EndOfFile) return false;
-            if (kind IS TokenKind::LeftBracket) depth++;
-            else if (kind IS TokenKind::RightBracket) depth--;
-            position++;
-         }
-         continue;
-      }
-      return kind IS TokenKind::DoToken;
-   }
-}
-
-//********************************************************************************************************************
 // Parses a scoped block with a specified set of terminator tokens, automatically adding end-of-file as a terminator.
 
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_scoped_block(std::initializer_list<TokenKind> terminators)
