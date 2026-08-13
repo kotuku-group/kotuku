@@ -6858,6 +6858,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mr CARG1, L
     |  srwi CARG2, RA, 3
     |  mr CARG3, RD
+    |  stw PC, SAVE_PC
     |  bl extern lj_context_begin_block
     |  lp BASE, L->base
     |  ins_next
