@@ -7,6 +7,11 @@
 
 #include "lj_obj.h"
 
+#ifdef LUA_USE_ASSERT
+#include <array>
+#include <unordered_map>
+#endif
+
 #define incr_top(L) (++L->top >= tvref(L->maxstack) and (lj_state_growstack1(L), 0))
 
 [[nodiscard]] inline ptrdiff_t savestack(lua_State* L, const TValue* p) noexcept
@@ -78,6 +83,60 @@ LJ_FUNC void lj_context_unwind(lua_State *L, const TValue *SurvivingBase) noexce
 LJ_FUNC void lj_context_restore_depth(lua_State *L, size_t Depth) noexcept;
 LJ_FUNC [[nodiscard]] size_t lj_context_depth(const lua_State *L) noexcept;
 
+enum class ContextMaterialisationReason : uint8_t {
+   NestedLuaCall,
+   NativeCall,
+   TailCall,
+   Snapshot,
+   SideExit,
+   UnsupportedBoundary,
+   Count
+};
+
+#ifdef LUA_USE_ASSERT
+struct ContextDebugCounters {
+   uint64_t virtual_activations_created = 0;
+   uint64_t virtual_activations_retired = 0;
+   uint64_t physical_context_entries = 0;
+   uint64_t physical_context_leaves = 0;
+   uint64_t jit_enter_calls = 0;
+   uint64_t jit_leave_calls = 0;
+   uint64_t jit_current_calls = 0;
+   uint64_t trace_starts = 0;
+   uint64_t trace_compilations = 0;
+   uint64_t trace_aborts = 0;
+   uint64_t side_exits = 0;
+   uint32_t maximum_virtual_depth = 0;
+   uint32_t maximum_physical_depth = 0;
+   std::array<uint64_t, size_t(ContextMaterialisationReason::Count)> materialisations{};
+   std::array<uint64_t, 256> native_fast_functions{};
+   std::unordered_map<uintptr_t, uint64_t> native_c_functions;
+};
+
+LJ_FUNC ContextDebugCounters *lj_context_debug_get(lua_State *L, bool Create);
+LJ_FUNC void lj_context_debug_reset(lua_State *L);
+LJ_FUNC void lj_context_debug_virtual_enter(lua_State *L, uint32_t Depth);
+LJ_FUNC void lj_context_debug_virtual_leave(lua_State *L);
+LJ_FUNC void lj_context_debug_materialise(
+   lua_State *L, ContextMaterialisationReason Reason, const GCfunc *Callable = nullptr);
+LJ_FUNC void lj_context_debug_physical_enter(lua_State *L);
+LJ_FUNC void lj_context_debug_physical_leave(lua_State *L, size_t Count = 1);
+LJ_FUNC void lj_context_debug_trace_start(lua_State *L);
+LJ_FUNC void lj_context_debug_trace_compiled(lua_State *L);
+LJ_FUNC void lj_context_debug_trace_abort(lua_State *L);
+LJ_FUNC void lj_context_debug_side_exit(lua_State *L);
+#else
+inline void lj_context_debug_virtual_enter(lua_State *, uint32_t) {}
+inline void lj_context_debug_virtual_leave(lua_State *) {}
+inline void lj_context_debug_materialise(lua_State *, ContextMaterialisationReason, const GCfunc * = nullptr) {}
+inline void lj_context_debug_physical_enter(lua_State *) {}
+inline void lj_context_debug_physical_leave(lua_State *, size_t = 1) {}
+inline void lj_context_debug_trace_start(lua_State *) {}
+inline void lj_context_debug_trace_compiled(lua_State *) {}
+inline void lj_context_debug_trace_abort(lua_State *) {}
+inline void lj_context_debug_side_exit(lua_State *) {}
+#endif
+
 // Asynchronous callbacks are deliberately unbound.  Temporarily expose the dynamic root while retaining suspended
 // activations owned by the interrupted synchronous call chain.
 
@@ -97,7 +156,9 @@ public:
       size_t floor = this->state_->context_root_floors.back();
       lj_assertG_(G(this->state_), this->state_->context_stack.size() IS floor,
          "asynchronous callback leaked a contextual activation");
+      size_t removed = this->state_->context_stack.size() - floor;
       this->state_->context_stack.resize(floor);
+      lj_context_debug_physical_leave(this->state_, removed);
       this->state_->context_root_floors.pop_back();
       size_t outer_floor = this->state_->context_root_floors.empty() ? 0 :
          this->state_->context_root_floors.back();

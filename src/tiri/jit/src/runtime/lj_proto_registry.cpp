@@ -286,6 +286,9 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
    if (limits != ERR::Okay) return limits;
    ERR state_validation = validate_method_state(L, Interface, Method, Callable);
    if (state_validation != ERR::Okay) return state_validation;
+   if ((Flags & FProtoFlags::ContextIndependent) != FProtoFlags::None) {
+      lj_builtin_set_context_independent(L, Callable);
+   }
 
    ProtoKey prototype_key{ kt::strhash(Interface), kt::strhash(Method) };
    MethodKey method_key{ ReceiverType, kt::strhash(Method) };
