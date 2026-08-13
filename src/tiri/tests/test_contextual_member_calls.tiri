@@ -3,6 +3,41 @@
 import 'json'
 module core as mCore
 
+@Test function StandaloneCurrentContextPreservesDynamicReceiverIdentity()
+   local inner = entity { name = 'inner', value = 0 }
+   local outer = entity { name = 'outer' }
+
+   function update_context(Context:table!, Value:num!)
+      Context.value = Value
+   end
+
+   function inner.update(Value:num!):table!
+      update_context(&&, Value)
+      assert(&&.name is &name,
+         'Standalone and suffixed current-context expressions should use the same receiver')
+      return &&
+   end
+
+   function inner.current():table!
+      return &&
+   end
+
+   function outer.observe():<table, table>
+      local inner_context = inner.update(17)
+      return inner_context, &&
+   end
+
+   local inner_context, restored_context = outer.observe()
+   assert(inner_context is inner and inner.value is 17,
+      'Passing the current context to a free helper should preserve the receiver identity')
+   assert(restored_context is outer,
+      'Returning from a nested contextual call should restore the outer materialised context')
+
+   local extracted = inner.current
+   assert(extracted() is _G,
+      'An extracted ordinary function should materialise its inherited context rather than capture its source entity')
+end
+
 @Test function NamedAndComputedTableCallsEstablishContext()
    local point = entity { name = 'point', value = 0 }
 

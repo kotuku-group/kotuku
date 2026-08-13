@@ -181,15 +181,25 @@ struct MCLink {
 };
 
 // Stack snapshot header.
+
+constexpr size_t LJ_MAX_VIRTUAL_CONTEXTS = 8;
+
+enum ContextCallState : uint8_t {
+  CONTEXT_CALL_NONE,
+  CONTEXT_CALL_VIRTUAL,
+  CONTEXT_CALL_MATERIALISED,
+  CONTEXT_CALL_EXEMPT
+};
 struct SnapShot {
   uint32_t mapofs;   //  Offset into snapshot map.
   IRRef1 ref;      //  First IR ref for this snapshot.
-  IRRef1 context_ref; // Virtual contextual receiver restored on trace exit, or zero.
-  uint16_t context_owner_slot; // Root-frame slot owning the virtual contextual activation.
+  IRRef1 context_refs[LJ_MAX_VIRTUAL_CONTEXTS]; // Virtual contextual receivers restored outermost first.
+  uint16_t context_owner_slots[LJ_MAX_VIRTUAL_CONTEXTS]; // Root-frame slots owning virtual activations.
   uint16_t mcofs;   //  Offset into machine code in MCode units.
   uint8_t nslots;   //  Number of valid slots.
   uint8_t topslot;   //  Maximum frame extent.
   uint8_t nent;      //  Number of compressed entries.
+  uint8_t context_count; // Number of virtual contextual activations reconstructed on exit.
   uint8_t count;   //  Count of taken exits for this snapshot.
 };
 

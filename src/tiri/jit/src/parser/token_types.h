@@ -87,6 +87,7 @@ enum class TokenKind : uint16_t {
    From = TK_from,
    When = TK_when,
    CaseArrow = TK_case_arrow,
+   CurrentContext = TK_current_context,
    Annotate = TK_annotate,
    CompileIf = TK_compif,
    CompileEnd = TK_compend,

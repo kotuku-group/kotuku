@@ -51,6 +51,20 @@ GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept
    return callable and callable->gch.gct IS uint8_t(~LJ_TFUNC) ? gco_to_function(callable) : nullptr;
 }
 
+void lj_builtin_set_context_independent(lua_State *L, BuiltinCallableID Id)
+{
+   if (not builtin_callable_valid(Id) or not lj_builtin_callable(L, Id)) {
+      lj_err_callermsg(L, "invalid context-independent built-in registration");
+   }
+   L2GG(L)->builtin_context_independent[builtin_callable_index(Id)] = 1;
+}
+
+bool lj_builtin_context_independent(lua_State *L, const GCfunc *Function) noexcept
+{
+   if (not Function or not isffunc(Function) or Function->c.ffid >= BUILTIN_CALLABLE_CAPACITY) return false;
+   return L2GG(L)->builtin_context_independent[Function->c.ffid] != 0;
+}
+
 static GCtab * lib_create_table(lua_State *L, const char *libname, int hsize)
 {
    if (libname) {

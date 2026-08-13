@@ -85,3 +85,5 @@ union GCfunc;
 
 void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function);
 [[nodiscard]] GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept;
+void lj_builtin_set_context_independent(lua_State *L, BuiltinCallableID Id);
+[[nodiscard]] bool lj_builtin_context_independent(lua_State *L, const GCfunc *Function) noexcept;

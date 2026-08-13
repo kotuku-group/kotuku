@@ -2720,20 +2720,20 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_method(L, "array", "concat", TiriType::Array, builtin_callable_id(FastFunc::array_concat),
       { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
    reg_iface_method(L, "array", "contains", TiriType::Array, builtin_callable_id(FastFunc::array_contains),
-      { TiriType::Bool }, { TiriType::Array, TiriType::Any });
+      { TiriType::Bool }, { TiriType::Array, TiriType::Any }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "array", "first", TiriType::Array, builtin_callable_id(FastFunc::array_first),
-      { TiriType::Any }, { TiriType::Array, TiriType::Func });
+      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "array", "last", TiriType::Array, builtin_callable_id(FastFunc::array_last),
-      { TiriType::Any }, { TiriType::Array, TiriType::Func });
+      { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "array", "clear", TiriType::Array, builtin_callable_id(FastFunc::array_clear), {},
       { TiriType::Array });
    reg_iface_method(L, "array", "resize", TiriType::Array, builtin_callable_id(FastFunc::array_resize), {},
       { TiriType::Array, TiriType::Num });
    reg_iface_method(L, "array", "push", TiriType::Array, builtin_callable_id(FastFunc::array_push), {},
-      { TiriType::Array, TiriType::Any });
+      { TiriType::Array, TiriType::Any }, FProtoFlags::ContextIndependent);
 
    reg_iface_method(L, "array", "pop", TiriType::Array, builtin_callable_id(FastFunc::array_pop),
-      { TiriType::Any }, { TiriType::Array });
+      { TiriType::Any }, { TiriType::Array }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "array", "copy", TiriType::Array, builtin_callable_id(FastFunc::array_copy), {},
       { TiriType::Array, TiriType::Any, TiriType::Num, TiriType::Num, TiriType::Num });
    reg_iface_method(L, "array", "getString", TiriType::Array, builtin_callable_id(FastFunc::array_getString),

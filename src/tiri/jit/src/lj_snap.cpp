@@ -11,7 +11,7 @@
 **   - mapofs: Offset into snapmap where this snapshot's entries begin
 **   - nent:   Number of slot entries (NOT including frame links)
 **   - ref:    IR reference at which this snapshot was created
-**   - context_ref/context_owner_slot: Virtual contextual activation materialised on exit
+**   - context_refs/context_owner_slots: Virtual contextual activations materialised on exit
 **   - nslots: Total number of stack slots
 **   - topslot: Top slot for stack sizing
 **
@@ -171,19 +171,25 @@ static void snapshot_stack(jit_State* J, SnapShot* snap, MSize nsnapmap)
    nent += snapshot_framelinks(J, p + nent, &snap->topslot);
    snap->mapofs = (uint32_t)nsnapmap;
    snap->ref = (IRRef1)J->cur.nins;
-   snap->context_ref = 0;
-   snap->context_owner_slot = 0;
+   memset(snap->context_refs, 0, sizeof(snap->context_refs));
+   memset(snap->context_owner_slots, 0, sizeof(snap->context_owner_slots));
    snap->mcofs = 0;
    snap->nslots = (uint8_t)nslots;
+   snap->context_count = 0;
    snap->count = 0;
-   if (J->context_virtual_slot >= 0) {
-      int32_t function_slot = J->context_virtual_slot;
+   for (size_t function_slot = 0; function_slot < std::size(J->context_call_state); function_slot++) {
+      if (J->context_call_state[function_slot] != CONTEXT_CALL_VIRTUAL) continue;
+      lj_assertJ(snap->context_count < LJ_MAX_VIRTUAL_CONTEXTS, "too many virtual contexts for snapshot");
       TRef receiver = J->context_call_receiver[function_slot];
       lj_assertJ(tref_istab(receiver), "snapshot virtual context is not a table");
-      snap->context_ref = IRRef1(tref_ref(receiver));
-      snap->context_owner_slot = uint16_t(function_slot + 1 + LJ_FR2);
+      size_t context_index = snap->context_count++;
+      snap->context_refs[context_index] = IRRef1(tref_ref(receiver));
+      snap->context_owner_slots[context_index] = uint16_t(function_slot + 1 + LJ_FR2);
       // Side traces cannot inherit virtual VM state. A guard exit materialises it and resumes in the interpreter.
       snap->count = SNAPCOUNT_DONE;
+   }
+   if (snap->context_count) {
+      lj_context_debug_materialise(J->L, ContextMaterialisationReason::Snapshot);
    }
    J->cur.nsnapmap = (uint32_t)(nsnapmap + nent);
 }
@@ -943,19 +949,20 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
    L->base += base_adj;
    lj_assertJ(map + nent IS flinks, "inconsistent frames in snapshot");
 
-   if (snap->context_ref) {
+   for (size_t context_index = 0; context_index < snap->context_count; context_index++) {
       TValue context;
-      TValue *context_owner = frame + snap->context_owner_slot;
+      TValue *context_owner = frame + snap->context_owner_slots[context_index];
       // A root trace may be reused beneath an inherited context, and a deeper inlined activation may have been
       // materialised after this snapshot. Preserve owners below this activation and discard owners abandoned by the
       // restored frames before installing (or de-duplicating) the snapshot activation.
       lj_context_unwind(L, context_owner);
-      IRIns *context_ir = &T->ir[snap->context_ref];
+      IRRef context_ref = snap->context_refs[context_index];
+      IRIns *context_ir = &T->ir[context_ref];
       if (context_ir->r IS RID_SUNK) {
          bool restored_slot = false;
          for (n = 0; n < nent; n++) {
             SnapEntry sn = map[n];
-            if (snap_ref(sn) IS snap->context_ref and not (sn & SNAP_NORESTORE)) {
+            if (snap_ref(sn) IS context_ref and not (sn & SNAP_NORESTORE)) {
                copyTV(L, &context, &frame[snap_slot(sn)]);
                restored_slot = true;
                break;
@@ -964,10 +971,11 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
          if (not restored_slot) snap_unsink(J, T, ex, snapno, rfilt, context_ir, &context);
       }
       else {
-         snap_restoreval(J, T, ex, snapno, rfilt, snap->context_ref, &context);
+         snap_restoreval(J, T, ex, snapno, rfilt, context_ref, &context);
       }
       lj_assertJ(tvistab(&context), "virtual context snapshot did not restore a table");
       lj_context_enter_jit(L, tabV(&context), context_owner);
+      lj_context_debug_materialise(L, ContextMaterialisationReason::SideExit);
    }
 
    // Compute current stack top.

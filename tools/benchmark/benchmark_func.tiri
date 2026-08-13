@@ -291,38 +291,38 @@ end
    local Counter = entity {
       value = 0,
       increment = function():num
-         .value++
-         return .value
+         &value++
+         return &value
       end,
       decrement = function():num
-         .value -= 1
-         return .value
+         &value -= 1
+         return &value
       end,
-      add = function(n):num
-         .value += n
-         return .value
+      add = function(Value:num):num
+         &value += Value
+         return &value
       end,
       getValue = function():num
-         return .value
+         return &value
       end,
       reset = function()
-         .value = 0
+         &value = 0
       end
    }
 
    local Point = entity {
       x = 0,
       y = 0,
-      set = function(x, y)
-         .x = x
-         .y = y
+      set = function(X:num, Y:num)
+         &x = X
+         &y = Y
       end,
-      translate = function(dx, dy)
-         .x += dx
-         .y += dy
+      translate = function(Dx:num, Dy:num)
+         &x += Dx
+         &y += Dy
       end,
       distance = function()
-         return math.sqrt(.x * .x + .y * .y)
+         return math.sqrt(&x * &x + &y * &y)
       end
    }
 

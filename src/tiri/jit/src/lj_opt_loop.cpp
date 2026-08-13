@@ -227,16 +227,20 @@ static void loop_subst_snap(jit_State* J, SnapShot* osnap, SnapEntry* loopmap, I
    // Setup new snapshot.
    snap->mapofs = (uint32_t)nmapofs;
    snap->ref = (IRRef1)J->cur.nins;
-   snap->context_ref = osnap->context_ref;
-   if (snap->context_ref and not irref_isk(snap->context_ref)) {
-      lj_assertJ(subst[snap->context_ref] != REF_DROP, "virtual context dropped during loop substitution");
-      snap->context_ref = subst[snap->context_ref];
+   snap->context_count = osnap->context_count;
+   for (size_t context_index = 0; context_index < snap->context_count; context_index++) {
+      IRRef context_ref = osnap->context_refs[context_index];
+      if (context_ref and not irref_isk(context_ref)) {
+         lj_assertJ(subst[context_ref] != REF_DROP, "virtual context dropped during loop substitution");
+         context_ref = subst[context_ref];
+      }
+      snap->context_refs[context_index] = IRRef1(context_ref);
+      snap->context_owner_slots[context_index] = osnap->context_owner_slots[context_index];
    }
-   snap->context_owner_slot = osnap->context_owner_slot;
    snap->mcofs = 0;
    snap->nslots = nslots;
    snap->topslot = osnap->topslot;
-   snap->count = snap->context_ref ? SNAPCOUNT_DONE : 0;
+   snap->count = snap->context_count ? SNAPCOUNT_DONE : 0;
    nmap = &J->cur.snapmap[nmapofs];
    // Substitute snapshot slots.
    on = ln = nn = 0;

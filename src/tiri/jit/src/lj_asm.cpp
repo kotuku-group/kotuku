@@ -967,7 +967,10 @@ static void asm_snap_alloc(ASMState* as, int snapno)
    SnapEntry* map = &as->T->snapmap[snap->mapofs];
    MSize n, nent = snap->nent;
    as->snapfilt1 = as->snapfilt2 = 0;
-   if (snap->context_ref and not irref_isk(snap->context_ref)) asm_snap_alloc1(as, snap->context_ref);
+   for (size_t context_index = 0; context_index < snap->context_count; context_index++) {
+      IRRef context_ref = snap->context_refs[context_index];
+      if (not irref_isk(context_ref)) asm_snap_alloc1(as, context_ref);
+   }
    for (n = 0; n < nent; n++) {
       SnapEntry sn = map[n];
       IRRef ref = snap_ref(sn);

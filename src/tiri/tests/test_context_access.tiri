@@ -6,6 +6,13 @@ function activate_context_statement(Statement:str):obj
    return script
 end
 
+@Test function CurrentContextMaterialisesRootEnvironment()
+   local current = &&
+   assert(current is _G, 'A root current-context expression should materialise the global environment')
+   assert(&&.tostring is &tostring,
+      'Standalone and field-prefixed context access should resolve through the same root table')
+end
+
 @Test function RootContextReadsAndWritesGlobalEnvironment()
    &glContextAccessValue = 11
    assert(&glContextAccessValue is 11, 'Context-prefixed reads should resolve through the root environment')

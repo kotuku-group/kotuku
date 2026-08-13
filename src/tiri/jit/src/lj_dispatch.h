@@ -45,6 +45,7 @@ struct GG_State {
    BCIns bcff[GG_NUM_ASMFF];          // Bytecode for ASM fast functions.
    // VM-only roots live after JIT state so growth does not move fields encoded in the 10-bit FOLD key.
    GCRef builtin_callables[BUILTIN_CALLABLE_CAPACITY]; // Immutable canonical native closures, indexed by FastFunc.
+   uint8_t builtin_context_independent[BUILTIN_CALLABLE_CAPACITY]; // Explicitly safe while context remains virtual.
 };
 
 static_assert(sizeof(((GG_State *)nullptr)->builtin_callables) / sizeof(GCRef) IS BUILTIN_CALLABLE_CAPACITY);
