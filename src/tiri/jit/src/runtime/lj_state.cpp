@@ -14,6 +14,7 @@
 #include "lj_str.h"
 #include "lj_tab.h"
 #include "lj_func.h"
+#include "lj_ff.h"
 #include "lj_meta.h"
 #include "lj_state.h"
 #include "lj_frame.h"
@@ -34,6 +35,81 @@
 
 // Type alias for the function names map (GCproto * -> function name string)
 using FuncNameMap = ankerl::unordered_dense::map<const GCproto *, std::string>;
+
+#ifdef LUA_USE_ASSERT
+ContextDebugCounters *lj_context_debug_get(lua_State *L, bool Create)
+{
+   if (not L->context_debug_counters and Create) L->context_debug_counters = new ContextDebugCounters();
+   return L->context_debug_counters;
+}
+
+void lj_context_debug_reset(lua_State *L)
+{
+   ContextDebugCounters *counters = lj_context_debug_get(L, true);
+   *counters = ContextDebugCounters();
+}
+
+void lj_context_debug_virtual_enter(lua_State *L, uint32_t Depth)
+{
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) {
+      counters->virtual_activations_created++;
+      if (Depth > counters->maximum_virtual_depth) counters->maximum_virtual_depth = Depth;
+   }
+}
+
+void lj_context_debug_virtual_leave(lua_State *L)
+{
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->virtual_activations_retired++;
+}
+
+void lj_context_debug_materialise(
+   lua_State *L, ContextMaterialisationReason Reason, const GCfunc *Callable)
+{
+   ContextDebugCounters *counters = lj_context_debug_get(L, false);
+   if (not counters) return;
+   counters->materialisations[size_t(Reason)]++;
+   if (Reason != ContextMaterialisationReason::NativeCall or not Callable) return;
+   if (Callable->c.ffid < counters->native_fast_functions.size()) {
+      counters->native_fast_functions[Callable->c.ffid]++;
+   }
+   if (Callable->c.ffid IS FF_C) counters->native_c_functions[uintptr_t(Callable->c.f)]++;
+}
+
+void lj_context_debug_physical_enter(lua_State *L)
+{
+   ContextDebugCounters *counters = lj_context_debug_get(L, false);
+   if (not counters) return;
+   counters->physical_context_entries++;
+   size_t floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   uint32_t depth = uint32_t(L->context_stack.size() - floor);
+   if (depth > counters->maximum_physical_depth) counters->maximum_physical_depth = depth;
+}
+
+void lj_context_debug_physical_leave(lua_State *L, size_t Count)
+{
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->physical_context_leaves += Count;
+}
+
+void lj_context_debug_trace_start(lua_State *L)
+{
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->trace_starts++;
+}
+
+void lj_context_debug_trace_compiled(lua_State *L)
+{
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->trace_compilations++;
+}
+
+void lj_context_debug_trace_abort(lua_State *L)
+{
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->trace_aborts++;
+}
+
+void lj_context_debug_side_exit(lua_State *L)
+{
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->side_exits++;
+}
+#endif
 
 //********************************************************************************************************************
 // Function name registry - maps GCproto pointers to their declared names for tostring() support.
@@ -202,11 +278,17 @@ extern "C" void lj_context_load(lua_State *L, TValue *Destination) noexcept
 
 extern "C" GCtab * lj_context_current_jit(lua_State *L) noexcept
 {
+#ifdef LUA_USE_ASSERT
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->jit_current_calls++;
+#endif
    return lj_context_current(L);
 }
 
 extern "C" void lj_context_enter_jit(lua_State *L, GCtab *Table, TValue *OwnerBase)
 {
+#ifdef LUA_USE_ASSERT
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->jit_enter_calls++;
+#endif
    lj_assertL(L and Table and OwnerBase, "invalid recorded contextual activation");
    ptrdiff_t owner_base = savestack(L, OwnerBase);
    if (not L->context_stack.empty() and
@@ -221,6 +303,9 @@ extern "C" void lj_context_enter_jit(lua_State *L, GCtab *Table, TValue *OwnerBa
 
 extern "C" void lj_context_leave_jit(lua_State *L, TValue *OwnerBase) noexcept
 {
+#ifdef LUA_USE_ASSERT
+   if (ContextDebugCounters *counters = lj_context_debug_get(L, false)) counters->jit_leave_calls++;
+#endif
    lj_assertL(L and OwnerBase, "invalid recorded contextual activation owner");
    ptrdiff_t owner_base = savestack(L, OwnerBase);
    if (not L->context_stack.empty() and
@@ -247,10 +332,12 @@ extern "C" void lj_context_tail_jit(
       "recorded tail context does not match the prepared activation");
 
    L->context_stack.pop_back();
+   lj_context_debug_physical_leave(L);
    if (not L->context_stack.empty() and
        L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
        L->context_stack.back().owner_base IS outgoing_owner) {
       L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
    }
    lj_context_push(L, Table, OutgoingOwner);
    L->context_stack.back().tail_transfer = true;
@@ -305,6 +392,7 @@ extern "C" void lj_context_end_block(lua_State *L, uint32_t BlockIndex) noexcept
    if (frame.owner_kind IS lua_State::ContextFrame::OwnerKind::Block and
        frame.owner_base IS savestack(L, L->base) and frame.block_index IS BlockIndex) {
       L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
       L->context_active = context_has_visible_override(L);
    }
 }
@@ -398,6 +486,7 @@ extern "C" void lj_context_leave_call(
        L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
        L->context_stack.back().owner_base IS owner_base) {
       L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
       L->context_active = context_has_visible_override(L);
    }
 
@@ -431,12 +520,14 @@ extern "C" uint32_t lj_context_prepare_tail_call(lua_State *L, uint32_t CallBase
    GCtab *context = tabref(L->context_stack.back().table);
    lj_assertL(tabV(receiver) IS context, "tail context does not match its receiver");
    L->context_stack.pop_back();
+   lj_context_debug_physical_leave(L);
 
    ptrdiff_t outgoing_owner = savestack(L, L->base);
    if (not L->context_stack.empty() and
        L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
        L->context_stack.back().owner_base IS outgoing_owner) {
       L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
    }
    lj_context_push(L, context, L->base);
    L->context_stack.back().tail_transfer = true;
@@ -459,6 +550,7 @@ void lj_context_push(lua_State *L, GCtab *Table, const TValue *OwnerBase)
    frame.owner_base = savestack(L, OwnerBase);
    L->context_stack.push_back(frame);
    L->context_active = 1;
+   lj_context_debug_physical_enter(L);
    lj_gc_barriercontext(L, Table);
 }
 
@@ -472,6 +564,7 @@ void lj_context_pop(lua_State *L, const TValue *OwnerBase) noexcept
    lj_assertL(L->context_stack.back().owner_base IS owner_base, "unbalanced contextual activation");
    if (L->context_stack.back().owner_base IS owner_base) {
       L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
       L->context_active = context_has_visible_override(L);
    }
 }
@@ -485,6 +578,7 @@ extern "C" uint32_t lj_context_leave_frame(
        L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
        L->context_stack.back().owner_base IS frame_base) {
       L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
       L->context_active = context_has_visible_override(L);
    }
    return ReturnState;
@@ -510,6 +604,7 @@ void lj_context_unwind(lua_State *L, const TValue *SurvivingBase) noexcept
    size_t floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
    while (L->context_stack.size() > floor and L->context_stack.back().owner_base > surviving_base) {
       L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
    }
    for (auto state = L->close_frames.begin(); state != L->close_frames.end();) {
       if (state->owner_base > surviving_base) state = L->close_frames.erase(state);
@@ -523,7 +618,11 @@ void lj_context_restore_depth(lua_State *L, size_t Depth) noexcept
    size_t floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
    if (Depth < floor) Depth = floor;
    lj_assertL(Depth <= L->context_stack.size(), "context unwind depth exceeds the active stack");
-   if (Depth <= L->context_stack.size()) L->context_stack.resize(Depth);
+   if (Depth <= L->context_stack.size()) {
+      size_t removed = L->context_stack.size() - Depth;
+      L->context_stack.resize(Depth);
+      lj_context_debug_physical_leave(L, removed);
+   }
    L->context_active = context_has_visible_override(L);
 }
 
@@ -581,6 +680,10 @@ static void close_state(lua_State *L)
    L->context_stack.clear();
    L->context_active = 0;
    L->context_root_floors.clear();
+#ifdef LUA_USE_ASSERT
+   delete L->context_debug_counters;
+   L->context_debug_counters = nullptr;
+#endif
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
@@ -733,6 +836,10 @@ void lj_state_free(global_State* g, lua_State *L)
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
+#ifdef LUA_USE_ASSERT
+   delete L->context_debug_counters;
+   L->context_debug_counters = nullptr;
+#endif
 
    lj_func_closeuv(L, tvref(L->stack));
    lj_assertG(gcref(L->openupval) IS nullptr, "stale open upvalues");

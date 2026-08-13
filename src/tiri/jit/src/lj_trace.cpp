@@ -574,6 +574,7 @@ static void trace_start(jit_State *J)
    setgcref(J->cur.startpt, obj2gco(J->pt));
 
    L = J->L;
+   lj_context_debug_trace_start(L);
    lj_vmevent_send(L, TRACE, setstrV(L, L->top++, lj_str_newlit(L, "start"));
    setintV(L->top++, traceno);
    setfuncV(L, L->top++, J->fn);
@@ -598,6 +599,7 @@ static void trace_start(jit_State *J)
 
 static void trace_stop(jit_State *J)
 {
+   lj_context_debug_trace_compiled(J->L);
    BCIns *pc = mref<BCIns>(J->cur.startpc);
    BCOp op = bc_op(J->cur.startins);
    GCproto* pt = &gcref(J->cur.startpt)->pt;
@@ -697,6 +699,7 @@ static int trace_downrec(jit_State *J)
 static int trace_abort(jit_State *J)
 {
    lua_State* L = J->L;
+   lj_context_debug_trace_abort(L);
    TraceError e = LJ_TRERR_RECERR;
    TraceNo traceno;
 
@@ -991,6 +994,7 @@ typedef struct ExitDataCP {
 
 static TValue* trace_exit_cp(lua_State* L, lua_CFunction dummy, void* ud)
 {
+   lj_context_debug_side_exit(L);
    ExitDataCP* exd = (ExitDataCP*)ud;
    // Always catch error here and don't call error function.
    cframe_errfunc(L->cframe) = 0;

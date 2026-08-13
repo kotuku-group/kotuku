@@ -882,7 +882,7 @@ extern int luaopen_string(lua_State *L)
       { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "dump", { TiriType::Str }, { TiriType::Func });
    reg_iface_method(L, "string", "endsWith", TiriType::Str, builtin_callable_id(FastFunc::string_endsWith),
-      { TiriType::Bool }, { TiriType::Str, TiriType::Str });
+      { TiriType::Bool }, { TiriType::Str, TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "escXML", TiriType::Str, builtin_callable_id(FastFunc::string_escXML),
       { TiriType::Str }, { TiriType::Str });
    reg_iface_method(L, "string", "find", TiriType::Str, builtin_callable_id(FastFunc::string_find),
@@ -892,11 +892,11 @@ extern int luaopen_string(lua_State *L)
    reg_iface_method(L, "string", "hash", TiriType::Str, builtin_callable_id(FastFunc::string_hash),
       { TiriType::Num }, { TiriType::Str, TiriType::Bool });
    reg_iface_method(L, "string", "len", TiriType::Str, builtin_callable_id(FastFunc::string_len),
-      { TiriType::Num }, { TiriType::Str });
+      { TiriType::Num }, { TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "lower", TiriType::Str, builtin_callable_id(FastFunc::string_lower),
-      { TiriType::Str }, { TiriType::Str });
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "pop", TiriType::Str, builtin_callable_id(FastFunc::string_pop),
-      { TiriType::Str }, { TiriType::Str, TiriType::Num });
+      { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "rep", TiriType::Str, builtin_callable_id(FastFunc::string_rep),
       { TiriType::Str }, { TiriType::Str, TiriType::Num });
    reg_iface_method(L, "string", "replace", TiriType::Str, builtin_callable_id(FastFunc::string_replace),
@@ -908,15 +908,15 @@ extern int luaopen_string(lua_State *L)
    reg_iface_method(L, "string", "split", TiriType::Str, builtin_callable_id(FastFunc::string_split),
       { TiriType::Array }, { TiriType::Str, TiriType::Str });
    reg_iface_method(L, "string", "startsWith", TiriType::Str, builtin_callable_id(FastFunc::string_startsWith),
-      { TiriType::Bool }, { TiriType::Str, TiriType::Str });
+      { TiriType::Bool }, { TiriType::Str, TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "sub", TiriType::Str, builtin_callable_id(FastFunc::string_sub),
       { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
    reg_iface_method(L, "string", "trim", TiriType::Str, builtin_callable_id(FastFunc::string_trim),
-      { TiriType::Str }, { TiriType::Str });
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "unescapeXML", TiriType::Str,
       builtin_callable_id(FastFunc::string_unescapeXML), { TiriType::Str }, { TiriType::Str });
    reg_iface_method(L, "string", "upper", TiriType::Str, builtin_callable_id(FastFunc::string_upper),
-      { TiriType::Str }, { TiriType::Str }, FProtoFlags::NoNil);
+      { TiriType::Str }, { TiriType::Str }, FProtoFlags::NoNil | FProtoFlags::ContextIndependent);
 
    return 1;
 }

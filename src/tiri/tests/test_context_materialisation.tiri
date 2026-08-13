@@ -1,0 +1,145 @@
+-- Structural regression tests for JIT table-context materialisation.
+
+function reset_context_counters():bool
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local counters = jit.util.contextStats(true)
+   return counters != nil and counters.enabled is true
+end
+
+@Test function NestedLuaContextsRemainVirtual()
+   if not reset_context_counters() then return end
+   local inner = entity {
+      value = 1,
+      read = function():num
+         return &value
+      end
+   }
+   local middle = entity {
+      bias = 2,
+      read = function():num
+         local value = inner.read()
+         return value + &bias
+      end
+   }
+   local outer = entity {
+      bias = 3,
+      read = function():num
+         local value = middle.read()
+         return value + &bias
+      end
+   }
+
+   function workload():num
+      local checksum = 0
+      for i in {0 to 1000} do
+         checksum += outer.read()
+      end
+      return checksum
+   end
+
+   assert(workload() is 6000, 'Three nested contextual receivers should preserve their values')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0 and counters.traceAborts is 0,
+      'The nested contextual workload should compile without recorder aborts')
+   assert(counters.maximumVirtualDepth >= 3,
+      f'The recorder should retain three virtual receivers, observed {counters.maximumVirtualDepth}')
+   assert(counters.jitEnterCalls <= 1 and counters.jitLeaveCalls <= 1,
+      f'Nested hot calls should avoid physical helper pairs, observed ' ..
+      f'{counters.jitEnterCalls} entries and {counters.jitLeaveCalls} leaves')
+   assert(counters.materialisations.nestedLuaCall is 0,
+      'Nested Lua calls should no longer force materialisation')
+end
+
+@Test function ContextIndependentBuiltinsDoNotMaterialise()
+   if not reset_context_counters() then return end
+   local values = array<int> { 1, 2, 3, 4 }
+   local span = {0 to 10}
+   local worker = entity {
+      read = function():num
+         return values.first() + values.last() + 'abc'.len() + (span.contains(4) ? 1 :> 0)
+      end
+   }
+
+   function workload():num
+      local checksum = 0
+      for i in {0 to 1000} do
+         checksum += worker.read()
+      end
+      return checksum
+   end
+
+   assert(workload() is 9000, 'Array, string and range helpers should preserve their results')
+   local counters = jit.util.contextStats()
+   assert(counters.maximumVirtualDepth >= 1 and counters.traceCompilations > 0,
+      'The built-in workload should execute under a compiled virtual context')
+   assert(counters.materialisations.nativeCall is 0 and counters.jitEnterCalls is 0,
+      'Explicitly context-independent built-ins should not materialise their inherited context')
+end
+
+@Test function ArbitraryNativeReentryRemainsConservative()
+   if not reset_context_counters() then return end
+   local worker = entity {
+      name = 'worker',
+      read = function():str
+         return exec([[return &name]])
+      end
+   }
+
+   function workload():str
+      local result = ''
+      for i in {0 to 100} do
+         result = worker.read()
+      end
+      return result
+   end
+
+   assert(workload() is 'worker', 'A native re-entry should observe the materialised receiver context')
+   local counters = jit.util.contextStats()
+   assert(counters.materialisations.nativeCall >= 1 and counters.jitEnterCalls > 0,
+      'An unclassified native callable should conservatively materialise a virtual context')
+end
+
+@Test function SideExitsReconstructEveryVirtualReceiver()
+   if not reset_context_counters() then return end
+   local inner = entity {
+      value = 1,
+      read = function(Exit:bool):num
+         if Exit then return &value + 10 end
+         return &value
+      end
+   }
+   local middle = entity {
+      bias = 2,
+      read = function(Exit:bool):num
+         local value = inner.read(Exit)
+         return value + &bias
+      end
+   }
+   local outer = entity {
+      bias = 3,
+      read = function(Exit:bool):num
+         local value = middle.read(Exit)
+         return value + &bias
+      end
+   }
+
+   function workload():num
+      local checksum = 0
+      for i in {0 to 300} do
+         checksum += outer.read(i is 93)
+      end
+      return checksum
+   end
+
+   assert(workload() is 1810,
+      'A side exit in the innermost call should restore inner, middle and outer receiver state')
+   local counters = jit.util.contextStats()
+   assert(counters.maximumVirtualDepth >= 3 and counters.sideExits > 0,
+      'The fixture should exercise a side exit with three virtual receivers')
+   assert(counters.materialisations.sideExit > 0,
+      'Side-exit reconstruction should report the materialised virtual prefix')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Side-exit reconstruction should leave physical context ownership balanced')
+end

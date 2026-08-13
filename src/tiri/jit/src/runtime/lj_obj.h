@@ -50,6 +50,7 @@ struct StrInternState;
 
 class TipEmitter;
 struct ParserSymbolCollection;
+struct ContextDebugCounters;
 
 // Debug objects
 
@@ -549,9 +550,10 @@ inline constexpr size_t PROTO_MAX_RETURN_TYPES = 8;
 // Prototype flags for function metadata
 
 enum class FProtoFlags : uint8_t {
-   None     = 0x00,
-   Variadic = 0x01,  // Function accepts variable arguments beyond listed params
-   NoNil    = 0x02   // All declared parameters are required (no nil values permitted)
+   None               = 0x00,
+   Variadic           = 0x01,  // Function accepts variable arguments beyond listed params
+   NoNil              = 0x02,  // All declared parameters are required (no nil values permitted)
+   ContextIndependent = 0x04   // Native callable cannot observe or re-enter dynamically scoped table context
 };
 
 inline constexpr FProtoFlags operator|(FProtoFlags a, FProtoFlags b) {
@@ -1666,6 +1668,7 @@ struct lua_State {
    // table-only overrides; direct and non-table calls do not need an entry.
    std::vector<ContextFrame> context_stack;
    uint8_t context_active = 0; // Fast VM return gate; indicates a visible override above the active root floor.
+   ContextDebugCounters *context_debug_counters = nullptr; // Lazily allocated in Debug builds only.
 
    // An asynchronous root boundary hides, but does not remove, suspended overrides. Keeping them in context_stack
    // ensures that the collector continues to trace their tables while a callback runs and performs collection.
