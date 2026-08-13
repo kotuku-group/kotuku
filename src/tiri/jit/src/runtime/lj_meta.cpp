@@ -539,13 +539,17 @@ TValue * lj_meta_equal_thunk(lua_State *L, BCIns ins)
       o2 = &tv;
    }
 
-   // Resolve thunks if present
+   // Snapshot both operands before resolving either thunk.  Resolution can execute arbitrary Tiri code and relocate
+   // the Lua stack, while the original slots keep copied GC values rooted.
 
-   cTValue *resolved_o1 = o1;
-   cTValue *resolved_o2 = o2;
+   TValue o1_copy, o2_copy;
+   copyTV(L, &o1_copy, o1);
+   copyTV(L, &o2_copy, o2);
+   cTValue *resolved_o1 = &o1_copy;
+   cTValue *resolved_o2 = &o2_copy;
 
-   if (lj_is_thunk(o1)) resolved_o1 = lj_thunk_resolve(L, udataV(o1));
-   if (lj_is_thunk(o2)) resolved_o2 = lj_thunk_resolve(L, udataV(o2));
+   if (lj_is_thunk(resolved_o1)) resolved_o1 = lj_thunk_resolve(L, udataV(resolved_o1));
+   if (lj_is_thunk(resolved_o2)) resolved_o2 = lj_thunk_resolve(L, udataV(resolved_o2));
 
    // Now compare the resolved values using standard Lua equality semantics
    // Return semantics: 0 = don't branch, 1 = branch
