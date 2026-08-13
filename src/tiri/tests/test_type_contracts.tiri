@@ -102,11 +102,11 @@ end
    local ints = array<int> { 1 }
    local words = array<str> { 'text' }
    assert(accept_ints(dynamic_value(ints)) is ints, 'A matching dynamic array should satisfy the member contract')
-   expect_array_contract_failure(function() accept_ints(dynamic_value(words)) end, 'int', 'string')
-   expect_array_contract_failure(function() checked_ints(words) end, 'int', 'string')
+   expect_array_contract_failure(function() accept_ints(dynamic_value(words)) end, 'int', 'str')
+   expect_array_contract_failure(function() checked_ints(words) end, 'int', 'str')
 
    local inferred = array<int> { 2 }
-   expect_array_contract_failure(function() inferred = dynamic_value(words) end, 'int', 'string')
+   expect_array_contract_failure(function() inferred = dynamic_value(words) end, 'int', 'str')
    assert(inferred[0] is 2, 'A rejected inferred-array store should preserve the previous value')
    inferred = nil
    inferred = dynamic_value(ints)
