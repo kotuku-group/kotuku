@@ -20,7 +20,7 @@ BTNGAP     <const> = 3
 WIDGET_GAP <const> = 6
 COL_BORDER <const> = 'rgba(128,128,128,0.75)'
 
-COMMON <const> = array<string> {
+COMMON <const> = array<str> {
   '0,64,64', '0,128,128', '0,192,192', '0,255,255', '64,255,255',  '128,255,255', '192,255,255', '224,255,255', -- Aqua
   '0,64,0',  '0,128,0',   '0,192,0',   '0,255,0',   '64,255,64',   '128,255,128', '192,255,192', '224,255,224', -- Green
   '64,64,0', '128,128,0', '192,192,0', '255,255,0', '255,255,64',  '255,255,128', '255,255,192', '255,255,224', -- Yellow
@@ -37,7 +37,7 @@ local glRainbowBitmap
 function saveColours(self)
    self._paletteChanged ?! return
 
-   svgColours = array<string> {}
+   svgColours = array<str> {}
    for col in values(self._userColours) do
       svgColours.push(tostring(col))
    end

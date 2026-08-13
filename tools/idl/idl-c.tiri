@@ -7,8 +7,8 @@
 
    import 'json', 'options'
 
-   global glHeader = array<string>
-   global glOutput = array<string>
+   global glHeader = array<str>
+   global glOutput = array<str>
    global glConstants = { }
 
    global glSelf = obj.find('self')
@@ -50,9 +50,9 @@ Examples:
          { name = 'output-proto', type = 'file', group = 'Output',
            comment = 'Target file for generated C++ function prototypes.' },
 
-         { name = 'feedback', type = 'enum', choices = array<string> { 'verbose' }, group = 'Diagnostics',
+         { name = 'feedback', type = 'enum', choices = array<str> { 'verbose' }, group = 'Diagnostics',
            comment = 'Set to verbose to print debug messages.' },
-         { name = 'prototypes', type = 'enum', choices = array<string> { 'static' }, group = 'Generation',
+         { name = 'prototypes', type = 'enum', choices = array<str> { 'static' }, group = 'Generation',
            comment = 'Set to static to output static prototype functions.' }
       }
    })
@@ -260,7 +260,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
       response = { type='void' }
    end
 
-   func.tags = Def.tags ? Def.tags :> array<string>
+   func.tags = Def.tags ? Def.tags :> array<str>
    func.tags = getTagsFromField(func.result, func.tags) -- User defined tags
    func.tags = getTagsFromCollection(func.tags, func.input) -- IDL defined tags
 

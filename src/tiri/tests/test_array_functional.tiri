@@ -22,7 +22,7 @@ end
 end
 
 @Test function EachReceivesIndexAsSecondArg()
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
    indexes = {}
    arr.each(function(v, i)
       indexes[#indexes] = i
@@ -40,7 +40,7 @@ end
 end
 
 @Test function EachWithStringArray()
-   arr = array<string> { 'hello', 'world' }
+   arr = array<str> { 'hello', 'world' }
    local values = {}
    arr.each(function(v, i)
       values[i] = v
@@ -107,7 +107,7 @@ end
 end
 
 @Test function MapStringArray()
-   arr = array<string> { 'hello', 'world' }
+   arr = array<str> { 'hello', 'world' }
    upper = arr.map(v => str: v.upper())
    assert(upper[0] is 'HELLO' and upper[1] is 'WORLD', "map() should work with string arrays")
 end
@@ -184,7 +184,7 @@ end
 end
 
 @Test function FilterStringArray()
-   arr = array<string> { 'apple', 'banana', 'apricot', 'cherry' }
+   arr = array<str> { 'apple', 'banana', 'apricot', 'cherry' }
    aWords = arr.filter(v => v.startsWith('a'))
    assert(#aWords is 2, "filter() should work with string arrays")
    assert(aWords[0] is 'apple' and aWords[1] is 'apricot', "filter() should return correct string matches")
@@ -232,7 +232,7 @@ end
 end
 
 @Test function ReduceWithInitialString()
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
    result = arr.reduce('', (acc, v) => acc .. v)
    assert(result is 'abc', "reduce() should work with string accumulator")
 end
@@ -303,7 +303,7 @@ end
 end
 
 @Test function AnyStringArray()
-   arr = array<string> { 'apple', 'banana', 'cherry' }
+   arr = array<str> { 'apple', 'banana', 'cherry' }
    hasLong = arr.any(v => #v > 5)
    assert(hasLong, "any() should work with string arrays")
 end
@@ -350,7 +350,7 @@ end
 end
 
 @Test function AllStringArray()
-   arr = array<string> { 'abc', 'def', 'ghi' }
+   arr = array<str> { 'abc', 'def', 'ghi' }
    allShort = arr.all(v => #v is 3)
    assert(allShort, "all() should work with string arrays")
 end

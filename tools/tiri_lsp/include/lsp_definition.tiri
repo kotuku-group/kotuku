@@ -539,7 +539,7 @@ function normaliseModuleName(Name:str):str
 end
 
 function resolveScriptImport(Doc:table, Name:str):table
-   candidates = array<string>
+   candidates = array<str>
    doc_path = lspUriToPath(Doc.uri)
    base_path = getParentPath(doc_path)
    script_name = Name.endsWith('.tiri') and Name or (Name .. '.tiri')

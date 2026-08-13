@@ -166,11 +166,11 @@ Examples:
            comment = "A regex pattern to filter filenames; mutually exclusive with 'name'." },
          { name = 'name', type = 'str', excludes = 'filter', group = 'Search',
            comment = "An exact filename to match; mutually exclusive with 'filter'." },
-         { name = 'type', type = 'enum', default = 'file', choices = array<string> { 'file', 'dir', 'all' },
+         { name = 'type', type = 'enum', default = 'file', choices = array<str> { 'file', 'dir', 'all' },
            group = 'Search', comment = "Match type: 'file', 'dir', or 'all'." },
-         { names = array<string> { 'maxdepth', 'max-depth' }, type = 'int', default = 100, group = 'Search',
+         { names = array<str> { 'maxdepth', 'max-depth' }, type = 'int', default = 100, group = 'Search',
            comment = 'Maximum directory depth to recurse into.' },
-         { names = array<string> { 'mindepth', 'min-depth' }, type = 'int', default = 0, group = 'Search',
+         { names = array<str> { 'mindepth', 'min-depth' }, type = 'int', default = 0, group = 'Search',
            comment = 'Minimum depth before results are reported.' },
 
          { name = 'size', type = parseSizeOption, group = 'Filters',
@@ -184,7 +184,7 @@ Examples:
 
          { name = 'count', kind = 'flag', default = false, group = 'Output',
            comment = 'Print only the total match count.' },
-         { name = 'output', type = 'enum', default = 'path', choices = array<string> { 'path', 'name', 'detail' },
+         { name = 'output', type = 'enum', default = 'path', choices = array<str> { 'path', 'name', 'detail' },
            group = 'Output', comment = "Output format: 'path', 'name', or 'detail'." },
          { name = 'verbose', kind = 'flag', default = false, group = 'Output',
            comment = 'Print search parameters before searching.' },

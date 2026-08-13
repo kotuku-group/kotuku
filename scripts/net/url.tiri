@@ -59,7 +59,7 @@ url.encode = function(String:str, ExtraChars:str):str
    if ExtraChars then chars_to_encode ..= ExtraChars end
 
    -- Simple character-by-character encoding to avoid pattern issues
-   result = array<string>
+   result = array<str>
    for i in {0 to #String} do
       c = String.sub(i, i+1)
       if chars_to_encode.find(c, 0, true) then
@@ -213,7 +213,7 @@ end
 url.buildQuery = function(Params:any):str
    Params ?! return ''
 
-   parts = array<string>
+   parts = array<str>
 
    if type(Params) is 'array' then
       for param in values(Params) do
@@ -358,7 +358,7 @@ end
 url.unparse = function(Components:table):str
    Components ?! return ''
 
-   parts = array<string>
+   parts = array<str>
 
    if Components.scheme then parts.push(Components.scheme .. ':') end
 
@@ -413,7 +413,7 @@ end
 ]])
 url.unsplit = function(Components:table):str
    Components ?! return ''
-   parts = array<string>
+   parts = array<str>
    if Components.scheme then parts.push(Components.scheme .. ':') end
    if Components.netloc then parts.push('//' .. Components.netloc) end
    if Components.path then parts.push(Components.path) end
@@ -431,7 +431,7 @@ end
 ]])
 url._buildNetloc = function(Components:table!):str
    Components.host ?! return nil
-   netloc = array<string>
+   netloc = array<str>
    if Components.auth then netloc.push(Components.auth .. '@') end
    if Components.host.find(':') then
       netloc.push('[' .. Components.host .. ']')
@@ -534,7 +534,7 @@ end
 url.normalize = function(Path:str):str
    Path ?! return ''
 
-   segments = array<string>
+   segments = array<str>
    isAbsolute = Path.sub(0, 1) is '/'
 
    for start, stop, cap in rxPathSegment.findAll(Path) do

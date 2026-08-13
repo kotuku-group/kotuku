@@ -226,7 +226,7 @@ end
 
 @Test function ArrayVarPipeIterationWithIndex()
    -- Variable array pipe should pass (value, index) to callback
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
    captured = {}
    arr |> function(v, i) captured[i] = v end
    assert(captured[0] is 'a', "index 0 should be 'a'")

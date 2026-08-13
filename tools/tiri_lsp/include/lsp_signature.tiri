@@ -581,7 +581,7 @@ end
 -- Build the display label for a signature sourced from XML API metadata.
 
 function signatureXmlLabel(DisplayName:str, Params:array<table>):str
-   labels = array<string>
+   labels = array<str>
    for param in values(Params or array<table>) do
       labels.push(signatureParamLabel(param))
    end

@@ -92,8 +92,8 @@ function symbolMakeRange(LineNo:num, StartChar:num, EndChar:num):table
    }
 end
 
-function symbolAnnotationLabels(Annotations:array<table>):array<string>
-   labels = array<string>
+function symbolAnnotationLabels(Annotations:array<table>):array<str>
+   labels = array<str>
    for anno in values(Annotations or array<table>) do
       labels.push('@' .. anno.name)
    end
@@ -108,7 +108,7 @@ function symbolHasAnnotation(Annotations:array<table>, Name:str):bool
 end
 
 function symbolBuildDetail(Base:str, Annotations:array<table>):str
-   parts = array<string>
+   parts = array<str>
    if Base and Base != '' then parts.push(Base) end
    for label in values(symbolAnnotationLabels(Annotations)) do
       parts.push(label)

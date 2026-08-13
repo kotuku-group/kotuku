@@ -12,8 +12,8 @@
       local dbl_arr1 = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
       local dbl_arr2 = array<double> { 3.14159, 2.71828, 1.41421, 1.73205 }
 
-      local str_arr1 = array<string> { "apple", "banana", "cherry" }
-      local str_arr2 = array<string> { "one", "two", "three", "four", "five" }
+      local str_arr1 = array<str> { "apple", "banana", "cherry" }
+      local str_arr2 = array<str> { "one", "two", "three", "four", "five" }
       checksum += #int_arr1 + #int_arr2 + #dbl_arr1 + #dbl_arr2 + #str_arr1 + #str_arr2
    end
    return checksum
@@ -43,7 +43,7 @@ end
 -- Initialise arrays
 
 local glIntArray = array<int, 1000>
-local glStrArray = array<string, 100>
+local glStrArray = array<str, 100>
 local glIntTable = { }
 local glStrTable = { }
 
@@ -113,7 +113,7 @@ end
          dbl_arr.push(j * 1.5)
       end
 
-      local str_arr = array<string>
+      local str_arr = array<str>
       for j in {0 to 50} do
          str_arr.push(f"item_{j}")
       end
@@ -165,7 +165,7 @@ end
       end
 
       -- Pop strings
-      local str_arr = array<string> { "a", "b", "c", "d", "e" }
+      local str_arr = array<str> { "a", "b", "c", "d", "e" }
       for j in {0 to 5} do
          local val = str_arr.pop()
          checksum += #val
@@ -180,7 +180,7 @@ end
 @Test function ArrayFindValue()
    local int_arr = array<int, 1000>
    local dbl_arr = array<double, 1000>
-   local str_arr = array<string> { "apple", "banana", "cherry", "date", "elderberry",
+   local str_arr = array<str> { "apple", "banana", "cherry", "date", "elderberry",
       "fig", "grape", "honeydew", "kiwi", "lemon" }
 
    for i in {0 to 1000} do
@@ -220,7 +220,7 @@ end
 @Test function ArrayContainsValue()
    local int_arr = array<int> { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 }
    local dbl_arr = array<double> { 1.5, 2.5, 3.5, 4.5, 5.5 }
-   local str_arr = array<string> { "red", "green", "blue", "yellow", "purple" }
+   local str_arr = array<str> { "red", "green", "blue", "yellow", "purple" }
 
    local checksum = 0
    for i in {0 to 15000} do
@@ -261,7 +261,7 @@ end
       dbl_arr.sort()
 
       -- Sort strings alphabetically
-      local str_arr = array<string> { "cherry", "apple", "banana", "date", "elderberry" }
+      local str_arr = array<str> { "cherry", "apple", "banana", "date", "elderberry" }
       str_arr.sort()
       checksum += int_arr[0] + int_arr2[0] + dbl_arr[0] + #str_arr[0]
    end
@@ -283,7 +283,7 @@ end
       dbl_arr.reverse()
 
       -- Reverse string array
-      local str_arr = array<string> { "first", "second", "third", "fourth", "fifth" }
+      local str_arr = array<str> { "first", "second", "third", "fourth", "fifth" }
       str_arr.reverse()
       checksum += int_arr[0] + dbl_arr[0] + #str_arr[0]
    end
@@ -296,7 +296,7 @@ end
 @Test function ArraySliceRange()
    local int_arr = array<int> { 0, 10, 20, 30, 40, 50, 60, 70, 80, 90 }
    local dbl_arr = array<double> { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0 }
-   local str_arr = array<string> { "a", "b", "c", "d", "e", "f", "g", "h" }
+   local str_arr = array<str> { "a", "b", "c", "d", "e", "f", "g", "h" }
 
    local checksum = 0
    for i in {0 to 1000} do
@@ -591,7 +591,7 @@ end
 @Test function ArrayConvertToTable()
    local int_arr = array<int> { 10, 20, 30, 40, 50 }
    local dbl_arr = array<double> { 1.5, 2.5, 3.5, 4.5, 5.5 }
-   local str_arr = array<string> { "one", "two", "three" }
+   local str_arr = array<str> { "one", "two", "three" }
    local checksum = 0.0
 
    for i in {0 to 15000} do
@@ -662,7 +662,7 @@ end
       checksum += sum
 
       -- Mixed push/pop operations
-      local mixed = array<string>
+      local mixed = array<str>
       mixed.push("first")
       mixed.push("second")
       local top:str = mixed.pop()

@@ -22,7 +22,7 @@ glState <const> = mSys.GetSystemState()
 glCopyList <const> = [[
    import 'gui/file'
    source_size = arg('source:size')
-   glList = array<string>
+   glList = array<str>
    if source_size?? then
       source_size = tonumber(source_size)
       for i in {0 to source_size} do
@@ -242,9 +242,9 @@ end
 
 -- Return allowed file extensions as a string list, which is cached.
 
-function getFilters(self):array<string>
+function getFilters(self):array<str>
    if self._filters then return self._filters end
-   self._filters = array<string>
+   self._filters = array<str>
    if self.filterList then
       for filter in values(self.filterList) do
          if filter.selected then
@@ -419,7 +419,7 @@ function copyFromList(self, Folder:str!, List, Move:bool)
    try
       msg(f'copyFromList({Folder})')
 
-      params = array<string> { '--dest', Folder }
+      params = array<str> { '--dest', Folder }
       if Move then params.push('--move') end
       params.push('--source')
       params.push('{')

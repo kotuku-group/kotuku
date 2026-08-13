@@ -54,7 +54,7 @@ gui.fontList = thunk():table
       if entry.Styles then
          font.styles = entry.Styles.split(',')
       else
-         font.styles = array<string> { 'Regular' }
+         font.styles = array<str> { 'Regular' }
       end
 
       if entry.Points then

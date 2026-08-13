@@ -2,7 +2,7 @@
 
 glTask = mSys.CurrentTask()
 
-function resolveFirstPath(Candidates:array<string>):str
+function resolveFirstPath(Candidates:array<str>):str
    for candidate in values(Candidates) do
       err, resolved = mSys.ResolvePath(candidate, RSF_APPROXIMATE)
       if err is ERR_Okay then return resolved end
@@ -12,12 +12,12 @@ function resolveFirstPath(Candidates:array<string>):str
 end
 
 @BeforeAll function init(State)
-   global glOrigoPath = resolveFirstPath(array<string> {
+   global glOrigoPath = resolveFirstPath(array<str> {
       glTask.processPath .. 'origo',
       'sdk:build/agents-install/origo',
       'origo'
    })
-   global glFindPath = resolveFirstPath(array<string> {
+   global glFindPath = resolveFirstPath(array<str> {
       'sdk:apps/find.tiri',
    })
    global glAppsPath = [*_]io.splitPath(glFindPath)
@@ -35,10 +35,10 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function runFind(Parameters:array<string>):table
+function runFind(Parameters:array<str>):table
    local output = ''
    local errors = ''
-   local task_params = array<string> { quoteTaskParam(glFindPath.replace('\\', '/')) }
+   local task_params = array<str> { quoteTaskParam(glFindPath.replace('\\', '/')) }
 
    for param in values(Parameters) do
       task_params.push(quoteTaskParam(param))
@@ -72,7 +72,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function ContentOptionMatchesLiteralText()
-   result = runFind(array<string> {
+   result = runFind(array<str> {
       'path=' .. glAppsPath,
       'name=find.tiri',
       'content=Match files containing the specified literal text.',
@@ -86,7 +86,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function ContentOptionRejectsMissingText()
-   result = runFind(array<string> {
+   result = runFind(array<str> {
       'path=' .. glAppsPath,
       'name=find.tiri',
       'content=definitely_absent_find_fixture',
@@ -100,7 +100,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function HelpDocumentsContentOption()
-   result = runFind(array<string> { 'help' })
+   result = runFind(array<str> { 'help' })
 
    assert(result.returnCode is 0, 'Help should return 0: ' .. result.errors)
    assert(result.text.find('content=CONTENT'), 'Help should list the content option')

@@ -8,8 +8,8 @@
 
    json = _LIB[_NS]
 
-   in_char  = array<string> { '\\', '"', '/', '\b', '\f', '\n', '\r', '\t' }
-   out_char = array<string> { '\\', '"', '/',  'b',  'f',  'n',  'r',  't' }
+   in_char  = array<str> { '\\', '"', '/', '\b', '\f', '\n', '\r', '\t' }
+   out_char = array<str> { '\\', '"', '/',  'b',  'f',  'n',  'r',  't' }
 
 local num_regex = regex.new([[^-?[0-9]+\.?[0-9]*[eE]?[+\-]?[0-9]*]])
 local rx_whitespace = regex.new("[^ \\t\\n\\r\\f\\v]")
@@ -100,7 +100,7 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
    local kind = type(Value)
    ErrorCallback ?= error
    if kind is 'array' then
-      s = array<string>
+      s = array<str>
       if AsKey then
          ErrorCallback('Can\'t encode array as key.')
       else
@@ -113,7 +113,7 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
       end
       return s.concat()
    elseif kind is 'table' then
-      s = array<string>
+      s = array<str>
       if AsKey then
          ErrorCallback('Can\'t encode table as key.')
       else

@@ -80,7 +80,7 @@ end
    assert(type(parts) is "array", "Expected type 'array', got '" .. type(parts) .. "'")
 
    -- Verify array methods are available
-   assert(parts.type() is "string", "Expected array element type 'string', got '" .. tostring(parts.type()) .. "'")
+   assert(parts.type() is "str", "Expected array element type 'str', got '" .. tostring(parts.type()) .. "'")
 
    -- Verify index-based iteration works
    assert(parts[0] is "a", "parts[0] should be 'a'")

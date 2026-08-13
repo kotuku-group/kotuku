@@ -4727,7 +4727,7 @@ static bool test_static_descriptor_model(kt::Log &Log)
       { "int64", AET::INT64, TiriType::Num },
       { "float", AET::FLOAT, TiriType::Num },
       { "double", AET::DOUBLE, TiriType::Num },
-      { "string", AET::STR_GC, TiriType::Str },
+      { "str", AET::STR_GC, TiriType::Str },
       { "table", AET::TABLE, TiriType::Table },
       { "array", AET::ARRAY, TiriType::Array },
       { "object", AET::OBJECT, TiriType::Object },

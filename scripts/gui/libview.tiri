@@ -629,7 +629,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
       })
    end
 
-   for v in values(array<string> { 'x', 'y', 'xOffset', 'yOffset', 'width', 'height'}) do
+   for v in values(array<str> { 'x', 'y', 'xOffset', 'yOffset', 'width', 'height'}) do
       if Options[v] then vw.viewport[v] = Options[v] end
    end
 

@@ -125,7 +125,7 @@ end
       -- Create typed string arrays
       local str_arrays = {}
       for j in {0 to 50} do
-         str_arrays[j] = array<string, 50>
+         str_arrays[j] = array<str, 50>
       end
       checksum += #int_arrays + #dbl_arrays + #str_arrays
    end

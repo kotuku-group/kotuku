@@ -123,7 +123,7 @@ end
 end
 
 @Test function ArrayPushString()
-   arr = array<string>
+   arr = array<str>
    arr.push('hello')
    arr.push('world')
    arr.push('!')
@@ -234,7 +234,7 @@ end
 end
 
 @Test function ArrayPopString()
-   arr = array<string> { 'hello', 'world', '!' }
+   arr = array<str> { 'hello', 'world', '!' }
    val = arr.pop()
    assert(val is '!', 'pop() should return !')
    assert(#arr is 2, 'Array length should be 2')
@@ -292,7 +292,7 @@ end
 end
 
 @Test function ArrayClearString()
-   arr = array<string> { 'hello', 'world' }
+   arr = array<str> { 'hello', 'world' }
    arr.clear()
    assert(#arr is 0, 'String array should be empty after clear')
 
@@ -449,7 +449,7 @@ end
 end
 
 @Test function ArrayInsertString()
-   arr = array<string> { 'a', 'c', 'd' }
+   arr = array<str> { 'a', 'c', 'd' }
    arr.insert(1, 'b')
    assert(#arr is 4, "String array length should be 4")
    assert(arr[0] is 'a', "arr[0] should be 'a'")
@@ -603,7 +603,7 @@ end
 end
 
 @Test function ArrayRemoveString()
-   arr = array<string> { 'a', 'b', 'c', 'd' }
+   arr = array<str> { 'a', 'b', 'c', 'd' }
    len = arr.remove(1)
    assert(len is 3, "remove(1) should return new length 3")
    assert(#arr is 3, "Array length should be 3")
@@ -670,7 +670,7 @@ end
 
 @Test function ArrayRemoveStringGC()
    -- Verify that removed strings can be garbage collected
-   arr = array<string> { 'alpha', 'beta', 'gamma', 'delta' }
+   arr = array<str> { 'alpha', 'beta', 'gamma', 'delta' }
    arr.remove(1, 2)  -- Remove 'beta' and 'gamma'
    assert(#arr is 2, "Array should have 2 elements")
    assert(arr[0] is 'alpha', "arr[0] should be 'alpha'")
@@ -725,7 +725,7 @@ end
 
 @Test function ArrayRemoveAllStringsGC()
    -- Remove all elements from a string array
-   arr = array<string> { 'one', 'two', 'three' }
+   arr = array<str> { 'one', 'two', 'three' }
    arr.remove(0, 3)
    assert(#arr is 0, "Array should be empty")
 
@@ -838,7 +838,7 @@ end
 end
 
 @Test function ArrayCloneString()
-   original = array<string> { 'hello', 'world', '!' }
+   original = array<str> { 'hello', 'world', '!' }
    copy = original.clone()
 
    assert(#copy is 3, "Clone should have same length")
@@ -977,9 +977,9 @@ end
    float_clone = float_arr.clone()
    assert(float_clone.type() is 'float', "Clone should preserve float type")
 
-   string_arr = array<string> { 'a', 'b' }
+   string_arr = array<str> { 'a', 'b' }
    string_clone = string_arr.clone()
-   assert(string_clone.type() is 'string', "Clone should preserve string type")
+   assert(string_clone.type() is 'str', "Clone should preserve string type")
 end
 
 @Test function ArrayCloneIndependence()
@@ -1225,7 +1225,7 @@ end
 end
 
 @Test function ArraySortComparatorString()
-   arr = array<string> { 'cherry', 'apple', 'banana' }
+   arr = array<str> { 'cherry', 'apple', 'banana' }
    arr.sort((a, b) => a < b)
 
    assert(arr[0] is 'apple', "comparator string arr[0] should be 'apple'")
@@ -1234,7 +1234,7 @@ end
 end
 
 @Test function ArraySortComparatorStringDescending()
-   arr = array<string> { 'cherry', 'apple', 'banana' }
+   arr = array<str> { 'cherry', 'apple', 'banana' }
    arr.sort((a, b) => a > b)
 
    assert(arr[0] is 'cherry', "comparator string desc arr[0] should be 'cherry'")
@@ -1343,7 +1343,7 @@ end
 
 @Test function ArraySortComparatorStringLength()
    -- Sort strings by length rather than lexicographic order
-   arr = array<string> { 'hi', 'hello', 'hey', 'h' }
+   arr = array<str> { 'hi', 'hello', 'hey', 'h' }
    arr.sort((a, b) => #a < #b)
 
    assert(arr[0] is 'h', "length sort arr[0] should be 'h'")

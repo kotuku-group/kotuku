@@ -74,7 +74,7 @@ glIntroduction = [[
 
    glOpenFilter = array<table> {
       { name='SVG Images', ext='.svg' },
-      { name='RIPL Documents', ext=array<string> { 'ripl', 'rpl' } }
+      { name='RIPL Documents', ext=array<str> { 'ripl', 'rpl' } }
    }
 
    glSaveFilter = array<table> { }

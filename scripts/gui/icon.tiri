@@ -35,7 +35,7 @@ gui.icon = function(Options)
    local lText, lTextGroup, lThemeColour
    lClick      = { held=false, x=0, y=0 }
    lWords      = array<table>
-   lLines      = array<string>
+   lLines      = array<str>
    lIconSize   = Options.size ?? 66
    lIconWidth  = lIconSize
    lFontSize   = FONT_HEIGHT
@@ -72,7 +72,7 @@ gui.icon = function(Options)
 
    function calcWords()
       lWords = array<table>
-      lLines = array<string>
+      lLines = array<str>
       lText ?! return
 
       lFontSize = choose lIconSize from

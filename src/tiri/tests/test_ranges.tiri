@@ -41,7 +41,7 @@ end
 
    script = obj.new('tiri', { statement=[[
    port = 8080
-   args = array<string> {
+   args = array<str> {
       f'url=http://127.0.0.1:{port}/echo',
       'data=plain',
       'json={}'

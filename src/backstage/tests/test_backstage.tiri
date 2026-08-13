@@ -114,7 +114,7 @@ function websocket_frame(Payload:str, Opcode:num):str
    return frame
 end
 
-function websocket_exchange(Frames:array<string>, ExpectedTokens:array<string>):str
+function websocket_exchange(Frames:array<str>, ExpectedTokens:array<str>):str
    response = ''
    frames_sent = false
 
@@ -502,7 +502,7 @@ end
 
 @Test; @Requires(network=true)
 function StreamingHandshakeReturnsSwitchingProtocols()
-   response = websocket_exchange(array<string> { }, array<string> {
+   response = websocket_exchange(array<str> { }, array<str> {
       'HTTP/1.1 101 Switching Protocols',
       'Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=',
       '"type":"event"',
@@ -576,7 +576,7 @@ end
 @Test; @Requires(network=true)
 function StreamingSubscribesToSystemTopic()
    frame = websocket_frame('{"id":"1","type":"subscribe","topics":["system"]}', 0x01)
-   response = websocket_exchange(array<string> { frame }, array<string> {
+   response = websocket_exchange(array<str> { frame }, array<str> {
       '"type":"ack"',
       '"id":"1"',
       '"command":"subscribe"',
@@ -590,7 +590,7 @@ end
 @Test; @Requires(network=true)
 function StreamingSubscribesToLogStub()
    frame = websocket_frame('{"id":"2","type":"subscribe","topics":["log"]}', 0x01)
-   response = websocket_exchange(array<string> { frame }, array<string> {
+   response = websocket_exchange(array<str> { frame }, array<str> {
       '"type":"ack"',
       '"id":"2"',
       '"topic":"log"',
@@ -603,7 +603,7 @@ end
 @Test; @Requires(network=true)
 function StreamingUnknownTopicReturnsError()
    frame = websocket_frame('{"id":"3","type":"subscribe","topics":["unknown"]}', 0x01)
-   response = websocket_exchange(array<string> { frame }, array<string> {
+   response = websocket_exchange(array<str> { frame }, array<str> {
       '"type":"error"',
       '"id":"3"',
       '"code":"unknown_topic"'
@@ -615,7 +615,7 @@ end
 @Test; @Requires(network=true)
 function StreamingPingReceivesPong()
    frame = websocket_frame('hello', 0x09)
-   response = websocket_exchange(array<string> { frame }, array<string> {
+   response = websocket_exchange(array<str> { frame }, array<str> {
       'HTTP/1.1 101 Switching Protocols',
       'hello'
    })

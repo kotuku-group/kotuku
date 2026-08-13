@@ -3,7 +3,7 @@
 @BeforeEach(hotpath=false)
 function enforce_hotpath() end
 
-reserved_keywords = array<string> {
+reserved_keywords = array<str> {
    'class',
    'interface',
    'record',
@@ -15,9 +15,9 @@ reserved_keywords = array<string> {
    'where',
 }
 
-assignment_operators = array<string> { '=', '?=', '??=' }
+assignment_operators = array<str> { '=', '?=', '??=' }
 
-primary_forms = array<string> {
+primary_forms = array<str> {
    '',
    '()',
 }

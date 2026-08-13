@@ -39,7 +39,7 @@ end
 global function resolveSDKPath()
    script_path = glSelf.workingPath
    err = ERR_Failed
-   search_list = array<string>
+   search_list = array<str>
    search_path = 'CMakeLists.txt'
    limit = 5
    local sdk_path

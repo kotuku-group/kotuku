@@ -14,7 +14,7 @@ end
    function identity_int64(Value:array<int64>):array<int64> return Value end
    function identity_float(Value:array<float>):array<float> return Value end
    function identity_double(Value:array<double>):array<double> return Value end
-   function identity_string(Value:array<string>):array<string> return Value end
+   function identity_string(Value:array<str>):array<str> return Value end
    function identity_table(Value:array<table>):array<table> return Value end
    function identity_array(Value:array<array>):array<array> return Value end
    function identity_object(Value:array<obj>):array<obj> return Value end
@@ -27,7 +27,7 @@ end
    assert(identity_int64(array<int64> {}) != nil, 'int64 binding identity should be accepted')
    assert(identity_float(array<float> {}) != nil, 'float binding identity should be accepted')
    assert(identity_double(array<double> {}) != nil, 'double binding identity should be accepted')
-   assert(identity_string(array<string> {}) != nil, 'string binding identity should be accepted')
+   assert(identity_string(array<str> {}) != nil, 'string binding identity should be accepted')
    assert(identity_table(array<table> {}) != nil, 'table binding identity should be accepted')
    assert(identity_array(array<array> {}) != nil, 'immediate nested-array identity should be accepted')
    assert(identity_object(array<obj> {}) != nil, 'object binding identity should be accepted')
@@ -162,7 +162,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function StringArray()
-   string_array = array<string, 3>
+   string_array = array<str, 3>
    string_array[0] = 'hello'
    string_array[1] = 'world'
    string_array[2] = '!'
@@ -583,8 +583,8 @@ end
    int_array = array<int> { 1, 2, 3 }
    assert(tostring(int_array) is 'array<int, 3>', "Integer array tostring() failed, got '" .. tostring(int_array) .. "'")
 
-   string_array = array<string> { 'hello', 'world' }
-   assert(tostring(string_array) is 'array<string, 2>', "String array tostring() failed, got '" .. tostring(string_array) .. "'")
+   string_array = array<str> { 'hello', 'world' }
+   assert(tostring(string_array) is 'array<str, 2>', "String array tostring() failed, got '" .. tostring(string_array) .. "'")
 
    empty_double_array = array<double, 0>
    assert(tostring(empty_double_array) is 'array<double, 0>',
@@ -637,10 +637,10 @@ end
    assert(byte_a is byte_b, 'Byte arrays with embedded NUL bytes should compare equal by raw memory')
    assert(byte_a != byte_c, 'Byte arrays with different raw bytes should not compare equal')
 
-   string_a = array<string> { 'hello', 'world' }
-   string_b = array<string> { 'hello', 'world' }
-   string_c = array<string> { 'hello', 'there' }
-   string_short = array<string> { 'hello' }
+   string_a = array<str> { 'hello', 'world' }
+   string_b = array<str> { 'hello', 'world' }
+   string_c = array<str> { 'hello', 'there' }
+   string_short = array<str> { 'hello' }
 
    assert(string_a is string_b, 'String arrays with identical contents should be equal')
    assert(string_a != string_c, 'String arrays with different contents should not be equal')
@@ -1306,10 +1306,10 @@ end
 -- Test array.of() functionality
 
 @Test function ArrayOfString()
-   arr = array<string> { 'google.com', 'kotuku.dev', 'amazon.co.uk' }
+   arr = array<str> { 'google.com', 'kotuku.dev', 'amazon.co.uk' }
 
    assert(#arr is 3, "array.of string should have length 3")
-   assert(arr.type() is 'string', "array.of string type should be 'string'")
+   assert(arr.type() is 'str', "array.of string type should be 'string'")
    assert(arr[0] is 'google.com', "arr[0] should be 'google.com'")
    assert(arr[1] is 'kotuku.dev', "arr[1] should be 'kotuku.dev'")
    assert(arr[2] is 'amazon.co.uk', "arr[2] should be 'amazon.co.uk'")
@@ -1394,7 +1394,7 @@ end
 end
 
 @Test function ArrayOfStringConcat()
-   arr = array<string> { 'hello', 'world', '!' }
+   arr = array<str> { 'hello', 'world', '!' }
 
    result = arr.concat(' ', '%s')
    assert(result is 'hello world !', "concat should produce 'hello world !', got '" .. result .. "'")
@@ -1487,9 +1487,9 @@ end
 @Test function ArrayOfStringWithTable()
    -- Tables cannot be converted to strings and should fail
    try
-      t = array<string> { 'hello', {}, 'world' }
+      t = array<str> { 'hello', {}, 'world' }
    success
-      error("array.of('string') with table value should fail")
+      error("array.of('str') with table value should fail")
    end
 end
 
@@ -1535,7 +1535,7 @@ end
 end
 
 @Test function ArrayIterationString()
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
    concat = ''
    for _, s in arr do
       concat ..= s
@@ -1649,32 +1649,32 @@ end
 -- Test array.concat() functionality
 
 @Test function ArrayConcatString()
-   arr = array<string> { 'hello', 'world', '!' }
+   arr = array<str> { 'hello', 'world', '!' }
    result = arr.concat(' ')
    assert(result is 'hello world !', "concat(' ') should produce 'hello world !', got '" .. result .. "'")
 end
 
 @Test function ArrayConcatStringComma()
-   arr = array<string> { 'apple', 'banana', 'cherry' }
+   arr = array<str> { 'apple', 'banana', 'cherry' }
    result = arr.concat(', ')
    assert(result is 'apple, banana, cherry', "concat(', ') failed, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatStringEmpty()
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
    result = arr.concat('')
    assert(result is 'abc', "concat('') should concatenate without separator, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatStringDefault()
-   arr = array<string> { 'one', 'two', 'three' }
+   arr = array<str> { 'one', 'two', 'three' }
    result = arr.concat()
    assert(result is 'onetwothree', "concat() with no separator should concatenate directly, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatStringEmbeddedNul()
    nul = string.char(0)
-   arr = array<string> { 'a' .. nul .. 'b', 'c' }
+   arr = array<str> { 'a' .. nul .. 'b', 'c' }
    result = arr.concat('|')
    expected = 'a' .. nul .. 'b|c'
 
@@ -1684,7 +1684,7 @@ end
 
 @Test function ArrayConcatStringEmbeddedNulFormat()
    nul = string.char(0)
-   arr = array<string> { 'a' .. nul .. 'b', 'c' }
+   arr = array<str> { 'a' .. nul .. 'b', 'c' }
    result = arr.concat('|', '%s')
    expected = 'a' .. nul .. 'b|c'
 
@@ -1694,7 +1694,7 @@ end
 
 @Test function ArrayConcatStringNulSeparator()
    nul = string.char(0)
-   arr = array<string> { 'a', 'b' }
+   arr = array<str> { 'a', 'b' }
    result = arr.concat(nul)
    expected = 'a' .. nul .. 'b'
 
@@ -1715,7 +1715,7 @@ end
 end
 
 @Test function ArrayConcatRangeString()
-   arr = array<string> { 'a', 'b', 'c', 'd' }
+   arr = array<str> { 'a', 'b', 'c', 'd' }
    result = arr.concat(',', nil, 1, 2)
    assert(result is 'b,c', "concat with indexes 1 to 2 should return 'b,c', got '" .. result .. "'")
 end
@@ -1733,25 +1733,25 @@ end
 end
 
 @Test function ArrayConcatRangeSingleElement()
-   arr = array<string> { 'zero', 'one', 'two' }
+   arr = array<str> { 'zero', 'one', 'two' }
    result = arr.concat(', ', nil, 1, 1)
    assert(result is 'one', "single-element concat range should return only that element, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeEmptySpan()
-   arr = array<string> { 'zero', 'one', 'two' }
+   arr = array<str> { 'zero', 'one', 'two' }
    result = arr.concat(', ', nil, 2, 1)
    assert(result is '', "concat range with End before Start should return an empty string, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeOmittedIndexes()
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
    result = arr.concat(',')
    assert(result is 'a,b,c', "concat with omitted range should preserve full-array behaviour, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeInvalidIndexes()
-   arr = array<string> { 'a', 'b', 'c' }
+   arr = array<str> { 'a', 'b', 'c' }
 
    try
       arr.concat(',', nil, -1, 1)
@@ -1777,7 +1777,7 @@ end
       error('concat should reject End indexes beyond the array length')
    end
 
-   empty = array<string>
+   empty = array<str>
    try
       empty.concat(',', nil, 0, 0)
    success
@@ -1822,13 +1822,13 @@ end
 end
 
 @Test function ArrayConcatEmpty()
-   arr = array<string>
+   arr = array<str>
    result = arr.concat(', ')
    assert(result is '', "concat on empty array should return empty string, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatSingle()
-   arr = array<string> { 'only' }
+   arr = array<str> { 'only' }
    result = arr.concat(', ')
    assert(result is 'only', "concat on single element should return just that element, got '" .. result .. "'")
 end
@@ -1848,7 +1848,7 @@ end
 end
 
 @Test function ArrayJoinRemoved()
-   arr = array<string> { 'a', 'b' }
+   arr = array<str> { 'a', 'b' }
    try
       arr.join(',')
    success
@@ -1887,7 +1887,7 @@ end
 end
 
 @Test function ArrayContainsString()
-   arr = array<string> { 'apple', 'banana', 'cherry' }
+   arr = array<str> { 'apple', 'banana', 'cherry' }
 
    assert(arr.contains('apple') is true, "contains('apple') should return true")
    assert(arr.contains('banana') is true, "contains('banana') should return true")
@@ -1898,7 +1898,7 @@ end
 end
 
 @Test function ArrayContainsStringEmpty()
-   arr = array<string> { '', 'nonempty' }
+   arr = array<str> { '', 'nonempty' }
 
    assert(arr.contains('') is true, "contains('') should find empty string if present")
    assert(arr.contains('nonempty') is true, "contains('nonempty') should return true")
@@ -1987,7 +1987,7 @@ end
 end
 
 @Test function ArrayInOperatorString()
-   arr = array<string> { 'apple', 'banana', 'cherry' }
+   arr = array<str> { 'apple', 'banana', 'cherry' }
    assert('banana' in arr, "'banana' should be in array")
    assert(not ('grape' in arr), "'grape' should not be in array")
    assert(not ('APPLE' in arr), "'APPLE' should not be in array (case-sensitive)")
@@ -1999,7 +1999,7 @@ end
 end
 
 @Test function ArrayInOperatorInCondition()
-   arr = array<string> { 'red', 'green', 'blue' }
+   arr = array<str> { 'red', 'green', 'blue' }
    found = false
    if 'green' in arr then
       found = true
@@ -2016,7 +2016,7 @@ end
 end
 
 @Test function ArrayFirstString()
-   arr = array<string> { 'alpha', 'beta', 'gamma' }
+   arr = array<str> { 'alpha', 'beta', 'gamma' }
    assert(arr.first() is 'alpha', "first() should return 'alpha'")
 end
 
@@ -2077,7 +2077,7 @@ end
 end
 
 @Test function ArrayLastString()
-   arr = array<string> { 'alpha', 'beta', 'gamma' }
+   arr = array<str> { 'alpha', 'beta', 'gamma' }
    assert(arr.last() is 'gamma', "last() should return 'gamma'")
 end
 
@@ -2131,7 +2131,7 @@ end
 
 @Test function ArrayFirstLastConsistency()
    -- For single element array, first() and last() should return same value
-   arr = array<string> { 'only' }
+   arr = array<str> { 'only' }
    assert(arr.first() is arr.last(), "first() and last() should be same for single element")
 end
 
@@ -2206,7 +2206,7 @@ end
 end
 
 @Test function ArrayPairsStrings()
-   str_arr = array<string> { 'a', 'b', 'c' }
+   str_arr = array<str> { 'a', 'b', 'c' }
    concat = ''
    for i, s in ipairs(str_arr) do
       concat ..= s
@@ -2222,7 +2222,7 @@ end
 @Test function JITStringArrayGCBarrier()
    -- Store freshly-allocated strings into an array in a hot loop, interleaving
    -- GC collection to trigger the write barrier while traces are active.
-   arr = array<string, 200>
+   arr = array<str, 200>
    for i in {0 to 200} do
       arr[i] = f"item-{i}"
    end
@@ -2271,7 +2271,7 @@ end
 @Test function JITStringArrayGCInterleaved()
    -- Interleave GC steps with stores in a hot loop to maximise the chance of
    -- the write barrier firing during incremental marking.
-   arr = array<string, 300>
+   arr = array<str, 300>
    for i in {0 to 300} do
       arr[i] = f"val-{i}"
       if i % 50 is 0 then
@@ -2303,7 +2303,7 @@ end
 
 @Test function JITStringArrayNilStoreGC()
    -- Verify nil stores (clearing slots) work correctly under GC pressure
-   arr = array<string, 100>
+   arr = array<str, 100>
    for i in {0 to 100} do
       arr[i] = f"temp-{i}"
    end
@@ -2347,7 +2347,7 @@ end
 @Test function JITStringArrayReadGCStress()
    -- Verify JIT-compiled reads of string arrays survive GC cycles.
    -- The read loop should compile to inline XLOAD with null-guard.
-   arr = array<string> { 'alpha', 'bravo', 'charlie', 'delta', 'echo' }
+   arr = array<str> { 'alpha', 'bravo', 'charlie', 'delta', 'echo' }
    for round in {0 to 100} do
       for i in {0 to 5} do
          s = arr[i]

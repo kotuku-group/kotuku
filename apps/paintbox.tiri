@@ -31,15 +31,15 @@ Examples:
 
       { name = 'output', type = 'csv', default = 'rgb,hex,hsl,xyz,oklab,oklch,p3,hsv,info', group = 'Output',
         comment = 'Comma-separated fields: rgb, hex, hsl, xyz, oklab, oklch, p3, hsv, info.' },
-      { name = 'format', type = lowercaseOption, default = 'text', choices = array<string> { 'text', 'json' },
+      { name = 'format', type = lowercaseOption, default = 'text', choices = array<str> { 'text', 'json' },
         group = 'Output', comment = 'Output format: text or json.' },
 
-      { names = array<string> { 'scheme', 'palette' }, type = lowercaseOption,
-        choices = array<string> { 'analogous', 'complementary', 'triadic', 'split', 'monochrome' },
+      { names = array<str> { 'scheme', 'palette' }, type = lowercaseOption,
+        choices = array<str> { 'analogous', 'complementary', 'triadic', 'split', 'monochrome' },
         group = 'Palette', comment = 'Palette scheme: analogous, complementary, triadic, split, monochrome.' },
       { name = 'palette-count', type = 'int', default = 5, group = 'Palette',
         comment = 'Number of colours for analogous/monochrome palettes.' },
-      { name = 'preview', type = lowercaseOption, choices = array<string> { 'true', 'ansi', 'svg' }, group = 'Palette',
+      { name = 'preview', type = lowercaseOption, choices = array<str> { 'true', 'ansi', 'svg' }, group = 'Palette',
         comment = 'Preview mode: true or ansi for text palettes, svg for JSON swatches.' },
       { name = 'save-to', type = 'file', group = 'Palette',
         comment = 'Save the SVG swatch preview when preview=svg.' }
@@ -217,7 +217,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function outputText(Report, Format:array<string>)
+function outputText(Report, Format:array<str>)
    if Format.find('rgb')   then print(f'RGB:     {Report.rgb}') end
    if Format.find('hex')   then print(f'RGB Hex: {Report.hex}') end
    if Format.find('hsl')   then print(f'HSL:     {Report.css.hsl}') end

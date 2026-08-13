@@ -8,8 +8,8 @@
 
 global glSelf = obj.find('self')
 global glPath = glSelf.workingPath
-global glOutput = array<string>
-global glHeader = array<string>
+global glOutput = array<str>
+global glHeader = array<str>
 
 global glProgram    = 'idl-compile'
 global glSource     = arg('src')

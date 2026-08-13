@@ -19,7 +19,7 @@ rx_sdk_path = <{ regex.new([[(.+)CMakeLists\.txt]]) }>
 function resolveSDKPath(Path:str)
    local sdk_path
    err = ERR_Failed
-   search_list = array<string>
+   search_list = array<str>
    if not Path then
       search_path = 'CMakeLists.txt'
       limit = 5

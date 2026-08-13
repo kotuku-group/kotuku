@@ -661,7 +661,7 @@ end
    end
 
    local text:str = 'needle stack'
-   local values:array<any> = array<string> { 'needle' }
+   local values:array<any> = array<str> { 'needle' }
    local indexes:range = {0 to 3}
    assert(text.startsWith(context_argument('needle')) is true,
       'String member dispatch should retain its existing behaviour')

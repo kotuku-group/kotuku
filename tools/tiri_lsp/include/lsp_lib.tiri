@@ -220,7 +220,7 @@ global LSP_ERROR = {
 
 -- Token types - order matters, index is used in the protocol
 
-global TOKEN_TYPES = array<string> {
+global TOKEN_TYPES = array<str> {
    'keyword',        -- 0: if, while, for, etc.
    'operator',       -- 1: and, or, not, is
    'variable',       -- 2: regular variables
@@ -237,7 +237,7 @@ global TOKEN_TYPES = array<string> {
 }
 
 -- Token modifiers (bitfield)
-global TOKEN_MODIFIERS = array<string> {
+global TOKEN_MODIFIERS = array<str> {
    'declaration',    -- 0: variable/function declaration
    'definition',     -- 1: definition site
    'readonly',       -- 2: constants
