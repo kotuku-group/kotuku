@@ -62,6 +62,7 @@ static const struct {
 #include "parser_context.cpp"
 #include "static_type_descriptor.cpp"
 #include "static_descriptor_analysis.cpp"
+#include "table_ownership.cpp"
 #include "ast/nodes.cpp"
 #include "ast/builder.cpp"
 #include "parser_symbols.cpp"

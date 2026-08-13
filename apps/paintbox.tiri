@@ -174,13 +174,13 @@ end
 function buildColourReport(Painter)
    nrgb  = Painter.Colour -- Normalised RGB
    rgb   = gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha)
-   oklab = rgb.toOKLab(rgb)
-   oklch = rgb.toOKLCH(rgb)
-   hsl   = rgb.toHSL(rgb)
-   hsv   = rgb.toHSV(rgb)
+   oklab = rgb.toOKLab()
+   oklch = rgb.toOKLCH()
+   hsl   = rgb.toHSL()
+   hsv   = rgb.toHSV()
    xyz   = rgbToXYZD50(rgb)
-   p3    = rgb.toDisplayP3(rgb)
-   lum   = rgb.luminance(rgb)
+   p3    = rgb.toDisplayP3()
+   lum   = rgb.luminance()
 
    alpha = clamp(rgb.a, 0, 1)
 

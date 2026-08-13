@@ -220,8 +220,11 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    //
    // For JIT traces (Ins == nullptr), L->base is also stale; sync from jit_base first.
 
-   const auto saved_base = L->base;
-   const auto saved_top = L->top;
+   const auto saved_base = savestack(L, L->base);
+   const auto saved_top = savestack(L, L->top);
+   // Interpreter destinations are stack slots and must follow relocation.  JIT recorders pass global_State::tmptv
+   // with no instruction pointer, so that external destination must remain a raw pointer.
+   const auto dest_offset = Ins ? savestack(L, Dest) : ptrdiff_t(0);
 
    if (not Ins) {
       auto jb = tvref(G(L)->jit_base);
@@ -268,17 +271,19 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    }
 
    // Call the field handler - it pushes result onto the Lua stack
-   if (func->Call(L, *func, Obj) > 0) copyTV(L, Dest, L->top - 1);
+   const auto result_count = func->Call(L, *func, Obj);
+   const auto result_dest = Ins ? restorestack(L, dest_offset) : Dest;
+   if (result_count > 0) copyTV(L, result_dest, L->top - 1);
    else { // An error occurred and is stored in L->CaughtError
       if (L->CaughtError > ERR::ExceptionThreshold) {
          luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), strdata(Key),
             GetErrorMsg(L->CaughtError));
       }
 
-      setnilV(Dest);
+      setnilV(result_dest);
    }
-   L->base = saved_base;
-   L->top = saved_top;
+   L->base = restorestack(L, saved_base);
+   L->top = restorestack(L, saved_top);
 }
 
 //********************************************************************************************************************
@@ -295,8 +300,8 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    // L->top is not maintained by the VM assembly between bytecodes (see bc_object_getfield).
    // For JIT traces (Ins == nullptr), L->base is also stale; sync from jit_base first.
 
-   const auto saved_base = L->base;
-   const auto saved_top  = L->top;
+   const auto saved_base = savestack(L, L->base);
+   const auto saved_top = savestack(L, L->top);
    if (not Ins) {
       auto jb = tvref(G(L)->jit_base);
       if (jb) L->base = jb;
@@ -352,8 +357,8 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    if (auto error = access_object(Obj, pobj); !error) {
       auto stack_idx = int(val_ptr - L->base) + 1;
       error = func->Call(L, pobj, func->Field, stack_idx);
-      L->base = saved_base;
-      L->top = saved_top;
+      L->base = restorestack(L, saved_base);
+      L->top = restorestack(L, saved_top);
       release_object(Obj);
 
       if (error >= ERR::ExceptionThreshold) luaL_error(L, error);

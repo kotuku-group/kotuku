@@ -774,8 +774,10 @@ static TRef rec_range_number(jit_State *J, BCREG Slot, int LoadMode = 0)
 {
    if (not tvisnumber(&J->L->base[Slot])) lj_trace_err(J, LJ_TRERR_BADTYPE);
    TRef current = J->base[Slot];
+   // Preserve a RANGEPREP alias to another slot; only replace a load of the hidden slot itself.
    if (LoadMode and (not current or
        (not tref_isk(current) and IR(tref_ref(current))->o IS IR_SLOAD and
+        IR(tref_ref(current))->op1 IS J->baseslot + Slot and
         not (IR(tref_ref(current))->op2 & IRSLOAD_INHERIT)))) {
       return fori_load(J, Slot, IRT_NUM, LoadMode);
    }
@@ -1337,33 +1339,37 @@ static bool rec_context_is_tail_call(jit_State *J, BCREG CallBase)
 static TRef rec_context_current(jit_State *J)
 {
    for (int32_t slot = int32_t(J->baseslot) - 1; slot >= 0; slot--) {
-      if (J->context_call_receiver[slot]) return J->context_call_receiver[slot];
+      if (J->context_call_state[slot] IS CONTEXT_CALL_VIRTUAL) return J->context_call_receiver[slot];
    }
    return lj_ir_call(J, IRCALL_lj_context_current_jit);
 }
 
-enum : uint8_t {
-   CONTEXT_CALL_NONE,
-   CONTEXT_CALL_VIRTUAL,
-   CONTEXT_CALL_MATERIALISED,
-   CONTEXT_CALL_EXEMPT
-};
-
-static void rec_context_materialise(jit_State *J)
+static uint32_t rec_context_virtual_count(const jit_State *J)
 {
-   int32_t function_slot = J->context_virtual_slot;
-   if (function_slot < 0) return;
+   uint32_t count = 0;
+   for (size_t slot = 0; slot < std::size(J->context_call_state); slot++) {
+      if (J->context_call_state[slot] IS CONTEXT_CALL_VIRTUAL) count++;
+   }
+   return count;
+}
 
-   TRef receiver = J->context_call_receiver[function_slot];
-   lj_assertJ(tref_istab(receiver), "virtual context receiver is not a table");
-   lj_assertJ(J->context_call_state[function_slot] IS CONTEXT_CALL_VIRTUAL,
-      "virtual context slot has inconsistent state");
+static void rec_context_materialise(
+   jit_State *J, ContextMaterialisationReason Reason, const GCfunc *Callable = nullptr)
+{
+   if (J->context_virtual_slot < 0) return;
 
+   lj_context_debug_materialise(J->L, Reason, Callable);
    IRBuilder ir(J);
-   int32_t owner_slot = function_slot + 1 + LJ_FR2;
-   TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
-   lj_ir_call(J, IRCALL_lj_context_enter_jit, receiver, owner_base);
-   J->context_call_state[function_slot] = CONTEXT_CALL_MATERIALISED;
+   for (size_t function_slot = 0; function_slot < std::size(J->context_call_state); function_slot++) {
+      if (J->context_call_state[function_slot] != CONTEXT_CALL_VIRTUAL) continue;
+      TRef receiver = J->context_call_receiver[function_slot];
+      lj_assertJ(tref_istab(receiver), "virtual context receiver is not a table");
+      int32_t owner_slot = int32_t(function_slot) + 1 + LJ_FR2;
+      TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
+      lj_ir_call(J, IRCALL_lj_context_enter_jit, receiver, owner_base);
+      lj_context_debug_virtual_leave(J->L);
+      J->context_call_state[function_slot] = CONTEXT_CALL_MATERIALISED;
+   }
    J->context_virtual_slot = -1;
    // Guards emitted later in the same bytecode must not reuse a snapshot that still describes virtual state.
    lj_snap_add(J);
@@ -1380,14 +1386,31 @@ static void rec_context_enter(jit_State *J, BCREG CallBase)
       return;
    }
 
-   // Internal namespaces inherit the caller's context.  Record the exemption before the callable overwrites its
-   // receiver slot so CTXLEAVE can still perform result compaction without attempting to restore an activation.
-   if (lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]))) {
-      J->context_call_state[int32_t(J->baseslot) + int32_t(CallBase)] = CONTEXT_CALL_EXEMPT;
-      return;
+   // An ordinary table inherits the caller's context.  Record that before the callable overwrites its receiver slot so
+   // CTXLEAVE can still perform result compaction without attempting to restore an activation.
+   //
+   // Contextuality is a monotonic bit in the shared flags byte, so guarding the observed state is sufficient: a table
+   // designated later side-exits the trace and the recompilation specialises to the contextual path.
+   {
+      IRBuilder ir(J);
+      TRef flags = ir.fload(receiver, IRFL_TAB_FLAGS, IRT_U8);
+      TRef designated = ir.emit_int(IR_BAND, flags, ir.kint(TAB_CONTEXTUAL));
+      if (not lj_tab_is_contextual(tabV(&J->L->base[CallBase - 1]))) {
+         ir.guard_eq_int(designated, ir.kint(0));
+         J->context_call_state[int32_t(J->baseslot) + int32_t(CallBase)] = CONTEXT_CALL_EXEMPT;
+         return;
+      }
+      ir.guard_ne_int(designated, ir.kint(0));
    }
 
-   if (tail_call or native_target) rec_context_materialise(J);
+   if (tail_call) {
+      rec_context_materialise(
+         J, ContextMaterialisationReason::TailCall, tvisfunc(callable) ? funcV(callable) : nullptr);
+   }
+   else if (native_target) {
+      rec_context_materialise(
+         J, ContextMaterialisationReason::NativeCall, tvisfunc(callable) ? funcV(callable) : nullptr);
+   }
 
    int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
    J->context_call_func[function_slot] = getslot(J, CallBase);
@@ -1395,16 +1418,17 @@ static void rec_context_enter(jit_State *J, BCREG CallBase)
 
    if (not tail_call) {
       J->context_call_receiver[function_slot] = receiver;
-      if (not J->L->context_active and not J->context_call_activation_count) {
-         J->context_call_state[function_slot] = CONTEXT_CALL_VIRTUAL;
-         J->context_call_activation_count++;
-         J->context_virtual_slot = function_slot;
-         J->needsnap = 1;
-         return;
+      uint32_t virtual_count = rec_context_virtual_count(J);
+      if (virtual_count >= LJ_MAX_VIRTUAL_CONTEXTS) {
+         rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary, funcV(callable));
+         virtual_count = 0;
       }
-      rec_context_materialise(J);
-      J->context_call_state[function_slot] = CONTEXT_CALL_MATERIALISED;
+      J->context_call_state[function_slot] = CONTEXT_CALL_VIRTUAL;
       J->context_call_activation_count++;
+      J->context_virtual_slot = function_slot;
+      lj_context_debug_virtual_enter(J->L, virtual_count + 1);
+      J->needsnap = 1;
+      return;
    }
    IRBuilder ir(J);
    int32_t owner_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
@@ -1429,6 +1453,13 @@ static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc
       if (context_state IS CONTEXT_CALL_VIRTUAL) {
          lj_assertJ(J->context_virtual_slot IS function_slot, "virtual context leave has inconsistent owner");
          J->context_virtual_slot = -1;
+         for (int32_t slot = function_slot - 1; slot >= 0; slot--) {
+            if (J->context_call_state[slot] IS CONTEXT_CALL_VIRTUAL) {
+               J->context_virtual_slot = slot;
+               break;
+            }
+         }
+         lj_context_debug_virtual_leave(J->L);
       }
       else {
          IRBuilder ir(J);
@@ -1473,7 +1504,19 @@ static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc
 void lj_record_call(jit_State *J, BCREG func, ptrdiff_t nargs)
 {
    cTValue *callable = &J->L->base[func];
-   if (not tvisfunc(callable) or not isluafunc(funcV(callable))) rec_context_materialise(J);
+   bool context_independent = tvisfunc(callable) and
+      lj_builtin_context_independent(J->L, funcV(callable));
+   if ((not tvisfunc(callable) or not isluafunc(funcV(callable))) and not context_independent) {
+      uint32_t virtual_count = rec_context_virtual_count(J);
+      rec_context_materialise(
+         J, ContextMaterialisationReason::NativeCall, tvisfunc(callable) ? funcV(callable) : nullptr);
+      // A context-observing native boundary can resume through a native frame whose stack top is not represented by
+      // a multi-context snapshot. Hand the call back to the interpreter after materialising the complete prefix.
+      if (virtual_count > 1) {
+         lj_record_stop(J, TraceLink::INTERP, 0);
+         return;
+      }
+   }
    rec_call_setup(J, func, nargs);
    FrameManager fm(J);
    // Bump frame.
@@ -1507,25 +1550,36 @@ static void rec_tailcall_compact(jit_State *J, BCREG Func)
 
 void lj_record_tailcall(jit_State *J, BCREG func, ptrdiff_t nargs)
 {
-   rec_context_materialise(J);
+   rec_context_materialise(J, ContextMaterialisationReason::TailCall);
    rec_call_setup(J, func, nargs);
    rec_tailcall_compact(J, func);
 }
 
 static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t ArgumentCount)
 {
-   rec_context_materialise(J);
+   rec_context_materialise(J, ContextMaterialisationReason::TailCall);
    cTValue *callable = &J->L->base[CallBase];
    if (not tvisfunc(callable)) {
       lj_trace_err(J, LJ_TRERR_NYIBC);
    }
 
    TRef receiver = getslot(J, int32_t(CallBase) - 1);
-   bool exempt_receiver = tvistab(&J->L->base[CallBase - 1]) and
-      lj_tab_is_context_exempt(tabV(&J->L->base[CallBase - 1]));
+   bool contextual_receiver = tvistab(&J->L->base[CallBase - 1]) and
+      lj_tab_is_contextual(tabV(&J->L->base[CallBase - 1]));
+
+   // Guard the monotonic designation bit before the callable overwrites the receiver slot, so that a trace
+   // specialised to one receiver class cannot be reused for the other.
+   if (tref_istab(receiver)) {
+      IRBuilder ir(J);
+      TRef flags = ir.fload(receiver, IRFL_TAB_FLAGS, IRT_U8);
+      TRef designated = ir.emit_int(IR_BAND, flags, ir.kint(TAB_CONTEXTUAL));
+      if (contextual_receiver) ir.guard_ne_int(designated, ir.kint(0));
+      else ir.guard_eq_int(designated, ir.kint(0));
+   }
+
    rec_call_setup(J, CallBase, ArgumentCount);
 
-   if (tref_istab(receiver) and not exempt_receiver) {
+   if (tref_istab(receiver) and contextual_receiver) {
       IRBuilder ir(J);
       int32_t prepared_slot = int32_t(J->baseslot) + int32_t(CallBase) + 1 + LJ_FR2;
       TRef prepared_owner = rec_stack_slot_addr(J, ir, prepared_slot);
@@ -4580,6 +4634,33 @@ void lj_record_ins(jit_State *J)
 
    case BC_CTXENTER:
       rec_context_enter(J, ra);
+      break;
+
+   case BC_TCTX:
+      // Designation is a runtime side effect on the constructor result, not speculative IR: a side exit taken after
+      // this point must observe the already-marked table.  Snapshotting after the call gives the exit that state.
+      lj_ir_call(J, IRCALL_lj_tab_mark_contextual_jit, ra);
+      J->needsnap = 1;
+      break;
+
+   case BC_CTXBEGIN:
+      if (not tref_istab(ra)) lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      // Block activations are installed physically. Materialise any virtual call receivers first so current-context
+      // lookup observes the block before the enclosing receiver, matching interpreter stack order.
+      rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
+      lj_ir_call(J, IRCALL_lj_context_begin_block_jit, ra, lj_ir_kint(J, int32_t(bc_d(*pc))),
+         lj_ir_kint(J, int32_t(bc_a(*pc)) + 1));
+      J->needsnap = 1;
+      break;
+
+   case BC_CTXEND:
+      lj_ir_call(J, IRCALL_lj_context_end_block_jit, lj_ir_kint(J, int32_t(bc_d(*pc))));
+      J->needsnap = 1;
+      break;
+
+   case BC_CLOSEARM:
+   case BC_CLOSE:
+      lj_trace_err_info(J, LJ_TRERR_NYIBC);
       break;
 
    case BC_CTXLEAVE:

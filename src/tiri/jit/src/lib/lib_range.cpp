@@ -860,13 +860,16 @@ static int range_slice_impl(lua_State *L)
          if (effective_stop < 0) effective_stop = 0;
       }
 
-      // Check for empty/invalid ranges
+      // Check for empty/invalid ranges.  An empty slice still derives structurally from its source table, so it
+      // inherits contextuality like any other result.
       if (forward and start > effective_stop) {
          lua_createtable(L, 0, 0);
+         lj_tab_inherit_contextual(tabV(L->top - 1), t);
          return 1;
       }
       if (not forward and start < effective_stop) {
          lua_createtable(L, 0, 0);
+         lj_tab_inherit_contextual(tabV(L->top - 1), t);
          return 1;
       }
 
@@ -877,6 +880,7 @@ static int range_slice_impl(lua_State *L)
 
       // Create result table
       lua_createtable(L, result_size, 0);
+      lj_tab_inherit_contextual(tabV(L->top - 1), t);
       int result_table_idx = lua_gettop(L);
       int32_t result_idx = 0;
 
@@ -1075,7 +1079,7 @@ extern "C" int luaopen_range(lua_State *L)
    reg_iface_method(L, "range", "map", TiriType::Range, builtin_callable_id(FastFunc::range_map),
       { TiriType::Array }, { TiriType::Range, TiriType::Func });
    reg_iface_method(L, "range", "take", TiriType::Range, builtin_callable_id(FastFunc::range_take),
-      { TiriType::Array }, { TiriType::Range, TiriType::Num });
+      { TiriType::Array }, { TiriType::Range, TiriType::Num }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "range", "any", TiriType::Range, builtin_callable_id(FastFunc::range_any),
       { TiriType::Bool }, { TiriType::Range, TiriType::Func });
    reg_iface_method(L, "range", "all", TiriType::Range, builtin_callable_id(FastFunc::range_all),
@@ -1083,9 +1087,9 @@ extern "C" int luaopen_range(lua_State *L)
    reg_iface_method(L, "range", "find", TiriType::Range, builtin_callable_id(FastFunc::range_find),
       { TiriType::Num }, { TiriType::Range, TiriType::Func });
    reg_iface_method(L, "range", "contains", TiriType::Range, builtin_callable_id(FastFunc::range_contains),
-      { TiriType::Bool }, { TiriType::Range, TiriType::Num });
+      { TiriType::Bool }, { TiriType::Range, TiriType::Num }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "range", "toArray", TiriType::Range, builtin_callable_id(FastFunc::range_toArray),
-      { TiriType::Array }, { TiriType::Range });
+      { TiriType::Array }, { TiriType::Range }, FProtoFlags::ContextIndependent);
 
    return 1;
 }

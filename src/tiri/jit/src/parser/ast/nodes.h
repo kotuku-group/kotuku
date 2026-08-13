@@ -441,6 +441,12 @@ struct CallExprPayload {
       bool safe = false;
    };
    mutable std::optional<RuntimeBuiltinMethodCall> runtime_builtin_method;
+   // Set when this is a direct call to the unshadowed built-in setmetatable() whose target the author owns.
+   // Only an authorised call may promote an ordinary table to contextual; every other spelling raises at runtime instead.
+   mutable bool authorised_contextual_designation = false;
+   // Static contextuality of the table returned by an authorised designation.  An unresolved metatable deliberately
+   // leaves this Unknown unless the target was already contextual.
+   mutable StaticContextuality contextual_designation_result = StaticContextuality::Unknown;
    mutable bool unresolved_method_reported = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
@@ -551,6 +557,9 @@ struct TableExprPayload {
    TableExprPayload& operator=(TableExprPayload&&) noexcept = default;
    std::vector<TableField> fields;
    bool has_array_part = false;
+   // Set by the `entity { ... }` prefix designation form.  The constructed table is permanently contextual, and the
+   // emitter appends the uniform table-marking operation after the constructor has been materialised.
+   bool contextual = false;
    ~TableExprPayload();
 };
 
@@ -888,6 +897,18 @@ struct DoStmtPayload {
    ~DoStmtPayload();
 };
 
+struct ContextStmtPayload {
+   ContextStmtPayload(ExprNodePtr Reference, std::unique_ptr<BlockStmt> Block)
+      : reference(std::move(Reference)), block(std::move(Block)) {}
+   ContextStmtPayload(const ContextStmtPayload&) = delete;
+   ContextStmtPayload& operator=(const ContextStmtPayload&) = delete;
+   ContextStmtPayload(ContextStmtPayload&&) noexcept = default;
+   ContextStmtPayload& operator=(ContextStmtPayload&&) noexcept = default;
+   ExprNodePtr reference;
+   std::unique_ptr<BlockStmt> block;
+   ~ContextStmtPayload();
+};
+
 struct ConditionalShorthandStmtPayload {
    ConditionalShorthandStmtPayload(ExprNodePtr condition, StmtNodePtr body)
       : condition(std::move(condition)), body(std::move(body)) {}
@@ -1021,7 +1042,7 @@ struct StmtNode {
       ExternDeclStmtPayload, LocalFunctionStmtPayload, FunctionStmtPayload, IfStmtPayload,
       LoopStmtPayload, NumericForStmtPayload, RangeForStmtPayload, GenericForStmtPayload,
       ReturnStmtPayload, BreakStmtPayload, ContinueStmtPayload, DeferStmtPayload,
-      DoStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
+      DoStmtPayload, ContextStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
       RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, WithStmtPayload,
       ExpressionStmtPayload>
       data;

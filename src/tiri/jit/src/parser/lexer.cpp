@@ -1417,6 +1417,12 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             if (auto tok = check_compound(State, TK_cmod)) return tok;
             return '%';
 
+         case '&':
+            State->mark_token_start();
+            lex_next(State);
+            if (State->c IS '&') { lex_next(State); return TK_current_context; }
+            return '&';
+
          case '!':
             State->mark_token_start();
             lex_next(State);

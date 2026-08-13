@@ -78,6 +78,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.mtHSV = { -- HSV metatable
+   __context = true,
    __newindex = function(Self, Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
@@ -103,20 +104,20 @@ gui.hsv = function(H:num, S:num, V:num, A:num):table -- HSV values
    return setmetatable({ h = H, s = S, v = V, a = A }, gui.mtHSV)
 end
 
-function gui.mtHSV.interpolate(Self, New:table!, Ratio:num):table
+function gui.mtHSV.interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
-      a = Self.a + ((New.a - Self.a) * Ratio),
-      h = Self.h + ((New.h - Self.h) * Ratio),
-      s = Self.s + ((New.s - Self.s) * Ratio),
-      v = Self.v + ((New.v - Self.v) * Ratio)
+      a = &a + ((New.a - &a) * Ratio),
+      h = &h + ((New.h - &h) * Ratio),
+      s = &s + ((New.s - &s) * Ratio),
+      v = &v + ((New.v - &v) * Ratio)
    }, gui.mtHSV)
 end
 
-function gui.mtHSV.toRGB(Self):table
-   h = Self.h / 60
-   s = Self.s
-   v = Self.v
+function gui.mtHSV.toRGB():table
+   h = &h / 60
+   s = &s
+   v = &v
    i = math.floor(h)
    f = h - i
    if (i & 1) is 0 then f = 1 - f end
@@ -124,25 +125,26 @@ function gui.mtHSV.toRGB(Self):table
    n = v * (1 - s * f)
 
    if i is 6 or i is 0 then
-      return setmetatable({ r = v, g = n, b = m, a = Self.a }, gui.mtRGB)
+      return setmetatable({ r = v, g = n, b = m, a = &a }, gui.mtRGB)
    elseif i is 1 then
-      return setmetatable({ r = n, g = v, b = m, a = Self.a }, gui.mtRGB)
+      return setmetatable({ r = n, g = v, b = m, a = &a }, gui.mtRGB)
    elseif i is 2 then
-      return setmetatable({ r = m, g = v, b = n, a = Self.a }, gui.mtRGB)
+      return setmetatable({ r = m, g = v, b = n, a = &a }, gui.mtRGB)
    elseif i is 3 then
-      return setmetatable({ r = m, g = n, b = v, a = Self.a }, gui.mtRGB)
+      return setmetatable({ r = m, g = n, b = v, a = &a }, gui.mtRGB)
    elseif i is 4 then
-      return setmetatable({ r = n, g = m, b = v, a = Self.a }, gui.mtRGB)
+      return setmetatable({ r = n, g = m, b = v, a = &a }, gui.mtRGB)
    elseif i is 5 then
-      return setmetatable({ r = v, g = m, b = n, a = Self.a }, gui.mtRGB)
+      return setmetatable({ r = v, g = m, b = n, a = &a }, gui.mtRGB)
    else
-      return setmetatable({ r = 0, g = 0, b = 0, a = Self.a }, gui.mtRGB)
+      return setmetatable({ r = 0, g = 0, b = 0, a = &a }, gui.mtRGB)
    end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.mtRGB = { -- sRGB metatable
+   __context = true,
    __newindex = function(Self, Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
@@ -165,7 +167,7 @@ gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
    G ?= 0
    B ?= 0
    A ?= 255
-   result = { r = R/255, g = G/255, b = B/255, a = A/255 }
+   result = entity { r = R/255, g = G/255, b = B/255, a = A/255 }
    if KV then
       for k, v in pairs(KV) do
          result[k] = v
@@ -175,7 +177,7 @@ gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
 end
 
 gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table -- Normalised RGB values
-   result = { r = R, g = G, b = B, a = A ? A :> 1 }
+   result = entity { r = R, g = G, b = B, a = A ? A :> 1 }
    if KV then
       for k, v in pairs(KV) do
          result[k] = v
@@ -184,35 +186,35 @@ gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table -- Normalised
    return setmetatable(result, gui.mtRGB)
 end
 
-function gui.mtRGB.interpolate(Self, New:table!, Ratio:num):table
+function gui.mtRGB.interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
-      a = Self.a + ((New.a - Self.a) * Ratio),
-      r = Self.r + ((New.r - Self.r) * Ratio),
-      g = Self.g + ((New.g - Self.g) * Ratio),
-      b = Self.b + ((New.b - Self.b) * Ratio)
+      a = &a + ((New.a - &a) * Ratio),
+      r = &r + ((New.r - &r) * Ratio),
+      g = &g + ((New.g - &g) * Ratio),
+      b = &b + ((New.b - &b) * Ratio)
    }, gui.mtRGB)
 end
 
-function gui.mtRGB.toHSV(Self):table -- Normalised HSV
-   max = Self.brightness(Self)
-   hsv = { v = max }
+function gui.mtRGB.toHSV():table -- Normalised HSV
+   max = &brightness()
+   hsv = entity { v = max }
    if max > 0 then
-      min = Self.b
-      if Self.g < min then min = Self.g end
-      if Self.r < min then min = Self.r end
+      min = &b
+      if &g < min then min = &g end
+      if &r < min then min = &r end
 
       delta = max - min
       hsv.s = delta / max
       if hsv.s is 0 then
          hsv.h = 0
       else
-         if Self.r >= max then
-            hsv.h = (Self.g - Self.b) / delta
-         elseif Self.g >= max then
-            hsv.h = 2.0 + (Self.b - Self.r) / delta
+         if &r >= max then
+            hsv.h = (&g - &b) / delta
+         elseif &g >= max then
+            hsv.h = 2.0 + (&b - &r) / delta
          else
-            hsv.h = 4.0 + (Self.r - Self.g) / delta
+            hsv.h = 4.0 + (&r - &g) / delta
          end
          hsv.h = hsv.h * 60
          if hsv.h < 0 then hsv.h = hsv.h + 360 end
@@ -226,32 +228,32 @@ end
 
 -- Return the light value of an RGB colour (i.e. the V in HSV)
 
-function gui.mtRGB.brightness(Self):num
-   local max:num = Self.b
-   if Self.g > max then max = Self.g end
-   if Self.r > max then max = Self.r end
+function gui.mtRGB.brightness():num
+   local max:num = &b
+   if &g > max then max = &g end
+   if &r > max then max = &r end
    return max
 end
 
-function gui.mtRGB.withAlpha(Self, Alpha:num!):table
-   return setmetatable({ r = Self.r, g = Self.g, b = Self.b, a = Self.a * Alpha }, gui.mtRGB)
+function gui.mtRGB.withAlpha(Alpha:num!):table
+   return setmetatable({ r = &r, g = &g, b = &b, a = &a * Alpha }, gui.mtRGB)
 end
 
-function gui.mtRGB.linearise(Self):table
+function gui.mtRGB.linearise():table
    function lineariseRGB(u)
       return (u <= 0.04045) ? (u / 12.92) :> (((u + 0.055) / 1.055) ** 2.4)
    end
 
-   return { r = lineariseRGB(Self.r), g = lineariseRGB(Self.g), b = lineariseRGB(Self.b), a = Self.a }
+   return { r = lineariseRGB(&r), g = lineariseRGB(&g), b = lineariseRGB(&b), a = &a }
 end
 
 -- Convert RGB table { r, g, b, a } (0-1) to HSL table { h, s, l }
 -- h is hue in degrees [0,360), s and l are in [0,1].
 
-function gui.mtRGB.toHSL(Self):table
-   local r:num = Self.r
-   local g:num = Self.g
-   local b:num = Self.b
+function gui.mtRGB.toHSL():table
+   local r:num = &r
+   local g:num = &g
+   local b:num = &b
 
    local max:num = r
    if g > max then max = g end
@@ -286,16 +288,16 @@ end
 -- Return the relative luminance of the colour per WCAG 2.x (BT.709 coefficients).
 -- Result is in [0,1] where 0 is black and 1 is white.
 
-function gui.mtRGB.luminance(Self):num
-   local linear = Self.linearise(Self)
+function gui.mtRGB.luminance():num
+   local linear = &linearise()
    return (0.2126 * linear.r) + (0.7152 * linear.g) + (0.0722 * linear.b)
 end
 
 -- Convert RGB table { r, g, b, a } (0-255) to Display P3 table { r, g, b }
 -- Values are in [0,1].  Out-of-gamut sRGB colours may produce values outside [0,1].
 
-function gui.mtRGB.toDisplayP3(Self):table
-   local linear = Self.linearise(Self)
+function gui.mtRGB.toDisplayP3():table
+   local linear = &linearise()
 
    -- sRGB linear → XYZ D65
    local x =  0.4124564 * linear.r + 0.3575761 * linear.g + 0.1804375 * linear.b
@@ -316,8 +318,8 @@ end
 -- Convert RGB table { r, g, b, a } (0-255) to OKLab table { okl, oka, okb, a }
 -- okl is lightness in [0,1], oka is green-red axis, okb is blue-yellow axis (both typically -0.5 to 0.5).
 
-function gui.mtRGB.toOKLab(Self):table
-   local linear = Self.linearise(Self)
+function gui.mtRGB.toOKLab():table
+   local linear = &linearise()
 
    -- Linear sRGB → LMS (OKLab M1 matrix)
    lms_l = 0.4122214708 * linear.r + 0.5363325363 * linear.g + 0.0514459929 * linear.b
@@ -334,22 +336,22 @@ function gui.mtRGB.toOKLab(Self):table
       okl = 0.2104542553 * lms_l + 0.7936177850 * lms_m - 0.0040720468 * lms_s,
       oka = 1.9779984951 * lms_l - 2.4285922050 * lms_m + 0.4505937099 * lms_s,
       okb = 0.0259040371 * lms_l + 0.7827717662 * lms_m - 0.8086757660 * lms_s,
-      a   = Self.a
+      a   = &a
    }
 end
 
 -- Convert RGB table { r, g, b, a } (0-255) to OKLCH table { okl, okc, okh, a }
 -- okl is lightness in [0,1], okc is chroma (unbounded, typically 0-0.4), okh is hue in degrees [0,360).
 
-function gui.mtRGB.toOKLCH(Self):table
-   local lab = Self.toOKLab(Self)
+function gui.mtRGB.toOKLCH():table
+   local lab = &toOKLab()
    local c = math.sqrt(lab.oka * lab.oka + lab.okb * lab.okb)
    local h = math.deg(math.atan2(lab.okb, lab.oka))
    if h < 0 then h = h + 360 end
-   return setmetatable({ okl = lab.okl, okc = c, okh = h, a = Self.a },
-      { __tostring = (Self) => Self.a is 1 ?
-         string.format('oklch(%.3f %.3f %.3f)', Self.okl, Self.okc, Self.okh) :>
-         string.format('oklch(%.3f %.3f %.3f / %.3f)', Self.okl, Self.okc, Self.okh, Self.a)
+   return setmetatable({ okl = lab.okl, okc = c, okh = h, a = &a },
+      { __tostring = () => &a is 1 ?
+         string.format('oklch(%.3f %.3f %.3f)', &okl, &okc, &okh) :>
+         string.format('oklch(%.3f %.3f %.3f / %.3f)', &okl, &okc, &okh, &a)
       }
    )
 end
@@ -416,7 +418,7 @@ gui.rgbToIconTheme = function(Value:any!):str
       Value = gui.strToRGB(Value)
    end
 
-   return (Value.brightness(Value) > 0.5) ? 'pearl' :> 'carbon'
+   return (Value.brightness() > 0.5) ? 'pearl' :> 'carbon'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -674,7 +676,7 @@ function modifyAlpha(Colour:str!, Alpha:num!):str
    mVec.ReadPainter(nil, Colour, glPainter)
    nrgb = glPainter.Colour
    rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)
-   return tostring(rgb.withAlpha(rgb, Alpha))
+   return tostring(rgb.withAlpha(Alpha))
 end
 
 ----------------------------------------------------------------------------------------------------------------------

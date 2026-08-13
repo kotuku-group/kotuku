@@ -76,7 +76,7 @@ static_assert(FF__MAX <= BUILTIN_CALLABLE_CAPACITY);
 static_assert(FF__MAX - 1 <= std::numeric_limits<uint16_t>::max());
 static_assert(builtin_callable_index(BuiltinCallableID::Invalid) >= FF__MAX);
 #ifdef FFDEF_BFUNC_ABI
-static_assert(builtin_callable_abi_fingerprint() IS 0xf21b72756e7e6411ull,
+static_assert(builtin_callable_abi_fingerprint() IS 0xa354e0882106d06eull,
    "fast-function ordering changed: bump BCDUMP_VERSION and update the BC_BFUNC ABI fingerprint");
 #endif
 
@@ -85,3 +85,5 @@ union GCfunc;
 
 void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function);
 [[nodiscard]] GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept;
+void lj_builtin_set_context_independent(lua_State *L, BuiltinCallableID Id);
+[[nodiscard]] bool lj_builtin_context_independent(lua_State *L, const GCfunc *Function) noexcept;

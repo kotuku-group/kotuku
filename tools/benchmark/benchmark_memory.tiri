@@ -109,7 +109,7 @@ end
 
 @Test function MemoryTypedArrayAllocation()
    local checksum = 0
-   for i in {0 to 10} do
+   for i in {0 to 120} do
       -- Create typed integer arrays
       local int_arrays = array<array>
       for j in {0 to 50} do
@@ -137,7 +137,7 @@ end
 
 @Test function MemoryTypedArrayFilled()
    local checksum = 0
-   for i in {0 to 100} do
+   for i in {0 to 300} do
       local int_arrays = array<array>
       for j in {0 to 101} do
          int_arrays.push(array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
@@ -149,7 +149,7 @@ end
 
 @Test function MemoryUntypedArrayFilled()
    local checksum = 0
-   for i in {0 to 100} do
+   for i in {0 to 300} do
       local any_arrays = array<array>
       for j in {0 to 101} do
          any_arrays.push(array<any> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })

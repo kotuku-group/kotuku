@@ -524,6 +524,11 @@ static bool infer_results_from_statement(FunctionReturnTypes &Result, const Stmt
          if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
          break;
       }
+      case AstNodeKind::ContextStmt: {
+         const auto &payload = std::get<ContextStmtPayload>(Statement.data);
+         if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
+         break;
+      }
       case AstNodeKind::ConditionalShorthandStmt: {
          const auto &payload = std::get<ConditionalShorthandStmtPayload>(Statement.data);
          if (payload.body and infer_results_from_statement(Result, *payload.body, Function)) return true;
@@ -762,6 +767,11 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
       }
       case AstNodeKind::DoStmt: {
          const auto &payload = std::get<DoStmtPayload>(Statement.data);
+         if (payload.block) collect_from_block(Collection, *payload.block);
+         break;
+      }
+      case AstNodeKind::ContextStmt: {
+         const auto &payload = std::get<ContextStmtPayload>(Statement.data);
          if (payload.block) collect_from_block(Collection, *payload.block);
          break;
       }

@@ -50,6 +50,7 @@ struct StrInternState;
 
 class TipEmitter;
 struct ParserSymbolCollection;
+struct ContextDebugCounters;
 
 // Debug objects
 
@@ -121,6 +122,7 @@ enum class AstNodeKind : uint16_t {
    ReturnStmt,
    DeferStmt,
    DoStmt,
+   ContextStmt,
    ConditionalShorthandStmt,
    TryExceptStmt,  // try...except...end exception handling
    RaiseStmt,      // raise error_code [, message] or raise message
@@ -548,9 +550,10 @@ inline constexpr size_t PROTO_MAX_RETURN_TYPES = 8;
 // Prototype flags for function metadata
 
 enum class FProtoFlags : uint8_t {
-   None     = 0x00,
-   Variadic = 0x01,  // Function accepts variable arguments beyond listed params
-   NoNil    = 0x02   // All declared parameters are required (no nil values permitted)
+   None               = 0x00,
+   Variadic           = 0x01,  // Function accepts variable arguments beyond listed params
+   NoNil              = 0x02,  // All declared parameters are required (no nil values permitted)
+   ContextIndependent = 0x04   // Native callable cannot observe or re-enter dynamically scoped table context
 };
 
 inline constexpr FProtoFlags operator|(FProtoFlags a, FProtoFlags b) {
@@ -629,6 +632,12 @@ struct TryBlockDesc {
    uint8_t  handler_count;   // Number of except clauses for this try block
    uint8_t  entry_slots;     // Active slot count at try entry (first free register)
    uint8_t  flags;           // Bit 0 = TRY_FLAG_TRACE (capture stack trace on exception)
+};
+
+struct ProtoContextBlockDesc {
+   BCPOS begin_pc = 0;
+   BCPOS end_pc = 0;
+   BCREG entry_slots = 0;
 };
 
 // Flags for TryBlockDesc.flags
@@ -790,6 +799,8 @@ struct TryFrame {
    uint16_t  try_block_index;  // Index into GCproto::try_blocks
    uint8_t   flags;            // Copy of TryBlockDesc.flags (e.g. TRY_FLAG_TRACE)
    BCREG     saved_nactvar;    // Active slot count at try entry (first free register)
+   size_t    context_depth;     // Absolute context-stack depth at try entry
+   size_t    context_floor;     // Active asynchronous root floor at try entry
 };
 
 // Stack of try frames for exception unwinding
@@ -830,6 +841,8 @@ typedef struct GCproto {
    TryHandlerDesc *try_handlers;      // Array of handler descriptors (nullptr if none)
    uint16_t        try_block_count;   // Number of try blocks
    uint16_t        try_handler_count; // Number of handlers
+   ProtoContextBlockDesc *context_blocks; // Temporary context block descriptors
+   uint16_t        context_block_count;
    // Module dependency metadata.  'dependencies' is a colocated portable descriptor block containing canonical names
    // only; 'resolved_dependencies' is a separately allocated sidecar of non-owning pointers to the global registry's
    // callable records, built on first activation and freed with the prototype.
@@ -946,6 +959,8 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->try_handlers = nullptr;
    Proto->try_block_count = 0;
    Proto->try_handler_count = 0;
+   Proto->context_blocks = nullptr;
+   Proto->context_block_count = 0;
    setmref(Proto->dependencies, nullptr);
    Proto->resolved_dependencies = nullptr;
    Proto->resolved_count = 0;
@@ -1093,8 +1108,8 @@ inline constexpr uint32_t TAB_SPARSE_BIT = 1;       // Bit index, for backends t
 inline constexpr uint8_t  TAB_SPARSE = (uint8_t)(1u << TAB_SPARSE_BIT); // Ever used with non-sequence numerical keys
 inline constexpr uint32_t TAB_METHOD_COMPATIBLE_BIT = 2; // Bit index for explicit-receiver userdata metatables.
 inline constexpr uint8_t  TAB_METHOD_COMPATIBLE = (uint8_t)(1u << TAB_METHOD_COMPATIBLE_BIT);
-inline constexpr uint32_t TAB_CONTEXT_EXEMPT_BIT = 3; // Bit index for internal namespace tables.
-inline constexpr uint8_t  TAB_CONTEXT_EXEMPT = (uint8_t)(1u << TAB_CONTEXT_EXEMPT_BIT);
+inline constexpr uint32_t TAB_CONTEXTUAL_BIT = 3; // Bit index for permanently designated contextual tables.
+inline constexpr uint8_t  TAB_CONTEXTUAL = (uint8_t)(1u << TAB_CONTEXTUAL_BIT);
 
 // Either flag makes the sequence length meaningless, so '#' reports nil and sequence library functions refuse to
 // infer a boundary.  Backends test this composite mask in one operation.
@@ -1152,8 +1167,8 @@ static_assert((1u << TAB_ASSOCIATIVE_BIT) IS TAB_ASSOCIATIVE);
 static_assert((1u << TAB_SPARSE_BIT) IS TAB_SPARSE);
 static_assert((1u << TAB_METHOD_COMPATIBLE_BIT) IS TAB_METHOD_COMPATIBLE);
 static_assert((TAB_METHOD_COMPATIBLE & TAB_NOT_SEQUENCE) IS 0);
-static_assert((1u << TAB_CONTEXT_EXEMPT_BIT) IS TAB_CONTEXT_EXEMPT);
-static_assert((TAB_CONTEXT_EXEMPT & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) IS 0);
+static_assert((1u << TAB_CONTEXTUAL_BIT) IS TAB_CONTEXTUAL);
+static_assert((TAB_CONTEXTUAL & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) IS 0);
 
 // Table classification helpers.  Every interpreter, library and C API path publishes classification through these so
 // that the semantics stay aligned; the JIT recorder mirrors them with equivalent IR.
@@ -1168,15 +1183,30 @@ static_assert((TAB_CONTEXT_EXEMPT & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) 
    return (Table->flags & TAB_SPARSE) != 0;
 }
 
-// Internal namespace tables inherit their caller's context.  This flag is set once during library registration and
-// never cleared, so the interpreter and JIT can treat it as an invariant of the table identity.
+// Every table is ordinary by default; contextuality is a positive, opt-in capability of the table identity.  A
+// designated table establishes itself as the current context when one of its members is called.
+//
+// The flag is permanent for the lifetime of the table: table.clear(), metatable replacement, field removal and every
+// other ordinary mutation must leave it set.  That monotonicity is what lets the interpreter and JIT guard the bit
+// cheaply, and prevents behaviour from changing halfway through a call sequence.
 
-[[nodiscard]] inline bool lj_tab_is_context_exempt(const GCtab *Table) noexcept
+[[nodiscard]] inline bool lj_tab_is_contextual(const GCtab *Table) noexcept
 {
-   return (Table->flags & TAB_CONTEXT_EXEMPT) != 0;
+   return (Table->flags & TAB_CONTEXTUAL) != 0;
 }
 
-inline void lj_tab_mark_context_exempt(GCtab *Table) noexcept { Table->flags |= TAB_CONTEXT_EXEMPT; }
+// One-way designation.  Internal native creation paths and tests use this; there is no public API counterpart.
+
+inline void lj_tab_mark_contextual(GCtab *Table) noexcept { Table->flags |= TAB_CONTEXTUAL; }
+
+// Propagate contextuality from a declared structural source to a newly derived table, per the derived-table contract.
+// Multiple-source operations call this once per declared source, making inheritance an any-source rule.  Allocation
+// alone has no source, so this must never be folded into lj_tab_new() or lua_createtable().
+
+inline void lj_tab_inherit_contextual(GCtab *Destination, const GCtab *Source) noexcept
+{
+   if (Source and lj_tab_is_contextual(Source)) lj_tab_mark_contextual(Destination);
+}
 
 // True when the table's usage history remains inside the non-negative integral sequence domain.  This does not prove
 // that every index below the numerical boundary is currently populated: positive holes deliberately remain legal.
@@ -1625,8 +1655,12 @@ struct lua_State {
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
 
    struct ContextFrame {
+      enum class OwnerKind : uint8_t { Call, Block };
       GCRef table;                 // GC-visible context override owned by this state.
       ptrdiff_t owner_base = 0;    // Stack-relative activation base; survives stack relocation.
+      OwnerKind owner_kind = OwnerKind::Call;
+      uint16_t block_index = UINT16_MAX;
+      BCREG entry_slots = 0;
       bool tail_transfer = false;  // Recorded terminal returns must restore transferred frame ownership.
    };
 
@@ -1634,10 +1668,17 @@ struct lua_State {
    // table-only overrides; direct and non-table calls do not need an entry.
    std::vector<ContextFrame> context_stack;
    uint8_t context_active = 0; // Fast VM return gate; indicates a visible override above the active root floor.
+   ContextDebugCounters *context_debug_counters = nullptr; // Lazily allocated in Debug builds only.
 
    // An asynchronous root boundary hides, but does not remove, suspended overrides. Keeping them in context_stack
    // ensures that the collector continues to trace their tables while a callback runs and performs collection.
    std::vector<size_t> context_root_floors;
+
+   struct CloseFrameState {
+      ptrdiff_t owner_base = 0;
+      uint64_t armed_slots = 0;
+   };
+   std::vector<CloseFrameState> close_frames;
 
    struct SavedMultresFrame {
       ptrdiff_t frame_base = 0;

@@ -159,6 +159,7 @@ private:
    LocalBindingTable binding_table;
    ConstantEvaluator constant_evaluator;
    StaticCallableHandle current_callable = 0;
+   bool is_root_chunk = true;
 
    ParserResult<IrEmitUnit> emit_block(const BlockStmt& block, FuncScopeFlag flags = FuncScopeFlag::None);
    ParserResult<IrEmitUnit> emit_block_with_bindings(const BlockStmt& block, FuncScopeFlag flags, std::span<const BlockBinding> bindings);
@@ -186,6 +187,7 @@ private:
    ParserResult<IrEmitUnit> emit_import_entry(const ImportEntryPayload& entry);
    ParserResult<IrEmitUnit> emit_import_stmt(const ImportStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_with_stmt(const WithStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_context_stmt(const ContextStmtPayload& Payload);
    ParserResult<IrEmitUnit> emit_assignment_stmt(const AssignmentStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_plain_assignment(std::vector<PreparedAssignment> targets, const ExprNodeList& values);
    ParserResult<IrEmitUnit> emit_compound_assignment(AssignmentOperator op, PreparedAssignment target, const ExprNodeList& values);
