@@ -2,6 +2,7 @@
 // UPDATED: 2026-06-30 — `?!` guard falsey set now includes empty tables; described as empty collections.
 // CHANGED: 2026-07-30 — Documented error() Message type handling; non-string/non-exception values are discarded.
 // CHANGED: 2026-07-31 — Standardised exception terminology on raise and re-raise.
+// UPDATED: 2026-08-11 - Documented current-context restoration during unwinding (commit 798665547)
 
 [[ch-error-handling]]
 == Error Handling

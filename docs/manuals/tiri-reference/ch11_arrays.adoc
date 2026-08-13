@@ -10,6 +10,7 @@
 // UPDATED: 2026-08-02 - Cross-referenced member-specialised array type annotations (commit 31fd44072)
 // UPDATED: 2026-08-06 - The object element type is now spelled 'obj'; recorded the 'object' synonym retained by
 //                       array.new() and array.of() (commit ca06aefda)
+// UPDATED: 2026-08-11 - Array methods are called with '.' as built-in method calls (commit 7e6746950)
 
 [[ch-arrays]]
 == Arrays
@@ -74,7 +75,7 @@ The names below are the complete set accepted in an `array<pass:[...]>` declarat
 
 |`obj`
 |8
-|Kōtuku object reference (garbage-collected).  `arr:type()` reports the element type as `'object'`.
+|Kōtuku object reference (garbage-collected).  `arr.type()` reports the element type as `'object'`.
 
 |`array`
 |8
@@ -119,8 +120,8 @@ nums[0] = '4'           -- error: incompatible element type
 nums[0] = tonumber('4') -- 4
 
 names = array<string> { 'a' }
-names:push(42)          -- error: incompatible element type
-names:push(tostring(42))  -- '42'
+names.push(42)          -- error: incompatible element type
+names.push(tostring(42))  -- '42'
 ----
 
 [[sec-element-numeric-conversion]]
@@ -156,14 +157,14 @@ indexterm:[arrays, atomic mutation] Operations that write more than one element 
 [source,tiri]
 ----
 arr = array<int> { 10, 20, 30 }
-arr:push(40, {})   -- error: incompatible element type
+arr.push(40, {})   -- error: incompatible element type
 #arr               -- 3; arr is unchanged
 ----
 
 [discrete]
 ==== Type Inspection
 
-[.api]`name = arr:type()`
+[.api]`name = arr.type()`
 
 Returns the element type of the array as a string, e.g. 'char', 'float'.
 
@@ -179,7 +180,7 @@ array<struct<Vec>>:type()    -- 'struct'
 [discrete]
 ==== Read-Only Arrays
 
-[.api]`result = arr:readOnly()`
+[.api]`result = arr.readOnly()`
 
 Returns `true` if the array is read-only.  Read-only arrays are produced by Kōtuku API calls that expose internal buffers.  Mutation methods raise an error when called on a read-only array.
 
@@ -287,7 +288,7 @@ nums = array<int> { 1, 2 }
 nums ..= 3           -- append the element 3; nums = {1, 2, 3}
 ----
 
-TIP: A byte array assembled with `..=` is the most efficient way to build a large string buffer.  Each append mutates the array in place and reuses spare capacity, avoiding the repeated allocation and copying that building a string with `..` in a loop incurs.  Recover the finished string with `tostring(buf)` or `buf:getString()`, or pass the array directly to functions that support character arrays.
+TIP: A byte array assembled with `..=` is the most efficient way to build a large string buffer.  Each append mutates the array in place and reuses spare capacity, avoiding the repeated allocation and copying that building a string with `..` in a loop incurs.  Recover the finished string with `tostring(buf)` or `buf.getString()`, or pass the array directly to functions that support character arrays.
 
 [source,tiri]
 ----
@@ -344,7 +345,7 @@ A string argument creates a byte array initialised from the string's bytes:
 [source,tiri]
 ----
 arr = array.new('Hello')
-arr:type()     -- 'char'
+arr.type()     -- 'char'
 #arr           -- 5
 arr[0]         -- 72 (ASCII 'H')
 ----
@@ -383,11 +384,11 @@ arr[-1]   -- error: negative index
 [discrete]
 ==== first() and last()
 
-[.api]`value = arr:first()`
+[.api]`value = arr.first()`
 
 Returns the first element, or `nil` if the array is empty.
 
-[.api]`value = arr:last()`
+[.api]`value = arr.last()`
 
 Returns the last element, or `nil` if the array is empty.
 
@@ -440,7 +441,7 @@ end
 [discrete]
 ==== push()
 
-[.api]`length = arr:push(Value, pass:[...])`
+[.api]`length = arr.push(Value, pass:[...])`
 
 indexterm:[arrays, mutation] Appends one or more values to the end of the array.  Grows the array if necessary.  Returns the new length.  If called with no arguments, returns the current length without modification.
 
@@ -451,29 +452,29 @@ For byte arrays (`byte`, `char`), string arguments are also accepted: the bytes 
 [source,tiri]
 ----
 arr = array<int>
-arr:push(10)         -- returns 1
-arr:push(20, 30)     -- returns 3
+arr.push(10)         -- returns 1
+arr.push(20, 30)     -- returns 3
 
 buf = array<char>
-buf:push('Hello')     -- append 5 bytes; returns 5
-buf:push(32, 'World') -- append a space and 5 bytes; returns 11
+buf.push('Hello')     -- append 5 bytes; returns 5
+buf.push(32, 'World') -- append a space and 5 bytes; returns 11
 ----
 
 [discrete]
 ==== pop()
 
-[.api]`value = arr:pop([Count])`
+[.api]`value = arr.pop([Count])`
 
 Removes and returns elements from the end of the array.  If `Count` is omitted, removes one element.  If `Count` exceeds the array length, removes all elements.  Returns `nil` for each element beyond the array's content.
 
 [source,tiri]
 ----
 arr = array<int> { 10, 20, 30 }
-arr:pop()       -- returns 30; #arr is 2
-arr:pop()       -- returns 20; #arr is 1
+arr.pop()       -- returns 30; #arr is 2
+arr.pop()       -- returns 20; #arr is 1
 
 arr = array<int> { 1, 2, 3, 4, 5 }
-a, b = arr:pop(2)   -- a=5, b=4; #arr is 3
+a, b = arr.pop(2)   -- a=5, b=4; #arr is 3
 ----
 
 Returns `nil` on an empty array.
@@ -481,7 +482,7 @@ Returns `nil` on an empty array.
 [discrete]
 ==== insert()
 
-[.api]`length = arr:insert(Index, Value, pass:[...])`
+[.api]`length = arr.insert(Index, Value, pass:[...])`
 
 Inserts one or more values at `Index`, shifting subsequent elements to the right.  Returns the new length.  Raises an error if `Index` is negative or exceeds the current length.  If no values are provided, the array is unchanged.
 
@@ -490,29 +491,29 @@ Each value must satisfy <<sec-element-storage-contract>>.  All values are valida
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 5 }
-arr:insert(2, 3, 4)   -- arr = {1, 2, 3, 4, 5}
-arr:insert(0, 0)      -- arr = {0, 1, 2, 3, 4, 5}
+arr.insert(2, 3, 4)   -- arr = {1, 2, 3, 4, 5}
+arr.insert(0, 0)      -- arr = {0, 1, 2, 3, 4, 5}
 ----
 
 [discrete]
 ==== remove()
 
-[.api]`length = arr:remove(Index, [Count])`
+[.api]`length = arr.remove(Index, [Count])`
 
 Removes `Count` elements starting at `Index`, shifting subsequent elements to the left.  `Count` defaults to 1.  If `Count` exceeds the number of elements from `Index` to the end, removes all remaining elements from `Index`.  Returns the new length.  Raises an error if `Index` is negative, at or beyond the current length, or if `Count` is negative.
 
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 3, 4, 5 }
-arr:remove(2)       -- arr = {1, 2, 4, 5}
-arr:remove(1, 2)    -- arr = {1, 5}
+arr.remove(2)       -- arr = {1, 2, 4, 5}
+arr.remove(1, 2)    -- arr = {1, 5}
 ----
 
 [discrete]
 ==== fill()
 
-[.api]`arr:fill(Value, [Start, Count])` +
-[.api]`arr:fill(Value, Range)`
+[.api]`arr.fill(Value, [Start, Count])` +
+[.api]`arr.fill(Value, Range)`
 
 Sets elements to `Value`.  With no additional arguments, fills the entire array.  With `Start` and `Count`, fills `Count` elements beginning at `Start`.  With a range, fills the elements selected by the range (supports exclusive, inclusive, negative, and stepped ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
@@ -521,21 +522,21 @@ Sets elements to `Value`.  With no additional arguments, fills the entire array.
 [source,tiri]
 ----
 arr = array<int, 10>
-arr:fill(0)               -- zero-fill all elements
-arr:fill(99, 2, 3)        -- arr[2..4] = 99
-arr:fill(77, {2 into 5})  -- arr[2 into 5] = 77 (inclusive)
-arr:fill(33, range.new(0, 10, false, 2))   -- every 2nd element
+arr.fill(0)               -- zero-fill all elements
+arr.fill(99, 2, 3)        -- arr[2..4] = 99
+arr.fill(77, {2 into 5})  -- arr[2 into 5] = 77 (inclusive)
+arr.fill(33, range.new(0, 10, false, 2))   -- every 2nd element
 
 refs = array<table, 3>
-refs:fill({ id = 1 })     -- every element references the same table
-refs:fill(nil, 1, 2)      -- clears refs[1] and refs[2]
+refs.fill({ id = 1 })     -- every element references the same table
+refs.fill(nil, 1, 2)      -- clears refs[1] and refs[2]
 ----
 
 [discrete]
 ==== sort()
 
-[.api]`arr:sort([Descending])` +
-[.api]`arr:sort(ComparatorFn)`
+[.api]`arr.sort([Descending])` +
+[.api]`arr.sort(ComparatorFn)`
 
 Sorts the array in place.  The default order is ascending.  If `Descending` is `true`, sorts in descending order.  Supported for all numeric types, string arrays, and `any` arrays.
 
@@ -544,12 +545,12 @@ Alternatively, a comparator function can be provided.  The function receives two
 [source,tiri]
 ----
 arr = array<int> { 5, 3, 1, 4, 2 }
-arr:sort()        -- {1, 2, 3, 4, 5}
-arr:sort(true)    -- {5, 4, 3, 2, 1}
+arr.sort()        -- {1, 2, 3, 4, 5}
+arr.sort(true)    -- {5, 4, 3, 2, 1}
 
 -- Custom comparator: sort by absolute value
 nums = array<int> { -5, 3, -1, 4, -2 }
-nums:sort((a, b) => math.abs(a) < math.abs(b))
+nums.sort((a, b) => math.abs(a) < math.abs(b))
 
 -- Sort tables by a field
 people = array<table> {
@@ -557,41 +558,41 @@ people = array<table> {
    { name = 'Alice',   age = 28 },
    { name = 'Bob',     age = 31 }
 }
-people:sort((a, b) => a.age < b.age)  -- sorted by age ascending
+people.sort((a, b) => a.age < b.age)  -- sorted by age ascending
 ----
 
 [discrete]
 ==== reverse()
 
-[.api]`arr:reverse()`
+[.api]`arr.reverse()`
 
 Reverses the order of all elements in place.
 
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 3, 4, 5 }
-arr:reverse()   -- {5, 4, 3, 2, 1}
+arr.reverse()   -- {5, 4, 3, 2, 1}
 ----
 
 [discrete]
 ==== clear()
 
-[.api]`arr:clear()`
+[.api]`arr.clear()`
 
 Resets the array length to zero.  Storage capacity is preserved for reuse.
 
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 3 }
-arr:clear()
+arr.clear()
 #arr            -- 0
-arr:push(67)    -- reuses existing capacity
+arr.push(67)    -- reuses existing capacity
 ----
 
 [discrete]
 ==== resize()
 
-[.api]`arr:resize(NewSize)`
+[.api]`arr.resize(NewSize)`
 
 Changes the array length to `NewSize`.  When growing, new elements are zero-initialised (or `nil` for reference types).  When shrinking, excess elements are discarded.  Raises an error if `NewSize` is negative.
 
@@ -600,8 +601,8 @@ Changes the array length to `NewSize`.  When growing, new elements are zero-init
 [discrete]
 ==== find()
 
-[.api]`index = arr:find(Value, [Start])` +
-[.api]`index = arr:find(Value, Range)`
+[.api]`index = arr.find(Value, [Start])` +
+[.api]`index = arr.find(Value, Range)`
 
 indexterm:[arrays, searching] indexterm:[arrays, querying] Searches for `Value` and returns its zero-based index, or `nil` if not found.  With a numeric `Start`, the search begins at that index.  With a range, the search is restricted to the indices selected by the range (supports exclusive, inclusive, negative, stepped, and reverse ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
@@ -610,10 +611,10 @@ For `obj` arrays, `Value` can be an object or a numeric UID.
 [source,tiri]
 ----
 arr = array<int> { 10, 20, 30, 40, 50 }
-arr:find(30)           -- 2
-arr:find(30, 3)        -- nil (search starts at index 3)
-arr:find(30, {0 to 5}) -- 2
-arr:find(99)           -- nil
+arr.find(30)           -- 2
+arr.find(30, 3)        -- nil (search starts at index 3)
+arr.find(30, {0 to 5}) -- 2
+arr.find(99)           -- nil
 ----
 
 Reverse ranges search from higher to lower indices, finding the last occurrence first:
@@ -621,7 +622,7 @@ Reverse ranges search from higher to lower indices, finding the last occurrence 
 [source,tiri]
 ----
 arr = array<int> { 10, 20, 30, 20, 40 }
-arr:find(20, {4 into 0})   -- 3 (found searching backwards)
+arr.find(20, {4 into 0})   -- 3 (found searching backwards)
 ----
 
 [[sec-copying-and-slicing]]
@@ -629,7 +630,7 @@ arr:find(20, {4 into 0})   -- 3 (found searching backwards)
 [discrete]
 ==== clone()
 
-[.api]`copy = arr:clone()`
+[.api]`copy = arr.clone()`
 
 indexterm:[arrays, copying] indexterm:[arrays, slicing] Creates a new array with the same element type and a copy of all elements.  For reference types (tables, objects, arrays), the clone is shallow: the new array holds references to the same underlying objects.
 
@@ -638,25 +639,25 @@ A `struct` element type is not supported and raises an error.
 [discrete]
 ==== slice()
 
-[.api]`result = arr:slice(Range)`
+[.api]`result = arr.slice(Range)`
 
 Returns a new array containing the elements selected by `Range`.  The result has the same element type as the source.  Supports exclusive, inclusive, negative, reverse, and stepped ranges.  Out-of-bounds indices are clamped.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 [source,tiri]
 ----
 arr = array<int> { 0, 10, 20, 30, 40, 50 }
-arr:slice({1 to 4})       -- array<int> {10, 20, 30}
-arr:slice({-2 into -1})   -- array<int> {40, 50}  (inclusive)
-arr:slice({-2 to -1})     -- array<int> {40}      (exclusive)
-arr:slice({4 into 2})     -- array<int> {40, 30, 20} (reverse)
+arr.slice({1 to 4})       -- array<int> {10, 20, 30}
+arr.slice({-2 into -1})   -- array<int> {40, 50}  (inclusive)
+arr.slice({-2 to -1})     -- array<int> {40}      (exclusive)
+arr.slice({4 into 2})     -- array<int> {40, 30, 20} (reverse)
 
-arr:slice({0 to 6 by 2})   -- array<int> {0, 20, 40}
+arr.slice({0 to 6 by 2})   -- array<int> {0, 20, 40}
 ----
 
 [discrete]
 ==== copy()
 
-[.api]`arr:copy(Source, [DestIndex, SrcIndex, Count])`
+[.api]`arr.copy(Source, [DestIndex, SrcIndex, Count])`
 
 Copies data into the array from `Source`.  `Source` can be an array, a string (copied as bytes into a byte array), or a table.
 
@@ -675,31 +676,31 @@ CAUTION: An array source is matched on its element type alone.  For a `struct` e
 [source,tiri]
 ----
 dest = array<int, 6>
-dest:fill(0)
-dest:copy(array<int> { 100, 200, 300 }, 2, 0, 3)
+dest.fill(0)
+dest.copy(array<int> { 100, 200, 300 }, 2, 0, 3)
 -- dest = {0, 0, 100, 200, 300, 0}
 
-dest:copy({ 1.9, 2.1, 3.8 })
+dest.copy({ 1.9, 2.1, 3.8 })
 -- dest = {1, 2, 3, 200, 300, 0}
 
-dest:copy({ 8, {}, 9 })   -- error: incompatible element type; dest is unchanged
+dest.copy({ 8, {}, 9 })   -- error: incompatible element type; dest is unchanged
 
 buf = array<byte, 10>
-buf:copy('Hello')
-buf:getString(0, 5)   -- 'Hello'
+buf.copy('Hello')
+buf.getString(0, 5)   -- 'Hello'
 ----
 
 [discrete]
 ==== table()
 
-[.api]`t = arr:table()`
+[.api]`t = arr.table()`
 
 Converts the array to a table.  Each element becomes a sequential entry in the returned table.
 
 [source,tiri]
 ----
 arr = array<int> { 10, 20, 30 }
-t = arr:table()
+t = arr.table()
 t[0]   -- 10
 t[1]   -- 20
 ----
@@ -709,28 +710,28 @@ t[1]   -- 20
 
 These methods are available only on byte (`char`) arrays.
 
-[.api]`str = arr:getString([Start, Length])`
+[.api]`str = arr.getString([Start, Length])`
 
 Extracts a string from the byte array starting at `Start` (default: 0) with the specified `Length` (default: remaining bytes from `Start`).  Raises an error if the range exceeds the array bounds, or if `Start` or `Length` is negative.
 
-[.api]`count = arr:setString(String, [Start])`
+[.api]`count = arr.setString(String, [Start])`
 
 Copies the bytes of `String` into the array at `Start` (default: 0).  If the string extends beyond the array bounds, it is clamped.  Returns the number of bytes written.
 
 [source,tiri]
 ----
 arr = array.new('Hello World')
-arr:getString(0, 5)   -- 'Hello'
-arr:getString(6)      -- 'World'
+arr.getString(0, 5)   -- 'Hello'
+arr.getString(6)      -- 'World'
 
-arr:setString('Greet', 0)
-arr:getString(0, 5)   -- 'Greet'
+arr.setString('Greet', 0)
+arr.getString(0, 5)   -- 'Greet'
 ----
 
 [discrete]
 ==== concat()
 
-[.api]`str = arr:concat([Separator], [Format], [Start], [End])`
+[.api]`str = arr.concat([Separator], [Format], [Start], [End])`
 
 Concatenates array elements into a string.  `Separator` is inserted between each element (default: empty string).  `Format` is an optional C-style format specifier applied to each element (e.g. `'%d'`, `'%.2f'`, `'%s'`).  `Start` and `End` are optional zero-based, inclusive indexes that restrict the operation to a sub-range of the array.
 
@@ -743,17 +744,17 @@ An error is raised if `Start` or `End` is negative or beyond the array bounds.  
 [source,tiri]
 ----
 arr = array<string> { 'hello', 'world' }
-arr:concat(' ')          -- 'hello world'
-arr:concat()             -- 'helloworld'
+arr.concat(' ')          -- 'hello world'
+arr.concat()             -- 'helloworld'
 
 arr = array<int> { 1, 2, 3 }
-arr:concat('-')          -- '1-2-3'
+arr.concat('-')          -- '1-2-3'
 
 arr = array<int> { 10, 20, 30 }
-arr:concat(', ', '%d')   -- '10, 20, 30'
+arr.concat(', ', '%d')   -- '10, 20, 30'
 
 arr = array<float> { 1.5, 2.7 }
-arr:concat(' | ', '%.1f')   -- '1.5 | 2.7'
+arr.concat(' | ', '%.1f')   -- '1.5 | 2.7'
 ----
 
 Sub-range concatenation with `Start` and `End`:
@@ -761,10 +762,10 @@ Sub-range concatenation with `Start` and `End`:
 [source,tiri]
 ----
 arr = array<string> { 'a', 'b', 'c', 'd' }
-arr:concat(',', nil, 1, 2)   -- 'b,c'
+arr.concat(',', nil, 1, 2)   -- 'b,c'
 
 arr = array<int> { 1, 2, 3, 4 }
-arr:concat('-', '%02d', 1, 3)  -- '02-03-04'
+arr.concat('-', '%02d', 1, 3)  -- '02-03-04'
 ----
 
 [[sec-functional-methods]]
@@ -774,14 +775,14 @@ indexterm:[arrays, functional methods] All functional methods in this section ac
 [discrete]
 ==== each()
 
-[.api]`arr:each(Callback)`
+[.api]`arr.each(Callback)`
 
 Calls `Callback(Value, Index)` for every element.  Returns the array for chaining.
 
 [source,tiri]
 ----
 arr = array<int> { 10, 20, 30 }
-arr:each(function(v, i)
+arr.each(function(v, i)
    print(i, v)
 end)
 ----
@@ -789,7 +790,7 @@ end)
 [discrete]
 ==== map()
 
-[.api]`result = arr:map(Callback)`
+[.api]`result = arr.map(Callback)`
 
 Returns a new array where each element is the result of `Callback(Value, Index)`.  The original array is not modified.  The result array preserves the source element type, including the struct definition of a `struct` element type.
 
@@ -798,16 +799,16 @@ Each callback result must satisfy <<sec-element-storage-contract>> for that elem
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 3, 4, 5 }
-doubled = arr:map(v => v * 2)
+doubled = arr.map(v => v * 2)
 -- doubled = {2, 4, 6, 8, 10}
 
-arr:map(v => tostring(v))   -- error: incompatible element type
+arr.map(v => tostring(v))   -- error: incompatible element type
 ----
 
 [discrete]
 ==== filter()
 
-[.api]`result = arr:filter(Predicate)`
+[.api]`result = arr.filter(Predicate)`
 
 Returns a new array containing only the elements for which `Predicate(Value, Index)` returns a truthy value.  The original array is not modified.  The result declares the same element type as the source.
 
@@ -816,51 +817,51 @@ A `struct` element type is not supported, because the result array is created wi
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 3, 4, 5, 6 }
-evens = arr:filter(v => v % 2 is 0)
+evens = arr.filter(v => v % 2 is 0)
 -- evens = {2, 4, 6}
 ----
 
 [discrete]
 ==== reduce()
 
-[.api]`result = arr:reduce(Initial, Reducer)`
+[.api]`result = arr.reduce(Initial, Reducer)`
 
 Applies `Reducer(Accumulator, Value, Index)` to each element, threading the accumulator from left to right.  Returns the final accumulator.  If the array is empty, returns `Initial` unchanged.
 
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 3, 4, 5 }
-sum = arr:reduce(0, (acc, v) => acc + v)
+sum = arr.reduce(0, (acc, v) => acc + v)
 -- sum = 15
 
-product = arr:reduce(1, (acc, v) => acc * v)
+product = arr.reduce(1, (acc, v) => acc * v)
 -- product = 120
 ----
 
 [discrete]
 ==== any()
 
-[.api]`result = arr:any(Predicate)`
+[.api]`result = arr.any(Predicate)`
 
 Returns `true` if `Predicate(Value, Index)` returns a truthy value for at least one element.  Returns `false` on an empty array.
 
 [source,tiri]
 ----
 arr = array<int> { 1, 3, 5, 6, 7 }
-arr:any(v => v % 2 is 0)   -- true
+arr.any(v => v % 2 is 0)   -- true
 ----
 
 [discrete]
 ==== all()
 
-[.api]`result = arr:all(Predicate)`
+[.api]`result = arr.all(Predicate)`
 
 Returns `true` if `Predicate(Value, Index)` returns a truthy value for every element.  Returns `true` on an empty array (vacuous truth).
 
 [source,tiri]
 ----
 arr = array<int> { 2, 4, 6, 8 }
-arr:all(v => v % 2 is 0)   -- true
+arr.all(v => v % 2 is 0)   -- true
 ----
 
 [discrete]
@@ -872,10 +873,10 @@ Functional methods that return arrays can be chained:
 ----
 arr = array<int> { 1, 2, 3, 4, 5 }
 
-result = arr:map(v => v * 2):filter(v => v > 5)
+result = arr.map(v => v * 2).filter(v => v > 5)
 -- result = {6, 8, 10}
 
-sum = arr:filter(v => v % 2 is 0)
+sum = arr.filter(v => v % 2 is 0)
    :reduce(0, (acc, v) => acc + v)
 -- sum = 6
 ----

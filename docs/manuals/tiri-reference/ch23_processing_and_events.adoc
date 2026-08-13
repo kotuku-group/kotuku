@@ -2,6 +2,8 @@
 // CHANGED: 2026-07-31 — Replaced informal callouts and future-tense behaviour.
 // CHANGED: 2026-07-31 — Documented the 'defer' collection mode and the automatic collection policy (commit faa63c606).
 // UPDATED: 2026-08-06 - Renamed array<object> to array<obj>, the sole accepted source spelling (commit ca06aefda)
+// UPDATED: 2026-08-11 - Migrated method calls to dot syntax; replaced the removed array join() with concat() (commit 7e6746950)
+// UPDATED: 2026-08-11 - Callbacks entered from outside the script begin in the root context (commit 798665547)
 
 [[ch-processing-and-events]]
 == Processing & Events
@@ -75,7 +77,7 @@ win = gui.window({
    quit    = true
 })
 
-win:show()
+win.show()
 processing.sleep()
 ----
 
@@ -121,6 +123,25 @@ end)
 ----
 
 The scheduled function executes exactly once.  To schedule recurring work, call `processing.delayedCall()` again from within the callback.
+
+[[sec-callback-context]]
+==== Callback Context
+
+A callback entered from outside the script's own control flow begins in the root context (<<sec-the-root-context>>), whatever context was current when it was registered.  This applies to `processing.delayedCall()`, timer callbacks, and object subscriptions (<<sec-subscriptions>>).
+
+A callback that operates on a table captures it as an upvalue:
+
+[%unbreakable]
+[source,tiri]
+----
+monitor = { name = 'monitor', ready = false }
+
+function monitor.arm()
+   processing.delayedCall(function()
+      monitor.ready = true      -- '.ready' would resolve against _G here
+   end)
+end
+----
 
 ==== processing.task()
 
@@ -232,11 +253,11 @@ script = obj.new('script', {
    statement=[[ msg('Thread is now in session.') ]] <2>
 })
 
-script.setKey('Files', files:join(',')) <2>
+script.setKey('Files', files.concat(',')) <2>
 
 thread.script(script,
    function() <3>
-      files:each(function(Object:obj)
+      files.each(function(Object:obj)
          Object.acSignal()
       end)
    end)
@@ -424,7 +445,7 @@ end
 
 err, animTimer = mSys.SubscribeTimer(0.001, animate)
 
-window:show()
+window.show()
 processing.sleep()
 ----
 

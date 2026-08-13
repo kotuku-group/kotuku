@@ -3,6 +3,8 @@
 // CHANGED: 2026-07-29 — Added <<sec-finalisers-and-scope-cleanup>> to distinguish nondeterministic __gc finalisation from deterministic <close> and defer (commit 279cb0a7)
 // CHANGED: 2026-07-31 — Tightened deferred-parameter guidance.
 // UPDATED: 2026-08-06 - Removed 'boolean' from the deferred-expression type names, which now rejects it (commit 66ad8a7dc)
+// UPDATED: 2026-08-11 - Migrated method calls in the resource examples to dot syntax (commit 7e6746950)
+// UPDATED: 2026-08-11 - Documented the current context of a __close handler (commit 798665547)
 
 [[ch-resource-management]]
 == Resource Management
@@ -643,7 +645,7 @@ Scarce resources must therefore not depend on `pass:[__]gc` for release.  File h
 ----
 handle_mt = {
    __close = function(Self:table, Error)
-      Self.file:close()
+      Self.file.close()
    end
 }
 
@@ -652,7 +654,7 @@ do
    local resource <close> = setmetatable(
       { file = io.open('temp:data.txt', 'r') }, handle_mt
    )
-   process(resource.file:read('*a'))
+   process(resource.file.read('*a'))
 end
 ----
 
@@ -708,17 +710,17 @@ Use an upvalue flag to conditionally execute cleanup:
 [source,tiri]
 ----
 function perform_transaction(Operations:table)
-   txn = db:begin()
+   txn = db.begin()
    committed = false
    defer
       if not committed then
-         txn:rollback()
+         txn.rollback()
       end
    end
    for _, op in pairs(Operations) do
-      txn:execute(op)
+      txn.execute(op)
    end
-   txn:commit()
+   txn.commit()
    committed = true
 end
 ----
@@ -748,7 +750,7 @@ For cleanup that must survive error unwinding, use `<close>` variables:
 ----
 closeable_mt = {
    __close = function(self:table, err)
-      self.handle:release()
+      self.handle.release()
    end
 }
 

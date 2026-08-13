@@ -581,9 +581,9 @@ name = user?.name ?? 'Guest'
 result = value in container
 ----
 
-indexterm:[operators, membership] Returns `true` if `container` contains `value`; `false` otherwise.  The expression `a in b` is equivalent to `b:contains(a)`.
+indexterm:[operators, membership] Returns `true` if `container` contains `value`; `false` otherwise.  The expression `a in b` is equivalent to `b.contains(a)`.
 
-The `in` operator requires the right-hand operand to provide a `:contains()` method.  The built-in types that define this method are ranges, strings and arrays.  Any user-defined type with a compliant `:contains()` method supports `in`.  If the right-hand operand lacks a `:contains()` method, the runtime raises an error.
+The `in` operator requires the right-hand operand to provide a `contains()` method.  The built-in types that define this method are ranges, strings and arrays.  Any user-defined type with a compliant `contains()` method supports `in`.  If the right-hand operand lacks a `contains()` method, the runtime raises an error.
 
 [source,tiri]
 ----
@@ -657,7 +657,7 @@ result = 3 |> double() |> square()  -- square(double(3))
 [[sec-pipe-iteration]]
 ==== Pipe Iteration
 
-The pipe operator doubles as an iteration operator when the LHS is a range or array and the RHS is a bare function reference (not a function call with parentheses).  The compiler rewrites the expression to an `:each()` method call on the LHS, invoking the function once for each element.
+The pipe operator doubles as an iteration operator when the LHS is a range or array and the RHS is a bare function reference (not a function call with parentheses).  The compiler rewrites the expression to an `each()` method call on the LHS, invoking the function once for each element.
 
 ===== Distinguishing Transform from Iteration
 
@@ -668,8 +668,8 @@ The RHS syntax determines the pipe mode:
 |Syntax           |Mode       |Equivalent
 
 |`x \|> func()`   |Transform  |`func(x)`
-|`range \|> func` |Iteration  |`range:each(func)`
-|`array \|> func` |Iteration  |`array:each(func)`
+|`range \|> func` |Iteration  |`range.each(func)`
+|`array \|> func` |Iteration  |`array.each(func)`
 |===
 
 ===== Ranges
@@ -694,7 +694,7 @@ Return `false` from the callback to terminate iteration early:
 end
 ----
 
-For ranges stored in variables, use the `:each()` method directly: `r:each(func)`.
+For ranges stored in variables, use the `each()` method directly: `r.each(func)`.
 
 ===== Arrays
 
