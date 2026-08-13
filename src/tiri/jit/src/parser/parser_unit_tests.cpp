@@ -806,6 +806,40 @@ return sum
 
 //********************************************************************************************************************
 
+static bool test_current_context_range_operands(kt::Log &Log)
+{
+   constexpr std::array<std::string_view, 2> sources = {
+      "local upper = 8\nlocal values = {&& to upper}",
+      "local step = 2\nlocal values = {0 to && by step}"
+   };
+
+   for (std::string_view source : sources) {
+      auto result = build_ast_from_source(source, true);
+      if (not result.chunk.ok() or not result.diagnostics.empty()) {
+         Log.error("failed to parse current-context range operand");
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+
+      StatementListView statements = result.chunk.value_ref()->view();
+      if (statements.size() != 2 or statements[1].kind != AstNodeKind::LocalDeclStmt) {
+         Log.error("current-context range fixture did not produce the expected local declarations");
+         return false;
+      }
+
+      const auto *declaration = std::get_if<LocalDeclStmtPayload>(&statements[1].data);
+      if (not declaration or declaration->values.size() != 1 or
+          declaration->values[0]->kind != AstNodeKind::RangeExpr) {
+         Log.error("current-context operand was not classified as a range expression");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_deprecated_numeric_for_rejected(kt::Log &Log)
 {
    struct DeprecatedForCase {
@@ -8265,7 +8299,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 73> tests = { {
+   constexpr std::array<TestCase, 74> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8278,6 +8312,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "local_function_table_ast", test_local_function_table_ast },
       { "ast_statement_matrix", test_ast_statement_matrix },
       { "range_for_ast", test_range_for_ast },
+      { "current_context_range_operands", test_current_context_range_operands },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
