@@ -1339,7 +1339,7 @@ static bool rec_context_is_tail_call(jit_State *J, BCREG CallBase)
 static TRef rec_context_current(jit_State *J)
 {
    for (int32_t slot = int32_t(J->baseslot) - 1; slot >= 0; slot--) {
-      if (J->context_call_receiver[slot]) return J->context_call_receiver[slot];
+      if (J->context_call_state[slot] IS CONTEXT_CALL_VIRTUAL) return J->context_call_receiver[slot];
    }
    return lj_ir_call(J, IRCALL_lj_context_current_jit);
 }
@@ -4645,6 +4645,9 @@ void lj_record_ins(jit_State *J)
 
    case BC_CTXBEGIN:
       if (not tref_istab(ra)) lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      // Block activations are installed physically. Materialise any virtual call receivers first so current-context
+      // lookup observes the block before the enclosing receiver, matching interpreter stack order.
+      rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
       lj_ir_call(J, IRCALL_lj_context_begin_block_jit, ra, lj_ir_kint(J, int32_t(bc_d(*pc))),
          lj_ir_kint(J, int32_t(bc_a(*pc)) + 1));
       J->needsnap = 1;

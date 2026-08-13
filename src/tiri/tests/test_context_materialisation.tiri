@@ -176,3 +176,43 @@ end
    assert(counters.physicalContextEntries is counters.physicalContextLeaves,
       'Side-exit reconstruction should leave physical context ownership balanced')
 end
+
+@Test function ContextBlocksOverrideNestedVirtualReceivers()
+   if not reset_context_counters() then return end
+   local block = { name = 'block' }
+   local inner = entity {
+      name = 'inner',
+      read = function():str
+         local block_name = ''
+         using block do
+            block_name = &name
+         end
+         return block_name .. ':' .. &name
+      end
+   }
+   local outer = entity {
+      name = 'outer',
+      read = function():str
+         return inner.read() .. ':' .. &name
+      end
+   }
+
+   function workload():str
+      local result = ''
+      for _ in {0 to 300} do
+         result = outer.read()
+      end
+      return result
+   end
+
+   local result = workload()
+   assert(result is 'block:inner:outer',
+      f'A context block should override nested receivers and restore them in stack order, observed {result}')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0 and counters.maximumVirtualDepth >= 2,
+      'The nested context-block workload should compile with multiple virtual receivers')
+   assert(counters.materialisations.unsupportedBoundary > 0,
+      'A physical context block should materialise its virtual receiver prefix')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Context block materialisation should leave physical context ownership balanced')
+end
