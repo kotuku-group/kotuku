@@ -470,6 +470,11 @@ struct StatementChildCounter {
       return block_child_count(Payload.block);
    }
 
+   [[nodiscard]] inline size_t operator()(const ContextStmtPayload &Payload) const
+   {
+      return (Payload.reference ? 1 : 0) + block_child_count(Payload.block);
+   }
+
    [[nodiscard]] inline size_t operator()(const ConditionalShorthandStmtPayload &Payload) const
    {
       size_t total = Payload.condition ? 1 : 0;
@@ -557,6 +562,7 @@ GenericForStmtPayload::~GenericForStmtPayload() = default;
 ReturnStmtPayload::~ReturnStmtPayload() = default;
 DeferStmtPayload::~DeferStmtPayload() = default;
 DoStmtPayload::~DoStmtPayload() = default;
+ContextStmtPayload::~ContextStmtPayload() = default;
 ExpressionStmtPayload::~ExpressionStmtPayload() = default;
 ConditionalShorthandStmtPayload::~ConditionalShorthandStmtPayload() = default;
 ExceptClause::~ExceptClause() = default;

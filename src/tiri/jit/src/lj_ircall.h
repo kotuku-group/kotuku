@@ -246,6 +246,10 @@ typedef struct CCallInfo {
   /* Environment mutation boundary */ \
   _(ANY,        lj_env_check,      4, S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_env_check_override, 5, S, NIL, CCI_L|CCI_T) \
+  /* Permanent contextual table designation */ \
+  _(ANY,        lj_tab_mark_contextual_jit, 1, S, NIL, 0) \
+  _(ANY,        lj_context_begin_block_jit, 4, S, NIL, CCI_L) \
+  _(ANY,        lj_context_end_block_jit,   2, S, NIL, CCI_L) \
   \
   // End of list.
 
@@ -278,6 +282,12 @@ LJ_DATA const CCallInfo lj_ir_callinfo[IRCALL__MAX+1];
 // Try-except exception handling runtime functions
 extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t TryBlockIndex);
 extern "C" void lj_try_leave(lua_State *L);
+
+// Permanent contextual designation of a recorded table (see lj_state.cpp).
+extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept;
+extern "C" void lj_context_begin_block_jit(
+   lua_State *L, GCtab *Table, uint32_t BlockIndex, uint32_t EntrySlots);
+extern "C" void lj_context_end_block_jit(lua_State *L, uint32_t BlockIndex) noexcept;
 
 // Environment mutation boundary (see lj_meta.cpp).
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value);

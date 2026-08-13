@@ -246,6 +246,10 @@ extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t 
    try_frame->saved_nactvar   = BCREG(block_desc->entry_slots);
    try_frame->func            = Func;
    try_frame->flags           = block_desc->flags;
+   try_frame->context_depth   = L->context_stack.size();
+   try_frame->context_floor   = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   lj_assertL(try_frame->context_depth >= try_frame->context_floor,
+      "try context depth is below the active asynchronous root floor");
 }
 
 //********************************************************************************************************************

@@ -1105,6 +1105,14 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
          break;
       }
+      case AstNodeKind::ContextStmt: {
+         auto *payload = std::get_if<ContextStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->reference) this->lower_unanalysed_expression(*payload->reference);
+            if (payload->block) this->lower_unanalysed_block(*payload->block);
+         }
+         break;
+      }
       case AstNodeKind::ConditionalShorthandStmt: {
          auto *payload = std::get_if<ConditionalShorthandStmtPayload>(&Statement.data);
          if (payload) {
@@ -1328,6 +1336,18 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
             this->push_scope();
             this->analyse_block(*payload->block);
             this->pop_scope();
+         }
+         break;
+      }
+      case AstNodeKind::ContextStmt: {
+         auto *payload = std::get_if<ContextStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->reference) this->analyse_expression(*payload->reference);
+            if (payload->block) {
+               this->push_scope();
+               this->analyse_block(*payload->block);
+               this->pop_scope();
+            }
          }
          break;
       }
@@ -3502,6 +3522,11 @@ bool TypeAnalyser::body_has_return_values(const BlockStmt& Block) const
             if (payload and payload->block and this->body_has_return_values(*payload->block)) return true;
             break;
          }
+         case AstNodeKind::ContextStmt: {
+            auto *payload = std::get_if<ContextStmtPayload>(&stmt->data);
+            if (payload and payload->block and this->body_has_return_values(*payload->block)) return true;
+            break;
+         }
          default:
             break;
       }
@@ -3610,6 +3635,14 @@ bool TypeAnalyser::statement_contains_call_to(const StmtNode& Stmt, GCstr *Name)
       case AstNodeKind::DoStmt: {
          auto *payload = std::get_if<DoStmtPayload>(&Stmt.data);
          if (payload and payload->block) return this->body_contains_call_to(*payload->block, Name);
+         break;
+      }
+      case AstNodeKind::ContextStmt: {
+         auto *payload = std::get_if<ContextStmtPayload>(&Stmt.data);
+         if (payload) {
+            if (payload->reference and this->expression_contains_call_to(*payload->reference, Name)) return true;
+            if (payload->block and this->body_contains_call_to(*payload->block, Name)) return true;
+         }
          break;
       }
       default:

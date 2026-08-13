@@ -86,7 +86,7 @@ struct TokenDefinition {
    TOKEN_DEF(await,        "await",    TKF_RESERVED) \
    TOKEN_DEF(finally,      "finally",  TKF_RESERVED) \
    TOKEN_DEF(yield,        "yield",    TKF_RESERVED) \
-   TOKEN_DEF(using,        "using",    TKF_RESERVED) \
+   TOKEN_DEF(using,        "using",    TKF_RESERVED | TKF_STATEMENT_START) \
    TOKEN_DEF(where,        "where",    TKF_RESERVED) \
    TOKEN_DEF(case_arrow,   "->",       TKF_NONE) \
    TOKEN_DEF(if_empty,     "??",       TKF_NONE) \

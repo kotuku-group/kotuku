@@ -229,6 +229,7 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
 
    -- Calibration is deliberately excluded from the reported benchmark rate and memory figures.
 
+   processing.collect()
    local post_calibration_mem = mSys.GetResource(RES_MEMORY_USAGE)
    benchmarkStartTime         = mSys.PreciseTime()
    results.initialMemory      = post_calibration_mem

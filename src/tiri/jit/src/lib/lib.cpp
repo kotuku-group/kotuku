@@ -108,9 +108,8 @@ void lj_lib_register(lua_State *L, const char* libname, const uint8_t* p, const 
    lj_gc_anybarriert(L, tab);
    tab->nomm = 0;
 
-   // Internal namespaces are implementation interfaces rather than client tables.  Calls through them inherit the
-   // caller's context; _G remains the permanent root context.
-   if (not libname or strcmp(libname, "_G") != 0) lj_tab_mark_context_exempt(tab);
+   // Internal namespaces need no exemption metadata: ordinary is the default, so calls through them already inherit
+   // the caller's context.  _G remains the permanent root context through the environment sentinel.
 
    for (;;) {
       uint32_t tag = *p++;

@@ -35,12 +35,14 @@ LJ_FUNC void lj_state_free(global_State* g, lua_State* L);
 
 // State-local table context.  The root is represented by an empty override stack and always resolves through L->env.
 
-// Client tables establish context.  Internal library namespaces are permanent implementation interfaces and inherit
-// the caller's context instead.  The interpreter and recorder share this predicate to keep their behaviour aligned.
+// Only a table permanently designated contextual establishes context.  Ordinary tables - including script namespaces,
+// benchmark harnesses, callback registries and internal library namespaces - inherit the caller's context instead,
+// because ordinary is the default and requires no exemption metadata.  The interpreter and recorder share this
+// predicate to keep their behaviour aligned.
 
 [[nodiscard]] inline bool lj_context_receiver_establishes(const TValue *Receiver) noexcept
 {
-   return tvistab(Receiver) and not lj_tab_is_context_exempt(tabV(Receiver));
+   return tvistab(Receiver) and lj_tab_is_contextual(tabV(Receiver));
 }
 
 LJ_FUNC [[nodiscard]] GCtab * lj_context_current(lua_State *L) noexcept;
@@ -50,6 +52,16 @@ extern "C" LJ_FUNC void lj_context_enter_jit(lua_State *L, GCtab *Table, TValue 
 extern "C" LJ_FUNC void lj_context_leave_jit(lua_State *L, TValue *OwnerBase) noexcept;
 extern "C" LJ_FUNC void lj_context_tail_jit(
    lua_State *L, GCtab *Table, TValue *PreparedOwner, TValue *OutgoingOwner);
+extern "C" LJ_FUNC void lj_tab_designate_contextual(lua_State *L, uint32_t Slot);
+extern "C" LJ_FUNC void lj_context_begin_block(lua_State *L, uint32_t Slot, uint32_t BlockIndex);
+extern "C" LJ_FUNC void lj_context_end_block(lua_State *L, uint32_t BlockIndex) noexcept;
+extern "C" LJ_FUNC void lj_context_begin_block_jit(
+   lua_State *L, GCtab *Table, uint32_t BlockIndex, uint32_t EntrySlots);
+extern "C" LJ_FUNC void lj_context_end_block_jit(lua_State *L, uint32_t BlockIndex) noexcept;
+extern "C" LJ_FUNC void lj_close_arm(lua_State *L, uint32_t Slot);
+extern "C" LJ_FUNC void lj_close_consume(lua_State *L, uint32_t Slot);
+LJ_FUNC uint64_t lj_close_take_armed(
+   lua_State *L, const TValue *OwnerBase, uint32_t LowerSlot, uint32_t UpperSlot) noexcept;
 extern "C" LJ_FUNC void lj_context_enter_call(lua_State *L, uint32_t CallBase);
 extern "C" LJ_FUNC uint32_t lj_context_prepare_call(lua_State *L, uint32_t CallBase, uint32_t ArgumentCount);
 extern "C" LJ_FUNC void lj_context_leave_call(
@@ -63,6 +75,7 @@ extern "C" LJ_FUNC uint32_t lj_context_leave_frame(
 extern "C" LJ_FUNC uint32_t lj_context_leave_native_frame(
    lua_State *L, TValue *FrameBase, uint32_t ReturnState) noexcept;
 LJ_FUNC void lj_context_unwind(lua_State *L, const TValue *SurvivingBase) noexcept;
+LJ_FUNC void lj_context_restore_depth(lua_State *L, size_t Depth) noexcept;
 LJ_FUNC [[nodiscard]] size_t lj_context_depth(const lua_State *L) noexcept;
 
 // Asynchronous callbacks are deliberately unbound.  Temporarily expose the dynamic root while retaining suspended

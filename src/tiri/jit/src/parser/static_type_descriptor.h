@@ -49,6 +49,16 @@ struct ArrayElementDescriptor {
 [[nodiscard]] ArrayElementDescriptor describe_array_element(const GCarray *) noexcept;
 [[nodiscard]] std::string array_element_name(const ArrayElementDescriptor &);
 
+// Whether a table value is known to establish context when one of its members is called.  `Unknown` is the sound
+// classification wherever the analysed function cannot see every designation of the table, because a designation
+// performed elsewhere must not invalidate an assumption already baked into emitted code.
+
+enum class StaticContextuality : uint8_t {
+   Unknown,
+   Ordinary,
+   Contextual
+};
+
 struct StaticValueDescriptor {
    TiriType primary = TiriType::Unknown;
    CLASSID object_class_id = CLASSID::NIL;
@@ -56,6 +66,7 @@ struct StaticValueDescriptor {
    StaticModuleHandle module = nullptr;
    ArrayElementDescriptor array_element{};
    StaticProof proof = StaticProof::Advisory;
+   StaticContextuality contextuality = StaticContextuality::Unknown;
    bool nullable = false;
 
    [[nodiscard]] bool operator==(const StaticValueDescriptor &) const = default;

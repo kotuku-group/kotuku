@@ -90,6 +90,7 @@ struct FuncState {
    // These are populated during emit_try_except_stmt and copied to GCproto during fs_finish.
    std::vector<TryBlockDesc>   try_blocks;    // Try block descriptors
    std::vector<TryHandlerDesc> try_handlers;  // Handler descriptors
+   std::vector<ProtoContextBlockDesc> context_blocks;
    uint8_t try_depth = 0;  // Current try nesting depth for break/continue cleanup
    bool is_root = false;   // True if this is the top-level (root) function
 

@@ -761,7 +761,7 @@ The process-wide ownership, publication and lock contract is documented in
 
 `CTXGET` is appended to the opcode set so existing opcode numbers remain stable. An empty physical context stack is
 the permanent root sentinel and resolves dynamically through `L->env`; consequently a supported environment
-replacement is visible to the next `CTXGET`. Leading-dot access lowers to `CTXGET` followed by ordinary `TGET*` or
+replacement is visible to the next `CTXGET`.  `&name` current-context access lowers to `CTXGET` followed by ordinary `TGET*` or
 `TSET*` operations. Root writes therefore cross the same marked-environment mutation boundary as `_G` writes and
 cannot bypass protected-global, const or sticky-type contracts.
 

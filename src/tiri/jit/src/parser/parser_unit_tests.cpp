@@ -44,6 +44,7 @@
 #include "type_checker.h"
 #include "parser.h"
 #include "static_descriptor_analysis.h"
+#include "table_ownership.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
@@ -1557,7 +1558,7 @@ static bool test_unmatched_context_entry_rejected(kt::Log &Log)
    LuaStateHolder state;
    lua_State *lua = state.get();
    constexpr std::string_view source =
-      "local receiver = { name='receiver', read=function():str return .name end }\n"
+      "local receiver = entity { name='receiver', read=function():str return &name end }\n"
       "local value = receiver.read()\n"
       "return value\n";
    if (lua_load(lua, source, "unmatched-context-entry")) {
@@ -3822,10 +3823,10 @@ return value * 3
 static bool test_contextual_member_ast_foundations(kt::Log &Log)
 {
    constexpr std::string_view source =
-      ".value = 1\n"
-      ".value += 2\n"
-      "local read = .child.name\n"
-      ".refresh(3, 4)\n"
+      "&value = 1\n"
+      "&value += 2\n"
+      "local read = &child.name\n"
+      "&refresh(3, 4)\n"
       "receiver.member(5)\n"
       "receiver[key](6)\n"
       "receiver?.member(7);\n"
@@ -3848,7 +3849,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       const auto *member = assignment and not assignment->targets.empty() ?
          std::get_if<MemberExprPayload>(&assignment->targets.front()->data) : nullptr;
       if (not member or not member->table or member->table->kind != AstNodeKind::CurrentContextExpr) {
-         Log.error("leading-dot assignment did not retain an explicit current-context receiver");
+         Log.error("ampersand-prefixed assignment did not retain an explicit current-context receiver");
          return false;
       }
       if (infer_expression_type(*member->table) != TiriType::Table) {
@@ -3861,7 +3862,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
    const auto &first_member = std::get<MemberExprPayload>(first_assignment.targets.front()->data);
    if (first_member.table->span.line != first_member.member.span.line or
        first_member.table->span.offset >= first_member.member.span.offset) {
-      Log.error("leading-dot access did not retain distinct context and member source spans");
+      Log.error("ampersand-prefixed access did not retain distinct context and member source spans");
       return false;
    }
 
@@ -3871,7 +3872,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       std::get_if<MemberExprPayload>(&outer_member->table->data) : nullptr;
    if (not inner_member or not inner_member->table or
        inner_member->table->kind != AstNodeKind::CurrentContextExpr) {
-      Log.error("chained leading-dot access lost its current-context root");
+      Log.error("chained context access lost its current-context root");
       return false;
    }
 
@@ -3927,8 +3928,8 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
 
    constexpr std::string_view multiline_source =
       "receiver.member()\n"
-      "   .next()\n"
-      ".contextual()\n";
+      ".next()\n"
+      "&contextual()\n";
    auto multiline = build_ast_from_source(multiline_source, false, false);
    if (not multiline.chunk.ok() or multiline.chunk.value_ref()->statements.size() != 2) {
       Log.error("multi-line member chain was split into contextual statements");
@@ -3945,7 +3946,7 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       std::get_if<MemberExprPayload>(&multiline_target->callable->data) : nullptr;
    if (not multiline_member or not multiline_member->table or
        multiline_member->table->kind != AstNodeKind::CallExpr) {
-      Log.error("indented multi-line member suffix did not retain the preceding call as its receiver");
+      Log.error("multi-line member suffix did not retain the preceding call as its receiver");
       return false;
    }
 
@@ -3958,7 +3959,13 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       std::get_if<MemberExprPayload>(&contextual_target->callable->data) : nullptr;
    if (not contextual_member or not contextual_member->table or
        contextual_member->table->kind != AstNodeKind::CurrentContextExpr) {
-      Log.error("same-indent leading dot did not remain a contextual statement after a multi-line chain");
+      Log.error("ampersand-prefixed access did not start a contextual statement after a multi-line chain");
+      return false;
+   }
+
+   auto multiline_bitwise = build_ast_from_source("local value = 7\n   & 3\n", false, false);
+   if (not multiline_bitwise.chunk.ok() or multiline_bitwise.chunk.value_ref()->statements.size() != 1) {
+      Log.error("a spaced ampersand did not remain available for multi-line bitwise-AND continuation");
       return false;
    }
 
@@ -3968,23 +3975,30 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
       return false;
    }
 
-   constexpr std::array<std::string_view, 2> invalid_context_sources = {
-      "local value = .\n",
-      "local value = .(123)\n"
+   constexpr std::array<std::string_view, 3> invalid_context_sources = {
+      "local value = &\n",
+      "local value = &(123)\n",
+      "local value = & member\n"
    };
    for (std::string_view invalid_source : invalid_context_sources) {
       auto invalid = build_ast_from_source(invalid_source, false, false);
-      bool found_leading_dot_diagnostic = false;
+      bool found_context_diagnostic = false;
       for (const ParserDiagnostic &diagnostic : invalid.diagnostics) {
          if (diagnostic.code IS ParserErrorCode::ExpectedIdentifier and
-             diagnostic.message.find("leading '.' context access") != std::string::npos) {
-            found_leading_dot_diagnostic = true;
+             diagnostic.message.find("'&' context access") != std::string::npos) {
+            found_context_diagnostic = true;
          }
       }
-      if (not found_leading_dot_diagnostic) {
-         Log.error("invalid leading-dot access did not produce its targeted diagnostic");
+      if (not found_context_diagnostic) {
+         Log.error("invalid ampersand-prefixed access did not produce its targeted diagnostic");
          return false;
       }
+   }
+
+   auto legacy_context = build_ast_from_source(".value = 1\n", false, false);
+   if (legacy_context.diagnostics.empty()) {
+      Log.error("leading-dot context access remained accepted after the prefix change");
+      return false;
    }
 
    constexpr std::array<std::string_view, 2> legacy_sources = {
@@ -5532,8 +5546,10 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
       "local body = { values={} }\nbody.values.insert(1)\nreturn body.values[0]\n", true, error);
    const BCIns *dynamic_dispatch = dynamic ? find_opcode(*dynamic, BC_BMETH) : nullptr;
    if (not dynamic or not dynamic_dispatch or count_opcode(*dynamic, BC_BMETH) != 1 or
-       count_opcode(*dynamic, BC_CALL) != 2 or count_opcode(*dynamic, BC_JMP) != 1 or
-       count_opcode(*dynamic, BC_BFUNC) != 0 or bc_j(*dynamic_dispatch) <= 0) {
+       count_opcode(*dynamic, BC_CALL) != 1 or count_opcode(*dynamic, BC_CTXCALL) != 1 or
+       count_opcode(*dynamic, BC_CTXENTER) != 1 or count_opcode(*dynamic, BC_CTXLEAVE) != 1 or
+       count_opcode(*dynamic, BC_JMP) != 1 or count_opcode(*dynamic, BC_BFUNC) != 0 or
+       bc_j(*dynamic_dispatch) <= 0) {
       Log.error("unproved dot call did not emit the two-branch runtime method shape: %s", error.c_str());
       return false;
    }
@@ -5542,16 +5558,19 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto userdata = compile_snapshot(L,
       "local function use(Handle:userdata)\nHandle.write('x')\nHandle.close()\nend\n", true, error);
    if (not userdata or count_opcode_tree(*userdata, BC_BMETH) != 2 or
-       count_opcode_tree(*userdata, BC_CALL) != 4) {
+       count_opcode_tree(*userdata, BC_CALL) != 4 or count_opcode_tree(*userdata, BC_CTXCALL) != 0 or
+       count_opcode_tree(*userdata, BC_CTXENTER) != 0 or count_opcode_tree(*userdata, BC_CTXLEAVE) != 0) {
       Log.error("proved userdata calls did not emit runtime method dispatch: %s", error.c_str());
       return false;
    }
 
    error.clear();
    auto dynamic_tail = compile_snapshot(L,
-      "local Values:any = {}\nreturn Values.insert(1)\n", true, error);
+      "local Values:any = {}\nlocal function forward():<any, ...> return Values.insert(1) end\nreturn forward()\n",
+      true, error);
    if (not dynamic_tail or count_opcode_tree(*dynamic_tail, BC_BMETH) != 1 or
-       count_opcode_tree(*dynamic_tail, BC_CALLT) != 2) {
+       count_opcode_tree(*dynamic_tail, BC_CALLT) != 2 or count_opcode_tree(*dynamic_tail, BC_CTXCALLT) != 1 or
+       count_opcode_tree(*dynamic_tail, BC_CTXENTER) != 1) {
       Log.error("runtime built-in method tail branches did not both use CALLT: %s", error.c_str());
       return false;
    }
@@ -5560,7 +5579,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_forwarded = compile_snapshot(L,
       "local function item():num return 2 end\nlocal Values:any = {}\nValues.insert(item())\n", true, error);
    if (not dynamic_forwarded or count_opcode(*dynamic_forwarded, BC_BMETH) != 1 or
-       count_opcode(*dynamic_forwarded, BC_CALLM) != 2) {
+       count_opcode(*dynamic_forwarded, BC_CALLM) != 1 or
+       count_opcode(*dynamic_forwarded, BC_CTXCALLM) != 1) {
       Log.error("runtime built-in method argument forwarding lost either CALLM branch: %s", error.c_str());
       return false;
    }
@@ -5569,16 +5589,18 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_thunk = compile_snapshot(L,
       "local Values:any = {}\nValues.insert(thunk():num return 1 end)\n", true, error);
    if (not dynamic_thunk or count_opcode(*dynamic_thunk, BC_BMETH) != 1 or
-       count_opcode(*dynamic_thunk, BC_CALL) != 2) {
+       count_opcode(*dynamic_thunk, BC_CALL) != 2 or count_opcode(*dynamic_thunk, BC_CALLM) != 1 or
+       count_opcode(*dynamic_thunk, BC_CTXCALLM) != 1) {
       Log.error("runtime built-in method could not emit a thunk argument for both branches: %s", error.c_str());
       return false;
    }
 
    error.clear();
    auto dynamic_safe = compile_snapshot(L,
-      "local maybe:any = nil\nmaybe?.insert(1)\nreturn maybe\n", true, error);
-   if (not dynamic_safe or count_opcode(*dynamic_safe, BC_BMETH) != 1 or
-       count_opcode(*dynamic_safe, BC_ISEQP) != 2 or count_opcode(*dynamic_safe, BC_CALL) != 2) {
+      "local function use(Maybe:any) Maybe?.insert(1) end\n", true, error);
+   if (not dynamic_safe or count_opcode_tree(*dynamic_safe, BC_BMETH) != 1 or
+       count_opcode_tree(*dynamic_safe, BC_ISEQP) != 2 or count_opcode_tree(*dynamic_safe, BC_CALL) != 1 or
+       count_opcode_tree(*dynamic_safe, BC_CTXCALL) != 1) {
       Log.error("unproved safe dot call lost runtime dispatch or nil short-circuiting: %s", error.c_str());
       return false;
    }
@@ -5587,7 +5609,8 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    auto dynamic_pipe = compile_snapshot(L,
       "local body = { values={} }\n1 |> body.values.insert()\nreturn body.values[0]\n", true, error);
    if (not dynamic_pipe or count_opcode(*dynamic_pipe, BC_BMETH) != 1 or
-       count_opcode(*dynamic_pipe, BC_CALL) != 2) {
+       count_opcode(*dynamic_pipe, BC_CALL) != 1 or count_opcode(*dynamic_pipe, BC_CTXCALL) != 1 or
+       count_opcode(*dynamic_pipe, BC_CTXENTER) != 1 or count_opcode(*dynamic_pipe, BC_CTXLEAVE) != 1) {
       Log.error("unproved piped dot call did not emit both runtime call frames: %s", error.c_str());
       return false;
    }
@@ -5619,6 +5642,94 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
       return false;
    }
 
+   return true;
+}
+
+// Phase 4 of the opt-in table context plan: specialise member-call bytecode from positive table contextuality.
+
+static bool test_contextual_call_specialisation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   lua_protect_globals(L);
+   std::string error;
+
+   auto ordinary = compile_snapshot(L,
+      "local target = { run = function():num return 1 end }\ntarget.run()\n", true, error);
+   if (not ordinary or count_opcode(*ordinary, BC_CALL) != 1 or count_opcode(*ordinary, BC_CTXENTER) != 0 or
+       count_opcode(*ordinary, BC_CTXCALL) != 0 or count_opcode(*ordinary, BC_CTXLEAVE) != 0) {
+      Log.error("a known ordinary table call retained contextual bytecode: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto contextual = compile_snapshot(L,
+      "local target = entity { run = function():num return 1 end }\ntarget.run()\n", true, error);
+   if (not contextual or count_opcode(*contextual, BC_CTXENTER) != 1 or
+       count_opcode(*contextual, BC_CTXCALL) != 1 or count_opcode(*contextual, BC_CTXLEAVE) != 1) {
+      Log.error("a known contextual table call lost contextual bytecode: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto unknown = compile_snapshot(L,
+      "local function invoke(Target:any) Target.run() end\n", true, error);
+   if (not unknown or count_opcode_tree(*unknown, BC_CTXENTER) != 1 or
+       count_opcode_tree(*unknown, BC_CTXCALL) != 1 or count_opcode_tree(*unknown, BC_CTXLEAVE) != 1) {
+      Log.error("an unknown receiver lost its runtime contextual gate: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto derived = compile_snapshot(L,
+      "local source = entity { 1 }\n"
+      "local sliced = range.slice(source, {0 to 1})\n"
+      "sliced.run = function():num return 1 end\nsliced.run()\n", true, error);
+   if (not derived or count_opcode(*derived, BC_CTXENTER) != 2 or
+       count_opcode(*derived, BC_CTXCALL) != 2 or count_opcode(*derived, BC_CTXLEAVE) != 2) {
+      Log.error("a statically derived contextual table lost contextual call lowering: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto designated = compile_snapshot(L,
+      "local mt = { __context = true }\n"
+      "local target = setmetatable({ run = function():num return 1 end }, mt)\n"
+      "target.run()\n", true, error);
+   if (not designated or count_opcode(*designated, BC_CTXENTER) != 1 or
+       count_opcode(*designated, BC_CTXCALL) != 1 or count_opcode(*designated, BC_CTXLEAVE) != 1) {
+      Log.error("a statically designated setmetatable result lost contextual call lowering: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_contextual_tail_call_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   luaL_openlibs(lua);
+   std::string error;
+   constexpr std::string_view target =
+      "local target = entity { run = function():num return 1 end }\n";
+
+   auto root = compile_snapshot(lua, std::string(target) + "return target.run()\n", true, error);
+   if (not root or count_opcode(*root, BC_CTXCALLT) != 0 or count_opcode(*root, BC_CTXCALL) != 1 or
+       count_opcode(*root, BC_CTXLEAVE) != 1) {
+      Log.error("root contextual return transferred ownership outside a callable frame: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto nested = compile_snapshot(lua, std::string(target) +
+      "local function forward():<any, ...> return target.run() end\nreturn forward()\n", true, error);
+   if (not nested or count_opcode_tree(*nested, BC_CTXCALLT) != 1 or
+       count_opcode_tree(*nested, BC_CTXCALL) != 0 or count_opcode_tree(*nested, BC_CTXLEAVE) != 0) {
+      Log.error("nested contextual return did not transfer ownership within its callable frame: %s", error.c_str());
+      return false;
+   }
    return true;
 }
 
@@ -7264,11 +7375,797 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+// Phase 1 of the opt-in table context plan: positive runtime contextuality metadata.
+
+// Marks its table argument contextual through the internal helper and returns it.  This stands in for the source
+// designation mechanisms that Phase 2 adds; no public API equivalent exists.
+static int unit_mark_contextual(lua_State *L)
+{
+   // Kotuku's C API is 0-based, so the first argument is the function's base slot.
+   if (L->top <= L->base or not tvistab(L->base)) return 0;
+   lj_tab_mark_contextual(tabV(L->base));
+   lua_settop(L, 1);
+   return 1;
+}
+
+static bool test_contextual_table_flag(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   // A freshly allocated table is ordinary, because contextuality is opt-in.  Every table below is rooted on the
+   // stack for the duration of the test so that an intervening collection cannot free it.
+   lua_createtable(L, 0, 0);
+   GCtab *ordinary = tabV(L->top - 1);
+   if (lj_tab_is_contextual(ordinary)) {
+      Log.error("a newly allocated table was contextual by default");
+      return false;
+   }
+
+   TValue receiver;
+   settabV(L, &receiver, ordinary);
+   if (lj_context_receiver_establishes(&receiver)) {
+      Log.error("an ordinary table established call context");
+      return false;
+   }
+
+   // Designation is one-way and permanent.
+   lj_tab_mark_contextual(ordinary);
+   if (not lj_tab_is_contextual(ordinary) or not lj_context_receiver_establishes(&receiver)) {
+      Log.error("a designated table did not establish call context");
+      return false;
+   }
+
+   // Ordinary mutation must never clear the flag: the JIT relies on its monotonicity to guard the bit cheaply.
+   // Route the mutation through the public API so the GC barriers and stack rooting match ordinary script behaviour.
+   settabV(L, L->top++, ordinary);
+   lua_pushstring(L, "field");
+   lua_pushinteger(L, 1);
+   lua_rawset(L, -3);
+   lua_createtable(L, 0, 0);
+   lua_setmetatable(L, -2);
+   lua_pushnil(L);
+   lua_setmetatable(L, -2);
+   lua_pop(L, 1);
+   lj_tab_clear(ordinary);
+   if (not lj_tab_is_contextual(ordinary)) {
+      Log.error("table mutation, clearing or metatable replacement cleared contextuality");
+      return false;
+   }
+
+   // The classification bits share one flags byte and must stay independent.
+   if ((TAB_CONTEXTUAL & (TAB_NOT_SEQUENCE | TAB_METHOD_COMPATIBLE)) != 0) {
+      Log.error("the contextual bit overlapped an existing classification bit");
+      return false;
+   }
+
+   // lj_tab_inherit_contextual() propagates from a declared structural source and otherwise leaves the result alone.
+   lua_createtable(L, 0, 0);
+   GCtab *from_ordinary = tabV(L->top - 1);
+   lua_createtable(L, 0, 0);
+   GCtab *source_ordinary = tabV(L->top - 1);
+   lj_tab_inherit_contextual(from_ordinary, source_ordinary);
+   if (lj_tab_is_contextual(from_ordinary)) {
+      Log.error("an ordinary source marked a derived table contextual");
+      return false;
+   }
+   lj_tab_inherit_contextual(from_ordinary, ordinary);
+   if (not lj_tab_is_contextual(from_ordinary)) {
+      Log.error("a contextual source did not propagate to a derived table");
+      return false;
+   }
+
+   // Template duplication carries the flag, which is how contextual table literals materialise.
+   lua_createtable(L, 0, 1);
+   GCtab *template_table = tabV(L->top - 1);
+   lj_tab_mark_contextual(template_table);
+   GCtab *duplicate = lj_tab_dup(L, template_table);
+   settabV(L, L->top++, duplicate);
+   if (not lj_tab_is_contextual(duplicate)) {
+      Log.error("lj_tab_dup() lost contextuality when materialising a template");
+      return false;
+   }
+
+   lua_createtable(L, 0, 1);
+   GCtab *ordinary_template = tabV(L->top - 1);
+   GCtab *ordinary_duplicate = lj_tab_dup(L, ordinary_template);
+   settabV(L, L->top++, ordinary_duplicate);
+   if (lj_tab_is_contextual(ordinary_duplicate)) {
+      Log.error("lj_tab_dup() invented contextuality from an ordinary template");
+      return false;
+   }
+
+   lua_settop(L, 0);
+   return true;
+}
+
+static bool test_contextual_runtime_semantics(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   lua_pushcfunction(L, unit_mark_contextual);
+   lua_setglobal(L, "designate");
+
+   // The internal helper's result is intentionally unresolved to the compiler, so this Phase 1 runtime test exercises
+   // the dynamic positive flag gate rather than Phase 4's source-level designation proof.
+   constexpr std::string_view source =
+      "local ordinary = { name = 'ordinary' }\n"
+      "local designated = designate({ name = 'designated' })\n"
+      "local outer = designate({ name = 'outer' })\n"
+      "function readName():str return &name end\n"
+      "function ordinary.read():str return readName() end\n"
+      "function designated.read():str return readName() end\n"
+      "function outer.viaOrdinary():str return ordinary.read() end\n"
+      "function outer.viaDesignated():str return designated.read() end\n"
+      "function outer.own():str return &name end\n"
+      "return ordinary.read(), designated.read(), outer.viaOrdinary(), outer.viaDesignated(), outer.own()\n";
+
+   if (lua_load(L, source, "contextual-runtime")) {
+      Log.error("failed to compile contextual runtime fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 5, 0)) {
+      Log.error("contextual runtime fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   // An ordinary table inherits the root context, so the ampersand-prefixed lookup resolves no name.
+   if (not lua_isnil(L, -5)) {
+      Log.error("an ordinary table established context for its member call");
+      return false;
+   }
+
+   struct NameCase {
+      int slot;
+      const char *expected;
+      const char *description;
+   };
+
+   constexpr std::array<NameCase, 4> names = { {
+      { -4, "designated", "a designated table did not establish context for its member call" },
+      { -3, "outer",      "an ordinary nested call did not inherit the caller context" },
+      { -2, "designated", "a designated nested call did not replace the inherited context" },
+      { -1, "outer",      "a designated receiver did not restore its own context after a nested call" }
+   } };
+
+   for (const auto &entry : names) {
+      const char *actual = lua_tostring(L, entry.slot);
+      if (not actual or strcmp(actual, entry.expected) != 0) {
+         Log.error("%s (got '%s')", entry.description, actual ? actual : "nil");
+         return false;
+      }
+   }
+   lua_pop(L, 5);
+
+   // Slice results carry contextuality from their declared source table, including the empty-slice exits.
+   constexpr std::string_view slice_source =
+      "local designated = { 10, 20, 30 }\n"
+      "designate(designated)\n"
+      "local ordinary = { 10, 20, 30 }\n"
+      "return designated[{0 to 1}], designated[{5 to 4}], range.slice(designated, {0 to 1}),\n"
+      "   table.slice(designated, {0 to 1}), ordinary[{0 to 1}], ordinary[{5 to 4}]\n";
+
+   if (lua_load(L, slice_source, "contextual-slice")) {
+      Log.error("failed to compile contextual slice fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 6, 0)) {
+      Log.error("contextual slice fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   struct SliceCase {
+      int slot;
+      bool contextual;
+      const char *description;
+   };
+
+   constexpr std::array<SliceCase, 6> slices = { {
+      { -6, true,  "range-index syntax on a contextual source" },
+      { -5, true,  "an empty slice of a contextual source" },
+      { -4, true,  "range.slice() on a contextual source" },
+      { -3, true,  "table.slice() on a contextual source" },
+      { -2, false, "range-index syntax on an ordinary source" },
+      { -1, false, "an empty slice of an ordinary source" }
+   } };
+
+   for (const auto &entry : slices) {
+      const TValue *result = L->top + entry.slot;
+      if (not tvistab(result)) {
+         Log.error("%s did not produce a table", entry.description);
+         return false;
+      }
+      if (lj_tab_is_contextual(tabV(result)) != entry.contextual) {
+         Log.error("%s produced the wrong contextuality", entry.description);
+         return false;
+      }
+   }
+   lua_pop(L, 6);
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Phase 2 of the opt-in table context plan: the `entity { ... }` prefix designation form.
+//
+// Recognition is a parser-level token sequence rather than a reserved word or a lexer compound token, so `entity`
+// must remain an ordinary identifier in every other position.  The token stream has already removed trivia, which is
+// why spaces, tabs, comments and line breaks between the two tokens all reach the same designation.
+
+static bool test_contextual_designation_syntax(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   struct DesignationCase {
+      const char *source;
+      bool contextual;
+      const char *description;
+   };
+
+   constexpr std::array<DesignationCase, 9> cases = { {
+      { "return entity { value = 1 }", true, "a designated constructor" },
+      { "return entity    { value = 1 }", true, "spaces between the tokens" },
+      { "return entity\t{ value = 1 }", true, "a tab between the tokens" },
+      { "return entity --[[ mark ]] { value = 1 }", true, "a comment between the tokens" },
+      { "return entity\n{ value = 1 }", true, "a line break between the tokens" },
+      { "return entity {}", true, "an empty designated constructor" },
+      { "return entity { nested = { value = 1 } }", true, "a designated outer constructor" },
+      { "local t = entity { nested = { value = 1 } }\nreturn t.nested", false,
+        "a nested constructor inside a designated table" },
+      { "return { value = 1 }", false, "an undesignated constructor" }
+   } };
+
+   for (const auto &entry : cases) {
+      if (lua_load(L, entry.source, "contextual-designation")) {
+         Log.error("failed to compile %s: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      if (lua_pcall(L, 0, 1, 0)) {
+         Log.error("%s failed to run: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      const TValue *result = L->top - 1;
+      if (not tvistab(result)) {
+         Log.error("%s did not produce a table", entry.description);
+         return false;
+      }
+      if (lj_tab_is_contextual(tabV(result)) != entry.contextual) {
+         Log.error("%s produced the wrong contextuality", entry.description);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // `entity` remains an ordinary identifier outside the complete designation form, and the parenthesised call is
+   // the replacement for the table-argument shorthand this grammar rule deliberately displaces.  `context` has no
+   // special table-constructor meaning and retains the ordinary shorthand.
+   constexpr std::string_view ordinary_source =
+      "local function entity(Table:table):num return Table.value * 2 end\n"
+      "local function context(Table:table):num return Table.value * 3 end\n"
+      "local entity_variable = 5\n"
+      "local holder = { entity = 7 }\n"
+      "return entity({ value = 21 }), context { value = 14 }, entity_variable, holder.entity\n";
+
+   if (lua_load(L, ordinary_source, "contextual-identifier")) {
+      Log.error("failed to compile the ordinary identifier fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 4, 0)) {
+      Log.error("the ordinary identifier fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_tonumber(L, -4) != 42 or lua_tonumber(L, -3) != 42 or lua_tonumber(L, -2) != 5 or
+       lua_tonumber(L, -1) != 7) {
+      Log.error("'entity' or 'context' did not behave as an ordinary identifier where required");
+      return false;
+   }
+   lua_pop(L, 4);
+
+   // A malformed or unterminated constructor after `entity` is a designation diagnostic.  Falling back to an
+   // ordinary identifier expression here would silently resurrect the displaced call shorthand.
+   constexpr std::array<const char *, 2> malformed = {
+      "return entity { value = 1",
+      "return entity { value = }"
+   };
+
+   for (const char *source : malformed) {
+      if (not lua_load(L, source, "contextual-malformed")) {
+         Log.error("a malformed designation compiled instead of producing a diagnostic");
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // TCTX must remain adjacent to its allocation even when dynamic fields require later initialisation bytecode, so
+   // a valid contextual constructor survives the bytecode reader's ownership validation after dumping and reloading.
+   constexpr std::string_view roundtrip_source =
+      "local dynamic = 7\n"
+      "return entity { value = dynamic }\n";
+
+   if (lua_load(L, roundtrip_source, "contextual-roundtrip")) {
+      Log.error("failed to compile the contextual round-trip fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump the contextual round-trip fixture");
+      return false;
+   }
+   lua_settop(L, 0);
+
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "contextual-roundtrip")) {
+      Log.error("failed to reload the contextual round-trip fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0)) {
+      Log.error("the reloaded contextual round-trip fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   cTValue *value = tvistab(L->top - 1) ?
+      lj_tab_getstr(tabV(L->top - 1), lj_str_newlit(L, "value")) : nullptr;
+   if (not tvistab(L->top - 1) or not lj_tab_is_contextual(tabV(L->top - 1)) or
+       not value or not tvisnumber(value) or numberVnum(value) != 7) {
+      Log.error("the reloaded contextual constructor lost its designation or dynamic field value");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Phase 2 of the opt-in table context plan: `__context` designation through an authorised setmetatable().
+
+static bool test_contextual_metatable_designation(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   lua_getglobal(L, "__setmetatable_ctx");
+   if (not lua_isnil(L, -1)) {
+      Log.error("the compiler-private contextual setmetatable callable is visible through the global environment");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   // Authorisation requires proof that `setmetatable` still names the built-in.  That proof comes from the protected
+   // global marker, so the fixture must protect globals exactly as a script state does.
+   lua_protect_globals(L);
+
+   struct DesignationCase {
+      const char *source;
+      bool contextual;
+      const char *description;
+   };
+
+   constexpr std::array<DesignationCase, 6> cases = { {
+      { "local mt = { __context = true }\n"
+        "return setmetatable({ value = 1 }, mt)", true, "an inline literal target" },
+
+      { "local mt = { __context = true }\n"
+        "local value = {}\n"
+        "value.field = 1\n"
+        "local alias = value\n"
+        "return setmetatable(value, mt)", true, "an owned local after prior ordinary use" },
+
+      { "local mt = { __context = true }\n"
+        "local function make():table local v = { r = 1 } return setmetatable(v, mt) end\n"
+        "return make()", true, "an idiomatic constructor" },
+
+      { "local mt = { __context = true }\n"
+        "local value\n"
+        "if 1 < 2 then value = { a = 1 } else value = { a = 2 } end\n"
+        "return setmetatable(value, mt)", true, "a merge of two owned literals" },
+
+      { "local mt = { __index = function() return 1 end }\n"
+        "return setmetatable({ value = 1 }, mt)", false, "an ordinary metatable" },
+
+      { "local mt = { __context = false }\n"
+        "return setmetatable({ value = 1 }, mt)", false, "a marker that is not exactly true" }
+   } };
+
+   for (const auto &entry : cases) {
+      if (lua_load(L, entry.source, "contextual-metatable")) {
+         Log.error("failed to compile %s: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      if (lua_pcall(L, 0, 1, 0)) {
+         Log.error("%s failed to run: %s", entry.description, lua_tostring(L, -1));
+         return false;
+      }
+      const TValue *result = L->top - 1;
+      if (not tvistab(result)) {
+         Log.error("%s did not produce a table", entry.description);
+         return false;
+      }
+      if (lj_tab_is_contextual(tabV(result)) != entry.contextual) {
+         Log.error("%s produced the wrong contextuality", entry.description);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // A statically known marker on a foreign target is a compile-time error, because designation would permanently
+   // alter a table belonging to another author.
+   constexpr std::array<const char *, 3> rejected = {
+      "local mt = { __context = true }\n"
+      "local function promote(Target:table) setmetatable(Target, mt) end\n"
+      "promote({})",
+
+      "local mt = { __context = true }\n"
+      "setmetatable(registry, mt)",
+
+      "local mt = { __context = true }\n"
+      "local function make():table return {} end\n"
+      "setmetatable(make(), mt)"
+   };
+
+   for (const char *source : rejected) {
+      if (not lua_load(L, source, "contextual-foreign")) {
+         Log.error("a foreign designation target compiled instead of producing a diagnostic");
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // An unauthorised call cannot promote an ordinary table, and the rejection is atomic: the target keeps the
+   // metatable it had.  An already contextual target remains eligible for later metatable changes.
+   constexpr std::string_view unauthorised_source =
+      "local smt = setmetatable\n"
+      "local mt = { __context = true }\n"
+      "local target = {}\n"
+      "local rejected = false\n"
+      "try\n   smt(target, mt)\nexcept e\n   rejected = true\nend\n"
+      "local designated = entity {}\n"
+      "local accepted = true\n"
+      "try\n   smt(designated, mt)\nexcept e\n   accepted = false\nend\n"
+      "return rejected, getmetatable(target) is nil, accepted\n";
+
+   if (lua_load(L, unauthorised_source, "contextual-unauthorised")) {
+      Log.error("failed to compile the unauthorised fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 3, 0)) {
+      Log.error("the unauthorised fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (not lua_toboolean(L, -3)) {
+      Log.error("an extracted setmetatable() promoted an ordinary table");
+      return false;
+   }
+   if (not lua_toboolean(L, -2)) {
+      Log.error("a rejected contextual designation was not atomic");
+      return false;
+   }
+   if (not lua_toboolean(L, -1)) {
+      Log.error("an already contextual target was refused a later metatable change");
+      return false;
+   }
+   lua_pop(L, 3);
+
+   // Designation is permanent: no mutation, clear or metatable change may clear the flag.
+   constexpr std::string_view permanence_source =
+      "local designated = entity { value = 1 }\n"
+      "designated.value = nil\n"
+      "table.clear(designated)\n"
+      "setmetatable(designated, nil)\n"
+      "return designated\n";
+
+   if (lua_load(L, permanence_source, "contextual-permanence")) {
+      Log.error("failed to compile the permanence fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 1, 0)) {
+      Log.error("the permanence fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (not tvistab(L->top - 1) or not lj_tab_is_contextual(tabV(L->top - 1))) {
+      Log.error("mutation, clearing or a metatable change cleared a permanent designation");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Phase 3 temporary context block syntax, lowering and dump reconstruction.
+
+static bool test_temporary_context_blocks(kt::Log &Log)
+{
+   auto legacy = build_ast_from_source("local receiver = {}\ncontext receiver do end\n", false, false);
+   if (legacy.diagnostics.empty()) {
+      Log.error("legacy context block syntax remained accepted after the using cut-over");
+      return false;
+   }
+
+   constexpr std::array<std::string_view, 2> invalid_references = {
+      "using make_receiver() do end\n",
+      "using {} do end\n"
+   };
+   for (std::string_view invalid_source : invalid_references) {
+      auto invalid = build_ast_from_source(invalid_source, false, false);
+      bool found_reference_diagnostic = false;
+      for (const ParserDiagnostic &diagnostic : invalid.diagnostics) {
+         if (diagnostic.message.find("using block requires") != std::string::npos) {
+            found_reference_diagnostic = true;
+         }
+      }
+      if (not found_reference_diagnostic) {
+         Log.error("invalid using block reference did not produce its targeted diagnostic");
+         return false;
+      }
+   }
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+
+   constexpr std::string_view source =
+      "local receiver = { value = 37 }\n"
+      "local result = 0\n"
+      "using receiver do result = &value end\n"
+      "local select_value = function(Flag)\n"
+      "   using receiver do if Flag then return &value end end\n"
+      "   return 0\n"
+      "end\n"
+      "return result, select_value(true), select_value(false), &value\n";
+
+   if (lua_load(L, source, "temporary-context")) {
+      Log.error("failed to compile a temporary context block: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *prototype = funcproto(funcV(L->top - 1));
+   if (prototype->context_block_count != 1 or not prototype->context_blocks) {
+      Log.error("temporary context descriptor was not attached to the prototype");
+      return false;
+   }
+   bool found_begin = false;
+   bool found_end = false;
+   for (MSize i = 1; i < prototype->sizebc; ++i) {
+      found_begin |= bc_op(proto_bc(prototype)[i]) IS BC_CTXBEGIN;
+      found_end |= bc_op(proto_bc(prototype)[i]) IS BC_CTXEND;
+   }
+   if (not found_begin or not found_end) {
+      Log.error("temporary context block did not lower to CTXBEGIN/CTXEND");
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump a temporary context block");
+      return false;
+   }
+   lua_settop(L, 0);
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "temporary-context")) {
+      Log.error("failed to reload a temporary context block: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_pcall(L, 0, 4, 0)) {
+      Log.error("reloaded temporary context block failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   if (lua_tonumber(L, -4) != 37 or lua_tonumber(L, -3) != 37 or lua_tonumber(L, -2) != 0 or
+       not lua_isnil(L, -1)) {
+      Log.error("temporary context block did not restore the root after reload");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+// Phase 0 of the opt-in table context plan: allocation-site ownership of a contextual designation target.
+
+static bool test_contextual_designation_ownership(kt::Log &Log)
+{
+   // Each `mark(...)` call stands in for the designation target of a future contextual setmetatable().  Ownership is
+   // classified from the argument expression alone, so the helper does not need to exist.
+   constexpr std::string_view source =
+      "local literal = {}\n"
+      "mark(literal);\n"                        // 1  owned: plain literal allocation
+      "mark({ value = 1 });\n"                  // 2  owned: inline literal
+      "local used = {}\n"
+      "used.field = 1\n"
+      "local alias = used\n"
+      "helper(used);\n"
+      "mark(used);\n"                           // 7  owned: prior mutation, aliasing and call use
+      "mark(alias);\n"                          // 8  owned: alias of an owned allocation
+      "local merged = {}\n"
+      "if flag then merged = { a = 1 } else merged = { a = 2 } end\n"
+      "mark(merged);\n"                         // 10 owned: merge of owned literals
+      "local tainted = {}\n"
+      "if flag then tainted = makeTable() end\n"
+      "mark(tainted);\n"                        // 13 rejected: merge with unknown provenance
+      "local produced = makeTable()\n"
+      "mark(produced);\n"                       // 15 rejected: unresolved call result
+      "mark(makeTable());\n"                    // 16 rejected: direct call result
+      "mark(registry);\n"                       // 17 rejected: global
+      "mark(container.nested);\n"               // 18 rejected: field of another table
+      "local overwritten = makeTable()\n"
+      "overwritten = {}\n"
+      "mark(overwritten);\n"                    // 21 owned: latest definite assignment replaces foreign provenance
+      "local assigned_later = {}\n"
+      "mark(assigned_later);\n"                 // 23 owned: a later assignment cannot reach this designation
+      "assigned_later = makeTable()\n"
+      "local foreign_source = makeTable()\n"
+      "local foreign_alias = foreign_source\n"
+      "foreign_source = {}\n"
+      "mark(foreign_alias);\n"                  // 27 rejected: alias retains the foreign value captured earlier
+      "local owned_source = {}\n"
+      "local owned_alias = owned_source\n"
+      "owned_source = makeTable()\n"
+      "mark(owned_alias);\n"                    // 31 owned: later source reassignment does not alter the alias
+      "local captured = {}\n"
+      "function replace_captured()\n"
+      "   captured = makeTable()\n"
+      "end\n"
+      "replace_captured()\n"
+      "mark(captured);\n"                       // 38 rejected: a closure can replace the owned allocation
+      "local read_capture = {}\n"
+      "function read_captured() return read_capture end\n"
+      "read_capture = {}\n"
+      "mark(read_capture);\n"                   // 42 owned: a read-only capture does not obscure local writes
+      "local outer = {}\n"
+      "function nested()\n"
+      "   mark(outer);\n"
+      "end\n"
+      "function promote(Target)\n"
+      "   mark(Target);\n"                      //    rejected: parameter (checked separately)
+      "end\n";
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(L, unit_reader, &reader, "designation-ownership", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserAllocator allocator = ParserAllocator::from(L);
+   ParserContext context = ParserContext::from(lex, fs, allocator);
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Log.error("designation ownership fixture did not parse");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+
+   BlockStmt &module = *chunk.value_ref();
+
+   // Recover the sole argument of every `mark(...)` expression statement, in source order.  Collecting them by scan
+   // keeps the expectations below independent of statements that do not contribute a designation target.
+   auto collect_marks = [](const BlockStmt &Block, std::vector<const ExprNode *> &Targets) {
+      for (const auto &statement : Block.statements) {
+         if (not statement) continue;
+         const auto *expression = std::get_if<ExpressionStmtPayload>(&statement->data);
+         if (not expression or not expression->expression) continue;
+         const auto *call = std::get_if<CallExprPayload>(&expression->expression->data);
+         if (not call or call->arguments.size() != 1) continue;
+         const auto *direct = std::get_if<DirectCallTarget>(&call->target);
+         if (not direct or not direct->callable or
+             direct->callable->kind != AstNodeKind::IdentifierExpr) continue;
+         const GCstr *name = std::get<NameRef>(direct->callable->data).identifier.symbol;
+         if (not name or name->hash != kt::strhash("mark")) continue;
+         Targets.push_back(call->arguments.front().get());
+      }
+   };
+
+   std::vector<const ExprNode *> marks;
+   collect_marks(module, marks);
+
+   struct OwnershipCase {
+      bool owned;
+      const char *description;
+   };
+
+   // One entry per `mark(...)` in the module fixture, in source order.
+   constexpr std::array<OwnershipCase, 16> cases = { {
+      { true,  "a literal bound to a local" },
+      { true,  "an inline table literal" },
+      { true,  "an owned allocation after mutation, aliasing and call use" },
+      { true,  "an alias of an owned allocation" },
+      { true,  "a control-flow merge of two owned literals" },
+      { false, "a merge with unknown provenance" },
+      { false, "an unresolved call result" },
+      { false, "a direct call result" },
+      { false, "a global" },
+      { false, "a field of another table" },
+      { true,  "an owned allocation that supersedes earlier foreign provenance" },
+      { true,  "an owned allocation followed by a later foreign assignment" },
+      { false, "an alias that retained an earlier foreign value" },
+      { true,  "an alias that retained an earlier owned allocation" },
+      { false, "an owned binding that a closure can replace" },
+      { true,  "a reassigned owned binding captured only for reading" }
+   } };
+
+   if (marks.size() != cases.size()) {
+      Log.error("designation fixture produced %u targets, expected %u",
+         unsigned(marks.size()), unsigned(cases.size()));
+      return false;
+   }
+
+   for (size_t i = 0; i < cases.size(); ++i) {
+      TableOwnershipProof proof = classify_table_ownership(context, *marks[i], 0, &module);
+      if (proof.owned() != cases[i].owned) {
+         Log.error("%s was classified %s", cases[i].description, proof.owned() ? "owned" : "foreign");
+         return false;
+      }
+   }
+
+   // Locate a named function declaration in the module fixture.
+   auto function_body = [&](uint32_t NameHash) -> BlockStmt * {
+      for (const auto &statement : module.statements) {
+         if (not statement) continue;
+         const auto *declaration = std::get_if<FunctionStmtPayload>(&statement->data);
+         if (not declaration or declaration->name.segments.size() != 1) continue;
+         const GCstr *name = declaration->name.segments.front().symbol;
+         if (not name or name->hash != NameHash) continue;
+         if (declaration->function) return declaration->function->body.get();
+      }
+      return nullptr;
+   };
+
+   // A local of the enclosing function is an upvalue inside a nested function, so its allocation is not visible.
+   BlockStmt *nested_body = function_body(kt::strhash("nested"));
+   std::vector<const ExprNode *> nested_marks;
+   if (nested_body) collect_marks(*nested_body, nested_marks);
+   if (nested_marks.size() != 1) {
+      Log.error("designation fixture nested function did not contain one designation target");
+      return false;
+   }
+   TableOwnershipProof nested_proof = classify_table_ownership(context, *nested_marks.front(), 1, nested_body);
+   if (nested_proof.owned() or nested_proof.foreign_source != ForeignTableSource::Upvalue) {
+      Log.error("an enclosing function's local was accepted as owned inside a nested function");
+      return false;
+   }
+
+   // A parameter belongs to the caller, so its designation must be rejected inside the declaring function.
+   const StmtNode *declaration = module.statements.back().get();
+   const auto *function_statement = declaration ?
+      std::get_if<FunctionStmtPayload>(&declaration->data) : nullptr;
+   if (not function_statement or not function_statement->function or not function_statement->function->body) {
+      Log.error("designation fixture did not end with a function declaration");
+      return false;
+   }
+   BlockStmt &body = *function_statement->function->body;
+   std::vector<const ExprNode *> parameter_marks;
+   collect_marks(body, parameter_marks);
+   if (parameter_marks.size() != 1) {
+      Log.error("designation fixture function body did not contain one designation target");
+      return false;
+   }
+
+   TableOwnershipProof parameter_proof = classify_table_ownership(context, *parameter_marks.front(), 1, &body);
+   if (parameter_proof.owned() or parameter_proof.foreign_source != ForeignTableSource::Parameter) {
+      Log.error("a parameter was accepted as an owned designation target");
+      return false;
+   }
+
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 64> tests = { {
+   constexpr std::array<TestCase, 72> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -7324,6 +8221,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_static_classification", test_builtin_method_static_classification },
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
+      { "contextual_call_specialisation", test_contextual_call_specialisation },
+      { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "module_call_result_descriptors", test_module_call_result_descriptors },
@@ -7332,7 +8231,13 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "safe_index_bytecode_selection", test_safe_index_bytecode_selection },
       { "type_guided_emission", test_type_guided_emission },
-      { "builtin_callable_bytecode", test_builtin_callable_bytecode }
+      { "builtin_callable_bytecode", test_builtin_callable_bytecode },
+      { "contextual_designation_ownership", test_contextual_designation_ownership },
+      { "contextual_table_flag", test_contextual_table_flag },
+      { "contextual_runtime_semantics", test_contextual_runtime_semantics },
+      { "contextual_designation_syntax", test_contextual_designation_syntax },
+      { "contextual_metatable_designation", test_contextual_metatable_designation },
+      { "temporary_context_blocks", test_temporary_context_blocks }
    } };
 
    // A dummy object is required to manage state.

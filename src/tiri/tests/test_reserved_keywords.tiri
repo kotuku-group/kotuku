@@ -12,7 +12,6 @@ reserved_keywords = array<string> {
    'await',
    'finally',
    'yield',
-   'using',
    'where',
 }
 

@@ -241,6 +241,7 @@ StaticValueDescriptor join_static_descriptors(
    if (Left.object_class_id != Right.object_class_id) result.object_class_id = CLASSID::NIL;
    if (Left.struct_def != Right.struct_def) result.struct_def = nullptr;
    if (Left.module != Right.module) result.module = nullptr;
+   if (Left.contextuality != Right.contextuality) result.contextuality = StaticContextuality::Unknown;
    if (Left.primary IS TiriType::Array and not (Left.array_element IS Right.array_element)) {
       if (Left.array_element.known and Right.array_element.known and
           (Left.array_element.storage IS AET::ANY or Right.array_element.storage IS AET::ANY)) {

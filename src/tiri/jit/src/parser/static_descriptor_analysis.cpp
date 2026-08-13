@@ -9,6 +9,7 @@
 #include "ast/nodes.h"
 #include "field_type_lookup.h"
 #include "parser_context.h"
+#include "table_ownership.h"
 #include "../../../defs.h"
 #include "../runtime/lj_proto_registry.h"
 #include "../runtime/lj_tab.h"
@@ -55,7 +56,11 @@ public:
    void propagate(BlockStmt &Module)
    {
       if (not this->native_calls_only_) this->refresh_callables();
+      // The module block is the depth-zero designation scope, so a designation written at file level can trace its
+      // target's allocation exactly as one inside a function can.
+      this->enclosing_body_ = &Module;
       this->propagate_block(Module);
+      this->enclosing_body_ = nullptr;
    }
 
 private:
@@ -256,7 +261,9 @@ private:
             for (size_t i = 0; i < payload.names.size(); ++i) {
                const ExprNode *initialiser = i < payload.values.size() ? payload.values[i].get() :
                   (payload.values.empty() ? nullptr : payload.values.back().get());
-               uint8_t result_position = i < payload.values.size() ? 0 :
+               // A declaration with no values reserves the name rather than drawing from a result position, so it
+               // keeps position zero.  Treating it as a later result would misreport the binding as a call result.
+               uint8_t result_position = (i < payload.values.size() or payload.values.empty()) ? 0 :
                   uint8_t(i - payload.values.size() + 1);
                this->declare(payload.names[i], initialiser, result_position);
             }
@@ -392,6 +399,12 @@ private:
          }
          case AstNodeKind::DoStmt: {
             auto &payload = std::get<DoStmtPayload>(Statement.data);
+            if (payload.block) this->discover_block(*payload.block);
+            break;
+         }
+         case AstNodeKind::ContextStmt: {
+            auto &payload = std::get<ContextStmtPayload>(Statement.data);
+            if (payload.reference) this->discover_expression(*payload.reference);
             if (payload.block) this->discover_block(*payload.block);
             break;
          }
@@ -1068,7 +1081,14 @@ private:
       if (Call.results) {
          result = this->catalogue_.results(Call.results).value_at(0);
       }
-      if (auto array_type = this->array_constructor_type(Call)) {
+      if (Call.authorised_contextual_designation and not Call.arguments.empty()) {
+         result = this->descriptor_of(*Call.arguments.front());
+         result.primary = TiriType::Table;
+         result.proof = StaticProof::Closed;
+         result.nullable = false;
+         result.contextuality = Call.contextual_designation_result;
+      }
+      else if (auto array_type = this->array_constructor_type(Call)) {
          auto element = describe_array_element(array_type->first, &this->context_.lua());
          if (element) {
             result.primary = TiriType::Array;
@@ -1234,6 +1254,37 @@ private:
       }
    }
 
+   [[nodiscard]] StaticValueDescriptor table_derivation_call_descriptor(const CallExprPayload &Call) const
+   {
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr or
+          Call.arguments.empty()) return {};
+
+      const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+      const auto *base = member.table and member.table->kind IS AstNodeKind::IdentifierExpr ?
+         std::get_if<NameRef>(&member.table->data) : nullptr;
+      if (not base or base->binding_id or not base->identifier.symbol or not member.member.symbol or
+          member.member.symbol->hash != kt::strhash("slice")) return {};
+
+      uint32_t interface_hash = base->identifier.symbol->hash;
+      if (interface_hash != kt::strhash("range") and interface_hash != kt::strhash("table")) return {};
+
+      StaticValueDescriptor source = this->descriptor_of(*Call.arguments.front());
+      if (source.primary IS TiriType::Table or source.contextuality != StaticContextuality::Unknown or
+          interface_hash IS kt::strhash("table")) {
+         source.primary = TiriType::Table;
+         source.proof = source.proved() ? source.proof : StaticProof::Trusted;
+         source.nullable = false;
+         return source;
+      }
+      if (source.primary IS TiriType::Str) {
+         source.proof = source.proved() ? source.proof : StaticProof::Trusted;
+         source.nullable = false;
+         return source;
+      }
+      return {};
+   }
+
    [[nodiscard]] static StaticValueDescriptor array_element_value(
       const ArrayElementDescriptor &Element)
    {
@@ -1258,6 +1309,131 @@ private:
       this->propagate_function(function, ContextParameters);
       Expression.static_value = this->add_value(value);
       Expression.static_results = 0;
+   }
+
+   // Resolve an expression to the table constructor that produced it, following only aliases whose allocation is
+   // visible in the analysed function.  Used to inspect a metatable literal for its `__context` marker.
+
+   [[nodiscard]] const TableExprPayload * resolved_table_literal(const ExprNode &Expression, unsigned Depth = 0) const
+   {
+      if (Depth > 8) return nullptr;
+
+      if (Expression.kind IS AstNodeKind::TableExpr) return &std::get<TableExprPayload>(Expression.data);
+
+      if (Expression.kind IS AstNodeKind::IdentifierExpr) {
+         const auto &reference = std::get<NameRef>(Expression.data);
+         if (not reference.binding_id) return nullptr;
+         const auto &binding = this->catalogue_.binding(reference.binding_id);
+         // A rewritten binding no longer describes one literal.  Depth is deliberately not checked: a metatable
+         // declared in an enclosing function is still a visible literal, and Section 5.2 keeps a proven marker valid
+         // across aliases and storage.  Ownership of the designation *target* is what depth constrains.
+         if (not binding.immutable or binding.is_parameter or not binding.initialiser) return nullptr;
+         return this->resolved_table_literal(*binding.initialiser, Depth + 1);
+      }
+
+      return nullptr;
+   }
+
+   // A metatable declares contextual designation when its raw `__context` field is exactly the literal `true`.  The
+   // lookup is deliberately raw and shallow: `__index` and any metatable of the metatable are not consulted.
+
+   [[nodiscard]] static bool declares_contextual_marker(const TableExprPayload &Metatable)
+   {
+      for (const auto &field : Metatable.fields) {
+         if (field.kind != TableFieldKind::Record or not field.name or not field.name->symbol) continue;
+         std::string_view name(strdata(field.name->symbol), field.name->symbol->len);
+         if (name != "__context") continue;
+         if (not field.value or field.value->kind != AstNodeKind::LiteralExpr) return false;
+         const auto &literal = std::get<LiteralValue>(field.value->data);
+         return literal.kind IS LiteralKind::Boolean and literal.bool_value;
+      }
+      return false;
+   }
+
+   // Classify a direct `setmetatable(Target, Metatable)` call for contextual designation.
+   //
+   // An owned target is authorised: a statically known marker designates it, and an unresolved metatable takes the
+   // authorised runtime path where an observed raw `true` designates and anything else is an ordinary metatable
+   // change.  An unowned target with a statically known marker is a compile-time error; if the marker can only be
+   // discovered dynamically the unauthorised call raises at runtime instead.
+
+   void analyse_contextual_designation(CallExprPayload &Call)
+   {
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable) return;
+      if (direct->callable->kind != AstNodeKind::IdentifierExpr) return;
+
+      const auto &reference = std::get<NameRef>(direct->callable->data);
+      // A local binding of that name shadows the built-in and carries no compiler authorisation.
+      if (reference.binding_id or not reference.identifier.symbol) return;
+      std::string_view name(strdata(reference.identifier.symbol), reference.identifier.symbol->len);
+      if (name != "setmetatable") return;
+
+      cTValue *builtin = this->protected_global_value(reference.identifier.symbol);
+      if (not builtin or not tvisfunc(builtin) or isluafunc(funcV(builtin))) return;
+      if (Call.arguments.size() < 2 or not Call.arguments[0] or not Call.arguments[1]) return;
+
+      const ExprNode &target = *Call.arguments[0];
+      const TableExprPayload *metatable = this->resolved_table_literal(*Call.arguments[1]);
+      const bool marker_known = metatable and declares_contextual_marker(*metatable);
+
+      TableOwnershipProof proof = classify_table_ownership(
+         this->context_, target, this->function_depth_, this->enclosing_body_);
+
+      if (proof.owned()) {
+         Call.authorised_contextual_designation = true;
+         StaticContextuality target_contextuality = this->descriptor_of(target).contextuality;
+         if (marker_known) Call.contextual_designation_result = StaticContextuality::Contextual;
+         else if (metatable) Call.contextual_designation_result = target_contextuality;
+         else if (target_contextuality IS StaticContextuality::Contextual) {
+            Call.contextual_designation_result = StaticContextuality::Contextual;
+         }
+
+         // A known true or unresolved marker can change an owned allocation after earlier ordinary calls.  Invalidate
+         // other ordinary bindings conservatively because aliases share the same identity, then publish the precise
+         // post-call state on a direct target binding.  Literals allocated after this point are classified normally.
+         if (marker_known or not metatable) {
+            for (size_t id = 1; id < this->catalogue_.binding_count(); ++id) {
+               auto &binding = this->catalogue_.binding(StaticBindingID(id));
+               StaticValueDescriptor value = this->catalogue_.value(binding.value);
+               if (value.contextuality != StaticContextuality::Ordinary) continue;
+               value.contextuality = StaticContextuality::Unknown;
+               binding.value = this->add_value(value);
+            }
+
+            if (target.kind IS AstNodeKind::IdentifierExpr) {
+               auto &mutable_target = const_cast<ExprNode &>(target);
+               auto &reference = std::get<NameRef>(mutable_target.data);
+               if (reference.binding_id) {
+                  StaticValueDescriptor value = this->descriptor_of(target);
+                  value.primary = TiriType::Table;
+                  value.proof = StaticProof::Closed;
+                  value.nullable = false;
+                  value.contextuality = Call.contextual_designation_result;
+                  auto &binding = this->catalogue_.binding(reference.binding_id);
+                  binding.value = this->add_value(value);
+                  reference.identifier.static_value = binding.value;
+                  mutable_target.static_value = binding.value;
+               }
+            }
+         }
+         return;
+      }
+
+      // A table already designated contextual is always eligible for later metatable changes, so nothing is rejected
+      // on the strength of the target's own contextuality.
+      if (this->descriptor_of(target).contextuality IS StaticContextuality::Contextual) return;
+
+      if (not marker_known) return;
+
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::InvalidAssignment;
+      diagnostic.message = std::format(
+         "cannot designate a contextual table through '__context' because {}",
+         foreign_table_source_reason(proof.foreign_source));
+      diagnostic.token = Token::from_span(target.span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
    }
 
    void propagate_call_children(CallExprPayload &Call)
@@ -1310,18 +1486,25 @@ private:
             break;
          case AstNodeKind::IdentifierExpr: {
             const auto &reference = std::get<NameRef>(Expression.data);
-            if (reference.binding_id) value = this->catalogue_.value(
-               this->catalogue_.binding(reference.binding_id).value);
+            if (reference.binding_id) {
+               const auto &binding = this->catalogue_.binding(reference.binding_id);
+               value = this->catalogue_.value(binding.value);
+               if (binding.function_depth != this->function_depth_) {
+                  value.contextuality = StaticContextuality::Unknown;
+               }
+            }
             else value = this->global_value(reference.identifier.symbol);
             break;
          }
-         case AstNodeKind::TableExpr:
-            for (auto &field : std::get<TableExprPayload>(Expression.data).fields) {
-               this->reject_builtin_method_shadow(field);
-            }
+         case AstNodeKind::TableExpr: {
+            auto &table = std::get<TableExprPayload>(Expression.data);
+            for (auto &field : table.fields) this->reject_builtin_method_shadow(field);
             value.primary = TiriType::Table;
             value.proof = StaticProof::Closed;
+            // The allocation is visible here, so an undesignated literal is provably ordinary rather than unknown.
+            value.contextuality = table.contextual ? StaticContextuality::Contextual : StaticContextuality::Ordinary;
             break;
+         }
          case AstNodeKind::RangeExpr:
             value.primary = TiriType::Range;
             value.proof = StaticProof::Closed;
@@ -1337,11 +1520,17 @@ private:
          case AstNodeKind::CallExpr:
          case AstNodeKind::SafeCallExpr: {
             auto &call = std::get<CallExprPayload>(Expression.data);
+            if (Expression.kind IS AstNodeKind::CallExpr) this->analyse_contextual_designation(call);
             value = this->call_descriptor(call, Expression.kind IS AstNodeKind::SafeCallExpr);
             StaticValueDescriptor transferred = this->array_preserving_call_descriptor(call);
             if (transferred.primary != TiriType::Unknown) {
                transferred.nullable = value.nullable;
                value = transferred;
+            }
+            StaticValueDescriptor derived_table = this->table_derivation_call_descriptor(call);
+            if (derived_table.primary != TiriType::Unknown) {
+               derived_table.nullable = value.nullable;
+               value = derived_table;
             }
             results = call.results;
             break;
@@ -1372,12 +1561,33 @@ private:
          case AstNodeKind::IndexExpr:
          case AstNodeKind::SafeIndexExpr: {
             ExprNode *base = nullptr;
+            ExprNode *index = nullptr;
             bool safe = Expression.kind IS AstNodeKind::SafeIndexExpr;
-            if (safe) base = std::get<SafeIndexExprPayload>(Expression.data).table.get();
-            else base = std::get<IndexExprPayload>(Expression.data).table.get();
+            if (safe) {
+               auto &payload = std::get<SafeIndexExprPayload>(Expression.data);
+               base = payload.table.get();
+               index = payload.index.get();
+            }
+            else {
+               auto &payload = std::get<IndexExprPayload>(Expression.data);
+               base = payload.table.get();
+               index = payload.index.get();
+            }
             if (base) {
                StaticValueDescriptor base_value = this->descriptor_of(*base);
-               if (base_value.primary IS TiriType::Array and base_value.array_element.known and
+               if (index and index->kind IS AstNodeKind::RangeExpr and
+                   (base_value.primary IS TiriType::Table or
+                    base_value.contextuality != StaticContextuality::Unknown)) {
+                  value = base_value;
+                  value.primary = TiriType::Table;
+                  value.nullable = safe;
+               }
+               else if (index and index->kind IS AstNodeKind::RangeExpr and
+                        base_value.primary IS TiriType::Str) {
+                  value = base_value;
+                  value.nullable = safe;
+               }
+               else if (base_value.primary IS TiriType::Array and base_value.array_element.known and
                    base_value.proved()) {
                   value = this->array_element_value(base_value.array_element);
                   value.nullable = value.nullable or safe;
@@ -1495,6 +1705,7 @@ private:
       if (Name.type != TiriType::Unknown and Name.type != TiriType::Any) {
          value = this->declared_descriptor(
             Name.type, Name.struct_def, Name.array_element, StaticProof::Checked);
+         if (Initialiser) value.contextuality = this->descriptor_of(*Initialiser).contextuality;
       }
       else if (binding.function) {
          value.primary = TiriType::Func;
@@ -1506,6 +1717,10 @@ private:
          }
          else value = this->descriptor_of(*Initialiser);
       }
+
+      // An explicit `any` binding may later receive a different table identity, including one designated elsewhere.
+      // Preserve useful value-shape information but never bake the initial table's contextuality into member calls.
+      if (Name.type IS TiriType::Any) value.contextuality = StaticContextuality::Unknown;
 
       if (value.module and not binding.immutable) value.module = nullptr;
       if (not binding.immutable) binding.callable = 0;
@@ -1577,7 +1792,16 @@ private:
          binding.value = this->add_value(value);
          parameter.name.static_value = binding.value;
       }
-      if (Function.body) this->propagate_block(*Function.body);
+      if (Function.body) {
+         // Ownership is a property of the function performing the designation, so the proof must be evaluated against
+         // this body and this depth rather than the module's.
+         const BlockStmt *outer_body = this->enclosing_body_;
+         this->enclosing_body_ = Function.body.get();
+         this->function_depth_++;
+         this->propagate_block(*Function.body);
+         this->function_depth_--;
+         this->enclosing_body_ = outer_body;
+      }
 
       StaticResultSet inferred;
       bool have_return = false;
@@ -1680,7 +1904,9 @@ private:
             for (size_t i = 0; i < payload.names.size(); ++i) {
                const ExprNode *initialiser = i < payload.values.size() ? payload.values[i].get() :
                   (payload.values.empty() ? nullptr : payload.values.back().get());
-               uint8_t position = i < payload.values.size() ? 0 : uint8_t(i - payload.values.size() + 1);
+               // See the matching note in discover_statement(): a value-less declaration has no result position.
+               uint8_t position = (i < payload.values.size() or payload.values.empty()) ? 0 :
+                  uint8_t(i - payload.values.size() + 1);
                this->set_binding_value(payload.names[i], initialiser, position);
             }
             break;
@@ -1984,6 +2210,9 @@ private:
          case AstNodeKind::WithStmt:
             for (auto &v : std::get<WithStmtPayload>(Statement.data).objects) visit(v);
             break;
+         case AstNodeKind::ContextStmt:
+            visit(std::get<ContextStmtPayload>(Statement.data).reference);
+            break;
          case AstNodeKind::ExpressionStmt: visit(std::get<ExpressionStmtPayload>(Statement.data).expression); break;
          default: break;
       }
@@ -2003,6 +2232,7 @@ private:
          case AstNodeKind::RangeForStmt: visit(std::get<RangeForStmtPayload>(Statement.data).body); break;
          case AstNodeKind::GenericForStmt: visit(std::get<GenericForStmtPayload>(Statement.data).body); break;
          case AstNodeKind::DoStmt: visit(std::get<DoStmtPayload>(Statement.data).block); break;
+         case AstNodeKind::ContextStmt: visit(std::get<ContextStmtPayload>(Statement.data).block); break;
          case AstNodeKind::TryExceptStmt: {
             auto &p = std::get<TryExceptPayload>(Statement.data);
             visit(p.try_block);
@@ -2053,6 +2283,7 @@ private:
    std::vector<BindingScope> scopes_;
    std::vector<std::pair<GCstr *, StaticValueHandle>> global_values_;
    std::vector<GCstr *> global_names_;
+   const BlockStmt *enclosing_body_ = nullptr;
    uint16_t function_depth_ = 0;
    bool native_calls_only_ = false;
 };

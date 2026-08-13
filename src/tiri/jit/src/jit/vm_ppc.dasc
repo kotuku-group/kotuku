@@ -6842,6 +6842,57 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_TCTX:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  bl extern lj_tab_designate_contextual
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXBEGIN:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  mr CARG3, RD
+    |  bl extern lj_context_begin_block
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CTXEND:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  mr CARG2, RD
+    |  bl extern lj_context_end_block
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CLOSEARM:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  bl extern lj_close_arm
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CLOSE:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  srwi CARG2, RA, 3
+    |  bl extern lj_close_consume
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

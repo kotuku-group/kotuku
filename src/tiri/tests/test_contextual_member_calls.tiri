@@ -4,23 +4,23 @@ import 'json'
 module core as mCore
 
 @Test function NamedAndComputedTableCallsEstablishContext()
-   local point = { name = 'point', value = 0 }
+   local point = entity { name = 'point', value = 0 }
 
    function point.set(Value:num):num
-      .value = Value
-      return .value
+      &value = Value
+      return &value
    end
 
    function point.read():str
-      return .name
+      return &name
    end
 
    function point.describe():<table, num>
-      return { name = .name, value = .value }, 2
+      return { name = &name, value = &value }, 2
    end
 
    assert(point.set(17) is 17, 'A named table call should pass only its written arguments')
-   assert(point.value is 17, 'A named table call should expose its receiver through leading-dot access')
+   assert(point.value is 17, 'A named table call should expose its receiver through context access')
 
    local key = 'read'
    assert(point[key]() is 'point', 'A computed table call should establish the original receiver as context')
@@ -32,11 +32,11 @@ module core as mCore
 end
 
 @Test function DirectCallsInheritAndNestedTableCallsRestoreContext()
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
 
    function read_context_name():str
-      return .name
+      return &name
    end
 
    function inner.read():str
@@ -59,44 +59,64 @@ end
       'A returned contextual call should complete restoration before returning to its caller')
 end
 
+@Test function DynamicBuiltinFallbackCallsUseTheRuntimeTableGate()
+   local holder = {
+      target = entity { total = 0 }
+   }
+
+   function holder.target.add(Value:num):num
+      &total += Value
+      return &total
+   end
+
+   assert(holder.target.add(4) is 4,
+      'A dynamic built-in fallback should establish a contextual field receiver')
+   assert(5 |> holder.target.add() is 9,
+      'A piped dynamic built-in fallback should preserve contextual results')
+
+   local maybe:any = holder.target
+   assert(maybe?.add(3) is 12,
+      'A safe dynamic built-in fallback should use the runtime table gate on its non-nil path')
+end
+
 @Test function CurrentContextMemberCallsUseOrdinaryCallBytecode()
-   .glCurrentContextCallName = 'root'
-   .glCurrentContextCallRead = function(Value:str):str
-      assert(.glCurrentContextCallName is 'root', 'A root leading-dot call should inherit the root context')
+   &glCurrentContextCallName = 'root'
+   &glCurrentContextCallRead = function(Value:str):str
+      assert(&glCurrentContextCallName is 'root', 'A root context call should inherit the root context')
       return Value
    end
-   assert(.glCurrentContextCallRead('root') is 'root',
-      'A root leading-dot member call should execute without a contextual override')
-   .glCurrentContextCallRead = nil
-   .glCurrentContextCallName = nil
+   assert(&glCurrentContextCallRead('root') is 'root',
+      'A root context member call should execute without a contextual override')
+   &glCurrentContextCallRead = nil
+   &glCurrentContextCallName = nil
 
-   local receiver = { name = 'receiver' }
+   local receiver = entity { name = 'receiver' }
 
    function receiver.read(Value:str):str
-      assert(.name is 'receiver', 'An inherited current-context call should retain its receiver')
+      assert(&name is 'receiver', 'An inherited current-context call should retain its receiver')
       return Value
    end
 
    function receiver.forward(Value:str):str
-      return .read(Value)
+      return &read(Value)
    end
 
    assert(receiver.forward('ordinary') is 'ordinary',
-      'A leading-dot member call should inherit the active context without re-entering it')
+      'A context member call should inherit the active context without re-entering it')
 
    local script = obj.new('tiri', { statement = [[
-local receiver = {}
+local receiver = entity {}
 
 function receiver.read(Value:str):str
    return Value
 end
 
 function receiver.invoke(Value:str)
-   .read(Value)
+   &read(Value)
 end
 
 function receiver.forward(Value:str):<any, ...>
-   return .read(Value)
+   return &read(Value)
 end
 ]] })
    check script.acQuery()
@@ -104,23 +124,23 @@ end
    local _, disassembly = script.mtDebugLog('disasm')
    assert(disassembly.find('CTXGET') != nil and disassembly.find('CALL      A=') != nil and
       disassembly.find('CALLT') != nil,
-      'Leading-dot calls should load the context and use ordinary call bytecode')
+      'Context-prefixed calls should load the context and use ordinary call bytecode')
    assert(disassembly.find('CTXENTER') is nil and disassembly.find('CTXCALL') is nil and
       disassembly.find('CTXLEAVE') is nil,
-      'A leading-dot member call should not emit redundant contextual call bytecode')
+      'A context member call should not emit redundant contextual call bytecode')
 end
 
 @Test function InternalNamespacesInheritCurrentContext()
-   local outer = { name = 'namespace outer' }
+   local outer = entity { name = 'namespace outer' }
 
    function read_namespace_argument():num
-      assert(.name is 'namespace outer', 'Namespace argument evaluation should inherit the caller context')
+      assert(&name is 'namespace outer', 'Namespace argument evaluation should inherit the caller context')
       return -19
    end
 
    function outer.run():<num, str>
       local result = math.abs(read_namespace_argument())
-      return result, .name
+      return result, &name
    end
 
    local result, restored_name = outer.run()
@@ -129,36 +149,36 @@ end
 end
 
 @Test function ReturnAritiesRestoreContext()
-   local receiver = { name = 'receiver' }
+   local receiver = entity { name = 'receiver' }
 
    function receiver.return_none()
-      assert(.name is 'receiver', 'A zero-result call should execute in its receiver context')
+      assert(&name is 'receiver', 'A zero-result call should execute in its receiver context')
    end
 
    function receiver.return_one():str
-      return .name
+      return &name
    end
 
    function receiver.return_many():<str, num, bool>
-      return .name, 17, true
+      return &name, 17, true
    end
 
    receiver.return_none()
-   assert(.receiver is nil, 'A zero-result return should restore the root context')
+   assert(&receiver is nil, 'A zero-result return should restore the root context')
    assert(receiver.return_one() is 'receiver', 'A fixed-result return should retain its value')
-   assert(.receiver is nil, 'A fixed-result return should restore the root context')
+   assert(&receiver is nil, 'A fixed-result return should restore the root context')
 
    local name, value, enabled = receiver.return_many()
    assert(name is 'receiver' and value is 17 and enabled is true,
       'A multiple-result return should retain all returned values')
-   assert(.receiver is nil, 'A multiple-result return should restore the root context')
+   assert(&receiver is nil, 'A multiple-result return should restore the root context')
 end
 
 @Test function VariableResultReturnsRestoreContext()
-   local receiver = { name = 'variable receiver' }
+   local receiver = entity { name = 'variable receiver' }
 
    function receiver.forward(...):<any, ...>
-      assert(.name is 'variable receiver', 'A variable-result callee should observe its receiver context')
+      assert(&name is 'variable receiver', 'A variable-result callee should observe its receiver context')
       return ...
    end
 
@@ -168,15 +188,15 @@ end
 
    local empty = receiver.forward()
    assert(empty is nil, 'A zero-value contextual variable-result return should produce nil in a fixed result slot')
-   assert(.name is nil, 'Variable-result returns should restore the root context')
+   assert(&name is nil, 'Variable-result returns should restore the root context')
 end
 
 @Test function ErrorsAndProtectedReentryRestoreContext()
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
 
    function inner.fail()
-      assert(.name is 'inner', 'The failing function should observe its receiver context')
+      assert(&name is 'inner', 'The failing function should observe its receiver context')
       error('context failure')
    end
 
@@ -185,13 +205,13 @@ end
          inner.fail()
       except e
          assert(e.message.find('context failure') != nil, 'The expected nested error should be caught')
-         return .name
+         return &name
       end
       return 'uncaught'
    end
 
    function outer.exec_in_context():str
-      return exec([[return .name]])
+      return exec([[return &name]])
    end
 
    function outer.exec_native_tail():num
@@ -202,18 +222,18 @@ end
    assert(outer.exec_in_context() is 'outer', 'Synchronous lua_pcall re-entry should inherit the active context')
    assert(outer.exec_native_tail() is 19,
       'A protected re-entry ending in a native contextual tail call should preserve its result')
-   assert(.name is nil, 'Protected calls should restore the root context after returning')
+   assert(&name is nil, 'Protected calls should restore the root context after returning')
 end
 
 @Test function ErrorCleanupHandlersObserveOwningContexts()
    local observed = {}
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
 
    function make_resource(Label:str):table
       return setmetatable({}, {
          __close = function()
-            observed[#observed] = Label .. ':' .. .name
+            observed[#observed] = Label .. ':' .. &name
          end
       })
    end
@@ -236,33 +256,92 @@ end
 
    assert(observed[0] is 'inner:inner', 'An inner error cleanup should retain the inner activation context')
    assert(observed[1] is 'outer:outer', 'An outer error cleanup should restore the outer activation context')
-   assert(.name is nil, 'Error cleanup should finish in the root context')
+   assert(&name is nil, 'Error cleanup should finish in the root context')
+end
+
+@Test function NormalExitDefersObserveOwningContexts()
+   local observed = {}
+   local outer = entity { name = 'defer outer' }
+   local inner = entity { name = 'defer inner' }
+
+   function inner.run():str
+      defer
+         observed[#observed] = 'inner:' .. &name
+      end
+      return &name
+   end
+
+   function outer.run():<str, str>
+      defer
+         observed[#observed] = 'outer:' .. &name
+      end
+      local inner_name = inner.run()
+      return inner_name, &name
+   end
+
+   local inner_name, outer_name = outer.run()
+   assert(inner_name is 'defer inner' and outer_name is 'defer outer',
+      'Nested contextual calls should retain their receivers through normal returns')
+   assert(observed[0] is 'inner:defer inner' and observed[1] is 'outer:defer outer',
+      'Normal-exit defers should observe their owning contextual calls in restoration order')
+   assert(&name is nil, 'Normal-exit defer cleanup should finish in the root context')
+end
+
+@Test function ActiveContextsSurviveStackGrowthAndFullCollection()
+   local outer = entity { name = 'stack outer' }
+   local inner = entity { name = 'stack inner' }
+
+   function recurse(Count:num):str
+      if Count <= 0 then
+         processing.collect('full')
+         return &name
+      end
+      local observed = recurse(Count - 1)
+      assert(&name is 'stack inner', 'Stack contraction should retain the inherited context')
+      return observed
+   end
+
+   function inner.run():str
+      return recurse(192)
+   end
+
+   function outer.run():<str, str>
+      local inner_name = inner.run()
+      return inner_name, &name
+   end
+
+   jit.off()
+   local inner_name, outer_name = outer.run()
+   jit.on()
+   assert(inner_name is 'stack inner' and outer_name is 'stack outer',
+      'Stack relocation and full collection should preserve every active contextual receiver')
+   assert(&name is nil, 'Stack and collection lifecycle work should restore the root context')
 end
 
 @Test function DelayedCallbacksAreUnbound()
-   .glDelayedContextName = 'root'
-   .glDelayedObservedContext = nil
-   local receiver = { glDelayedContextName = 'receiver' }
+   &glDelayedContextName = 'root'
+   &glDelayedObservedContext = nil
+   local receiver = entity { glDelayedContextName = 'receiver' }
 
    function receiver.schedule()
       processing.delayedCall(function()
-         .glDelayedObservedContext = .glDelayedContextName
+         &glDelayedObservedContext = &glDelayedContextName
          processing.signal()
       end)
    end
 
    receiver.schedule()
    check processing.sleep(1.0)
-   assert(.glDelayedObservedContext is 'root',
+   assert(&glDelayedObservedContext is 'root',
       'A delayed callback should begin unbound in the state root context')
-   .glDelayedContextName = nil
-   .glDelayedObservedContext = nil
+   &glDelayedContextName = nil
+   &glDelayedObservedContext = nil
 end
 
 @Test function ActionCallbacksAreUnbound()
-   .glActionContextName = 'root'
-   .glActionObservedContext = nil
-   local receiver = { glActionContextName = 'receiver' }
+   &glActionContextName = 'root'
+   &glActionObservedContext = nil
+   local receiver = entity { glActionContextName = 'receiver' }
    local file = obj.new('file')
    local timer
    local file_freed = false
@@ -270,13 +349,13 @@ end
    defer
       if timer then check mCore.UpdateTimer(timer, 0) end
       if not file_freed then file.free() end
-      .glActionContextName = nil
-      .glActionObservedContext = nil
+      &glActionContextName = nil
+      &glActionObservedContext = nil
    end
 
    function receiver.wait_for_free()
       file.subscribe('free', function()
-         .glActionObservedContext = .glActionContextName
+         &glActionObservedContext = &glActionContextName
          processing.signal()
       end)
 
@@ -290,17 +369,17 @@ end
    end
 
    receiver.wait_for_free()
-   assert(.glActionObservedContext is 'root',
+   assert(&glActionObservedContext is 'root',
       'An out-of-band action callback should begin unbound in the state root context')
 end
 
 @Test function ContextualTailCallsTransferOwnership()
-   local outer = { name = 'outer' }
-   local inner = { name = 'inner' }
-   local recursive = { name = 'recursive' }
+   local outer = entity { name = 'outer' }
+   local inner = entity { name = 'inner' }
+   local recursive = entity { name = 'recursive' }
 
    function inherited_helper(Value:num):<str, num>
-      return .name, Value
+      return &name, Value
    end
 
    function outer.to_direct(Value:num):<str, num>
@@ -312,7 +391,7 @@ end
    end
 
    function outer.read():str
-      return .name
+      return &name
    end
 
    function outer.to_different():str
@@ -320,11 +399,11 @@ end
    end
 
    function inner.read():str
-      return .name
+      return &name
    end
 
    function recursive.read(Count:num):str
-      if Count <= 0 then return .name end
+      if Count <= 0 then return &name end
       return recursive.read(Count - 1)
    end
 
@@ -334,15 +413,15 @@ end
    assert(outer.to_same() is 'outer', 'A same-receiver tail call should retain its receiver')
    assert(outer.to_different() is 'inner', 'A different-receiver tail call should replace its receiver')
    assert(recursive.read(40) is 'recursive', 'Contextual tail recursion should retain context ownership')
-   assert(.name is nil, 'Completed contextual tail calls should restore the root context')
+   assert(&name is nil, 'Completed contextual tail calls should restore the root context')
 end
 
 @Test function DirectCallerContextualTailCallRestoresRoot()
    local script = obj.new('tiri', { statement = [[
-local target = { name = 'tail target' }
+local target = entity { name = 'tail target' }
 
 function target.read()
-   return .name
+   return &name
 end
 
 function forward():<any, ...>
@@ -350,7 +429,7 @@ function forward():<any, ...>
 end
 
 assert(forward() is 'tail target', 'The contextual tail target should retain its receiver')
-assert(.name is nil, 'A contextual tail call from a direct function should restore the root context')
+assert(&name is nil, 'A contextual tail call from a direct function should restore the root context')
 ]] })
    check script.acQuery()
    check script.acActivate()
@@ -360,12 +439,12 @@ assert(.name is nil, 'A contextual tail call from a direct function should resto
 end
 
 @Test function ComputedVariadicAndNativeTailCallsRestoreContext()
-   local outer = { name = 'outer' }
-   local target = { name = 'target' }
+   local outer = entity { name = 'outer' }
+   local target = entity { name = 'target' }
 
    function target.collect(...):str
       local first = ...
-      return .name .. ':' .. tostring(first)
+      return &name .. ':' .. tostring(first)
    end
 
    function outer.forward(Key:str, ...):str
@@ -379,16 +458,16 @@ end
    assert(outer.forward('collect', 7, 'eight') is 'target:7',
       'A computed variadic contextual call should preserve its receiver and forwarded arguments')
    assert(outer.native_tail() is 12, 'A contextual tail call into a native namespace should preserve its result')
-   assert(.name is nil, 'Native and variadic contextual tail calls should restore the root context')
+   assert(&name is nil, 'Native and variadic contextual tail calls should restore the root context')
 end
 
 @Test function ReceiverKeyAndArgumentsPreserveEvaluationOrder()
    local events = {}
-   local target = { name = 'ordered' }
+   local target = entity { name = 'ordered' }
 
    function target.invoke(Value:num):num
       events[#events] = 'call'
-      assert(.name is 'ordered', 'The callable should observe the original receiver')
+      assert(&name is 'ordered', 'The callable should observe the original receiver')
       return Value
    end
 
@@ -404,7 +483,7 @@ end
 
    function evaluate_argument():num
       events[#events] = 'argument'
-      assert(.name is 'ordered', 'Arguments should be evaluated after contextual entry')
+      assert(&name is 'ordered', 'Arguments should be evaluated after contextual entry')
       return 23
    end
 
@@ -417,13 +496,17 @@ end
 
 @Test function MetatableLookupKeepsOriginalReceiver()
    local implementation = function():str
-      return .name
+      return &name
    end
    local prototype = { inherited = implementation }
-   local receiver = setmetatable({ name = 'receiver' }, { __index = prototype })
+   -- The metatable designates the receiver contextual, so this also covers the `__context` designation path with an
+   -- inline literal target.
+   local receiver = setmetatable({ name = 'receiver' }, { __index = prototype, __context = true })
 
    assert(receiver.inherited() is 'receiver',
       'A callable returned through __index should retain the original table receiver as context')
+   assert(prototype.inherited() is nil,
+      'The ordinary table holding an inherited callable should not replace the receiver')
 end
 
 @Test function SafeContextualCallsShortCircuitAndEstablishContext()
@@ -446,25 +529,25 @@ end
    assert(key_calls is 0 and argument_calls is 0,
       'A safe computed call should not evaluate its key or arguments on the nil path')
 
-   local receiver = { name = 'safe' }
+   local receiver = entity { name = 'safe' }
    function receiver.invoke():str
-      return .name
+      return &name
    end
 
    assert(receiver?.invoke() is 'safe', 'A safe named table call should establish context on its non-nil path')
 end
 
 @Test function ExtractedMembersRemainUnbound()
-   .glContextualExtractionName = 'root'
-   local receiver = { glContextualExtractionName = 'receiver' }
+   &glContextualExtractionName = 'root'
+   local receiver = entity { glContextualExtractionName = 'receiver' }
 
    function receiver.read():str
-      return .glContextualExtractionName
+      return &glContextualExtractionName
    end
 
    local callback = receiver.read
    assert(callback() is 'root', 'An extracted member should inherit invocation-time context without binding its table')
-   .glContextualExtractionName = nil
+   &glContextualExtractionName = nil
 end
 
 @Test function StaticStructureMemberCallsBypassContextBytecode()
@@ -485,10 +568,10 @@ end
 end
 
 @Test function NonTableReceiversDoNotReplaceContext()
-   .glContextualExemption = 'root'
+   &glContextualExemption = 'root'
 
    function context_argument(Value:any):any
-      assert(.glContextualExemption is 'root', 'A non-table member call should leave argument context unchanged')
+      assert(&glContextualExemption is 'root', 'A non-table member call should leave argument context unchanged')
       return Value
    end
 
@@ -506,7 +589,7 @@ end
    assert(err is ERR_Okay and state != nil, 'Object member dispatch should retain its visible argument layout')
 
    local probe = function(Value:any):any
-      assert(.glContextualExemption is 'root', 'A non-table metatable function should inherit the current context')
+      assert(&glContextualExemption is 'root', 'A non-table metatable function should inherit the current context')
       return Value
    end
 
@@ -523,16 +606,16 @@ end
    assert(scalar.probe(context_argument('scalar')) is 'scalar',
       'Scalar member dispatch should not replace the current table context')
    debug.setMetatable(scalar, scalar_metatable)
-   .glContextualExemption = nil
+   &glContextualExemption = nil
 end
 
 @Test(hotpath=80) function JITHotNestedContextsAndSideExitsMatchInterpreter()
-   local outer = { name = 'jit outer' }
-   local inner = { name = 'jit inner', alternate = false }
+   local outer = entity { name = 'jit outer' }
+   local inner = entity { name = 'jit inner', alternate = false }
 
    function inner.read(Value:num):str
-      if .alternate then return .name .. ':alternate:' .. tostring(Value) end
-      return .name .. ':primary:' .. tostring(Value)
+      if &alternate then return &name .. ':alternate:' .. tostring(Value) end
+      return &name .. ':primary:' .. tostring(Value)
    end
 
    function outer.run(Target:table, Count:num):str
@@ -540,7 +623,7 @@ end
       for i in {0 to Count} do
          if i is 24 then Target.alternate = true end
          result = Target.read(i)
-         assert(.name is 'jit outer', 'A recorded contextual return should restore its caller context')
+         assert(&name is 'jit outer', 'A recorded contextual return should restore its caller context')
       end
       return result
    end
@@ -564,15 +647,15 @@ end
    assert(recorded is interpreted,
       'Recorded nested contexts and their forced branch side exit should match the interpreter')
    assert(trace_count > 0, 'The contextual hot workload should produce at least one recorded trace')
-   assert(.name is nil, 'A completed recorded contextual workload should restore the root context')
+   assert(&name is nil, 'A completed recorded contextual workload should restore the root context')
 end
 
 @Test(hotpath=80) function JITAlternatingReceiversUseRecordedContext()
-   local first = { value = 3 }
-   local second = { value = 7 }
+   local first = entity { value = 3 }
+   local second = entity { value = 7 }
 
    function read_value():num
-      return .value
+      return &value
    end
 
    first.read = read_value
@@ -598,19 +681,19 @@ end
 
    assert(recorded is interpreted and recorded is 1000,
       'A recorded contextual call should use the loop-selected receiver rather than a retained earlier table')
-   assert(.value is nil, 'Alternating recorded receivers should restore the root context')
+   assert(&value is nil, 'Alternating recorded receivers should restore the root context')
 end
 
 @Test function JITVirtualContextRestoresAllocatedReceiverOnExit()
    function read_allocated():num
-      if .alternate then return .value + 1 end
-      return .value
+      if &alternate then return &value + 1 end
+      return &value
    end
 
    function run(Count:num):num
       local total = 0
       for i in {0 to Count} do
-         local target = { value = i, alternate = i is 24, read = read_allocated }
+         local target = entity { value = i, alternate = i is 24, read = read_allocated }
          total += target.read()
       end
       return total
@@ -627,14 +710,14 @@ end
 
    assert(recorded is interpreted,
       'A virtual context side exit should restore a receiver allocated by the recorded loop')
-   assert(.value is nil, 'An allocated virtual receiver should no longer be current after contextual restoration')
+   assert(&value is nil, 'An allocated virtual receiver should no longer be current after contextual restoration')
 end
 
 @Test function JITFreshContextualClosuresReusePrototypeTrace()
    function run_factory(Offset:num, Count:num):num
-      local target = {
+      local target = entity {
          value = 3,
-         read = function():num return .value + Offset end
+         read = function():num return &value + Offset end
       }
       local total = 0
       for _ in {0 to Count} do total += target.read() end
@@ -668,12 +751,12 @@ end
 end
 
 @Test function JITVirtualExitPreservesMaterialisedCallerContext()
-   local outer = { name = 'materialised outer' }
-   local target = { value = 3, alternate = false }
+   local outer = entity { name = 'materialised outer' }
+   local target = entity { value = 3, alternate = false }
 
    function target.read():num
-      if .alternate then return .value + 1 end
-      return .value
+      if &alternate then return &value + 1 end
+      return &value
    end
 
    function run(Target:table, Count:num):num
@@ -684,7 +767,7 @@ end
 
    function outer.invoke(Target:table, Count:num):<num, str>
       local total = run(Target, Count)
-      return total, .name
+      return total, &name
    end
 
    jit.on()
@@ -700,24 +783,24 @@ end
       'A reused virtual trace should preserve receiver results on both guarded paths')
    assert(restored_name is 'materialised outer',
       'A virtual side exit should preserve the materialised context inherited by the reused trace')
-   assert(.name is nil, 'The reused trace should restore the root context after its caller returns')
+   assert(&name is nil, 'The reused trace should restore the root context after its caller returns')
 end
 
 @Test(hotpath=80) function JITContextualResultAritiesAndNestedRestorationMatchInterpreter()
-   local outer = { name = 'arity outer' }
-   local target = { name = 'arity target', calls = 0, alternate = false }
+   local outer = entity { name = 'arity outer' }
+   local target = entity { name = 'arity target', calls = 0, alternate = false }
 
    function target.zero()
-      .calls++
+      &calls++
    end
 
    function target.fixed(Value:num):str
-      if .alternate then return .name .. ':alternate:' .. tostring(Value) end
-      return .name .. ':primary:' .. tostring(Value)
+      if &alternate then return &name .. ':alternate:' .. tostring(Value) end
+      return &name .. ':primary:' .. tostring(Value)
    end
 
    function target.multiple(Value:num):<str, num>
-      return .name, Value
+      return &name, Value
    end
 
    function outer.run(Target:table, Count:num):str
@@ -728,7 +811,7 @@ end
          local fixed = Target.fixed(i)
          local name, value = Target.multiple(i)
          result = fixed .. ':' .. name .. ':' .. tostring(value)
-         assert(.name is 'arity outer', 'Every contextual result arity should restore the outer context')
+         assert(&name is 'arity outer', 'Every contextual result arity should restore the outer context')
       end
       return result
    end
@@ -752,12 +835,12 @@ end
       'Recorded zero, fixed and multiple-result contextual calls should match the interpreter')
    assert(target.calls is interpreted_calls,
       'A recorded zero-result contextual call should execute exactly once per source invocation')
-   assert(.name is nil, 'Recorded contextual result arities should finish in the root context')
+   assert(&name is nil, 'Recorded contextual result arities should finish in the root context')
 end
 
 @Test function JITContextualVariableResultsMatchInterpreter()
-   local outer = { name = 'variable outer' }
-   local target = { name = 'variable target' }
+   local outer = entity { name = 'variable outer' }
+   local target = entity { name = 'variable target' }
 
    function target.forward(...):<any, ...>
       return ...
@@ -768,7 +851,7 @@ end
       for i in {0 to Count} do
          local first, second = Target.forward(i, i + 1)
          result = first + second
-         assert(.name is 'variable outer', 'A contextual RETM return should restore its recorded caller context')
+         assert(&name is 'variable outer', 'A contextual RETM return should restore its recorded caller context')
       end
       return result
    end
@@ -790,15 +873,15 @@ end
 
    assert(recorded is interpreted, 'Recorded contextual variable-result returns should match the interpreter')
    assert(trace_count > 0, 'The contextual variable-result workload should produce at least one recorded trace')
-   assert(.name is nil, 'Recorded contextual variable-result returns should finish in the root context')
+   assert(&name is nil, 'Recorded contextual variable-result returns should finish in the root context')
 end
 
 @Test function JITComputedContextualResultsMatchInterpreter()
-   local outer = { name = 'computed outer' }
-   local target = { name = 'computed target' }
+   local outer = entity { name = 'computed outer' }
+   local target = entity { name = 'computed target' }
 
    function target.describe(Value:num):<table, num>
-      return { name = .name, value = Value }, Value + 1
+      return { name = &name, value = Value }, Value + 1
    end
 
    function outer.run(Target:table, Count:num):num
@@ -809,7 +892,7 @@ end
          result = description.value + next_value
          assert(description.name is 'computed target',
             'A recorded computed contextual call should preserve its table result')
-         assert(.name is 'computed outer',
+         assert(&name is 'computed outer',
             'A recorded computed contextual call should restore its caller context')
       end
       return result
@@ -832,11 +915,11 @@ end
 
    assert(recorded is interpreted, 'Recorded computed contextual results should match the interpreter')
    assert(trace_count > 0, 'The computed contextual result workload should produce at least one recorded trace')
-   assert(.name is nil, 'Recorded computed contextual calls should finish in the root context')
+   assert(&name is nil, 'Recorded computed contextual calls should finish in the root context')
 end
 
 @Test function JITNativeContextualResultsRemainLoopCarried()
-   local methods = { decode = array.getString }
+   local methods = entity { decode = array.getString }
    local bytes = array<byte> { 65, 66, 67 }
    local expected = { [0] = 'A', [1] = 'B', [2] = 'C' }
 
@@ -868,7 +951,7 @@ end
 
    assert(recorded is interpreted, 'A recorded native contextual result should match the interpreter')
    assert(trace_count > 0, 'The native contextual result workload should produce at least one recorded trace')
-   assert(.decode is nil, 'Recorded native contextual calls should finish in the root context')
+   assert(&decode is nil, 'Recorded native contextual calls should finish in the root context')
 end
 
 @Test function JITNestedContextualReturnRootsPreserveCallerArguments()
@@ -897,15 +980,15 @@ end
    assert(recorded is interpreted,
       'A nested return trace below a contextual caller should preserve recursive arguments and results')
    assert(trace_count > 0, 'The nested contextual return workload should produce at least one recorded trace')
-   assert(.start is nil, 'Nested contextual return roots should finish in the root context')
+   assert(&start is nil, 'Nested contextual return roots should finish in the root context')
 end
 
 @Test(hotpath=80) function JITContextualTailTransferMatchesInterpreter()
-   local receiver = { name = 'jit tail' }
-   local target = { name = 'jit target' }
+   local receiver = entity { name = 'jit tail' }
+   local target = entity { name = 'jit target' }
 
    function target.read():str
-      return .name
+      return &name
    end
 
    function receiver.forward():str
@@ -930,22 +1013,22 @@ end
 
    assert(recorded is interpreted and recorded is 'jit target',
       'A recorded contextual tail transfer should preserve the transferred receiver')
-   assert(.name is nil, 'A completed contextual tail transfer should restore the root context')
+   assert(&name is nil, 'A completed contextual tail transfer should restore the root context')
 end
 
 @Test(hotpath=80) function JITContextualTailTransferCoversOwnershipAndSideExits()
-   local outer = { name = 'tail outer' }
-   local target = { name = 'tail target', alternate = false }
+   local outer = entity { name = 'tail outer' }
+   local target = entity { name = 'tail target', alternate = false }
 
    function target.read(Value:num):str
-      assert(.name is 'tail target', 'A transferred tail context should be visible in the target')
-      if .alternate then return .name .. ':alternate:' .. tostring(Value) end
-      return .name .. ':primary:' .. tostring(Value)
+      assert(&name is 'tail target', 'A transferred tail context should be visible in the target')
+      if &alternate then return &name .. ':alternate:' .. tostring(Value) end
+      return &name .. ':primary:' .. tostring(Value)
    end
 
    function outer.read(Value:num):str
-      assert(.name is 'tail outer', 'A same-receiver tail transfer should retain its context')
-      return .name .. ':' .. tostring(Value)
+      assert(&name is 'tail outer', 'A same-receiver tail transfer should retain its context')
+      return &name .. ':' .. tostring(Value)
    end
 
    function outer.forward(Target:table, Value:num):str
@@ -1007,12 +1090,12 @@ end
    assert(recorded_direct is interpreted_direct,
       'A recorded contextual tail transfer from a direct caller should match the interpreter')
    assert(trace_count > 0, 'Contextual tail transfers should produce at least one recorded trace')
-   assert(.name is nil, 'All recorded contextual tail transfers should restore the root context')
+   assert(&name is nil, 'All recorded contextual tail transfers should restore the root context')
 end
 
 @Test(hotpath=80) function JITNativeContextualTailTransferRestoresContext()
-   local native_target = { absolute = math.abs }
-   local native_forwarder = { name = 'native forwarder' }
+   local native_target = entity { absolute = math.abs }
+   local native_forwarder = entity { name = 'native forwarder' }
 
    function native_forwarder.run():num
       return native_target.absolute(-7)
@@ -1030,17 +1113,17 @@ end
    jit.opt.start()
 
    assert(native_result is 7, 'A recorded native contextual tail transfer should preserve its result')
-   assert(.name is nil, 'The native contextual tail transfer should restore the root context')
+   assert(&name is nil, 'The native contextual tail transfer should restore the root context')
 end
 
 @Test(hotpath=80) function JITRecursiveContextualTailTransferHandlesAbortsAndSideExits()
-   local recursive = { name = 'recursive tail', visits = 0, alternate = false }
+   local recursive = entity { name = 'recursive tail', visits = 0, alternate = false }
 
    function recursive.run(Count:num):<any, ...>
-      .visits++
+      &visits++
       if Count <= 0 then
-         if .alternate then return .name .. ':alternate:' .. tostring(.visits) end
-         return .name .. ':primary:' .. tostring(.visits)
+         if &alternate then return &name .. ':alternate:' .. tostring(&visits) end
+         return &name .. ':primary:' .. tostring(&visits)
       end
       return recursive.run(Count - 1)
    end
@@ -1096,5 +1179,78 @@ end
       'A forced side exit should retain the recursive receiver, result and visit count')
    assert(aborted > 0, 'A low tail unroll limit should exercise recorder abort cleanup')
    assert(compiled > 0, 'Retrying with a sufficient tail unroll limit should compile recursive traces')
-   assert(.name is nil, 'Recursive tail completion, aborts and side exits should restore the root context')
+   assert(&name is nil, 'Recursive tail completion, aborts and side exits should restore the root context')
+end
+
+@Test(hotpath=80) function JITTraceFlushInsideContextPreservesLifecycle()
+   local target = entity { name = 'flush target' }
+
+   function target.read(Flush:bool):str
+      if Flush then jit.flush() end
+      return &name
+   end
+
+   function run(Count:num, FlushAt:num):str
+      local result = ''
+      for i in {0 to Count} do result = target.read(i is FlushAt) end
+      return result
+   end
+
+   jit.off()
+   local interpreted = run(96, -1)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded = run(96, 48)
+   local after_flush = run(96, -1)
+   jit.off()
+   jit.opt.start()
+
+   assert(recorded is interpreted and after_flush is interpreted,
+      'Flushing traces from an active contextual call should preserve current and subsequent results')
+   assert(&name is nil, 'Trace flushing from an active contextual call should restore the root context')
+end
+
+@Test(hotpath=80) function JITBlacklistedContextualCalleeRestoresContext()
+   local target = entity { name = 'blacklisted target' }
+
+   function target.read():str
+      return &name
+   end
+
+   function run(Count:num):str
+      local result = ''
+      for _ in {0 to Count} do result = target.read() end
+      return result
+   end
+
+   jit.off(target.read, true)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local aborted = 0
+   local blacklisted = 0
+   local last_reason:any = nil
+   local function trace_event(Event, TraceNo, Function, BytecodePosition, Reason)
+      if Event != 'abort' then return end
+      aborted++
+      last_reason = Reason
+      -- LJ_TRERR_BLACKL is the append-only trace error value 5.
+      if Reason is 5 then blacklisted++ end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = run(256)
+   jit.attach(trace_event)
+   jit.off()
+   jit.opt.start()
+
+   assert(result is 'blacklisted target',
+      'A contextual call into a blacklisted callee should continue correctly in the interpreter')
+   assert(aborted > 0 and blacklisted > 0,
+      f'The contextual workload should exercise the recorder blacklisting abort path ' ..
+      f'(aborted={aborted}, reason={last_reason})')
+   assert(&name is nil, 'A blacklisted contextual callee should restore the root context')
 end

@@ -148,6 +148,7 @@ private:
    ParserResult<ExprNodePtr> parse_scanned_range_in_braces(
       bool HasStep, bool HasBareStringOperand);
    ParserResult<StmtNodePtr> parse_do();
+   ParserResult<StmtNodePtr> parse_using();
    ParserResult<StmtNodePtr> parse_with();
    ParserResult<StmtNodePtr> parse_defer();
    ParserResult<StmtNodePtr> parse_return();

@@ -1002,6 +1002,47 @@ ParserResult<StmtNodePtr> AstBuilder::parse_do()
 }
 
 //********************************************************************************************************************
+// Parses a temporary table-context block.  The reference grammar deliberately excludes calls and safe access so the
+// receiver is a stable identifier/member/index path evaluated exactly once at entry.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_using()
+{
+   Token token = this->ctx.tokens().current();
+   this->ctx.tokens().advance();
+
+   auto reference = this->parse_primary();
+   if (not reference.ok()) return ParserResult<StmtNodePtr>::failure(reference.error_ref());
+
+   auto is_reference = [](const ExprNode *Node, const auto &Self) -> bool {
+      if (not Node) return false;
+      if (Node->kind IS AstNodeKind::IdentifierExpr) return true;
+      if (Node->kind IS AstNodeKind::MemberExpr) {
+         const auto &payload = std::get<MemberExprPayload>(Node->data);
+         return Self(payload.table.get(), Self);
+      }
+      if (Node->kind IS AstNodeKind::IndexExpr) {
+         const auto &payload = std::get<IndexExprPayload>(Node->data);
+         return Self(payload.table.get(), Self);
+      }
+      return false;
+   };
+
+   if (not is_reference(reference.value_ref().get(), is_reference)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, token,
+         "using block requires an identifier, member or index reference");
+   }
+
+   this->ctx.consume(TokenKind::DoToken, ParserErrorCode::ExpectedToken);
+   auto block = this->parse_scoped_block({ TokenKind::EndToken });
+   if (not block.ok()) return ParserResult<StmtNodePtr>::failure(block.error_ref());
+   this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
+
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::ContextStmt, token.span());
+   stmt->data = ContextStmtPayload(std::move(reference.value_ref()), std::move(block.value_ref()));
+   return ParserResult<StmtNodePtr>::success(std::move(stmt));
+}
+
+//********************************************************************************************************************
 // Parses with statements: with expr1, expr2 do ... end
 // Auto-locks Kotuku objects for the duration of the block, unlocking when scope exits.
 
