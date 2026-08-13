@@ -102,7 +102,7 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 
 |`function t:name()` +
 implicit `self`
-|Removed; declare the receiver as an explicit parameter
+|`function t.name()`; the receiver is the current context, reached with a leading `&`
 |<<sec-migration-method-calls>>
 
 |`obj?:method()`
@@ -231,6 +231,67 @@ print(s.sub(0, 3))   -- 'hel'
 ----
 
 This change affects all table constructors, `ipairs()` iteration, string functions and array access.  When migrating numeric `for` loops that iterate over tables, adjust the start index from 1 to 0 and the end condition accordingly.
+
+[[sec-migration-method-calls]]
+=== Method Calls and the Colon
+
+indexterm:[Lua, method calls] indexterm:[colon syntax] Tiri has no colon call syntax and no `self` parameter.  Every call is written with `.`.  A function called as a member of a table receives that table as its __current context__ and reaches it with a leading `.`, so the receiver is neither declared nor passed.  Both the colon call form and the colon declaration form are rejected by the compiler with a diagnostic that names the replacement.  See <<sec-the-current-context>>.
+
+==== Calls
+
+Replace `receiver:method(...)` with `receiver.method(...)`:
+
+[source,tiri]
+----
+-- Lua
+local upper = s:upper()
+local parts = s:gsub('%s', '')
+
+-- Tiri
+upper = s.upper()
+parts = s.replace(' ', '')
+----
+
+The dot form is not merely a rename.  For the built-in types -- `str`, `table`, `array`, `range`, `struct` and file handles -- `receiver.method(...)` invokes a registered built-in method and passes the receiver automatically, so it remains equivalent to the namespace form `string.upper(s)`.  See <<sec-built-in-method-calls>>.
+
+Replace the safe method operator `?:` with `?.`:
+
+[source,tiri]
+----
+-- Lua-style, no longer accepted:  text?:upper()
+result = text?.upper()
+----
+
+==== Declarations
+
+Replace `function t:name(...)` with a dot-qualified declaration and rewrite every `self` reference as `&&` in isolation, or a leading `&[name]` for field access.  Call sites change only in the separator:
+
+[source,tiri]
+----
+-- Lua
+function Account:deposit(Amount)
+   self.balance = self.balance + Amount
+end
+account:deposit(50)
+
+-- Tiri
+function Account.deposit(Amount:num)
+   &balance += Amount
+end
+account.deposit(50)
+----
+
+The mapping from `self.` to `&` is direct, with three differences to check during migration:
+
+- A function extracted from a table (`handler = t.method`) carries no receiver.  Lua's colon call binds the receiver at the call site, and so does Tiri's dot call; an extracted value binds nothing in either language, but Tiri gives it the caller's context rather than a `nil` first argument.
+- A callback registered with the framework begins in the root context, not on the table that registered it.  Capture the table as an upvalue.  See <<sec-context-and-callbacks>>.
+- A function that must operate on a table other than its receiver declares that table as an ordinary parameter.
+
+The `pass:[__]index` class pattern carries over unchanged apart from this substitution; see <<sec-class-pattern>>.
+
+==== Method Names That Collide with Built-ins
+
+A function assigned to a table member whose name matches a built-in `table` method is rejected at compile time, because the built-in owns the immediate call position.  Lua code that defines methods named `insert`, `remove`, `concat`, `clear`, `sort` or similar must be renamed, or declared with a computed key and called through one of the field-call escape forms.  See <<sec-built-in-method-calls>>.
 
 [[sec-migration-scoping]]
 === Variable Scoping

@@ -1,11 +1,13 @@
 // CHANGED: 2026-07-29 — Removed newproxy(); the function is now internal.
 // UPDATED: 2026-08-06 - Recorded the zero-based math.random(High) range (commit 2e7951d41)
 // UPDATED: 2026-08-06 - Added table.kind(), table.size() and the sequence requirements (commit 26e122ab7)
+// UPDATED: 2026-08-11 - Method-call syntax is now written with '.'; retitled every method entry accordingly (commit 7e6746950)
+// UPDATED: 2026-08-11 - table.clear() now dispatches to the __clear metamethod (commit 0e4d3a341)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
 == Standard Library Quick Reference
-indexterm:[library, standard] This appendix provides a compact reference of all built-in Tiri functions organised by library.  For full semantics, see the referenced chapters.  All string and table indexing is zero-based.  String and array methods support method-call syntax: `s:upper()` is equivalent to `string.upper(s)`.
+indexterm:[library, standard] This appendix provides a compact reference of all built-in Tiri functions organised by library.  For full semantics, see the referenced chapters.  All string and table indexing is zero-based.  String, table, array and range methods support built-in method-call syntax on a receiver: `s.upper()` is equivalent to `string.upper(s)`.  See <<sec-built-in-method-calls>>.
 
 === Global Functions
 indexterm:[global functions] See <<ch-basic-syntax>>, <<ch-types-and-values>>, <<ch-error-handling>>.
@@ -106,7 +108,7 @@ indexterm:[library, table] See <<ch-tables>>.
 |`table.sort(Table, [Comparator])`                   |Sorts the array portion in-place.  Requires a sequence table.
 |`table.sortByKeys(Table, [Comparator])`             |Iterates in sorted key order.
 |`table.slice(Table, Range)`                         |Extracts a subsequence.  Requires a sequence table.
-|`table.clear(Table)`                                |Removes all entries.  Raises an error for a global environment.
+|`table.clear(Table)`                                |Removes all entries, or invokes `pass:[__]clear` when the metamethod is present.  Raises an error for a global environment.
 |`table.empty(Table)`                                |Returns `true` if the table has no entries.
 |`table.kind(Table)`                                 |Returns the classification: `'sequence'`, `'sparse'`, `'associative'` or `'mixed'`.
 |`table.size(Table)`                                 |Counts every live entry across both parts.
@@ -136,12 +138,12 @@ Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
 |===
 |Signature |Description
 
-|`arr:type()`              |Returns the element type as a string.
-|`arr:readOnly()`          |Returns `true` if the array is read-only.
-|`arr:first()`             |Returns the first element.
-|`arr:last()`              |Returns the last element.
-|`arr:find(Value, [Start])`|Returns the index of `Value`, or `nil` if not found.
-|`arr:find(Value, Range)`  |Searches within a range.
+|`arr.type()`              |Returns the element type as a string.
+|`arr.readOnly()`          |Returns `true` if the array is read-only.
+|`arr.first()`             |Returns the first element.
+|`arr.last()`              |Returns the last element.
+|`arr.find(Value, [Start])`|Returns the index of `Value`, or `nil` if not found.
+|`arr.find(Value, Range)`  |Searches within a range.
 |===
 
 ==== Mutation
@@ -150,17 +152,17 @@ Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
 |===
 |Signature |Description
 
-|`arr:push(Value, pass:[...])`         |Appends elements.  Returns the new length.
-|`arr:pop([Count])`                    |Removes and returns elements from the end.
-|`arr:insert(Index, Value, pass:[...])`|Inserts elements at `Index`.
-|`arr:remove(Index, [Count])`          |Removes elements at `Index`.
-|`arr:fill(Value, [Start, Count])`     |Fills elements with `Value`.
-|`arr:fill(Value, Range)`              |Fills elements within a range.
-|`arr:sort([Descending])`              |Sorts in-place.
-|`arr:sort(ComparatorFn)`              |Sorts with a custom comparator.
-|`arr:reverse()`                       |Reverses in-place.
-|`arr:clear()`                         |Resets the length to zero.
-|`arr:resize(NewSize)`                 |Changes the length.
+|`arr.push(Value, pass:[...])`         |Appends elements.  Returns the new length.
+|`arr.pop([Count])`                    |Removes and returns elements from the end.
+|`arr.insert(Index, Value, pass:[...])`|Inserts elements at `Index`.
+|`arr.remove(Index, [Count])`          |Removes elements at `Index`.
+|`arr.fill(Value, [Start, Count])`     |Fills elements with `Value`.
+|`arr.fill(Value, Range)`              |Fills elements within a range.
+|`arr.sort([Descending])`              |Sorts in-place.
+|`arr.sort(ComparatorFn)`              |Sorts with a custom comparator.
+|`arr.reverse()`                       |Reverses in-place.
+|`arr.clear()`                         |Resets the length to zero.
+|`arr.resize(NewSize)`                 |Changes the length.
 |===
 
 ==== Copying, Slicing, and Conversion
@@ -169,13 +171,13 @@ Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
 |===
 |Signature |Description
 
-|`arr:clone()`                                   |Returns a shallow copy.
-|`arr:slice(Range)`                              |Extracts a subsequence.
-|`arr:copy(Source, [DestIndex, SrcIndex, Count])`|Copies elements from another array.
-|`arr:table()`                                   |Converts to a table.
-|`arr:getString([Start, Length])`                |Byte/char arrays only.  Extracts a string.
-|`arr:setString(String, [Start])`                |Byte/char arrays only.  Writes a string.
-|`arr:concat([Separator], [Format], [Start], [End])`|Concatenates elements into a string, optionally formatted.
+|`arr.clone()`                                   |Returns a shallow copy.
+|`arr.slice(Range)`                              |Extracts a subsequence.
+|`arr.copy(Source, [DestIndex, SrcIndex, Count])`|Copies elements from another array.
+|`arr.table()`                                   |Converts to a table.
+|`arr.getString([Start, Length])`                |Byte/char arrays only.  Extracts a string.
+|`arr.setString(String, [Start])`                |Byte/char arrays only.  Writes a string.
+|`arr.concat([Separator], [Format], [Start], [End])`|Concatenates elements into a string, optionally formatted.
 |===
 
 ==== Functional Methods
@@ -184,12 +186,12 @@ Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
 |===
 |Signature |Description
 
-|`arr:each(Callback)`          |Calls `Callback` for each element.
-|`arr:map(Callback)`           |Returns a new array of transformed elements.
-|`arr:filter(Predicate)`       |Returns a new array of elements matching `Predicate`.
-|`arr:reduce(Initial, Reducer)`|Folds elements into a single value.
-|`arr:any(Predicate)`          |Returns `true` if any element matches.
-|`arr:all(Predicate)`          |Returns `true` if all elements match.
+|`arr.each(Callback)`          |Calls `Callback` for each element.
+|`arr.map(Callback)`           |Returns a new array of transformed elements.
+|`arr.filter(Predicate)`       |Returns a new array of elements matching `Predicate`.
+|`arr.reduce(Initial, Reducer)`|Folds elements into a single value.
+|`arr.any(Predicate)`          |Returns `true` if any element matches.
+|`arr.all(Predicate)`          |Returns `true` if all elements match.
 |===
 
 <<<
@@ -203,16 +205,16 @@ indexterm:[library, range] See <<ch-ranges>>.
 |`range(Start, Stop, [Inclusive], [Step])`    |Creates a range.
 |`range.new(Start, Stop, [Inclusive], [Step])`|Alias for `range()`.
 |`range.slice(Object, Range)`|Extracts a slice from an object using a range.
-|`r:toArray()`               |Converts the range to an array.
-|`r:contains(Value)`         |Returns `true` if `Value` is within the range.
-|`r:each(Callback)`          |Calls `Callback` for each value in the range.
-|`r:map(Transform)`          |Returns an array of transformed values.
-|`r:filter(Predicate)`       |Returns an array of matching values.
-|`r:reduce(Initial, Reducer)`|Folds values into a single result.
-|`r:take(Count)`             |Returns an array of the first `Count` values.
-|`r:any(Predicate)`          |Returns `true` if any value matches.
-|`r:all(Predicate)`          |Returns `true` if all values match.
-|`r:find(Predicate)`         |Returns the first value matching `Predicate`.
+|`r.toArray()`               |Converts the range to an array.
+|`r.contains(Value)`         |Returns `true` if `Value` is within the range.
+|`r.each(Callback)`          |Calls `Callback` for each value in the range.
+|`r.map(Transform)`          |Returns an array of transformed values.
+|`r.filter(Predicate)`       |Returns an array of matching values.
+|`r.reduce(Initial, Reducer)`|Folds values into a single result.
+|`r.take(Count)`             |Returns an array of the first `Count` values.
+|`r.any(Predicate)`          |Returns `true` if any value matches.
+|`r.all(Predicate)`          |Returns `true` if all values match.
+|`r.find(Predicate)`         |Returns the first value matching `Predicate`.
 |===
 
 Range literal syntax: `{0 to 5}` (exclusive), `{0 into 5}` (inclusive).
@@ -389,12 +391,12 @@ indexterm:[library, I/O] See <<ch-file-io>>.
 |===
 |Signature |Description
 
-|`file:read([Format, pass:[...]])`|Reads data.  Formats: `*l` (line), `*a` (all), `*n` (number), or byte count.
-|`file:write(Data, pass:[...])`   |Writes data.
-|`file:seek([Whence, [Offset]])`  |Sets or gets position.  `Whence`: `"set"`, `"cur"`, `"end"`.
-|`file:close()`                   |Closes the handle.
-|`file:flush()`                   |Flushes the write buffer.
-|`file:lines()`                   |Returns a line iterator.
+|`file.read([Format, pass:[...]])`|Reads data.  Formats: `*l` (line), `*a` (all), `*n` (number), or byte count.
+|`file.write(Data, pass:[...])`   |Writes data.
+|`file.seek([Whence, [Offset]])`  |Sets or gets position.  `Whence`: `"set"`, `"cur"`, `"end"`.
+|`file.close()`                   |Closes the handle.
+|`file.flush()`                   |Flushes the write buffer.
+|`file.lines()`                   |Returns a line iterator.
 |===
 
 Standard streams: `io.stdin`, `io.stdout`, `io.stderr`.

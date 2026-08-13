@@ -202,6 +202,32 @@ end
 ----
 
 [discrete]
+==== Context During Unwinding
+
+Unwinding restores the current context (<<sec-the-current-context>>) of every activation that survives.  An `except` handler therefore runs in the context of the activation that declares the `try` statement, whatever contexts the abandoned activations established:
+
+[%unbreakable]
+[source,tiri]
+----
+service = { name = 'service' }
+worker = { name = 'worker' }
+
+function worker.run()
+   error('failed in ' .. &name)      -- 'failed in worker'
+end
+
+function service.dispatch():str
+   try
+      worker.run()
+   except e
+      return &name                   -- 'service'
+   end
+end
+----
+
+A `<close>` handler that runs during unwinding executes in the context of the activation that owns the variable, not the context in which the error was raised.  See <<sec-to-be-closed-variables>>.
+
+[discrete]
 ==== Re-raising Exceptions
 
 Call `error()` within an `except` block, passing the exception table, to propagate the exception to an outer handler.  Re-raising preserves all structured metadata: the outer handler receives the same `message`, `source`, `line` and `code` as the inner handler.

@@ -305,6 +305,22 @@ end
 -- Output: Closing: resource
 ----
 
+The handler runs in the current context of the activation that declares the variable (<<sec-the-current-context>>), on both the normal and the error path.  A `pass:[__]close` handler declared inside a method therefore reaches the receiver through self referencing:
+
+[%unbreakable]
+[source,tiri]
+----
+session = { name = 'session', open = true }
+
+function session.run()
+   res <close> = setmetatable({}, {
+      __close = function()
+         &open = false          -- clears the field on 'session'
+      end
+   })
+end
+----
+
 [discrete]
 ==== Execution Order
 

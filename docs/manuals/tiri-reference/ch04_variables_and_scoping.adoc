@@ -199,6 +199,8 @@ Writes through `_G` are subject to the same policy as direct global assignment. 
 
 Each script state has one global environment, and a name that is not resolved as a local or upvalue is looked up in the environment of the enclosing function.
 
+The global environment is also the root of the current context (<<sec-the-root-context>>).  Code that is not executing inside a context resolves self references against it, so `&glTitle` and `_G.glTitle` name the same entry at that point.  The root exists to guarantee that self referencing always has a table to resolve against; name a global directly when a global is what is intended.
+
 A function's environment can still be read and replaced through `debug.getEnv()` and `debug.setEnv()`, which is the supported route for sandboxing.  Replacing a function's environment changes how global names resolve inside it:
 
 [source,tiri]

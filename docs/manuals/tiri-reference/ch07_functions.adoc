@@ -135,9 +135,10 @@ The contract is enforced for the remainder of the chunk and is not scope-sensiti
 
 Forward declaration checking applies to `global function` declarations only.  A local forward declaration takes the form of a `local` variable that is assigned a function value later (see <<sec-recursive-functions>>), and carries no signature contract.
 
-==== Method Syntax
+[[sec-qualified-function-names]]
+==== Qualified Names
 
-The colon syntax declares a method that receives an implicit `self` parameter as its first argument:
+A function name is a dot-separated path.  Each leading segment names a table; the final segment names the field that receives the function value:
 
 [%unbreakable]
 [source,tiri]

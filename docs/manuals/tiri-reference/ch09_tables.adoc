@@ -435,7 +435,7 @@ end
 
 [[sec-table-library]]
 === Table Library
-indexterm:[library, table] All table library functions are accessed through the `table` namespace.
+indexterm:[library, table] All table library functions are accessed through the `table` namespace, or as built-in methods on a table receiver: `t.insert(v)` is equivalent to `table.insert(t, v)`.  A registered method owns the immediate call position on a table receiver, and assigning a function to a member of the same name is rejected; see <<sec-built-in-method-calls>>.
 
 [[sec-table-insert]]
 ==== table.insert()
@@ -580,7 +580,9 @@ Removes all entries from `Table`, including both the array part and the hash par
 
 Clearing empties the table but does not restore its classification, so `#Table` continues to return `nil` for a table that has ever been stored through a classifying key, and the sequence operations continue to reject it (see <<sec-table-classification>>).
 
-Raises an error if `Table` is a global environment, including any alias of one.  The environment is left unmodified.
+Raises an error if `Table` is a global environment, including any alias of one.  The environment is left unmodified.  This restriction is applied before any metamethod lookup.
+
+If `Table` has a `pass:[__]clear` metamethod, the metamethod is invoked in place of the default behaviour and no entries are removed.  See <<sec-clearing>>.
 
 [[sec-table-empty]]
 ==== table.empty()

@@ -836,7 +836,97 @@ scale()          -- valid: Value is nil
 scale(nil)       -- valid: returns nil
 ----
 
-Contracts consequently express optional values without a separate nullable annotation, matching the rules in <<sec-nil-semantics-in-typed-code>>.
+An unmarked contract consequently expresses an optional value, matching the rules in <<sec-nil-semantics-in-typed-code>>.  A boundary that must receive a value states so with the required annotation defined in <<sec-required-values>>.
+
+[[sec-required-values]]
+[discrete]
+==== Required Values
+
+indexterm:[required values] indexterm:[type annotations, required] indexterm:[!, required annotation] A `!` suffix on a type annotation marks the value _required_.  A required contract rejects `nil` and rejects a value that is absent altogether; every other contract rule applies unchanged.
+
+The annotation is permitted on function parameters and on declared return values only.  Every other annotated position -- locals, globals, upvalues, struct fields -- rejects it:
+
+[source,tiri]
+----
+function label(Text:str!, Prefix:str):str!
+   if Prefix is nil then return Text end
+   return Prefix .. Text
+end
+
+local path:str! = 'file'   -- error: Required annotations are only permitted on
+                           -- function parameters and return values
+----
+
+`nil!` is rejected as contradictory, and `!` without a preceding type name is a parse error.
+
+[discrete]
+===== Semantics
+
+A required parameter fails if the argument is `nil` or if the call supplies no argument at that position.  A required result fails if the returned value is `nil` or if the function returns fewer values than the declared position, including the implicit return produced by falling off the end of the body:
+
+[source,tiri]
+----
+function required(Value:str!):str!
+   return Value
+end
+
+required('text')           -- valid
+required(nil)              -- error: required argument 1 cannot be nil
+required()                 -- error: required argument 1 is missing
+----
+
+The two failures above are visible in the source and are reported at compile time.  Reaching the same function through a value of type `any` defers the check to the boundary, where it raises a catchable contract failure:
+
+[source,tiri]
+----
+local dynamic:any = required
+dynamic(nil)               -- error: contract failure on parameter 1
+dynamic()                  -- error: contract failure on parameter 1
+----
+
+A required annotation applies to the position it marks.  In a multiple return declaration each position is marked independently, and a `!` on the position preceding the variadic marker applies to every additional value:
+
+[source,tiri]
+----
+function pair():<str!, str>       -- first result required, second optional
+   return 'first', nil
+end
+
+function series():<num!, ...>     -- every result required
+   return 1, 2, 3
+end
+----
+
+`any!` is the one form in which `any` carries a contract.  It imposes no type constraint and accepts every present value, including `false`, but rejects `nil` and a missing value:
+
+[source,tiri]
+----
+function accept(Value:any!):any!
+   return Value
+end
+
+accept(false)    -- valid
+accept(nil)      -- error: required argument 1 cannot be nil
+----
+
+[discrete]
+===== Static Diagnostics
+
+A violation that is visible in the source is reported at compile time and names the position at fault:
+
+----
+required argument 1 cannot be nil
+required argument 1 is missing
+required return value 1 cannot be nil
+required return value 1 is missing
+----
+
+A violation that is not statically provable is validated at the boundary and reported as an ordinary contract failure (<<sec-runtime-type-contracts>>).
+
+[discrete]
+===== Signature Identity
+
+The required annotation is part of a function's signature.  Two signatures that differ only in whether a position is required are distinct, and a forward declaration and its definition must agree on every marked position (see <<sec-forward-declarations>>).
 
 [discrete]
 ==== Contracts Do Not Coerce

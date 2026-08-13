@@ -3,6 +3,9 @@
 // UPDATED: 2026-08-07 - Added the Module namespace entry and distinguished it from a `namespace` declaration (commit 45b671b20)
 // UPDATED: 2026-08-08 - Added the Nullable and Required value entries; a type contract now accepts nil only when it is
 //                       not marked required (commit db7996e3e)
+// UPDATED: 2026-08-11 - Added the Built-in method entry; corrected the Method and Safe navigation entries for the removal of
+//                       colon syntax (commit 7e6746950)
+// UPDATED: 2026-08-11 - Added the Contextual call, Current context, Receiver and Root context entries (commit 798665547)
 
 [[appendix-glossary]]
 [appendix]
@@ -32,6 +35,9 @@ The single underscore (`pass:[_]`) used to explicitly discard values.  Assigning
 Block::
 A sequence of statements forming the body of a control structure, function, or explicit `do`/`end` scope.  Each block introduces a new scope for local variables.  See <<sec-statements-and-blocks>>.
 
+Built-in method::
+A library operation registered against a built-in type and invoked as `receiver.name(...)`, with the receiver supplied as the first argument automatically.  Equivalent to the namespace form `type.name(receiver, ...)`.  Published by `str`, `table`, `array`, `range`, `struct` and file handles.  See <<sec-built-in-method-calls>>.
+
 Check statement::
 A conditional exception mechanism.  `check` evaluates an error code and raises an exception if the code is at or above the exception threshold.  See <<sec-the-check-statement>>.
 
@@ -55,6 +61,12 @@ An operator that combines an arithmetic, string, or conditional operation with a
 
 Const variable::
 A variable declared with the `<const>` attribute.  Prevents reassignment after initialisation; the value itself remains mutable if it is a reference type.  See <<sec-constant-variables>>.
+
+Contextual call::
+A call that selects its callable from a receiver: `receiver.name(...)`, `receiver[key](...)`, or their safe forms.  When the receiver is a table entity, it becomes the current context for the activation, and the caller's context is restored when the activation ends.  See <<sec-contextual-calls>>.
+
+Current context::
+The single table entity that a function activation reaches through self referencing (`&name`), without naming it.  Established by a contextual call on a table receiver; otherwise inherited from the caller.  Tiri's equivalent of `this` or `self`.  See <<sec-the-current-context>>.
 
 Defer statement::
 Registers a code block for execution when the enclosing scope exits via normal completion, `return`, `break`, or `continue`.  Does not execute during error unwinding; use `<close>` for error-safe cleanup.  Multiple defers execute in LIFO order.  See <<sec-defer-statement>>.
@@ -132,7 +144,7 @@ Metatable::
 A table that customises the behaviour of another table or userdata value.  Operations on the value dispatch to metamethods defined in its metatable.  See <<sec-metatable-basics>>.
 
 Method::
-A class-specific operation on a Kōtuku object, prefixed with `mt`.  Object methods are invoked with dot notation on the object interface (`xml.mtFindTag(...)`) and return an `ERR` code as their first result.  This is distinct from the colon syntax used to declare and call methods on tables, strings, arrays and ranges, which supplies an implicit `self`.  See <<sec-actions-and-methods>> and <<sec-function-definitions>>.
+A class-specific operation on a Kōtuku object, prefixed with `mt`.  Object methods are invoked with dot notation on the object interface (`xml.mtFindTag(...)`) and return an `ERR` code as their first result.  This is distinct from a built-in method, which is a library operation invoked on a value of a built-in type.  See <<sec-actions-and-methods>> and <<sec-built-in-method-calls>>.
 
 Module::
 A separately loadable component of the Kōtuku framework providing domain-specific functionality (e.g. network, vector, display).  Modules are loaded dynamically or linked statically depending on the build configuration.  A script binds a module to a module namespace with the `module` declaration.  See <<ch-modules>>.
@@ -176,6 +188,9 @@ Bypassing metamethods on a table using the `rawget`, `rawset`, `rawlen`, and `ra
 Reference type::
 A value whose variable holds a reference to the underlying data rather than a copy.  Tables, arrays, functions, userdata, objects, and structs are reference types.  Assignment copies the reference, not the data.  See <<ch-types-and-values>>.
 
+Receiver::
+The value a member call selects its callable from.  A table entity receiver becomes the current context of the activation.  A receiver of any other type dispatches to a built-in method, an action, or a method, and leaves the context unchanged.  See <<sec-contextual-calls>>.
+
 Regular expression::
 A pattern-matching facility provided by the `regex` library.  Replaces the deprecated Lua pattern system.  See <<ch-regular-expressions>>.
 
@@ -185,8 +200,11 @@ A function parameter or declared return value whose annotation carries the `!` s
 Result filter operator::
 The `[mask]` operator placed before a call to select which of its results are kept, using `*` to keep a position and `pass:[_]` to discard it.  The filtered call can appear anywhere a call is valid, not only in an assignment.  Commonly used to drop a leading `ERR` code.  See <<sec-result-filter-operator>>.
 
+Root context::
+The current context in force when no contextual call is active: the global environment, `_G`.  It guarantees that self referencing always resolves against a table.  Naming a global directly is the preferred way to reach one.  See <<sec-the-root-context>>.
+
 Safe navigation::
-A family of nil-safe operators (`?.`, `?:`, `?[]`) that return `nil` instead of raising an error when the receiver is `nil`.  See <<sec-safe-navigation>>.
+A family of nil-safe operators (`?.`, `?[]`) that return `nil` instead of raising an error when the receiver is `nil`.  See <<sec-safe-navigation>>.
 
 Scope::
 A lexical region in which local variables are visible.  Scopes are introduced by blocks, functions, and control structures.  Variables declared in a scope are inaccessible outside it.  See <<ch-variables-and-scoping>>.

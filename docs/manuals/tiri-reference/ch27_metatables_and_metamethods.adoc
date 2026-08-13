@@ -266,23 +266,55 @@ function create_proxy(Backing)
 end
 ----
 
+[[sec-class-pattern]]
 ==== Class Pattern
 
 The `pass:[__]index` metamethod enables a simple class/inheritance pattern.  Setting a table's `pass:[__]index` to a class table causes method lookups on instances to fall through to the class.
 
+A class function reaches the instance through the current context (<<sec-the-current-context>>).  The instance is the receiver of the call, so the method operates on it even though the function value was found on the class:
+
+[%unbreakable]
 [source,tiri]
 ----
 Animal = {}
 Animal.__index = Animal
 
-function Animal.new(Name)
+function Animal.new(Name:str):table
    return setmetatable({ name = Name }, Animal)
 end
 
-function Animal:speak()
-   return f'{self.name} speaks'
+function Animal.speak():str
+   return f'{&name} speaks'
 end
+
+dog = Animal.new('Dog')
+print(dog.speak())         -- 'Dog speaks'
 ----
+
+Subclassing chains one class table to another.  A method that the subclass does not define resolves on the parent and still runs on the instance:
+
+[%unbreakable]
+[source,tiri]
+----
+Dog = setmetatable({}, { __index = Animal })
+Dog.__index = Dog
+
+function Dog.new(Name:str):table
+   return setmetatable({ name = Name }, Dog)
+end
+
+function Dog.fetch():str
+   return f'{&name} fetches'
+end
+
+pet = Dog.new('Rex')
+print(pet.speak())         -- 'Rex speaks', inherited from Animal
+print(pet.fetch())         -- 'Rex fetches'
+----
+
+<<sec-tables-as-objects>> covers constructors, encapsulation and polymorphism built on this pattern.
+
+A class function name must not collide with a built-in `table` method, because the built-in owns the immediate call position on a table receiver.  See <<sec-built-in-method-calls>>.
 
 [[sec-callable-tables]]
 === Callable Tables
@@ -310,6 +342,39 @@ print(c())   -- 2
 ----
 
 The `pass:[__]call` metamethod enables factory and constructor patterns where a table acts as both a namespace and a callable constructor.
+
+[[sec-clearing]]
+=== Clearing
+[.api]`pass:[__]clear(Self)`
+
+indexterm:[metamethods, clear] The runtime invokes `pass:[__]clear` when `table.clear()` is applied to the table, in either the library form `table.clear(t)` or the built-in method form `t.clear()` (<<sec-built-in-method-calls>>).  The table is passed as the only argument.
+
+When the metamethod is present it replaces the default behaviour entirely: the receiver's own entries are left untouched, and the metamethod is responsible for whatever clearing the type requires.  Values returned by the metamethod become the results of the `table.clear()` call.  Errors raised inside the metamethod propagate to the caller.
+
+The global-environment restriction is applied before the lookup, so `table.clear()` on a global environment raises an error whether or not a `pass:[__]clear` metamethod is present.
+
+[source,tiri]
+----
+target = setmetatable({ value = 42 }, {
+   __clear = function(Self) print('cleared') end
+})
+
+target.clear()      -- 'cleared'
+print(target.value) -- 42: the metamethod suppressed the raw clear
+----
+
+This metamethod completes the proxy pattern (<<sec-indexing>>).  A proxy that redirects reads and writes to a hidden backing table uses `pass:[__]clear` to redirect clearing as well, so that the proxy's own empty interface table is not mistaken for the data:
+
+[source,tiri]
+----
+function create_proxy(Backing)
+   return setmetatable({}, {
+      __index    = Backing,
+      __newindex = Backing,
+      __clear    = function(Self) table.clear(Backing) end
+   })
+end
+----
 
 [[sec-garbage-collection]]
 === Garbage Collection

@@ -1,4 +1,4 @@
-
+// UPDATED: 2026-08-11 - Added the Contextual Call Cost section (commit 798665547)
 [[ch-performance-and-the-jit]]
 == Performance & the JIT
 indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the Kōtuku JIT implementation and is not part of the language specification.
@@ -123,6 +123,14 @@ for i in {0 to 1000} do
    end
 end
 ----
+
+[[sec-contextual-call-cost]]
+=== Contextual Call Cost
+indexterm:[current context, performance] indexterm:[contextual calls, performance] A contextual call (<<sec-contextual-calls>>) does more work than a direct call.  It retains the receiver across the callable lookup, installs it as the current context before the arguments are evaluated, and restores the caller's context when the activation ends.  The trace compiler records and compiles these calls, including nested contexts, side exits and tail transfers, so the cost does not exclude a method from a hot path.
+
+Calls that carry no context cost are direct calls to named functions, calls through a variable holding a function value, module namespace calls, and calls that resolve to a built-in method on a `str`, `array`, `range`, `struct` or object receiver.
+
+Self referencing involves a table lookup on the current context, and costs the same as an equivalent field access on a named table.  In the root context it resolves against the global environment, so `&glCounter` performs the work of `_G.glCounter` plus the context load.  Name the global directly when a global is what is intended, and hoist it into a local for a hot loop as described in <<sec-avoid-global-lookups>>.
 
 [[sec-arrays-vs-tables-performance]]
 === Arrays vs. Tables
