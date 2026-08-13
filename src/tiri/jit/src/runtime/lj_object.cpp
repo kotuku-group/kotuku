@@ -222,7 +222,9 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    const auto saved_base = savestack(L, L->base);
    const auto saved_top = savestack(L, L->top);
-   const auto dest_offset = savestack(L, Dest);
+   // Interpreter destinations are stack slots and must follow relocation.  JIT recorders pass global_State::tmptv
+   // with no instruction pointer, so that external destination must remain a raw pointer.
+   const auto dest_offset = Ins ? savestack(L, Dest) : ptrdiff_t(0);
 
    if (not Ins) {
       auto jb = tvref(G(L)->jit_base);
@@ -269,14 +271,16 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    }
 
    // Call the field handler - it pushes result onto the Lua stack
-   if (func->Call(L, *func, Obj) > 0) copyTV(L, restorestack(L, dest_offset), L->top - 1);
+   const auto result_count = func->Call(L, *func, Obj);
+   const auto result_dest = Ins ? restorestack(L, dest_offset) : Dest;
+   if (result_count > 0) copyTV(L, result_dest, L->top - 1);
    else { // An error occurred and is stored in L->CaughtError
       if (L->CaughtError > ERR::ExceptionThreshold) {
          luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), strdata(Key),
             GetErrorMsg(L->CaughtError));
       }
 
-      setnilV(restorestack(L, dest_offset));
+      setnilV(result_dest);
    }
    L->base = restorestack(L, saved_base);
    L->top = restorestack(L, saved_top);

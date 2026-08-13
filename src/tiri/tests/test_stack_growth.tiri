@@ -36,6 +36,29 @@ struct StackGrowthRecord
    Name: string
 end
 
+@Test(hotpath=80) function JitFallbackDestinationsRemainStable()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local file = obj.new('file')
+   file.path = 'temp:jit_stack_growth.txt'
+   local native_record = struct<StackGrowthRecord> { Name='jit-relocated' }
+   local path = ''
+   local name = ''
+
+   for index in {0 to 80} do
+      path = file.path
+      name = native_record.Name
+   end
+
+   assert(path is 'temp:jit_stack_growth.txt', 'A traced object fallback should retain its external result destination')
+   assert(name is 'jit-relocated', 'A traced struct fallback should retain its external result destination')
+
+   jit.flush()
+   jit.opt.start()
+end
+
 @Test function StructStringReadsSurviveStackGrowth()
    local holder:any = {
       func = function()

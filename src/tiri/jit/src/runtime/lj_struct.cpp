@@ -216,7 +216,9 @@ extern "C" void bc_struct_getfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
 {
    const auto saved_base = savestack(L, L->base);
    const auto saved_top = savestack(L, L->top);
-   const auto dest_offset = savestack(L, Dest);
+   // Interpreter destinations are stack slots and must follow relocation.  JIT recorders pass global_State::tmptv
+   // with no instruction pointer, so that external destination must remain a raw pointer.
+   const auto dest_offset = Ins ? savestack(L, Dest) : ptrdiff_t(0);
 
    if (not Ins) {
       auto jit_base = tvref(G(L)->jit_base);
@@ -227,7 +229,8 @@ extern "C" void bc_struct_getfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
    const auto field_name = strdata(Key);
    if (std::string_view("structSize") IS field_name) {
       lj_struct_push_size_closure(L, Struct);
-      copyTV(L, restorestack(L, dest_offset), L->top - 1);
+      const auto result_dest = Ins ? restorestack(L, dest_offset) : Dest;
+      copyTV(L, result_dest, L->top - 1);
       L->base = restorestack(L, saved_base);
       L->top = restorestack(L, saved_top);
       return;
@@ -241,7 +244,8 @@ extern "C" void bc_struct_getfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
    if (auto field = find_cached_field(Struct, Key, Ins)) {
       auto address = (int8_t *)Struct->data + field->Offset;
       lj_struct_getfield_core(L, Struct, *field, address, true);
-      copyTV(L, restorestack(L, dest_offset), L->top - 1);
+      const auto result_dest = Ins ? restorestack(L, dest_offset) : Dest;
+      copyTV(L, result_dest, L->top - 1);
       L->base = restorestack(L, saved_base);
       L->top = restorestack(L, saved_top);
       return;
