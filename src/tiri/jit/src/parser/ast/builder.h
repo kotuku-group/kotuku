@@ -170,7 +170,8 @@ private:
    ParserResult<ExprNodePtr> parse_suffixed(ExprNodePtr);
    ParserResult<ExprNodePtr> parse_arrow_function(ExprNodeList parameters);
    ParserResult<ExprNodePtr> parse_function_literal(
-      const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr);
+      const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr,
+      FunctionCallableKind CallableKind = FunctionCallableKind::Ordinary);
    ParserResult<ExprNodePtr> parse_table_literal(bool AllowRange = true);
    ParserResult<ExprNodeList> parse_array_initialiser();
    ParserResult<ReturnStmtPayload> parse_return_payload(const Token &, bool same_line_only);
