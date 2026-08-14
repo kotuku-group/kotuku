@@ -98,11 +98,11 @@ function tempus._valueIndex(Self:table!, Key:any!):any
    if state is nil then return nil end
 
    local metatable = metatable_by_type[state.type_name]
-   local method = rawget(metatable, Key)
-   if method != nil then
+   local member_function = rawget(metatable, Key)
+   if member_function != nil then
       -- Ordinary table field calls do not receive an implicit receiver, so bind the Tempus value here.
       return function(...):any
-         return method(Self, ...)
+         return member_function(Self, ...)
       end
    end
 

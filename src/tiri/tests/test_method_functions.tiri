@@ -1,0 +1,225 @@
+-- Flute coverage for context-first `method` function literals.
+
+@BeforeEach(hotpath=40)
+function enforce_hotpath() end
+
+@Test function MetamethodBodiesUseTheirFirstRuntimeTableArgument()
+   local colour_mt = {
+      __tostring = method():str
+         return f'colour:{&name}'
+      end,
+      __eq = method(Other:table!):bool
+         return &id is Other.id
+      end,
+      __newindex = method(Key, Value)
+         error(f'Colour tables are immutable: {Key}')
+      end
+   }
+   local first = setmetatable({ name = 'red', id = 7 }, colour_mt)
+   local second = setmetatable({ name = 'blue', id = 7 }, colour_mt)
+
+   assert(tostring(first) is 'colour:red', 'A context-first __tostring should expose its converted table')
+   assert(first is second, 'A context-first __eq should receive its other argument after the hidden context')
+
+   local failed = false
+   try
+      first.shade = 'green'
+   except e
+      failed = true
+      assert(e.message.find('immutable: shade') != nil,
+         'A context-first __newindex should retain its visible key argument')
+   end
+   assert(failed, 'The context-first __newindex handler should run')
+end
+
+@Test function ExtractedMethodsRetainContextFirstBehaviour()
+   local receiver = setmetatable({ name = 'stored' }, {
+      __tostring = method():str
+         return &name
+      end
+   })
+   local render = getmetatable(receiver).__tostring
+   local storage = { render = render }
+
+   assert(render(receiver) is 'stored', 'A directly-called extracted method should enter its first table argument')
+   assert(storage.render(receiver) is 'stored', 'Storing a method in another table must not remove its calling convention')
+
+   local failed = false
+   try
+      render(42)
+   except e
+      failed = true
+      assert(e.message.find('table expected, got number') != nil,
+         'The hidden context argument should be validated at method entry')
+   end
+   assert(failed, 'A non-table context argument must fail')
+   assert(&name is nil, 'A failed method entry must not leak a context activation')
+
+   function renderer_factory():func
+      return method():str
+         return &name
+      end
+   end
+   local restored = exec(string.dump(renderer_factory, true))
+   assert(restored(receiver) is 'stored',
+      'A bytecode round-trip must retain the context-first signature and whole-body activation')
+end
+
+@Test function ReceiverStableAndBinaryMetamethodsFollowTheirDocumentedRules()
+   local indexed = setmetatable({ name = 'indexed' }, {
+      __index = method(Key):str
+         return f'{&name}:{Key}'
+      end,
+      __len = method():num
+         return &size
+      end
+   })
+   indexed.size = 13
+   assert(indexed.missing is 'indexed:missing', 'A context-first __index should enter the lookup subject')
+   assert(#indexed is 13, 'A context-first __len should enter its operand')
+
+   local arithmetic_mt = {
+      __add = method(Other:table!):num
+         return &value + Other.value
+      end
+   }
+   local left = setmetatable({ value = 3 }, arithmetic_mt)
+   local right = setmetatable({ value = 4 }, arithmetic_mt)
+   assert(left + right is 7, 'A left-provider context-first arithmetic handler should enter the left operand')
+
+   local failed = false
+   try
+      local result = 1 + left
+   except e
+      failed = true
+      assert(e.message.find('right operand') != nil,
+         'A right-provider context-first arithmetic handler should report its ambiguity')
+   end
+   assert(failed, 'A right-provider context-first arithmetic handler must not enter the left operand')
+end
+
+@Test function ReceiverStableHandlersAndVarargsKeepTheirRuntimeLayout()
+   local callable = setmetatable({ value = 8 }, {
+      __call = method(Amount:num):num
+         return &value + Amount
+      end
+   })
+   local negatable = setmetatable({ value = 6 }, {
+      __unm = method():num
+         return -&value
+      end
+   })
+   local collect = method(...):str
+      return f'{&prefix}:{...}'
+   end
+
+   assert(callable(4) is 12, 'A context-first __call should retain its visible argument positions')
+   assert(-negatable is -6, 'A context-first __unm should enter its operand')
+   assert(collect({ prefix = 'items' }, 'first') is 'items:first',
+      'Varargs should begin after the hidden context argument')
+end
+
+@Test function BinaryConcatAndComparisonRejectRightProviders()
+   local concat_mt = {
+      __concat = method(Other):str
+         return &value .. Other
+      end
+   }
+   local ordered_mt = {
+      __lt = method(Other:table!):bool
+         return &value < Other.value
+      end
+   }
+   local concat_value = setmetatable({ value = 'left' }, concat_mt)
+   local first = setmetatable({ value = 1 }, ordered_mt)
+   local second = setmetatable({ value = 2 }, ordered_mt)
+
+   assert(concat_value .. '!' is 'left!', 'A left-provider context-first concat handler should enter the left table')
+   assert(first < second, 'A left-provider context-first ordering handler should enter the left table')
+
+   local concat_failed = false
+   try
+      local result = '!' .. concat_value
+   except e
+      concat_failed = true
+      assert(e.message.find('right operand') != nil,
+         'A right-provider context-first concat handler should report its ambiguity')
+   end
+   assert(concat_failed, 'A right-provider context-first concat handler must fail')
+
+   local comparison_failed = false
+   try
+      local result = 0 < first
+   except e
+      comparison_failed = true
+      assert(e.message.find('right operand') != nil,
+         'A right-provider context-first ordering handler should report its ambiguity')
+   end
+   assert(comparison_failed, 'A right-provider context-first ordering handler must fail')
+end
+
+@Test function MethodReturnsAndErrorsRestoreTheCallerContext()
+   local receiver = { name = 'method' }
+   local caller = { name = 'caller' }
+   local read_or_fail = method(Fail:bool):str
+      if Fail then error('expected method failure') end
+      return &name
+   end
+
+   using caller do
+      assert(read_or_fail(receiver, false) is 'method', 'A normal return should run under the method context')
+      assert(&name is 'caller', 'A normal return should restore the caller context')
+
+      local failed = false
+      try
+         read_or_fail(receiver, true)
+      except e
+         failed = true
+         assert(e.message.find('expected method failure') != nil)
+      end
+      assert(failed, 'The method should propagate its body error')
+      assert(&name is 'caller', 'An error should restore the caller context')
+   end
+end
+
+@Test function MethodCleanupRunsBeforeItsContextIsRestored()
+   local events = {}
+   local caller = { name = 'caller' }
+   local receiver = { name = 'receiver' }
+   local read_with_cleanup = method():str
+      defer
+         events.insert(&name)
+      end
+      return &name
+   end
+
+   using caller do
+      assert(read_with_cleanup(receiver) is 'receiver', 'The method body should use its hidden table context')
+      assert(&name is 'caller', 'Method cleanup should restore the caller context before returning')
+   end
+   assert(events[0] is 'receiver', 'Deferred cleanup owned by a method should execute under its table context')
+end
+
+@Test function MethodCannotNameDeclaredFunctions()
+   local declarations = {
+      'function method() end',
+      'local function method() end',
+      'global function method() end',
+      'thunk method():num return 1 end',
+      'local thunk method():num return 1 end',
+      'global thunk method():num return 1 end',
+      'local receiver = {}; function receiver.method() end'
+   }
+
+   for declaration in values(declarations) do
+      local failed = false
+      try
+         exec(declaration)
+      except e
+         failed = true
+         assert(e.message.find("'method' is reserved") != nil,
+            'Rejected callable names should explain that method is reserved')
+      end
+      assert(failed, 'A declared function or method cannot be named method')
+   end
+end

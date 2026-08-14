@@ -670,7 +670,8 @@ enum class ProtoSignatureFlag : uint8_t {
    ParameterVariadic = 1 << 0,
    ResultVariadic = 1 << 1,
    ExplicitResults = 1 << 2,
-   DynamicResults = 1 << 3
+   DynamicResults = 1 << 3,
+   ContextFirstArgument = 1 << 4
 };
 
 inline constexpr uint8_t PROTO_TYPE_NULLABLE = 1 << 0;
@@ -1074,6 +1075,13 @@ typedef union GCfunc {
 
 [[nodiscard]] inline GCproto* funcproto(const GCfunc* fn) noexcept {
    return check_exp(isluafunc(fn), (GCproto*)(mref<char>(fn->l.pc) - sizeof(GCproto)));
+}
+
+[[nodiscard]] inline bool func_context_first_argument(const GCfunc *Function) noexcept
+{
+   if (not Function or not isluafunc(Function)) return false;
+   const ProtoSignature *signature = proto_signature(funcproto(Function));
+   return signature and (signature->flags & proto_signature_flag(ProtoSignatureFlag::ContextFirstArgument));
 }
 
 [[nodiscard]] constexpr inline size_t sizeCfunc(MSize n) noexcept {

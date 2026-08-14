@@ -34,6 +34,8 @@ ERRDEF(OPARITH,  "Perform arithmetic on")
 ERRDEF(OPCAT,    "Concatenate")
 ERRDEF(OPLEN,    "Get length of")
 ERRDEF(LENMM,    "__len metamethod must return a number")
+ERRDEF(CTXMMBIN, "context-first __%s handler selected from the right operand; use an ordinary function for "
+                  "provider-ambiguous methods")
 
 // Type checks.
 ERRDEF(BADSELF,  "Calling " LUA_QS " on bad self (%s)")

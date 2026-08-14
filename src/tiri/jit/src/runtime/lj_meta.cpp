@@ -202,6 +202,18 @@ TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *mo, cTValue *a, cTValue
    return top;  //  Return new base.
 }
 
+// A context-first handler establishes its first actual table argument as the current context.  Binary metamethods
+// may find their callable on the right operand while preserving ordinary left/right argument order, which would make
+// that context silently wrong.  Reject that shape before a Lua frame is created.
+
+static void reject_context_first_binary_mismatch(lua_State *L, cTValue *Method, cTValue *Provider,
+   cTValue *FirstArgument, CSTRING Name)
+{
+   if (not tvisfunc(Method) or not func_context_first_argument(funcV(Method))) return;
+   if (tvistab(Provider) and tvistab(FirstArgument) and tabV(Provider) IS tabV(FirstArgument)) return;
+   lj_err_msgv(L, ErrMsg::CTXMMBIN, Name);
+}
+
 //********************************************************************************************************************
 // Helpers for some instructions, called from assembler VM
 
@@ -352,14 +364,17 @@ TValue * lj_meta_arith(lua_State *L, TValue *ra, cTValue *rb, cTValue *rc, BCREG
    }
    else {
       cTValue *mo = lj_meta_lookup(L, rb, mm);
+      cTValue *provider = rb;
       if (tvisnil(mo)) {
          mo = lj_meta_lookup(L, rc, mm);
+         provider = rc;
          if (tvisnil(mo)) {
             if (str2num(rb, &tempb) IS nullptr) rc = rb;
             lj_err_optype(L, rc, ErrMsg::OPARITH);
             return nullptr;  //  unreachable
          }
       }
+      reject_context_first_binary_mismatch(L, mo, provider, rb, strdata(mmname_str(G(L), mm)) + 2);
       return mmcall(L, lj_cont_ra, mo, rb, rc);
    }
 }
@@ -386,14 +401,18 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
 
       if (not (tvisstr(top) or tvisnumber(top)) or !(tvisstr(top - 1) or tvisnumber(top - 1))) {
          cTValue *mo = lj_meta_lookup(L, top - 1, MM_concat);
+         cTValue *provider = top - 1;
          if (tvisnil(mo)) {
             mo = lj_meta_lookup(L, top, MM_concat);
+            provider = top;
             if (tvisnil(mo)) {
                if (tvisstr(top - 1) or tvisnumber(top - 1)) top++;
                lj_err_optype(L, top - 1, ErrMsg::OPCAT);
                return nullptr;  //  unreachable
             }
          }
+
+         reject_context_first_binary_mismatch(L, mo, provider, top - 1, "concat");
 
          // One of the top two elements is not a string, call __cat metamethod:
          //
@@ -622,7 +641,12 @@ TValue * lj_meta_comp(lua_State *L, cTValue *o1, cTValue *o2, int op)
          ASMFunction cont = (op & 1) ? lj_cont_condf : lj_cont_condt;
          MMS mm = (op & 2) ? MM_le : MM_lt;
          cTValue *mo = lj_meta_lookup(L, o1, mm);
-         if (tvisnil(mo) and tvisnil((mo = lj_meta_lookup(L, o2, mm)))) {
+         cTValue *provider = o1;
+         if (tvisnil(mo)) {
+            mo = lj_meta_lookup(L, o2, mm);
+            provider = o2;
+         }
+         if (tvisnil(mo)) {
             if (op & 2) {  // MM_le not found: retry with MM_lt.
                cTValue *ot = o1; o1 = o2; o2 = ot;  //  Swap operands.
                op ^= 3;  //  Use LT and flip condition.
@@ -631,6 +655,7 @@ TValue * lj_meta_comp(lua_State *L, cTValue *o1, cTValue *o2, int op)
             lj_err_comp(L, o1, o2);
             return nullptr;
          }
+         reject_context_first_binary_mismatch(L, mo, provider, o1, strdata(mmname_str(G(L), mm)) + 2);
          return mmcall(L, cont, mo, o1, o2);
       }
    }
