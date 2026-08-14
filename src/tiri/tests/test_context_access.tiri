@@ -42,6 +42,18 @@ end
    &glContextAccessInherited = nil
 end
 
+@Test function DebugSetLocalCannotModifyInheritedContextCache()
+   local receiver = entity { value = 7 }
+
+   function receiver.read():num
+      local cache_name = debug.setLocal(1, 0, { value = 99 })
+      assert(cache_name is nil, 'debug.setLocal should reject the internal context cache')
+      return &value
+   end
+
+   assert(receiver.read() is 7, 'Rejected debug mutation should leave the inherited context cache unchanged')
+end
+
 @Test function ContextStoreCannotOverrideProtectedGlobal()
    local script = activate_context_statement([[&tostring = 5]])
    assert(script.error != ERR_Okay, 'A root context store should reject a protected global')

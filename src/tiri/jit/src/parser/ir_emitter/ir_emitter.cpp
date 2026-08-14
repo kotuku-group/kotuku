@@ -41,6 +41,328 @@ inline const TiriConstant * lookup_constant(const GCstr *Name)
 static bool is_named_external_global(GCstr *Name);
 
 //********************************************************************************************************************
+// Contextual member calls select a dynamic context only for contextual tables or unresolved receivers.  A current
+// context expression is already the active receiver, so entering it again would add a redundant runtime frame.
+
+static bool receiver_uses_contextual_call(const ParserContext &Context, const ExprNode &Receiver)
+{
+   if (Receiver.kind IS AstNodeKind::CurrentContextExpr) return false;
+   if (not Receiver.static_value) return true;
+
+   const StaticValueDescriptor &descriptor = Context.descriptors().value(Receiver.static_value);
+   if (descriptor.contextuality IS StaticContextuality::Ordinary) return false;
+   if (descriptor.contextuality IS StaticContextuality::Contextual) return true;
+   return not (descriptor.proved() and descriptor.primary != TiriType::Unknown and
+      descriptor.primary != TiriType::Any and descriptor.primary != TiriType::Table);
+}
+
+static bool receiver_is_proven_contextual(const ParserContext &Context, const ExprNode &Receiver)
+{
+   if (not Receiver.static_value) return false;
+   return Context.descriptors().value(Receiver.static_value).contextuality IS StaticContextuality::Contextual;
+}
+
+static const ExprNode *call_receiver(const CallExprPayload &Payload)
+{
+   const auto *direct = std::get_if<DirectCallTarget>(&Payload.target);
+   if (not direct or not direct->callable) return nullptr;
+
+   switch (direct->callable->kind) {
+      case AstNodeKind::MemberExpr:
+         return std::get<MemberExprPayload>(direct->callable->data).table.get();
+      case AstNodeKind::SafeMemberExpr:
+         return std::get<SafeMemberExprPayload>(direct->callable->data).table.get();
+      case AstNodeKind::IndexExpr:
+         return std::get<IndexExprPayload>(direct->callable->data).table.get();
+      case AstNodeKind::SafeIndexExpr:
+         return std::get<SafeIndexExprPayload>(direct->callable->data).table.get();
+      default:
+         return nullptr;
+   }
+}
+
+//********************************************************************************************************************
+// Walk the AST for context reads that execute in the current emitter region.  Function bodies and using bodies are
+// separate regions: their child emitter or retained reference supplies their own context source.  Contextual call
+// arguments are likewise excluded when the runtime call will install a receiver before evaluating them.  Runtime
+// built-in dispatch is the exception because its ordinary built-in branch evaluates the same arguments without a
+// contextual activation.
+
+class ContextUseWalker {
+public:
+   explicit ContextUseWalker(const ParserContext &Context) : context(Context) { }
+
+   [[nodiscard]] bool block_uses_context(const BlockStmt &Block)
+   {
+      for (const StmtNode &statement : Block.view()) {
+         if (this->statement_uses_context(statement)) return true;
+      }
+      return false;
+   }
+
+   [[nodiscard]] bool expression_uses_context(const ExprNode &Expression)
+   {
+      return this->expression_uses_context_impl(Expression);
+   }
+
+private:
+   const ParserContext &context;
+
+   [[nodiscard]] bool expressions_use_context(const ExprNodeList &Expressions)
+   {
+      for (const ExprNodePtr &expression : Expressions) {
+         if (expression and this->expression_uses_context_impl(*expression)) return true;
+      }
+      return false;
+   }
+
+   [[nodiscard]] bool block_uses_context(const std::unique_ptr<BlockStmt> &Block)
+   {
+      return Block and this->block_uses_context(*Block);
+   }
+
+   [[nodiscard]] bool statement_uses_context(const StmtNode &Statement)
+   {
+      switch (Statement.kind) {
+         case AstNodeKind::AssignmentStmt: {
+            const auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.targets) or this->expressions_use_context(payload.values);
+         }
+         case AstNodeKind::LocalDeclStmt: {
+            const auto &payload = std::get<LocalDeclStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.values);
+         }
+         case AstNodeKind::GlobalDeclStmt: {
+            const auto &payload = std::get<GlobalDeclStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.values);
+         }
+         case AstNodeKind::LocalFunctionStmt:
+         case AstNodeKind::FunctionStmt:
+            return false;
+         case AstNodeKind::IfStmt: {
+            const auto &payload = std::get<IfStmtPayload>(Statement.data);
+            for (const IfClause &clause : payload.clauses) {
+               if ((clause.condition and this->expression_uses_context_impl(*clause.condition)) or
+                   this->block_uses_context(clause.block)) return true;
+            }
+            return false;
+         }
+         case AstNodeKind::WhileStmt:
+         case AstNodeKind::RepeatStmt: {
+            const auto &payload = std::get<LoopStmtPayload>(Statement.data);
+            return (payload.condition and this->expression_uses_context_impl(*payload.condition)) or
+               this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::NumericForStmt: {
+            const auto &payload = std::get<NumericForStmtPayload>(Statement.data);
+            return (payload.start and this->expression_uses_context_impl(*payload.start)) or
+               (payload.stop and this->expression_uses_context_impl(*payload.stop)) or
+               (payload.step and this->expression_uses_context_impl(*payload.step)) or
+               this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::RangeForStmt: {
+            const auto &payload = std::get<RangeForStmtPayload>(Statement.data);
+            return (payload.start and this->expression_uses_context_impl(*payload.start)) or
+               (payload.stop and this->expression_uses_context_impl(*payload.stop)) or
+               (payload.step and this->expression_uses_context_impl(*payload.step)) or
+               this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::GenericForStmt: {
+            const auto &payload = std::get<GenericForStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.iterators) or this->block_uses_context(payload.body);
+         }
+         case AstNodeKind::ReturnStmt:
+            return this->expressions_use_context(std::get<ReturnStmtPayload>(Statement.data).values);
+         case AstNodeKind::DeferStmt: {
+            const auto &payload = std::get<DeferStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.arguments);
+         }
+         case AstNodeKind::DoStmt:
+            return this->block_uses_context(std::get<DoStmtPayload>(Statement.data).block);
+         case AstNodeKind::ContextStmt: {
+            const auto &payload = std::get<ContextStmtPayload>(Statement.data);
+            // The reference is evaluated before the new context becomes visible.  The body is a separate source.
+            return payload.reference and this->expression_uses_context_impl(*payload.reference);
+         }
+         case AstNodeKind::ConditionalShorthandStmt: {
+            const auto &payload = std::get<ConditionalShorthandStmtPayload>(Statement.data);
+            return (payload.condition and this->expression_uses_context_impl(*payload.condition)) or
+               (payload.body and this->statement_uses_context(*payload.body));
+         }
+         case AstNodeKind::TryExceptStmt: {
+            const auto &payload = std::get<TryExceptPayload>(Statement.data);
+            if (this->block_uses_context(payload.try_block) or this->block_uses_context(payload.success_block)) {
+               return true;
+            }
+            for (const ExceptClause &clause : payload.except_clauses) {
+               if (this->expressions_use_context(clause.filter_codes) or this->block_uses_context(clause.block)) {
+                  return true;
+               }
+            }
+            return false;
+         }
+         case AstNodeKind::RaiseStmt: {
+            const auto &payload = std::get<RaiseStmtPayload>(Statement.data);
+            return (payload.error_code and this->expression_uses_context_impl(*payload.error_code)) or
+               (payload.message and this->expression_uses_context_impl(*payload.message));
+         }
+         case AstNodeKind::CheckStmt: {
+            const auto &payload = std::get<CheckStmtPayload>(Statement.data);
+            return payload.error_code and this->expression_uses_context_impl(*payload.error_code);
+         }
+         case AstNodeKind::ImportStmt: {
+            const auto &payload = std::get<ImportStmtPayload>(Statement.data);
+            for (const ImportEntryPayload &entry : payload.entries) {
+               if (this->block_uses_context(entry.inlined_body)) return true;
+            }
+            return false;
+         }
+         case AstNodeKind::WithStmt: {
+            const auto &payload = std::get<WithStmtPayload>(Statement.data);
+            return this->expressions_use_context(payload.objects) or this->block_uses_context(payload.block);
+         }
+         case AstNodeKind::ExpressionStmt:
+            return std::get<ExpressionStmtPayload>(Statement.data).expression and
+               this->expression_uses_context_impl(*std::get<ExpressionStmtPayload>(Statement.data).expression);
+         case AstNodeKind::BreakStmt:
+         case AstNodeKind::ContinueStmt:
+         case AstNodeKind::ExternStmt:
+            return false;
+         default:
+            return false;
+      }
+   }
+
+   [[nodiscard]] bool expression_uses_context_impl(const ExprNode &Expression)
+   {
+      switch (Expression.kind) {
+         case AstNodeKind::CurrentContextExpr:
+            return true;
+         case AstNodeKind::UnaryExpr:
+            return this->expression_uses_context_ptr(std::get<UnaryExprPayload>(Expression.data).operand);
+         case AstNodeKind::UpdateExpr:
+            return this->expression_uses_context_ptr(std::get<UpdateExprPayload>(Expression.data).target);
+         case AstNodeKind::BinaryExpr: {
+            const auto &payload = std::get<BinaryExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.left) or this->expression_uses_context_ptr(payload.right);
+         }
+         case AstNodeKind::ComparisonChainExpr:
+            return this->expressions_use_context(std::get<ComparisonChainExprPayload>(Expression.data).operands);
+         case AstNodeKind::TernaryExpr: {
+            const auto &payload = std::get<TernaryExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.condition) or
+               this->expression_uses_context_ptr(payload.if_true) or
+               this->expression_uses_context_ptr(payload.if_false);
+         }
+         case AstNodeKind::PresenceExpr:
+            return this->expression_uses_context_ptr(std::get<PresenceExprPayload>(Expression.data).value);
+         case AstNodeKind::PipeExpr: {
+            const auto &payload = std::get<PipeExprPayload>(Expression.data);
+            if (payload.rhs_call and
+                (payload.rhs_call->kind IS AstNodeKind::CallExpr or
+                 payload.rhs_call->kind IS AstNodeKind::SafeCallExpr)) {
+               const auto &call = std::get<CallExprPayload>(payload.rhs_call->data);
+               const ExprNode *receiver = call_receiver(call);
+               bool callable_uses_context = false;
+               if (const auto *direct = std::get_if<DirectCallTarget>(&call.target)) {
+                  callable_uses_context = direct->callable and this->expression_uses_context_impl(*direct->callable);
+               }
+               if (call.runtime_builtin_method) {
+                  return callable_uses_context or this->expression_uses_context_ptr(payload.lhs) or
+                     this->expressions_use_context(call.arguments);
+               }
+               if (receiver and receiver_uses_contextual_call(this->context, *receiver)) {
+                  // The contextual pipe path evaluates its piped value and written arguments after CTXENTER.  Only
+                  // the receiver, its key and the callable itself execute under the enclosing source.
+                  return callable_uses_context;
+               }
+            }
+            return this->expression_uses_context_ptr(payload.lhs) or
+               this->expression_uses_context_ptr(payload.rhs_call);
+         }
+         case AstNodeKind::CallExpr:
+         case AstNodeKind::SafeCallExpr: {
+            const auto &payload = std::get<CallExprPayload>(Expression.data);
+            bool result = false;
+            if (const auto *direct = std::get_if<DirectCallTarget>(&payload.target)) {
+               result = direct->callable and this->expression_uses_context_impl(*direct->callable);
+            }
+
+            // Runtime built-in dispatch emits an ordinary built-in branch and a contextual fallback branch.  Its
+            // arguments therefore need the enclosing source even when the receiver is unresolved.
+            if (payload.runtime_builtin_method or not call_receiver(payload)) {
+               return result or this->expressions_use_context(payload.arguments);
+            }
+
+            const ExprNode *receiver = call_receiver(payload);
+            if (receiver_uses_contextual_call(this->context, *receiver)) return result;
+            return result or this->expressions_use_context(payload.arguments);
+         }
+         case AstNodeKind::MemberExpr:
+            return this->expression_uses_context_ptr(std::get<MemberExprPayload>(Expression.data).table);
+         case AstNodeKind::IndexExpr: {
+            const auto &payload = std::get<IndexExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.table) or
+               this->expression_uses_context_ptr(payload.index);
+         }
+         case AstNodeKind::SafeMemberExpr:
+            return this->expression_uses_context_ptr(std::get<SafeMemberExprPayload>(Expression.data).table);
+         case AstNodeKind::SafeIndexExpr: {
+            const auto &payload = std::get<SafeIndexExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.table) or
+               this->expression_uses_context_ptr(payload.index);
+         }
+         case AstNodeKind::ResultFilterExpr:
+            return this->expression_uses_context_ptr(std::get<ResultFilterPayload>(Expression.data).expression);
+         case AstNodeKind::TableExpr: {
+            const auto &payload = std::get<TableExprPayload>(Expression.data);
+            for (const TableField &field : payload.fields) {
+               if (this->expression_uses_context_ptr(field.key) or this->expression_uses_context_ptr(field.value)) {
+                  return true;
+               }
+            }
+            return false;
+         }
+         case AstNodeKind::FunctionExpr:
+            return false;
+         case AstNodeKind::DeferredExpr:
+            return this->expression_uses_context_ptr(std::get<DeferredExprPayload>(Expression.data).inner);
+         case AstNodeKind::RangeExpr: {
+            const auto &payload = std::get<RangeExprPayload>(Expression.data);
+            return this->expression_uses_context_ptr(payload.start) or
+               this->expression_uses_context_ptr(payload.stop) or
+               this->expression_uses_context_ptr(payload.step);
+         }
+         case AstNodeKind::ChooseExpr: {
+            const auto &payload = std::get<ChooseExprPayload>(Expression.data);
+            if (this->expression_uses_context_ptr(payload.scrutinee) or
+                this->expressions_use_context(payload.scrutinee_tuple)) return true;
+            for (const ChooseCase &choice : payload.cases) {
+               if (this->expression_uses_context_ptr(choice.pattern) or
+                   this->expressions_use_context(choice.tuple_patterns) or
+                   this->expression_uses_context_ptr(choice.guard) or
+                   this->expression_uses_context_ptr(choice.result) or
+                   (choice.result_stmt and this->statement_uses_context(*choice.result_stmt))) return true;
+            }
+            return false;
+         }
+         case AstNodeKind::LiteralExpr:
+         case AstNodeKind::IdentifierExpr:
+         case AstNodeKind::VarArgExpr:
+         case AstNodeKind::ModuleFunctionExpr:
+            return false;
+         default:
+            return false;
+      }
+   }
+
+   [[nodiscard]] bool expression_uses_context_ptr(const ExprNodePtr &Expression)
+   {
+      return Expression and this->expression_uses_context_impl(*Expression);
+   }
+};
+
+//********************************************************************************************************************
 // Determine whether a constant integer range can use its visible value as the numeric loop induction variable.
 
 static bool range_direct_integer(
@@ -721,6 +1043,84 @@ IrEmitter::IrEmitter(ParserContext& context)
 {
 }
 
+IrEmitter::ContextSourceScope::ContextSourceScope(ContextSourceScope &&Other) noexcept
+   : emitter(Other.emitter), active(Other.active)
+{
+   Other.emitter = nullptr;
+   Other.active = false;
+}
+
+IrEmitter::ContextSourceScope& IrEmitter::ContextSourceScope::operator=(ContextSourceScope &&Other) noexcept
+{
+   if (this IS &Other) return *this;
+   this->release();
+   this->emitter = Other.emitter;
+   this->active = Other.active;
+   Other.emitter = nullptr;
+   Other.active = false;
+   return *this;
+}
+
+IrEmitter::ContextSourceScope::~ContextSourceScope()
+{
+   this->release();
+}
+
+void IrEmitter::ContextSourceScope::activate(IrEmitter *Owner, ContextSource Source)
+{
+   this->release();
+   if (not Owner) return;
+   Owner->push_context_source(Source);
+   this->emitter = Owner;
+   this->active = true;
+}
+
+void IrEmitter::ContextSourceScope::release()
+{
+   if (this->active and this->emitter) this->emitter->pop_context_source();
+   this->emitter = nullptr;
+   this->active = false;
+}
+
+bool IrEmitter::context_region_uses_context(const BlockStmt &Block) const
+{
+   ContextUseWalker walker(this->ctx);
+   return walker.block_uses_context(Block);
+}
+
+bool IrEmitter::expression_uses_context(const ExprNode &Expression) const
+{
+   ContextUseWalker walker(this->ctx);
+   return walker.expression_uses_context(Expression);
+}
+
+std::optional<BCReg> IrEmitter::allocate_inherited_context_cache(const BlockStmt &Block)
+{
+   if (not this->context_region_uses_context(Block)) return std::nullopt;
+
+   // The cache is an internal local, so it participates in frame sizing and GC stack marking but cannot be resolved by
+   // a source identifier, captured as an upvalue or modified through debug.setLocal().  It is allocated after
+   // parameter contracts and before body code.
+   this->func_state.reset_freereg();
+   this->lex_state.var_new_fixed(BCReg(0), VARNAME_CONTEXT_CACHE);
+   this->lex_state.var_add(BCReg(1));
+   this->func_state.reset_freereg();
+   BCReg slot = BCReg(this->func_state.varmap.size() - 1);
+   bcemit_AD(&this->func_state, BC_CTXGET, slot.raw(), 0);
+   return slot;
+}
+
+void IrEmitter::push_context_source(ContextSource Source)
+{
+   this->context_sources.push_back(Source);
+}
+
+void IrEmitter::pop_context_source()
+{
+   lj_assertX(not this->context_sources.empty(), "context source stack underflow");
+   this->context_sources.pop_back();
+}
+
 std::optional<CompileTimeValue> IrEmitter::resolve_compile_time_value(const NameRef &Reference) const
 {
    const LocalBindingEntry *entry = this->binding_table.resolve(Reference.identifier.symbol);
@@ -827,6 +1227,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_chunk(const BlockStmt& chunk)
    this->control_flow.reset(&this->func_state);
    FuncScope chunk_scope;
    ScopeGuard guard(&this->func_state, &chunk_scope, FuncScopeFlag::None);
+   auto inherited_cache = this->allocate_inherited_context_cache(chunk);
+   ContextSourceScope context_scope;
+   if (inherited_cache) {
+      context_scope.activate(this, ContextSource{ .slot = inherited_cache.value(),
+         .kind = ContextSourceKind::Inherited });
+   }
    auto result = this->emit_block(chunk, FuncScopeFlag::None);
    if (not result.ok()) return result;
    this->control_flow.finalize();
@@ -1001,7 +1407,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_context_stmt(const ContextStmtPayload &
    auto reference = this->emit_expression(*Payload.reference);
    if (not reference.ok()) return ParserResult<IrEmitUnit>::failure(reference.error_ref());
 
-   BCReg slot = fs->free_reg();
+   // Pending locals do not contribute to varmap.size(), and evaluating a complex reference may leave temporaries
+   // above the local floor.  The retained context must use the slot that var_add() will actually publish.
+   BCReg slot = BCReg(fs->varmap.size());
    ExpDesc value = reference.value_ref();
    this->materialise_to_reg(value, slot, "context block reference");
    RegisterAllocator allocator(fs);
@@ -1021,6 +1429,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_context_stmt(const ContextStmtPayload &
    });
    scope.context_block = block_index;
    bcemit_AD(fs, BC_CTXBEGIN, slot.raw(), block_index);
+   ContextSourceScope context_scope;
+   context_scope.activate(this, ContextSource{ .slot = slot, .kind = ContextSourceKind::UsingReference });
 
    for (const StmtNode &stmt : Payload.block->view()) {
       auto status = this->emit_statement(stmt);
@@ -2807,10 +3217,18 @@ ParserResult<ExpDesc> IrEmitter::emit_literal_expr(const LiteralValue& literal)
 }
 
 //********************************************************************************************************************
-// Load the state-local table context.  The runtime resolves an empty override stack through the current L->env.
+// Resolve the active table context.  Stable regions use their retained register; regions without a known source
+// materialise through BC_CTXGET, whose runtime resolution still follows the dynamic context stack and L->env root.
 
 ParserResult<ExpDesc> IrEmitter::emit_current_context_expr()
 {
+   if (not this->context_sources.empty()) {
+      const ContextSource &source = this->context_sources.back();
+      ExpDesc expr(ExpKind::NonReloc, source.slot.raw());
+      expr.result_type = TiriType::Table;
+      return ParserResult<ExpDesc>::success(expr);
+   }
+
    ExpDesc expr;
    expr.init(ExpKind::Relocable, bcemit_AD(&this->func_state, BC_CTXGET, 0, 0));
    expr.result_type = TiriType::Table;

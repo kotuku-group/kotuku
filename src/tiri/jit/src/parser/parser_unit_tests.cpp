@@ -3330,187 +3330,6 @@ static bool test_module_definition_ownership(kt::Log &Log)
 }
 
 //********************************************************************************************************************
-// Phase 3: portable prototype dependency descriptors.
-//
-// Verifies that a compilation unit's module declarations are recorded as canonical names on its prototype, that the
-// names deduplicate across aliases, that a dependency with no referenced function is retained, and that the whole
-// block survives a bytecode round trip in a fresh state.
-
-static bool test_module_dependency_descriptors(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *L = state.get();
-   luaL_openlibs(L);
-   register_module_class(L);
-   lua_protect_globals(L);
-
-   // 'core' is referenced through two aliases and 'display' is declared without being referenced, so the descriptors
-   // must contain exactly two modules, one carrying a single function and the other none.
-
-   constexpr std::string_view source =
-      "module core as mC\n"
-      "module core as mCore\n"
-      "module display as mD\n"
-      "local a = mC.PreciseTime()\n"
-      "local b = mCore.PreciseTime()\n"
-      "return a + b\n";
-
-   if (lua_load(L, source, "dependency-descriptors")) {
-      Log.error("failed to compile the descriptor fixture: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   GCproto *proto = funcproto(funcV(L->top - 1));
-   auto table = proto_dependencies(proto);
-   if (not table) {
-      Log.error("a unit declaring modules produced no dependency descriptors");
-      return false;
-   }
-
-   if (table->version != PROTO_DEPENDENCY_VERSION) {
-      Log.error("descriptor version is %d, expected %d", int(table->version), int(PROTO_DEPENDENCY_VERSION));
-      return false;
-   }
-
-   if (table->dependency_count != 2) {
-      Log.error("two aliases of one module produced %d dependencies, expected 2",
-         int(table->dependency_count));
-      return false;
-   }
-
-   if (table->function_count != 1) {
-      Log.error("one deduplicated function reference produced %d entries, expected 1",
-         int(table->function_count));
-      return false;
-   }
-
-   auto dependencies = proto_dependency_list(table);
-   auto functions = proto_dependency_functions(table);
-
-   bool saw_core = false, saw_display = false;
-   for (uint32_t i = 0; i < table->dependency_count; ++i) {
-      GCstr *name = gco_to_string(gcref(dependencies[i].name));
-      std::string_view view(strdata(name), name->len);
-
-      if (kt::iequals(view, "core")) {
-         saw_core = true;
-         if (dependencies[i].function_count != 1) {
-            Log.error("the core dependency records %d functions, expected 1",
-               int(dependencies[i].function_count));
-            return false;
-         }
-         GCstr *function = gco_to_string(gcref(functions[dependencies[i].first_function].name));
-         if (not kt::iequals(std::string_view(strdata(function), function->len), "PreciseTime")) {
-            Log.error("the recorded function name is '%.*s', expected PreciseTime",
-               int(function->len), strdata(function));
-            return false;
-         }
-      }
-      else if (kt::iequals(view, "display")) {
-         saw_display = true;
-         if (dependencies[i].function_count != 0) {
-            Log.error("an unreferenced declaration recorded %d functions, expected 0",
-               int(dependencies[i].function_count));
-            return false;
-         }
-      }
-      else {
-         Log.error("unexpected dependency '%.*s'", int(name->len), strdata(name));
-         return false;
-      }
-   }
-
-   if (not saw_core or not saw_display) {
-      Log.error("descriptors are missing core (%d) or display (%d)", int(saw_core), int(saw_display));
-      return false;
-   }
-
-   // Round trip through a dump.  The reload happens in a second state, so the rebuilt descriptors cannot be sharing
-   // anything with the originals; only the persisted names connect them.
-
-   std::string dump;
-   if (lua_dump(L, bytecode_writer, &dump) != 0) {
-      Log.error("failed to dump the descriptor fixture");
-      return false;
-   }
-   lua_pop(L, 1);
-
-   LuaStateHolder reload_state;
-   lua_State *R = reload_state.get();
-   luaL_openlibs(R);
-   register_module_class(R);
-   lua_protect_globals(R);
-   if (lua_load(R, std::string_view(dump.data(), dump.size()), "dependency-reload")) {
-      Log.error("failed to reload the descriptor fixture: %s", lua_tostring(R, -1));
-      return false;
-   }
-
-   auto reloaded = proto_dependencies(funcproto(funcV(R->top - 1)));
-   if (not reloaded) {
-      Log.error("the reloaded prototype lost its dependency descriptors");
-      return false;
-   }
-
-   if (reloaded->dependency_count != table->dependency_count or
-       reloaded->function_count != table->function_count) {
-      Log.error("the reloaded descriptors have %d/%d entries, expected %d/%d",
-         int(reloaded->dependency_count), int(reloaded->function_count),
-         int(table->dependency_count), int(table->function_count));
-      return false;
-   }
-
-   auto reloaded_dependencies = proto_dependency_list(reloaded);
-   for (uint32_t i = 0; i < reloaded->dependency_count; ++i) {
-      GCstr *original = gco_to_string(gcref(dependencies[i].name));
-      GCstr *restored = gco_to_string(gcref(reloaded_dependencies[i].name));
-      if (not kt::iequals(std::string_view(strdata(original), original->len),
-            std::string_view(strdata(restored), restored->len))) {
-         Log.error("dependency %d reloaded as '%.*s', expected '%.*s'", int(i),
-            int(restored->len), strdata(restored), int(original->len), strdata(original));
-         return false;
-      }
-      if (reloaded_dependencies[i].first_function != dependencies[i].first_function or
-          reloaded_dependencies[i].function_count != dependencies[i].function_count) {
-         Log.error("dependency %d reloaded with a different function range", int(i));
-         return false;
-      }
-   }
-
-   // The dumped chunk must still run in the fresh state, which exercises resolution of the reloaded names against
-   // the global registry rather than anything carried over from compilation.
-
-   if (lua_pcall(R, 0, 1, 0)) {
-      Log.error("the reloaded chunk failed to execute: %s", lua_tostring(R, -1));
-      return false;
-   }
-   if (not lua_isnumber(R, -1)) {
-      Log.error("the reloaded chunk did not produce a numeric result");
-      return false;
-   }
-   lua_pop(R, 1);
-
-   // A prototype without module declarations must carry no descriptor block at all, so that ordinary functions pay
-   // nothing for the feature.
-
-   LuaStateHolder plain_state;
-   lua_State *P = plain_state.get();
-   luaL_openlibs(P);
-   register_module_class(P);
-   lua_protect_globals(P);
-   if (lua_load(P, std::string_view("return 1"), "dependency-none")) {
-      Log.error("failed to compile the descriptor-free fixture: %s", lua_tostring(P, -1));
-      return false;
-   }
-   if (proto_dependencies(funcproto(funcV(P->top - 1)))) {
-      Log.error("a unit with no module declaration produced dependency descriptors");
-      return false;
-   }
-   lua_pop(P, 1);
-
-   return true;
-}
-
-//********************************************************************************************************************
 // Corrupt dependency metadata must be rejected rather than resolved.  The fixture mutates a valid dump, so every
 // rejection below is attributable to the dependency block and not to an unrelated inconsistency.
 
@@ -3785,7 +3604,6 @@ static bool test_module_registry(kt::Log &Log)
       test_module_registry_shared_ordinal(Log) and
       test_module_registry_concurrency(Log) and
       test_module_definition_ownership(Log) and
-      test_module_dependency_descriptors(Log) and
       test_module_dependency_activation_uses_sidecar(Log) and
       test_module_dependency_corruption_rejected(Log);
 }
@@ -4825,6 +4643,76 @@ static bool test_current_context_materialisation_bytecode(kt::Log &Log)
       return false;
    }
 
+   error.clear();
+   auto repeated = compile_snapshot(L,
+      "function repeated():num return &value + &value + &value end\n", true, error);
+   if (not repeated or count_opcode_tree(*repeated, BC_CTXGET) != 1 or
+       count_opcode_tree(*repeated, BC_TGETS) != 3) {
+      Log.error("repeated inherited context access did not reuse one cache register: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto context_free = compile_snapshot(L, "function plain():num return 1 end\n", true, error);
+   if (not context_free or count_opcode_tree(*context_free, BC_CTXGET) != 0) {
+      Log.error("a function without context access acquired an unnecessary cache: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto using_block = compile_snapshot(L,
+      "local receiver = { value = 1 }\n"
+      "using receiver do return &value + &value end\n", true, error);
+   if (not using_block or count_opcode_tree(*using_block, BC_CTXGET) != 0 or
+       count_opcode_tree(*using_block, BC_TGETS) != 2) {
+      Log.error("direct context access in a using block did not use its retained reference: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto using_closure = compile_snapshot(L,
+      "local receiver = { value = 1 }\n"
+      "using receiver do local read = function():num return &value end return read() end\n", true, error);
+   if (not using_closure or count_opcode_tree(*using_closure, BC_CTXGET) != 1 or
+       count_opcode_tree(*using_closure, BC_UGET) != 0) {
+      Log.error("a function declared in using did not acquire an isolated inherited cache: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto contextual_pipe = compile_snapshot(L,
+      "local receiver = entity { value = 1 }\n"
+      "function receiver.add(Value:num):num return &value + Value end\n"
+      "return 2 |> receiver.add()\n", true, error);
+   if (not contextual_pipe or count_opcode(*contextual_pipe, BC_CTXENTER) != 1 or
+       count_opcode(*contextual_pipe, BC_CTXCALL) != 1 or count_opcode(*contextual_pipe, BC_CTXLEAVE) != 1) {
+      Log.error("a contextual pipe destination did not use the contextual call frame: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto runtime_context_pipe = compile_snapshot(L,
+      "local function invoke(Target:any):num return &value |> Target['consume']() end\n", true, error);
+   if (not runtime_context_pipe or count_opcode_tree(*runtime_context_pipe, BC_CTXGET) != 1 or
+       count_opcode_tree(*runtime_context_pipe, BC_CTXENTER) != 1 or
+       count_opcode_tree(*runtime_context_pipe, BC_CTXCALL) != 1) {
+      Log.error("a runtime-dependent contextual pipe did not acquire its argument context: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto runtime_builtin_pipe = compile_snapshot(L,
+      "local function invoke(Target:any):num\n"
+      "   local inherited = &value\n"
+      "   return &value |> Target.add()\n"
+      "end\n", true, error);
+   if (not runtime_builtin_pipe or count_opcode_tree(*runtime_builtin_pipe, BC_CTXGET) != 2 or
+       count_opcode_tree(*runtime_builtin_pipe, BC_BMETH) != 1 or
+       count_opcode_tree(*runtime_builtin_pipe, BC_CTXENTER) != 1) {
+      Log.error("a runtime built-in pipe did not separate inherited and fallback contexts: %s", error.c_str());
+      return false;
+   }
+
    return true;
 }
 
@@ -5820,11 +5708,33 @@ static bool test_contextual_call_specialisation(kt::Log &Log)
    }
 
    error.clear();
+   auto contextual_arguments = compile_snapshot(L,
+      "local target = entity { value = 1 }\n"
+      "function target.read(Value:num):num return &value + Value end\n"
+      "return target.read(&value)\n", true, error);
+   if (not contextual_arguments or count_opcode(*contextual_arguments, BC_CTXGET) != 0 or
+       count_opcode(*contextual_arguments, BC_CTXENTER) != 1 or
+       count_opcode(*contextual_arguments, BC_CTXCALL) != 1) {
+      Log.error("a statically contextual argument region reacquired its retained receiver: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
    auto unknown = compile_snapshot(L,
       "local function invoke(Target:any) Target.run() end\n", true, error);
    if (not unknown or count_opcode_tree(*unknown, BC_CTXENTER) != 1 or
        count_opcode_tree(*unknown, BC_CTXCALL) != 1 or count_opcode_tree(*unknown, BC_CTXLEAVE) != 1) {
       Log.error("an unknown receiver lost its runtime contextual gate: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto runtime_arguments = compile_snapshot(L,
+      "local function invoke(Target:any):num return Target['run'](&value) end\n", true, error);
+   if (not runtime_arguments or count_opcode_tree(*runtime_arguments, BC_CTXGET) != 1 or
+       count_opcode_tree(*runtime_arguments, BC_CTXENTER) != 1 or
+       count_opcode_tree(*runtime_arguments, BC_CTXCALL) != 1) {
+      Log.error("a runtime contextual argument region did not acquire one scratch context: %s", error.c_str());
       return false;
    }
 

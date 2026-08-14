@@ -760,11 +760,16 @@ The process-wide ownership, publication and lock contract is documented in
 | `CTXCALLT` | AD | Transfer context ownership and invoke a fixed-argument tail call |
 
 `CTXGET` is appended to the opcode set so existing opcode numbers remain stable. An empty physical context stack is
-the permanent root sentinel and resolves dynamically through `L->env`; consequently a supported environment
-replacement is visible to the next `CTXGET`.  The standalone `&&` current-context expression lowers directly to
-`CTXGET`.  `&name` and the equivalent `&&.name` access lower to `CTXGET` followed by ordinary `TGET*` or `TSET*`
-operations. Root writes therefore cross the same marked-environment mutation boundary as `_G` writes and cannot
-bypass protected-global, const or sticky-type contracts.
+the permanent root sentinel and resolves dynamically through `L->env`.  A function or chunk that directly uses its
+inherited context emits one `CTXGET` into a hidden blank local at region entry; repeated `&&`, `&name` and
+`&&.name` expressions then read that register through ordinary `TGET*` or `TSET*` operations.  A `using` body reads
+its retained reference register, while contextual-call arguments read the retained receiver or one runtime-selected
+scratch register.  Regions without a context use retain neither a cache local nor a `CTXGET`.
+
+Root-environment replacement is supported between Lua activations and is observed when the next region acquires its
+inherited source.  Replacing `L->env` during an active Lua activation is unsupported; mutating the root table remains
+fully supported.  Root writes therefore cross the same marked-environment mutation boundary as `_G` writes and
+cannot bypass protected-global, const or sticky-type contracts.
 
 Phase 2 deliberately stops recording a trace at `CTXGET`; Phase 5 will model context in recorder state and snapshots.
 
