@@ -686,18 +686,10 @@ static ERR TIRI_DerefProcedure(extTiri *Self, struct sc::DerefProcedure *Args)
    if (not Args) return ERR::NullArgs;
 
    if (Args->Procedure.isScript() and (Args->Procedure.Context IS Self)) { // Verify ownership
-      log.trace("Dereferencing procedure #%" PF64, (long long)Args->Procedure.ProcedureID);
+      log.trace("Dereferencing procedure #%u", Args->Procedure.procedureID());
 
-      if (Args->Procedure.ProcedureID) {
-         if (not Self->Lua) { // Guarded because Deref is used by the Free action manager.
-            Args->Procedure.ProcedureID = 0;
-            Args->Procedure.consume();
-            return ERR::Okay;
-         }
-
-         luaL_unref(Self->Lua, LUA_REGISTRYINDEX, Args->Procedure.ProcedureID);
-         Args->Procedure.ProcedureID = 0;
-      }
+      // Guarded because Deref is used by the Free action manager.  Both registry references belong to the callback.
+      release_tiri_function(Self->Lua, &Args->Procedure);
       Args->Procedure.consume();
       return ERR::Okay;
    }

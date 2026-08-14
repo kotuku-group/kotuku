@@ -172,6 +172,39 @@ private:
    lua_State *state_;
 };
 
+// A native FUNCTION callback starts from the state root, then may restore the table captured when the callback was
+// marshalled.  Context depth is retained rather than a TValue pointer so stack growth, error unwinding and nested
+// callbacks cannot invalidate the guard's ownership.
+
+class LuaCallbackContextGuard {
+public:
+   explicit LuaCallbackContextGuard(lua_State *State) noexcept :
+      root_(State), state_(State), depth_(State->context_stack.size())
+   {
+   }
+
+   void activate(GCtab *Table) noexcept
+   {
+      if (not Table) return;
+
+      lj_context_push(this->state_, Table, this->state_->base);
+      this->state_->context_stack.back().owner_kind = lua_State::ContextFrame::OwnerKind::Callback;
+   }
+
+   ~LuaCallbackContextGuard() noexcept
+   {
+      lj_context_restore_depth(this->state_, this->depth_);
+   }
+
+   LuaCallbackContextGuard(const LuaCallbackContextGuard &) = delete;
+   LuaCallbackContextGuard & operator=(const LuaCallbackContextGuard &) = delete;
+
+private:
+   LuaContextRootGuard root_;
+   lua_State *state_;
+   size_t depth_;
+};
+
 // Function name registry for tostring() support on named functions.
 LJ_FUNC void lj_funcname_register(global_State* g, const GCproto* pt, const char* name, size_t len);
 LJ_FUNC const char* lj_funcname_lookup(global_State* g, const GCproto* pt, size_t* len);

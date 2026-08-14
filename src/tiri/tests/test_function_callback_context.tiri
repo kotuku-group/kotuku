@@ -1,0 +1,236 @@
+-- Native FUNCTION callback context capture and restoration.
+
+module core as mCore
+
+function wait_for_callback(Context:str)
+   check processing.sleep(1.0)
+end
+
+function clear_timer(Subscription)
+   if Subscription then check mCore.UpdateTimer(Subscription, 0) end
+end
+
+@Test function ModuleCallbacksCaptureRootAndUsingContexts()
+   &glRootCallbackValue = 'root callback context'
+   &glRootCallbackObserved = nil
+   local root_timer
+   local context_timer
+   local root_complete = false
+   local context_complete = false
+   local context = entity { value = 'using callback context', observed = nil }
+
+   defer
+      clear_timer(root_timer)
+      clear_timer(context_timer)
+      &glRootCallbackValue = nil
+      &glRootCallbackObserved = nil
+   end
+
+   local err
+   err, root_timer = mCore.SubscribeTimer(0.01, function()
+      &glRootCallbackObserved = &glRootCallbackValue
+      root_complete = true
+      if root_complete and context_complete then processing.signal() end
+   end)
+   check err
+
+   using context do
+      err, context_timer = mCore.SubscribeTimer(0.01, function()
+         &observed = &value
+         context_complete = true
+         if root_complete and context_complete then processing.signal() end
+      end)
+      check err
+   end
+
+   wait_for_callback('module callback capture')
+   assert(&glRootCallbackObserved is 'root callback context', 'A root callback should observe _G')
+   assert(context.observed is 'using callback context',
+      'A callback registered in using should observe its captured table')
+end
+
+@Test function EntityMethodCallbacksCaptureTheEntity()
+   local timer
+   local owner = entity { value = 'entity method callback', observed = nil }
+
+   defer clear_timer(timer) end
+
+   function owner.register_callback()
+      local err
+      err, timer = mCore.SubscribeTimer(0.01, function()
+         &observed = &value
+         processing.signal()
+      end)
+      check err
+   end
+
+   owner.register_callback()
+   wait_for_callback('entity method callback capture')
+   assert(owner.observed is 'entity method callback',
+      'A callback registered inside an entity method should observe that entity')
+   assert(&value is nil, 'An entity callback should restore the root context after it returns')
+end
+
+@Test function SameFunctionRetainsEachRegistrationContext()
+   local first_timer
+   local second_timer
+   local first = entity { name = 'first registration', observed = nil }
+   local second = entity { name = 'second registration', observed = nil }
+
+   defer
+      clear_timer(first_timer)
+      clear_timer(second_timer)
+   end
+
+   local callback = function()
+      &observed = &name
+      if first.observed and second.observed then processing.signal() end
+   end
+
+   local err
+   using first do
+      err, first_timer = mCore.SubscribeTimer(0.01, callback)
+      check err
+   end
+   using second do
+      err, second_timer = mCore.SubscribeTimer(0.01, callback)
+      check err
+   end
+
+   wait_for_callback('separate callback registrations')
+   assert(first.observed is 'first registration', 'The first callback should retain the first registration context')
+   assert(second.observed is 'second registration', 'The second callback should retain the second registration context')
+end
+
+@Test function ObjectMethodCallbacksRestoreNestedContexts()
+   local outer = entity { name = 'outer callback', before = nil, after = nil }
+   local inner = entity { name = 'inner callback', observed = nil }
+   local source = obj.new('file', { src='scripts:gui.tiri', flags=FL_READ })
+
+   defer
+      mSys.DeleteFile('temp:function_callback_outer.tiri')
+      mSys.DeleteFile('temp:function_callback_inner.tiri')
+   end
+
+   using outer do
+      check source.mtCopy('temp:function_callback_outer.tiri', function()
+         &before = &name
+         using inner do
+            check mCore.CopyFile('scripts:gui.tiri', 'temp:function_callback_inner.tiri', function()
+               &observed = &name
+            end)
+         end
+         &after = &name
+      end)
+   end
+
+   assert(outer.before is 'outer callback', 'An object method callback should observe its captured table')
+   assert(inner.observed is 'inner callback', 'A nested module callback should observe its own captured table')
+   assert(outer.after is 'outer callback', 'A nested callback should restore the outer callback context')
+   assert(&name is nil, 'Nested native callbacks should restore the root context after completion')
+end
+
+@Test function ObjectFieldCallbacksCaptureAndReplaceContexts()
+   local system_state = mSys.GetSystemState()
+   if system_state.platform is 'Windows' then return end
+
+   local current_task = mSys.CurrentTask()
+   local task
+   local owner = entity { name = 'object field callback', first_called = false, observed = nil }
+
+   defer
+      if task then task.free() end
+   end
+
+   using owner do
+      task = obj.new('task', {
+         location = current_task.processPath .. 'origo',
+         args = '--version',
+         exitCallback = function()
+            &first_called = true
+         end
+      })
+
+      task.exitCallback = function()
+         &observed = &name
+         processing.signal()
+      end
+   end
+
+   check task.acActivate()
+   wait_for_callback('object field callback capture')
+   assert(owner.first_called is false, 'Replacing a callback field should release the original callback')
+   assert(owner.observed is 'object field callback',
+      'A replacement object-field callback should observe its captured table')
+   assert(&name is nil, 'An object-field callback should restore the root context after it returns')
+end
+
+@Test function CallbackErrorsRestoreTheRootContext()
+   defer mSys.DeleteFile('temp:function_callback_error.tiri') end
+   local script = obj.new('tiri', { statement=[[
+      local owner = entity { name = 'failing callback' }
+      local source = obj.new('file', { src='scripts:gui.tiri', flags=FL_READ })
+
+      using owner do
+         source.mtCopy('temp:function_callback_error.tiri', function()
+            error('expected bound callback failure')
+         end)
+      end
+
+      assert(&name is nil, 'A failing native callback should restore the child script root context')
+   ]] })
+
+   check script.acActivate()
+   assert(script.error is ERR_Okay, 'The callback error should not leak into the surrounding child script')
+   script.free() -- Validates that no callback context remains active in the failed script state.
+   assert(&name is nil, 'A failed child callback must not affect the parent script root context')
+end
+
+@Test function RejectedAndConsumedCallbacksDoNotExecute()
+   local rejected = entity { called = false }
+   local consumed = entity { called = false }
+
+   using rejected do
+      local err = mCore.CopyFile('', '', function()
+         &called = true
+      end)
+      assert(err != ERR_Okay, 'CopyFile() should reject empty paths after receiving its callback')
+   end
+
+   using consumed do
+      local err = mCore.CopyFile('scripts:gui.tiri', '', function()
+         &called = true
+      end)
+      assert(err != ERR_Okay, 'CopyFile() should consume a callback when native validation rejects the call')
+   end
+
+   assert(rejected.called is false, 'A rejected native call must not invoke its callback')
+   assert(consumed.called is false, 'A consumed callback must not run after native rejection')
+end
+
+@Test(hotpath=3) function JITCallbacksCaptureTheRegistrationContext()
+   local context = entity { value = 'jit callback context', observed = nil }
+   local iterations = 40
+
+   defer mSys.DeleteFile('temp:function_callback_jit.tiri') end
+
+   jit.off()
+   using context do
+      check mCore.CopyFile('scripts:gui.tiri', 'temp:function_callback_jit.tiri', function()
+         &observed = &value
+      end)
+   end
+   assert(context.observed is 'jit callback context', 'Interpreter registration should retain its context')
+
+   context.observed = nil
+   jit.on()
+   for _ in {0 to iterations} do
+      using context do
+         check mCore.CopyFile('scripts:gui.tiri', 'temp:function_callback_jit.tiri', function()
+            &observed = &value
+         end)
+      end
+   end
+   assert(context.observed is 'jit callback context', 'JIT registration should retain its context')
+   assert(&value is nil, 'JIT callback completion should restore the root context')
+end
