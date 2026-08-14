@@ -16,6 +16,7 @@ function replacement_bnot(Value:num):num return 104 end
 function replacement_lshift(Left:num, Right:num):num return 105 end
 function replacement_rshift(Left:num, Right:num):num return 106 end
 function replacement_range(Start:num, Stop:num, Inclusive:bool):str return 'replacement range' end
+function replacement_regex_new(Pattern:str, Flags:num):str return 'replacement regex.new' end
 
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
@@ -26,6 +27,21 @@ function enforce_hotpath() end
    assert(rawget(_G, '__filter') is nil, 'The result-filter intrinsic must not be published in _G')
    assert(rawget(_G, '__create_thunk') is nil, 'The deferred-expression intrinsic must not be published in _G')
    assert(array.append is nil, 'The array append intrinsic must not be published in the array namespace')
+end
+
+@Test function CanonicalRegexLiteralIgnoresNamespaceRebinding()
+   local original_regex_new = regex.new
+
+   defer regex.new = original_regex_new end
+
+   regex.new = replacement_regex_new
+   processing.collect('full')
+
+   local literal = r'\d+'
+   assert(literal.pattern is [[\d+]] and literal.test('abc123'),
+      'Regex literal syntax should use the rooted canonical regex.new constructor')
+   assert(regex.new('dynamic', 0) is 'replacement regex.new',
+      'Explicit regex.new calls should retain dynamic field lookup semantics')
 end
 
 @Test function CanonicalCoreSyntaxIgnoresNamespaceRebinding()

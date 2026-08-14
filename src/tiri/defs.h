@@ -483,6 +483,7 @@ extern void register_input_class(lua_State *);
 extern void register_module_class(lua_State *);
 extern void register_processing_class(lua_State *);
 extern void register_regex_class(lua_State *);
+extern int luaopen_regex_intrinsic(lua_State *);
 extern void register_async_class(lua_State *);
 //static void register_widget_class(lua_State *);
 void release_object(GCobject *);
