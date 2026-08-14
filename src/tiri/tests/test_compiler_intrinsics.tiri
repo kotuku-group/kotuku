@@ -1,0 +1,38 @@
+-- Regression coverage for compiler-only callables that must remain usable without public namespace bindings.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function CompilerIntrinsicsAreNotPublished()
+   assert(rawget(_G, '__tiri_iter_prepare') is nil,
+      'The generic-iteration preparation intrinsic must not be published in _G')
+   assert(rawget(_G, '__filter') is nil, 'The result-filter intrinsic must not be published in _G')
+   assert(rawget(_G, '__create_thunk') is nil, 'The deferred-expression intrinsic must not be published in _G')
+   assert(array.append is nil, 'The array append intrinsic must not be published in the array namespace')
+end
+
+@Test function IsolatedIntrinsicsRetainRuntimeBehaviour()
+   function sum_dynamic(Target:any):num
+      local total = 0
+      for _, value in Target do total += value end
+      return total
+   end
+
+   function values():<num, num, num>
+      return 2, 3, 5
+   end
+
+   local filtered_first, filtered_second = [_**]values()
+   local deferred = <num{ filtered_first + filtered_second }>
+   local bytes = array<byte>
+   bytes ..= 'a' .. 'b' .. 'c'
+
+   assert(sum_dynamic(array<int> { 2, 3, 5 }) is 10,
+      'Dynamic bare iteration should continue to use the hidden preparation intrinsic')
+   assert(filtered_first is 3 and filtered_second is 5,
+      'Result filtering should continue to use the hidden filter intrinsic')
+   assert(resolve(deferred) is 8,
+      'Deferred expressions should continue to use the hidden thunk intrinsic')
+   assert(bytes.getString() is 'abc',
+      'Compound byte-array concatenation should continue to use the hidden append intrinsic')
+end

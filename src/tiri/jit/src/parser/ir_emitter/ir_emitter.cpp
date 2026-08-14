@@ -2699,12 +2699,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       fs->freereg = (base - BCREG(3) + BCREG(3)).raw();
    }
    else {
-      ExpDesc prepare_function;
-      prepare_function.init(ExpKind::Global, 0);
-      prepare_function.u.sval = fs->ls->keepstr("__tiri_iter_prepare");
-      this->materialise_to_next_reg(prepare_function, "generic for runtime preparation intrinsic");
-      RegisterAllocator allocator(fs);
-      allocator.reserve(BCReg(1));
+      bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__tiri_iter_prepare), fs->free_reg());
 
       auto collection = this->emit_expression(*Payload.iterators.front());
       if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
@@ -3262,6 +3257,12 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
    if (reference.identifier.is_blank) {
       return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UnexpectedToken,
          "Cannot read blank identifier '_'"));
+   }
+
+   if (reference.resolution IS NameResolution::BuiltinCallable) {
+      auto id = BuiltinCallableID(reference.slot);
+      auto result = bcemit_builtin_callable(&this->func_state, id, this->func_state.free_reg());
+      return ParserResult<ExpDesc>::success(result);
    }
 
    ExpDesc resolved;

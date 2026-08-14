@@ -56,12 +56,7 @@ static const ExprNode * builtin_method_receiver(const CallExprPayload &Payload)
 static BCReg prepare_builtin_method_frame(
    FuncState *State, BuiltinCallableID Callable, BCReg Receiver, BCReg CallBase)
 {
-   RegisterAllocator allocator(State);
-   BCREG required_top = CallBase.raw() + 2 + LJ_FR2;
-   if (State->freereg < required_top) allocator.reserve(BCReg(required_top - State->freereg));
-   bcemit_AD(State, BC_MOV, CallBase.raw() + 1 + LJ_FR2, Receiver.raw());
-   bcemit_builtin_callable(State, Callable, CallBase.raw());
-   return CallBase;
+   return bcemit_builtin_call_frame(State, Callable, CallBase, Receiver);
 }
 
 //********************************************************************************************************************
@@ -1208,15 +1203,8 @@ ParserResult<ExpDesc> IrEmitter::emit_result_filter_expr(const ResultFilterPaylo
 
    FuncState* fs = &this->func_state;
 
-   // Look up and emit the __filter function
    BCReg base = fs->free_reg();
-   ExpDesc filter_fn;
-   this->lex_state.var_lookup_symbol(lj_str_newlit(this->lex_state.L, "__filter"), &filter_fn);
-   this->materialise_to_next_reg(filter_fn, "filter function");
-
-   // Reserve register for frame link
-   RegisterAllocator allocator(fs);
-   allocator.reserve(BCReg(1));
+   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__filter), base);
 
    // Emit arguments: mask, count, trailing_keep
    ExpDesc mask_expr(double(Payload.keep_mask));

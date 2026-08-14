@@ -41,11 +41,12 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
       ExprNodePtr inner_fn = make_function_expr(span, {}, false, std::move(inner_body));
 
-      // Create call to __create_thunk(inner_fn, type_tag)
+      // Create canonical call to __create_thunk(inner_fn, type_tag)
       NameRef create_thunk_ref;
       create_thunk_ref.identifier.symbol = lj_str_newlit(this->lex_state.L, "__create_thunk");
       create_thunk_ref.identifier.span = span;
-      create_thunk_ref.resolution = NameResolution::Unresolved;
+      create_thunk_ref.resolution = NameResolution::BuiltinCallable;
+      create_thunk_ref.slot = uint16_t(builtin_callable_id(FastFunc::__create_thunk));
       ExprNodePtr create_thunk_fn = make_identifier_expr(span, create_thunk_ref);
 
       // Logical type argument.  A VM tag cannot distinguish range from full userdata or represent both full and

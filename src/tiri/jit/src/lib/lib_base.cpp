@@ -289,7 +289,7 @@ static int bare_array_iterator_next(lua_State *L)
 // Normalise a single dynamic generic-for target once at loop entry.  This is a protected compiler intrinsic; source
 // code should continue to use the ordinary collection and iterator forms.
 
-LJLIB_CF(__tiri_iter_prepare)
+LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare)
 {
    int32_t value_count = lua_gettop(L);
    if (value_count >= 2) return value_count;
@@ -549,7 +549,7 @@ LJLIB_CF(rawlen)      LJLIB_REC(.)
 // RAII Pattern: Uses StackFrame to ensure L->top is restored on error paths.
 // The frame automatically cleans up if an error is thrown, preventing stack leaks.
 
-LJLIB_CF(__filter)      LJLIB_REC(.)
+LJLIB_INTRINSIC LJLIB_CF(__filter)      LJLIB_REC(.)
 {
    StackFrame frame(L);
 
@@ -899,7 +899,7 @@ LJLIB_CF(resolve)
 // Args: (closure:function, expected_type:number)
 // Returns: thunk userdata
 
-LJLIB_CF(__create_thunk)
+LJLIB_INTRINSIC LJLIB_CF(__create_thunk)
 {
    GCfunc *fn = lj_lib_checkfunc(L, 1);
    int expected_type = int(lj_lib_checkint(L, 2));
@@ -1087,7 +1087,7 @@ LJLIB_CF(ltr)
 // Appended at the end of the base library because fast-function ordering is part of the private bytecode ABI for
 // BC_BFUNC; inserting it beside setmetatable() would renumber every later fast function.
 
-LJLIB_CF(__setmetatable_ctx)
+LJLIB_INTRINSIC LJLIB_CF(__setmetatable_ctx)
 {
    return setmetatable_impl(L, true);
 }
@@ -1117,12 +1117,6 @@ extern int luaopen_base(lua_State* L)
    newproxy_weaktable(L);  //  top-2.
    LJ_LIB_REG(L, "_G", base);
 
-   // Registration gives every fast function a canonical state-local identity for BC_BFUNC.  The authorised
-   // setmetatable variant is compiler-private, so remove its temporary global binding while retaining that canonical
-   // identity.  Compiler-emitted calls load it directly by fast-function ID.
-   lua_pushnil(L);
-   lua_setglobal(L, "__setmetatable_ctx");
-
    // Register function prototypes for compile-time type inference
    reg_func_prototype("print", { }, {}, FProtoFlags::Variadic);
    reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str });
@@ -1140,7 +1134,6 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic);
    reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any });
    reg_func_prototype("newproxy", { TiriType::Userdata }, { TiriType::Any });
-   reg_func_prototype("__create_thunk", { TiriType::Any }, { TiriType::Func, TiriType::Num });
    reg_func_prototype("ltr", { TiriType::Str }, { TiriType::Str });
    reg_func_prototype("resolve", { TiriType::Any }, { TiriType::Any });
 

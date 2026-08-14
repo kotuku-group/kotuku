@@ -182,7 +182,8 @@ enum class NameResolution : uint8_t {
    Local,
    Upvalue,
    Global,
-   Environment
+   Environment,
+   BuiltinCallable
 };
 
 enum class TableFieldKind : uint8_t {

@@ -5522,6 +5522,18 @@ static const BCIns * find_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    return nullptr;
 }
 
+static const BCIns * find_builtin_callable_opcode(const BytecodeSnapshot &Snapshot, BuiltinCallableID Id)
+{
+   BCREG callable = builtin_callable_index(Id);
+   for (const BCIns &instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS BC_BFUNC and bc_d(instruction) IS callable) return &instruction;
+   }
+   for (const BytecodeSnapshot &child : Snapshot.children) {
+      if (const BCIns *instruction = find_builtin_callable_opcode(child, Id)) return instruction;
+   }
+   return nullptr;
+}
+
 static bool test_builtin_method_bytecode_emission(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -5674,6 +5686,53 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 1 or
        bc_d(*append_load) != builtin_callable_index(builtin_callable_id(FastFunc::array_append))) {
       Log.error("compiler-only array append did not use canonical emission: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_compiler_intrinsic_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string error;
+
+   auto iteration = compile_snapshot(L,
+      "local function visit(Target:any)\n"
+      "   local total = 0\n"
+      "   for _, value in Target do total += value end\n"
+      "   return total\n"
+      "end\n"
+      "return visit\n", true, error);
+   if (not iteration or not find_builtin_callable_opcode(*iteration,
+         builtin_callable_id(FastFunc::__tiri_iter_prepare)) or
+       count_opcode_tree(*iteration, BC_BFUNC) != 1 or count_opcode_tree(*iteration, BC_GGET) != 0 or
+       count_opcode_tree(*iteration, BC_TGETS) != 0 or count_opcode_tree(*iteration, BC_TGETV) != 0) {
+      Log.error("dynamic generic iteration did not use the isolated preparation intrinsic: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto filter = compile_snapshot(L,
+      "local function source():<num, num, num> return 1, 2, 3 end\n"
+      "local first, second = [_*]source()\n"
+      "return first, second\n", true, error);
+   if (not filter or not find_builtin_callable_opcode(*filter, builtin_callable_id(FastFunc::__filter)) or
+       count_opcode_tree(*filter, BC_BFUNC) != 1 or count_opcode_tree(*filter, BC_CALLM) != 1 or
+       count_opcode_tree(*filter, BC_GGET) != 0 or count_opcode_tree(*filter, BC_TGETS) != 0 or
+       count_opcode_tree(*filter, BC_TGETV) != 0) {
+      Log.error("result filtering did not use the isolated filter intrinsic: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto thunk = compile_snapshot(L, "return <num{ 42 }>\n", true, error);
+   if (not thunk or not find_builtin_callable_opcode(*thunk, builtin_callable_id(FastFunc::__create_thunk)) or
+       count_opcode_tree(*thunk, BC_BFUNC) != 1 or count_opcode_tree(*thunk, BC_GGET) != 0 or
+       count_opcode_tree(*thunk, BC_TGETS) != 0 or count_opcode_tree(*thunk, BC_TGETV) != 0) {
+      Log.error("deferred expressions did not use the isolated thunk intrinsic: %s", error.c_str());
       return false;
    }
 
@@ -8222,7 +8281,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 74> tests = { {
+   constexpr std::array<TestCase, 75> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8280,6 +8339,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_static_classification", test_builtin_method_static_classification },
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
+      { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },
       { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },
