@@ -304,8 +304,8 @@ static ERR TIRI_Activate(extTiri *Self)
 
    if (Self->Statement.empty()) return log.warning(ERR::FieldNotSet);
 
-   log.trace("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
-      Self->Procedure.empty() ? "." : Self->Procedure.c_str(), (long long)Self->ProcedureID);
+   log.trace("Target: %d, Procedure: %s / ID #%u", Self->TargetID,
+      Self->Procedure.empty() ? "." : Self->Procedure.c_str(), FUNCTION::unpackProcedureID(Self->ProcedureID));
 
    if ((Self->Recurse) and (Self->Procedure.empty()) and (not Self->ProcedureID)) {
       return ERR::Okay; // Do nothing, script is running.
@@ -576,8 +576,8 @@ static ERR TIRI_Query(extTiri *Self)
    if (Self->Recurse) return ERR::NothingDone; // Do nothing, script is running.
 
    if (not Self->MainChunkRef) {
-      log.branch("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
-         Self->Procedure.empty() ? "." : Self->Procedure.c_str(), Self->ProcedureID);
+      log.branch("Target: %d, Procedure: %s / ID #%u", Self->TargetID,
+         Self->Procedure.empty() ? "." : Self->Procedure.c_str(), FUNCTION::unpackProcedureID(Self->ProcedureID));
 
       lua_gc(Self->Lua, LUA_GCSTOP, 0);  // Stop collector during initialization
          luaL_openlibs(Self->Lua);  // Open Lua libraries
@@ -779,6 +779,7 @@ static ERR save_binary(extTiri *Self, OBJECTPTR Target)
 static ERR run_script(extTiri *Self)
 {
    kt::Log log(__FUNCTION__);
+   auto procedure_id = FUNCTION::unpackProcedureID(Self->ProcedureID);
 
    log.traceBranch("Procedure: %s, Top: %d", Self->Procedure.c_str(), lua_gettop(Self->Lua));
 
@@ -789,7 +790,7 @@ static ERR run_script(extTiri *Self)
    bool pcall_failed = false;
    if ((not Self->Procedure.empty()) or (Self->ProcedureID)) {
       if (not Self->Procedure.empty()) lua_getglobal(Self->Lua, Self->Procedure);
-      else lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, Self->ProcedureID);
+      else lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, int(procedure_id));
 
       if (lua_isfunction(Self->Lua, -1)) {
          if ((Self->Flags & SCF::LOG_ALL) != SCF::NIL) {
@@ -883,7 +884,7 @@ static ERR run_script(extTiri *Self)
       }
       else {
          auto str = std::format("Procedure '{}' / #{} does not exist in the script.",
-            Self->Procedure.empty() ? "NULL" : Self->Procedure.c_str(), Self->ProcedureID);
+            Self->Procedure.empty() ? "NULL" : Self->Procedure.c_str(), procedure_id);
          Self->setErrorMessage(str.c_str());
          log.warning("%s", str.c_str());
 

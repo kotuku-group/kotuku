@@ -196,7 +196,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
                { "HTTP", Self, FD_OBJECTPTR },
             }), error) != ERR::Okay) error = ERR::Failed;
          if (error > ERR::ExceptionThreshold) {
-            log.warning("Procedure %" PRId64 " failed, aborting HTTP call.", Self->Outgoing.ProcedureID);
+            log.warning("Procedure %u failed, aborting HTTP call.", Self->Outgoing.procedureID());
          }
       }
       else error = ERR::InvalidValue;

@@ -6,6 +6,8 @@
 
 #include <type_traits>
 #include <utility>
+#include <bit>
+#include <cstddef>
 #include <cstdint>
 
 //********************************************************************************************************************
@@ -43,6 +45,11 @@ enum class CALL : uint8_t {
 };
 
 struct FUNCTION {
+   struct ScriptData {
+      uint32_t ProcedureID;
+      int32_t  ContextID;
+   };
+
    CALL Type;
    uint8_t Flags;
    uint16_t ID; // Unused.  Unique identifier for the function.
@@ -52,8 +59,9 @@ struct FUNCTION {
       int64_t MetaValue;
    };
    union {
-      void * Routine;    // CALL::STD_C: Pointer to a C routine
-      int64_t ProcedureID; // CALL::SCRIPT: Function identifier, usually a hash
+      void *     Routine;     // CALL::STD_C: Pointer to a C routine
+      int64_t    ScriptValue; // Retains the callback transport size and alignment.
+      ScriptData Script;      // CALL::SCRIPT: Procedure and optional bound context identifiers.
    };
 
    static constexpr uint8_t CONSUMED = 0x01;
@@ -61,25 +69,55 @@ struct FUNCTION {
    FUNCTION() : Type(CALL::NIL), Flags(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
    FUNCTION(CALL pType) : Type(pType), Flags(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
 
-   // Script constructor
+   // Script constructors
 
-   FUNCTION(class objScript *pScript, int64_t pProcedure) {
+   FUNCTION(class objScript *pScript, uint32_t pProcedure) :
+      FUNCTION(pScript, pProcedure, 0) { }
+
+   FUNCTION(class objScript *pScript, uint32_t pProcedure, int32_t pContext) {
       Type        = CALL::SCRIPT;
       Flags       = 0;
       ID          = 0;
       Context     = (OBJECTPTR)pScript;
       MetaValue   = 0;
-      ProcedureID = pProcedure;
+      setScript(pProcedure, pContext);
    }
 
    // The CALL::STDC constructor is managed by C_FUNCTION() in order to prevent problems with
    // implicit type conversion.
 
    inline void disable() { Type = CALL::NIL; }
-   inline void clear() { Type = CALL::NIL; Flags = 0; MetaValue = 0; Routine = nullptr; }
+   inline void clear() { Type = CALL::NIL; Flags = 0; MetaValue = 0; clearScript(); }
    inline bool isC() const { return Type IS CALL::STD_C; }
    inline bool isScript() const { return Type IS CALL::SCRIPT; }
    inline bool defined() const { return Type != CALL::NIL; }
+
+   [[nodiscard]] static constexpr int64_t packScriptValue(uint32_t ProcedureID, int32_t ContextID) noexcept {
+      uint64_t value = uint64_t(ProcedureID) | (uint64_t(uint32_t(ContextID)) << 32);
+      return std::bit_cast<int64_t>(value);
+   }
+
+   [[nodiscard]] static constexpr uint32_t unpackProcedureID(int64_t ScriptValue) noexcept {
+      return uint32_t(std::bit_cast<uint64_t>(ScriptValue) & UINT32_MAX);
+   }
+
+   [[nodiscard]] static constexpr int32_t unpackContextID(int64_t ScriptValue) noexcept {
+      return std::bit_cast<int32_t>(uint32_t(std::bit_cast<uint64_t>(ScriptValue) >> 32));
+   }
+
+   inline void setScript(uint32_t ProcedureID, int32_t ContextID = 0) {
+      Script.ProcedureID = ProcedureID;
+      Script.ContextID   = ContextID;
+   }
+
+   inline void setScriptValue(int64_t Value) {
+      setScript(unpackProcedureID(Value), unpackContextID(Value));
+   }
+
+   inline void clearScript() { setScript(0, 0); }
+   [[nodiscard]] inline uint32_t procedureID() const { return Script.ProcedureID; }
+   [[nodiscard]] inline int32_t contextID() const { return Script.ContextID; }
+   [[nodiscard]] inline int64_t scriptValue() const { return packScriptValue(procedureID(), contextID()); }
 
    inline bool releaseIfStale() {
       if (stale()) {
@@ -103,8 +141,8 @@ struct FUNCTION {
             (Other.MetaValue IS MetaValue);
       }
       else if (Type IS CALL::SCRIPT) {
-         return (Other.Type IS Type) and (Other.Context IS Context) and (Other.ProcedureID IS ProcedureID) and
-            (Other.MetaValue IS MetaValue);
+         return (Other.Type IS Type) and (Other.Context IS Context) and (Other.procedureID() IS procedureID()) and
+            (Other.contextID() IS contextID()) and (Other.MetaValue IS MetaValue);
       }
       else return (Other.Type IS Type) and (Other.MetaValue IS MetaValue);
    }
@@ -117,6 +155,7 @@ struct FUNCTION {
 inline bool operator==(const struct FUNCTION &A, const struct FUNCTION &B)
 {
    if (A.Type IS CALL::STD_C) return (A.Type IS B.Type) and (A.Context IS B.Context) and (A.Routine IS B.Routine);
-   else if (A.Type IS CALL::SCRIPT) return (A.Type IS B.Type) and (A.Context IS B.Context) and (A.ProcedureID IS B.ProcedureID);
+   else if (A.Type IS CALL::SCRIPT) return (A.Type IS B.Type) and (A.Context IS B.Context) and
+      (A.procedureID() IS B.procedureID()) and (A.contextID() IS B.contextID());
    else return (A.Type IS B.Type);
 }

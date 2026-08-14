@@ -148,12 +148,12 @@ static int object_method_call(lua_State *Lua)
 
 inline void release_func_id(lua_State *Lua, FUNCTION *Func)
 {
-   if (Func->ProcedureID > 0) luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
+   if (Func->procedureID() > 0) luaL_unref(Lua, LUA_REGISTRYINDEX, int(Func->procedureID()));
 }
 
 inline void release_consumed_func(lua_State *Lua, FUNCTION *Func)
 {
-   if (Func->consumed() and (Func->ProcedureID > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
+   if (Func->consumed() and (Func->procedureID() > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, int(Func->procedureID()));
 }
 
 static void materialise_function_arg(lua_State *Lua, const pending_function_arg &Pending, int8_t *ArgBuffer)

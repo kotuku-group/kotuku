@@ -1407,8 +1407,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       FUNCTION  &Func;
       bool OwnsReference = true;
       ~func_ref_guard() {
-         if (Func.isScript() and (Func.ProcedureID > 0)) {
-            if (OwnsReference or Func.consumed()) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
+         if (Func.isScript() and (Func.procedureID() > 0)) {
+            if (OwnsReference or Func.consumed()) luaL_unref(Lua, LUA_REGISTRYINDEX, int(Func.procedureID()));
          }
       }
    } func_guard{ Lua, func };
