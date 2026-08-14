@@ -48,11 +48,6 @@ template<class... Args> void RMSG(Args...) {
    //log.trace(Args)  // Enable if you want to debug results returned from functions, actions etc
 }
 
-// Only obj.new and obj._state retain a member-read closure; the remaining registered obj.* methods are dispatched
-// canonically through BC_BMETH and no longer need member-read hashes here.
-static constexpr uint32_t OJH_new       = simple_hash("new");
-static constexpr uint32_t OJH_state     = simple_hash("_state");
-
 // Forward declarations
 [[nodiscard]] static int object_action_call_args(lua_State *);
 [[nodiscard]] static int object_method_call_args(lua_State *);
@@ -68,10 +63,8 @@ static constexpr uint32_t OJH_state     = simple_hash("_state");
 [[nodiscard]] static int object_get(lua_State *);
 [[nodiscard]] static int object_getkey(lua_State *);
 [[nodiscard]] static int object_init(lua_State *);
-[[nodiscard]] static int object_newchild(lua_State *);
 [[nodiscard]] static int object_set(lua_State *);
 [[nodiscard]] static int object_setkey(lua_State *);
-[[nodiscard]] static int object_state(lua_State *);
 [[nodiscard]] static int object_subscribe(lua_State *);
 [[nodiscard]] static int object_unsubscribe(lua_State *);
 
@@ -100,33 +93,18 @@ static constexpr uint32_t OJH_state     = simple_hash("_state");
 [[nodiscard]] static ERR object_set_number(lua_State *, OBJECTPTR, const Field *, int);
 [[nodiscard]] static ERR object_set_struct(lua_State *, OBJECTPTR, const Field *, int);
 
-inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
-   lua_pushvalue(Lua, 1); // Duplicate the object reference
-   lua_pushcclosure(Lua, (lua_CFunction)Function, 1); // C function to call, +1 value for the object reference
-}
-
-// Most registered obj.* methods are dispatched as canonical built-in methods (BC_BMETH) with the object supplied as
-// an explicit receiver at native argument one.  Two methods, obj.new (child creation) and obj._state, retain the
-// bound-closure dispatch path where the receiver is recovered from the closure upvalue via object_context(); these
-// helpers therefore continue to accept either ABI.
+// Registered obj.* methods receive their Object receiver at native argument one.
 
 [[nodiscard]] static GCobject * object_method_receiver(lua_State *Lua)
 {
-   if (lua_isobject(Lua, 1)) return lj_get_object_fast(Lua, 1);
-   return object_context(Lua);
+   return lj_get_object_fast(Lua, 1);
 }
 
 [[nodiscard]] static int object_method_argument(lua_State *Lua, int WrittenArgument)
 {
-   return lua_isobject(Lua, 1) ? WrittenArgument + 1 : WrittenArgument;
+   UNUSED(Lua);
+   return WrittenArgument + 1;
 }
-
-// obj.new (child creation) and obj._state retain the bound-closure dispatch path: they have no canonical BC_BMETH
-// identity, so a member read still yields a closure that carries the receiving object in its upvalue.  Every other
-// registered obj.* method is dispatched canonically with an explicit receiver and therefore no longer needs a
-// member-read closure factory here.
-[[nodiscard]] static int stack_object_newchild(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_newchild); return 1; }
-[[nodiscard]] static int stack_object_state(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_state); return 1; }
 
 //********************************************************************************************************************
 // Action jump table implementation
@@ -353,12 +331,6 @@ READ_TABLE * get_read_table(objMetaClass *Class)
       }
    }
 
-   // obj.new and obj._state are dispatched through bound-receiver closures at member-read time.  All other
-   // registered obj.* methods use canonical BC_BMETH dispatch with an explicit receiver and are intentionally
-   // absent from the member-read table.
-   jmp.emplace_back(OJH_new, stack_object_newchild);
-   jmp.emplace_back(OJH_state, stack_object_state);
-
    std::sort(jmp.begin(), jmp.end(), read_hash);
 
    return &Class->ReadTable;
@@ -491,10 +463,9 @@ extern int object_newindex(lua_State *Lua)
       return result;
    }
 
-   luaL_error(Lua, ERR::NoFieldAccess, "Field does not exist or is unreadable: %s.%s",
-      def->classptr ? def->classptr->ClassName.c_str() : "?", strdata(keystr));
-
-   return 0; // Not reached
+   // A computed or extracted member read remains ordinary object field access.  Absent canonical methods must not
+   // manufacture a bound closure here, so report the missing field as nil just like other metatable lookups.
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -533,9 +504,9 @@ extern int object_newindex(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// obj.new("Display", { field1 = value1, field2 = value2, ...})
+// obj.new("Display", { field1 = value1, field2 = value2, ...}) is the public alias for object.create().
 
-LJLIB_CF(object_new)
+LJLIB_NOREGUV LJLIB_CF(object_create)
 {
    kt::Log log("obj.new");
    CSTRING class_name;
@@ -610,6 +581,8 @@ LJLIB_CF(object_new)
 
    return 0;
 }
+
+LJLIB_PUSH(lastcl) LJLIB_SET(new)
 
 //********************************************************************************************************************
 // obj.find("ObjectName" | ObjectID, [ClassName | ClassID])
@@ -706,24 +679,23 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 }
 
 //********************************************************************************************************************
-// Object instance methods (accessed via metatable, not library functions)
-// State is maintained globally, so other object variables reference the same state table.
+// Object instance methods. State is maintained globally, so other object variables reference the same state table.
 
-static int object_state(lua_State *Lua)
+LJLIB_INTRINSIC LJLIB_CF(object__state)
 {
-   auto def = object_method_receiver(Lua);
+   auto def = lj_get_object_fast(L, 1);
 
-   if (object_is_dead(def)) luaL_error(Lua, ERR::DoesNotExist, "Object dereferenced, unable to access state.");
+   if (object_is_dead(def)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to access state.");
 
-   if (auto it = Lua->script->StateMap.find(def->uid); it != Lua->script->StateMap.end()) {
-      lua_rawgeti(Lua, LUA_REGISTRYINDEX, it->second);
+   if (auto it = L->script->StateMap.find(def->uid); it != L->script->StateMap.end()) {
+      lua_rawgeti(L, LUA_REGISTRYINDEX, it->second);
       return 1;
    }
    else {
-      lua_createtable(Lua, 0, 0);
-      auto state_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      Lua->script->StateMap[def->uid] = state_ref;
-      lua_rawgeti(Lua, LUA_REGISTRYINDEX, state_ref);
+      lua_createtable(L, 0, 0);
+      auto state_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+      L->script->StateMap[def->uid] = state_ref;
+      lua_rawgeti(L, LUA_REGISTRYINDEX, state_ref);
       return 1;
    }
 }
@@ -731,67 +703,67 @@ static int object_state(lua_State *Lua)
 //********************************************************************************************************************
 // Create a new object as the child of another object.
 
-static int object_newchild(lua_State *Lua)
+LJLIB_INTRINSIC LJLIB_CF(object_new)
 {
-   auto parent = object_method_receiver(Lua);
+   auto parent = lj_get_object_fast(L, 1);
 
-   int class_argument = object_method_argument(Lua, 1);
-   int initialiser_argument = object_method_argument(Lua, 2);
+   constexpr int class_argument = 2;
+   constexpr int initialiser_argument = 3;
 
    CSTRING class_name;
    CLASSID class_id;
    NF objflags = NF::NIL;
-   int type = lua_type(Lua, class_argument);
+   int type = lua_type(L, class_argument);
    if (type IS LUA_TNUMBER) {
-      class_id = CLASSID(lua_tointeger(Lua, class_argument));
+      class_id = CLASSID(lua_tointeger(L, class_argument));
       class_name = nullptr;
    }
-   else if ((class_name = luaL_checkstring(Lua, class_argument))) {
+   else if ((class_name = luaL_checkstring(L, class_argument))) {
       class_id = CLASSID(strihash(class_name));
    }
-   else luaL_error(Lua, ERR::Mismatch, "String or ID expected for class name, got '%s'.", lua_typename(Lua, type));
+   else luaL_error(L, ERR::Mismatch, "String or ID expected for class name, got '%s'.", lua_typename(L, type));
 
    OBJECTPTR obj;
    if (auto error = NewObject(class_id, objflags, &obj); !error) {
-      ScopedObjectLock new_owner(Lua->script->TargetID);
+      ScopedObjectLock new_owner(L->script->TargetID);
       if (new_owner.granted()) SetOwner(obj, *new_owner);
-      else luaL_error(Lua, ERR::LockFailed);
+      else luaL_error(L, ERR::LockFailed);
 
-      obj->CreatorMeta = Lua;
+      obj->CreatorMeta = L;
 
-      load_include_for_class(Lua, obj->Class);
+      load_include_for_class(L, obj->Class);
 
-      lua_pushobject(Lua, obj->UID, obj, obj->Class, GCOBJ_DETACHED);
+      lua_pushobject(L, obj->UID, obj, obj->Class, GCOBJ_DETACHED);
 
-      lua_pushinteger(Lua, parent->uid);
+      lua_pushinteger(L, parent->uid);
 
-      if (set_object_field(Lua, obj, fieldhash("owner"), lua_gettop(Lua)) != ERR::Okay) {
+      if (set_object_field(L, obj, fieldhash("owner"), lua_gettop(L)) != ERR::Okay) {
          FreeResource(obj);
-         luaL_error(Lua, ERR::SetField);
+         luaL_error(L, ERR::SetField);
       }
 
-      lua_pop(Lua, 1);
+      lua_pop(L, 1);
 
-      if (lua_istable(Lua, initialiser_argument)) {
+      if (lua_istable(L, initialiser_argument)) {
          ERR field_error = ERR::Okay;
          std::string_view field_name;
          const Field *failed_field = nullptr;
          auto failed_type = LUA_TNONE;
-         lua_pushnil(Lua);
-         while (lua_next(Lua, initialiser_argument) != 0) {
+         lua_pushnil(L);
+         while (lua_next(L, initialiser_argument) != 0) {
             failed_field = nullptr;
-            if (field_name = luaL_checkstring(Lua, -2); not field_name.empty()) {
+            if (field_name = luaL_checkstring(L, -2); not field_name.empty()) {
                if (iequals("owner", field_name)) field_error = ERR::UnsupportedOwner; // Setting the owner field in this situation is illegal
-               else field_error = set_object_field(Lua, obj, fieldhash(field_name), -1, &failed_field);
+               else field_error = set_object_field(L, obj, fieldhash(field_name), -1, &failed_field);
             }
             else field_error = ERR::UnsupportedField;
 
             if (field_error != ERR::Okay) {
-               failed_type = lua_type(Lua, -1);
-               lua_pop(Lua, 2);
+               failed_type = lua_type(L, -1);
+               lua_pop(L, 2);
                break;
             }
-            else lua_pop(Lua, 1);
+            else lua_pop(L, 1);
          }
 
          if ((field_error != ERR::Okay) or ((error = InitObject(obj)) != ERR::Okay)) {
@@ -800,17 +772,17 @@ static int object_newchild(lua_State *Lua)
 
             if (field_error != ERR::Okay) {
                auto field_type = failed_field ? field_typename(*failed_field) : "unknown";
-               luaL_error(Lua, field_error, "Failed to set %s %s.%.*s with %s: %s",
+               luaL_error(L, field_error, "Failed to set %s %s.%.*s with %s: %s",
                   field_type.c_str(), class_name, int(field_name.size()), field_name.data(),
-                  lua_typename(Lua, failed_type), GetErrorMsg(field_error));
+                  lua_typename(L, failed_type), GetErrorMsg(field_error));
             }
-            else luaL_error(Lua, ERR::Init, "Failed to Init() object '%s', error: %s", class_name, GetErrorMsg(error));
+            else luaL_error(L, ERR::Init, "Failed to Init() object '%s', error: %s", class_name, GetErrorMsg(error));
          }
       }
 
       return 1;
    }
-   else luaL_error(Lua, ERR::NewObject);
+   else luaL_error(L, ERR::NewObject);
 
    return 0;
 }
@@ -1081,8 +1053,12 @@ extern "C" int luaopen_object(lua_State *L)
    setgcref(basemt_it(g, LJ_TOBJECT), obj2gco(lib));
 
    // Register obj interface prototypes for compile-time type inference
-   reg_iface_prototype("obj", "new", { TiriType::Object }, { TiriType::Str });
+   reg_iface_prototype("obj", "new", { TiriType::Object }, { TiriType::Any, TiriType::Table });
    reg_iface_prototype("obj", "find", { TiriType::Object }, { TiriType::Any });
+   reg_intrinsic_method(L, "obj", "new", TiriType::Object, builtin_callable_id(FastFunc::object_new),
+      { TiriType::Object }, { TiriType::Object, TiriType::Any, TiriType::Table });
+   reg_intrinsic_method(L, "obj", "_state", TiriType::Object, builtin_callable_id(FastFunc::object__state),
+      { TiriType::Table }, { TiriType::Object });
    reg_iface_method(L, "obj", "class", TiriType::Object, builtin_callable_id(FastFunc::object_class),
       { TiriType::Object }, { TiriType::Object });
    reg_iface_method(L, "obj", "init", TiriType::Object, builtin_callable_id(FastFunc::object_init),

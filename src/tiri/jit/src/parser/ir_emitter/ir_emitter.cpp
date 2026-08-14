@@ -40,6 +40,21 @@ inline const TiriConstant * lookup_constant(const GCstr *Name)
 
 static bool is_named_external_global(GCstr *Name);
 
+// Canonical object methods are callable syntax, not object fields.  A bare lookup must therefore retain ordinary
+// table indexing, which lets the runtime return a real field when present or nil when it is absent.
+
+static bool is_intrinsic_object_method(const GCstr *Name)
+{
+   return Name and get_method_prototype_by_hash(TiriType::Object, Name->hash);
+}
+
+static GCstr * string_literal_symbol(const ExprNode &Expression)
+{
+   if (Expression.kind != AstNodeKind::LiteralExpr) return nullptr;
+   const auto &literal = std::get<LiteralValue>(Expression.data);
+   return literal.kind IS LiteralKind::String ? literal.string_value : nullptr;
+}
+
 //********************************************************************************************************************
 // Contextual member calls select a dynamic context only for contextual tables or unresolved receivers.  A current
 // context expression is already the active receiver, so entering it again would add a redundant runtime frame.
@@ -4013,7 +4028,10 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
       table.result_type = TiriType::Object;
       // Only use IndexedObject for string keys (member access always uses string keys)
 
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedObject;
+      bool is_intrinsic_method = is_intrinsic_object_method(Payload.member.symbol);
+      if (not is_intrinsic_method and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+         table.k = ExpKind::IndexedObject;
+      }
 
       // Look up the field type from the class dictionary for compile-time type checking.
       // Use either the AST-level class_id or the emitted expression's class_id.
@@ -4027,7 +4045,7 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
             table.result_type = field_info->type;
             table.object_class_id = field_info->object_class_id;
          }
-         else if (not Payload.is_call_target) {
+         else if (not Payload.is_call_target and not is_intrinsic_method) {
             // Field not found in dictionary and not being called as a function - raise parse error
             auto *meta_class = FindClass(class_id);
             CSTRING class_name = meta_class ? meta_class->ClassName.c_str() : "Unknown";
@@ -4136,7 +4154,8 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
    else if (proved_object) {
       // Objects use string field access - only change kind for string const keys
       // (aux < 0 means string const key)
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      GCstr *index_name = string_literal_symbol(*Payload.index);
+      if (not is_intrinsic_object_method(index_name) and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
          table.k = ExpKind::IndexedObject;
       }
    }
@@ -4223,12 +4242,14 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    if (proved_object) {
       table.result_type = TiriType::Object;
       table.object_class_id = CLASSID::NIL;
+      bool is_intrinsic_method = is_intrinsic_object_method(Payload.member.symbol);
 
       // Call targets must retain generic lookup so the object metatable can resolve actions, methods and helpers.
       // Unlike ordinary member expressions, safe member expressions materialise the lookup before emit_call_expr()
       // can downgrade specialised expression kinds.
 
-      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (not Payload.is_call_target and not is_intrinsic_method and table.k IS ExpKind::Indexed and
+          int32_t(table.u.s.aux) < 0) {
          table.k = ExpKind::IndexedObject;
       }
 
@@ -4243,7 +4264,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
             table.result_type     = field_info->type;
             table.object_class_id = field_info->object_class_id;
          }
-         else if (not Payload.is_call_target) {
+         else if (not Payload.is_call_target and not is_intrinsic_method) {
             auto *meta_class = FindClass(class_id);
             const char *class_name = meta_class ? meta_class->ClassName.c_str() : "Unknown";
             lj_lex_error(this->func_state.ls, 0, ErrMsg::BADFIELD, strdata(Payload.member.symbol), class_name);

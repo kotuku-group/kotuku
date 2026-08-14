@@ -225,6 +225,45 @@ end
    file.free()
 end
 
+@Test function ObjectNewAndStateMethods()
+   local parent = obj.new('time')
+   local child = parent.new('time')
+   assert(child.owner.id is parent.id, 'Parent.new should preserve the receiving object as the child owner')
+
+   local state = parent._state()
+   state.marker = 11
+   assert(parent._state().marker is 11, '_state should return the same per-object table')
+
+   local dynamic_parent:any = parent
+   local dynamic_child = dynamic_parent.new('time')
+   assert(dynamic_child.owner.id is parent.id, 'An any receiver should select canonical Parent.new at runtime')
+   assert(dynamic_parent._state().marker is 11, 'An any receiver should select canonical _state at runtime')
+end
+
+@Test function ObjectNewAndStateSafeCalls()
+   local maybe:any = nil
+   local evaluated = false
+   maybe?.new(function():str evaluated = true; return 'time' end())
+   maybe?._state()
+   assert(not evaluated, 'Nil safe Object methods should skip written arguments')
+end
+
+@Test function ObjectNewNamespaceRebindingAndEscapes()
+   local parent = obj.new('time')
+   local original = obj.new
+   obj.new = function(Class) return nil end
+   assert(obj.new('time') is nil, 'obj.new should retain ordinary namespace rebinding semantics')
+   local child = parent.new('time')
+   obj.new = original
+   assert(child.owner.id is parent.id, 'Parent.new should ignore obj.new namespace rebinding')
+   assert(obj._state is nil, 'The hidden Object _state callable must not be published on obj')
+   local function read_member(Value:any, Key:str):any
+      return Value[Key]
+   end
+   assert(read_member(parent, 'new') is nil and read_member(parent, '_state') is nil,
+      'Computed Object method reads should remain ordinary fields instead of bound closures')
+end
+
 @Test function SafeMethods()
    local values:table = nil
    local called = false

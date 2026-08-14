@@ -1574,7 +1574,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // 0x86 is included deliberately: Phase 5 removed the compiler-private binder referenced by those chunks and
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
-   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86) }) {
+   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -5125,11 +5125,27 @@ static bool test_builtin_method_registry(kt::Log &Log)
    const fprototype *range_contains = get_method_prototype(TiriType::Range, "contains");
    const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
    const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
-   if (not array_insert or not range_contains or not struct_clone or not object_exists or
+   const fprototype *object_new = get_method_prototype(TiriType::Object, "new");
+   const fprototype *object_state = get_method_prototype(TiriType::Object, "_state");
+   const fprototype *namespace_new = get_prototype("obj", "new");
+   lua_getglobal(L, "obj");
+   lua_getfield(L, -1, "new");
+   GCfunc *public_create = tvisfunc(L->top - 1) ? funcV(L->top - 1) : nullptr;
+   lua_pop(L, 2);
+   if (not array_insert or not range_contains or not struct_clone or not object_exists or not object_new or
+       not object_state or not namespace_new or
        array_insert->builtin_callable_id != builtin_callable_id(FastFunc::array_insert) or
        range_contains->builtin_callable_id != builtin_callable_id(FastFunc::range_contains) or
        struct_clone->builtin_callable_id != builtin_callable_id(FastFunc::struct_clone) or
        object_exists->builtin_callable_id != builtin_callable_id(FastFunc::object_exists) or
+       object_new->builtin_callable_id != builtin_callable_id(FastFunc::object_new) or
+       object_state->builtin_callable_id != builtin_callable_id(FastFunc::object__state) or
+       object_new IS namespace_new or object_new->param_count != 3 or
+       object_new->param_types()[0] != TiriType::Object or object_new->param_types()[1] != TiriType::Any or
+       object_new->param_types()[2] != TiriType::Table or object_state->param_count != 1 or
+       object_state->param_types()[0] != TiriType::Object or namespace_new->is_method() or
+       namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "_state") or
+       public_create != lj_builtin_callable(L, builtin_callable_id(FastFunc::object_create)) or
        array_insert IS table_insert or get_method_prototype(TiriType::Table, "push") or
        get_method_prototype(TiriType::Table, "new")) {
       Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
@@ -5208,8 +5224,22 @@ static bool test_builtin_method_registry(kt::Log &Log)
    lua_pushvalue(L, -1);
    lua_setfield(L, -3, "insert");
    lua_pop(L, 2);
+   ERR hidden_duplicate = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Object },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
+   ERR hidden_conflict = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Table },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
+   ERR hidden_invalid_receiver = reg_intrinsic_method(L, "obj", "new", TiriType::Any,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Object },
+      { TiriType::Any, TiriType::Any, TiriType::Table });
+   ERR hidden_wrong_callable = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_create), { TiriType::Object },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
    if (duplicate != ERR::Exists or conflicting != ERR::Mismatch or invalid_receiver != ERR::InvalidValue or
-       wrong_callable != ERR::Mismatch or wrong_export != ERR::Mismatch) {
+       wrong_callable != ERR::Mismatch or wrong_export != ERR::Mismatch or hidden_duplicate != ERR::Exists or
+       hidden_conflict != ERR::Mismatch or hidden_invalid_receiver != ERR::InvalidValue or
+       hidden_wrong_callable != ERR::Mismatch) {
       Log.error("method registration consistency checks returned unexpected errors");
       return false;
    }
@@ -5586,6 +5616,35 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
        count_opcode(*safe, BC_CALL) != 1 or count_opcode(*safe, BC_TGETS) != 0 or
        count_opcode(*safe, BC_TGETV) != 0) {
       Log.error("safe built-in method call lost canonical nil-short-circuit lowering: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto object_methods = compile_snapshot(L,
+      "local parent = obj.new('time')\nlocal child = parent.new('time')\nreturn parent._state()\n", true, error);
+   if (not object_methods or not find_builtin_callable_opcode(*object_methods,
+         builtin_callable_id(FastFunc::object_new)) or not find_builtin_callable_opcode(*object_methods,
+         builtin_callable_id(FastFunc::object__state)) or count_opcode(*object_methods, BC_BFUNC) != 2 or
+       count_opcode(*object_methods, BC_TGETS) != 1 or count_opcode(*object_methods, BC_TGETV) != 0) {
+      Log.error("proved Object new and _state calls did not use canonical lookup-free emission: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_object_methods = compile_snapshot(L,
+      "local function use(Parent:any):any\nParent.new('time')\nreturn Parent._state()\nend\nreturn use\n", true, error);
+   if (not dynamic_object_methods or count_opcode_tree(*dynamic_object_methods, BC_BMETH) != 2 or
+       count_opcode_tree(*dynamic_object_methods, BC_BFUNC) != 0) {
+      Log.error("runtime Object new and _state calls did not retain BC_BMETH dispatch: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto namespace_object_new = compile_snapshot(L, "return obj.new('time')\n", true, error);
+   if (not namespace_object_new or find_builtin_callable_opcode(*namespace_object_new,
+         builtin_callable_id(FastFunc::object_create)) or count_opcode(*namespace_object_new, BC_GGET) != 1 or
+       count_opcode(*namespace_object_new, BC_TGETS) != 1) {
+      Log.error("public obj.new call lost ordinary namespace lookup semantics: %s", error.c_str());
       return false;
    }
 
