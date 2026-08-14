@@ -8,7 +8,6 @@
 struct pending_function_arg {
    int Offset;
    int StackIndex;
-   int Type;
 };
 
 //********************************************************************************************************************
@@ -146,30 +145,57 @@ static int object_method_call(lua_State *Lua)
 //********************************************************************************************************************
 // Helpers for argument building
 
-inline void release_func_id(lua_State *Lua, FUNCTION *Func)
+ERR capture_tiri_function(lua_State *Lua, int ValueIndex, FUNCTION &Function)
 {
-   if (Func->procedureID() > 0) luaL_unref(Lua, LUA_REGISTRYINDEX, int(Func->procedureID()));
-}
+   int value_index = ValueIndex;
+   bool resolved_name = false;
 
-inline void release_consumed_func(lua_State *Lua, FUNCTION *Func)
-{
-   if (Func->consumed() and (Func->procedureID() > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, int(Func->procedureID()));
-}
-
-static void materialise_function_arg(lua_State *Lua, const pending_function_arg &Pending, int8_t *ArgBuffer)
-{
-   int ref;
-
-   if (Pending.Type IS LUA_TSTRING) {
-      lua_getglobal(Lua, lua_tostring(Lua, Pending.StackIndex));
-      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   }
-   else {
-      lua_pushvalue(Lua, Pending.StackIndex);
-      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   if (lua_type(Lua, value_index) IS LUA_TSTRING) {
+      lua_getglobal(Lua, lua_tostring(Lua, value_index));
+      value_index = lua_gettop(Lua);
+      resolved_name = true;
    }
 
-   *(FUNCTION *)(ArgBuffer + Pending.Offset) = FUNCTION(Lua->script, ref);
+   if (lua_type(Lua, value_index) != LUA_TFUNCTION) {
+      if (resolved_name) lua_pop(Lua, 1);
+      return ERR::SetValueNotFunction;
+   }
+
+   GCtab *context = lj_context_current(Lua);
+   bool capture_context = context != tabref(Lua->env);
+   lj_state_checkstack(Lua, capture_context ? 2 : 1);
+   lua_pushvalue(Lua, value_index);
+   int procedure_id = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   int context_id = 0;
+   if (capture_context) {
+      settabV(Lua, Lua->top++, context);
+      context_id = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   }
+
+   if (resolved_name) lua_pop(Lua, 1);
+   Function = FUNCTION(Lua->script, uint32_t(procedure_id), context_id);
+   return ERR::Okay;
+}
+
+void release_tiri_function(lua_State *Lua, FUNCTION *Function)
+{
+   if ((not Function) or (not Function->isScript())) return;
+
+   if (Lua) {
+      if (Function->procedureID() > 0) luaL_unref(Lua, LUA_REGISTRYINDEX, int(Function->procedureID()));
+      if (Function->contextID() > 0) luaL_unref(Lua, LUA_REGISTRYINDEX, Function->contextID());
+   }
+   Function->clearScript();
+}
+
+void release_consumed_tiri_function(lua_State *Lua, FUNCTION *Function)
+{
+   if (Function and Function->consumed()) release_tiri_function(Lua, Function);
+}
+
+static ERR materialise_function_arg(lua_State *Lua, const pending_function_arg &Pending, int8_t *ArgBuffer)
+{
+   return capture_tiri_function(Lua, Pending.StackIndex, *(FUNCTION *)(ArgBuffer + Pending.Offset));
 }
 
 template <class T> static void delete_cpp_array_arg(APTR Array)
@@ -534,7 +560,7 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
          }
          else if (type & FD_FUNCTION) {
             j = ALIGN64(j);
-            if (ReleaseFunctions) release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
+            if (ReleaseFunctions) release_tiri_function(Lua, ((FUNCTION *)(ArgBuffer + j)));
             j += sizeof(FUNCTION);
          }
          else if (type & FD_STR) {
@@ -574,7 +600,7 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
       }
       else if (type & FD_FUNCTION) {
          j = ALIGN64(j);
-         if (ReleaseFunctions) release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
+         if (ReleaseFunctions) release_tiri_function(Lua, ((FUNCTION *)(ArgBuffer + j)));
          j += sizeof(FUNCTION);
       }
       else if (type & FD_PTR) j = ALIGN64(j) + sizeof(APTR);
@@ -761,7 +787,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          new (ArgBuffer + j) FUNCTION;
 
          if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
-            pending_functions.push_back({ j, n, type });
+            pending_functions.push_back({ j, n });
          }
          else if ((type != LUA_TNIL) and (type != LUA_TNONE)) {
             return fail_arg(n, "String or function required.");
@@ -869,7 +895,14 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    log.trace("Processed %d Args (%d bytes), detected %d result parameters.", i, j, resultcount);
    if (ResultCount) *ResultCount = resultcount;
 
-   for (auto &pending : pending_functions) materialise_function_arg(Lua, pending, ArgBuffer);
+   for (auto &pending : pending_functions) {
+      if (auto error = materialise_function_arg(Lua, pending, ArgBuffer); error != ERR::Okay) {
+         cleanup_argbuffer(Lua, Args, ArgsSize, ArgBuffer, true);
+         ErrorArg = pending.StackIndex;
+         ErrorMsg = "Function required.";
+         return error;
+      }
+   }
 
    return ERR::Okay;
 }
@@ -981,7 +1014,7 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
       else if (type & FD_FUNCTION) {
          of = ALIGN64(of);
          if (type & FD_RESULT); // We don't process functions as results
-         else release_consumed_func(Lua, (FUNCTION *)(ArgBuf + of));
+         else release_consumed_tiri_function(Lua, (FUNCTION *)(ArgBuf + of));
          of += sizeof(FUNCTION);
       }
       else if (type & FD_PTR) {

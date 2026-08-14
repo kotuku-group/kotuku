@@ -22,6 +22,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include <cctype>
 #include <format>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -780,6 +781,26 @@ static ERR run_script(extTiri *Self)
 {
    kt::Log log(__FUNCTION__);
    auto procedure_id = FUNCTION::unpackProcedureID(Self->ProcedureID);
+   auto context_id = FUNCTION::unpackContextID(Self->ProcedureID);
+   bool native_callback = Self->Procedure.empty() and bool(Self->ProcedureID);
+   std::optional<LuaCallbackContextGuard> callback_context;
+
+   if (native_callback) {
+      callback_context.emplace(Self->Lua);
+      if (context_id != 0) {
+         lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, context_id);
+         if (lua_type(Self->Lua, -1) != LUA_TTABLE) {
+            lua_pop(Self->Lua, 1);
+            auto message = std::format("Callback context #{} does not exist or is not a table.", context_id);
+            Self->setErrorMessage(message.c_str());
+            Self->Error = ERR::InvalidData;
+            return Self->Error;
+         }
+
+         callback_context->activate(tabV(Self->Lua->top - 1));
+         lua_pop(Self->Lua, 1);
+      }
+   }
 
    log.traceBranch("Procedure: %s, Top: %d", Self->Procedure.c_str(), lua_gettop(Self->Lua));
 

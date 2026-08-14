@@ -159,3 +159,12 @@ inline bool operator==(const struct FUNCTION &A, const struct FUNCTION &B)
       (A.procedureID() IS B.procedureID()) and (A.contextID() IS B.contextID());
    else return (A.Type IS B.Type);
 }
+
+static_assert((sizeof(void *) != 8) or (sizeof(FUNCTION) IS 32));
+static_assert((sizeof(void *) != 8) or (alignof(FUNCTION) IS 8));
+static_assert((sizeof(void *) != 8) or (offsetof(FUNCTION, Context) IS 8));
+static_assert((sizeof(void *) != 8) or (offsetof(FUNCTION, MetaValue) IS 16));
+static_assert((sizeof(void *) != 8) or (offsetof(FUNCTION, Routine) IS 24));
+static_assert(offsetof(FUNCTION::ScriptData, ProcedureID) IS 0);
+static_assert(offsetof(FUNCTION::ScriptData, ContextID) IS 4);
+static_assert(sizeof(FUNCTION::ScriptData) IS sizeof(int64_t));

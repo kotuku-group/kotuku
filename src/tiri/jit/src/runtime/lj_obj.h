@@ -1665,7 +1665,7 @@ struct lua_State {
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
 
    struct ContextFrame {
-      enum class OwnerKind : uint8_t { Call, Block };
+      enum class OwnerKind : uint8_t { Call, Block, Callback };
       GCRef table;                 // GC-visible context override owned by this state.
       ptrdiff_t owner_base = 0;    // Stack-relative activation base; survives stack relocation.
       OwnerKind owner_kind = OwnerKind::Call;

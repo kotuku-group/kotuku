@@ -1407,9 +1407,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       FUNCTION  &Func;
       bool OwnsReference = true;
       ~func_ref_guard() {
-         if (Func.isScript() and (Func.procedureID() > 0)) {
-            if (OwnsReference or Func.consumed()) luaL_unref(Lua, LUA_REGISTRYINDEX, int(Func.procedureID()));
-         }
+         if (OwnsReference or Func.consumed()) release_tiri_function(Lua, &Func);
       }
    } func_guard{ Lua, func };
 
@@ -1637,16 +1635,12 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          // or it can mark the function as consumed.
 
          switch(lua_type(Lua, i)) {
-            case LUA_TSTRING: { // Name of function to call
-               lua_getglobal(Lua, lua_tostringview(Lua, i));
-               func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
-               ((FUNCTION **)(buffer + j))[0] = &func;
-               break;
-            }
-
-            case LUA_TFUNCTION: { // Direct function reference
-               lua_pushvalue(Lua, i);
-               func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
+            case LUA_TSTRING:
+            case LUA_TFUNCTION: {
+               if (auto error = capture_tiri_function(Lua, i, func); error != ERR::Okay) {
+                  ErrorMsg = std::format("Function argument #{} ({}) must resolve to a function.", i, args[i].Name);
+                  return error;
+               }
                ((FUNCTION **)(buffer + j))[0] = &func;
                break;
             }

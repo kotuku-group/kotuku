@@ -59,12 +59,12 @@ gui.slider = function(Options:table!)
          &prvSliderVP = &prvSliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
 
          &prvSliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
-            max_size = self.prvSliderHostVP.height - BOX_SIZE
+            max_size = &prvSliderHostVP.height - BOX_SIZE
             Y = math.clamp(Y, 0, max_size)
             if Viewport.y is Y then return end
 
             Viewport.y = Y
-            setValue(self, self.min + (self.max - self.min) * ((max_size - Y) / max_size))
+            setValue(&&, &min + (&max - &min) * ((max_size - Y) / max_size))
          end
 
          max_size = &prvSliderHostVP.height - BOX_SIZE
@@ -95,12 +95,12 @@ gui.slider = function(Options:table!)
          &prvSliderVP = &prvSliderHostVP.new('VectorViewport', { width = BOX_SIZE, height = BOX_SIZE })
 
          &prvSliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
-            max_size  = self.prvSliderHostVP.width - BOX_SIZE
+            max_size  = &prvSliderHostVP.width - BOX_SIZE
             X = math.clamp(X, 0, max_size)
             if Viewport.x is X then return end
 
             Viewport.x = X
-            setValue(self, self.min + (self.max - self.min) * (X / max_size))
+            setValue(&&, &min + (&max - &min) * (X / max_size))
          end
 
          &prvSliderVP.x = (&value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
@@ -112,14 +112,14 @@ gui.slider = function(Options:table!)
          function(Viewport:obj!, Msg)
             repeat
                if (Msg.type is JET_LMB) and (Msg.value > 0) then
-                  if self.orientation is 'V' then
-                     new_value = self.min + ((Msg.y / self.prvSliderHostVP.height) * (self.max - self.min))
-                     self.prvSliderVP.y = (new_value - self.min) / ((self.max - self.min) / (self.prvSliderHostVP.height - BOX_SIZE))
-                     setValue(self, new_value)
+                  if &orientation is 'V' then
+                     new_value = &min + ((Msg.y / &prvSliderHostVP.height) * (&max - &min))
+                     &prvSliderVP.y = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.height - BOX_SIZE))
+                     setValue(&&, new_value)
                   else
-                     new_value = self.min + ((Msg.x / self.prvSliderHostVP.width) * (self.max - self.min))
-                     self.prvSliderVP.x = (new_value - self.min) / ((self.max - self.min) / (self.prvSliderHostVP.width - BOX_SIZE))
-                     setValue(self, new_value)
+                     new_value = &min + ((Msg.x / &prvSliderHostVP.width) * (&max - &min))
+                     &prvSliderVP.x = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
+                     setValue(&&, new_value)
                   end
                end
                Msg = Msg.next
