@@ -1014,20 +1014,18 @@ static ControlFlowEdge emit_falsey_jumps(
 
 static void emit_bit_function_lookup(FuncState &State, RegisterAllocator &Allocator, std::string_view Name, BCReg Base)
 {
-   ExpDesc callee, key;
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = State.ls->keepstr("bit");
-
-   ExpressionValue callee_value(&State, callee);
-   callee_value.to_reg(Allocator, Base);
-   callee = callee_value.legacy();
-
-   key.init(ExpKind::Str, 0);
-   key.u.sval = State.ls->keepstr(Name);
-   expr_index(&State, &callee, &key);
-
-   ExpressionValue callee_indexed(&State, callee);
-   callee_indexed.to_reg(Allocator, Base);
+   (void)Allocator;
+   BuiltinCallableID callable = BuiltinCallableID::Invalid;
+   switch (kt::strhash(Name)) {
+      case kt::strhash("band"): callable = builtin_callable_id(FastFunc::bit_band); break;
+      case kt::strhash("bor"): callable = builtin_callable_id(FastFunc::bit_bor); break;
+      case kt::strhash("bxor"): callable = builtin_callable_id(FastFunc::bit_bxor); break;
+      case kt::strhash("bnot"): callable = builtin_callable_id(FastFunc::bit_bnot); break;
+      case kt::strhash("lshift"): callable = builtin_callable_id(FastFunc::bit_lshift); break;
+      case kt::strhash("rshift"): callable = builtin_callable_id(FastFunc::bit_rshift); break;
+      default: fs_check_assert(&State, false, "unknown compiler-generated bit operation"); break;
+   }
+   bcemit_builtin_callable(&State, callable, Base.raw());
 }
 
 IrEmitter::IrEmitter(ParserContext& context)
@@ -4163,30 +4161,11 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
 ParserResult<ExpDesc> IrEmitter::emit_table_slice_call(const IndexExprPayload &Payload)
 {
    FuncState *fs = &this->func_state;
-   RegisterAllocator allocator(fs);
 
    // Capture the call base register before emitting anything
    BCReg call_base = fs->free_reg();
 
-   // Load range.slice function (range global, then access .slice field)
-   ExpDesc range_lib;
-   range_lib.init(ExpKind::Global, 0);
-   range_lib.u.sval = fs->ls->keepstr("range");
-
-   // Discharge range global to a register
-   ExpressionValue range_value(fs, range_lib);
-   range_value.discharge_to_any_reg(allocator);
-   range_lib = range_value.legacy();
-
-   // Access the .slice field
-   ExpDesc slice_key(fs->ls->keepstr("slice"));
-   expr_index(fs, &range_lib, &slice_key);
-
-   // Materialise the function to call base register
-   this->materialise_to_next_reg(range_lib, "range.slice function");
-
-   // Reserve register for frame link (LJ_FR2)
-   allocator.reserve(BCReg(1));
+   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_slice), call_base);
 
    // Emit base expression (table or string) as arg1
    auto base_result = this->emit_expression(*Payload.table);
@@ -4346,22 +4325,15 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
 ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload)
 {
    FuncState* fs = &this->func_state;
-   RegisterAllocator allocator(fs);
 
    // Emit the start and stop expressions first
    if (not Payload.start or not Payload.stop) {
       return this->unsupported_expr(AstNodeKind::RangeExpr, SourceSpan{});
    }
 
-   // Load the 'range' global function first
+   // Load the canonical range constructor first.
    BCReg base = fs->free_reg();
-   ExpDesc callee;
-   callee.init(ExpKind::Global, 0);
-   callee.u.sval = fs->ls->keepstr("range");
-   this->materialise_to_next_reg(callee, "range function");
-
-   // Reserve register for frame link (LJ_FR2)
-   allocator.reserve(BCReg(1));
+   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::range_new), base);
 
    // Emit start expression as arg1
    auto start_result = this->emit_expression(*Payload.start);

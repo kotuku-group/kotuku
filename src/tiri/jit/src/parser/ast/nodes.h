@@ -429,6 +429,7 @@ struct CallExprPayload {
    ExprNodeList arguments;
    CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic;
    bool forwards_multret = false;
+   BuiltinCallableID compiler_callable = BuiltinCallableID::Invalid;
    struct BuiltinMethodCall {
       const fprototype *prototype = nullptr;
       BuiltinCallableID callable = BuiltinCallableID::Invalid;

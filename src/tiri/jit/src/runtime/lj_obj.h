@@ -1642,7 +1642,9 @@ struct lua_State {
    ParserDiagnostics *parser_diagnostics; // Stores ParserDiagnostics* during parsing errors
    TipEmitter *parser_tips;               // Stores TipEmitter* during parsing for code hints
    ParserSymbolCollection *parser_symbols; // Stores parser symbol metadata for LSP/documentation tooling
-   TValue close_err;  // Current error for __close handlers (nil if no error)
+   // Protected error value for the __close handler currently being invoked. Nested unwinding saves and restores this
+   // field, and the collector treats it as a thread-local root. It is never mirrored through the public environment.
+   TValue pending_close_error;
    // Try-except exception handling runtime state (lazily allocated)
    TryFrameStack try_stack;      // Exception frame stack (nullptr until first BC_TRYENTER)
    const BCIns   *try_handler_pc; // Handler PC for error re-entry (set during unwind)

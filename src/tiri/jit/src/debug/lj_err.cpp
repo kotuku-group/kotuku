@@ -139,7 +139,8 @@ extern "C" void lj_err_prepare_foreign_exception(lua_State *L, const char *Messa
 
 //********************************************************************************************************************
 // Call __close handlers for to-be-closed locals during error unwinding.
-// Sets _G.__close_err so bytecode-based close handlers can access the error.
+// The active error is held in protected per-thread state while each handler runs. Normal bytecode scope exits use the
+// dedicated BC_CLOSE path, while error unwinding calls lj_meta_close() directly with this value.
 // Returns the error object to propagate (may be updated if a __close handler throws).
 // Per Lua 5.4: if a __close handler throws, that error replaces the original,
 // but all other pending __close handlers are still called.
@@ -191,19 +192,13 @@ static TValue* unwind_close_try_block(
    lj_assertL(MinimumSlotIndex <= LJ_MAX_SLOTS,
       "unwind_close_try_block: min_slot_index too large (%d)", MinimumSlotIndex);
 
-   // Set _G.__close_err for bytecode-based handlers
+   // A close handler can trigger and catch nested unwinding. Preserve the outer pending value so the enclosing close
+   // sequence remains isolated when the nested handler returns.
 
-   GCtab *env = tabref(L->env);
-   if (env) {
-      GCstr *key = lj_str_newlit(L, "__close_err");
-      TValue *slot = lj_tab_setstr(L, env, key);
-      if (ErrorObject) copyTV(L, slot, ErrorObject);
-      else setnilV(slot);
-      lj_gc_anybarriert(L, env);
-   }
-
-   if (ErrorObject) copyTV(L, &L->close_err, ErrorObject);
-   else setnilV(&L->close_err);
+   TValue saved_close_error;
+   copyTV(L, &saved_close_error, &L->pending_close_error);
+   if (ErrorObject) copyTV(L, &L->pending_close_error, ErrorObject);
+   else setnilV(&L->pending_close_error);
 
    // Call lj_meta_close for each slot with <close> attribute in LIFO order.
    // Only process slots >= min_slot_index (created inside the try block)
@@ -233,26 +228,12 @@ static TValue* unwind_close_try_block(
             has_current_err = true;
             current_err_offset = savestack(L, L->top - 1);
             current_err = restorestack(L, current_err_offset);
-            if (env) {
-               GCstr *key = lj_str_newlit(L, "__close_err");
-               TValue *slot_tv = lj_tab_setstr(L, env, key);
-               copyTV(L, slot_tv, current_err);
-               lj_gc_anybarriert(L, env);
-            }
-            copyTV(L, &L->close_err, current_err);
+            copyTV(L, &L->pending_close_error, current_err);
          }
       }
    }
 
-   // Clear __close_err after processing
-
-   if (env) {
-      GCstr *key = lj_str_newlit(L, "__close_err");
-      TValue *slot_tv = lj_tab_setstr(L, env, key);
-      setnilV(slot_tv);
-   }
-
-   setnilV(&L->close_err);
+   copyTV(L, &L->pending_close_error, &saved_close_error);
    return has_current_err ? restorestack(L, current_err_offset) : nullptr;
 }
 
@@ -315,14 +296,6 @@ static void unwind_close_all(lua_State *L, TValue *From, TValue *To)
 
    lj_assertL(count < LUAI_MAXCSTACK, "frame chain exceeded LUAI_MAXCSTACK during __close unwinding");
 
-   // Clear __close_err after all handlers run
-
-   if (GCtab *env = tabref(L->env)) {
-      GCstr *key = lj_str_newlit(L, "__close_err");
-      TValue *slot = lj_tab_setstr(L, env, key);
-      setnilV(slot);
-   }
-   setnilV(&L->close_err);
 }
 
 //********************************************************************************************************************

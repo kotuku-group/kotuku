@@ -260,6 +260,87 @@ end
    assert(tostring(received_err).find('test error message'), 'Error message should contain "test error message": got ' .. tostring(received_err))
 end
 
+-- Error unwinding must never publish its private control state through the global environment.
+
+@Test function CloseErrorStateIsPrivate()
+   _G.__close_err = nil
+   received_message = nil
+   global_during_close = 'not_checked'
+
+   function inner()
+      local obj <close> = setmetatable({}, {
+         __close = function(Self, Error)
+            processing.collect('full')
+            received_message = tostring(Error)
+            global_during_close = _G.__close_err
+         end
+      })
+      error('private close error')
+   end
+
+   try
+      inner()
+   except err
+   end
+
+   assert(received_message.find('private close error'), 'The close handler must receive the active error')
+   assert(global_during_close is nil, 'The active close error must not be exposed through _G')
+   assert(_G.__close_err is nil, 'Error unwinding must not leave close state in _G')
+end
+
+-- Nested unwinding from a close handler must restore the enclosing error before the next outer handler runs.
+
+@Test function NestedCloseErrorIsolation()
+   inner_message = nil
+   outer_messages = {}
+
+   inner_mt = {
+      __close = function(Self, Error)
+         processing.collect('full')
+         inner_message = tostring(Error)
+      end
+   }
+
+   nesting_mt = {
+      __close = function(Self, Error)
+         outer_messages.insert(tostring(Error))
+
+         function nested_failure()
+            local nested <close> = setmetatable({}, inner_mt)
+            error('nested close error')
+         end
+
+         try
+            nested_failure()
+         except nested_err
+         end
+      end
+   }
+
+   trailing_mt = {
+      __close = function(Self, Error)
+         outer_messages.insert(tostring(Error))
+      end
+   }
+
+   function outer_failure()
+      local trailing <close> = setmetatable({}, trailing_mt)
+      local nesting <close> = setmetatable({}, nesting_mt)
+      error('outer close error')
+   end
+
+   try
+      outer_failure()
+   except outer_err
+   end
+
+   assert(inner_message.find('nested close error'), 'Nested cleanup must receive the nested error')
+   assert(#outer_messages is 2, 'Both outer close handlers must run')
+   assert(outer_messages[0].find('outer close error'), 'The nesting handler must receive the outer error')
+   assert(outer_messages[1].find('outer close error'), 'Nested unwinding must restore the outer error')
+   assert(_G.__close_err is nil, 'Nested unwinding must not expose close state through _G')
+end
+
 -- Close with string value - should not crash
 
 @Test function CloseWithString()
