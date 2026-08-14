@@ -243,6 +243,29 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Registered obj.* methods (get, set, exists, ...) are dispatched as canonical built-in methods with the object
+-- supplied as an explicit receiver.  The colon-era bound-receiver closures for these methods were removed, while
+-- obj.new (child creation) and obj._state retain their bound-closure dispatch path.
+
+@Test(hotpath=true) function RegisteredMethodsUseExplicitReceiver()
+   f = obj.new('file', { path='temp:' })
+   assert(f.exists(), "exists() should dispatch through the explicit receiver")
+   assert(f.get('path') is 'temp:', "get() should read a field through the explicit receiver")
+
+   scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width=50, height=50 })
+
+   err = vp.set('opacity', 0.5)
+   assert(err is ERR_Okay, "set() should update a field through the explicit receiver")
+   assert(math.abs(vp.get('opacity') - 0.5) < 0.0001, "set() should have persisted the field value")
+
+   -- obj.new (used above for VectorViewport) and obj._state retain bound-closure dispatch.
+   state = f._state()
+   state.marker = 7
+   assert(f._state().marker is 7, "_state() should still bind the receiver and persist state")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test action calling on objects
 
 @Test function ActionCalling()

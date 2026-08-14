@@ -1201,7 +1201,7 @@ void IrEmitter::optimise_assert(ExprNodeList &Args)
 }
 
 //********************************************************************************************************************
-// Result filter expression: [_*]func(), [*_]obj:method(), etc.
+// Result filter expression: [_*]func(), [*_]obj.method(), etc.
 // Transforms to: __filter(mask, count, trailing_keep, func(...))
 // The __filter function is a built-in that selectively returns values based on the filter pattern.
 

@@ -38,6 +38,7 @@ ExprNodePtr make_builtin_call(ParserContext &Context, SourceSpan Span, FastFunc 
       case FastFunc::array_of: interface_name = "array"; member_name = "of"; break;
       case FastFunc::array_resize: interface_name = "array"; member_name = "resize"; break;
       case FastFunc::struct_new: interface_name = "struct"; member_name = "new"; break;
+      case FastFunc::regex_new: interface_name = "regex"; member_name = "new"; break;
       default:
          assert_node(false, "unsupported compiler-owned callable");
          interface_name = "<invalid>";
@@ -498,17 +499,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          GCstr *pattern = current.payload().as_string();
          this->ctx.tokens().advance();
 
-         Identifier regex_id = Identifier::from_keepstr(this->ctx.lex().keepstr("regex"), span);
-         NameRef regex_ref;
-         regex_ref.identifier = regex_id;
-         ExprNodePtr regex_base = make_identifier_expr(span, regex_ref);
-
-         Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr regex_new = make_member_expr(span, std::move(regex_base), new_id);
-
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(pattern)));
-         node = make_call_expr(span, std::move(regex_new), std::move(args), false);
+         node = make_builtin_call(this->ctx, span, FastFunc::regex_new, std::move(args), TiriType::Userdata);
          break;
       }
 

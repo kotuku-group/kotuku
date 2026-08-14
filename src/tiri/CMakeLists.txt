@@ -192,6 +192,7 @@ set (LJLIB_C
    "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_debug.cpp"
    "${JIT_SRC}/lib/lib_jit.cpp"
+   "${JIT_SRC}/lib/lib_regex.cpp"
 )
 
 # Buildvm source files (used in both build paths)
@@ -774,6 +775,7 @@ set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.c
    "${JIT_SRC}/lib/lib_object.cpp"
    "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_range.cpp"
+   "${JIT_SRC}/lib/lib_regex.cpp"
    "${JIT_SRC}/lib/lib_string.cpp"
    "${JIT_SRC}/lib/lib_table.cpp"
    "${JIT_SRC}/bytecode/lj_bc.cpp"

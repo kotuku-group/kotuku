@@ -48,20 +48,10 @@ template<class... Args> void RMSG(Args...) {
    //log.trace(Args)  // Enable if you want to debug results returned from functions, actions etc
 }
 
-static constexpr uint32_t OJH_init      = simple_hash("init");
-static constexpr uint32_t OJH_free      = simple_hash("free");
-static constexpr uint32_t OJH_children  = simple_hash("children");
-static constexpr uint32_t OJH_detach    = simple_hash("detach");
-static constexpr uint32_t OJH_get       = simple_hash("get");
+// Only obj.new and obj._state retain a member-read closure; the remaining registered obj.* methods are dispatched
+// canonically through BC_BMETH and no longer need member-read hashes here.
 static constexpr uint32_t OJH_new       = simple_hash("new");
 static constexpr uint32_t OJH_state     = simple_hash("_state");
-static constexpr uint32_t OJH_getKey    = simple_hash("getKey");
-static constexpr uint32_t OJH_set       = simple_hash("set");
-static constexpr uint32_t OJH_setKey    = simple_hash("setKey");
-static constexpr uint32_t OJH_delayCall = simple_hash("delayCall");
-static constexpr uint32_t OJH_exists    = simple_hash("exists");
-static constexpr uint32_t OJH_subscribe = simple_hash("subscribe");
-static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 
 // Forward declarations
 [[nodiscard]] static int object_action_call_args(lua_State *);
@@ -115,6 +105,11 @@ inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
    lua_pushcclosure(Lua, (lua_CFunction)Function, 1); // C function to call, +1 value for the object reference
 }
 
+// Most registered obj.* methods are dispatched as canonical built-in methods (BC_BMETH) with the object supplied as
+// an explicit receiver at native argument one.  Two methods, obj.new (child creation) and obj._state, retain the
+// bound-closure dispatch path where the receiver is recovered from the closure upvalue via object_context(); these
+// helpers therefore continue to accept either ABI.
+
 [[nodiscard]] static GCobject * object_method_receiver(lua_State *Lua)
 {
    if (lua_isobject(Lua, 1)) return lj_get_object_fast(Lua, 1);
@@ -126,19 +121,12 @@ inline void SET_CONTEXT(lua_State *Lua, APTR Function) {
    return lua_isobject(Lua, 1) ? WrittenArgument + 1 : WrittenArgument;
 }
 
-[[nodiscard]] static int stack_object_children(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_children); return 1; }
-[[nodiscard]] static int stack_object_detach(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_detach); return 1; }
-[[nodiscard]] static int stack_object_exists(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_exists); return 1; }
-[[nodiscard]] static int stack_object_free(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_free); return 1; }
-[[nodiscard]] static int stack_object_get(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_get); return 1; }
-[[nodiscard]] static int stack_object_getKey(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_getkey); return 1; }
-[[nodiscard]] static int stack_object_init(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_init); return 1; }
+// obj.new (child creation) and obj._state retain the bound-closure dispatch path: they have no canonical BC_BMETH
+// identity, so a member read still yields a closure that carries the receiving object in its upvalue.  Every other
+// registered obj.* method is dispatched canonically with an explicit receiver and therefore no longer needs a
+// member-read closure factory here.
 [[nodiscard]] static int stack_object_newchild(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_newchild); return 1; }
-[[nodiscard]] static int stack_object_set(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_set); return 1; }
-[[nodiscard]] static int stack_object_setKey(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_setkey); return 1; }
 [[nodiscard]] static int stack_object_state(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_state); return 1; }
-[[nodiscard]] static int stack_object_subscribe(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_subscribe); return 1; }
-[[nodiscard]] static int stack_object_unsubscribe(lua_State *Lua, const obj_read &Handle, GCobject *def) { SET_CONTEXT(Lua, (APTR)object_unsubscribe); return 1; }
 
 //********************************************************************************************************************
 // Action jump table implementation
@@ -365,19 +353,11 @@ READ_TABLE * get_read_table(objMetaClass *Class)
       }
    }
 
-   jmp.emplace_back(OJH_init, stack_object_init);
-   jmp.emplace_back(OJH_free, stack_object_free);
-   jmp.emplace_back(OJH_children, stack_object_children);
-   jmp.emplace_back(OJH_detach, stack_object_detach);
-   jmp.emplace_back(OJH_get, stack_object_get);
+   // obj.new and obj._state are dispatched through bound-receiver closures at member-read time.  All other
+   // registered obj.* methods use canonical BC_BMETH dispatch with an explicit receiver and are intentionally
+   // absent from the member-read table.
    jmp.emplace_back(OJH_new, stack_object_newchild);
    jmp.emplace_back(OJH_state, stack_object_state);
-   jmp.emplace_back(OJH_getKey, stack_object_getKey);
-   jmp.emplace_back(OJH_set, stack_object_set);
-   jmp.emplace_back(OJH_setKey, stack_object_setKey);
-   jmp.emplace_back(OJH_exists, stack_object_exists);
-   jmp.emplace_back(OJH_subscribe, stack_object_subscribe);
-   jmp.emplace_back(OJH_unsubscribe, stack_object_unsubscribe);
 
    std::sort(jmp.begin(), jmp.end(), read_hash);
 

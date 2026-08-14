@@ -5802,6 +5802,47 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
    return true;
 }
 
+static bool test_regex_literal_canonical_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   luaopen_regex_intrinsic(L);
+   lua_pop(L, 1);
+   std::string error;
+
+   BuiltinCallableID constructor = builtin_callable_id(FastFunc::regex_new);
+   GCfunc *canonical_constructor = lj_builtin_callable(L, constructor);
+   if (not canonical_constructor or canonical_constructor->c.ffid != builtin_callable_index(constructor) or
+       std::string_view(builtin_callable_name(constructor)) != "regex.new") {
+      Log.error("canonical regex.new callable was not registered with its generated identity");
+      return false;
+   }
+   lua_gc(L, LUA_GCCOLLECT, 0);
+   if (lj_builtin_callable(L, constructor) != canonical_constructor) {
+      Log.error("canonical regex.new callable was not rooted independently of its public field");
+      return false;
+   }
+
+   auto literal = compile_snapshot(L, "local value = r'\\d+'\nreturn value\n", true, error);
+   if (not literal or not find_builtin_callable_opcode(*literal, constructor) or
+       count_opcode_tree(*literal, BC_BFUNC) != 1 or count_opcode_tree(*literal, BC_GGET) != 0 or
+       count_opcode_tree(*literal, BC_TGETS) != 0 or count_opcode_tree(*literal, BC_TGETV) != 0) {
+      Log.error("regex literal did not use the canonical regex.new callable: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto explicit_call = compile_snapshot(L, "extern regex\nreturn regex.new('\\\\d+')\n", true, error);
+   if (not explicit_call or find_builtin_callable_opcode(*explicit_call, constructor) or
+       count_opcode_tree(*explicit_call, BC_GGET) IS 0 or count_opcode_tree(*explicit_call, BC_BMETH) IS 0) {
+      Log.error("explicit regex.new call lost ordinary dynamic lookup bytecode: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
 // Phase 4 of the opt-in table context plan: specialise member-call bytecode from positive table contextuality.
 
 static bool test_contextual_call_specialisation(kt::Log &Log)
@@ -8346,7 +8387,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 76> tests = { {
+   constexpr std::array<TestCase, 77> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8406,6 +8447,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
       { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
+      { "regex_literal_canonical_bytecode_emission", test_regex_literal_canonical_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },
       { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },

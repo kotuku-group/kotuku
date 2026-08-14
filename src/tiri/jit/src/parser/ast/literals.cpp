@@ -777,7 +777,7 @@ ParserResult<AstBuilder::ResultFilterInfo> AstBuilder::parse_result_filter_patte
 }
 
 //********************************************************************************************************************
-// Parses result filter expressions: [_*]func(), [*_]obj:method(), etc.
+// Parses result filter expressions: [_*]func(), [*_]obj.method(), etc.
 // This syntax allows selective extraction of return values from multi-value function calls.
 
 ParserResult<ExprNodePtr> AstBuilder::parse_result_filter_expr(const Token &StartToken)
