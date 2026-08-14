@@ -48,6 +48,7 @@ end
    f = obj.new('time')
    child = f.new('time')
    assert(type(child) is 'object', "Expected child to be an object")
+   assert(child.owner.id is f.id, 'Expected parent.new() to retain the receiving object as owner')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -240,14 +241,23 @@ end
    -- Retrieve state again and verify
    state2 = f._state()
    assert(state2.myvalue is 42, "Expected state to persist value")
+
+   f.free()
+   caught = false
+   try
+      f._state()
+   except e
+      caught = true
+   end
+   assert(caught, 'Expected _state() to reject a dead object')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Registered obj.* methods (get, set, exists, ...) are dispatched as canonical built-in methods with the object
--- supplied as an explicit receiver.  The colon-era bound-receiver closures for these methods were removed, while
--- obj.new (child creation) and obj._state retain their bound-closure dispatch path.
+-- Registered obj.* methods, including new and _state, are dispatched as canonical built-in methods with the object
+-- supplied as an explicit receiver.
 
-@Test(hotpath=true) function RegisteredMethodsUseExplicitReceiver()
+@Test(hotpath=true) @Requires(display=true)
+function RegisteredMethodsUseExplicitReceiver()
    f = obj.new('file', { path='temp:' })
    assert(f.exists(), "exists() should dispatch through the explicit receiver")
    assert(f.get('path') is 'temp:', "get() should read a field through the explicit receiver")
@@ -259,10 +269,19 @@ end
    assert(err is ERR_Okay, "set() should update a field through the explicit receiver")
    assert(math.abs(vp.get('opacity') - 0.5) < 0.0001, "set() should have persisted the field value")
 
-   -- obj.new (used above for VectorViewport) and obj._state retain bound-closure dispatch.
    state = f._state()
    state.marker = 7
-   assert(f._state().marker is 7, "_state() should still bind the receiver and persist state")
+   assert(f._state().marker is 7, "_state() should use the explicit receiver and persist state")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectMethodEscapePaths()
+   parent = obj.new('time')
+   assert(parent.new is nil, 'Bare new access should not manufacture a bound closure')
+   assert(parent._state is nil, 'Bare _state access should not manufacture a bound closure')
+   assert(parent['new'] is nil, 'Computed new access should not manufacture a bound closure')
+   assert(parent['_state'] is nil, 'Computed _state access should not manufacture a bound closure')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
