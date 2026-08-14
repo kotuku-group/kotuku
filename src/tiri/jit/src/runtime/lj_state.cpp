@@ -366,7 +366,7 @@ extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept
 extern "C" void lj_context_begin_block(lua_State *L, uint32_t Slot, uint32_t BlockIndex)
 {
    TValue *reference = L->base + Slot;
-   if (not tvistab(reference)) lj_err_argt(L, int(Slot) + 1, LUA_TTABLE);
+   if (not tvistab(reference)) lj_err_msgv(L, ErrMsg::BADTYPE, "table", lj_typename(reference));
 
    GCfunc *function = frame_func(L->base - 1);
    lj_assertL(isluafunc(function), "temporary context block has no Lua owner");
