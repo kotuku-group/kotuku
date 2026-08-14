@@ -28,6 +28,34 @@ ExprNodePtr make_direct_method_call(ParserContext &Context, SourceSpan Span, std
    return call;
 }
 
+ExprNodePtr make_builtin_call(ParserContext &Context, SourceSpan Span, FastFunc Callable,
+   ExprNodeList Arguments, TiriType ResultType)
+{
+   std::string_view interface_name;
+   std::string_view member_name;
+   switch (Callable) {
+      case FastFunc::array_new: interface_name = "array"; member_name = "new"; break;
+      case FastFunc::array_of: interface_name = "array"; member_name = "of"; break;
+      case FastFunc::array_resize: interface_name = "array"; member_name = "resize"; break;
+      case FastFunc::struct_new: interface_name = "struct"; member_name = "new"; break;
+      default:
+         assert_node(false, "unsupported compiler-owned callable");
+         interface_name = "<invalid>";
+         member_name = "<invalid>";
+         break;
+   }
+   NameRef interface_ref;
+   interface_ref.identifier = Identifier::from_keepstr(Context.lex().keepstr(interface_name), Span);
+   ExprNodePtr callable = make_member_expr(Span, make_identifier_expr(Span, interface_ref),
+      Identifier::from_keepstr(Context.lex().keepstr(member_name), Span));
+   ExprNodePtr call = make_call_expr(Span, std::move(callable), std::move(Arguments), false,
+      CallArgumentSyntax::Synthetic);
+   auto &payload = std::get<CallExprPayload>(call->data);
+   payload.compiler_callable = builtin_callable_id(Callable);
+   payload.result_type = ResultType;
+   return call;
+}
+
 } // namespace
 
 //********************************************************************************************************************
@@ -812,19 +840,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
          SourceSpan span = start.span();
 
-         // Build identifier for 'array' global
-         Identifier array_id = Identifier::from_keepstr(this->ctx.lex().keepstr("array"), span);
-         NameRef array_ref;
-         array_ref.identifier = array_id;
-         ExprNodePtr array_base = make_identifier_expr(span, array_ref);
-
          if (has_initialiser and not init_values.empty()) {
             // array<type> { values } -> array.of('type', v1, v2, ...)
             // Build: array.of('type', values...)
-
-            // Create member access for .of
-            Identifier of_id = Identifier::from_keepstr(this->ctx.lex().keepstr("of"), span);
-            ExprNodePtr array_of = make_member_expr(span, std::move(array_base), of_id);
 
             // Build argument list: ('type', v1, v2, ...)
             ExprNodeList args;
@@ -837,7 +855,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                args.push_back(std::move(val));
             }
 
-            ExprNodePtr array_of_call = make_call_expr(span, std::move(array_of), std::move(args), false);
+            ExprNodePtr array_of_call = make_builtin_call(
+               this->ctx, span, FastFunc::array_of, std::move(args), TiriType::Array);
 
             // If size was specified (literal or expression) and may be larger than values count, wrap in IIFE to resize
             // For literal sizes, we only wrap if size > values count
@@ -861,14 +880,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
                // Build array.resize(_arr, size_expr_or_literal)
 
-               Identifier array_id2 = Identifier::from_keepstr(this->ctx.lex().keepstr("array"), span);
-               NameRef array_ref2;
-               array_ref2.identifier = array_id2;
-               ExprNodePtr array_base2 = make_identifier_expr(span, array_ref2);
-
-               Identifier resize_id = Identifier::from_keepstr(this->ctx.lex().keepstr("resize"), span);
-               ExprNodePtr array_resize = make_member_expr(span, std::move(array_base2), resize_id);
-
                // Arguments for resize: (_arr, size)
 
                ExprNodeList resize_args;
@@ -881,7 +892,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                if (size_expr) resize_args.push_back(std::move(size_expr));
                else resize_args.push_back(make_literal_expr(span, LiteralValue::number(double(specified_size))));
 
-               ExprNodePtr resize_call = make_call_expr(span, std::move(array_resize), std::move(resize_args), false);
+               ExprNodePtr resize_call = make_builtin_call(
+                  this->ctx, span, FastFunc::array_resize, std::move(resize_args), TiriType::Array);
 
                // Statement 2: array.resize(_arr, size)
                StmtNodePtr resize_stmt = make_expression_stmt(span, std::move(resize_call));
@@ -913,10 +925,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
             // Empty braces {} or no initialiser: use array.new()
             // array<type> or array<type, size> -> array.new(size, 'type')
 
-            // Create member access for .new
-            Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-            ExprNodePtr array_new = make_member_expr(span, std::move(array_base), new_id);
-
             // Build argument list: (size, 'type')
 
             ExprNodeList args;
@@ -925,7 +933,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
             args.push_back(make_literal_expr(span, LiteralValue::string(type_str)));
 
-            node = make_call_expr(span, std::move(array_new), std::move(args), false);
+            node = make_builtin_call(this->ctx, span, FastFunc::array_new, std::move(args), TiriType::Array);
          }
 
          // Mark the result as TiriType::Array so downstream index expressions emit AGET/ASET opcodes
@@ -959,18 +967,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          }
          else initialiser = make_table_expr(span, {}, false);
 
-         // Build struct.new('Name', { fields })
-         Identifier struct_id = Identifier::from_keepstr(this->ctx.lex().keepstr("struct"), span);
-         NameRef struct_ref;
-         struct_ref.identifier = struct_id;
-         ExprNodePtr struct_base = make_identifier_expr(span, struct_ref);
-         Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr struct_new = make_member_expr(span, std::move(struct_base), new_id);
-
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(name_str)));
          args.push_back(std::move(initialiser));
-         node = make_call_expr(span, std::move(struct_new), std::move(args), false);
+         node = make_builtin_call(this->ctx, span, FastFunc::struct_new, std::move(args), TiriType::Struct);
          break;
       }
 

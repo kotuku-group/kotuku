@@ -866,6 +866,10 @@ private:
    void resolve_builtin_method(CallExprPayload &Call)
    {
       Call.runtime_builtin_method.reset();
+      if (Call.compiler_callable != BuiltinCallableID::Invalid) {
+         Call.builtin_method.reset();
+         return;
+      }
       const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
       if (not direct or not direct->callable or
           (Call.argument_syntax != CallArgumentSyntax::Parenthesised and

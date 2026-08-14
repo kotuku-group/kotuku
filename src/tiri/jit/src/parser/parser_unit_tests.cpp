@@ -2030,6 +2030,7 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
+   luaL_openlibs(L);
    constexpr std::string_view source =
       "extern obj\n"
       "extern array\n"
@@ -5673,7 +5674,7 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    error.clear();
    auto range_pipe = compile_snapshot(L,
       "local total = 0\n{0 to 4} |> (Value => do total += Value end)\nreturn total\n", true, error);
-   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 1 or
+   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 2 or
        count_opcode_tree(*range_pipe, BC_TGETS) != 0) {
       Log.error("compiler-generated range iteration did not use canonical emission: %s", error.c_str());
       return false;
@@ -5682,8 +5683,9 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    error.clear();
    auto append = compile_snapshot(L,
       "local values = array<byte>\nvalues ..= 'x' .. 'y'\nreturn values\n", true, error);
-   const BCIns *append_load = append ? find_opcode(*append, BC_BFUNC) : nullptr;
-   if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 1 or
+   const BCIns *append_load = append ? find_builtin_callable_opcode(
+      *append, builtin_callable_id(FastFunc::array_append)) : nullptr;
+   if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 2 or
        bc_d(*append_load) != builtin_callable_index(builtin_callable_id(FastFunc::array_append))) {
       Log.error("compiler-only array append did not use canonical emission: %s", error.c_str());
       return false;
@@ -5733,6 +5735,67 @@ static bool test_compiler_intrinsic_bytecode_emission(kt::Log &Log)
        count_opcode_tree(*thunk, BC_BFUNC) != 1 or count_opcode_tree(*thunk, BC_GGET) != 0 or
        count_opcode_tree(*thunk, BC_TGETS) != 0 or count_opcode_tree(*thunk, BC_TGETV) != 0) {
       Log.error("deferred expressions did not use the isolated thunk intrinsic: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string error;
+
+   auto core = compile_snapshot(L,
+      "struct PhaseTwoRecord\n   Value: int\nend\n"
+      "local array:any = {}\nlocal struct:any = {}\n"
+      "local first = 1\nlocal last = 5\nlocal size = 4\nlocal source = { 10, 20, 30 }\n"
+      "local bounds = {first to last}\nlocal sliced = source[{0 to 2}]\nlocal present = first in bounds\n"
+      "local values = array<int, size> { 7, 8 }\n"
+      "local constructed = struct<PhaseTwoRecord> { Value=9 }\n"
+      "local bits = (first & last) | (first ^ last)\n"
+      "return sliced, present, values, constructed, bits\n", true, error);
+   constexpr std::array<FastFunc, 9> required = { {
+      FastFunc::range_new, FastFunc::range_slice, FastFunc::range_contains,
+      FastFunc::array_of, FastFunc::array_resize, FastFunc::struct_new,
+      FastFunc::bit_band, FastFunc::bit_bor, FastFunc::bit_bxor
+   } };
+   if (not core) {
+      Log.error("canonical core syntax fixture did not compile: %s", error.c_str());
+      return false;
+   }
+   for (FastFunc callable : required) {
+      if (find_builtin_callable_opcode(*core, builtin_callable_id(callable))) continue;
+      Log.error("canonical core syntax omitted built-in callable %u", unsigned(callable));
+      return false;
+   }
+   if (count_opcode_tree(*core, BC_GGET) != 0 or count_opcode_tree(*core, BC_TGETS) != 0 or
+       count_opcode_tree(*core, BC_TGETV) != 0) {
+      Log.error("compiler-owned core syntax retained namespace lookup bytecode");
+      return false;
+   }
+
+   error.clear();
+   auto shifts = compile_snapshot(L,
+      "local value = 5\nlocal amount = 1\nreturn ~value, value << amount, value >> amount\n", true, error);
+   if (not shifts or not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_bnot)) or
+       not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_lshift)) or
+       not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_rshift)) or
+       count_opcode_tree(*shifts, BC_GGET) != 0 or count_opcode_tree(*shifts, BC_TGETS) != 0) {
+      Log.error("unary and shifted bitwise syntax did not use canonical callables: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto explicit_calls = compile_snapshot(L,
+      "local values = array.new(2, 'int')\n"
+      "array.resize(values, 3)\n"
+      "return range(0, 2), range.slice({}, {0 to 1}), bit.band(1, 1)\n", true, error);
+   if (not explicit_calls or count_opcode_tree(*explicit_calls, BC_GGET) IS 0 or
+       count_opcode_tree(*explicit_calls, BC_TGETS) IS 0) {
+      Log.error("explicit namespace calls lost ordinary dynamic lookup bytecode: %s", error.c_str());
       return false;
    }
 
@@ -6668,7 +6731,9 @@ static bool test_tail_call_eligibility(kt::Log &Log)
    auto cleaned = compile_snapshot(L, cleanup_source, true, error);
    if (not cleaned or count_opcode_tree(*cleaned, BC_CALLT) != 0 or
        count_opcode_tree(*cleaned, BC_CALLMT) != 0 or count_opcode_tree(*cleaned, BC_MRSAVE) != 1 or
-       count_opcode_tree(*cleaned, BC_MRRESTORE) != 1 or count_opcode_tree(*cleaned, BC_RETM) IS 0) {
+       count_opcode_tree(*cleaned, BC_MRRESTORE) != 1 or count_opcode_tree(*cleaned, BC_RETM) IS 0 or
+       count_opcode_tree(*cleaned, BC_CLOSEARM) IS 0 or count_opcode_tree(*cleaned, BC_CLOSE) IS 0 or
+       count_opcode_tree(*cleaned, BC_GGET) != 0) {
       Log.error("user cleanup did not retain a protected multi-result return path: %s", error.c_str());
       return false;
    }
@@ -8281,7 +8346,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 75> tests = { {
+   constexpr std::array<TestCase, 76> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8340,6 +8405,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
+      { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },
       { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },
