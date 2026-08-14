@@ -125,6 +125,62 @@ end
       'A safe dynamic built-in fallback should use the runtime table gate on its non-nil path')
 end
 
+@Test function ContextualPipeCallsPreserveReceiverContext()
+   local receiver = entity { value = 7 }
+
+   function receiver.add(Value:num):num
+      return &value + Value
+   end
+
+   function receiver.sum(First:num, Second:num):num
+      return &value + First + Second
+   end
+
+   function values():<num, num>
+      return 1, 2
+   end
+
+   assert(3 |> receiver.add() is 10,
+      'A statically contextual pipe destination should evaluate in its receiver context')
+   assert(3 |> receiver['add']() is 10,
+      'A computed contextual pipe destination should retain its receiver context')
+   assert(3 |> receiver?.add() is 10,
+      'A safe contextual pipe destination should establish context on its non-nil path')
+   assert(values() |> receiver.sum() is 10,
+      'A contextual pipe destination should preserve forwarded multiple results')
+end
+
+@Test function RuntimeDependentPipesSelectTheActiveArgumentContext()
+   local outer = entity { value = 100 }
+   local ordinary = {
+      value = 7,
+      consume = function(Value:num):num return Value end
+   }
+
+   function outer.pipe_to(Target:any):num
+      return &value + &value |> Target['consume']()
+   end
+
+   assert(outer.pipe_to(ordinary) is 200,
+      'A runtime ordinary pipe receiver should retain the caller context for its piped operand')
+end
+
+@Test function RuntimeBuiltinPipeFallbackUsesReceiverContext()
+   local outer = entity { value = 100, target = entity { value = 7 } }
+
+   function outer.target.add(Value:num):num
+      return &value + Value
+   end
+
+   function outer.pipe_to_target():num
+      local inherited = &value
+      return &value + &value |> &&.target.add()
+   end
+
+   assert(outer.pipe_to_target() is 21,
+      'A runtime built-in fallback should evaluate its piped operand in the contextual receiver')
+end
+
 @Test function DynamicFallbackObjectReadsSurviveStackGrowth()
    local holder:any = {
       func = function()

@@ -300,6 +300,13 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       }
    }
 
+   auto inherited_cache = child_emitter.allocate_inherited_context_cache(*Payload.body);
+   IrEmitter::ContextSourceScope child_context_scope;
+   if (inherited_cache) {
+      child_context_scope.activate(&child_emitter, ContextSource{ .slot = inherited_cache.value(),
+         .kind = ContextSourceKind::Inherited });
+   }
+
    // Save the parent's lastline - function body emission will update it, but we need
    // to restore it so the BC_FNEW instruction gets the correct line (start of function, not body).
    BCLine saved_lastline = this->lex_state.lastline;
