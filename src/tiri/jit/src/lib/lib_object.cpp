@@ -463,9 +463,15 @@ extern int object_newindex(lua_State *Lua)
       return result;
    }
 
-   // A computed or extracted member read remains ordinary object field access.  Absent canonical methods must not
-   // manufacture a bound closure here, so report the missing field as nil just like other metatable lookups.
-   return 0;
+   // Escaped intrinsic methods must not manufacture bound closures.  Other failed field reads retain the usual
+   // NoFieldAccess error, including accesses through an any receiver or a computed key.
+   const std::string_view key(strdata(keystr), keystr->len);
+   if ((key IS "new") or (key IS "_state")) return 0;
+
+   luaL_error(Lua, ERR::NoFieldAccess, "Field does not exist or is unreadable: %s.%s",
+      def->classptr ? def->classptr->ClassName.c_str() : "?", strdata(keystr));
+
+   return 0; // Not reached
 }
 
 //********************************************************************************************************************

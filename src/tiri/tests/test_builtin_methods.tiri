@@ -264,6 +264,30 @@ end
       'Computed Object method reads should remain ordinary fields instead of bound closures')
 end
 
+@Test function ObjectDynamicMissingFieldsRemainErrors()
+   local parent = obj.new('time')
+   local function read_missing(Value:any):any
+      return Value.does_not_exist
+   end
+   try
+      read_missing(parent)
+   except error_value when ERR_NoFieldAccess
+   success
+      error('An unknown field read through an any receiver should raise NoFieldAccess')
+   end
+
+   local function read_member(Value:any, Key:str):any
+      return Value[Key]
+   end
+   local task_obj = obj.new('task')
+   try
+      read_member(task_obj, 'args')
+   except error_value when ERR_NoFieldAccess
+   success
+      error('A computed read of an unreadable field should raise NoFieldAccess')
+   end
+end
+
 @Test function SafeMethods()
    local values:table = nil
    local called = false
