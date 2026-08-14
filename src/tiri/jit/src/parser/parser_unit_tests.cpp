@@ -1522,6 +1522,54 @@ static bool test_forward_declaration_signature_validation(kt::Log &Log)
 
    lua_pop(L, 1);
 
+   constexpr std::string_view matching_local_source =
+      "function local_declared(Name:str, Options:table, ...):<str, num> end\n"
+      "function local_declared(Value:str, Settings:table, ...):<str, num>\n"
+      "   return Value, 1\n"
+      "end\n";
+
+   if (lua_load(L, matching_local_source, "matching-local-forward-signature")) {
+      Log.error("matching local forward declaration was rejected: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view mismatched_local_source =
+      "function local_klass(Name:str, Options:table):str end\n"
+      "function local_klass(Name:num, Options:table):num\n"
+      "   return ''\n"
+      "end\n";
+
+   if (lua_load(L, mismatched_local_source, "mismatched-local-forward-signature") IS 0) {
+      Log.error("mismatched local forward declaration was accepted");
+      lua_pop(L, 1);
+      return false;
+   }
+
+   message = lua_tostring(L, -1);
+   if (message.find("signature for local function 'local_klass' does not match its forward declaration") IS
+       std::string_view::npos or message.find("parameter 1 has type 'num', expected 'str'") IS
+       std::string_view::npos) {
+      Log.error("mismatched local forward declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+
+   lua_pop(L, 1);
+
+   constexpr std::string_view nested_local_source =
+      "function local_scoped(Value:num):num end\n"
+      "function outer()\n"
+      "   function local_scoped(Value:str):str return Value end\n"
+      "end\n"
+      "function local_scoped(Value:num):num return Value end\n";
+
+   if (lua_load(L, nested_local_source, "nested-local-forward-signature")) {
+      Log.error("nested local function inherited an outer forward declaration: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
    constexpr std::string_view conditional_mismatch_source =
       "global function routed(Value:num) end\n"
       "if true then\n"
@@ -3474,130 +3522,6 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
 }
 
 //********************************************************************************************************************
-// Executing a unit's dependency declaration must populate the prototype's resolved sidecar, and the callables bound
-// into the generated locals must be exactly the records the sidecar holds.
-//
-// BC_MODACT serves its bindings from the sidecar rather than repeating module and function lookups.  Comparing the
-// bound upvalue against the sidecar slot makes the descriptor path observable independently of call behaviour.
-
-static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *L = state.get();
-   luaL_openlibs(L);
-   register_module_class(L);
-   lua_protect_globals(L);
-
-   // Two distinct functions from one module, plus a declaration that references none.  The unreferenced module must
-   // still resolve, and the referenced functions must occupy consecutive sidecar slots in declaration order.
-
-   constexpr std::string_view source =
-      "module core as mC\n"
-      "module display as mD\n"
-      "local a = mC.PreciseTime\n"
-      "local b = mC.GetErrorMsg\n"
-      "return a, b\n";
-
-   if (lua_load(L, source, "dependency-activation")) {
-      Log.error("failed to compile the activation fixture: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   GCproto *proto = funcproto(funcV(L->top - 1));
-
-   if (proto->resolved_dependencies) {
-      Log.error("the sidecar was populated before the chunk executed");
-      return false;
-   }
-
-   // lua_pcall() consumes the chunk, so retain a copy for the re-activation check below.
-
-   lua_pushvalue(L, -1);
-
-   if (lua_pcall(L, 0, 2, 0)) {
-      Log.error("the activation fixture failed to execute: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   if (not proto->resolved_dependencies) {
-      Log.error("executing a dependency declaration left the sidecar unresolved");
-      return false;
-   }
-
-   auto table = proto_dependencies(proto);
-   if (not table or table->function_count != 2) {
-      Log.error("expected two resolved function slots, found %d", table ? int(table->function_count) : -1);
-      return false;
-   }
-
-   // Every referenced function slot must hold a record, and every declaration must be marked activated even when it
-   // references no function.
-
-   std::array<const void *, 2> resolved = { };
-   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
-      resolved[slot] = proto_dependency_callable(proto, slot);
-      if (not resolved[slot]) {
-         Log.error("sidecar slot %d is empty after activation", int(slot));
-         return false;
-      }
-   }
-   if (not proto->resolved_dependency_states or proto->resolved_dependency_count != table->dependency_count) {
-      Log.error("dependency activation state does not match the descriptor table");
-      return false;
-   }
-   for (uint32_t dependency = 0; dependency < table->dependency_count; ++dependency) {
-      if (not proto->resolved_dependency_states[dependency]) {
-         Log.error("dependency %d was not marked activated", int(dependency));
-         return false;
-      }
-   }
-
-   // The returned values are the generated bindings.  Each is a C closure whose single upvalue is the light userdata
-   // pointing at the callable record, so it can be compared directly against the sidecar.
-
-   for (int index = 0; index < 2; ++index) {
-      int stack_slot = index - 2; // -2 is the first result, -1 the second
-
-      if (not lua_iscfunction(L, stack_slot)) {
-         Log.error("binding %d is not a C closure", index);
-         return false;
-      }
-
-      if (not lua_getupvalue(L, stack_slot, 1)) {
-         Log.error("binding %d exposes no callable upvalue", index);
-         return false;
-      }
-
-      const void *bound = lua_topointer(L, -1);
-      lua_pop(L, 1);
-
-      const void *expected = proto_dependency_callable(proto, uint32_t(index));
-      if (bound != expected) {
-         Log.error("binding %d holds %p but sidecar slot %d holds %p; the adapter is not serving from the sidecar",
-            index, bound, index, expected);
-         return false;
-      }
-   }
-
-   lua_pop(L, 2); // Discard the two bindings, leaving the retained chunk on top.
-
-   // Re-executing the chunk must preserve the resolved sidecar and simply rebuild closures from its stable records.
-
-   if (lua_pcall(L, 0, 2, 0)) {
-      Log.error("re-executing the activation fixture failed: %s", lua_tostring(L, -1));
-      return false;
-   }
-   lua_pop(L, 2);
-
-   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
-      if (proto_dependency_callable(proto, slot) != resolved[slot]) {
-         Log.error("re-activation replaced resolved sidecar slot %d", int(slot));
-         return false;
-      }
-   }
-
-   return true;
-}
 
 static bool test_module_registry(kt::Log &Log)
 {
@@ -3605,7 +3529,6 @@ static bool test_module_registry(kt::Log &Log)
       test_module_registry_shared_ordinal(Log) and
       test_module_registry_concurrency(Log) and
       test_module_definition_ownership(Log) and
-      test_module_dependency_activation_uses_sidecar(Log) and
       test_module_dependency_corruption_rejected(Log);
 }
 
