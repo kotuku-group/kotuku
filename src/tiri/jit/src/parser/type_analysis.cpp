@@ -239,6 +239,7 @@ private:
    void discover_global_decl_policy(const GlobalDeclStmtPayload &, bool PublishStaticPolicy);
    void analyse_local_function(const LocalFunctionStmtPayload &);
    void analyse_function_stmt(const FunctionStmtPayload &);
+   void declare_local_function(GCstr *, const FunctionExprPayload *, SourceSpan);
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
    void analyse_expression(const ExprNode &);
    void analyse_call_expr(const CallExprPayload &, SourceSpan);
@@ -1980,9 +1981,30 @@ void TypeAnalyser::analyse_local_function(const LocalFunctionStmtPayload &Payloa
    #endif
 
    const FunctionExprPayload* function = Payload.function.get();
-   this->current_scope().declare_function(Payload.name.symbol, function, Payload.name.span);
+   this->declare_local_function(Payload.name.symbol, function, Payload.name.span);
 
    if (function) this->analyse_function_payload(*function, Payload.name.symbol);
+}
+
+//********************************************************************************************************************
+// Local Function Declaration: Retains an empty declaration as a lexical-scope-local signature contract for the
+// next definition of the same simple name.
+
+void TypeAnalyser::declare_local_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location)
+{
+   const FunctionExprPayload *forward_declaration = this->current_scope().lookup_function(Name);
+   if (forward_declaration and Function and is_function_forward_declaration(*forward_declaration)) {
+      if (auto mismatch = function_signature_mismatch(*forward_declaration, *Function)) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.code = ParserErrorCode::FunctionSignatureMismatch;
+         diag.message = std::format("signature for local function '{}' does not match its forward declaration: {}",
+            std::string_view(strdata(Name), Name->len), *mismatch);
+         this->record_diagnostic(std::move(diag));
+      }
+   }
+
+   this->current_scope().declare_function(Name, Function, Location);
 }
 
 //********************************************************************************************************************
@@ -2001,7 +2023,8 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
    if (not Payload.name.is_explicit_global) {
       if (not Payload.name.segments.empty()) {
          const Identifier& terminal = Payload.name.segments.back();
-         this->current_scope().declare_function(terminal.symbol, function, terminal.span);
+         if (Payload.name.segments.size() IS 1) this->declare_local_function(terminal.symbol, function, terminal.span);
+         else this->current_scope().declare_function(terminal.symbol, function, terminal.span);
          function_name = terminal.symbol;
          function_location = terminal.span;
       }
