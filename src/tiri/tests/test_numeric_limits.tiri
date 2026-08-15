@@ -485,3 +485,72 @@ end
    jit.on()
    assert(trace_count > 0, 'String arithmetic metamethod workload must produce a JIT trace')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- String-to-number bitwise coercion
+
+function expect_string_bitwise_error(Operation:func, Description:str)
+   local raised = false
+   try
+      Operation()
+   except
+      raised = true
+   end
+   assert(raised, Description .. ' must raise a bitwise type error')
+end
+
+@Test function StringToNumberCoercionInBitwise()
+   local text = '12'
+   local other_text = '5'
+
+   -- Bitwise operations do not coerce strings; the operand must be converted with tonumber().
+   expect_string_bitwise_error(function() return bit.band(text, 5) end, 'bit.band with string first argument')
+   expect_string_bitwise_error(function() return bit.band(12, other_text) end, 'bit.band with string second argument')
+   expect_string_bitwise_error(function() return bit.bor(text, 1) end, 'bit.bor with a string')
+   expect_string_bitwise_error(function() return bit.bxor(text, other_text) end, 'bit.bxor with two strings')
+   expect_string_bitwise_error(function() return bit.bnot(text) end, 'bit.bnot with a string')
+   expect_string_bitwise_error(function() return bit.lshift(text, 4) end, 'bit.lshift with a string value')
+   expect_string_bitwise_error(function() return bit.lshift(1, other_text) end, 'bit.lshift with a string count')
+   expect_string_bitwise_error(function() return bit.rshift(text, 4) end, 'bit.rshift with a string')
+   expect_string_bitwise_error(function() return bit.tobit(text) end, 'bit.tobit with a string')
+
+   -- The native C-style operators route to the same bit library and must not coerce either.
+   expect_string_bitwise_error(function() return text & 5 end, 'Native & with a string')
+   expect_string_bitwise_error(function() return text | 1 end, 'Native | with a string')
+   expect_string_bitwise_error(function() return ~text end, 'Native ~ with a string')
+   expect_string_bitwise_error(function() return text << 4 end, 'Native << with a string')
+
+   -- Explicit conversion with tonumber() restores the numeric result.
+   assert(bit.band(tonumber('12'), 5) is 4, 'bit.band(tonumber("12"), 5) should be 4')
+   assert((tonumber('12') & 5) is 4, 'tonumber("12") & 5 should be 4')
+   assert(bit.lshift(tonumber('1'), tonumber('4')) is 16, 'bit.lshift(tonumber("1"), tonumber("4")) should be 16')
+end
+
+function string_bitwise_workload(Iterations:num)
+   local text = '12'
+   for _ in {0 to Iterations} do
+      local ignore = bit.band(text, 5)
+   end
+end
+
+@Test function StringToNumberBitwiseUnderJIT()
+   -- A hot loop compiles a trace; a string operand must abort back to the interpreter and raise the
+   -- type error rather than silently coercing on the compiled path.
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local raised = false
+   try
+      string_bitwise_workload(200)
+   except
+      raised = true
+   end
+   assert(raised, 'JIT bitwise on a string must raise a type error, not coerce')
+end

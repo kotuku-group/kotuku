@@ -1249,10 +1249,19 @@ static void recff_math_random(jit_State* J, RecordFFData* rd)
 //********************************************************************************************************************
 // Bit library fast functions
 
+// Bitwise operations do not coerce strings to numbers (mirroring Tiri arithmetic).  A string operand
+// aborts the trace so execution falls back to the interpreter, which raises the type error.
+
+static void recff_bit_checknumber(jit_State* J, BCREG arg)
+{
+   if (tref_isstr(J->base[arg])) lj_trace_err(J, LJ_TRERR_BADTYPE);
+}
+
 // Record bit.tobit.
 
 static void recff_bit_tobit(jit_State* J, RecordFFData* rd)
 {
+   recff_bit_checknumber(J, 0);
    TRef tr = J->base[0];
    J->base[0] = lj_opt_narrow_tobit(J, tr);
    UNUSED(rd);
@@ -1266,6 +1275,7 @@ static void recff_bit_unary(jit_State* J, RecordFFData* rd)
 #if LJ_HASFFI
    if (recff_bit64_unary(J, rd)) return;
 #endif
+   recff_bit_checknumber(J, 0);
    J->base[0] = emitir(IRTI(rd->data), lj_opt_narrow_tobit(J, J->base[0]), 0);
 }
 
@@ -1279,11 +1289,14 @@ static void recff_bit_nary(jit_State* J, RecordFFData* rd)
       return;
 #endif
    {
+      recff_bit_checknumber(J, 0);
       TRef tr = lj_opt_narrow_tobit(J, J->base[0]);
       uint32_t ot = IRTI(rd->data);
       BCREG i;
-      for (i = 1; J->base[i] != 0; i++)
+      for (i = 1; J->base[i] != 0; i++) {
+         recff_bit_checknumber(J, i);
          tr = emitir(ot, tr, lj_opt_narrow_tobit(J, J->base[i]));
+      }
       J->base[0] = tr;
    }
 }
@@ -1298,6 +1311,8 @@ static void recff_bit_shift(jit_State* J, RecordFFData* rd)
       return;
 #endif
    {
+      recff_bit_checknumber(J, 0);
+      recff_bit_checknumber(J, 1);
       TRef tr = lj_opt_narrow_tobit(J, J->base[0]);
       TRef tsh = lj_opt_narrow_tobit(J, J->base[1]);
       IROp op = (IROp)rd->data;
