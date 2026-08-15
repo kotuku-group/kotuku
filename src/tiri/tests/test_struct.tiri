@@ -779,7 +779,7 @@ end
 
    assert(fields is array<str> { 'count', 'name', 'enabled' }, 'pairs() should preserve declaration order')
    assert(values[0] is 7 and values[1] is 'sample' and values[2] is 1, 'pairs() should return live field values')
-   assert(tostring(value).startsWith('IterableRecord: 0x'), 'tostring() should include the struct definition name')
+   assert(tostring(value) is 'IterableRecord', 'tostring() should return the struct definition name')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
