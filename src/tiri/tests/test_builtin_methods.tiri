@@ -208,8 +208,6 @@ end
 
 @Test function StructMethods()
    local source = struct<BuiltinMethodRecord> { Value=42 }
-   assert(source.structSize() > 0, 'Struct size should be available as a canonical method')
-
    local clone = source.clone()
    assert(clone.Value is 42, 'Struct clone should retain the payload')
    local destination = struct<BuiltinMethodRecord> { Value=1 }

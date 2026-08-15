@@ -32,6 +32,7 @@ static bool is_builtin_interface_namespace(uint32_t Hash)
       case kt::strhash("debug"):
       case kt::strhash("array"):
       case kt::strhash("range"):
+      case kt::strhash("struct"):
          return true;
       default:
          return false;

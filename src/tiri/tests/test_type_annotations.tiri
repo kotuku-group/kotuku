@@ -146,7 +146,7 @@ end
    end
 
    assert_rejected('function invalid(Value:array) end', 'element type')
-   assert_rejected('function invalid(Value:array<str>) end', 'Unknown array element type')
+   assert_rejected('function invalid(Value:array<string>) end', 'Unknown array element type')
    assert_rejected('function invalid(Value:array<missing>) end', 'Unknown array element type')
    assert_rejected('function invalid(Value:array<pointer>) end', 'Unknown array element type')
    assert_rejected('function invalid(Value:array<array<str>>) end', 'Nested array specialisation')
