@@ -587,6 +587,9 @@ void TypeAnalyser::pop_scope() {
       auto unused = this->scope_stack_.back().get_unused_variables();
       for (const auto& var : unused) {
          std::string_view name_view(strdata(var.name), var.name->len);
+         // Skip compiler-generated hidden bindings (e.g. \x1fmodfn:... module-function locals). Their names carry an
+         // internal encoding that must never surface in user-facing diagnostics.
+         if (not name_view.empty() and (name_view.front() IS '\x1f')) continue;
          if (var.is_parameter) {
             this->emit_tip(2, TipCategory::CodeQuality,
                std::format("Unused function parameter '{}'", name_view),
