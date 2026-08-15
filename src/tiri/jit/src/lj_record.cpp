@@ -3148,7 +3148,9 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
 
    switch (op) {
       case BC_UNM:
-         if (tref_isnumber_str(rc)) return lj_opt_narrow_unm(J, rc, rcv);
+         // Arithmetic does not coerce strings; string operands route to the metamethod path
+         // (mirroring lj_meta_arith), where they raise an arithmetic type error.
+         if (tref_isnumber(rc)) return lj_opt_narrow_unm(J, rc, rcv);
          ix->tab = rc;
          copyTV(J->L, &ix->tabv, rcv);
          return rec_mm_arith(J, ix, MM_unm);
@@ -3160,7 +3162,7 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
          copyTV(J->L, rbv, rcv);
          copyTV(J->L, rcv, rav);
          if (op IS BC_MODNV) {
-            if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+            if (tref_isnumber(rb) and tref_isnumber(rc))
                return lj_opt_narrow_mod(J, rb, rc, rbv, rcv);
             return rec_mm_arith(J, ix, MM_mod);
          }
@@ -3169,18 +3171,18 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
       case BC_ADDVN: case BC_SUBVN: case BC_MULVN: case BC_DIVVN:
       case BC_ADDVV: case BC_SUBVV: case BC_MULVV: case BC_DIVVV: {
          MMS mm = bcmode_mm(op);
-         if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+         if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_arith(J, rb, rc, rbv, rcv, (IROp)((int)mm - (int)MM_add + (int)IR_ADD));
          return rec_mm_arith(J, ix, mm);
       }
 
       case BC_MODVN: case BC_MODVV:
-         if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+         if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_mod(J, rb, rc, rbv, rcv);
          return rec_mm_arith(J, ix, MM_mod);
 
       case BC_POW:
-         if (tref_isnumber_str(rb) and tref_isnumber_str(rc))
+         if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_pow(J, rb, rc, rbv, rcv);
          return rec_mm_arith(J, ix, MM_pow);
 

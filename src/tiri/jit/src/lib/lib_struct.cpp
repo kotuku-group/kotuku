@@ -569,7 +569,7 @@ static int struct_pairs(lua_State *L)
 static int struct_tostring(lua_State *L)
 {
    auto value = lj_lib_checkstruct(L, 1);
-   lua_pushfstring(L, "%s: %p", value->def->Name.c_str(), value->data);
+   lua_pushstring(L, value->def->Name.c_str());
    return 1;
 }
 

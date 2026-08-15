@@ -61,7 +61,7 @@ function setFont(Face, Size)
 
    -- FONTSIZE MATCHES THE CAP HEIGHT WHEN * 0.75
    glSize.y = glText.y
-   glSize.height = -glText.fontSize * 0.75
+   glSize.height = -tonumber(glText.fontSize) * 0.75
 
    glNextLine.y = glText.y + metrics.lineSpacing
    glNextHeight.y = glText.y + metrics.lineSpacing - metrics.ascent

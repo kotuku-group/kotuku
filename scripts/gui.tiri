@@ -694,14 +694,14 @@ gui.sizing = {
 }
 
 gui.fonts = {
-   -- Use percentages for scalable sizes, where 100% is equivalent to the value of gui.interface.fontSize
+   -- Percentages are scaled against gui.interface.fontSize
    default  = { face='Noto Sans,Source Sans Pro', size='100%' },
    window   = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' }, -- For non-widget text
-   button   = { face='Noto Sans,Source Sans Pro', size='12' }, -- Text inside buttons
-   filesys  = { face='Inconsolata', size='12', style='medium' }, -- Text for files, folders
+   button   = { face='Noto Sans,Source Sans Pro', size=12 }, -- Text inside buttons
+   filesys  = { face='Inconsolata', size=12, style='medium' }, -- Text for files, folders
    icon     = { face='Noto Sans,Source Sans Pro', size='100%' }, -- Labeling for icons
-   menu     = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Menu & dropdown item text
-   page     = { face='Noto Sans,Source Sans Pro', size='12' }, -- Multiple lines of text
+   menu     = { face='Noto Sans,Source Sans Pro', style='medium', size=12 }, -- Menu & dropdown item text
+   page     = { face='Noto Sans,Source Sans Pro', size=12 }, -- Multiple lines of text
    titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text
    small    = { face='Tiny', size='60%' }, -- Recommended text for small sizes
    large    = { face='Noto Sans,Source Sans Pro', size='130%' }, -- Recommended text for headers

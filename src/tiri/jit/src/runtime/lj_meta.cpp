@@ -346,7 +346,9 @@ static cTValue * str2num(cTValue *o, TValue *n)
 {
    if (tvisnum(o)) return o;
    else if (tvisint(o)) return (setnumV(n, (lua_Number)intV(o)), n);
-   else if (tvisstr(o) and lj_strscan_num(strV(o), n)) return n;
+   // String-to-number coercion is intentionally not performed for arithmetic; callers must use
+   // tonumber() explicitly, e.g. 1 + tonumber('2').  Non-numeric operands fall through to the
+   // metamethod path and, failing that, raise an arithmetic type error.
    else return nullptr;
 }
 
