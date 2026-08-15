@@ -366,7 +366,7 @@ extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept
 extern "C" void lj_context_begin_block(lua_State *L, uint32_t Slot, uint32_t BlockIndex)
 {
    TValue *reference = L->base + Slot;
-   if (not tvistab(reference)) lj_err_argt(L, int(Slot) + 1, LUA_TTABLE);
+   if (not tvistab(reference)) lj_err_msgv(L, ErrMsg::BADTYPE, "table", lj_typename(reference));
 
    GCfunc *function = frame_func(L->base - 1);
    lj_assertL(isluafunc(function), "temporary context block has no Lua owner");
@@ -753,7 +753,7 @@ extern lua_State * lua_newstate(lua_Alloc allocf, void* allocd)
    L->gct = ~LJ_TSTRUCT;  // Tag shared with GCstruct; this is the only lua_State per interpreter.
    L->marked = LJ_GC_WHITE0 | LJ_GC_FIXED | LJ_GC_SFIXED;  //  Prevent free.
    L->dummy_ffid = FF_C;
-   setnilV(&L->close_err);  // Initialize __close error to nil
+   setnilV(&L->pending_close_error);
    L->try_handler_pc = nullptr;
    setmref(L->glref, g);
    g->gc.currentwhite = LJ_GC_WHITE0 | LJ_GC_FIXED;

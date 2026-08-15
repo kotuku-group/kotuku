@@ -19,7 +19,7 @@
 // If is_thunk is true, validates thunk-specific constraints.
 
 ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
-   const Token &FunctionToken, bool IsThunk, GCstr *FunctionName)
+   const Token &FunctionToken, bool IsThunk, GCstr *FunctionName, FunctionCallableKind CallableKind)
 {
    auto params = this->parse_parameter_list(false);
    if (not params.ok()) return ParserResult<ExprNodePtr>::failure(params.error_ref());
@@ -43,7 +43,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
 
    this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
    ExprNodePtr node = make_function_expr(FunctionToken.span(), std::move(params.value_ref().parameters),
-      params.value_ref().is_vararg, std::move(body.value_ref()), IsThunk, return_types);
+      params.value_ref().is_vararg, std::move(body.value_ref()), IsThunk, return_types, CallableKind);
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
 
@@ -100,7 +100,7 @@ ParserResult<ExprNodeList> AstBuilder::parse_array_initialiser()
       // Reject keyed syntax at the offending field rather than at the array type token.  Lookahead is limited to the
       // start of the field so that buffered interpolation tokens are never disturbed.
 
-      const bool record_key = current.is_identifier_or_future_reserved() and
+      const bool record_key = (current.is_identifier_or_future_reserved() or current.kind() IS TokenKind::Method) and
          this->ctx.tokens().peek(1).kind() IS TokenKind::Equals;
 
       if (record_key or current.kind() IS TokenKind::LeftBracket) {
@@ -595,7 +595,7 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
          field.key = std::move(key.value_ref());
          field.value = std::move(value.value_ref());
       }
-      else if (current.is_identifier_or_future_reserved() and
+      else if ((current.is_identifier_or_future_reserved() or current.kind() IS TokenKind::Method) and
          this->ctx.tokens().peek(1).kind() IS TokenKind::Equals) {
          this->ctx.tokens().advance();
          this->ctx.tokens().advance();
@@ -777,7 +777,7 @@ ParserResult<AstBuilder::ResultFilterInfo> AstBuilder::parse_result_filter_patte
 }
 
 //********************************************************************************************************************
-// Parses result filter expressions: [_*]func(), [*_]obj:method(), etc.
+// Parses result filter expressions: [_*]func(), [*_]obj.method(), etc.
 // This syntax allows selective extraction of return values from multi-value function calls.
 
 ParserResult<ExprNodePtr> AstBuilder::parse_result_filter_expr(const Token &StartToken)

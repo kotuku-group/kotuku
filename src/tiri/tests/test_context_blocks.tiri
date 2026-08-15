@@ -8,6 +8,23 @@ function enforce_hotpath() end
    assert(value.using is 'member', 'The using keyword should remain available as a member name')
 end
 
+@Test function NonTableReferenceReportsItsActualType()
+   local value:any = 42
+   local failed = false
+
+   try
+      using value do end
+   except e
+      failed = true
+      assert(e.message.find('table expected, got number') != nil,
+         'A non-table using reference should report its actual type: ' .. e.message)
+      assert(e.message.find('Bad argument') is nil,
+         'A using diagnostic should not expose the VM helper register as a function argument: ' .. e.message)
+   end
+
+   assert(failed, 'A using block should reject a non-table reference')
+end
+
 @Test function TemporaryContextDoesNotDesignateAndEvaluatesReferenceOnce()
    local lookups = 0
    local values = { { name = 'temporary' } }

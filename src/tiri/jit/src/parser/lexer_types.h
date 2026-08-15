@@ -60,6 +60,7 @@ struct TokenDefinition {
    TOKEN_DEF(in,           "in",       TKF_RESERVED) \
    TOKEN_DEF(is,           "is",       TKF_RESERVED) \
    TOKEN_DEF(local,        "local",    TKF_RESERVED | TKF_STATEMENT_START) \
+   TOKEN_DEF(method,       "method",   TKF_RESERVED) \
    TOKEN_DEF(namespace,    "namespace", TKF_RESERVED | TKF_STATEMENT_START) \
    TOKEN_DEF(nil,          "nil",      TKF_RESERVED | TKF_CAN_END_RANGE_EXPRESSION | TKF_LITERAL) \
    TOKEN_DEF(not,          "not",      TKF_RESERVED) \

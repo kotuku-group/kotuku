@@ -530,10 +530,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       }
 
       auto call_base = BCReg(this->func_state.free_reg());
-      bcemit_builtin_callable(
-         &this->func_state, builtin_callable_id(FastFunc::array_append), call_base.raw());
-      RegisterAllocator call_allocator(&this->func_state);
-      call_allocator.reserve(BCReg(2));
+      bcemit_builtin_call_frame(
+         &this->func_state, builtin_callable_id(FastFunc::array_append), call_base);
 
       this->materialise_to_next_reg(working, "array append compound receiver");
 

@@ -180,13 +180,13 @@ end
 end
 
 @Test function StructAnnotationResolvesToDeclaration()
-   doc = makeDoc('struct User\n   Name: string\nend\n\nfunction describe(Person: struct<User>)\nend\n')
+   doc = makeDoc('struct User\n   Name: str\nend\n\nfunction describe(Person: struct<User>)\nend\n')
    locations = resolveDefinition(doc, { line = 4, character = 34 })
    assertLocationLine(locations, 0, 'struct<User> annotation should resolve to the struct declaration')
 end
 
 @Test function StructFieldAccessResolvesToFieldLine()
-   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n\nu = struct.new(\'User\')\nprint(u.Age)\n')
+   doc = makeDoc('struct User\n   Name: str\n   Age: int\nend\n\nu = struct.new(\'User\')\nprint(u.Age)\n')
    locations = resolveDefinition(doc, { line = 6, character = 9 })
    assertLocationLine(locations, 2, 'Field access should resolve to the field declaration line')
 end
@@ -204,7 +204,7 @@ end
 end
 
 @Test function EndTerminatedStructDeclarationResolves()
-   doc = makeDoc('struct User\n   Name: string\nend\n\nfunction describe(Person: struct<User>)\nend\n')
+   doc = makeDoc('struct User\n   Name: str\nend\n\nfunction describe(Person: struct<User>)\nend\n')
    locations = resolveDefinition(doc, { line = 4, character = 34 })
    assertLocationLine(locations, 0, 'An end-terminated struct declaration should resolve')
 end

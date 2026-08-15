@@ -182,7 +182,8 @@ enum class NameResolution : uint8_t {
    Local,
    Upvalue,
    Global,
-   Environment
+   Environment,
+   BuiltinCallable
 };
 
 enum class TableFieldKind : uint8_t {
@@ -428,6 +429,7 @@ struct CallExprPayload {
    ExprNodeList arguments;
    CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic;
    bool forwards_multret = false;
+   BuiltinCallableID compiler_callable = BuiltinCallableID::Invalid;
    struct BuiltinMethodCall {
       const fprototype *prototype = nullptr;
       BuiltinCallableID callable = BuiltinCallableID::Invalid;
@@ -563,6 +565,14 @@ struct TableExprPayload {
    ~TableExprPayload();
 };
 
+// The calling convention of a Tiri function literal.  A context-first callable consumes a required table as its
+// first ABI argument, but deliberately does not publish a matching source parameter.
+
+enum class FunctionCallableKind : uint8_t {
+   Ordinary,
+   ContextFirstArgument
+};
+
 struct FunctionExprPayload {
    FunctionExprPayload() = default;
    FunctionExprPayload(const FunctionExprPayload&) = delete;
@@ -572,6 +582,7 @@ struct FunctionExprPayload {
    std::vector<FunctionParameter> parameters;
    bool is_vararg = false;
    bool is_thunk = false;              // Marks function as thunk
+   FunctionCallableKind callable_kind = FunctionCallableKind::Ordinary;
    mutable FunctionReturnTypes return_types{}; // Declared, validated inferred or advisory result metadata
    mutable StaticCallableHandle callable = 0;
    std::unique_ptr<BlockStmt> body;
@@ -1148,14 +1159,16 @@ ExprNodePtr make_safe_index_expr(SourceSpan span, ExprNodePtr table, ExprNodePtr
 ExprNodePtr make_result_filter_expr(SourceSpan span, ExprNodePtr expression, uint64_t keep_mask, uint8_t explicit_count, bool trailing_keep);
 ExprNodePtr make_table_expr(SourceSpan span, std::vector<TableField> fields, bool has_array_part);
 ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> Parameters, bool IsVararg,
-   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {});
+   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {},
+   FunctionCallableKind CallableKind = FunctionCallableKind::Ordinary);
 ExprNodePtr make_deferred_expr(SourceSpan span, ExprNodePtr inner, TiriType type = TiriType::Unknown, bool type_explicit = false);
 ExprNodePtr make_range_expr(SourceSpan span, ExprNodePtr start, ExprNodePtr stop, bool inclusive,
    ExprNodePtr step = nullptr);
 ExprNodePtr make_choose_expr(SourceSpan span, ExprNodePtr scrutinee, std::vector<ChooseCase> cases, size_t inferred_arity = 0);
 ExprNodePtr make_choose_expr_tuple(SourceSpan span, ExprNodeList scrutinee_tuple, std::vector<ChooseCase> cases);
 std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> Parameters, bool IsVararg,
-   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {});
+   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {},
+   FunctionCallableKind CallableKind = FunctionCallableKind::Ordinary);
 std::unique_ptr<BlockStmt> make_block(SourceSpan span, StmtNodeList statements);
 StmtNodePtr make_assignment_stmt(SourceSpan span, AssignmentOperator op, ExprNodeList targets, ExprNodeList values);
 StmtNodePtr make_local_decl_stmt(SourceSpan span, std::vector<Identifier> names, ExprNodeList values);

@@ -113,34 +113,34 @@ end
 -- Method Dispatch
 
 function dispatchMethod(Self:table, Message:table, State:table)
-   method = Message.method
+   request_method = Message.method
 
-   if not method then
+   if not request_method then
       -- This is a response, not a request - ignore for now
       logVerbose(Self, 'Received response message (ignored)')
       return nil
    end
 
-   handler = Self._handlers[method]
+   handler = Self._handlers[request_method]
 
    if handler then
-      logVerbose(Self, 'Dispatching method: ' .. method)
+      logVerbose(Self, 'Dispatching method: ' .. request_method)
 
       local result
       try
          return handler(Message, State)
       except ex
-         logMessage(Self, f'Handler error for {method}: {ex.message}')
+         logMessage(Self, f'Handler error for {request_method}: {ex.message}')
          if Message.id then
             return makeErrorResponse(Message.id, LSP_ERROR.INTERNAL_ERROR, ex.message)
          end
          return nil
       end
    else
-      logWarning(Self, 'Unknown method: ' .. method)
+      logWarning(Self, 'Unknown method: ' .. request_method)
       -- Unknown method: return error for requests, ignore notifications
       if Message.id then
-         return makeErrorResponse(Message.id, LSP_ERROR.METHOD_NOT_FOUND, f'Method not found: {method}')
+         return makeErrorResponse(Message.id, LSP_ERROR.METHOD_NOT_FOUND, f'Method not found: {request_method}')
       end
       return nil
    end

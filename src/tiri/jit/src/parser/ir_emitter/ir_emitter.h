@@ -36,6 +36,20 @@ struct BlockBinding {
 
 //********************************************************************************************************************
 
+enum class ContextSourceKind : uint8_t {
+   Inherited,
+   UsingReference,
+   MethodArgument,
+   ContextualArgument
+};
+
+struct ContextSource {
+   BCReg slot = BCReg(0);
+   ContextSourceKind kind = ContextSourceKind::Inherited;
+};
+
+//********************************************************************************************************************
+
 class LocalBindingTable {
 public:
    inline LocalBindingTable() = default;
@@ -150,6 +164,22 @@ private:
    friend struct LoopStackGuard;
    friend class NilShortCircuitGuard;
 
+   struct ContextSourceScope {
+      ContextSourceScope() = default;
+      ContextSourceScope(const ContextSourceScope &) = delete;
+      ContextSourceScope& operator=(const ContextSourceScope &) = delete;
+      ContextSourceScope(ContextSourceScope &&Other) noexcept;
+      ContextSourceScope& operator=(ContextSourceScope &&Other) noexcept;
+      ~ContextSourceScope();
+
+      void activate(IrEmitter *Owner, ContextSource Source);
+      void release();
+
+   private:
+      IrEmitter *emitter = nullptr;
+      bool active = false;
+   };
+
    ParserContext &ctx;
    FuncState &func_state;
    LexState &lex_state;
@@ -160,6 +190,7 @@ private:
    ConstantEvaluator constant_evaluator;
    StaticCallableHandle current_callable = 0;
    bool is_root_chunk = true;
+   std::vector<ContextSource> context_sources;
 
    ParserResult<IrEmitUnit> emit_block(const BlockStmt& block, FuncScopeFlag flags = FuncScopeFlag::None);
    ParserResult<IrEmitUnit> emit_block_with_bindings(const BlockStmt& block, FuncScopeFlag flags, std::span<const BlockBinding> bindings);
@@ -250,6 +281,11 @@ private:
    ParserResult<ExpDesc> unsupported_expr(AstNodeKind kind, const SourceSpan& span);
 
    [[nodiscard]] std::optional<CompileTimeValue> resolve_compile_time_value(const NameRef &Reference) const;
+   [[nodiscard]] bool context_region_uses_context(const BlockStmt &Block) const;
+   [[nodiscard]] bool expression_uses_context(const ExprNode &Expression) const;
+   [[nodiscard]] std::optional<BCReg> allocate_inherited_context_cache(const BlockStmt &Block);
+   void push_context_source(ContextSource Source);
+   void pop_context_source();
    inline std::optional<BCReg> resolve_local(GCstr *Symbol) const {
       const LocalBindingEntry *entry = this->binding_table.resolve(Symbol);
       return entry ? std::optional<BCReg>(entry->slot) : std::nullopt;

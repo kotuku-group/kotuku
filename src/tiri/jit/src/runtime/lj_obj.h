@@ -670,7 +670,8 @@ enum class ProtoSignatureFlag : uint8_t {
    ParameterVariadic = 1 << 0,
    ResultVariadic = 1 << 1,
    ExplicitResults = 1 << 2,
-   DynamicResults = 1 << 3
+   DynamicResults = 1 << 3,
+   ContextFirstArgument = 1 << 4
 };
 
 inline constexpr uint8_t PROTO_TYPE_NULLABLE = 1 << 0;
@@ -1074,6 +1075,13 @@ typedef union GCfunc {
 
 [[nodiscard]] inline GCproto* funcproto(const GCfunc* fn) noexcept {
    return check_exp(isluafunc(fn), (GCproto*)(mref<char>(fn->l.pc) - sizeof(GCproto)));
+}
+
+[[nodiscard]] inline bool func_context_first_argument(const GCfunc *Function) noexcept
+{
+   if (not Function or not isluafunc(Function)) return false;
+   const ProtoSignature *signature = proto_signature(funcproto(Function));
+   return signature and (signature->flags & proto_signature_flag(ProtoSignatureFlag::ContextFirstArgument));
 }
 
 [[nodiscard]] constexpr inline size_t sizeCfunc(MSize n) noexcept {
@@ -1642,7 +1650,9 @@ struct lua_State {
    ParserDiagnostics *parser_diagnostics; // Stores ParserDiagnostics* during parsing errors
    TipEmitter *parser_tips;               // Stores TipEmitter* during parsing for code hints
    ParserSymbolCollection *parser_symbols; // Stores parser symbol metadata for LSP/documentation tooling
-   TValue close_err;  // Current error for __close handlers (nil if no error)
+   // Protected error value for the __close handler currently being invoked. Nested unwinding saves and restores this
+   // field, and the collector treats it as a thread-local root. It is never mirrored through the public environment.
+   TValue pending_close_error;
    // Try-except exception handling runtime state (lazily allocated)
    TryFrameStack try_stack;      // Exception frame stack (nullptr until first BC_TRYENTER)
    const BCIns   *try_handler_pc; // Handler PC for error re-entry (set during unwind)
@@ -1655,7 +1665,7 @@ struct lua_State {
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
 
    struct ContextFrame {
-      enum class OwnerKind : uint8_t { Call, Block };
+      enum class OwnerKind : uint8_t { Call, Block, Callback };
       GCRef table;                 // GC-visible context override owned by this state.
       ptrdiff_t owner_base = 0;    // Stack-relative activation base; survives stack relocation.
       OwnerKind owner_kind = OwnerKind::Call;

@@ -399,7 +399,7 @@ gui.columnView = function(Options):table
 
          col.x = x
          col.minWidth = x + MARGIN
-         col.px_width = col.width * View.fontSize * (4 / 3)
+         col.px_width = col.width * tonumber(View.fontSize) * (4 / 3)
 
          if not col.bannerVP then
             -- Each banner viewport hosts the title and sorting icon

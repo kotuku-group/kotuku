@@ -4,6 +4,8 @@
 #define lj_debug_c
 #define LUA_CORE
 
+#include <cstring>
+
 #include "lj_obj.h"
 #include "lj_ff.h"
 #include "lj_err.h"
@@ -522,6 +524,10 @@ extern CSTRING lua_setlocal(lua_State *L, const lua_Debug *ar, int n)
 {
    CSTRING name = nullptr;
    TValue *o = debug_localname(L, ar, &name, n);
+   if (name and strcmp(name, "(context cache)") IS 0) {
+      name = nullptr;
+      o = nullptr;
+   }
    if (name) copyTV(L, o, L->top - 1);
    L->top--;
    return name;

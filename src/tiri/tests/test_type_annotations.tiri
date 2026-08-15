@@ -57,7 +57,6 @@ end
    assert_compiles("B:bool")
    assert_compiles("T:table")
    assert_compiles("F:func")
-   assert_compiles("Function:function")
    assert_compiles("A:any")
    assert_compiles("NilVal:nil")
    assert_compiles("StructVal:struct")

@@ -26,6 +26,7 @@ Examples:
 #include "lj_array.h"
 #include "lj_str.h"
 #include "lj_gc.h"
+#include "lj_ff.h"
 #include "lj_proto_registry.h"
 #include "defs.h"
 
@@ -187,7 +188,7 @@ static ERR match_none(int Index, std::vector<std::string_view> &Captures, size_t
 // Constructor: regex.new(pattern [, flags])
 // Will throw if compilation of the pattern fails.
 
-static int regex_new(lua_State *Lua)
+int tiri_regex_new(lua_State *Lua)
 {
    kt::Log log(__FUNCTION__);
 
@@ -607,7 +608,6 @@ static int regex_tostring(lua_State *Lua)
 void register_regex_class(lua_State *Lua)
 {
    static const struct luaL_Reg functions[] = {
-      { "new", regex_new },
       { "escape", regex_escape },
       { nullptr, nullptr }
    };
@@ -621,6 +621,9 @@ void register_regex_class(lua_State *Lua)
 
    kt::Log(__FUNCTION__).trace("Registering regex interface");
 
+   luaopen_regex_intrinsic(Lua);
+   lua_pop(Lua, 1);
+
    // Create metatable
    luaL_newmetatable(Lua, "Tiri.regex");
    lua_pushstring(Lua, "Tiri.regex");
@@ -632,6 +635,14 @@ void register_regex_class(lua_State *Lua)
 
    // Create regex module
    luaL_openlib(Lua, "regex", functions, 0);
+
+   GCfunc *constructor = lj_builtin_callable(Lua, builtin_callable_id(FastFunc::regex_new));
+   if (not constructor) {
+      luaL_error(Lua, ERR::Init, "Canonical regex.new constructor is unavailable");
+      return;
+   }
+   setfuncV(Lua, Lua->top++, constructor);
+   lua_setfield(Lua, -2, "new");
 
    // Add flag constants to regex module.  These match the REGEX_* flags but making them available
    // in this way means that scripts don't need to include the regex module.

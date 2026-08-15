@@ -1522,6 +1522,54 @@ static bool test_forward_declaration_signature_validation(kt::Log &Log)
 
    lua_pop(L, 1);
 
+   constexpr std::string_view matching_local_source =
+      "function local_declared(Name:str, Options:table, ...):<str, num> end\n"
+      "function local_declared(Value:str, Settings:table, ...):<str, num>\n"
+      "   return Value, 1\n"
+      "end\n";
+
+   if (lua_load(L, matching_local_source, "matching-local-forward-signature")) {
+      Log.error("matching local forward declaration was rejected: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view mismatched_local_source =
+      "function local_klass(Name:str, Options:table):str end\n"
+      "function local_klass(Name:num, Options:table):num\n"
+      "   return ''\n"
+      "end\n";
+
+   if (lua_load(L, mismatched_local_source, "mismatched-local-forward-signature") IS 0) {
+      Log.error("mismatched local forward declaration was accepted");
+      lua_pop(L, 1);
+      return false;
+   }
+
+   message = lua_tostring(L, -1);
+   if (message.find("signature for local function 'local_klass' does not match its forward declaration") IS
+       std::string_view::npos or message.find("parameter 1 has type 'num', expected 'str'") IS
+       std::string_view::npos) {
+      Log.error("mismatched local forward declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+
+   lua_pop(L, 1);
+
+   constexpr std::string_view nested_local_source =
+      "function local_scoped(Value:num):num end\n"
+      "function outer()\n"
+      "   function local_scoped(Value:str):str return Value end\n"
+      "end\n"
+      "function local_scoped(Value:num):num return Value end\n";
+
+   if (lua_load(L, nested_local_source, "nested-local-forward-signature")) {
+      Log.error("nested local function inherited an outer forward declaration: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
    constexpr std::string_view conditional_mismatch_source =
       "global function routed(Value:num) end\n"
       "if true then\n"
@@ -1574,7 +1622,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // 0x86 is included deliberately: Phase 5 removed the compiler-private binder referenced by those chunks and
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
-   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86) }) {
+   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -2030,6 +2078,7 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
+   luaL_openlibs(L);
    constexpr std::string_view source =
       "extern obj\n"
       "extern array\n"
@@ -3330,187 +3379,6 @@ static bool test_module_definition_ownership(kt::Log &Log)
 }
 
 //********************************************************************************************************************
-// Phase 3: portable prototype dependency descriptors.
-//
-// Verifies that a compilation unit's module declarations are recorded as canonical names on its prototype, that the
-// names deduplicate across aliases, that a dependency with no referenced function is retained, and that the whole
-// block survives a bytecode round trip in a fresh state.
-
-static bool test_module_dependency_descriptors(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *L = state.get();
-   luaL_openlibs(L);
-   register_module_class(L);
-   lua_protect_globals(L);
-
-   // 'core' is referenced through two aliases and 'display' is declared without being referenced, so the descriptors
-   // must contain exactly two modules, one carrying a single function and the other none.
-
-   constexpr std::string_view source =
-      "module core as mC\n"
-      "module core as mCore\n"
-      "module display as mD\n"
-      "local a = mC.PreciseTime()\n"
-      "local b = mCore.PreciseTime()\n"
-      "return a + b\n";
-
-   if (lua_load(L, source, "dependency-descriptors")) {
-      Log.error("failed to compile the descriptor fixture: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   GCproto *proto = funcproto(funcV(L->top - 1));
-   auto table = proto_dependencies(proto);
-   if (not table) {
-      Log.error("a unit declaring modules produced no dependency descriptors");
-      return false;
-   }
-
-   if (table->version != PROTO_DEPENDENCY_VERSION) {
-      Log.error("descriptor version is %d, expected %d", int(table->version), int(PROTO_DEPENDENCY_VERSION));
-      return false;
-   }
-
-   if (table->dependency_count != 2) {
-      Log.error("two aliases of one module produced %d dependencies, expected 2",
-         int(table->dependency_count));
-      return false;
-   }
-
-   if (table->function_count != 1) {
-      Log.error("one deduplicated function reference produced %d entries, expected 1",
-         int(table->function_count));
-      return false;
-   }
-
-   auto dependencies = proto_dependency_list(table);
-   auto functions = proto_dependency_functions(table);
-
-   bool saw_core = false, saw_display = false;
-   for (uint32_t i = 0; i < table->dependency_count; ++i) {
-      GCstr *name = gco_to_string(gcref(dependencies[i].name));
-      std::string_view view(strdata(name), name->len);
-
-      if (kt::iequals(view, "core")) {
-         saw_core = true;
-         if (dependencies[i].function_count != 1) {
-            Log.error("the core dependency records %d functions, expected 1",
-               int(dependencies[i].function_count));
-            return false;
-         }
-         GCstr *function = gco_to_string(gcref(functions[dependencies[i].first_function].name));
-         if (not kt::iequals(std::string_view(strdata(function), function->len), "PreciseTime")) {
-            Log.error("the recorded function name is '%.*s', expected PreciseTime",
-               int(function->len), strdata(function));
-            return false;
-         }
-      }
-      else if (kt::iequals(view, "display")) {
-         saw_display = true;
-         if (dependencies[i].function_count != 0) {
-            Log.error("an unreferenced declaration recorded %d functions, expected 0",
-               int(dependencies[i].function_count));
-            return false;
-         }
-      }
-      else {
-         Log.error("unexpected dependency '%.*s'", int(name->len), strdata(name));
-         return false;
-      }
-   }
-
-   if (not saw_core or not saw_display) {
-      Log.error("descriptors are missing core (%d) or display (%d)", int(saw_core), int(saw_display));
-      return false;
-   }
-
-   // Round trip through a dump.  The reload happens in a second state, so the rebuilt descriptors cannot be sharing
-   // anything with the originals; only the persisted names connect them.
-
-   std::string dump;
-   if (lua_dump(L, bytecode_writer, &dump) != 0) {
-      Log.error("failed to dump the descriptor fixture");
-      return false;
-   }
-   lua_pop(L, 1);
-
-   LuaStateHolder reload_state;
-   lua_State *R = reload_state.get();
-   luaL_openlibs(R);
-   register_module_class(R);
-   lua_protect_globals(R);
-   if (lua_load(R, std::string_view(dump.data(), dump.size()), "dependency-reload")) {
-      Log.error("failed to reload the descriptor fixture: %s", lua_tostring(R, -1));
-      return false;
-   }
-
-   auto reloaded = proto_dependencies(funcproto(funcV(R->top - 1)));
-   if (not reloaded) {
-      Log.error("the reloaded prototype lost its dependency descriptors");
-      return false;
-   }
-
-   if (reloaded->dependency_count != table->dependency_count or
-       reloaded->function_count != table->function_count) {
-      Log.error("the reloaded descriptors have %d/%d entries, expected %d/%d",
-         int(reloaded->dependency_count), int(reloaded->function_count),
-         int(table->dependency_count), int(table->function_count));
-      return false;
-   }
-
-   auto reloaded_dependencies = proto_dependency_list(reloaded);
-   for (uint32_t i = 0; i < reloaded->dependency_count; ++i) {
-      GCstr *original = gco_to_string(gcref(dependencies[i].name));
-      GCstr *restored = gco_to_string(gcref(reloaded_dependencies[i].name));
-      if (not kt::iequals(std::string_view(strdata(original), original->len),
-            std::string_view(strdata(restored), restored->len))) {
-         Log.error("dependency %d reloaded as '%.*s', expected '%.*s'", int(i),
-            int(restored->len), strdata(restored), int(original->len), strdata(original));
-         return false;
-      }
-      if (reloaded_dependencies[i].first_function != dependencies[i].first_function or
-          reloaded_dependencies[i].function_count != dependencies[i].function_count) {
-         Log.error("dependency %d reloaded with a different function range", int(i));
-         return false;
-      }
-   }
-
-   // The dumped chunk must still run in the fresh state, which exercises resolution of the reloaded names against
-   // the global registry rather than anything carried over from compilation.
-
-   if (lua_pcall(R, 0, 1, 0)) {
-      Log.error("the reloaded chunk failed to execute: %s", lua_tostring(R, -1));
-      return false;
-   }
-   if (not lua_isnumber(R, -1)) {
-      Log.error("the reloaded chunk did not produce a numeric result");
-      return false;
-   }
-   lua_pop(R, 1);
-
-   // A prototype without module declarations must carry no descriptor block at all, so that ordinary functions pay
-   // nothing for the feature.
-
-   LuaStateHolder plain_state;
-   lua_State *P = plain_state.get();
-   luaL_openlibs(P);
-   register_module_class(P);
-   lua_protect_globals(P);
-   if (lua_load(P, std::string_view("return 1"), "dependency-none")) {
-      Log.error("failed to compile the descriptor-free fixture: %s", lua_tostring(P, -1));
-      return false;
-   }
-   if (proto_dependencies(funcproto(funcV(P->top - 1)))) {
-      Log.error("a unit with no module declaration produced dependency descriptors");
-      return false;
-   }
-   lua_pop(P, 1);
-
-   return true;
-}
-
-//********************************************************************************************************************
 // Corrupt dependency metadata must be rejected rather than resolved.  The fixture mutates a valid dump, so every
 // rejection below is attributable to the dependency block and not to an unrelated inconsistency.
 
@@ -3654,130 +3522,6 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
 }
 
 //********************************************************************************************************************
-// Executing a unit's dependency declaration must populate the prototype's resolved sidecar, and the callables bound
-// into the generated locals must be exactly the records the sidecar holds.
-//
-// BC_MODACT serves its bindings from the sidecar rather than repeating module and function lookups.  Comparing the
-// bound upvalue against the sidecar slot makes the descriptor path observable independently of call behaviour.
-
-static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *L = state.get();
-   luaL_openlibs(L);
-   register_module_class(L);
-   lua_protect_globals(L);
-
-   // Two distinct functions from one module, plus a declaration that references none.  The unreferenced module must
-   // still resolve, and the referenced functions must occupy consecutive sidecar slots in declaration order.
-
-   constexpr std::string_view source =
-      "module core as mC\n"
-      "module display as mD\n"
-      "local a = mC.PreciseTime\n"
-      "local b = mC.GetErrorMsg\n"
-      "return a, b\n";
-
-   if (lua_load(L, source, "dependency-activation")) {
-      Log.error("failed to compile the activation fixture: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   GCproto *proto = funcproto(funcV(L->top - 1));
-
-   if (proto->resolved_dependencies) {
-      Log.error("the sidecar was populated before the chunk executed");
-      return false;
-   }
-
-   // lua_pcall() consumes the chunk, so retain a copy for the re-activation check below.
-
-   lua_pushvalue(L, -1);
-
-   if (lua_pcall(L, 0, 2, 0)) {
-      Log.error("the activation fixture failed to execute: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   if (not proto->resolved_dependencies) {
-      Log.error("executing a dependency declaration left the sidecar unresolved");
-      return false;
-   }
-
-   auto table = proto_dependencies(proto);
-   if (not table or table->function_count != 2) {
-      Log.error("expected two resolved function slots, found %d", table ? int(table->function_count) : -1);
-      return false;
-   }
-
-   // Every referenced function slot must hold a record, and every declaration must be marked activated even when it
-   // references no function.
-
-   std::array<const void *, 2> resolved = { };
-   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
-      resolved[slot] = proto_dependency_callable(proto, slot);
-      if (not resolved[slot]) {
-         Log.error("sidecar slot %d is empty after activation", int(slot));
-         return false;
-      }
-   }
-   if (not proto->resolved_dependency_states or proto->resolved_dependency_count != table->dependency_count) {
-      Log.error("dependency activation state does not match the descriptor table");
-      return false;
-   }
-   for (uint32_t dependency = 0; dependency < table->dependency_count; ++dependency) {
-      if (not proto->resolved_dependency_states[dependency]) {
-         Log.error("dependency %d was not marked activated", int(dependency));
-         return false;
-      }
-   }
-
-   // The returned values are the generated bindings.  Each is a C closure whose single upvalue is the light userdata
-   // pointing at the callable record, so it can be compared directly against the sidecar.
-
-   for (int index = 0; index < 2; ++index) {
-      int stack_slot = index - 2; // -2 is the first result, -1 the second
-
-      if (not lua_iscfunction(L, stack_slot)) {
-         Log.error("binding %d is not a C closure", index);
-         return false;
-      }
-
-      if (not lua_getupvalue(L, stack_slot, 1)) {
-         Log.error("binding %d exposes no callable upvalue", index);
-         return false;
-      }
-
-      const void *bound = lua_topointer(L, -1);
-      lua_pop(L, 1);
-
-      const void *expected = proto_dependency_callable(proto, uint32_t(index));
-      if (bound != expected) {
-         Log.error("binding %d holds %p but sidecar slot %d holds %p; the adapter is not serving from the sidecar",
-            index, bound, index, expected);
-         return false;
-      }
-   }
-
-   lua_pop(L, 2); // Discard the two bindings, leaving the retained chunk on top.
-
-   // Re-executing the chunk must preserve the resolved sidecar and simply rebuild closures from its stable records.
-
-   if (lua_pcall(L, 0, 2, 0)) {
-      Log.error("re-executing the activation fixture failed: %s", lua_tostring(L, -1));
-      return false;
-   }
-   lua_pop(L, 2);
-
-   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
-      if (proto_dependency_callable(proto, slot) != resolved[slot]) {
-         Log.error("re-activation replaced resolved sidecar slot %d", int(slot));
-         return false;
-      }
-   }
-
-   return true;
-}
 
 static bool test_module_registry(kt::Log &Log)
 {
@@ -3785,8 +3529,6 @@ static bool test_module_registry(kt::Log &Log)
       test_module_registry_shared_ordinal(Log) and
       test_module_registry_concurrency(Log) and
       test_module_definition_ownership(Log) and
-      test_module_dependency_descriptors(Log) and
-      test_module_dependency_activation_uses_sidecar(Log) and
       test_module_dependency_corruption_rejected(Log);
 }
 
@@ -4825,6 +4567,76 @@ static bool test_current_context_materialisation_bytecode(kt::Log &Log)
       return false;
    }
 
+   error.clear();
+   auto repeated = compile_snapshot(L,
+      "function repeated():num return &value + &value + &value end\n", true, error);
+   if (not repeated or count_opcode_tree(*repeated, BC_CTXGET) != 1 or
+       count_opcode_tree(*repeated, BC_TGETS) != 3) {
+      Log.error("repeated inherited context access did not reuse one cache register: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto context_free = compile_snapshot(L, "function plain():num return 1 end\n", true, error);
+   if (not context_free or count_opcode_tree(*context_free, BC_CTXGET) != 0) {
+      Log.error("a function without context access acquired an unnecessary cache: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto using_block = compile_snapshot(L,
+      "local receiver = { value = 1 }\n"
+      "using receiver do return &value + &value end\n", true, error);
+   if (not using_block or count_opcode_tree(*using_block, BC_CTXGET) != 0 or
+       count_opcode_tree(*using_block, BC_TGETS) != 2) {
+      Log.error("direct context access in a using block did not use its retained reference: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto using_closure = compile_snapshot(L,
+      "local receiver = { value = 1 }\n"
+      "using receiver do local read = function():num return &value end return read() end\n", true, error);
+   if (not using_closure or count_opcode_tree(*using_closure, BC_CTXGET) != 1 or
+       count_opcode_tree(*using_closure, BC_UGET) != 0) {
+      Log.error("a function declared in using did not acquire an isolated inherited cache: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto contextual_pipe = compile_snapshot(L,
+      "local receiver = entity { value = 1 }\n"
+      "function receiver.add(Value:num):num return &value + Value end\n"
+      "return 2 |> receiver.add()\n", true, error);
+   if (not contextual_pipe or count_opcode(*contextual_pipe, BC_CTXENTER) != 1 or
+       count_opcode(*contextual_pipe, BC_CTXCALL) != 1 or count_opcode(*contextual_pipe, BC_CTXLEAVE) != 1) {
+      Log.error("a contextual pipe destination did not use the contextual call frame: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto runtime_context_pipe = compile_snapshot(L,
+      "local function invoke(Target:any):num return &value |> Target['consume']() end\n", true, error);
+   if (not runtime_context_pipe or count_opcode_tree(*runtime_context_pipe, BC_CTXGET) != 1 or
+       count_opcode_tree(*runtime_context_pipe, BC_CTXENTER) != 1 or
+       count_opcode_tree(*runtime_context_pipe, BC_CTXCALL) != 1) {
+      Log.error("a runtime-dependent contextual pipe did not acquire its argument context: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto runtime_builtin_pipe = compile_snapshot(L,
+      "local function invoke(Target:any):num\n"
+      "   local inherited = &value\n"
+      "   return &value |> Target.add()\n"
+      "end\n", true, error);
+   if (not runtime_builtin_pipe or count_opcode_tree(*runtime_builtin_pipe, BC_CTXGET) != 2 or
+       count_opcode_tree(*runtime_builtin_pipe, BC_BMETH) != 1 or
+       count_opcode_tree(*runtime_builtin_pipe, BC_CTXENTER) != 1) {
+      Log.error("a runtime built-in pipe did not separate inherited and fallback contexts: %s", error.c_str());
+      return false;
+   }
+
    return true;
 }
 
@@ -5236,11 +5048,27 @@ static bool test_builtin_method_registry(kt::Log &Log)
    const fprototype *range_contains = get_method_prototype(TiriType::Range, "contains");
    const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
    const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
-   if (not array_insert or not range_contains or not struct_clone or not object_exists or
+   const fprototype *object_new = get_method_prototype(TiriType::Object, "new");
+   const fprototype *object_state = get_method_prototype(TiriType::Object, "_state");
+   const fprototype *namespace_new = get_prototype("obj", "new");
+   lua_getglobal(L, "obj");
+   lua_getfield(L, -1, "new");
+   GCfunc *public_create = tvisfunc(L->top - 1) ? funcV(L->top - 1) : nullptr;
+   lua_pop(L, 2);
+   if (not array_insert or not range_contains or not struct_clone or not object_exists or not object_new or
+       not object_state or not namespace_new or
        array_insert->builtin_callable_id != builtin_callable_id(FastFunc::array_insert) or
        range_contains->builtin_callable_id != builtin_callable_id(FastFunc::range_contains) or
        struct_clone->builtin_callable_id != builtin_callable_id(FastFunc::struct_clone) or
        object_exists->builtin_callable_id != builtin_callable_id(FastFunc::object_exists) or
+       object_new->builtin_callable_id != builtin_callable_id(FastFunc::object_new) or
+       object_state->builtin_callable_id != builtin_callable_id(FastFunc::object__state) or
+       object_new IS namespace_new or object_new->param_count != 3 or
+       object_new->param_types()[0] != TiriType::Object or object_new->param_types()[1] != TiriType::Any or
+       object_new->param_types()[2] != TiriType::Table or object_state->param_count != 1 or
+       object_state->param_types()[0] != TiriType::Object or namespace_new->is_method() or
+       namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "_state") or
+       public_create != lj_builtin_callable(L, builtin_callable_id(FastFunc::object_create)) or
        array_insert IS table_insert or get_method_prototype(TiriType::Table, "push") or
        get_method_prototype(TiriType::Table, "new")) {
       Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
@@ -5264,7 +5092,7 @@ static bool test_builtin_method_registry(kt::Log &Log)
    constexpr std::array<std::string_view, 10> range_methods = {
       "each", "filter", "reduce", "map", "take", "any", "all", "find", "contains", "toArray"
    };
-   constexpr std::array<std::string_view, 3> struct_methods = { "structSize", "copy", "clone" };
+   constexpr std::array<std::string_view, 2> struct_methods = { "copy", "clone" };
    constexpr std::array<std::string_view, 12> object_methods = {
       "class", "init", "free", "children", "detach", "get", "set", "getKey", "setKey", "exists", "subscribe",
       "unsubscribe"
@@ -5319,8 +5147,22 @@ static bool test_builtin_method_registry(kt::Log &Log)
    lua_pushvalue(L, -1);
    lua_setfield(L, -3, "insert");
    lua_pop(L, 2);
+   ERR hidden_duplicate = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Object },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
+   ERR hidden_conflict = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Table },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
+   ERR hidden_invalid_receiver = reg_intrinsic_method(L, "obj", "new", TiriType::Any,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Object },
+      { TiriType::Any, TiriType::Any, TiriType::Table });
+   ERR hidden_wrong_callable = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_create), { TiriType::Object },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
    if (duplicate != ERR::Exists or conflicting != ERR::Mismatch or invalid_receiver != ERR::InvalidValue or
-       wrong_callable != ERR::Mismatch or wrong_export != ERR::Mismatch) {
+       wrong_callable != ERR::Mismatch or wrong_export != ERR::Mismatch or hidden_duplicate != ERR::Exists or
+       hidden_conflict != ERR::Mismatch or hidden_invalid_receiver != ERR::InvalidValue or
+       hidden_wrong_callable != ERR::Mismatch) {
       Log.error("method registration consistency checks returned unexpected errors");
       return false;
    }
@@ -5634,6 +5476,18 @@ static const BCIns * find_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    return nullptr;
 }
 
+static const BCIns * find_builtin_callable_opcode(const BytecodeSnapshot &Snapshot, BuiltinCallableID Id)
+{
+   BCREG callable = builtin_callable_index(Id);
+   for (const BCIns &instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS BC_BFUNC and bc_d(instruction) IS callable) return &instruction;
+   }
+   for (const BytecodeSnapshot &child : Snapshot.children) {
+      if (const BCIns *instruction = find_builtin_callable_opcode(child, Id)) return instruction;
+   }
+   return nullptr;
+}
+
 static bool test_builtin_method_bytecode_emission(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -5685,6 +5539,35 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
        count_opcode(*safe, BC_CALL) != 1 or count_opcode(*safe, BC_TGETS) != 0 or
        count_opcode(*safe, BC_TGETV) != 0) {
       Log.error("safe built-in method call lost canonical nil-short-circuit lowering: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto object_methods = compile_snapshot(L,
+      "local parent = obj.new('time')\nlocal child = parent.new('time')\nreturn parent._state()\n", true, error);
+   if (not object_methods or not find_builtin_callable_opcode(*object_methods,
+         builtin_callable_id(FastFunc::object_new)) or not find_builtin_callable_opcode(*object_methods,
+         builtin_callable_id(FastFunc::object__state)) or count_opcode(*object_methods, BC_BFUNC) != 2 or
+       count_opcode(*object_methods, BC_TGETS) != 1 or count_opcode(*object_methods, BC_TGETV) != 0) {
+      Log.error("proved Object new and _state calls did not use canonical lookup-free emission: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_object_methods = compile_snapshot(L,
+      "local function use(Parent:any):any\nParent.new('time')\nreturn Parent._state()\nend\nreturn use\n", true, error);
+   if (not dynamic_object_methods or count_opcode_tree(*dynamic_object_methods, BC_BMETH) != 2 or
+       count_opcode_tree(*dynamic_object_methods, BC_BFUNC) != 0) {
+      Log.error("runtime Object new and _state calls did not retain BC_BMETH dispatch: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto namespace_object_new = compile_snapshot(L, "return obj.new('time')\n", true, error);
+   if (not namespace_object_new or find_builtin_callable_opcode(*namespace_object_new,
+         builtin_callable_id(FastFunc::object_create)) or count_opcode(*namespace_object_new, BC_GGET) != 1 or
+       count_opcode(*namespace_object_new, BC_TGETS) != 1) {
+      Log.error("public obj.new call lost ordinary namespace lookup semantics: %s", error.c_str());
       return false;
    }
 
@@ -5773,7 +5656,7 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    error.clear();
    auto range_pipe = compile_snapshot(L,
       "local total = 0\n{0 to 4} |> (Value => do total += Value end)\nreturn total\n", true, error);
-   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 1 or
+   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 2 or
        count_opcode_tree(*range_pipe, BC_TGETS) != 0) {
       Log.error("compiler-generated range iteration did not use canonical emission: %s", error.c_str());
       return false;
@@ -5782,10 +5665,160 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    error.clear();
    auto append = compile_snapshot(L,
       "local values = array<byte>\nvalues ..= 'x' .. 'y'\nreturn values\n", true, error);
-   const BCIns *append_load = append ? find_opcode(*append, BC_BFUNC) : nullptr;
-   if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 1 or
+   const BCIns *append_load = append ? find_builtin_callable_opcode(
+      *append, builtin_callable_id(FastFunc::array_append)) : nullptr;
+   if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 2 or
        bc_d(*append_load) != builtin_callable_index(builtin_callable_id(FastFunc::array_append))) {
       Log.error("compiler-only array append did not use canonical emission: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_compiler_intrinsic_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string error;
+
+   auto iteration = compile_snapshot(L,
+      "local function visit(Target:any)\n"
+      "   local total = 0\n"
+      "   for _, value in Target do total += value end\n"
+      "   return total\n"
+      "end\n"
+      "return visit\n", true, error);
+   if (not iteration or not find_builtin_callable_opcode(*iteration,
+         builtin_callable_id(FastFunc::__tiri_iter_prepare)) or
+       count_opcode_tree(*iteration, BC_BFUNC) != 1 or count_opcode_tree(*iteration, BC_GGET) != 0 or
+       count_opcode_tree(*iteration, BC_TGETS) != 0 or count_opcode_tree(*iteration, BC_TGETV) != 0) {
+      Log.error("dynamic generic iteration did not use the isolated preparation intrinsic: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto filter = compile_snapshot(L,
+      "local function source():<num, num, num> return 1, 2, 3 end\n"
+      "local first, second = [_*]source()\n"
+      "return first, second\n", true, error);
+   if (not filter or not find_builtin_callable_opcode(*filter, builtin_callable_id(FastFunc::__filter)) or
+       count_opcode_tree(*filter, BC_BFUNC) != 1 or count_opcode_tree(*filter, BC_CALLM) != 1 or
+       count_opcode_tree(*filter, BC_GGET) != 0 or count_opcode_tree(*filter, BC_TGETS) != 0 or
+       count_opcode_tree(*filter, BC_TGETV) != 0) {
+      Log.error("result filtering did not use the isolated filter intrinsic: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto thunk = compile_snapshot(L, "return <num{ 42 }>\n", true, error);
+   if (not thunk or not find_builtin_callable_opcode(*thunk, builtin_callable_id(FastFunc::__create_thunk)) or
+       count_opcode_tree(*thunk, BC_BFUNC) != 1 or count_opcode_tree(*thunk, BC_GGET) != 0 or
+       count_opcode_tree(*thunk, BC_TGETS) != 0 or count_opcode_tree(*thunk, BC_TGETV) != 0) {
+      Log.error("deferred expressions did not use the isolated thunk intrinsic: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string error;
+
+   auto core = compile_snapshot(L,
+      "struct PhaseTwoRecord\n   Value: int\nend\n"
+      "local array:any = {}\nlocal struct:any = {}\n"
+      "local first = 1\nlocal last = 5\nlocal size = 4\nlocal source = { 10, 20, 30 }\n"
+      "local bounds = {first to last}\nlocal sliced = source[{0 to 2}]\nlocal present = first in bounds\n"
+      "local values = array<int, size> { 7, 8 }\n"
+      "local constructed = struct<PhaseTwoRecord> { Value=9 }\n"
+      "local bits = (first & last) | (first ^ last)\n"
+      "return sliced, present, values, constructed, bits\n", true, error);
+   constexpr std::array<FastFunc, 9> required = { {
+      FastFunc::range_new, FastFunc::range_slice, FastFunc::range_contains,
+      FastFunc::array_of, FastFunc::array_resize, FastFunc::struct_new,
+      FastFunc::bit_band, FastFunc::bit_bor, FastFunc::bit_bxor
+   } };
+   if (not core) {
+      Log.error("canonical core syntax fixture did not compile: %s", error.c_str());
+      return false;
+   }
+   for (FastFunc callable : required) {
+      if (find_builtin_callable_opcode(*core, builtin_callable_id(callable))) continue;
+      Log.error("canonical core syntax omitted built-in callable %u", unsigned(callable));
+      return false;
+   }
+   if (count_opcode_tree(*core, BC_GGET) != 0 or count_opcode_tree(*core, BC_TGETS) != 0 or
+       count_opcode_tree(*core, BC_TGETV) != 0) {
+      Log.error("compiler-owned core syntax retained namespace lookup bytecode");
+      return false;
+   }
+
+   error.clear();
+   auto shifts = compile_snapshot(L,
+      "local value = 5\nlocal amount = 1\nreturn ~value, value << amount, value >> amount\n", true, error);
+   if (not shifts or not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_bnot)) or
+       not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_lshift)) or
+       not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_rshift)) or
+       count_opcode_tree(*shifts, BC_GGET) != 0 or count_opcode_tree(*shifts, BC_TGETS) != 0) {
+      Log.error("unary and shifted bitwise syntax did not use canonical callables: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto explicit_calls = compile_snapshot(L,
+      "local values = array.new(2, 'int')\n"
+      "array.resize(values, 3)\n"
+      "return range(0, 2), range.slice({}, {0 to 1}), bit.band(1, 1)\n", true, error);
+   if (not explicit_calls or count_opcode_tree(*explicit_calls, BC_GGET) IS 0 or
+       count_opcode_tree(*explicit_calls, BC_TGETS) IS 0) {
+      Log.error("explicit namespace calls lost ordinary dynamic lookup bytecode: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_regex_literal_canonical_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   luaopen_regex_intrinsic(L);
+   lua_pop(L, 1);
+   std::string error;
+
+   BuiltinCallableID constructor = builtin_callable_id(FastFunc::regex_new);
+   GCfunc *canonical_constructor = lj_builtin_callable(L, constructor);
+   if (not canonical_constructor or canonical_constructor->c.ffid != builtin_callable_index(constructor) or
+       std::string_view(builtin_callable_name(constructor)) != "regex.new") {
+      Log.error("canonical regex.new callable was not registered with its generated identity");
+      return false;
+   }
+   lua_gc(L, LUA_GCCOLLECT, 0);
+   if (lj_builtin_callable(L, constructor) != canonical_constructor) {
+      Log.error("canonical regex.new callable was not rooted independently of its public field");
+      return false;
+   }
+
+   auto literal = compile_snapshot(L, "local value = r'\\d+'\nreturn value\n", true, error);
+   if (not literal or not find_builtin_callable_opcode(*literal, constructor) or
+       count_opcode_tree(*literal, BC_BFUNC) != 1 or count_opcode_tree(*literal, BC_GGET) != 0 or
+       count_opcode_tree(*literal, BC_TGETS) != 0 or count_opcode_tree(*literal, BC_TGETV) != 0) {
+      Log.error("regex literal did not use the canonical regex.new callable: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto explicit_call = compile_snapshot(L, "extern regex\nreturn regex.new('\\\\d+')\n", true, error);
+   if (not explicit_call or find_builtin_callable_opcode(*explicit_call, constructor) or
+       count_opcode_tree(*explicit_call, BC_GGET) IS 0 or count_opcode_tree(*explicit_call, BC_BMETH) IS 0) {
+      Log.error("explicit regex.new call lost ordinary dynamic lookup bytecode: %s", error.c_str());
       return false;
    }
 
@@ -5820,11 +5853,33 @@ static bool test_contextual_call_specialisation(kt::Log &Log)
    }
 
    error.clear();
+   auto contextual_arguments = compile_snapshot(L,
+      "local target = entity { value = 1 }\n"
+      "function target.read(Value:num):num return &value + Value end\n"
+      "return target.read(&value)\n", true, error);
+   if (not contextual_arguments or count_opcode(*contextual_arguments, BC_CTXGET) != 0 or
+       count_opcode(*contextual_arguments, BC_CTXENTER) != 1 or
+       count_opcode(*contextual_arguments, BC_CTXCALL) != 1) {
+      Log.error("a statically contextual argument region reacquired its retained receiver: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
    auto unknown = compile_snapshot(L,
       "local function invoke(Target:any) Target.run() end\n", true, error);
    if (not unknown or count_opcode_tree(*unknown, BC_CTXENTER) != 1 or
        count_opcode_tree(*unknown, BC_CTXCALL) != 1 or count_opcode_tree(*unknown, BC_CTXLEAVE) != 1) {
       Log.error("an unknown receiver lost its runtime contextual gate: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto runtime_arguments = compile_snapshot(L,
+      "local function invoke(Target:any):num return Target['run'](&value) end\n", true, error);
+   if (not runtime_arguments or count_opcode_tree(*runtime_arguments, BC_CTXGET) != 1 or
+       count_opcode_tree(*runtime_arguments, BC_CTXENTER) != 1 or
+       count_opcode_tree(*runtime_arguments, BC_CTXCALL) != 1) {
+      Log.error("a runtime contextual argument region did not acquire one scratch context: %s", error.c_str());
       return false;
    }
 
@@ -6699,7 +6754,9 @@ static bool test_tail_call_eligibility(kt::Log &Log)
    auto cleaned = compile_snapshot(L, cleanup_source, true, error);
    if (not cleaned or count_opcode_tree(*cleaned, BC_CALLT) != 0 or
        count_opcode_tree(*cleaned, BC_CALLMT) != 0 or count_opcode_tree(*cleaned, BC_MRSAVE) != 1 or
-       count_opcode_tree(*cleaned, BC_MRRESTORE) != 1 or count_opcode_tree(*cleaned, BC_RETM) IS 0) {
+       count_opcode_tree(*cleaned, BC_MRRESTORE) != 1 or count_opcode_tree(*cleaned, BC_RETM) IS 0 or
+       count_opcode_tree(*cleaned, BC_CLOSEARM) IS 0 or count_opcode_tree(*cleaned, BC_CLOSE) IS 0 or
+       count_opcode_tree(*cleaned, BC_GGET) != 0) {
       Log.error("user cleanup did not retain a protected multi-result return path: %s", error.c_str());
       return false;
    }
@@ -8312,7 +8369,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 74> tests = { {
+   constexpr std::array<TestCase, 77> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8370,6 +8427,9 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_static_classification", test_builtin_method_static_classification },
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
+      { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
+      { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
+      { "regex_literal_canonical_bytecode_emission", test_regex_literal_canonical_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },
       { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },

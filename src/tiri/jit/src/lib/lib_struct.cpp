@@ -469,6 +469,10 @@ static GCstruct * push_external_struct(lua_State *L, APTR Address, std::string_v
 
 LJLIB_CF(struct_size)
 {
+   if (lua_isstruct(L, 1)) { // A struct reference reports the byte size of its own definition.
+      lua_pushnumber(L, lua_tostruct(L, 1)->structsize);
+      return 1;
+   }
    if (auto name = lua_tostring(L, 1)) {
       if (auto def = find_struct(L, name)) {
          lua_pushnumber(L, def->Size);
@@ -476,7 +480,7 @@ LJLIB_CF(struct_size)
       }
       luaL_argerror(L, 1, "The requested structure is not defined.");
    }
-   else luaL_argerror(L, 1, "Structure name required.");
+   else luaL_argerror(L, 1, "A structure name or reference is required.");
    return 0;
 }
 
@@ -529,31 +533,6 @@ LJLIB_CF(struct_def)
    return 1;
 }
 
-static int struct_struct_size(lua_State *L)
-{
-   auto *value = lua_isstruct(L, lua_upvalueindex(1)) ? lua_tostruct(L, lua_upvalueindex(1)) : nullptr;
-   if (not value) {
-      luaL_argerror(L, 1, "Expected struct.");
-      return 0;
-   }
-   lua_pushnumber(L, value->structsize);
-   return 1;
-}
-
-LJLIB_CF(struct_structSize)
-{
-   auto *value = lj_lib_checkstruct(L, 1);
-   lua_pushnumber(L, value->structsize);
-   return 1;
-}
-
-void lj_struct_push_size_closure(lua_State *L, GCstruct *Struct)
-{
-   setstructV(L, L->top, Struct);
-   incr_top(L);
-   lua_pushcclosure(L, &struct_struct_size, 1);
-}
-
 static int struct_len(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
@@ -590,7 +569,7 @@ static int struct_pairs(lua_State *L)
 static int struct_tostring(lua_State *L)
 {
    auto value = lj_lib_checkstruct(L, 1);
-   lua_pushfstring(L, "%s: %p", value->def->Name.c_str(), value->data);
+   lua_pushstring(L, value->def->Name.c_str());
    return 1;
 }
 
@@ -715,10 +694,7 @@ static int struct_get(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
    auto field_name = luaL_checkstring(L, 2);
-   if (std::string_view("structSize") IS field_name) {
-      lj_struct_push_size_closure(L, value);
-      return 1;
-   }
+
    lj_struct_check_lifecycle(L, value, field_name);
    if (not value->data) {
       luaL_error(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
@@ -819,9 +795,7 @@ extern "C" int luaopen_struct(lua_State *L)
 
    reg_iface_prototype("struct", "new", { TiriType::Struct }, { TiriType::Str, TiriType::Table });
    reg_iface_prototype("struct", "def", { TiriType::Func }, { TiriType::Str });
-   reg_iface_prototype("struct", "size", { TiriType::Num }, { TiriType::Str });
-   reg_iface_method(L, "struct", "structSize", TiriType::Struct,
-      builtin_callable_id(FastFunc::struct_structSize), { TiriType::Num }, { TiriType::Struct });
+   reg_iface_prototype("struct", "size", { TiriType::Num }, { TiriType::Any }); // Accepts a struct name or reference
    reg_iface_method(L, "struct", "copy", TiriType::Struct, builtin_callable_id(FastFunc::struct_copy),
       { TiriType::Struct }, { TiriType::Struct, TiriType::Struct });
    reg_iface_method(L, "struct", "clone", TiriType::Struct, builtin_callable_id(FastFunc::struct_clone),

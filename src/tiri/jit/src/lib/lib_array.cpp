@@ -2516,7 +2516,7 @@ static void array_append_reduce_rhs(lua_State *L, int PieceCount)
    if (PieceCount > 1) lua_concat(L, PieceCount);
 }
 
-LJLIB_CF(array_append)      LJLIB_REC(.)
+LJLIB_INTRINSIC LJLIB_CF(array_append)      LJLIB_REC(.)
 {
    TValue *left = lj_lib_checkany(L, 1);
    int piece_count = lua_gettop(L) - 1;
@@ -2683,11 +2683,6 @@ extern "C" int luaopen_array(lua_State *L)
 {
    LJ_LIB_REG(L, "array", array);
    // Stack: [..., array_lib_table]
-
-   // array.append is a compiler-only compound-concatenation helper.  Its canonical closure remains rooted for
-   // BC_BFUNC, but it is not part of the public array namespace.
-   lua_pushnil(L);
-   lua_setfield(L, -2, "append");
 
    // Use the library table directly as the base metatable for arrays.
    // This allows lj_arr_get to find methods like concat, sort, etc. via direct table lookup.

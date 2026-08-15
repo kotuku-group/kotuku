@@ -16,7 +16,6 @@ TiriType parse_type_name(std::string_view Name)
       { "table",     TiriType::Table },
       { "array",     TiriType::Array },
       { "func",      TiriType::Func },
-      { "function",  TiriType::Func },
       { "struct",    TiriType::Struct },
       { "obj",       TiriType::Object },
       { "range",     TiriType::Range },
@@ -898,13 +897,14 @@ ExprNodePtr make_table_expr(SourceSpan Span, std::vector<TableField> fields, boo
 }
 
 ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> Parameters, bool IsVararg,
-   std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes)
+   std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes, FunctionCallableKind CallableKind)
 {
    assert_node(Body != nullptr, "function literal body required");
    FunctionExprPayload payload;
    payload.parameters = std::move(Parameters);
    payload.is_vararg = IsVararg;
    payload.is_thunk = IsThunk;
+   payload.callable_kind = CallableKind;
    payload.return_types = ReturnTypes;
    payload.body = std::move(Body);
    ExprNodePtr node = std::make_unique<ExprNode>();
@@ -973,13 +973,15 @@ ExprNodePtr make_choose_expr_tuple(SourceSpan Span, ExprNodeList ScrutineeTuple,
 }
 
 std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> Parameters,
-   bool IsVararg, std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes)
+   bool IsVararg, std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes,
+   FunctionCallableKind CallableKind)
 {
    assert_node(Body != nullptr, "function body required");
    auto payload = std::make_unique<FunctionExprPayload>();
    payload->parameters = std::move(Parameters);
    payload->is_vararg = IsVararg;
    payload->is_thunk = IsThunk;
+   payload->callable_kind = CallableKind;
    payload->return_types = ReturnTypes;
    payload->body = std::move(Body);
    return payload;

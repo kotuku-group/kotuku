@@ -53,32 +53,10 @@ static const ExprNode * builtin_method_receiver(const CallExprPayload &Payload)
    return nullptr;
 }
 
-// A known ordinary allocation needs no contextual frame.  A known contextual table and an unresolved receiver use
-// the contextual bytecode shape; the latter is gated by TAB_CONTEXTUAL at runtime.  Proved non-table receivers retain
-// their specialised ordinary ABI.
-
-static bool receiver_uses_contextual_call(
-   const ParserContext &Context, const ExprNode &Receiver)
-{
-   if (Receiver.kind IS AstNodeKind::CurrentContextExpr) return false;
-   if (not Receiver.static_value) return true;
-
-   const StaticValueDescriptor &descriptor = Context.descriptors().value(Receiver.static_value);
-   if (descriptor.contextuality IS StaticContextuality::Ordinary) return false;
-   if (descriptor.contextuality IS StaticContextuality::Contextual) return true;
-   return not (descriptor.proved() and descriptor.primary != TiriType::Unknown and
-      descriptor.primary != TiriType::Any and descriptor.primary != TiriType::Table);
-}
-
 static BCReg prepare_builtin_method_frame(
    FuncState *State, BuiltinCallableID Callable, BCReg Receiver, BCReg CallBase)
 {
-   RegisterAllocator allocator(State);
-   BCREG required_top = CallBase.raw() + 2 + LJ_FR2;
-   if (State->freereg < required_top) allocator.reserve(BCReg(required_top - State->freereg));
-   bcemit_AD(State, BC_MOV, CallBase.raw() + 1 + LJ_FR2, Receiver.raw());
-   bcemit_builtin_callable(State, Callable, CallBase.raw());
-   return CallBase;
+   return bcemit_builtin_call_frame(State, Callable, CallBase, Receiver);
 }
 
 //********************************************************************************************************************
@@ -199,6 +177,28 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
       bcemit_INS(state, BCINS_AD(BC_CTXENTER, field_call_base.raw(), 0));
    }
 
+   ContextSourceScope argument_context_scope;
+   if (contextual_field) {
+      if (receiver_is_proven_contextual(this->ctx, *receiver_node)) {
+         argument_context_scope.activate(this,
+            ContextSource{ .slot = call_base, .kind = ContextSourceKind::ContextualArgument });
+      }
+      else {
+         bool arguments_use_context = this->expression_uses_context(*Payload.lhs);
+         for (const ExprNodePtr &argument : Call.arguments) {
+            if (argument and this->expression_uses_context(*argument)) {
+               arguments_use_context = true;
+               break;
+            }
+         }
+         if (arguments_use_context) {
+            bcemit_AD(state, BC_CTXGET, call_base.raw(), 0);
+            argument_context_scope.activate(this,
+               ContextSource{ .slot = call_base, .kind = ContextSourceKind::ContextualArgument });
+         }
+      }
+   }
+
    auto field_result = emit_branch(false);
    if (not field_result.ok()) return ParserResult<ExpDesc>::failure(field_result.error_ref());
    BCPos field_call = field_result.value_ref();
@@ -296,6 +296,150 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
    const CallExprPayload &call_payload = std::get<CallExprPayload>(Payload.rhs_call->data);
    if (call_payload.runtime_builtin_method) {
       return this->emit_runtime_builtin_method_pipe(Payload, call_payload);
+   }
+
+   const auto *direct = std::get_if<DirectCallTarget>(&call_payload.target);
+   const ExprNode *context_receiver_node = call_receiver(call_payload);
+   bool contextual_call = context_receiver_node and
+      receiver_uses_contextual_call(this->ctx, *context_receiver_node);
+   bool safe_callable = direct and direct->callable and
+      (direct->callable->kind IS AstNodeKind::SafeMemberExpr or
+       direct->callable->kind IS AstNodeKind::SafeIndexExpr);
+
+   if (contextual_call) {
+      if (not direct or not direct->callable) return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
+
+      BCReg context_result_base = fs->free_reg();
+      auto receiver_result = this->emit_expression(*context_receiver_node);
+      if (not receiver_result.ok()) return receiver_result;
+      ExpDesc receiver = receiver_result.value_ref();
+      this->materialise_to_next_reg(receiver, "contextual pipe receiver");
+      context_result_base = BCReg(receiver.u.s.info);
+
+      ControlFlowEdge receiver_nil_jump;
+      if (safe_callable) {
+         ExpDesc nil_value(ExpKind::Nil);
+         bcemit_INS(fs, BCINS_AD(BC_ISEQP, context_result_base, const_pri(&nil_value)));
+         receiver_nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
+      }
+
+      BCReg base = fs->free_reg();
+      if (direct->callable->kind IS AstNodeKind::MemberExpr or
+          direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+         GCstr *member = direct->callable->kind IS AstNodeKind::MemberExpr ?
+            std::get<MemberExprPayload>(direct->callable->data).member.symbol :
+            std::get<SafeMemberExprPayload>(direct->callable->data).member.symbol;
+         ExpDesc key(member);
+         bcreg_reserve(fs, 1);
+         bcemit_tgets(fs, base.raw(), context_result_base.raw(), const_str(fs, &key));
+      }
+      else {
+         const ExprNode *index_node = direct->callable->kind IS AstNodeKind::IndexExpr ?
+            std::get<IndexExprPayload>(direct->callable->data).index.get() :
+            std::get<SafeIndexExprPayload>(direct->callable->data).index.get();
+         if (not index_node) return this->unsupported_expr(AstNodeKind::PipeExpr, direct->callable->span);
+         BCReg retained_receiver_reg = fs->free_reg();
+         bcreg_reserve(fs, 1);
+         bcemit_AD(fs, BC_MOV, retained_receiver_reg, context_result_base.raw());
+         auto key_result = this->emit_expression(*index_node);
+         if (not key_result.ok()) return key_result;
+         ExpDesc key = key_result.value_ref();
+         ExpressionValue key_value(fs, key);
+         key_value.to_val();
+         key = key_value.legacy();
+         ExpDesc lookup(ExpKind::NonReloc, context_result_base.raw());
+         lookup.static_value = receiver.static_value;
+         expr_index(fs, &lookup, &key);
+         this->materialise_to_next_reg(lookup, "contextual pipe callee");
+         base = BCReg(lookup.u.s.info);
+      }
+      RegisterAllocator context_allocator(fs);
+      context_allocator.reserve(BCReg(1));
+
+      ControlFlowEdge nil_jump;
+      if (safe_callable) {
+         ExpDesc nil_value(ExpKind::Nil);
+         bcemit_INS(fs, BCINS_AD(BC_ISEQP, base, const_pri(&nil_value)));
+         nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
+      }
+
+      bcemit_INS(fs, BCINS_AD(BC_CTXENTER, base, 0));
+      ContextSourceScope context_scope;
+      if (receiver_is_proven_contextual(this->ctx, *context_receiver_node)) {
+         context_scope.activate(this,
+            ContextSource{ .slot = context_result_base, .kind = ContextSourceKind::ContextualArgument });
+      }
+      else {
+         bool arguments_use_context = this->expression_uses_context(*Payload.lhs);
+         for (const ExprNodePtr &argument : call_payload.arguments) {
+            if (argument and this->expression_uses_context(*argument)) {
+               arguments_use_context = true;
+               break;
+            }
+         }
+         if (arguments_use_context) {
+            bcemit_AD(fs, BC_CTXGET, context_result_base.raw(), 0);
+            context_scope.activate(this,
+               ContextSource{ .slot = context_result_base, .kind = ContextSourceKind::ContextualArgument });
+         }
+      }
+
+      auto lhs_result = this->emit_expression(*Payload.lhs);
+      if (not lhs_result.ok()) return lhs_result;
+      ExpDesc lhs = lhs_result.value_ref();
+      bool forward_multret = false;
+      if (lhs.k IS ExpKind::Call) {
+         if (Payload.limit > 0) {
+            set_call_result_count(fs, lhs, Payload.limit + 1);
+            fs->freereg = lhs.u.s.aux + Payload.limit;
+         }
+         else {
+            set_call_result_count(fs, lhs, 0);
+            forward_multret = true;
+         }
+      }
+      else this->materialise_to_next_reg(lhs, "contextual pipe operand");
+
+      BCReg arg_count(0);
+      ExpDesc args(ExpKind::Void);
+      if (not call_payload.arguments.empty()) {
+         auto args_result = this->emit_expression_list(call_payload.arguments, arg_count);
+         if (not args_result.ok()) return ParserResult<ExpDesc>::failure(args_result.error_ref());
+         args = args_result.value_ref();
+      }
+
+      BCIns instruction;
+      if (forward_multret and call_payload.arguments.empty()) {
+         instruction = BCINS_ABC(BC_CTXCALLM, base, 2, lhs.u.s.aux - base - 1 - 1);
+      }
+      else {
+         if (args.k != ExpKind::Void) this->materialise_to_next_reg(args, "contextual pipe arguments");
+         instruction = BCINS_ABC(BC_CTXCALL, base, 2, fs->freereg - base - 1);
+      }
+      this->lex_state.lastline = call_line;
+      BCPos call_pc = BCPos(bcemit_INS(fs, instruction));
+      bcemit_INS(fs, BCINS_AD(BC_CTXLEAVE, base, BCREG(base.raw() - context_result_base.raw())));
+
+      if (safe_callable) {
+         ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
+         BCPos nil_path = BCPos(fs->pc);
+         if (not receiver_nil_jump.empty()) receiver_nil_jump.patch_to(nil_path);
+         nil_jump.patch_to(nil_path);
+         bcemit_nil(fs, context_result_base.raw(), 1);
+         skip_nil.patch_to(BCPos(fs->pc));
+      }
+
+      ExpDesc result(ExpKind::Call, call_pc);
+      result.u.s.aux = context_result_base.raw();
+      result.static_results = call_payload.results;
+      if (call_payload.results) {
+         const auto &descriptor = this->ctx.descriptors().results(call_payload.results).value_at(0);
+         result.result_type = descriptor.primary;
+         result.object_class_id = descriptor.object_class_id;
+         result.struct_def = descriptor.struct_def;
+      }
+      fs->freereg = base;
+      return ParserResult<ExpDesc>::success(result);
    }
 
    // Emit the callee (function) FIRST to establish base register
@@ -610,6 +754,28 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
       bcemit_INS(state, BCINS_AD(BC_CTXENTER, field_call_base.raw(), 0));
    }
 
+   ContextSourceScope argument_context_scope;
+   if (contextual_field) {
+      if (receiver_is_proven_contextual(this->ctx, *receiver_node)) {
+         argument_context_scope.activate(this,
+            ContextSource{ .slot = call_base, .kind = ContextSourceKind::ContextualArgument });
+      }
+      else {
+         bool arguments_use_context = false;
+         for (const ExprNodePtr &argument : Payload.arguments) {
+            if (argument and this->expression_uses_context(*argument)) {
+               arguments_use_context = true;
+               break;
+            }
+         }
+         if (arguments_use_context) {
+            bcemit_AD(state, BC_CTXGET, call_base.raw(), 0);
+            argument_context_scope.activate(this,
+               ContextSource{ .slot = call_base, .kind = ContextSourceKind::ContextualArgument });
+         }
+      }
+   }
+
    auto field_call_result = emit_branch_call(false);
    if (not field_call_result.ok()) return ParserResult<ExpDesc>::failure(field_call_result.error_ref());
    BCPos field_call = field_call_result.value_ref();
@@ -648,8 +814,10 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
 
 ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 {
-   if (Payload.builtin_method) return this->emit_builtin_method_call(Payload);
-   if (Payload.runtime_builtin_method) return this->emit_runtime_builtin_method_call(Payload);
+   if (Payload.compiler_callable IS BuiltinCallableID::Invalid) {
+      if (Payload.builtin_method) return this->emit_builtin_method_call(Payload);
+      if (Payload.runtime_builtin_method) return this->emit_runtime_builtin_method_call(Payload);
+   }
 
    kt::Log log(__FUNCTION__);
 
@@ -681,6 +849,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    bool is_safe_callable = false;
    bool is_contextual_call = false;
    bool uses_specialised_member_dispatch = false;
+   const ExprNode *context_receiver_node = nullptr;
    ControlFlowEdge receiver_nil_jump;
    TiriType callee_return_type = TiriType::Unknown;  // First return type of callee (if known)
    CLASSID callee_object_class_id = CLASSID::NIL;  // CLASSID if return type is Object
@@ -738,9 +907,16 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
          index_node = index->index.get();
       }
 
-      is_contextual_call = receiver_node and receiver_uses_contextual_call(this->ctx, *receiver_node);
+      is_contextual_call = Payload.compiler_callable IS BuiltinCallableID::Invalid and receiver_node and
+         receiver_uses_contextual_call(this->ctx, *receiver_node);
+      context_receiver_node = receiver_node;
 
-      if (is_contextual_call) {
+      if (Payload.compiler_callable != BuiltinCallableID::Invalid) {
+         BCReg call_base = this->func_state.free_reg();
+         callee = bcemit_builtin_callable(&this->func_state, Payload.compiler_callable, call_base.raw());
+         bcreg_reserve(&this->func_state, 1);
+      }
+      else if (is_contextual_call) {
          auto receiver_result = this->emit_expression(*receiver_node);
          if (not receiver_result.ok()) return receiver_result;
          ExpDesc receiver = receiver_result.value_ref();
@@ -873,7 +1049,28 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       nil_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
    }
 
-   if (is_contextual_call) bcemit_INS(&this->func_state, BCINS_AD(BC_CTXENTER, base, 0));
+   ContextSourceScope argument_context_scope;
+   if (is_contextual_call) {
+      bcemit_INS(&this->func_state, BCINS_AD(BC_CTXENTER, base, 0));
+      if (context_receiver_node and receiver_is_proven_contextual(this->ctx, *context_receiver_node)) {
+         argument_context_scope.activate(this,
+            ContextSource{ .slot = context_result_base, .kind = ContextSourceKind::ContextualArgument });
+      }
+      else {
+         bool arguments_use_context = false;
+         for (const ExprNodePtr &argument : Payload.arguments) {
+            if (argument and this->expression_uses_context(*argument)) {
+               arguments_use_context = true;
+               break;
+            }
+         }
+         if (arguments_use_context) {
+            bcemit_AD(&this->func_state, BC_CTXGET, context_result_base.raw(), 0);
+            argument_context_scope.activate(this,
+               ContextSource{ .slot = context_result_base, .kind = ContextSourceKind::ContextualArgument });
+         }
+      }
+   }
 
    // Evaluate arguments only after the nil check, so if callable is nil we skip argument evaluation
    auto arg_count = BCReg(0);
@@ -1004,7 +1201,7 @@ void IrEmitter::optimise_assert(ExprNodeList &Args)
 }
 
 //********************************************************************************************************************
-// Result filter expression: [_*]func(), [*_]obj:method(), etc.
+// Result filter expression: [_*]func(), [*_]obj.method(), etc.
 // Transforms to: __filter(mask, count, trailing_keep, func(...))
 // The __filter function is a built-in that selectively returns values based on the filter pattern.
 
@@ -1014,15 +1211,8 @@ ParserResult<ExpDesc> IrEmitter::emit_result_filter_expr(const ResultFilterPaylo
 
    FuncState* fs = &this->func_state;
 
-   // Look up and emit the __filter function
    BCReg base = fs->free_reg();
-   ExpDesc filter_fn;
-   this->lex_state.var_lookup_symbol(lj_str_newlit(this->lex_state.L, "__filter"), &filter_fn);
-   this->materialise_to_next_reg(filter_fn, "filter function");
-
-   // Reserve register for frame link
-   RegisterAllocator allocator(fs);
-   allocator.reserve(BCReg(1));
+   bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__filter), base);
 
    // Emit arguments: mask, count, trailing_keep
    ExpDesc mask_expr(double(Payload.keep_mask));

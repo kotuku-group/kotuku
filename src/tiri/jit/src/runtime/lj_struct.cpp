@@ -227,15 +227,6 @@ extern "C" void bc_struct_getfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
    if (curr_funcisL(L)) L->top = curr_topL(L);
 
    const auto field_name = strdata(Key);
-   if (std::string_view("structSize") IS field_name) {
-      lj_struct_push_size_closure(L, Struct);
-      const auto result_dest = Ins ? restorestack(L, dest_offset) : Dest;
-      copyTV(L, result_dest, L->top - 1);
-      L->base = restorestack(L, saved_base);
-      L->top = restorestack(L, saved_top);
-      return;
-   }
-
    lj_struct_check_lifecycle(L, Struct, field_name, true);
    if (not Struct->data) {
       luaL_error_current(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);

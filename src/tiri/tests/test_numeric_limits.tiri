@@ -408,14 +408,80 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- String-to-number arithmetic coercion
 
-@Test function StringToNumberCoercionInArithmetic()
-   -- Tiri may or may not coerce strings in arithmetic; test the actual behaviour
+function expect_string_arithmetic_error(Operation:func, Description:str)
+   local raised = false
    try
-      result = 3 + '4'
-      -- If we get here, coercion happened
-      assert(result is 7, 'If string coercion occurs, 3 + "4" should be 7')
+      Operation()
    except
-      -- If we get here, coercion is not supported (which is safer)
-      assert(true, 'String-to-number coercion in arithmetic correctly raises error')
+      raised = true
    end
+   assert(raised, Description .. ' must raise an arithmetic type error')
+end
+
+function string_arithmetic_metamethod_workload(Iterations:num):num
+   local text = '4'
+   local other_text = '5'
+   local total = 0
+
+   for _ in {0 to Iterations} do
+      total += 3 + text
+      total += text + 3
+      total += text + other_text
+      total += text % 3
+      total += 3 % text
+      total += 2 ** text
+      total += -text
+   end
+   return total
+end
+
+@Test function StringToNumberCoercionInArithmetic()
+   local text = '4'
+   local other_text = '5'
+
+   -- Arithmetic does not coerce strings; the operand must be converted explicitly with tonumber().
+   expect_string_arithmetic_error(function() return -text end, 'Unary minus on a string')
+   expect_string_arithmetic_error(function() return 3 + text end, 'Number plus string')
+   expect_string_arithmetic_error(function() return text + 3 end, 'String plus number')
+   expect_string_arithmetic_error(function() return text + other_text end, 'String plus string')
+   expect_string_arithmetic_error(function() return text % 3 end, 'String modulo number')
+   expect_string_arithmetic_error(function() return 3 % text end, 'Number modulo string')
+   expect_string_arithmetic_error(function() return 2 ** text end, 'Number to a string power')
+   assert(3 + tonumber('4') is 7, '3 + tonumber("4") should be 7')
+
+   -- A string arithmetic metamethod must run instead of implicit conversion in both the interpreter and JIT.
+   local original_metatable = debug.getMetatable('')
+   defer
+      debug.setMetatable('', original_metatable)
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   debug.setMetatable('', {
+      __unm = function(Value):num return 400 - tonumber(Value) end,
+      __add = function(Left, Right):num return 100 + tonumber(Left) + tonumber(Right) end,
+      __mod = function(Left, Right):num return 200 + (tonumber(Left) % tonumber(Right)) end,
+      __pow = function(Left, Right):num return 300 + (tonumber(Left) ** tonumber(Right)) end
+   })
+
+   jit.off()
+   jit.flush()
+   local expected = string_arithmetic_metamethod_workload(10)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local actual = 0
+   for _ in {0 into 50} do actual = string_arithmetic_metamethod_workload(10) end
+
+   assert(actual is expected, 'JIT string arithmetic must match the interpreter metamethod result')
+
+   jit.off()
+   local trace_count = 0
+   for trace_no in {1 into 30} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.on()
+   assert(trace_count > 0, 'String arithmetic metamethod workload must produce a JIT trace')
 end

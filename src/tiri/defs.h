@@ -410,6 +410,9 @@ void load_include_for_class(lua_State *, objMetaClass *);
 ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *, int &,
    CSTRING &);
 void cleanup_argbuffer(lua_State *, const struct FunctionField *, int, int8_t *, bool);
+[[nodiscard]] ERR capture_tiri_function(lua_State *, int, FUNCTION &);
+void release_tiri_function(lua_State *, FUNCTION *);
+void release_consumed_tiri_function(lua_State *, FUNCTION *);
 const char * code_reader(lua_State *, void *, size_t *);
 [[maybe_unused]] int code_writer_id(lua_State *, CPTR, size_t, void *);
 [[maybe_unused]] int code_writer(lua_State *, CPTR, size_t, void *);
@@ -483,6 +486,7 @@ extern void register_input_class(lua_State *);
 extern void register_module_class(lua_State *);
 extern void register_processing_class(lua_State *);
 extern void register_regex_class(lua_State *);
+extern int luaopen_regex_intrinsic(lua_State *);
 extern void register_async_class(lua_State *);
 //static void register_widget_class(lua_State *);
 void release_object(GCobject *);

@@ -545,10 +545,6 @@ static int fp_range_contains(lua_State *L)
 {
    auto range = check_range(L, 1);
    int argument = 2;
-   if (not range) {
-      range = (tiri_range *)lua_touserdata(L, lua_upvalueindex(1));
-      argument = 1;
-   }
    if (not range or lua_type(L, argument) != LUA_TNUMBER) {
       lua_pushboolean(L, 0);
       return 1;
@@ -579,7 +575,6 @@ static int fp_range_contains(lua_State *L)
 static int fp_range_toarray(lua_State *L)
 {
    auto range = check_range(L, 1);
-   if (not range) range = (tiri_range *)lua_touserdata(L, lua_upvalueindex(1));
    if (not range) lj_err_caller(L, ErrMsg::BADVAL);
    size_t count = fp_range_count(L, range, true);
    GCarray *array = fp_range_materialise(L, range, count);
@@ -657,8 +652,9 @@ LJLIB_CF(range_new)
 
 //********************************************************************************************************************
 // __index metamethod
-// Handles property access (.start, .stop, .step, .inclusive, .length)
-// and method calls (:contains, :toArray)
+// Handles property access (.start, .stop, .step, .inclusive, .length) and returns the functional helper fast
+// functions (.each, .filter, ...).  The .contains and .toArray methods are dispatched canonically through BC_BMETH
+// with an explicit receiver and are intentionally not exposed here as bound-receiver closures.
 
 constexpr auto HASH_start     = kt::strhash("start");
 constexpr auto HASH_stop      = kt::strhash("stop");
@@ -697,14 +693,10 @@ static int range_index(lua_State *Lua)
          case HASH_any:       lua_pushcfunction(Lua, fp_range_any); return 1;
          case HASH_all:       lua_pushcfunction(Lua, fp_range_all); return 1;
          case HASH_find:      lua_pushcfunction(Lua, fp_range_find); return 1;
-         case HASH_contains: // Methods - return closures with range as upvalue
-            lua_pushvalue(Lua, 1);  // Push the range userdata
-            lua_pushcclosure(Lua, fp_range_contains, 1);
-            return 1;
-         case HASH_toArray:
-            lua_pushvalue(Lua, 1);  // Push the range userdata
-            lua_pushcclosure(Lua, fp_range_toarray, 1);
-            return 1;
+         // range.contains and range.toArray are dispatched as canonical built-in methods with an explicit
+         // receiver (BC_BMETH); they are no longer exposed as bound-receiver closures through member lookup.
+         case HASH_contains:
+         case HASH_toArray:   break;
       }
    }
 

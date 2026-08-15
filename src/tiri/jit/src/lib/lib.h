@@ -81,6 +81,7 @@ extern GCfunc* lj_lib_pushcc(lua_State *, lua_CFunction f, int id, int n);
 #define LJLIB_REC(handler)
 #define LJLIB_NOREGUV
 #define LJLIB_NOREG
+#define LJLIB_INTRINSIC
 
 #define LJ_LIB_REG(L, regname, name) lj_lib_register(L, regname, lj_lib_init_##name, lj_lib_cf_##name)
 

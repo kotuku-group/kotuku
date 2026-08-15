@@ -689,6 +689,7 @@ static void gc_traverse_thread(global_State *g, lua_State* th)
          setnilV(o);
    }
    gc_markobj(g, tabref(th->env));
+   gc_marktv(g, &th->pending_close_error);
    for (const lua_State::ContextFrame &context : th->context_stack) {
       GCtab *table = tabref(context.table);
       lj_assertG(table, "context stack contains a non-table root");

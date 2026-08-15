@@ -1893,7 +1893,7 @@ static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
          if ((it->isScript()) and
                 (it->Context IS Args->Function.Context) and
-                (it->ProcedureID IS Args->Function.ProcedureID)) {
+                (it->scriptValue() IS Args->Function.scriptValue())) {
             deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             removed_listener = true;

@@ -191,7 +191,7 @@ static cTValue * exported_interface_member(
 }
 
 static ERR validate_method_state(lua_State *L, std::string_view Interface, std::string_view Method,
-   BuiltinCallableID Callable)
+   BuiltinCallableID Callable, bool RequireExportedMember)
 {
    if (not L or not builtin_callable_valid(Callable)) return ERR::InvalidValue;
    const char *canonical_name = builtin_callable_name(Callable);
@@ -206,8 +206,11 @@ static ERR validate_method_state(lua_State *L, std::string_view Interface, std::
    }
 
    GCfunc *canonical = lj_builtin_callable(L, Callable);
-   cTValue *exported = exported_interface_member(L, Interface, Method);
-   if (not canonical or not exported or not tvisfunc(exported) or funcV(exported) != canonical) return ERR::Mismatch;
+   if (not canonical) return ERR::Mismatch;
+   if (RequireExportedMember) {
+      cTValue *exported = exported_interface_member(L, Interface, Method);
+      if (not exported or not tvisfunc(exported) or funcV(exported) != canonical) return ERR::Mismatch;
+   }
    return ERR::Okay;
 }
 
@@ -284,7 +287,7 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
        ParamTypes.size() IS 0 or *ParamTypes.begin() != ReceiverType) return ERR::InvalidValue;
    ERR limits = validate_prototype_limits(ResultTypes, ParamTypes);
    if (limits != ERR::Okay) return limits;
-   ERR state_validation = validate_method_state(L, Interface, Method, Callable);
+   ERR state_validation = validate_method_state(L, Interface, Method, Callable, true);
    if (state_validation != ERR::Okay) return state_validation;
    if ((Flags & FProtoFlags::ContextIndependent) != FProtoFlags::None) {
       lj_builtin_set_context_independent(L, Callable);
@@ -333,6 +336,48 @@ ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view 
 
    auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable);
    glRegistry[prototype_key] = prototype;
+   glMethodRegistry[method_key] = prototype;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR reg_intrinsic_method(lua_State *L, std::string_view Interface, std::string_view Method,
+   TiriType ReceiverType, BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
+{
+   if (Interface.empty() or Method.empty() or ReceiverType IS TiriType::Any or
+       ReceiverType IS TiriType::Unknown or ReceiverType IS TiriType::Nil or ParamTypes.size() IS 0 or
+       *ParamTypes.begin() != ReceiverType) return ERR::InvalidValue;
+   ERR limits = validate_prototype_limits(ResultTypes, ParamTypes);
+   if (limits != ERR::Okay) return limits;
+   ERR state_validation = validate_method_state(L, Interface, Method, Callable, false);
+   if (state_validation != ERR::Okay) return state_validation;
+   if ((Flags & FProtoFlags::ContextIndependent) != FProtoFlags::None) {
+      lj_builtin_set_context_independent(L, Callable);
+   }
+
+   MethodKey method_key{ ReceiverType, kt::strhash(Method) };
+
+   { // Repeated state initialisation only needs shared access after its state-local callable validation.
+      std::shared_lock read_lock(glRegistryMutex);
+      if (auto existing = glMethodRegistry.find(method_key); existing != glMethodRegistry.end()) {
+         return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable) ?
+            ERR::Exists : ERR::Mismatch;
+      }
+   }
+
+   std::unique_lock lock(glRegistryMutex);
+   if (auto existing = glMethodRegistry.find(method_key); existing != glMethodRegistry.end()) {
+      return prototype_matches(existing->second, ResultTypes, ParamTypes, Flags, ReceiverType, Callable) ?
+         ERR::Exists : ERR::Mismatch;
+   }
+
+   lj_assertX(not glRegistrySealed.load(std::memory_order_acquire),
+      "intrinsic method '%.*s' registered after the prototype registry was sealed",
+      int(Method.size()), Method.data());
+
+   auto *prototype = alloc_prototype(ResultTypes, ParamTypes, Flags, ReceiverType, Callable);
    glMethodRegistry[method_key] = prototype;
    return ERR::Okay;
 }

@@ -105,7 +105,7 @@ global function extractFields(Def:str, Origin:str):table
             type = type.sub(1).trim()
          end
 
-         field = cType({ type=type, name=name.trim(), comment=comment.trim() }, Origin)
+         field = cType({ type=type, name=name?.trim(), comment=comment?.trim() }, Origin)
          if virtual then field.virtual = true end
          fields.insert(field)
       elseif not content.trim()?? then

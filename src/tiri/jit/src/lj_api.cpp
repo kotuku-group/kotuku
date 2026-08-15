@@ -288,6 +288,8 @@ static void copy_slot(lua_State *L, TValue * f, int idx)
 {
    if (idx IS LUA_GLOBALSINDEX) {
       lj_checkapi(tvistab(f), "stack slot %d is not a table", idx);
+      // Root replacement is an embedding boundary operation.  Native runtime code mutates this table rather than
+      // replacing L->env while Lua bytecode is active, so inherited context caches remain valid for the activation.
       // NOBARRIER: A thread (i.e. L) is never black.
       setgcref(L->env, obj2gco(tabV(f)));
    }

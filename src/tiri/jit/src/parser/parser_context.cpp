@@ -88,7 +88,7 @@ ParserResult<Token> ParserContext::consume(TokenKind kind, ParserErrorCode code)
 ParserResult<Token> ParserContext::expect_identifier(ParserErrorCode code)
 {
    Token current = this->tokens().current();
-   if (current.is_identifier()) {
+   if (current.is_identifier() or current.kind() IS TokenKind::Method) {
       this->token_stream.advance();
       return ParserResult<Token>::success(current);
    }

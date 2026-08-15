@@ -214,7 +214,7 @@ end
 @Test function StructDeclarationWithFieldChildren()
    doc = makeDoc([[
 struct User
-   Name: string -- The user name
+   Name: str -- The user name
    Age: int
    Sock: obj<NetSocket>
    Buf: char[32]
@@ -237,7 +237,7 @@ end
 
    name_field = findChild(user, 'Name')
    assert(name_field and name_field.kind is SYMBOL_KIND.FIELD, 'Struct fields should use the field kind.')
-   assert(name_field.detail is 'string', 'Field detail should carry the declared type.')
+   assert(name_field.detail is 'str', 'Field detail should carry the declared type.')
 
    sock_field = findChild(user, 'Sock')
    assert(sock_field and sock_field.detail is 'obj<NetSocket>', 'Generic field types should be preserved.')

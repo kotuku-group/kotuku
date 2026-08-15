@@ -134,12 +134,25 @@ static inline BCPOS bcemit_AJ(FuncState *fs, Op o, BCREG a, BCPOS j) {
 [[nodiscard]] static inline ExpDesc bcemit_builtin_callable(
    FuncState *State, BuiltinCallableID Id, BCREG Destination)
 {
-   fs_check_assert(State, builtin_callable_valid(Id) and lj_builtin_callable(State->L, Id),
-      "unregistered built-in callable ID");
+   fs_check_assert(State, builtin_callable_valid(Id), "invalid built-in callable ID");
    bcemit_AD(State, BC_BFUNC, Destination, BCREG(builtin_callable_index(Id)));
    ExpDesc result(ExpKind::NonReloc, Destination);
    result.result_type = TiriType::Func;
    return result;
+}
+
+// Prepare a canonical native call frame.  An optional receiver is written into argument zero before the callable is
+// loaded, preserving the established method-call bytecode order while sharing LJ_FR2-aware register arithmetic.
+
+[[nodiscard]] static inline BCReg bcemit_builtin_call_frame(
+   FuncState *State, BuiltinCallableID Id, BCReg CallBase, BCReg Receiver = BCReg(NO_REG))
+{
+   BCREG argument_count = Receiver.raw() IS NO_REG ? 0 : 1;
+   BCREG required_top = CallBase.raw() + 1 + LJ_FR2 + argument_count;
+   if (State->freereg < required_top) bcreg_reserve(State, required_top - State->freereg);
+   if (Receiver.raw() != NO_REG) bcemit_AD(State, BC_MOV, CallBase.raw() + 1 + LJ_FR2, Receiver.raw());
+   bcemit_builtin_callable(State, Id, CallBase.raw());
+   return CallBase;
 }
 
 // Emit BC_TGETS with overflow protection. When the string constant index exceeds 255 (the 8-bit C field limit),
