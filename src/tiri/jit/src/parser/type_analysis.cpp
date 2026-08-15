@@ -671,20 +671,34 @@ void TypeAnalyser::leave_function()
          if (position.concrete.primary != TiriType::Any and position.concrete.primary != TiriType::Unknown) {
             diag.expected = position.concrete.primary;
             diag.message = std::format(
-               "cannot infer result {} as '{}' from a dynamic value; declare ': {}' to check it at runtime or "
-               "': any' to allow a variant result",
+               "cannot infer result {} as '{}' from a dynamic value; declare ':{}' to check it at runtime or "
+               "':any' to allow a variant result",
                i + 1, type_name(position.concrete.primary), type_name(position.concrete.primary));
          }
          else {
             diag.message = std::format(
                "cannot infer result {} from a dynamic value; declare a concrete result type to check it at "
-               "runtime or ': any' to allow a variant result", i + 1);
+               "runtime or ':any' to allow a variant result", i + 1);
          }
          this->record_diagnostic(std::move(diag));
          ctx.inference_failed = true;
       }
 
       if (inferred_return_count > 0 and not ctx.inference_failed) {
+         #ifdef INCLUDE_TIPS
+         if (this->should_emit_tip(1)) {
+            for (size_t i = 0; i < inferred_return_count; ++i) {
+               const InferredReturnPosition &position = ctx.inferred_returns[i];
+               if (position.state != ReturnInferenceState::ExplicitAny) continue;
+
+               this->emit_tip(1, TipCategory::TypeSafety,
+                  "Function infers an 'any' result type; declare ':any' to make the variant result explicit",
+                  Token::from_span(position.location, TokenKind::ReturnToken));
+               break;
+            }
+         }
+         #endif
+
          FunctionReturnTypes &published = ctx.function->return_types;
          published.count = uint8_t(inferred_return_count);
          published.is_inferred = true;
@@ -1488,6 +1502,9 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   not (result_position IS 0 and is_table_read_expression(*Payload.values[source]));
                inferred.is_fixed = inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
                   inferred.primary != TiriType::Unknown;
+               if (result_position IS 0 and is_table_read_expression(*Payload.values[source])) {
+                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
+               }
                if (Payload.op != AssignmentOperator::Plain and not inferred.requires_destination_type) {
                   this->current_scope().declare_local(name, inferred, target.span);
                   this->publish_binding_type(name_ref->binding_id, inferred);
@@ -1520,6 +1537,7 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          if (Payload.values.empty()) continue;
          size_t source = std::min(i, Payload.values.size() - 1);
          size_t result_position = i - source;
+         const bool is_table_read = result_position IS 0 and is_table_read_expression(*Payload.values[source]);
          InferredType value_type;
          if (result_position IS 0) value_type = this->infer_expression_type(*Payload.values[source]);
          else {
@@ -1626,7 +1644,11 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             // But don't fix if the variable was explicitly declared as 'any'
             if (existing->primary IS TiriType::Nil and
                 (value_type.primary IS TiriType::Any or value_type.primary IS TiriType::Unknown)) {
-               this->mark_dynamic_ingress(name, is_global);
+               if (is_table_read and not is_global) {
+                  this->fix_local_type(name, name_ref->binding_id, TiriType::Any);
+                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
+               }
+               else this->mark_dynamic_ingress(name, is_global);
             }
             else if ((existing->primary != TiriType::Any) and (value_type.primary != TiriType::Nil)) {
                if (is_global) {
@@ -1781,7 +1803,8 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       #endif
 
       this->current_scope().declare_local(name.symbol, inferred, name.span, name.has_const);
-      if (name.type IS TiriType::Any and name.binding_id) {
+      if ((name.type IS TiriType::Any or (initialiser and is_table_read_expression(*initialiser))) and
+          name.binding_id) {
          this->explicit_variant_bindings_.insert(name.binding_id);
       }
       this->publish_binding_type(name.binding_id, inferred);
@@ -2523,9 +2546,9 @@ void TypeAnalyser::check_argument_type(
 // - Binary ops: Depends on operator (comparisons -> bool, arithmetic -> num, etc.)
 // - Unary ops: Depends on operator (not -> bool, negate -> num, length -> num)
 
-// Reads from a resolved untyped table yield 'any' because element types are not tracked.  Such a value is dynamic by
-// nature rather than by an unresolved ingress, so it must not lock the destination into requiring an annotation.
-// Struct fields and typed array elements infer concrete types and never reach this path.
+// Reads from an untyped table, including an unannotated parameter, yield 'any' because element types are not tracked.
+// Such a value is dynamic by nature rather than by an unresolved ingress, so it must not lock the destination into
+// requiring an annotation.  Struct fields and typed array elements infer concrete types and never reach this path.
 
 bool TypeAnalyser::is_table_read_expression(const ExprNode &Expr)
 {
@@ -2566,7 +2589,10 @@ bool TypeAnalyser::is_table_read_expression(const ExprNode &Expr)
          return false;
    }
 
-   return base and this->infer_expression_type(*base).primary IS TiriType::Table;
+   if (not base) return false;
+
+   const TiriType base_type = this->infer_expression_type(*base).primary;
+   return base_type IS TiriType::Table or base_type IS TiriType::Any;
 }
 
 InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
