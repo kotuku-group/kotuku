@@ -1,12 +1,4 @@
-// CHANGED: 2026-07-27 — struct<Name> documented as an exact runtime contract.
-// CREATED: 2026-07-15 — Struct documentation relocated from the former Modules & Structures chapter.  Added the native 'struct' declaration syntax, the official field type table and typed reference annotations (commit 9279202).  Removed the internal MAKESTRUCT interface and its shorthand field definitions.
-// UPDATED: 2026-07-16 — Dynamically sized array<type> fields can now be declared in native structs (commit 408def84d).
-// UPDATED: 2026-07-17 — Declarations are now 'end'-terminated blocks rather than brace-delimited (commit 56400bb).  Declarations no longer bind a constructor; instances are constructed only through the explicit struct<Name> { ... } form (commit 41b2c10).
-// CHANGED: 2026-07-31 — Replaced ambiguous pointer-safety guidance with a specific warning.
-// CHANGED: 2026-08-02 — Field writes validate value categories exactly; added sec-struct-numeric-conversion for truncation, width wrapping and non-finite rejection (commit 9f89c965).
-// CHANGED: 2026-08-07 — Module definitions are now registered by the 'module' declaration; 'mod.load()' no longer exists (commit 45b671b20).
-// UPDATED: 2026-08-08 — The struct<Name> initialiser table is now optional; removed the retired 'int32' and 'uint32' field spellings (commit d04a2e798).
-// UPDATED: 2026-08-11 - Instance-taking struct functions are also callable as built-in methods on the instance (commit 7e6746950)
+// VERIFIED: 2028-08-15
 
 [[ch-structs]]
 == Structs
@@ -49,7 +41,7 @@ indexterm:[struct declarations] The `struct` declaration statement registers a n
 [source,tiri]
 ----
 struct User
-   Name: string
+   Name: str
    Age: int
    Enabled: bool
 end
@@ -60,7 +52,7 @@ print(user.Name, user.Age)   -- Alice  30
 
 Each field is declared as `Name: type`, where `type` is one of the official field types listed in <<sec-struct-field-types>>.  Fields are separated by commas or newlines; both separators are interchangeable within the same declaration.
 
-A declaration does not bind the definition name as a variable or constructor.  Instances are constructed through the explicit `struct<Name>` form described in <<sec-struct-construction>>, or through the `struct` namespace functions in <<sec-struct-namespace>>.  Braces are reserved for construction and cannot delimit a declaration.
+A declaration does not bind the definition name as a variable or constructor.  Instances are constructed through the explicit `struct<Name>` form described in <<sec-struct-construction>>, or through the `struct` namespace functions in <<sec-struct-namespace>>.
 
 [discrete]
 ==== Semantics
@@ -77,7 +69,7 @@ A declaration does not bind the definition name as a variable or constructor.  I
 The following conditions raise a parse error:
 
 * A definition name containing non-alphanumeric characters.
-* A brace following the definition name.  Declarations use `end` termination; braces are reserved for `struct<Name> { ... }` construction.
+* A brace following the definition name.  Declarations use `end` termination; braces are reserved for `struct<Name> { pass:[...] }` construction.
 * A declaration with no fields.
 * Two field names that collide case-insensitively.
 * An unrecognised field type name.
@@ -159,7 +151,7 @@ user  = struct<User> { Name='Alice', Age=30, Enabled=true }
 |64-bit floating point.
 |8
 
-|`string`
+|`str`
 |Owned string.  The struct owns the string storage.
 |Implementation-defined
 
@@ -213,7 +205,7 @@ struct Sample
 end
 ----
 
-Fixed arrays of `string` are not supported and raise a parse error.
+Fixed arrays of `str` are not supported and raise a parse error.
 
 [[sec-struct-dynamic-arrays]]
 [discrete]
@@ -224,7 +216,7 @@ indexterm:[struct array fields] The `array<type>` field type declares a dynamica
 [source,tiri]
 ----
 struct Palette
-   Names:  array<string>
+   Names:  array<str>
    Values: array<int>
 end
 
@@ -232,7 +224,7 @@ palette = struct<Palette> { Values=array<int> { 1, 2, 3 } }
 palette.Values = array<int> { 8, 9, 10, 11, 12 }   -- resizes to five elements
 ----
 
-The element type may be any scalar numeric type from the table above, `string`, or `struct<Name>` where `Name` references a registered definition whose fields are all trivially owned (a definition containing owned `string` or `array` fields is rejected).  Element types that own external resources -- `cstr`, `ptr`, `obj`, `func` and nested `array` types -- raise a parse error.
+The element type may be any scalar numeric type from the table above, `str`, or `struct<Name>` where `Name` references a registered definition whose fields are all trivially owned (a definition containing owned `str` or `array` fields is rejected).  Element types that own external resources -- `cstr`, `ptr`, `obj`, `func` and nested `array` types -- raise a parse error.
 
 A dynamic array field cannot declare a dimension: both `array<type, N>` and `array<type>[N]` raise a parse error.  A newly constructed instance reads dynamic array fields as empty arrays.
 
@@ -294,7 +286,7 @@ tag = struct.new('XMLTag', address)
 
 [.api]`bytes = struct.size(StructName)`
 
-Returns the byte size of the struct definition identified by `StructName`.  Does not create a struct instance.  Raises an exception if the definition is not found.
+Returns the byte size of the struct definition identified by `StructName`.  Raises an exception if the definition is not found.
 
 ==== struct.clone()
 
@@ -317,12 +309,6 @@ print(copy.name)   -- 'source'
 Deep-copies the payload of `Source` into the existing `Dest` instance and returns `Dest`.  `Dest` and `Source` must share the same definition; a mismatch raises an exception with `ERR_Mismatch`.  Raises an exception if either payload is null, if the payloads overlap in memory, or if the definition holds an unsupported C++ array field type.
 
 === Instance Methods
-
-==== structSize() Method
-
-[.api]`bytes = inst.structSize()`
-
-Returns the byte size of the struct instance.  Be wary of confusing this method with `size()`, which does not exist in this context (`size` is a common field name).
 
 ==== ptr() Method
 
@@ -456,9 +442,9 @@ end
 [[sec-struct-tostring]]
 === String Representation
 
-`tostring()` produces a string in the form `StructName: 0xADDRESS`, where `StructName` is the definition name and `ADDRESS` is the payload address in hexadecimal.
+`tostring()` returns the name of the struct definition.
 
 [source,tiri]
 ----
-tostring(struct.new('IterableRecord'))  -- 'IterableRecord: 0x...'
+tostring(struct.new('IterableRecord'))  -- 'IterableRecord'
 ----

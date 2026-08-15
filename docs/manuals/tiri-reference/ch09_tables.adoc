@@ -1,13 +1,4 @@
-// VERIFIED: 2026-02-11
-// UPDATED: 2026-08-06 - Documented bare table iteration in generic for loops (commit 5f9e2003e)
-// UPDATED: 2026-08-06 - The length of a string-keyed table is now permanently nil (commit 6fc85b01b)
-// UPDATED: 2026-08-06 - Broadened the length classification to every non-numeric key (commit d40436498)
-// UPDATED: 2026-08-06 - Added sparse classification, the sequence guards, table.kind(), table.size() and
-//                       duplicate constructor key rejection (commit 26e122ab7)
-// UPDATED: 2026-08-11 - Table library functions are also callable as built-in methods on a table receiver (commit 7e6746950)
-// UPDATED: 2026-08-11 - table.clear() now dispatches to the __clear metamethod (commit 0e4d3a341)
-// UPDATED: 2026-08-11 - Added the Tables as Objects section covering methods, constructors, encapsulation,
-//                       prototypes, polymorphism and extracted methods (commit 798665547)
+// VERIFIED: 2026-08-15
 
 [[ch-tables]]
 == Tables
@@ -204,7 +195,7 @@ table.insert(t, 3)    -- error: 'insert'() requires a sequence table
 table.concat(t, ',', 0, 1)   -- '1,2': an explicit End supplies the range
 ----
 
-CAUTION: `#` on a table is therefore a nullable expression.  Code that feeds it straight into arithmetic, such as
+CAUTION: Using `#` on a table is a nullable expression.  Code that feeds it straight into arithmetic, such as
 `#t - 1`, raises an error once the table acquires a classifying key.  Use `rawlen()` where the numerical sequence
 length is what is actually wanted.
 
@@ -736,6 +727,273 @@ t[{2 to 2}]     -- {} (empty exclusive range)
 t[{5 to 10}]    -- {} (beyond table length)
 ----
 
+[[sec-table-entities]]
+=== Entities
+
+indexterm:[entities] indexterm:[tables, entities] An __entity__ is a table that has been permitted to establish itself as the context of a call made on it (<<sec-the-current-context>>).  Tables without this designation are ordinary and cannot be used as context.
+
+An entity is elevated above the ordinary table type and loses none of its properties.  It is a `table` for the purposes of `type()`, indexing, iteration, length, classification, identity, equality and every function of the table library.  Designation adds one capability and changes nothing else.
+
+Designation attaches to the table identity rather than to a variable, so every alias of an entity is an entity.  The designation is permanent and cannot be removed.
+
+==== Constructor Designation
+
+[source,ebnf]
+----
+entity_expr = "entity" table_constructor ;
+----
+
+The `entity` prefix designates the table that the following constructor produces:
+
+[%unbreakable]
+[source,tiri]
+----
+account = entity { owner = 'You', balance = 0 }
+readings = entity { 10, 20, 30 }
+----
+
+`entity` is a contextual keyword.  It introduces a designation only when a table constructor follows it, and remains available as an ordinary identifier in every other position.
+
+Designation is not recursive.  A table constructor nested inside an entity constructor produces an ordinary table:
+
+[source,tiri]
+----
+outer = entity { inner = { name = 'inner' } }
+-- 'outer' is an entity; 'outer.inner' is ordinary
+----
+
+[[sec-context-metafield]]
+==== Metatable Designation
+
+Attaching a metatable whose raw `pass:[__]context` field is `true` designates the target:
+
+[%unbreakable]
+[source,tiri]
+----
+Shape = { __context = true }
+Shape.__index = Shape
+
+function Shape.new(Name:str):table
+   return setmetatable({ name = Name }, Shape)
+end
+----
+
+The marker is read raw and shallow at the moment `setmetatable()` is called: `pass:[__]index` is not consulted, and neither is a metatable of the metatable.  A value of any other type, including a truthy non-boolean, leaves the target ordinary.  The marker is a designation input and not a live property; removing it from the metatable afterwards does not clear the designation.
+
+This form exists so that a constructor can designate the instance it builds, which is the basis of the class pattern in <<sec-class-pattern>>.
+
+===== Ownership
+
+Promotion of an ordinary table requires the author to own it.  The designating call must be a direct call to the built-in `setmetatable()`, and the target must trace back to a table constructor allocated in the function that performs the designation.  Prior ordinary use of an owned allocation -- mutation, aliasing, storage, or being passed to a call -- never removes ownership.
+
+[%unbreakable]
+[source,tiri]
+----
+contextual = { __context = true }
+
+function promote(Table:table):table
+   return setmetatable(Table, contextual)   -- error: the caller owns 'Table'
+end
+----
+
+The diagnostic is raised at compile time when the marker is visible to the compiler, and at runtime otherwise.  A call made through an extracted or shadowed `setmetatable` carries no authorisation and raises at runtime.
+
+A target that is already an entity accepts any metatable, because designation is permanent and no promotion takes place.
+
+==== Derived Tables
+
+Slicing propagates designation from its source, because the result is derived from a live table.  The three slice spellings behave identically, including when the result is empty:
+
+[%unbreakable]
+[source,tiri]
+----
+source = entity { 10, 20, 30 }
+
+source[{0 to 1}]               -- an entity
+table.slice(source, {0 to 1})  -- an entity
+range.slice(source, {0 to 1})  -- an entity
+----
+
+No other operation propagates designation.  A manually populated constructor, a decoded document, and a table that merely holds an entity as an element are all ordinary.  `table.move()` does not create its destination, so it neither designates a caller-supplied ordinary destination nor disturbs an entity destination.
+
+[[sec-tables-as-objects]]
+=== Tables as Objects
+
+indexterm:[tables, objects] indexterm:[objects, tables] indexterm:[methods] A table entity whose fields hold functions is an object, and those functions are its methods.  Calling a function as a member of an entity establishes that entity as the current context, so the function reaches the receiver's fields through a leading `&` without declaring a parameter for it.  <<sec-the-current-context>> defines the mechanism, <<sec-table-entities>> defines designation, and this section applies both.
+
+The capability requires no library, but it does require designation.  A table that is not an entity holds functions as ordinary fields, and calling one of them establishes no context.
+
+==== Methods
+
+A method is an ordinary function stored in the field of an entity.  It reads and writes the receiver through self referencing:
+
+[%unbreakable]
+[source,tiri]
+----
+stack = entity { items = {} }
+
+function stack.push(Value:any)
+   &items[#&items] = Value
+end
+
+function stack.pop():any
+   local last = #&items - 1
+   local value = &items[last]
+   &items[last] = nil
+   return value
+end
+
+stack.push('a')
+stack.pop()      -- 'a'
+----
+
+A method calls a sibling method through the context, without naming the receiver:
+
+[%unbreakable]
+[source,tiri]
+----
+function stack.drain()
+   while #&items > 0 do
+      &pop()
+   end
+end
+----
+
+A method name must not collide with a built-in `table` method, because the built-in owns the immediate call position on a table receiver.  See <<sec-built-in-method-calls>>.
+
+==== Constructors
+
+A constructor is a function that builds and returns a configured table.  Nothing distinguishes it from any other function; the name `new` is a convention:
+
+[%unbreakable]
+[source,tiri]
+----
+Account = {}
+
+function Account.new(Owner:str):table
+   local instance = entity { owner = Owner, balance = 0 }
+
+   function instance.deposit(Amount:num):num
+      &balance += Amount
+      return &balance
+   end
+
+   function instance.statement():str
+      return &owner .. ': ' .. &balance
+   end
+
+   return instance
+end
+
+savings = Account.new('Joe Bloggs')
+savings.deposit(120)
+savings.statement()      -- 'Joe Bloggs: 120'
+----
+
+This form gives every instance its own copy of each method.  <<sec-prototypes-and-inheritance>> shares one copy across all instances instead.
+
+==== Encapsulation
+
+Methods declared inside a constructor close over its locals (<<sec-closures>>).  A local that is never stored in the returned table is unreachable from outside, which yields private state:
+
+[%unbreakable]
+[source,tiri]
+----
+function newCounter(Start:num):table
+   local count = Start
+   local instance = entity {}
+
+   function instance.increment():num
+      count++
+      return count
+   end
+
+   return instance
+end
+
+counter = newCounter(5)
+counter.increment()          -- 6
+print(counter.count)         -- nil: the state is not a field
+----
+
+Private state held in an upvalue and public state held in a field are independent.  Self referencing reaches only the fields.
+
+[[sec-prototypes-and-inheritance]]
+==== Prototypes and Inheritance
+
+Setting an instance's `pass:[__]index` metamethod to a shared table causes absent lookups to fall through to that table (<<sec-indexing>>).  The shared table holds one copy of each method, and the instance holds only its data.
+
+The receiver of the call is the instance, so an inherited method operates on the instance that received the call.
+
+[%unbreakable]
+[source,tiri]
+----
+Shape = {}
+
+function Shape.describe():str
+   return &name .. ' has area ' .. &area() <1>
+end
+
+Rectangle = setmetatable({}, { __index = Shape })
+
+function Rectangle.area():num
+   return &width * &height
+end
+
+function Rectangle.new(Width:num, Height:num):table
+   return setmetatable({
+         name = 'rectangle', width = Width, height = Height
+      },
+      { __index = Rectangle, __context = true })
+end
+
+Rectangle.new(3, 4).describe()      -- 'rectangle has area 12'
+----
+<1> `describe` is declared once on `Shape` and reads `&name` from the instance.  `&area()` resolves through the same chain: it is absent from the instance, found on `Rectangle`, and runs with the instance as its context.
+
+Neither `Shape` nor `Rectangle` is an entity; only the instances are, because only the instance is ever a receiver.  Inheritance depth is limited only by the chain limit described in <<sec-indexing>>.
+
+==== Polymorphism
+
+A method resolved through a prototype chain dispatches on the receiver, so distinct types answer the same call with their own implementations:
+
+[source,tiri]
+----
+Circle = setmetatable({}, { __index = Shape })
+
+function Circle.area():num
+   return math.floor(math.pi * &radius * &radius)
+end
+
+function Circle.new(Radius:num):table
+   return setmetatable({ name = 'circle', radius = Radius },
+      { __index = Circle, __context = true })
+end
+
+for _, shape in pairs({ Rectangle.new(2, 5), Circle.new(3) }) do
+   print(shape.describe())
+end
+----
+
+`Shape.describe` is unchanged.  Each call binds `&area` to the implementation reached from that instance's chain.
+
+==== Extracted Methods
+
+Selecting a method without calling it yields an unbound function value.  It carries no receiver, so calling it later runs it in whatever context is current at the call site, not on the table it came from:
+
+[source,tiri]
+----
+handler = savings.deposit
+handler(50)              -- does not operate on 'savings'
+----
+
+Pass the table and call the method on it, or wrap the call in a closure, when a receiver must survive the extraction:
+
+[source,tiri]
+----
+handler = function(Amount:num) return savings.deposit(Amount) end
+----
+
 [[sec-tables-vs-arrays]]
 === Tables vs. Arrays
 indexterm:[tables, arrays comparison] indexterm:[arrays, tables comparison] Tables and arrays serve different purposes.  The following comparison summarises the key distinctions.
@@ -757,7 +1015,7 @@ indexterm:[tables, arrays comparison] indexterm:[arrays, tables comparison] Tabl
 |Contiguous typed buffer
 
 |Key types
-|Strings, integers, and any non-`nil` value
+|Strings, integers, and any non-nil value
 |Integer indices only
 
 |Indexing

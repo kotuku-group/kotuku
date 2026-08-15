@@ -1,6 +1,7 @@
 // UPDATED: 2026-07-06 -- Added the `extern` keyword.
 // UPDATED: 2026-04-03 -- Clarified `is not` as an inequality form using reserved words.
 // CHANGED: 2026-08-07 -- Documented the contextual keywords `module` and `struct`, and `as` in its module-declaration role (commit 45b671b20).
+// UPDATED: 2026-08-13 -- Added the reserved word `using` and the contextual keyword `entity` (commit d3638efc0).
 [[appendix-reserved-words]]
 [appendix]
 == Reserved Words & Keywords
@@ -16,8 +17,10 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 |`global`   |`has`     |`if`      |`import`   |`in`      |`is`
 |`local`    |`namespace`|`nil`    |`not`      |`or`      |`raise`
 |`repeat`   |`return`  |`success` |`then`     |`thunk`   |`true`
-|`try`      |`until`   |`when`    |`while`    |`with`    |
+|`try`      |`until`   |`using`   |`when`     |`while`   |`with`
 |===
+
+A reserved word remains available as a table member name, so `t.using` and `t.with` are valid field accesses.
 
 === Reference by Category
 
@@ -108,6 +111,7 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 |`import`    |Inlines a Tiri library script at parse time.  See <<sec-the-import-directive>>.
 |`as`        |Provides a namespace alias in an `import` statement, and binds a module namespace in a `module` declaration.  See <<sec-the-import-directive>> and <<sec-module-declarations>>.
 |`defer`     |Registers code to execute when the enclosing scope exits.  See <<ch-resource-management>>.
+|`using`     |Activates a table as the current context for the duration of a block.  See <<sec-context-blocks>>.
 |===
 
 === Contextual Keywords
@@ -120,4 +124,5 @@ indexterm:[contextual keywords] A contextual keyword introduces a declaration on
 
 |`module` |Binds a Kōtuku module to a namespace when followed by an identifier, as `module Name as Namespace`.  See <<sec-module-declarations>>.
 |`struct` |Declares a struct layout when followed by an identifier.  See <<sec-struct-declarations>>.
+|`entity` |Designates a table as an entity when followed by a table constructor, as `entity { pass:[...] }`.  The form takes precedence over the same-line table-argument call shorthand, so a callable named `entity` requires parenthesised call syntax.  See <<sec-table-entities>>.
 |===

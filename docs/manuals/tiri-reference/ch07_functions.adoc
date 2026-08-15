@@ -1,14 +1,4 @@
 // VERIFIED: 2028-08-06
-// UPDATED: 2026-08-07 - Return type inference now accepts reads from a known table as variant results, so an
-//                       annotation is no longer required for them; added the Variant Results section (commit 58755ad6f)
-// UPDATED: 2026-08-08 - Documented the required value annotation ('!') on parameters and return values; corrected the
-//                       forward declaration caution and the signature comparison list (commit db7996e3e)
-// UPDATED: 2026-08-11 - Replaced the Method Syntax section with Qualified Names and Built-in Method Calls; documented
-//                       receiver resolution, built-in call priority, field-call escape forms and shadowing rules
-//                       (commit 7e6746950)
-// UPDATED: 2026-08-11 - Added The Current Context section covering leading-dot access, contextual calls, inherited
-//                       context, restoration, the root context and callback unbinding; rewrote Qualified Names for
-//                       the contextual receiver (commit 798665547)
 
 [[ch-functions]]
 == Functions
@@ -44,34 +34,9 @@ end
 
 ==== Locality
 
-Functions declared without a qualifier are local to the enclosing scope:
+Functions declared without a qualifier are local to the enclosing scope.
 
-[%unbreakable]
-[source,tiri]
-----
-function helper()       -- local by default
-   return 42
-end
-----
-
-The `local` keyword makes locality explicit and is required for forward declarations and multi-assignment patterns:
-
-[source,tiri]
-----
-local isOdd              -- forward declaration
-
-function isEven(N: num):bool
-   if N is 0 then return true end
-   return isOdd(N - 1)
-end
-
-isOdd = function(N: num):bool
-   if N is 0 then return false end
-   return isEven(N - 1)
-end
-----
-
-The `global` keyword makes a function accessible to the parent scope and to nested functions that reference it by name:
+The `global` keyword makes a function accessible to the parent scope, external code and to nested functions that reference it by name:
 
 [%unbreakable]
 [source,tiri]
@@ -84,56 +49,44 @@ end
 [[sec-forward-declarations]]
 ==== Forward Declarations
 
-indexterm:[functions, forward declarations] indexterm:[forward declarations] A `global function` declaration with an empty body is a forward declaration.  It publishes the name and signature of a function whose full definition appears later in the same chunk:
+indexterm:[functions, forward declarations] indexterm:[forward declarations] A `function` declaration with an empty body is a forward declaration.  It publishes the name and signature of a function whose full definition appears later in the same chunk:
 
 [%unbreakable]
 [source,tiri]
 ----
-global function transform(Value:str, Options:table):<str, num> end
+function transform(Value:str, Options:table):<str, num> end
 
-global function transform(Value:str, Options:table):<str, num>
+...
+
+function transform(Value:str, Options:table):<str, num>
    return Value.upper(), #Value
 end
 ----
 
-A forward declaration is a complete function definition, so it binds a function value to the global name immediately.  Calling that value before the full definition executes runs the empty body and returns no values.
+A forward declaration is a complete function definition, so it binds a function value to the name immediately.  Calling that value before the full definition executes runs the empty body and returns no values.
 
-CAUTION: The empty body yields `nil` for every declared result.  A result that is not marked required accepts `nil`, so a call made before the real definition executes fails quietly rather than raising a contract failure.  Place forward declarations immediately before the code that needs them.  A result marked with the `!` suffix (see <<sec-required-values>>) rejects `nil`, so a premature call raises a contract failure instead.
-
-Every subsequent `global function` definition of the same name must match the signature of the forward declaration.  The compiler compares:
+Every subsequent `function` definition of the same name must match the signature of the forward declaration.  The compiler compares:
 
 * The callable kind, `function` or `thunk`.
 * The parameter count and the presence of the variadic marker.
-* For each parameter, whether a type annotation is present, the annotated type, including the struct definition for `struct` and `ptr` types and the element type for array types, and whether the annotation marks the parameter required.
-* Whether a return type annotation is present, the declared return count, the presence of a variadic return marker, and each declared return type, compared on the same terms as the parameter types.
+* For each parameter, the type annotation must match if present.
+* Return types are compared on the same terms as the parameter types.
 
 Parameter names are excluded from the comparison, so the definition is free to rename its parameters:
 
 [%unbreakable]
 [source,tiri]
 ----
-global function encode(Input:str):str end
+function encode(Input:str):str end
 
-global function encode(Source:str):str   -- accepted, name ignored
+function encode(Source:str):str   -- accepted, name ignored
    return Source
 end
 ----
 
-A mismatch raises a compile-time error that identifies the parameter or return position at fault:
+A mismatch raises a compile-time error that identifies the parameter or return position at fault.
 
-[%unbreakable]
-[source,tiri]
-----
-global function encode(Input:str):str end
-
-global function encode(Source:num):num   -- error on parameter 1
-   return Source
-end
-----
-
-The contract is enforced for the remainder of the chunk and is not scope-sensitive.  A definition nested inside a conditional branch is validated against the original forward declaration in the same way as a definition at the top level.
-
-Forward declaration checking applies to `global function` declarations only.  A local forward declaration takes the form of a `local` variable that is assigned a function value later (see <<sec-recursive-functions>>), and carries no signature contract.
+The contract is enforced for the remainder of the chunk and is not scope-sensitive.
 
 [[sec-qualified-function-names]]
 ==== Qualified Names
@@ -143,17 +96,82 @@ A function name is a dot-separated path.  Each leading segment names a table; th
 [%unbreakable]
 [source,tiri]
 ----
-function obj:getName()
-   return self.name
-end
+account = entity { name = 'current' }
 
--- Equivalent to:
-function obj.getName(self)
-   return self.name
+function account.getName():str
+   return &name   -- 'current'
 end
 ----
 
-Dot syntax stores the function as a table field without an implicit `self`.
+The declaration is equivalent to assigning an anonymous function to `account.getName`.  No parameter is supplied implicitly.  A function called as a member of a table entity reaches its receiver through the current context, written with a leading `&`, so no receiver parameter is declared or passed.
+
+[[sec-built-in-method-calls]]
+==== Built-in Method Calls
+
+A call of the form `receiver.name(pass:[...])` invokes a registered built-in method when `name` is a method of the receiver's type.  The receiver is passed as the first argument automatically, so the call is equivalent to the namespace form:
+
+[%unbreakable]
+[source,tiri]
+----
+'hello'.upper()          -- equivalent to string.upper('hello')
+items.push(3)            -- equivalent to array.push(items, 3)
+entries.insert('a')      -- equivalent to table.insert(entries, 'a')
+{0 to 5}.contains(3)     -- equivalent to range.contains({0 to 5}, 3)
+----
+
+The receiver type is resolved statically where the compiler can prove it, and at runtime otherwise.  Receivers reached through table fields, function parameters or chained expressions therefore dispatch correctly without an annotation.
+
+The following types publish built-in methods: `str` (<<ch-strings>>), `table` (<<ch-tables>>), `array` (<<ch-arrays>>), `range` (<<ch-ranges>>), `struct` (<<ch-structs>>) and file handles (<<sec-file-handle-methods>>).  Kōtuku objects use dot notation for their own actions and methods and are not affected by these rules; see <<sec-actions-and-methods>>.
+
+A call that resolves to a built-in method leaves the current context unchanged.  A call that resolves to a function held in a table field establishes that table as the current context when the table is an entity; see <<sec-contextual-calls>>.
+
+===== Resolution Order
+
+A registered built-in method takes the immediate call position, even when the receiver holds a field of the same name:
+
+[%unbreakable]
+[source,tiri]
+----
+records = {}
+records.insert = 'field value'
+records.insert('method value')   -- calls the built-in table.insert()
+print(records.insert)            -- 'field value'; the field is unchanged
+print(records[0])                -- 'method value'
+----
+
+Two forms escape the built-in and call the field instead.  Parenthesising the member access, or indexing with a computed key, both produce an ordinary field call:
+
+[source,tiri]
+----
+(records.insert)('one')      -- calls the field
+records['insert']('two')     -- calls the field
+----
+
+===== Shadowing
+
+Assigning a function to a member whose name matches a built-in method of the receiver's type is rejected at compile time, because the assignment would be unreachable through dot-call syntax.  Use a computed key to declare the shadowing field explicitly:
+
+[%unbreakable]
+[source,tiri]
+----
+records = {}
+records.insert = function(V:any):any return V end     -- error: cannot assign
+                                                      -- a function to built-in
+                                                      -- method 'insert'
+records['insert'] = function(V:any):any return V end  -- permitted
+----
+
+The same rule applies to a record field in a table constructor.  Assigning a non-function value to such a name is permitted, as shown in the preceding section.
+
+===== Safe Method Calls
+
+`receiver?.name(pass:[...])` applies safe navigation to a built-in method call.  If the receiver is `nil` the call is skipped and the expression evaluates to `nil`; see <<sec-safe-navigation>>.
+
+[source,tiri]
+----
+text = nil
+result = text?.upper()   -- nil
+----
 
 ==== Anonymous Functions
 
@@ -168,6 +186,340 @@ end
 
 table.sort(items, function(A, B) return A < B end)
 ----
+
+[[sec-the-current-context]]
+=== The Current Context
+
+indexterm:[current context] indexterm:[context] indexterm:[receiver] Every function activation runs within a __context__, represented by a table that the activation reaches without naming it.  A leading `&` on a name reads or writes a field of that table, and `+&&+` yields the table itself.  The current context is Tiri's equivalent of the receiver that other languages expose as `this` or `self`.
+
+The capability is opt-in.  A receiver becomes the current context of a call made on it only when it is a table that has been designated an __entity__ (<<sec-table-entities>>).  An ordinary table receiver leaves the context unchanged, as does a receiver of any other type.  Designation belongs to the table identity, not to the functions stored in it, so one function behaves according to the receiver used for each call.
+
+[%unbreakable]
+[source,tiri]
+----
+account = entity { name = 'current', balance = 0 }
+
+function account.deposit(Amount:num):num
+   &balance += Amount
+   return &balance
+end
+
+account.deposit(50)        -- 50
+print(account.balance)     -- 50
+----
+
+No parameter is reserved for the receiver and no declaration syntax marks `account.deposit` as a method.  `Amount` is the only parameter, and the call passes only the arguments that are written.
+
+An entity is elevated above the ordinary table type without losing any of its properties.  It remains a table for the purposes of typing, indexing, iteration, length, equality and the table library; designation adds the ability to establish context and nothing else.
+
+<<sec-tables-as-objects>> applies the mechanism to constructors, prototypes and inheritance.
+
+[[sec-self-referencing]]
+==== Self Referencing
+
+[source,ebnf]
+----
+self_reference = "&" identifier { suffix } ;
+context_value  = "&&" { suffix } ;
+suffix         = "." identifier | "[" expression "]" ;
+----
+
+indexterm:[self referencing] indexterm:[current context, self referencing] A leading `&` denotes the current context.  `&name` is exactly `Context.name`, where `Context` is the current context table.  Self referencing is ordinary table indexing: it consults `pass:[__]index` and `pass:[__]newindex` (<<sec-indexing>>), yields `nil` for an absent key, and creates a key on assignment.
+
+A self reference occupies every position that an ordinary field access occupies -- reads, assignment targets, compound assignment targets, and call positions:
+
+[%unbreakable]
+[source,tiri]
+----
+counter = entity { total = 0, history = {} }
+
+function counter.track(Value:num)
+   &total += Value                        -- compound assignment
+   &history[#&history] = Value            -- indexed suffix
+   &last = Value                          -- creates the field
+end
+----
+
+Self referencing performs no type test of its own.  A read of a key that the context does not hold yields `nil`.
+
+===== Form
+
+The `&` must be followed immediately by an identifier, with no intervening whitespace or comment.  Suffixes after that identifier are unrestricted, so `&config.retries` and `&entries[Index]` are valid while `&[Index]` is not.  A self reference whose identifier is absent or displaced is rejected at compile time.
+
+The adjacency requirement is what separates the two roles of the character.  A `&` that is separated from its operand by whitespace is the bitwise AND operator (<<sec-bitwise-operators>>):
+
+[source,tiri]
+----
+&flags                     -- self reference to the field 'flags'
+mask & flags               -- bitwise AND
+----
+
+===== Statement Boundaries
+
+A line break does not terminate a statement (<<sec-statement-ambiguity>>).  A self reference that opens a line therefore terminates the expression on the preceding line and begins a new statement:
+
+[%unbreakable]
+[source,tiri]
+----
+&total = Value
+&count++                   -- a second statement, not 'Value & count'
+----
+
+Two statements written on one line are read as a single expression, because the same-line `&` is the binary operator.  Separate them with a semicolon:
+
+[source,tiri]
+----
+&reset(); &count++
+----
+
+[[sec-context-expression]]
+==== The Context Expression
+
+indexterm:[current context, materialisation] `+&&+` evaluates to the active context table, and is the language's equivalent of `self`.  It carries ordinary member and index suffixes, so `+&&.name+` and `&name` resolve the same field:
+
+[%unbreakable]
+[source,tiri]
+----
+node = entity { name = 'node' }
+
+function node.register()
+   registry.add(&&)                       -- passes the receiver as a value
+end
+
+function node.label():str
+   return &&.name                         -- identical to &name
+end
+----
+
+`+&&+` is a value like any other.  It is compared with `is`, stored in a variable, passed as an argument and returned as a result; the identity it yields is the receiver of the call, so `node.register()` supplies `node` itself.
+
+An identifier or a further `&` placed immediately after `+&&+` is rejected at compile time, so `+&&name+` is an error rather than a self reference on a materialised context.  Write `+&&.name+` or `&name`.
+
+[[sec-contextual-calls]]
+==== Contextual Calls
+
+A call that selects its callable from an entity receiver is a __contextual call__.  The receiver becomes the current context for the whole activation, and the caller's context is restored when the activation ends.  Four written forms select a callable from a receiver:
+
+[cols="1,3"]
+|===
+|Form |Description
+
+|`receiver.name(pass:[...])`
+|Named member call.
+
+|`receiver[key](pass:[...])`
+|Computed member call.  `key` is evaluated once.
+
+|`receiver?.name(pass:[...])`
+|Safe named member call.  See <<sec-safe-navigation>>.
+
+|`receiver?[key](pass:[...])`
+|Safe computed member call.
+|===
+
+Parenthesising the member access (`(receiver.name)(pass:[...])`) escapes built-in method resolution, as described in <<sec-built-in-method-calls>>, but remains a contextual call.
+
+A safe form evaluates neither its key nor its arguments when the receiver is `nil`; the expression yields `nil` and the context is unchanged.
+
+The receiver establishes the context only when it is a table entity.  An ordinary table receiver, and a receiver of any other type -- `str`, `array`, `range`, `struct`, or a Kōtuku object -- dispatches exactly as <<sec-built-in-method-calls>> and <<sec-actions-and-methods>> define, and leaves the current context unchanged:
+
+[%unbreakable]
+[source,tiri]
+----
+ordinary = { name = 'ordinary' }
+designated = entity { name = 'designated' }
+
+function probe():any
+   return &name
+end
+
+ordinary.read = probe
+designated.read = probe
+
+ordinary.read()    -- nil: the caller's context is intact
+designated.read()  -- 'designated'
+----
+
+The receiver is tested at every call, so the same function value answers both calls according to the table it was reached through.
+
+Evaluation order is receiver, then key, then arguments, then the call.  The context is established before the arguments are evaluated, so an argument expression observes the receiver:
+
+[%unbreakable]
+[source,tiri]
+----
+gauge = entity { scale = 10 }
+
+function factor():num
+   return &scale          -- reads the receiver of the call below
+end
+
+function gauge.report(Value:num):num
+   return Value
+end
+
+gauge.report(factor())    -- 10
+----
+
+The callable is located by an ordinary lookup, so a function inherited through `pass:[__]index` receives the original receiver as its context rather than the table it was found in.  Contextuality is read from the receiver, so the instance is the table that must be designated:
+
+[%unbreakable]
+[source,tiri]
+----
+prototype = { label = 'prototype' }
+
+function prototype.describe():str
+   return &label
+end
+
+instance = entity { label = 'instance' }
+setmetatable(instance, { __index = prototype })
+instance.describe()     -- 'instance'
+----
+
+[[sec-inherited-context]]
+==== Calls That Inherit the Context
+
+A call that does not select its callable from an entity receiver leaves the context alone, and the callee runs in the caller's context.  This covers direct calls to named functions, calls through a variable holding a function value, calls to module namespaces, and every call made on an ordinary table:
+
+[%unbreakable]
+[source,tiri]
+----
+document = entity { title = 'Report' }
+
+function heading():str
+   return &title                   -- reads the caller's context
+end
+
+function document.render():str
+   return string.upper(heading())  -- 'REPORT'; neither call changes context
+end
+----
+
+Selecting a member without calling it produces an unbound function value.  The value carries no receiver, so a later call inherits whatever context is current where the call is written:
+
+[source,tiri]
+----
+extracted = document.render
+extracted()                 -- runs in the caller's context
+----
+
+Calling a member of the current context with `&name(pass:[...])` is a direct call on a function that the context supplies.  The callee inherits the same context, so one method calls another without naming the receiver:
+
+[%unbreakable]
+[source,tiri]
+----
+invoice = entity { net = 100, rate = 0.2 }
+
+function invoice.tax():num
+   return &net * &rate
+end
+
+function invoice.total():num
+   return &net + &tax()     -- &tax() runs in the same context
+end
+
+invoice.total()             -- 120
+----
+
+Closures follow the same rule.  A closure created inside a method does not capture the context; it inherits the context that is current when it is called.
+
+[[sec-context-restoration]]
+==== Restoration
+
+The caller's context is restored when a contextual activation ends, on every exit path:
+
+- A normal return restores the caller's context, for zero, fixed and multiple results alike.
+- An error restores the context of each surviving activation as the stack unwinds.  A `try` handler runs in the context of the activation that owns it (<<sec-try-except-statements>>).
+- A `<close>` handler runs in the context of the activation that owns the variable, including during error unwinding (<<sec-to-be-closed-variables>>).
+- A tail call transfers ownership of the context to the reused frame.  A contextual tail call installs its own receiver; a direct tail call retains the outgoing activation's context.  Neither form grows the stack (<<sec-tail-calls>>).
+
+[%unbreakable]
+[source,tiri]
+----
+outer = entity { name = 'outer' }
+inner = entity { name = 'inner' }
+
+function inner.fail()
+   error('failed in ' .. &name)
+end
+
+function outer.guard():str
+   try
+      inner.fail()
+   except e
+      return &name      -- 'outer': the handler's own context
+   end
+end
+----
+
+[[sec-context-blocks]]
+==== Context Blocks
+
+indexterm:[using statement] indexterm:[context blocks] A `using` statement activates a table as the current context for the duration of a block, without designating it:
+
+[source,ebnf]
+----
+using_stmt = "using" reference "do" block "end" ;
+reference  = identifier { "." identifier | "[" expression "]" } ;
+----
+
+The reference is restricted to an identifier, member or index path so that it names a stable receiver.  Calls and safe-navigation forms are rejected at compile time.  The reference is evaluated exactly once, on entry to the block, and raises an error when it does not yield a table.
+
+[%unbreakable]
+[source,tiri]
+----
+settings = { width = 640, height = 480 }
+
+using settings do
+   print(&width)     -- 640
+   &height = 720     -- writes settings.height
+end
+
+print(&height)       -- nil: settings no longer holds the context
+----
+
+Activation is temporary and confers no designation.  A table activated by a `using` block remains ordinary, so a call made on it afterwards establishes no context.
+
+Blocks nest, and each block restores the context that preceded it.  Every exit path removes the activations it crosses, including `return`, `break`, `continue` and error unwinding.  Cleanup declared inside a block runs under that block's context: a `<close>` handler and a `defer` block both observe the activation that encloses their declaration (<<ch-resource-management>>).
+
+A closure created inside a block does not capture the activation.  It inherits whatever context is current when it is called, exactly as it does elsewhere.
+
+[[sec-the-root-context]]
+==== The Root Context
+
+The context is never absent.  When no contextual call and no context block is active, the current context is the global environment, `_G` (<<sec-the-global-environment>>).  A script's top level, a direct call made from it, and an unbound function value all run in this __root context__, and `+&&+` yields `_G` there.
+
+The root exists so that self referencing always resolves against a table.  It is a backstop, not an access route for globals: naming a global directly is clearer and cheaper than routing the access through the context.  Write `glTitle`, not `&glTitle`.
+
+Root writes cross the environment mutation boundary described in <<sec-environment-mutation-boundary>>, so they cannot bypass environment policy.  A write to a protected name raises an error, and a write to a declared global is validated against its type contract:
+
+[source,tiri]
+----
+&tostring = 5              -- error: cannot override built-in 'tostring'
+----
+
+Because the root resolves through the environment rather than through a stored table, an environment replacement made with `debug.setEnv()` is visible to the next self reference.
+
+[[sec-context-and-callbacks]]
+==== Asynchronous Callbacks
+
+A callback entered from outside the script's own control flow begins in the root context, not in the context that was current when the callback was registered.  This applies to `processing.delayedCall()` (<<sec-processing-callbacks>>), timer callbacks, and object subscriptions (<<sec-subscriptions>>).
+
+[%unbreakable]
+[source,tiri]
+----
+monitor = entity { name = 'monitor' }
+
+function monitor.watch()
+   processing.delayedCall(function()
+      report(monitor)                     -- the context here is _G, not 'monitor'
+   end)
+end
+----
+
+A callback that needs the receiver captures it as an upvalue, as shown above, or is invoked as a member of it.
+
+Synchronous re-entry through the host, including `exec()`, is not a callback boundary and inherits the active context.
 
 [[sec-parameters-and-arguments]]
 === Parameters & Arguments
@@ -190,7 +542,7 @@ Parameters accept optional type annotations after a colon.  An annotation is a r
 
 [source,tiri]
 ----
-function process(Path: str, Count: num, Options: table)
+function process(Path:str, Count:num, Options:table)
    -- Path must be a string, Count a number, Options a table
 end
 ----
@@ -201,7 +553,7 @@ An annotation accepts `nil` unless it carries the `!` suffix, which marks the pa
 
 [source,tiri]
 ----
-function connect(Host: str!, Port: num)
+function connect(Host:str!, Port:num)
    -- Host must be supplied; Port is optional
 end
 ----
@@ -226,7 +578,7 @@ A missing argument satisfies an annotated parameter, because `nil` satisfies eve
 
 [source,tiri]
 ----
-function g(A: num, B: num)
+function g(A:num, B:num)
    print(A, B)
 end
 
@@ -237,7 +589,7 @@ A parameter whose annotation carries the `!` suffix rejects both a `nil` argumen
 
 [source,tiri]
 ----
-function h(A: num!, B: num!)
+function h(A:num!, B:num!)
    print(A, B)
 end
 
@@ -294,11 +646,11 @@ Functions accept optional return type annotations after the parameter list.  A s
 
 [source,tiri]
 ----
-function double(X: num):num
+function double(X:num):num
    return X * 2
 end
 
-function divmod(A: num, B: num):<num, num>
+function divmod(A:num, B:num):<num, num>
    return math.floor(A / B), A % B
 end
 ----
@@ -309,7 +661,7 @@ Returning fewer values than declared is permitted unless the position is marked 
 
 [source,tiri]
 ----
-function one(V: num):num
+function one(V:num):num
    return V, 'text'
 end
 
@@ -320,7 +672,7 @@ A declared return type accepts `nil` unless it carries the `!` suffix, which mar
 
 [source,tiri]
 ----
-function lookup(Source: table, Key: str):str!
+function lookup(Source:table, Key:str):str!
    return Source[Key]     -- contract failure if the key is absent
 end
 ----
@@ -363,37 +715,12 @@ end
 The inferred signature is published to call sites, where it is used exactly as a declared signature is (see <<sec-call-site-type-propagation>>).
 
 [discrete]
-===== Dynamic Results
-
-An inferred signature carries no runtime contract, so every inferred position must be provable at compile time.  Returning a value whose type is not statically known is an error.  Unannotated parameters, array elements, member reads from an object, names supplied by the host, and the results of calls that have no result signature are all dynamic, on the same terms as the initialisers described in <<sec-dynamic-ingress>>:
-
-[source,tiri]
-----
-function firstEntry(Values)
-   return Values['key']   -- error: cannot infer result 1 from a dynamic value
-end
-----
-
-Declare the result type to resolve it.  A declared type is validated as the function returns (see <<sec-runtime-type-contracts>>); `:any` accepts every value and imposes no contract:
-
-[source,tiri]
-----
-function firstEntry(Values):num
-   return Values['key']   -- validated on return
-end
-
-function firstAny(Values):any
-   return Values['key']   -- accepted, no contract
-end
-----
-
-[discrete]
 ===== Variant Results
 
 A value that is unconstrained by construction rather than by an unresolved origin is _variant_, and infers an `any` result without an annotation.  Three sources are variant:
 
 . A read from a name declared `:any`.
-. A member or index read whose receiver is known to be a `table`, written with `.`, `[]`, `?.` or `?[]`.  Element types are not tracked for tables, so the result is unconstrained by construction.
+. A member or index read written with `.`, `[]`, `?.` or `?[]`.  Element types are not tracked for tables, so the result is unconstrained by construction.
 . A call to a function whose signature -- declared or inferred -- gives `any` at that position.
 
 [source,tiri]
@@ -402,21 +729,16 @@ function identity(Value:any)
    return Value           -- inferred signature: <any>
 end
 
-function firstEntry(Values:table)
+function firstEntry(Values)
    return Values['key']   -- inferred signature: <any>
 end
 
 function wrapped(Values:table)
-   return firstEntry(Values)   -- inferred signature: <any>
+   return firstEntry(Values)  -- inferred signature: <any>
 end
-----
 
-The receiver's type must be known.  A chained read is not variant beyond its first step, because the intermediate value is `any` rather than `table`:
-
-[source,tiri]
-----
-function nested(Values:table)
-   return Values.a.b      -- error: cannot infer result 1 from a dynamic value
+function nested(Values)
+   return Values.a.b      -- inferred signature: <any>
 end
 ----
 
@@ -492,7 +814,7 @@ _, result = getStatus()
 
 ==== Result Filter
 
-The result filter operator `[mask]` provides selective extraction of return values.  The mask uses `_` (drop) and `*` (keep) characters:
+The result filter operator `[mask]` provides selective extraction of return values.  The mask uses underscore (drop) and `*` (keep) characters:
 
 [source,tiri]
 ----
@@ -514,7 +836,7 @@ indexterm:[functions, variadic] The `pass:[...]` token declares a variadic param
 ----
 function sum(...)
    total = 0
-   for _, v in ipairs({...}) do
+   for _, v in {...} do
       total += v
    end
    return total
@@ -703,7 +1025,7 @@ A self-recursive function must declare an explicit return type (<<sec-recursive-
 
 [source,tiri]
 ----
-function countDown(Count: num, Accumulator: num):num
+function countDown(Count:num, Accumulator:num):num
    if Count is 0 then return Accumulator end
    return countDown(Count - 1, Accumulator + 1)   -- tail call: one frame for the entire chain
 end
@@ -715,14 +1037,14 @@ Forwarding the contract does not weaken it.  The declared type is still enforced
 
 [source,tiri]
 ----
-function typedTail(Count: num, Value:any):num
+function typedTail(Count:num, Value:any):num
    if Count is 0 then return Value end
    return typedTail(Count - 1, Value)
 end
 
 typedTail(1000, 'wrong') <1>
 
-function fixedTail(Count: num):num
+function fixedTail(Count:num):num
    if Count is 0 then return 1, 2 end
    return fixedTail(Count - 1)
 end
@@ -731,8 +1053,6 @@ first, truncated = fixedTail(1000) <2>
 ----
 <1> Fails because `Value` is returned as a `string` when `num` is expected
 <2> The undeclared second result is discarded, `truncated` is `nil`
-
-WARNING: The exemption requires the recursive name to be immutable.  Assigning to the function's binding anywhere in scope means a call through that name is no longer provably a call to the current function, so the optimisation is withdrawn and the recursion consumes a stack frame per activation.
 
 Mutual recursion is not covered by the exemption.  Each call targets a different function, whose return contract cannot be assumed identical to the caller's, so a mutually recursive pair receives no tail call optimisation and its depth remains bounded by the stack.  Express deep mutual iteration as a loop rather than as tail recursion.
 
@@ -743,7 +1063,7 @@ Tiri supports both direct and mutual recursion.  Recursive functions that call t
 
 [source,tiri]
 ----
-function factorial(N: num):num
+function factorial(N:num):num
    if N <= 1 then return 1 end
    return N * factorial(N - 1)
 end
@@ -760,12 +1080,12 @@ Mutually recursive functions require forward declaration of at least one functio
 ----
 local isOdd
 
-function isEven(N: num):bool
+function isEven(N:num):bool
    if N is 0 then return true end
    return isOdd(N - 1)
 end
 
-isOdd = function(N: num):bool
+isOdd = function(N:num):bool
    if N is 0 then return false end
    return isEven(N - 1)
 end

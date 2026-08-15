@@ -1,6 +1,8 @@
 // VERIFIED: 2026-08-01
 // UPDATED: 2026-08-11 - Documented the indentation rule that separates a leading-dot continuation from a
 //                       current-context statement (commit 798665547)
+// UPDATED: 2026-08-13 - Replaced the leading-dot rule with the line rule for self referencing ('&name'), which is
+//                       what distinguishes it from the binary '&' (commit d3638efc0)
 
 [[ch-basic-syntax]]
 == Basic Syntax
@@ -121,6 +123,16 @@ Terminate the preceding statement with a semicolon to force a statement boundary
 ----
 a = f;
 (g).x = 1     -- two statements
+----
+
+A self reference (<<sec-self-referencing>>) is exempt from the continuation rule when it opens a line: a `&` that begins a line and is followed immediately by an identifier terminates the preceding statement.  On the same line the character reads as the bitwise AND operator, so two such statements written on one line require a semicolon between them:
+
+[source,tiri]
+----
+&total = Value
+&count++            -- a second statement
+
+&reset(); &count++  -- one line, so the semicolon is required
 ----
 
 ==== Blocks

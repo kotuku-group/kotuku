@@ -1,6 +1,7 @@
 // UPDATED: 2026-08-06 - Renamed array<object> to array<obj>, the sole accepted source spelling (commit ca06aefda)
 // UPDATED: 2026-08-11 - Renamed async.pool.clear() to async.pool.reset() (commit 7e6746950)
 // UPDATED: 2026-08-11 - async.pool.clear() is restored as an equivalent of reset() via __clear (commit 0e4d3a341)
+// UPDATED: 2026-08-14 - async.pool.reset() is removed; clearing is dispatched solely through the __clear metamethod (commit 148480f9d)
 
 [[ch-threading]]
 == Threading
@@ -424,6 +425,8 @@ Reading a key that does not exist returns `nil`.  Reading a key that was previou
 [.api]`async.pool.clear()`
 
 Removes all entries from the pool.  Acquires an exclusive lock for the duration of the operation.
+
+Clearing is dispatched through the pool's `pass:[__]clear` metamethod (<<sec-clearing>>), so the library form `table.clear(async.pool)` is equivalent.
 
 [discrete]
 ===== Thread Safety

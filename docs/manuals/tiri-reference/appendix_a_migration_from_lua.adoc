@@ -1,10 +1,4 @@
-// UPDATED: 2026-08-06 - Recorded the #t and math.random(N) divergences from Lua (commits 6fc85b01b, 2e7951d41)
-// UPDATED: 2026-08-06 - Broadened the #t divergence to every non-numeric key (commit d40436498)
-// UPDATED: 2026-08-06 - Added the sparse-key divergence, the sequence guards and duplicate constructor keys (commit 26e122ab7)
-// UPDATED: 2026-08-06 - Added the type() 'bool' divergence and regrouped the silent differences (commit 66ad8a7dc)
-// UPDATED: 2026-08-11 - Added the Method Calls and the Colon migration section and summary-table rows for the removal of
-//                       colon calls, colon-qualified declarations and implicit self (commit 7e6746950)
-// UPDATED: 2026-08-11 - Rewrote the self migration guidance for the current context (commit 798665547)
+// VERIFIED: 2026-08-14
 
 [[appendix-migration-from-lua]]
 [appendix]
@@ -24,7 +18,7 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |<<sec-migration-equality>>
 
 |`~=`
-|`is not` / `!=`
+|`!=`
 |<<sec-migration-equality>>
 
 |`^` (exponentiation)
@@ -102,8 +96,12 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 
 |`function t:name()` +
 implicit `self`
-|`function t.name()`; the receiver is the current context, reached with a leading `&`
+|`function t.name()`; the receiver is the current context, reached with `&name` or `+&&+`
 |<<sec-migration-method-calls>>
+
+|Any table can carry methods
+|The receiver must be designated an entity
+|<<sec-table-entities>>
 
 |`obj?:method()`
 |`obj?.method()`
@@ -158,7 +156,6 @@ if y ~= 0 then ... end
 
 -- Tiri
 if x is nil then ... end
-if y is not 0 then ... end
 if y != 0 then ... end
 ----
 
@@ -235,11 +232,13 @@ This change affects all table constructors, `ipairs()` iteration, string functio
 [[sec-migration-method-calls]]
 === Method Calls and the Colon
 
-indexterm:[Lua, method calls] indexterm:[colon syntax] Tiri has no colon call syntax and no `self` parameter.  Every call is written with `.`.  A function called as a member of a table receives that table as its __current context__ and reaches it with a leading `.`, so the receiver is neither declared nor passed.  Both the colon call form and the colon declaration form are rejected by the compiler with a diagnostic that names the replacement.  See <<sec-the-current-context>>.
+indexterm:[Lua, method calls] indexterm:[colon syntax] Tiri has no colon call syntax and no `self` parameter.  A function called as a member of a table entity receives that table as its current context and reaches it through self referencing, so the receiver is neither declared nor passed.  See <<sec-the-current-context>>.
+
+The context feature is opt-in.  A Lua table that carries methods becomes an entity by constructing it with the `entity` prefix, or by attaching a metatable that declares `pass:[__]context = true`.  Without designation the table remains ordinary and its methods observe the caller's context, not the receiver.  See <<sec-table-entities>>.
 
 ==== Calls
 
-Replace `receiver:method(...)` with `receiver.method(...)`:
+Replace `receiver:method(pass:[...])` with `receiver.method(pass:[...])`:
 
 [source,tiri]
 ----
@@ -252,42 +251,39 @@ upper = s.upper()
 parts = s.replace(' ', '')
 ----
 
-The dot form is not merely a rename.  For the built-in types -- `str`, `table`, `array`, `range`, `struct` and file handles -- `receiver.method(...)` invokes a registered built-in method and passes the receiver automatically, so it remains equivalent to the namespace form `string.upper(s)`.  See <<sec-built-in-method-calls>>.
-
-Replace the safe method operator `?:` with `?.`:
-
-[source,tiri]
-----
--- Lua-style, no longer accepted:  text?:upper()
-result = text?.upper()
-----
+The dot form is not merely a rename.  For the built-in types -- `str`, `table`, `array`, `range`, `struct` and file handles -- `receiver.method(pass:[...])` invokes a registered built-in method and passes the receiver automatically, so it remains equivalent to the namespace form `string.upper(s)`.  See <<sec-built-in-method-calls>>.
 
 ==== Declarations
 
-Replace `function t:name(...)` with a dot-qualified declaration and rewrite every `self` reference as `&&` in isolation, or a leading `&[name]` for field access.  Call sites change only in the separator:
+Replace `function t:name(pass:[...])` with a dot-qualified declaration, designate the receiver as an entity, and rewrite every `self.field` reference as `&field`.  A bare `self` becomes `+&&+`.  Call sites change only in the separator:
 
 [source,tiri]
 ----
 -- Lua
+Account = {}
 function Account:deposit(Amount)
    self.balance = self.balance + Amount
 end
 account:deposit(50)
 
 -- Tiri
+Account = entity { balance = 0 }
 function Account.deposit(Amount:num)
    &balance += Amount
 end
 account.deposit(50)
 ----
 
-The mapping from `self.` to `&` is direct, with three differences to check during migration:
+The mapping from `self.` to `&`, and from `self` to `+&&+`, is direct, with four differences to check during migration:
 
-- A function extracted from a table (`handler = t.method`) carries no receiver.  Lua's colon call binds the receiver at the call site, and so does Tiri's dot call; an extracted value binds nothing in either language, but Tiri gives it the caller's context rather than a `nil` first argument.
+- The receiver must be an __entity__.  An ordinary table inherits the caller's context instead of the receiver, so designate the table at the point where it is constructed.
+- A function extracted from a table (`ref = t.method`) carries no association with a receiver.
 - A callback registered with the framework begins in the root context, not on the table that registered it.  Capture the table as an upvalue.  See <<sec-context-and-callbacks>>.
 - A function that must operate on a table other than its receiver declares that table as an ordinary parameter.
 
-The `pass:[__]index` class pattern carries over unchanged apart from this substitution; see <<sec-class-pattern>>.
+The `pass:[__]index` class pattern carries over apart from this substitution and the addition of `pass:[__]context = true` to the class table; see <<sec-class-pattern>>.
+
+Lua's `setmetatable(t, mt)` is unrestricted.  In Tiri a metatable that designates an entity may only be attached to an allocation owned by the designating function, through a direct call to the built-in `setmetatable()`; see <<sec-context-metafield>>.
 
 ==== Method Names That Collide with Built-ins
 
@@ -438,27 +434,6 @@ The `goto` statement and `::label::` syntax are removed.  The constructs that `g
 |Cleanup before return
 |`defer`
 |===
-
-[source,tiri]
-----
--- Lua: skip even numbers with goto
-for i = 1, 10 do
-   if i % 2 == 0 then goto continue end
-   print(i)
-   ::continue::
-end
-
--- Tiri
-for i in {0 to 10} do
-   if i % 2 is 0 then continue end
-   print(i)
-end
-----
-
-[discrete]
-==== The continue Statement
-
-`continue` skips the remainder of the current loop body and advances to the next iteration.  It works in `for`, `while` and `repeat` loops.  See <<ch-control-flow>> for details.
 
 [[sec-migration-coroutines]]
 === Coroutines
@@ -719,7 +694,7 @@ The following standard Lua functions are removed or replaced:
 Three constructs in common Lua code return different values in Tiri and produce no diagnostic when translated literally:
 
 `#t` on a mixed table::
-Lua returns the sequence length and ignores the hash part.  Tiri returns `nil` for any table that has ever been stored through a key that is not a non-negative integer, so a record-shaped table, a set keyed by object identity, a table keyed by booleans and a table indexed from `-1` all have no length.  Non-negative integer keys are unaffected however scattered, so `t[9999]` leaves the length intact.  Translate `#t` to `rawlen(t)` wherever the numerical sequence length is what the original code meant.  See <<sec-table-classification>>.
+Lua returns the sequence length and ignores the hash part.  Tiri returns `nil` for any table that has ever been stored through a key that is not a positive integer.  Positive integer keys are unaffected however scattered, so `t[9999]` leaves the length intact.  Translate `#t` to `rawlen(t)` wherever the numerical sequence length is what the original code meant.  See <<sec-table-classification>>.
 
 `type()` on a boolean::
 Lua returns `'boolean'`, Tiri returns `'bool'.  A Lua test written as `type(v) is 'boolean'` therefore evaluates to `false` for every value.  See <<sec-type-inspection>>.
@@ -895,7 +870,7 @@ local items = { 'a', 'b', 'c' }
 table.insert(items, 'd')
 
 -- Tiri: use an array
-items = array<string> { 'a', 'b', 'c' }
+items = array<str> { 'a', 'b', 'c' }
 items.push('d')
 ----
 
@@ -927,7 +902,7 @@ The following Tiri features have no counterpart in standard Lua.  They do not re
 * **Pipe operator**: `x |> func()` (see <<ch-result-management>>)
 * **Deferred expressions**: `<{ expr }>` (see <<ch-resource-management>>)
 * **Thunk functions**: `thunk name():type pass:[...] end` (see <<ch-resource-management>>)
-* **Unicode operator aliases**: `≠`, `≤`, `≥`, `×`, `÷`, `↑`, `‥`, `⁇`, `▷`, `⧺` (see <<sec-unicode-operator-aliases>>)
+* **Unicode operator aliases**: see <<sec-unicode-operator-aliases>>
 * **Approximate equality**: `a ≈ b` (see <<sec-approximate-equality>>)
 
 The following subsections illustrate how selected features replace common verbose Lua patterns.  Each example shows the Lua idiom followed by the equivalent Tiri code.  Refer to the cross-referenced chapters for the complete specification.

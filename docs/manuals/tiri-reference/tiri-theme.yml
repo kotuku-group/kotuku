@@ -60,6 +60,16 @@ code:
   orphans: 5
   page-break-inside: avoid
   font-size: 0.95em
+  line-height: 1.15
+  padding: [2, 0, 2, 18]
+  border-radius: 0
+  # A left rule only.  Note that 'background-color' must name the page colour rather
+  # than 'transparent': the converter skips the entire fill-and-stroke step when a block
+  # has neither a background nor a non-zero *top* border width (converter.rb:4537-4550),
+  # and an array border-width is gated on its first (top) element.
+  background-color: '#FFFFFF'
+  border-width: [0, 0, 0, 2]
+  border-color: '#ddddff'
 
 page:
   margin: [0.75in, 0.75in, 0.75in, 0.75in]

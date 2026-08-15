@@ -1,4 +1,7 @@
 // VERIFIED: 2026-02-12
+// UPDATED: 2026-08-14 - The array string element is now spelled 'str'; corrected the type_name and element_type
+//                       grammar, which listed 'number', 'string' and bare 'struct' as accepted names when the
+//                       parser rejects all three (commit 148480f9d)
 
 [[ch-type-system]]
 == Type System
@@ -56,7 +59,8 @@ The two interfaces share a core of names but are not identical dialects, and the
 |`int64`                         |`int64` |Yes |Number
 |`uint64`                        |--   |Yes |Number
 |`float`, `double`               |Yes  |Yes |Number
-|`str`                           |Yes  |Yes |String
+|`str`                           |`str` |--  |String
+|`string`                        |--   |Yes |String
 |`cstr`                          |--   |Yes |String
 |`table`                         |Yes  |--  |Table
 |`array`, `array<type>`, `type[N]`|`array` |Yes |Array
@@ -303,7 +307,7 @@ result_list       = type_name [ "!" ] { "," type_name [ "!" ] } ;
 
 (* native vocabulary *)
 type_name         = "any" | "nil" | "bool"
-                  | "num" | "number" | "str" | "string"
+                  | "num" | "str"
                   | "table" | "func" | "function"
                   | "obj" | "range" | "userdata"
                   | "struct" | "struct" "<" identifier ">"
@@ -311,10 +315,10 @@ type_name         = "any" | "nil" | "bool"
 array_type        = "array" "<" element_type ">" ;
 
 (* compatibility vocabulary *)
-element_type      = "byte" | "char" | "int16" | "int" | "int64"
-                  | "float" | "double" | "string" | "table"
+element_type      = "byte" | "char" | "int8" | "int16" | "int" | "int64"
+                  | "float" | "double" | "str" | "table"
                   | "array" | "obj" | "any"
-                  | "struct" | "struct" "<" identifier ">" ;
+                  | "struct" "<" identifier ">" ;
 ----
 
 [discrete]
@@ -350,22 +354,22 @@ These are the names of the native vocabulary, and they are the complete set that
 |===
 |Annotation |Type
 
-|`any`              |Any (see <<sec-the-any-type>>)
-|`nil`              |Nil
-|`bool`             |Boolean
-|`num`              |Number
-|`str`              |String
-|`table`            |Table
-|`array<element>`   |Array constrained to the declared element type (see <<sec-array-member-annotations>>)
-|`func`, `function` |Function
-|`obj`              |Object
-|`range`            |Range
-|`userdata`         |Userdata with client-side origins (see <<sec-userdata>>)
-|`struct`           |Structure (see <<ch-structs>>)
-|`struct<Name>`     |Structure constrained to the declared layout `Name` (see <<sec-struct-typed-references>>)
+|`any`            |Any (see <<sec-the-any-type>>)
+|`nil`            |Nil
+|`bool`           |Boolean
+|`num`            |Number
+|`str`            |String
+|`table`          |Table
+|`array<element>` |Array constrained to the declared element type (see <<sec-array-member-annotations>>)
+|`func`           |Function
+|`obj`            |Object
+|`range`          |Range
+|`userdata`       |Userdata with client-side origins (see <<sec-userdata>>)
+|`struct`         |Structure (see <<ch-structs>>)
+|`struct<Name>`   |Structure constrained to the declared layout `Name` (see <<sec-struct-typed-references>>)
 |===
 
-Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic, and a compatibility type name such as `int` or `double` is unrecognised here.
+An unrecognised type name raises a parse-time diagnostic, and a compatibility type name such as `int` or `double` is unrecognised here.
 
 The only constrained forms are `struct<Name>` and `array<element>`.  There is no `obj<Class>` annotation; a class constraint is expressible on a struct field (<<sec-struct-field-types>>) but not on a variable, parameter or return value, where `obj` accepts an object of any class.
 
@@ -378,7 +382,7 @@ indexterm:[type annotations, arrays] indexterm:[arrays, type annotations] An arr
 [source,tiri]
 ----
 local values:array<int>           -- integer elements only
-local names:array<string>         -- string elements only
+local names:array<str>            -- string elements only
 local points:array<struct<Vec>>   -- elements of the Vec definition only
 local variant:array<any>          -- any array, whatever its element type
 ----
@@ -391,7 +395,7 @@ The annotation constrains the element type and nothing else.  Length is not part
 ----
 function first(Values:array)                 -- error: an element type is required
 function first(Values:array<int, 4>)         -- error: an annotation cannot declare a size
-function first(Values:array<array<string>>)  -- error: use array<array>
+function first(Values:array<array<str>>)     -- error: use array<array>
 ----
 
 `array<any>` is an array contract, not the variant opt-out: it accepts an array of any element type and rejects every non-array value.  Only a plain `:any` annotation removes the constraint entirely.  `array<array>` accepts an array of arrays without constraining the elements of the inner arrays.
@@ -404,8 +408,8 @@ The element type is part of the fixed type wherever a type is fixed, including i
 ----
 local scores = array<int> { 1, 2 }   -- fixed to 'array<int>'
 scores = array<int> { 3 }            -- valid
-scores = array<string> { 'a' }       -- error: array member mismatch: expected
-                                     -- array<int>, got array<string>
+scores = array<str> { 'a' }          -- error: array member mismatch: expected
+                                     -- array<int>, got array<str>
 ----
 
 [discrete]
@@ -752,7 +756,7 @@ An `array<any>` redeclaration is a weaker form of the same idea for arrays alone
 [source,tiri]
 ----
 global glValues:array<int> = array<int> { 1 }
-global glValues:array<any> = array<string> { 'open' }
+global glValues:array<any> = array<str> { 'open' }
 
 glValues = array<double> { 2.5 }   -- accepted: any element type satisfies array<any>
 glValues = { 3 }                   -- error: expected array<any>, got table

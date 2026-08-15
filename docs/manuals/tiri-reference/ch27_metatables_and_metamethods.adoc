@@ -8,6 +8,8 @@
 // UPDATED: 2026-08-11 - Added the __clear metamethod and the sec-clearing section (commit 0e4d3a341)
 // UPDATED: 2026-08-11 - Rewrote the class pattern for the current context; __index lookup retains the original
 //                       receiver (commit 798665547)
+// UPDATED: 2026-08-13 - The class pattern now declares __context on the class table so that instances are designated
+//                       entities; added __context to the metamethod reference (commit d3638efc0)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -34,6 +36,8 @@ t = setmetatable({}, mt)
 Returns the metatable of `Table`, or `nil` if none is set.  If the metatable defines a `pass:[__]metatable` field, returns the value of that field instead of the actual metatable.
 
 A metatable can be replaced at any time by calling `setmetatable` again, provided the current metatable does not define `pass:[__]metatable`.
+
+A metatable whose raw `pass:[__]context` field is `true` requires `Table` to be an entity (<<sec-table-entities>>).  Promoting an ordinary table is automatic if the `Table` is owned by the calling function.  An unauthorised promotion is otherwise rejected before the metatable is installed.  See <<sec-context-metafield>>.
 
 ==== Metatable Protection
 
@@ -228,6 +232,10 @@ t = setmetatable({}, mt)
 print(t.colour)   -- 'red'
 ----
 
+A lookup that resolves through `pass:[__]index` to a function, and is called immediately, retains the original receiver.  When that receiver is a table entity, the function runs with it as its current context, not with the table the value was found in (<<sec-contextual-calls>>).  This is the basis of the class pattern in <<sec-class-pattern>>.
+
+A self reference is itself an ordinary table lookup, so `pass:[__]index` and `pass:[__]newindex` on the current context apply to it.
+
 ==== __newindex
 
 The runtime invokes `pass:[__]newindex` when assigning to a key that does not already exist in the table.  Assignments to existing keys bypass the metamethod and modify the table directly.
@@ -271,13 +279,14 @@ end
 
 The `pass:[__]index` metamethod enables a simple class/inheritance pattern.  Setting a table's `pass:[__]index` to a class table causes method lookups on instances to fall through to the class.
 
-A class function reaches the instance through the current context (<<sec-the-current-context>>).  The instance is the receiver of the call, so the method operates on it even though the function value was found on the class:
+A class function reaches the instance through the current context (<<sec-the-current-context>>).  The instance is the receiver of the call, so the method operates on it even though the function value was found on the class.  The instance must therefore be an entity, which the class table declares by carrying `pass:[__]context = true` alongside `pass:[__]index` (<<sec-context-metafield>>):
 
 [%unbreakable]
 [source,tiri]
 ----
 Animal = {}
 Animal.__index = Animal
+Animal.__context = true
 
 function Animal.new(Name:str):table
    return setmetatable({ name = Name }, Animal)
@@ -291,13 +300,16 @@ dog = Animal.new('Dog')
 print(dog.speak())         -- 'Dog speaks'
 ----
 
-Subclassing chains one class table to another.  A method that the subclass does not define resolves on the parent and still runs on the instance:
+The designation applies to the instance that `Animal.new` allocates, not to `Animal` itself.  `Animal` is never a receiver of a contextual call, so it remains an ordinary table.
+
+Subclassing chains one class table to another.  A method that the subclass does not define resolves on the parent and still runs on the instance.  Each class table that constructs instances declares its own marker, because `pass:[__]context` is read raw from the metatable supplied to `setmetatable()` and is not inherited through `pass:[__]index`:
 
 [%unbreakable]
 [source,tiri]
 ----
 Dog = setmetatable({}, { __index = Animal })
 Dog.__index = Dog
+Dog.__context = true
 
 function Dog.new(Name:str):table
    return setmetatable({ name = Name }, Dog)
@@ -551,4 +563,7 @@ indexterm:[metamethods, reference] The following table lists every metamethod re
 |`pass:[__]pairs`      |`pairs()` iteration          |`pass:[__]pairs(self)` pass:[->]iterator, state, initial
 |`pass:[__]ipairs`     |`ipairs()` iteration         |`pass:[__]ipairs(self)` pass:[->]iterator, state, initial
 |`pass:[__]clear`      |`table.clear()` call         |`pass:[__]clear(self)`
+|`pass:[__]context`    |Entity designation on `setmetatable()` |Not callable; value must be the boolean `true`
 |===
+
+`pass:[__]context` is a designation input rather than a metamethod: the runtime samples it once, when the metatable is attached, and never dispatches to it.  See <<sec-context-metafield>>.
