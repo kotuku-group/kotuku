@@ -5092,7 +5092,7 @@ static bool test_builtin_method_registry(kt::Log &Log)
    constexpr std::array<std::string_view, 10> range_methods = {
       "each", "filter", "reduce", "map", "take", "any", "all", "find", "contains", "toArray"
    };
-   constexpr std::array<std::string_view, 3> struct_methods = { "structSize", "copy", "clone" };
+   constexpr std::array<std::string_view, 2> struct_methods = { "copy", "clone" };
    constexpr std::array<std::string_view, 12> object_methods = {
       "class", "init", "free", "children", "detach", "get", "set", "getKey", "setKey", "exists", "subscribe",
       "unsubscribe"

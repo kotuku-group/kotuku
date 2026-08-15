@@ -46,10 +46,11 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // BC_TCTX contextual table designation and cuts over to opt-in table context, which changes the meaning of every
 // existing contextual call sequence.  Version 0x8d adds materialised temporary context blocks and consuming close
 // activation bytecodes.  Version 0x8e adds the canonical regex.new identity used by regex literals.  Version 0x8f
-// separates object.create, object.new and object._state callable identities.  Older chunks are rejected rather than
-// retaining compatibility shims.
+// separates object.create, object.new and object._state callable identities.  Version 0x90 accepts a struct reference
+// in struct.size, which shifts the generated fast-function ordering.  Older chunks are rejected rather than retaining
+// compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x8f;
+constexpr uint8_t BCDUMP_VERSION = 0x90;
 
 // Compatibility flags.
 
