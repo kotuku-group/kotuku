@@ -480,6 +480,26 @@ end
    assert(not hasTipMessage(with_wildcard, message), "Choose with wildcard should not emit missing-else tip")
 end
 
+@Test function ValidateInferredAnyResultTip()
+   message = "Function infers an 'any' result type; declare ': any' to make the variant result explicit"
+
+   inferred = debug.validate([[
+      function first_entry(Values)
+         return Values['key']
+      end
+   ]])
+   assert(inferred.success is true, 'A function with an inferred any result should parse')
+   assert(hasTipMessage(inferred, message), 'Expected an inferred-any result tip')
+
+   explicit = debug.validate([[
+      function first_entry(Values):any
+         return Values['key']
+      end
+   ]])
+   assert(explicit.success is true, 'A function with an explicit any result should parse')
+   assert(not hasTipMessage(explicit, message), 'An explicit any result should suppress the inferred-any tip')
+end
+
 @Test function ValidateComplexCode()
    code = [[
       function hello(Name)

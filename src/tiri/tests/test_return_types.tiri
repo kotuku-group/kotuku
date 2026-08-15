@@ -172,17 +172,36 @@ end
    assert(wrapped_entry({ 'value' }) is 'value', 'a wrapped table variant should accept different value types')
 end
 
-@Test function UnknownTableIndexStillRequiresResultAnnotation()
-   try
-      exec([[
-         extern glUnspecifiedValue
-         function unresolved_entry()
-            return glUnspecifiedValue[0]
-         end
-      ]])
-   success
-      error('an unresolved indexed return requires an explicit result annotation')
+@Test function UntypedTableKeyReadInfersAnyResult()
+   function first_member(Values)
+      val = Values.key
+      return val
    end
+
+   function first_index(Values)
+      val = Values['key']
+      return val
+   end
+
+   function direct_index(Values)
+      return Values['key']
+   end
+
+   assert(first_member({ key = 42 }) is 42, 'an untyped table member read should infer an any result')
+   assert(first_member({ key = 'value' }) is 'value', 'an untyped table member result should remain variant')
+   assert(first_index({ key = 42 }) is 42, 'an untyped table index read should infer an any result')
+   assert(first_index({ key = 'value' }) is 'value', 'an untyped table index result should remain variant')
+   assert(direct_index({ key = 42 }) is 42, 'a direct untyped table index read should infer an any result')
+   assert(direct_index({ key = 'value' }) is 'value', 'a direct untyped table index result should remain variant')
+end
+
+@Test function UnknownTableIndexInfersAnyResult()
+   exec([[
+      extern glUnspecifiedValue
+      function unresolved_entry()
+         return glUnspecifiedValue[0]
+      end
+   ]])
 end
 
 @Test function ImplicitDynamicStillRequiresResultAnnotation()
