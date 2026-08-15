@@ -1537,6 +1537,7 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          if (Payload.values.empty()) continue;
          size_t source = std::min(i, Payload.values.size() - 1);
          size_t result_position = i - source;
+         const bool is_table_read = result_position IS 0 and is_table_read_expression(*Payload.values[source]);
          InferredType value_type;
          if (result_position IS 0) value_type = this->infer_expression_type(*Payload.values[source]);
          else {
@@ -1643,7 +1644,11 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             // But don't fix if the variable was explicitly declared as 'any'
             if (existing->primary IS TiriType::Nil and
                 (value_type.primary IS TiriType::Any or value_type.primary IS TiriType::Unknown)) {
-               this->mark_dynamic_ingress(name, is_global);
+               if (is_table_read and not is_global) {
+                  this->fix_local_type(name, name_ref->binding_id, TiriType::Any);
+                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
+               }
+               else this->mark_dynamic_ingress(name, is_global);
             }
             else if ((existing->primary != TiriType::Any) and (value_type.primary != TiriType::Nil)) {
                if (is_global) {
