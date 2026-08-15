@@ -5,7 +5,7 @@ end
 
 struct DeclaredUser
    -- User-facing name retained as parser tooling metadata.
-   Name: string -- Owned string storage.
+   Name: str -- Owned string storage.
    Borrowed: cstr
    Age: int
    Enabled: bool
@@ -22,7 +22,7 @@ struct DeclaredLayout
    Bool: bool, Char: char, Byte: byte, Int8: int8, UInt8: uint8,
    Int16: int16, UInt16: uint16, Int: int, UInt: uint,
    Int32: int, UInt32: uint, Int64: int64, UInt64: uint64,
-   Float: float, Double: double, String: string, CStr: cstr,
+   Float: float, Double: double, String: str, CStr: cstr,
    Pointer: ptr, IntPointer: ptr<int>, IntList: ptr<int[]>, Object: obj, Callback: func, Buffer: char[7],
    Fixed: int[3], Child: struct<DeclaredChild>, ChildPointer: ptr<DeclaredChild>
 end
@@ -42,7 +42,7 @@ struct DeclaredVectorFields
 end
 
 struct DeclaredNonTrivialVectorElement
-   Name: string
+   Name: str
 end
 
 struct DeclaredVectorOwner

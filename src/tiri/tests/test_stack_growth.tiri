@@ -33,7 +33,7 @@
 end
 
 struct StackGrowthRecord
-   Name: string
+   Name: str
 end
 
 @Test(hotpath=80) function JitFallbackDestinationsRemainStable()

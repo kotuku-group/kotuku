@@ -519,7 +519,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       }
       else if (type_name IS "float") { field.Type = FD_FLOAT; field.NativeType = NativeStructType::Float; }
       else if (type_name IS "double") { field.Type = FD_DOUBLE; field.NativeType = NativeStructType::Double; }
-      else if (type_name IS "string") {
+      else if (type_name IS "str") {
          field.Type = FD_STRING|FD_CPP; field.NativeType = NativeStructType::String;
       }
       else if (type_name IS "cstr") { field.Type = FD_STRING; field.NativeType = NativeStructType::CStr; }

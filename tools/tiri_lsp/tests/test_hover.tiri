@@ -188,7 +188,7 @@ end
 @Test function StructDeclarationHoverShowsFields()
    hover, token = hoverAt([[
 struct Us|er
-   Name: string -- The user name
+   Name: str -- The user name
    Age: int
 end
 ]])
@@ -196,14 +196,14 @@ end
    assert(token and token.text is 'User', 'Hover token extraction should identify the struct name.')
    assertContains(hover, 'struct User', 'Struct hover should lead with the declaration signature.')
    assertContains(hover, '**Fields**', 'Struct hover should include a Fields section.')
-   assertContains(hover, '`Name: string`', 'Struct hover should list field names and types.')
+   assertContains(hover, '`Name: str`', 'Struct hover should list field names and types.')
    assertContains(hover, 'The user name', 'Struct hover should include field doc comments.')
 end
 
 @Test function StructFieldHoverViaStructNew()
    hover, token = hoverAt([[
 struct User
-   Name: string -- The user name
+   Name: str -- The user name
    Age: int
 end
 u = struct.new('User')
@@ -212,14 +212,14 @@ print(u.Na|me)
 
    assert(token and token.text is 'Name' and token.object is 'u', 'Token extraction should identify field access.')
    assertContains(hover, 'User.Name', 'Field hover should be attributed to the struct.')
-   assertContains(hover, '`string`', 'Field hover should state the declared type.')
+   assertContains(hover, '`str`', 'Field hover should state the declared type.')
    assertContains(hover, 'The user name', 'Field hover should include the doc comment.')
 end
 
 @Test function StructFieldHoverViaAnnotatedParameter()
    hover, token = hoverAt([[
 struct User
-   Name: string
+   Name: str
    Age: int -- Age in years
 end
 function describe(Person: struct<User>)
@@ -235,7 +235,7 @@ end
 @Test function StructFieldHoverViaConstruction()
    hover, token = hoverAt([[
 struct User
-   Name: string -- The user name
+   Name: str -- The user name
 end
 user = struct<User> { Name = 'Paul' }
 print(user.Na|me)
@@ -248,7 +248,7 @@ end
 @Test function StructUnknownFieldHasNoHover()
    hover, token = hoverAt([[
 struct User
-   Name: string
+   Name: str
 end
 u = struct.new('User')
 print(u.Mis|sing)
