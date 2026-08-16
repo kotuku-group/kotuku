@@ -250,6 +250,15 @@ end
    assertOperatorToken(tokens, 3, 17, '??', 'Binary if-empty operator should remain highlighted.')
 end
 
+@Test function TernarySeparatorScanStopsAtLineBoundary()
+   source = 'answer = flag ? 1 : 0\n' ..
+      'function f():num return 1 end\n'
+   tokens = tokenizeTiri(source)
+
+   assertOperatorToken(tokens, 0, 18, ':', 'The ternary separator should remain highlighted.')
+   assertNoToken(tokens, 1, 12, ':', 'A later function return annotation must not be a ternary separator.')
+end
+
 @Test function TernaryDiagnosticsUseCurrentParser()
    doc = makeDoc('value = 0 ? \'truthy\' : \'falsey\'\n' ..
       'extended = 0 ?? \'truthy\' : \'falsey\'\n' ..

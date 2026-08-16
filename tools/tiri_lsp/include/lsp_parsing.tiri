@@ -96,6 +96,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
 
       while scan >= 0 do
          c = Source.sub(scan, scan + 1)
+         if c is '\n' or c is '\r' then return false end
          if c is ')' then
             paren_depth++
          elseif c is '(' and paren_depth > 0 then

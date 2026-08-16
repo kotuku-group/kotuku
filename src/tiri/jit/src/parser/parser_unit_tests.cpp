@@ -998,6 +998,43 @@ static bool test_ternary_colon_separators(kt::Log &Log)
 
 //********************************************************************************************************************
 
+static bool test_extended_ternary_annotation_lookahead(kt::Log &Log)
+{
+   constexpr std::array<std::string_view, 2> sources = { {
+      "local fallback = nil ?? function():num return 1 end",
+      "local fallback = nil ?? Value => num: Value"
+   } };
+
+   for (std::string_view source : sources) {
+      auto result = build_ast_from_source(source);
+      if (not result.chunk.ok() or not result.diagnostics.empty()) {
+         Log.error("extended ternary lookahead misidentified a type annotation as a separator");
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+
+      const BlockStmt& block = *result.chunk.value_ref();
+      StatementListView statements = block.view();
+      const auto* local_payload = statements.size() IS 1 and statements[0].kind IS AstNodeKind::LocalDeclStmt ?
+         std::get_if<LocalDeclStmtPayload>(&statements[0].data) : nullptr;
+      if (not local_payload or local_payload->values.size() != 1 or
+          local_payload->values[0]->kind != AstNodeKind::BinaryExpr) {
+         Log.error("type-annotated fallback did not remain an if-empty binary expression");
+         return false;
+      }
+
+      const auto* if_empty = std::get_if<BinaryExprPayload>(&local_payload->values[0]->data);
+      if (not if_empty or not (if_empty->op IS AstBinaryOperator::IfEmpty)) {
+         Log.error("type-annotated fallback did not retain the if-empty operator");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_array_length_range_for_ast(kt::Log &Log)
 {
    constexpr const char *source = R"(
@@ -8425,7 +8462,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 78> tests = { {
+   constexpr std::array<TestCase, 79> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8442,6 +8479,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "ternary_colon_separators", test_ternary_colon_separators },
+      { "extended_ternary_annotation_lookahead", test_extended_ternary_annotation_lookahead },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
       { "bare_collection_iteration_emission", test_bare_collection_iteration_emission },

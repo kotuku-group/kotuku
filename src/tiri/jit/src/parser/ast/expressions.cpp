@@ -1546,6 +1546,7 @@ bool AstBuilder::is_extended_ternary_ahead() const
    int paren_depth = 0;
    int brace_depth = 0;
    int bracket_depth = 0;
+   bool function_return_annotation_pending = false;
 
    while (pos < 200) {
       Token ahead = this->ctx.tokens().peek(pos);
@@ -1568,7 +1569,33 @@ bool AstBuilder::is_extended_ternary_ahead() const
       }
       else if (paren_depth IS 0 and brace_depth IS 0 and bracket_depth IS 0) {
          if (ahead.span().line.lineNumber() != start_line.lineNumber()) return false;
-         if (kind IS TokenKind::Colon or kind IS TokenKind::TernarySep) return true;
+         if (kind IS TokenKind::Function) {
+            function_return_annotation_pending = true;
+         }
+         else if (function_return_annotation_pending) {
+            if (kind IS TokenKind::Colon) {
+               function_return_annotation_pending = false;
+               pos++;
+               continue;
+            }
+            function_return_annotation_pending = false;
+         }
+
+         if (kind IS TokenKind::Colon or kind IS TokenKind::TernarySep) {
+            bool arrow_return_annotation = false;
+            if (kind IS TokenKind::Colon and pos >= 2 and
+                this->ctx.tokens().peek(pos - 2).kind() IS TokenKind::Arrow) {
+               Token type_token = this->ctx.tokens().peek(pos - 1);
+               if (type_token.is_identifier()) {
+                  std::string_view type_name(strdata(type_token.identifier()), type_token.identifier()->len);
+                  arrow_return_annotation = parse_type_name(type_name) != TiriType::Unknown;
+               }
+            }
+            if (arrow_return_annotation) {
+               return false;
+            }
+            return true;
+         }
          if (kind IS TokenKind::Question) return false;
          if (kind IS TokenKind::EndToken or
              kind IS TokenKind::EndOfFile or
