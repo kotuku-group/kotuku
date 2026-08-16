@@ -42,8 +42,8 @@ end
 
 function shadowed_tostring_append_call_shape()
    local mt = {
-      __concat = metamethod(Other, LhsDispatch)
-         if LhsDispatch then return &val .. Other end
+      __concat = metamethod(Other, LHS)
+         if LHS then return &val .. Other end
          return Other .. &val
       end
    }
@@ -514,8 +514,8 @@ end
 
 @Test function ArrayConcatAssignmentPreservesRhsMetamethodConcat()
    mt = {
-      __concat = metamethod(Other, LhsDispatch)
-         if LhsDispatch then return &val .. Other end
+      __concat = metamethod(Other, LHS)
+         if LHS then return &val .. Other end
          return Other .. &val
       end
    }

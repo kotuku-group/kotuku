@@ -142,7 +142,7 @@ end
    local captured = 1
    function capture() return captured end
    local pointer = debug.upvalueID(capture, 0)
-   local callable = setmetatable({}, { __call = function(Self):table return Self end })
+   local callable = setmetatable({}, { __call = metamethod():table return && end })
 
    assert(accept_nil(nil) is nil, 'nil should satisfy nil')
    assert(accept_bool(true) is true, 'true should satisfy bool')
@@ -423,7 +423,7 @@ end
    local object = obj.new('time')
    local sequence = {0 to 3}
    local proxy = newproxy(true)
-   local callable = setmetatable({}, { __call = function() return true end })
+   local callable = setmetatable({}, { __call = metamethod():bool return true end })
 
    assert(checked_nil(nil) is nil, 'nil should satisfy a nil result contract')
    assert(checked_bool(true), 'bool should satisfy a bool result contract')
@@ -520,7 +520,7 @@ end
    global glContractClosed:bool = false
    function checked_close():num
       local resource <close> = setmetatable({}, {
-         __close = function(Self, Error)
+         __close = metamethod(Error)
             glContractClosed = true
          end
       })
@@ -646,7 +646,7 @@ end
    local closed = false
    expect_contract_failure(function()
       local resource <close>:num = dynamic_value(setmetatable({}, {
-         __close = function(Self, Error)
+         __close = metamethod(Error)
             closed = true
          end
       }))
@@ -656,7 +656,7 @@ end
    local grouped_closed = false
    function dynamic_close_pair():<any, any>
       return setmetatable({}, {
-         __close = function(Self, Error)
+         __close = metamethod(Error)
             grouped_closed = true
          end
       }), 'wrong'
@@ -788,7 +788,7 @@ end
 
    local value = 1
    local overloaded:any = setmetatable({}, {
-      __add = metamethod(Other, LhsDispatch:bool):str return 'wrong' end
+      __add = metamethod(Other, LHS:bool):str return 'wrong' end
    })
    expect_contract_failure(function() value += overloaded end, 'overloaded compound assignment')
    assert(value is 1, 'A rejected overloaded compound result must preserve the sticky local')
@@ -796,7 +796,7 @@ end
 
 @Test function VariantMutationInvalidatesStaticProof()
    local overloaded:any = setmetatable({}, {
-      __add = metamethod(Other, LhsDispatch:bool):str return 'wrong' end
+      __add = metamethod(Other, LHS:bool):str return 'wrong' end
    })
 
    local compound_source:any = 1
