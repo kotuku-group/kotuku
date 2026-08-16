@@ -7,6 +7,8 @@
 //                       colon syntax (commit 7e6746950)
 // UPDATED: 2026-08-11 - Added the Contextual call, Current context, Receiver and Root context entries (commit 798665547)
 // UPDATED: 2026-08-15 - Added the Context-first method entry (commit ac4f30a67)
+// UPDATED: 2026-08-16 - Replaced the Contextual method entry with Metamethod literal, scoped to metatable handlers
+//                       (commit 5c92d652a)
 // UPDATED: 2026-08-15 - Added the Bound context entry (commit 1a38f18e0)
 // UPDATED: 2026-08-13 - Added the Context block, Entity and Self referencing entries; context is now opt-in and
 //                       established only by an entity receiver (commit d3638efc0)
@@ -70,9 +72,6 @@ A variable declared with the `<const>` attribute.  Prevents reassignment after i
 
 Context block::
 A `using Reference do pass:[...] end` statement that activates a table as the current context for the duration of a block.  The reference is evaluated once on entry, the activation is removed on every exit path, and no designation is conferred.  See <<sec-context-blocks>>.
-
-Contextual method::
-A function literal written with the `method` keyword.  Its first argument is required, is absent from the parameter list, and becomes the current context of the activation, superseding the context inherited from the call site.  Written for metamethods and for handlers that are extracted from a table and supplied with their subject at each call.  See <<sec-contextual-methods>>.
 
 Contextual call::
 A call that selects its callable from a receiver: `receiver.name(...)`, `receiver[key](...)`, or their safe forms.  When the receiver is a table entity, it becomes the current context for the activation, and the caller's context is restored when the activation ends.  See <<sec-contextual-calls>>.
@@ -154,6 +153,9 @@ The high-performance Lua virtual machine and JIT compiler that serves as the fou
 
 Metamethod::
 A function stored in a metatable under a reserved key (e.g. `__add`, `__index`, `__tostring`).  Metamethods intercept and customise operations on the value associated with the metatable.  See <<ch-metatables-and-metamethods>>.
+
+Metamethod literal::
+A metatable handler written with the `metamethod` keyword.  Its first argument is required, is absent from the parameter list, and becomes the current context of the activation, superseding the context inherited from the dispatch site, so the body reads the subject through self referencing.  See <<sec-metamethod-literals>> and <<sec-context-first-metamethods>>.
 
 Metatable::
 A table that customises the behaviour of another table or userdata value.  Operations on the value dispatch to metamethods defined in its metatable.  See <<sec-metatable-basics>>.

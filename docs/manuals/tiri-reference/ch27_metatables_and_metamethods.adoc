@@ -1,19 +1,4 @@
 // VERIFIED: 2026-03-03
-// UPDATED: 2026-08-06 - __len must now return a number, and takes precedence over the string-key classification (commit 6fc85b01b)
-// UPDATED: 2026-08-06 - The classification now covers every non-numeric key (commit d40436498)
-// UPDATED: 2026-08-06 - __len masks the length only; the sequence operations ignore it (commit 26e122ab7)
-// UPDATED: 2026-08-06 - Renamed the boolean return kind to bool in the metamethod signatures (commit 66ad8a7dc)
-// UPDATED: 2026-08-11 - The class pattern now declares an explicit receiver parameter; added the sec-class-pattern anchor
-//                       (commit 7e6746950)
-// UPDATED: 2026-08-11 - Added the __clear metamethod and the sec-clearing section (commit 0e4d3a341)
-// UPDATED: 2026-08-11 - Rewrote the class pattern for the current context; __index lookup retains the original
-//                       receiver (commit 798665547)
-// UPDATED: 2026-08-13 - The class pattern now declares __context on the class table so that instances are designated
-//                       entities; added __context to the metamethod reference (commit d3638efc0)
-// UPDATED: 2026-08-15 - Added the sec-context-first-metamethods section for `method` literal handlers and the
-//                       left-operand restriction on binary handlers (commit ac4f30a67)
-// UPDATED: 2026-08-15 - Arithmetic no longer coerces string operands, so a string now reaches metamethod lookup
-//                       (commit f54ecaf52)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -31,7 +16,7 @@ indexterm:[metatables, basics] Sets the metatable of `Table` to `Metatable` and 
 
 [source,tiri]
 ----
-mt = { __index = function(self, key) return 0 end }
+mt = { __index = metamethod(Key) return 0 end }
 t = setmetatable({}, mt)
 ----
 
@@ -55,7 +40,7 @@ Setting a `pass:[__]metatable` field on a metatable achieves two effects:
 mt = { __metatable = 'locked' }
 t = setmetatable({}, mt)
 print(getmetatable(t))    -- 'locked'
--- setmetatable(t, nil)   -- raises error: cannot change a protected metatable
+-- setmetatable(t, nil)   -- error: metatable is protected
 ----
 
 To bypass metatable protection for debugging purposes, use `debug.getMetatable` and `debug.setMetatable` (see <<ch-the-debug-library>>).
@@ -103,7 +88,7 @@ t  = setmetatable({}, mt)
 '1' + 1     -- error: neither operand supplies __add
 ----
 
-A handler written as a `method` literal is restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
+A handler written as a `metamethod` literal is restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
 
 See <<sec-arithmetic-operators>> for full operator semantics.
 
@@ -116,13 +101,13 @@ function Vec2.new(X, Y)
    return setmetatable({ x = X, y = Y }, Vec2)
 end
 
-Vec2.__add = function(A, B) return Vec2.new(A.x + B.x, A.y + B.y) end
-Vec2.__sub = function(A, B) return Vec2.new(A.x - B.x, A.y - B.y) end
-Vec2.__mul = function(A, B)
-   if type(B) is 'number' then return Vec2.new(A.x * B, A.y * B) end
-   return Vec2.new(A.x * B.x, A.y * B.y)
+Vec2.__add = metamethod(B:table!):table return Vec2.new(&x + B.x, &y + B.y) end
+Vec2.__sub = metamethod(B:table!):table return Vec2.new(&x - B.x, &y - B.y) end
+Vec2.__mul = metamethod(B):table
+   if type(B) is 'number' then return Vec2.new(&x * B, &y * B) end
+   return Vec2.new(&x * B.x, &y * B.y)
 end
-Vec2.__unm = function(A) return Vec2.new(-A.x, -A.y) end
+Vec2.__unm = metamethod():table return Vec2.new(-&x, -&y) end
 
 v = Vec2.new(1, 2) + Vec2.new(3, 4)   -- Vec2(4, 6)
 ----
@@ -155,7 +140,7 @@ If `pass:[__]le` is absent but `pass:[__]lt` is defined, the runtime evaluates `
 
 For two string operands, the runtime performs a direct lexicographic comparison without consulting metamethods.  See <<sec-comparison-operators>> for full details.
 
-`pass:[__]lt` and `pass:[__]le` written as `method` literals are restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
+`pass:[__]lt` and `pass:[__]le` written as `metamethod` literals are restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
 
 [[sec-string-and-length]]
 === String & Length
@@ -169,8 +154,8 @@ The `tostring` function and string interpolation invoke the `pass:[__]tostring` 
 [source,tiri]
 ----
 mt = {
-   __tostring = function(Self)
-      return f'Point({Self.x}, {Self.y})'
+   __tostring = metamethod():str
+      return f'Point({&x}, {&y})'
    end
 }
 p = setmetatable({ x = 10, y = 20 }, mt)
@@ -183,7 +168,7 @@ print(tostring(p))   -- 'Point(10, 20)'
 
 The `..` operator invokes `pass:[__]concat` when either operand is neither a string nor a number.  The runtime checks the left operand's metatable first, then the right operand's metatable.  See <<sec-string-concatenation>>.
 
-A handler written as a `method` literal is restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
+A handler written as a `metamethod` literal is restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
 
 ==== __len
 
@@ -195,7 +180,7 @@ The metamethod is required to return a number.  Returning any other value, inclu
 
 [source,tiri]
 ----
-mt = { __len = function(Self):num return Self.size end }
+mt = { __len = metamethod():num return &size end }
 t = setmetatable({ size = 42 }, mt)
 print(#t)   -- 42
 ----
@@ -204,7 +189,7 @@ print(#t)   -- 42
 
 [source,tiri]
 ----
-t = setmetatable({ 1, 2 }, { __len = function(Self):num return 7 end })
+t = setmetatable({ 1, 2 }, { __len = metamethod():num return 7 end })
 t.name  = 'x'
 t[-1]   = 'y'
 print(#t)   -- 7: the metamethod overrides the classification
@@ -231,7 +216,7 @@ indexterm:[metamethods, indexing] The runtime invokes `pass:[__]index` when a ta
 [source,tiri]
 ----
 mt = {
-   __index = function(Self, Key)
+   __index = metamethod(Key)
       return f'default({Key})'
    end
 }
@@ -263,7 +248,7 @@ The runtime invokes `pass:[__]newindex` when assigning to a key that does not al
 [source,tiri]
 ----
 mt = {
-   __newindex = function(Self, Key, Value)
+   __newindex = metamethod(Key, Value)
       error(f'read-only table: cannot set {Key}')
    end
 }
@@ -361,9 +346,9 @@ function Counter.new(Start)
    return setmetatable({ count = Start ?? 0 }, Counter)
 end
 
-Counter.__call = function(Self)
-   Self.count++
-   return Self.count
+Counter.__call = metamethod():num
+   &count++
+   return &count
 end
 
 c = Counter.new(0)
@@ -386,7 +371,7 @@ The global-environment restriction is applied before the lookup, so `table.clear
 [source,tiri]
 ----
 target = setmetatable({ value = 42 }, {
-   __clear = function(Self) print('cleared') end
+   __clear = metamethod() print('cleared') end
 })
 
 target.clear()      -- 'cleared'
@@ -401,7 +386,7 @@ function create_proxy(Backing)
    return setmetatable({}, {
       __index    = Backing,
       __newindex = Backing,
-      __clear    = function(Self) table.clear(Backing) end
+      __clear    = metamethod() table.clear(Backing) end
    })
 end
 ----
@@ -423,12 +408,12 @@ An object acquires a finaliser only at the moment a metatable that *already cont
 [source,tiri]
 ----
 -- Registered: __gc is present when the metatable is attached.
-resource = setmetatable({}, { __gc = function(Self) print('released') end })
+resource = setmetatable({}, { __gc = metamethod() print('released') end })
 
 -- Not registered: __gc is added after attachment.
 mt = {}
 ignored = setmetatable({}, mt)
-mt.__gc = function() print('never called') end
+mt.__gc = metamethod() print('never called') end
 ----
 
 Attaching the metatable again registers the object, because the field is present at the time of that call:
@@ -437,11 +422,11 @@ Attaching the metatable again registers the object, because the field is present
 ----
 mt = {}
 subject = setmetatable({}, mt)
-mt.__gc = function() print('released') end
+mt.__gc = metamethod() print('released') end
 setmetatable(subject, mt)   -- subject is now registered
 ----
 
-`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule:
+`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule.  The handler is written with `function`, because a `metamethod` literal requires a table subject:
 
 [source,tiri]
 ----
@@ -452,7 +437,7 @@ Registration is permanent for the lifetime of the object and cannot be cancelled
 
 [source,tiri]
 ----
-mt = { __gc = function() print('released') end }
+mt = { __gc = metamethod() print('released') end }
 subject = setmetatable({}, mt)
 setmetatable(subject, nil)   -- no finaliser call takes place
 ----
@@ -465,14 +450,14 @@ The object remains intact for the duration of the call.  Its fields, metatable a
 
 ===== Resurrection
 
-indexterm:[resurrection] A finaliser that stores its argument in a location that is still reachable makes the object reachable again.  The collector does not reclaim a resurrected object, and the object remains usable:
+indexterm:[resurrection] A finaliser that stores its subject in a location that is still reachable makes the object reachable again.  The collector does not reclaim a resurrected object, and the object remains usable:
 
 [source,tiri]
 ----
 registry = nil
 
 pending = setmetatable({ id = 1 }, {
-   __gc = function(Self) registry = Self end   -- resurrects Self
+   __gc = metamethod() registry = && end   -- resurrects the subject
 })
 pending = nil
 

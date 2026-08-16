@@ -4,6 +4,8 @@
 // UPDATED: 2026-08-13 - Replaced the leading-dot rule with the line rule for self referencing ('&name'), which is
 //                       what distinguishes it from the binary '&' (commit d3638efc0)
 // UPDATED: 2026-08-15 - Added the reserved word `method`, and `using`, which the keyword table had omitted
+// UPDATED: 2026-08-16 - Renamed the reserved word `method` to `metamethod`; `method` is now an ordinary identifier
+//                       (commit 5c92d652a)
 //                       (commits ac4f30a67, d3638efc0)
 
 [[ch-basic-syntax]]
@@ -84,7 +86,7 @@ The following words are reserved and cannot be used as identifiers:
 |`defer`    |`do`      |`else`    |`elseif`   |`end`     |`enum`
 |`except`   |`extern`  |`false`   |`for`      |`from`    |`function`
 |`global`   |`has`     |`if`      |`import`   |`in`      |`is`
-|`local`    |`method`  |`namespace`|`nil`    |`not`     |`or`
+|`local`    |`metamethod`|`namespace`|`nil`  |`not`     |`or`
 |`raise`    |`repeat`  |`return`  |`success`  |`then`    |`thunk`
 |`true`     |`try`     |`until`   |`using`    |`when`    |`while`
 |`with`     |          |          |           |          |
@@ -92,7 +94,7 @@ The following words are reserved and cannot be used as identifiers:
 
 Keywords are case-sensitive.  `and` is reserved; `And` and `AND` are valid identifiers.
 
-A reserved word remains available as a table member name, so `t.using` and `t.with` are valid field accesses.  `method` is accepted wherever an identifier is expected, and is reserved only against naming a callable and against the call position (<<sec-context-first-methods>>).
+A reserved word remains available as a table member name, so `t.using` and `t.with` are valid field accesses.  `metamethod` is accepted wherever an identifier is expected, and is reserved only against naming a callable and against the call position (<<sec-metamethod-literals>>).
 
 [%breakable]
 [[sec-statements-and-blocks]]

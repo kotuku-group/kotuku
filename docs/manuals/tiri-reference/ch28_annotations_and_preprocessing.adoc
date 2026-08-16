@@ -4,6 +4,7 @@
 // CHANGED: 2026-07-31 — Replaced ambiguous normative wording.
 // UPDATED: 2026-08-15 - Symbol metadata now reports the 'method' kind and the leading context parameter
 //                       (commit ac4f30a67)
+// UPDATED: 2026-08-16 - The symbol kind is now reported as 'metamethod' (commit 5c92d652a)
 
 [[ch-annotations-and-preprocessing]]
 == Annotations & Preprocessing
@@ -588,7 +589,7 @@ Each symbol entry has the following fields:
 
 |`kind`
 |String
-|`'function'`, `'thunk'` or `'method'`.
+|`'function'`, `'thunk'` or `'metamethod'`.
 
 |`signature`
 |String

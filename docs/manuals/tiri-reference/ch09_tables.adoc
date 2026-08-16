@@ -1,6 +1,8 @@
 // VERIFIED: 2026-08-15
 // UPDATED: 2026-08-15 - Extracted methods now cover the `method` literal form; added the sec-extracted-methods anchor
 //                       (commit ac4f30a67)
+// UPDATED: 2026-08-16 - Removed the `method` literal from extracted methods; the renamed `metamethod` keyword is
+//                       documented for metatable handlers only (commit 5c92d652a)
 
 [[ch-tables]]
 == Tables
@@ -995,19 +997,6 @@ Pass the table and call the method on it, or wrap the call in a closure, when a 
 [source,tiri]
 ----
 handler = function(Amount:num) return savings.deposit(Amount) end
-----
-
-A method that is written to be extracted takes its subject as an argument.  Declaring it as a `method` literal (<<sec-context-first-methods>>) keeps the body written against the current context, and the subject is supplied at each call rather than by the call form:
-
-[%unbreakable]
-[source,tiri]
-----
-savings.report = method():str
-   return f'{&owner}: {&balance}'
-end
-
-handler = savings.report
-handler(savings)         -- operates on 'savings' wherever it is called
 ----
 
 [[sec-tables-vs-arrays]]
