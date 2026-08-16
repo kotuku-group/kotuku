@@ -79,23 +79,16 @@ end
    assert(#indexed is 13, 'A context-first __len should enter its operand')
 
    local arithmetic_mt = {
-      __add = metamethod(Other:table!):num
-         return &value + Other.value
+      __sub = metamethod(Other, LhsDispatch:bool):num
+         if LhsDispatch then return &value - Other.value end
+         return Other - &value
       end
    }
    local left = setmetatable({ value = 3 }, arithmetic_mt)
    local right = setmetatable({ value = 4 }, arithmetic_mt)
-   assert(left + right is 7, 'A left-provider context-first arithmetic handler should enter the left operand')
-
-   local failed = false
-   try
-      local result = 1 + left
-   except e
-      failed = true
-      assert(e.message.find('right operand') != nil,
-         'A right-provider context-first arithmetic handler should report its ambiguity')
-   end
-   assert(failed, 'A right-provider context-first arithmetic handler must not enter the left operand')
+   assert(left - right is -1, 'A left-provider context-first arithmetic handler should enter the left operand')
+   assert(1 - left is -2,
+      'A right-provider context-first arithmetic handler should enter the provider and receive a false dispatch flag')
 end
 
 @Test function ReceiverStableHandlersAndVarargsKeepTheirRuntimeLayout()
@@ -119,15 +112,17 @@ end
       'Varargs should begin after the hidden context argument')
 end
 
-@Test function BinaryConcatAndComparisonRejectRightProviders()
+@Test function BinaryConcatAndComparisonUseReceiverFirstDispatch()
    local concat_mt = {
-      __concat = metamethod(Other):str
-         return &value .. Other
+      __concat = metamethod(Other, LhsDispatch:bool):str
+         if LhsDispatch then return &value .. Other end
+         return Other .. &value
       end
    }
    local ordered_mt = {
-      __lt = metamethod(Other:table!):bool
-         return &value < Other.value
+      __lt = metamethod(Other, LhsDispatch:bool):bool
+         if LhsDispatch then return &value < Other.value end
+         return Other < &value
       end
    }
    local concat_value = setmetatable({ value = 'left' }, concat_mt)
@@ -137,25 +132,8 @@ end
    assert(concat_value .. '!' is 'left!', 'A left-provider context-first concat handler should enter the left table')
    assert(first < second, 'A left-provider context-first ordering handler should enter the left table')
 
-   local concat_failed = false
-   try
-      local result = '!' .. concat_value
-   except e
-      concat_failed = true
-      assert(e.message.find('right operand') != nil,
-         'A right-provider context-first concat handler should report its ambiguity')
-   end
-   assert(concat_failed, 'A right-provider context-first concat handler must fail')
-
-   local comparison_failed = false
-   try
-      local result = 0 < first
-   except e
-      comparison_failed = true
-      assert(e.message.find('right operand') != nil,
-         'A right-provider context-first ordering handler should report its ambiguity')
-   end
-   assert(comparison_failed, 'A right-provider context-first ordering handler must fail')
+   assert('!' .. concat_value is '!left', 'A right-provider context-first concat handler should enter its provider')
+   assert(0 < first, 'A right-provider context-first ordering handler should enter its provider')
 end
 
 @Test function MetamethodReturnsAndErrorsRestoreTheCallerContext()

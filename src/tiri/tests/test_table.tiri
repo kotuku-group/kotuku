@@ -403,6 +403,23 @@ end
    assert(t[1] is 9, "t[1] should be 9")
 end
 
+@Test function SortMetamethodPreservesComparisonOrder()
+   local function less_than(Receiver:table!, Other:table!, LhsDispatch:bool):bool
+      if not LhsDispatch then Receiver, Other = Other, Receiver end
+      return Receiver.value < Other.value
+   end
+
+   local comparison_mt = { __lt = less_than }
+   local values = {
+      setmetatable({ value = 2 }, comparison_mt),
+      setmetatable({ value = 1 }, comparison_mt)
+   }
+
+   values.sort()
+   assert(values[0].value is 1, "table.sort() should preserve the source order passed to __lt")
+   assert(values[1].value is 2, "table.sort() should order values through a receiver-first __lt")
+end
+
 -- Tests for table.clear()
 
 @Test function ClearArrayPart()

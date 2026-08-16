@@ -42,9 +42,9 @@ end
 
 function shadowed_tostring_append_call_shape()
    local mt = {
-      __concat = function(A, B)
-         if type(A) is 'table' then return A.val .. B end
-         return A .. B.val
+      __concat = metamethod(Other, LHS)
+         if LHS then return &val .. Other end
+         return Other .. &val
       end
    }
    local tostring = function(Value)
@@ -514,9 +514,9 @@ end
 
 @Test function ArrayConcatAssignmentPreservesRhsMetamethodConcat()
    mt = {
-      __concat = function(A, B)
-         if type(A) is 'table' then return A.val .. B end
-         return A .. B.val
+      __concat = metamethod(Other, LHS)
+         if LHS then return &val .. Other end
+         return Other .. &val
       end
    }
    local obj = setmetatable({ val = 'data' }, mt)

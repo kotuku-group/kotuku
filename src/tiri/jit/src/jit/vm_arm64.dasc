@@ -865,7 +865,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  // Returns 0/1 or TValue * (metamethod).
   |3:
   |  cmp CRET1, #1
-  |  bhi ->vmeta_binop
+  |  bhi ->vmeta_binop3
   |4:
   |   ldrh RBw, [PC, # OFS_RD]
   |    add PC, PC, #8			// Skip past JMP instruction (64-bit BCIns)
@@ -974,6 +974,10 @@ static void build_subroutines(BuildCtx *ctx)
   |  bl extern lj_meta_arith  // (lua_State *L, TValue *ra,*rb,*rc, BCReg op)
   |  // Returns NULL (finished) or TValue * (metamethod).
   |  cbz CRET1, ->cont_nop
+  |  ldrb TMP0w, [PC, #-8+OFS_OP]
+  |  cmp TMP0w, #BC_UNM
+  |  beq ->vmeta_binop
+  |  b ->vmeta_binop3
   |
   |  // Call metamethod for binary op.
   |->vmeta_binop:
@@ -983,6 +987,15 @@ static void build_subroutines(BuildCtx *ctx)
   |  add PC, TMP1, #FRAME_CONT
   |  mov BASE, CRET1
   |   mov NARGS8:RC, #16		// 2 args for func(o1, o2).
+  |  b ->vm_call_dispatch
+  |
+  |->vmeta_binop3:
+  |  // BASE = old base, CRET1 = new base, stack = cont/func/receiver/other/lhs_dispatch
+  |  sub TMP1, CRET1, BASE
+  |   str PC, [CRET1, #-24]		// [cont|PC]
+  |  add PC, TMP1, #FRAME_CONT
+  |  mov BASE, CRET1
+  |   mov NARGS8:RC, #24		// 3 args for func(receiver, other, lhs_dispatch).
   |  b ->vm_call_dispatch
   |
   |->vmeta_len:
@@ -2976,7 +2989,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // Returns NULL (finished) or TValue * (metamethod).
     |  ldrb RBw, [PC, #-8+OFS_RB]
     |   ldr BASE, L->base
-    |   cbnz CRET1, ->vmeta_binop
+    |   cbnz CRET1, ->vmeta_binop3
     |  ldr TMP0, [BASE, RB, lsl #3]
     |  str TMP0, [BASE, RA, lsl #3]	// Copy result to RA.
     |  ins_next

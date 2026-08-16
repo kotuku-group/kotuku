@@ -248,8 +248,8 @@ typedef struct CCallInfo {
   _(ANY,        lj_env_check_override, 5, S, NIL, CCI_L|CCI_T) \
   /* Permanent contextual table designation */ \
   _(ANY,        lj_tab_mark_contextual_jit, 1, S, NIL, 0) \
-  _(ANY,        lj_context_begin_block_jit, 4, S, NIL, CCI_L) \
-  _(ANY,        lj_context_end_block_jit,   2, S, NIL, CCI_L) \
+  _(ANY,        lj_context_begin_block_jit, 5, S, NIL, CCI_L) \
+  _(ANY,        lj_context_end_block_jit,   3, S, NIL, CCI_L) \
   \
   // End of list.
 
@@ -286,8 +286,8 @@ extern "C" void lj_try_leave(lua_State *L);
 // Permanent contextual designation of a recorded table (see lj_state.cpp).
 extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept;
 extern "C" void lj_context_begin_block_jit(
-   lua_State *L, GCtab *Table, uint32_t BlockIndex, uint32_t EntrySlots);
-extern "C" void lj_context_end_block_jit(lua_State *L, uint32_t BlockIndex) noexcept;
+   lua_State *L, GCtab *Table, TValue *OwnerBase, uint32_t BlockIndex, uint32_t EntrySlots);
+extern "C" void lj_context_end_block_jit(lua_State *L, TValue *OwnerBase, uint32_t BlockIndex) noexcept;
 
 // Environment mutation boundary (see lj_meta.cpp).
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value);

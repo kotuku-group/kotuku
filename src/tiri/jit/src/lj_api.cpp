@@ -526,7 +526,7 @@ extern int lua_lessthan(lua_State *L, int idx1, int idx2)
    else {
       TValue *base = lj_meta_comp(L, o1, o2, 0);
       if ((uintptr_t)base <= 1) return (int)(uintptr_t)base;
-      return tvistruecond(MetaCall::invoke(L, base, 2, 1));
+      return tvistruecond(MetaCall::invoke(L, base, 3, 1));
    }
 }
 
