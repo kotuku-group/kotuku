@@ -118,13 +118,13 @@ function hitBall(NormalX, NormalY, ImpactSpeed)
    if math.abs(NormalX) > 0 then
       ball_scale_x = math.min(ball_scale_x, compression)
       ball_scale_y = math.max(ball_scale_y, stretch)
-      squash_pivot_x = NormalX < 0 ? 0 :> 1
+      squash_pivot_x = NormalX < 0 ? 0 : 1
       squash_pivot_y = 0.5
    else
       ball_scale_x = math.max(ball_scale_x, stretch)
       ball_scale_y = math.min(ball_scale_y, compression)
       squash_pivot_x = 0.5
-      squash_pivot_y = NormalY < 0 ? 0 :> 1
+      squash_pivot_y = NormalY < 0 ? 0 : 1
    end
 end
 

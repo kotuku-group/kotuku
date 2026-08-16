@@ -17,7 +17,7 @@ MAX_WIDTH <const> = 600
 rx_sanitise_icon = <{ regex.new([[^(%w+)\/(%w+)]]) }>
 rx_word = <{ regex.new([[\S+]]) }>
 
-ICONS = {
+ICONS <const> = {
    error     = 'items/error',
    critical  = 'items/error',
    warning   = 'items/alert_circle',
@@ -37,7 +37,7 @@ function defaultIcon(self):str
 end
 
 gui.dialog.message = function(Options)
-   self = { -- Public variables
+   self = entity { -- Public interface
       document = nil,
       options  = Options.options,
       type     = Options.type,
@@ -45,15 +45,15 @@ gui.dialog.message = function(Options)
       inputRequired = Options.inputRequired,
       message     = Options.message,
       fmtMessage  = Options.fmtMessage,
-      scaleWindow = Options.scale is false ? nil :> true -- Scale by default
+      scaleWindow = Options.scale is false ? nil : true -- Scale by default
    }
 
    -- Wait for the user to respond to the dialog.
 
    self.wait = function()
-      self.waiting = true
+      &waiting = true
       processing.sleep(-1)
-      self.waiting = nil
+      &waiting = nil
    end
 
    -- Configure the window according to initial doc size
@@ -86,7 +86,7 @@ gui.dialog.message = function(Options)
             response = self.options[responseIndex]
             state = { }
 
-            state.checkbox = Document.getKey('checkbox') is '1' ? true :> false
+            state.checkbox = Document.getKey('checkbox') is '1' ? true : false
 
             local input = Document.getKey('input')
             if input?? then state.input = input end
@@ -168,7 +168,7 @@ gui.dialog.message = function(Options)
          inputOptions = ''
          if Options.secret then inputOptions = 'secret="true"' end
 
-         msg = type(Options.userInput) is 'string' ? Options.userInput :> ''
+         msg = type(Options.userInput) is 'string' ? Options.userInput : ''
 
          doc ..= f'<p><input name="input" {inputOptions} width="16em" value="{msg}"/></p>\n'
       end
@@ -212,81 +212,83 @@ gui.dialog.message = function(Options)
 
    self.setMessage = function(Message, Formatted)
       if Formatted then
-         self.message = nil
-         self.fmtMessage = Message
+         &message = nil
+         &fmtMessage = Message
       else
-         self.message = Message
-         self.fmtMessage = nil
+         &message = Message
+         &fmtMessage = nil
       end
-      self.document.acClear()
-      self.document.acDataFeed(nil, DATA_XML, buildDocument())
+      &document.acClear()
+      &document.acDataFeed(nil, DATA_XML, buildDocument())
    end
 
-   -- Work out the dialog width based on the message.
+   using self do
+      -- Work out the dialog width based on the message.
 
-   dlg_width = MIN_WIDTH
-   if self.message?? then
-      longest = 10
-      for start, stop in rx_word.findAll(self.message) do
-         word_len = stop - start
-         if word_len > longest then longest = word_len end
-      end
-      dlg_width = 120 + (longest * FONT_HEIGHT)
-   elseif self.fmtMessage?? then
-      xml = obj.new('xml', { statement=f'<xml>{self.fmtMessage}</xml>' })
-      err, content = xml.mtSerialise(0, XMF_OMIT_TAGS|XMF_READABLE)
-      longest = 10
-      for start, stop in rx_word.findAll(content) do
-         word_len = stop - start
-         if word_len > longest then longest = word_len end
-      end
-      dlg_width = 120 + (longest * FONT_HEIGHT)
-   else
-      error('Dialog requires a message string.')
-   end
-
-   dlg_width = math.clamp(dlg_width, MIN_WIDTH, MAX_WIDTH)
-
-   self.window = gui.window({
-      insideWidth  = dlg_width,
-      insideHeight = 300,
-      quit         = Options.quit ?? false,
-      popover      = Options.popover,
-      parent       = Options.target,
-      aspectRatio  = true,
-      icon         = Options.icon ?? 'items/question',
-      title        = Options.title ?? 'Confirmation Required',
-      modal        = Options.modal ?? false,
-      events = {
-         close = function(Window)
-            self?.feedback(self, nil, nil)
-
-            if self.waiting then processing.signal() end
-            self.clear()
+      dlg_width = MIN_WIDTH
+      if &message?? then
+         longest = 10
+         for start, stop in rx_word.findAll(&message) do
+            word_len = stop - start
+            if word_len > longest then longest = word_len end
          end
-      }
-   })
+         dlg_width = 120 + (longest * FONT_HEIGHT)
+      elseif &fmtMessage?? then
+         xml = obj.new('xml', { statement=f'<xml>{&fmtMessage}</xml>' })
+         err, content = xml.mtSerialise(0, XMF_OMIT_TAGS|XMF_READABLE)
+         longest = 10
+         for start, stop in rx_word.findAll(content) do
+            word_len = stop - start
+            if word_len > longest then longest = word_len end
+         end
+         dlg_width = 120 + (longest * FONT_HEIGHT)
+      else
+         error('Dialog requires a message string.')
+      end
 
-   self.viewport = self.window.clientViewport()
+      dlg_width = math.clamp(dlg_width, MIN_WIDTH, MAX_WIDTH)
 
-   lDoc = self.viewport.new('document', {
-      eventMask     = 'LinkActivated',
-      eventCallback = docEvent,
-      path          = '#Index',
-      flags         = 'NoScrollbars',
-      clientScript  = obj.find('self')
-   })
+      &window = gui.window({
+         insideWidth  = dlg_width,
+         insideHeight = 300,
+         quit         = Options.quit ?? false,
+         popover      = Options.popover,
+         parent       = Options.target,
+         aspectRatio  = true,
+         icon         = Options.icon ?? 'items/question',
+         title        = Options.title ?? 'Confirmation Required',
+         modal        = Options.modal ?? false,
+         events = {
+            close = function(Window)
+               self?.feedback(self, nil, nil)
 
-   lDoc.acDataFeed(nil, DATA_XML, buildDocument())
+               if &waiting then processing.signal() end
+               &clear()
+            end
+         }
+      })
 
-   self?.input?.textinput?.mtSelectArea(0, 0, 20000, 20000)
+      &viewport = &window.clientViewport()
 
-   matchWindowToDocSize(self, lDoc)
+      lDoc = &viewport.new('document', {
+         eventMask     = 'LinkActivated',
+         eventCallback = docEvent,
+         path          = '#Index',
+         flags         = 'NoScrollbars',
+         clientScript  = obj.find('self')
+      })
 
-   self.window.moveToFront()
-   self.window.show(true)
+      lDoc.acDataFeed(nil, DATA_XML, buildDocument())
 
-   self.document = lDoc
+      self?.input?.textinput?.mtSelectArea(0, 0, 20000, 20000)
+
+      matchWindowToDocSize(self, lDoc)
+
+      &window.moveToFront()
+      &window.show(true)
+
+      &document = lDoc
+   end
 
    return self
 end

@@ -225,7 +225,7 @@ end
 
 @Test function TernaryOperator()
    x = 5
-   result = f"{x > 3 ? 'big' :> 'small'}"
+   result = f"{x > 3 ? 'big' : 'small'}"
    assert(result is "big", "Ternary operator failed: " .. tostring(result))
 end
 

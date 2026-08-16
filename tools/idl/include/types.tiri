@@ -317,7 +317,7 @@ global function cType(Value:table, Origin:str):table
          if ptr_struct then struct = ptr_struct end
 
          Value.struct = struct
-         Value.type = Value.isClass ? ('class ' .. struct) :> ('struct ' .. struct)
+         Value.type = Value.isClass ? ('class ' .. struct) : ('struct ' .. struct)
 
          if glStructures[struct] then
             glActiveRefs['STRUCT:' .. struct] = 'type-ref'
@@ -646,7 +646,7 @@ global function cType(Value:table, Origin:str):table
             return Value
          end
 
-         local inner_type = Value.struct ?? 'struct ' .. Value.struct :> Value.type
+         local inner_type = Value.struct ?? 'struct ' .. Value.struct : Value.type
          if Value.isConst then inner_type = 'const ' .. inner_type end
 
          if Value.docType and not Value.isFunction and not Value.isMethod then
@@ -700,7 +700,7 @@ global function cType(Value:table, Origin:str):table
 
          -- Process function result type
 
-         Value.type = ((#arglist is 0) ? 'void' :> (glTypes[arglist[0]].c_type ?? arglist[0])) .. f' (*{Value.name})'
+         Value.type = ((#arglist is 0) ? 'void' : (glTypes[arglist[0]].c_type ?? arglist[0])) .. f' (*{Value.name})'
 
          -- Process function parameters
 

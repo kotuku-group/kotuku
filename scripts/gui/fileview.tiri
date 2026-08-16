@@ -496,7 +496,7 @@ function createFileItem(self, Info)
       free_space = nil
       device = obj.new('storagedevice', { volume = Info.name .. ':' } )
       if device.deviceFlags has DEVICE_BOOKMARK then -- User shortcut
-         colour = self.theme.palette.type is 'light' ? 'carbon' :> 'pearl'
+         colour = self.theme.palette.type is 'light' ? 'carbon' : 'pearl'
       elseif device.deviceFlags has (DEVICE_FLOPPY_DISK|DEVICE_FIXED|DEVICE_HARD_DISK|DEVICE_COMPACT_DISC) then
          colour = 'green'
          if device.deviceSize >= 1 then total_size = sortNum(device.deviceSize) end
@@ -521,7 +521,7 @@ function createFileItem(self, Info)
          freespace   = free_space
       }
    elseif Info.flags has RDF_FOLDER then
-      local display_name:str = self.view.noIcons ? Info.name :> rxStripFolder.extract(Info.name)
+      local display_name:str = self.view.noIcons ? Info.name : rxStripFolder.extract(Info.name)
 
       if not Info.name.endsWith('/') then
          display_name ..= '/'
@@ -549,7 +549,7 @@ function createFileItem(self, Info)
       if self.hideFiles then return end
 
       if not self._filter or self._filter.test(Info.name) then
-         local filename = self.hideExtensions ? rxStripExtension.extract(Info.name) :> Info.name
+         local filename = self.hideExtensions ? rxStripExtension.extract(Info.name) : Info.name
 
           new_item = {
             type        = 'file',
@@ -1230,7 +1230,7 @@ gui.fileview = function(Options)
    -- Apply a private file filter using regex patterns.  E.g. '.*\.tiri$'
 
    self.filter = function(Filter)
-      self._filter = Filter ?? regex.new(Filter) :> nil
+      self._filter = Filter ?? regex.new(Filter) : nil
       self.refresh()
    end
 
@@ -1675,7 +1675,7 @@ gui.fileview = function(Options)
    end
 
    self.theme = self.view.theme --gui.getTheme(Options.target)
-   glFolderFill = self.theme.palette.type is 'light' ? 'rgb(20,20,110)' :> 'rgb(205,225,255)'
+   glFolderFill = self.theme.palette.type is 'light' ? 'rgb(20,20,110)' : 'rgb(205,225,255)'
 
    -- Drag and drop support is implemented with help from the Clipboard class.  It allows items to be
    -- requested from the FileView.

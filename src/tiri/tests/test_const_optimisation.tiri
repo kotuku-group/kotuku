@@ -274,7 +274,7 @@ function foldedValues()
       (15 & 7) << 2, 8 | 3 ^ 1, 'a' .. 'b' .. 'c',
       10 < 20, 'a' <= 'b', 4 is 4, 4 != 5, 1.0 ≈ 1.000001, 7 has 3,
       false and 41, true or 42, 0 ?? 9,
-      true ? 11 :> 12, '' ?? 14 :> 13
+      true ? 11 : 12, '' ?? 14 : 13
 end
 ]])
 
@@ -459,8 +459,8 @@ end
    assert((false and 41) is false, 'Logical and should return its known left value')
    assert((true or 42) is true, 'Logical or should return its known left value')
    assert((0 ?? 9) is 9 and ('' ?? 8) is 8, 'If-empty folding should use extended falseyness')
-   assert((true ? 11 :> 12) is 11, 'Standard ternary folding should select the reachable value')
-   assert(('' ?? 14 :> 13) is 13, 'Extended ternary folding should use extended falseyness')
+   assert((true ? 11 : 12) is 11, 'Standard ternary folding should select the reachable value')
+   assert(('' ?? 14 : 13) is 13, 'Extended ternary folding should use extended falseyness')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

@@ -74,7 +74,7 @@ gui.dialog.file = function(Options)
          end
       end
 
-      self?.feedback(self, self.fileview.path, #list > 0 ? list :> nil)
+      self?.feedback(self, self.fileview.path, #list > 0 ? list : nil)
 
       self.clear()
       processing.collect('defer')

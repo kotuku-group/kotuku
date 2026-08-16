@@ -124,7 +124,7 @@ end
    assert(str is -1, "Array access LHS test failed for zero value: expected -1, got '" .. tostring(str) .. "'")
 
    -- Ternary version - establishes a benchmark
-   status = t.missing ? 'exists' :> 'missing'
+   status = t.missing ? 'exists' : 'missing'
    assert(status is 'missing', "Failed table key test: expected 'ok', got '" .. tostring(status) .. "'")
 
    status = t.missing ?? 'missing'
@@ -469,18 +469,18 @@ end
 
 @Test function TernaryEmptyArray()
    empty = array<int>
-   v = empty ? 'truthy' :> 'falsey'
+   v = empty ? 'truthy' : 'falsey'
    assert(v is 'truthy', "Empty array in ternary should be truthy: expected 'truthy', got '" .. tostring(v) .. "'")
 end
 
 @Test function TernaryNonEmptyArray()
    filled = array<int, 5>
-   v = filled ? 'truthy' :> 'falsey'
+   v = filled ? 'truthy' : 'falsey'
    assert(v is 'truthy', "Non-empty array in ternary should be truthy: expected 'truthy', got '" .. tostring(v) .. "'")
 end
 
 @Test function ExtendedTernaryEmptyArray()
    empty = array<int>
-   v = empty ?? 'truthy' :> 'falsey'
+   v = empty ?? 'truthy' : 'falsey'
    assert(v is 'falsey', "Empty array in extended ternary should be falsey: expected 'falsey', got '" .. tostring(v) .. "'")
 end

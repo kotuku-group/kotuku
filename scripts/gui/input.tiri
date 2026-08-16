@@ -9,7 +9,7 @@ Documentation is available in the Kotuku Wiki.
 function reportActivate(self:table!, State:str!, Force:bool!)
    self.events.activate ?! return
    text = self.text.string
-   hash = text ? string.hash(text) :> 0
+   hash = text ? string.hash(text) : 0
    if Force or hash != self.hash then
       self.hash = hash
       self.events.activate(self, { text=text, state=State })
@@ -38,7 +38,7 @@ gui.input = function(Options)
       events         = Options.events ?? { },
       label          = Options.label,
       parentViewport = Options.target,
-      inputMask      = Options.inputMask ?? regex.new(Options.inputMask) :> nil,
+      inputMask      = Options.inputMask ?? regex.new(Options.inputMask) : nil,
       text           = nil, -- A VectorText that represents the string
       viewport       = nil, -- The input box's primary viewport
       _lastGoodInput = ''
@@ -164,7 +164,7 @@ gui.input = function(Options)
 
    textFill = Options.textFill
    if not textFill?? then
-      textFill = Options.bkgd is 'none' ? theme.window.text :> theme.page.text
+      textFill = Options.bkgd is 'none' ? theme.window.text : theme.page.text
    end
 
    if Options.shadowLabel then

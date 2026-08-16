@@ -807,7 +807,7 @@ function createResponseObject(self, Client)
    res.json = function(data)
       assert(not res._sent, 'Response already sent')
 
-      jsonStr = type(data) is 'string' ? data :> json.encode(data)
+      jsonStr = type(data) is 'string' ? data : json.encode(data)
 
       res._headers['content-type'] = 'application/json'
       sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers, jsonStr)
@@ -819,7 +819,7 @@ function createResponseObject(self, Client)
    res.redirect = function(url, code)
       assert(not res._sent, 'Response already sent')
 
-      code ?= (res._statusCode >= 300 and res._statusCode < 400) ? res._statusCode :> 302
+      code ?= (res._statusCode >= 300 and res._statusCode < 400) ? res._statusCode : 302
       res._headers['location'] = url
       res.status(code)
       sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers)
@@ -1119,7 +1119,7 @@ a:hover { text-decoration: underline; }
          -- Skip hidden files and system files for security
          if not name.startsWith('.') then
             isFolder = info.flags has RDF_FOLDER
-            size     = isFolder ? '-' :> formatFileSize(info.size)
+            size     = isFolder ? '-' : formatFileSize(info.size)
             modTime  = printableTime(info.modified)
             href     = URIPath .. name
             if isFolder then href ..= '/' end
@@ -1543,7 +1543,7 @@ function serverIncoming(self, ClientSocket)
       local ip = ClientSocket.client?.ip
       if ip then
          err, ip_str = mNet.AddressToStr(ip)
-         state.ip = (err is ERR_Okay) ? ip_str :> 'unknown'
+         state.ip = (err is ERR_Okay) ? ip_str : 'unknown'
       else
          state.ip = 'unknown'
       end

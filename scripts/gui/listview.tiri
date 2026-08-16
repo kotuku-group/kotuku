@@ -24,7 +24,7 @@ function rearrangeItems(View)
    for item in values(View.items) do
       item._y = y
       if item._vectors.viewport then
-         item._vectors.viewport.visibility = item.hidden ? VIS_HIDDEN :> VIS_VISIBLE
+         item._vectors.viewport.visibility = item.hidden ? VIS_HIDDEN : VIS_VISIBLE
          item._vectors.viewport.y = y + EDGE
       end
 

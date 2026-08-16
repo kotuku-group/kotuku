@@ -254,7 +254,7 @@ end
 
    local total = 0
    for index in {0 to 240} do
-      total += callback(index % 2 is 0 ? alpha :> nil)
+      total += callback(index % 2 is 0 ? alpha : nil)
    end
 
    local metrics = trace_metrics()
@@ -329,7 +329,7 @@ end
 
    function failure_after_warm(Callback:func, Good:any, Bad:any, Count:num):str
       for index in {0 to Count} do
-         local value:any = index is Count - 1 ? Bad :> Good
+         local value:any = index is Count - 1 ? Bad : Good
          try
             Callback(value)
          except e
