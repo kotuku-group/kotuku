@@ -23,7 +23,7 @@ end
 
 @Test function RemoveMetatable()
    t = {}
-   mt = { __index = function() return 'value' end }
+   mt = { __index = metamethod() return 'value' end }
    setmetatable(t, mt)
    assert(getmetatable(t) is mt, "Should have metatable before removal")
 
@@ -32,7 +32,7 @@ end
 end
 
 @Test function SharedMetatable()
-   mt = { __index = function(Self, Key) return Key .. '_default' end }
+   mt = { __index = metamethod(Key) return Key .. '_default' end }
    a = setmetatable({}, mt)
    b = setmetatable({}, mt)
    assert(getmetatable(a) is getmetatable(b), "Both tables should share the same metatable")
@@ -42,8 +42,8 @@ end
 
 @Test function ReplaceMetatable()
    t = {}
-   mt1 = { __index = function() return 'first' end }
-   mt2 = { __index = function() return 'second' end }
+   mt1 = { __index = metamethod() return 'first' end }
+   mt2 = { __index = metamethod() return 'second' end }
    setmetatable(t, mt1)
    assert(t.x is 'first', "Should use first metatable")
    setmetatable(t, mt2)
@@ -56,28 +56,58 @@ end
 
 -- Helper: create a simple 2D vector type with arithmetic metamethods
 
+function source_arithmetic_operands(Receiver, Other, LHS):<any, any>
+   if LHS then return Receiver, Other end
+   return Other, Receiver
+end
+
+function source_binary_operands(Receiver, Other, LHS):<any, any>
+   if LHS then return Receiver, Other end
+   return Other, Receiver
+end
+
 function newVec(X, Y):table
    vec_mt = {
-      __add = function(A, B) return newVec(A.x + B.x, A.y + B.y) end,
-      __sub = function(A, B) return newVec(A.x - B.x, A.y - B.y) end,
-      __mul = function(A, B)
-         if type(B) is 'number' then return newVec(A.x * B, A.y * B) end
-         if type(A) is 'number' then return newVec(A * B.x, A * B.y) end
-         return newVec(A.x * B.x, A.y * B.y)
+      __add = metamethod(Other, LHS)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         return newVec(sl.x + sr.x, sl.y + sr.y)
       end,
-      __div = function(A, B)
-         if type(B) is 'number' then return newVec(A.x / B, A.y / B) end
-         return newVec(A.x / B.x, A.y / B.y)
+      __sub = metamethod(Other, LHS)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         return newVec(sl.x - sr.x, sl.y - sr.y)
       end,
-      __mod = function(A, B)
-         if type(B) is 'number' then return newVec(A.x % B, A.y % B) end
-         return newVec(A.x % B.x, A.y % B.y)
+      __mul = metamethod(Other, LHS)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x * sr, sl.y * sr)
+         end
+         if type(sl) is 'number' then
+            return newVec(sl * sr.x, sl * sr.y)
+         end
+         return newVec(sl.x * sr.x, sl.y * sr.y)
       end,
-      __pow = function(A, B)
-         if type(B) is 'number' then return newVec(A.x ** B, A.y ** B) end
-         return newVec(A.x ** B.x, A.y ** B.y)
+      __div = metamethod(Other, LHS)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x / sr, sl.y / sr)
+         end
+         return newVec(sl.x / sr.x, sl.y / sr.y)
       end,
-      __unm = function(A) return newVec(-A.x, -A.y) end
+      __mod = metamethod(Other, LHS)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x % sr, sl.y % sr)
+         end
+         return newVec(sl.x % sr.x, sl.y % sr.y)
+      end,
+      __pow = metamethod(Other, LHS)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x ** sr, sl.y ** sr)
+         end
+         return newVec(sl.x ** sr.x, sl.y ** sr.y)
+      end,
+      __unm = metamethod() return newVec(-&x, -&y) end
    }
    return setmetatable({ x = X, y = Y }, vec_mt)
 end
@@ -137,11 +167,66 @@ end
    assert(v2.y is 9, "__pow: y should be 9, got " .. v2.y)
 end
 
+@Test function ArithmeticMetamethodsUseReceiverFirstDispatch()
+   local probe = metamethod(Other, LHS:bool):str
+      return f'{&name}:{Other.name ?? Other}:{LHS}'
+   end
+
+   local arithmetic_mt = {
+      __add = probe, __sub = probe, __mul = probe, __div = probe, __mod = probe, __pow = probe
+   }
+   local left = setmetatable({ name = 'left' }, arithmetic_mt)
+   local right = setmetatable({ name = 'right' }, arithmetic_mt)
+
+   assert(left + right is 'left:right:true', '__add should retain the left provider')
+   assert(left - right is 'left:right:true', '__sub should retain the left provider')
+   assert(left * right is 'left:right:true', '__mul should retain the left provider')
+   assert(left / right is 'left:right:true', '__div should retain the left provider')
+   assert(left % right is 'left:right:true', '__mod should retain the left provider')
+   assert(left ** right is 'left:right:true', '__pow should retain the left provider')
+
+   local rhs = setmetatable({ name = 'right' }, arithmetic_mt)
+   assert({ name = 'left' } + rhs is 'right:left:false', '__add should reverse arguments for a right provider')
+   assert({ name = 'left' } - rhs is 'right:left:false', '__sub should reverse arguments for a right provider')
+   assert({ name = 'left' } * rhs is 'right:left:false', '__mul should reverse arguments for a right provider')
+   assert({ name = 'left' } / rhs is 'right:left:false', '__div should reverse arguments for a right provider')
+   assert({ name = 'left' } % rhs is 'right:left:false', '__mod should reverse arguments for a right provider')
+   assert({ name = 'left' } ** rhs is 'right:left:false', '__pow should reverse arguments for a right provider')
+
+   local left_priority = setmetatable({ name = 'left priority' }, { __add = probe })
+   local right_priority = setmetatable({ name = 'right priority' }, {
+      __add = metamethod(Other, LHS:bool):str return &name end
+   })
+   assert(left_priority + right_priority is 'left priority:right priority:true',
+      'the left handler should win when the operands have different metatables')
+
+   local variadic_rhs = setmetatable({ name = 'variadic right' }, {
+      __add = metamethod(...):str
+         local other, lhs_dispatch = ...
+         return f'{&name}:{other.name}:{lhs_dispatch}'
+      end
+   })
+   assert({ name = 'variadic left' } + variadic_rhs is 'variadic right:variadic left:false',
+      'a variadic arithmetic handler should receive Other and LHS after its receiver')
+
+   local result:any = { name = 'left' }
+   result += rhs
+   assert(result is 'right:left:false', 'compound arithmetic should use the corresponding receiver-first operation')
+end
+
 @Test function MetaUnm()
    v = newVec(5, -3)
    v2 = -v
    assert(v2.x is -5, "__unm: x should be -5, got " .. v2.x)
    assert(v2.y is 3, "__unm: y should be 3, got " .. v2.y)
+
+   local operand = setmetatable({}, {
+      __unm = metamethod(...):table return {...} end
+   })
+   local arguments = -operand
+   assert(#arguments is 1, '__unm should retain its two-argument compatibility ABI')
+   assert(arguments[0] is operand,
+      '__unm should receive the operand in the compatibility argument slot')
 end
 
 @Test function ArithmeticChaining()
@@ -167,9 +252,15 @@ end
 -- Shared metatable so that __eq is invoked (both operands must share the same metatable)
 
 cmp_mt = {
-   __eq = function(A, B) return A.val is B.val end,
-   __lt = function(A, B) return A.val < B.val end,
-   __le = function(A, B) return A.val <= B.val end
+   __eq = metamethod(Other) return &val is Other.val end,
+   __lt = metamethod(Other, LHS)
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return sl.val < sr.val
+   end,
+   __le = metamethod(Other, LHS)
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return sl.val <= sr.val
+   end
 }
 
 function newComparable(Val)
@@ -215,37 +306,96 @@ end
    assert(a >= c, ">= with equal values should work via __le")
 end
 
+@Test function ProviderAmbiguousBinaryMetamethodsUseReceiverFirstDispatch()
+   local concat_probe = metamethod(Other, LHS:bool):str
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return f'{&name}:{LHS}:{sl.name ?? sl}{sr.name ?? sr}'
+   end
+
+   local concat_mt = { __concat = concat_probe }
+   local concat_left = setmetatable({ name = 'concat left' }, concat_mt)
+   local concat_right = setmetatable({ name = 'concat right' }, concat_mt)
+   assert(concat_left .. concat_right is 'concat left:true:concat leftconcat right',
+      '__concat should pass the left provider first')
+   assert({ name = 'concat source left' } .. concat_right is 'concat right:false:concat source leftconcat right',
+      '__concat should pass a right provider first')
+   assert(concat_left .. concat_right .. '!' is 'concat left:true:concat leftconcat right:true:concat right!',
+      'chained __concat should preserve the continuation result')
+
+   local concatenated:any = { name = 'concat source left' }
+   concatenated ..= concat_right
+   assert(concatenated is 'concat right:false:concat source leftconcat right',
+      '..= should use the receiver-first __concat convention')
+
+   local observed = ''
+   local function operand_value(Value):num
+      if type(Value) is 'table' then return Value.value end
+      return Value
+   end
+   local ordering_probe = metamethod(Other, LHS:bool):bool
+      observed = f'{&name}:{LHS}'
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return operand_value(sl) < operand_value(sr)
+   end
+
+   local ordering_le_probe = metamethod(Other, LHS:bool):bool
+      observed = f'{&name}:{LHS}'
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return operand_value(sl) <= operand_value(sr)
+   end
+
+   local ordering_mt = { __lt = ordering_probe, __le = ordering_le_probe }
+   local order_left = setmetatable({ name = 'order left', value = 2 }, ordering_mt)
+   local order_right = setmetatable({ name = 'order right', value = 3 }, ordering_mt)
+   assert(order_left < order_right and observed is 'order left:true',
+      '__lt should retain left-provider priority')
+   assert(2 < order_right and observed is 'order right:false',
+      '__lt should identify a right provider')
+   assert(order_right > 2 and observed is 'order right:false',
+      '> should report the swapped effective pair')
+   assert(order_right >= 3 and observed is 'order right:false',
+      '>= should report the swapped effective pair')
+
+   local fallback_mt = { __lt = ordering_probe }
+   local fallback_left = setmetatable({ name = 'fallback left', value = 1 }, fallback_mt)
+   local fallback_right = setmetatable({ name = 'fallback right', value = 2 }, fallback_mt)
+   assert(fallback_left <= fallback_right and observed is 'fallback right:true',
+      '__le fallback should describe its reversed effective pair')
+   assert(fallback_left <= 2 and observed is 'fallback left:false',
+      '__le fallback should identify a provider on the effective right side')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- String & Length Metamethods
 
 @Test function MetaToString()
-   mt = { __tostring = function(Self) return 'MyObject(' .. Self.val .. ')' end }
+   mt = { __tostring = metamethod() return 'MyObject(' .. &val .. ')' end }
    local obj = setmetatable({ val = 42 }, mt)
    result = tostring(obj)
    assert(result is 'MyObject(42)', "__tostring should return custom string, got '" .. result .. "'")
 end
 
 @Test function MetaToStringInConcat()
-   mt = { __tostring = function(Self) return 'item' end }
+   mt = { __tostring = metamethod() return 'item' end }
    local obj = setmetatable({}, mt)
    result = 'The ' .. tostring(obj) .. ' is here'
    assert(result is 'The item is here', "__tostring used in concatenation, got '" .. result .. "'")
 end
 
 @Test function MetaLen()
-   mt = { __len = function(Self):num return Self.custom_size end }
+   mt = { __len = metamethod():num return &custom_size end }
    local obj = setmetatable({ custom_size = 42 }, mt)
    assert(#obj is 42, "__len should return custom length, got " .. #obj)
 end
 
 @Test function MetaLenZero()
-   mt = { __len = function(Self) return 0 end }
+   mt = { __len = metamethod() return 0 end }
    local obj = setmetatable({ 'a', 'b', 'c' }, mt)
    assert(#obj is 0, "__len returning 0 should override actual length")
 end
 
 @Test function MetaLenRejectsNonNumericResults()
-   local string_length = setmetatable({}, { __len = function(Self):any return 'invalid' end })
+   local string_length = setmetatable({}, { __len = metamethod():any return 'invalid' end })
    try
       local result = #string_length
    except err
@@ -255,7 +405,7 @@ end
       error('A string __len result should fail')
    end
 
-   local nil_length = setmetatable({}, { __len = function(Self):num return nil end })
+   local nil_length = setmetatable({}, { __len = metamethod():num return nil end })
    try
       local result = #nil_length
    except err
@@ -268,7 +418,7 @@ end
 
 @Test function MetaLenOverridesStringKeyClassification()
    -- A table addressed with a string key normally has no length, but __len takes precedence.
-   local obj = setmetatable({ 1, 2 }, { __len = function(Self):num return 7 end })
+   local obj = setmetatable({ 1, 2 }, { __len = metamethod():num return 7 end })
    obj.name = 'x'
    assert(#obj is 7, "__len should override the string-key classification, got " .. tostring(#obj))
 
@@ -283,7 +433,7 @@ end
 
 @Test function MetaLenAbsentLeavesPureTableNumerical()
    -- A metatable without __len must not disturb the ordinary numerical length.
-   local obj = setmetatable({ 1, 2, 3 }, { __index = function(Self, Key) return nil end })
+   local obj = setmetatable({ 1, 2, 3 }, { __index = metamethod(Key) return nil end })
    assert(#obj is 3, "A pure table with an unrelated metatable should keep its length, got " .. tostring(#obj))
 end
 
@@ -299,7 +449,7 @@ end
    -- A __newindex that diverts the store classifies the table that actually receives it, not the proxy.
    local backing = { 1, 2, 3 }
    local proxy = setmetatable({ 1, 2, 3 }, {
-      __newindex = function(Self, Key, Value) rawset(backing, Key, Value) end
+      __newindex = metamethod(Key, Value) rawset(backing, Key, Value) end
    })
    proxy.name = 'x'
    assert(#proxy is 3, "The proxy should not be classified by a diverted store, got " .. tostring(#proxy))
@@ -310,7 +460,7 @@ end
    -- The same diversion rule applies to any non-numeric key, not just strings.
    local backing = { 1, 2, 3 }
    local proxy = setmetatable({ 1, 2, 3 }, {
-      __newindex = function(Self, Key, Value) rawset(backing, Key, Value) end
+      __newindex = metamethod(Key, Value) rawset(backing, Key, Value) end
    })
    proxy[true] = 'x'
    assert(#proxy is 3, "The proxy should not be classified by a diverted store, got " .. tostring(#proxy))
@@ -319,7 +469,7 @@ end
 
 @Test function MetaLenOverridesNonNumericKeyClassification()
    -- __len takes precedence over the classification regardless of which key type caused it.
-   local obj = setmetatable({ 1, 2 }, { __len = function(Self):num return 7 end })
+   local obj = setmetatable({ 1, 2 }, { __len = metamethod():num return 7 end })
    obj[true] = 'x'
    assert(#obj is 7, "__len should override a boolean-key classification, got " .. tostring(#obj))
 
@@ -348,14 +498,15 @@ end
 
 @Test function MetaConcat()
    mt = {
-      __concat = function(A, B):table
-         if type(A) is 'table' and type(B) is 'table' then
-            return setmetatable({ val = A.val .. B.val }, getmetatable(A))
+      __concat = metamethod(Other, LHS):table
+         local sl, sr = source_binary_operands(&&, Other, LHS)
+         if type(sl) is 'table' and type(sr) is 'table' then
+            return setmetatable({ val = sl.val .. sr.val }, getmetatable(sl))
          end
-         if type(A) is 'table' then
-            return setmetatable({ val = A.val .. B }, getmetatable(A))
+         if type(sl) is 'table' then
+            return setmetatable({ val = sl.val .. sr }, getmetatable(sl))
          end
-         return setmetatable({ val = A .. B.val }, getmetatable(B))
+         return setmetatable({ val = sl .. sr.val }, getmetatable(sr))
       end
    }
    a = setmetatable({ val = 'hello' }, mt)
@@ -366,11 +517,12 @@ end
 
 @Test function MetaConcatWithString()
    mt = {
-      __concat = function(A, B)
-         if type(A) is 'table' then
-            return A.val .. B
+      __concat = metamethod(Other, LHS)
+         local sl, sr = source_binary_operands(&&, Other, LHS)
+         if type(sl) is 'table' then
+            return sl.val .. sr
          end
-         return A .. B.val
+         return sl .. sr.val
       end
    }
    local obj = setmetatable({ val = 'data' }, mt)
@@ -385,7 +537,7 @@ end
 -- Indexing: __index and __newindex
 
 @Test function MetaIndexFunction()
-   mt = { __index = function(Self, Key) return Key .. '_default' end }
+   mt = { __index = metamethod(Key) return Key .. '_default' end }
    t = setmetatable({}, mt)
    assert(t.foo is 'foo_default', "__index function should provide default, got '" .. tostring(t.foo) .. "'")
    assert(t.bar is 'bar_default', "__index function should work for any key")
@@ -423,9 +575,9 @@ end
 @Test function MetaNewIndex()
    log = {}
    mt = {
-      __newindex = function(Self, Key, Value)
+      __newindex = metamethod(Key, Value)
          log.insert(Key .. '=' .. tostring(Value))
-         rawset(Self, Key, Value)
+         rawset(&&, Key, Value)
       end
    }
    t = setmetatable({}, mt)
@@ -441,7 +593,7 @@ end
 
 @Test function MetaNewIndexReadOnly()
    mt = {
-      __newindex = function(Self, Key, Value)
+      __newindex = metamethod(Key, Value)
          error("Cannot modify read-only table: key '" .. Key .. "'")
       end
    }
@@ -460,9 +612,9 @@ end
    -- __newindex is only called for NEW keys; existing keys bypass it
    call_count = 0
    mt = {
-      __newindex = function(Self, Key, Value)
+      __newindex = metamethod(Key, Value)
          call_count++
-         rawset(Self, Key, Value)
+         rawset(&&, Key, Value)
       end
    }
    t = setmetatable({}, mt)
@@ -478,10 +630,10 @@ end
    -- Classic proxy pattern: separate storage from the proxy object
    storage = {}
    mt = {
-      __index = function(Self, Key):any
+      __index = metamethod(Key):any
          return storage[Key]
       end,
-      __newindex = function(Self, Key, Value)
+      __newindex = metamethod(Key, Value)
          storage[Key] = Value
       end
    }
@@ -500,21 +652,21 @@ end
 -- Callable Tables (__call)
 
 @Test function MetaCallBasic()
-   mt = { __call = function(Self) return 'called' end }
+   mt = { __call = metamethod() return 'called' end }
    t = setmetatable({}, mt)
    result = t()
    assert(result is 'called', "__call basic should return 'called', got '" .. tostring(result) .. "'")
 end
 
 @Test function MetaCallWithArgs()
-   mt = { __call = function(Self, A, B) return A + B end }
+   mt = { __call = metamethod(A, B) return A + B end }
    t = setmetatable({}, mt)
    result = t(3, 4)
    assert(result is 7, "__call with args should return 7, got " .. result)
 end
 
 @Test function MetaCallMultipleReturns()
-   mt = { __call = function(Self, X):<num, num, num> return X, X * 2, X * 3 end }
+   mt = { __call = metamethod(X):<num, num, num> return X, X * 2, X * 3 end }
    t = setmetatable({}, mt)
    a, b, c = t(5)
    assert(a is 5, "__call first return should be 5, got " .. a)
@@ -524,8 +676,8 @@ end
 
 @Test function MetaCallSelfAccess()
    mt = {
-      __call = function(Self, Key):any
-         return Self.data[Key]
+      __call = metamethod(Key):any
+         return &data[Key]
       end
    }
    t = setmetatable({ data = { a = 1, b = 2, c = 3 } }, mt)
@@ -537,7 +689,7 @@ end
 @Test function MetaCallAsFactory()
    -- Callable table acting as a constructor/factory
    Point = setmetatable({}, {
-      __call = function(Self, X, Y)
+      __call = metamethod(X, Y)
          return { x = X, y = Y }
       end
    })
@@ -553,7 +705,7 @@ end
 @Test function MetaProtectedGetmetatable()
    mt = {
       __metatable = 'protected',
-      __index = function() return 'value' end
+      __index = metamethod() return 'value' end
    }
    t = setmetatable({}, mt)
    result = getmetatable(t)
@@ -577,7 +729,7 @@ end
 -- Rawget and Rawset
 
 @Test function RawgetBypassesIndex()
-   mt = { __index = function() return 'metamethod' end }
+   mt = { __index = metamethod() return 'metamethod' end }
    t = setmetatable({ real = 'actual' }, mt)
    assert(t.missing is 'metamethod', "Normal access should use __index")
    assert(rawget(t, 'missing') is nil, "rawget should bypass __index")
@@ -587,9 +739,9 @@ end
 @Test function RawsetBypassesNewindex()
    call_count = 0
    mt = {
-      __newindex = function(Self, Key, Value)
+      __newindex = metamethod(Key, Value)
          call_count++
-         rawset(Self, Key, Value)
+         rawset(&&, Key, Value)
       end
    }
    t = setmetatable({}, mt)
@@ -624,11 +776,11 @@ end
    function createCounting()
       state = { reads = 0, writes = 0, data = {} }
       mt = {
-         __index = function(Self, Key):any
+         __index = metamethod(Key):any
             state.reads++
             return state.data[Key]
          end,
-         __newindex = function(Self, Key, Value):any
+         __newindex = metamethod(Key, Value):any
             state.writes++
             state.data[Key] = Value
          end
@@ -707,12 +859,15 @@ function newWrapped(Val)
    return setmetatable({ val = Val }, wrapped_mt)
 end
 
-wrapped_mt.__add      = function(A, B):table return newWrapped(A.val + B.val) end
-wrapped_mt.__tostring = function(Self):str return 'Wrapped(' .. Self.val .. ')' end
-wrapped_mt.__eq       = function(A, B):bool return A.val is B.val end
-wrapped_mt.__len      = function(Self):num return Self.val end
-wrapped_mt.__call     = function(Self):num return Self.val end
-wrapped_mt.__unm      = function(Self):table return newWrapped(-Self.val) end
+wrapped_mt.__add      = metamethod(Other, LHS:bool):table
+   local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+   return newWrapped(sl.val + sr.val)
+end
+wrapped_mt.__tostring = metamethod():str return 'Wrapped(' .. &val .. ')' end
+wrapped_mt.__eq       = metamethod(Other):bool return &val is Other.val end
+wrapped_mt.__len      = metamethod():num return &val end
+wrapped_mt.__call     = metamethod():num return &val end
+wrapped_mt.__unm      = metamethod():table return newWrapped(-&val) end
 
 @Test function CombinedMetamethods()
 

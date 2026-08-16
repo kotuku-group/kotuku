@@ -460,9 +460,17 @@ end
 
    debug.setMetatable('', {
       __unm = function(Value):num return 400 - tonumber(Value) end,
-      __add = function(Left, Right):num return 100 + tonumber(Left) + tonumber(Right) end,
-      __mod = function(Left, Right):num return 200 + (tonumber(Left) % tonumber(Right)) end,
-      __pow = function(Left, Right):num return 300 + (tonumber(Left) ** tonumber(Right)) end
+      __add = function(Receiver, Other, LhsDispatch:bool):num
+         return 100 + tonumber(Receiver) + tonumber(Other)
+      end,
+      __mod = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 200 + (tonumber(Receiver) % tonumber(Other)) end
+         return 200 + (tonumber(Other) % tonumber(Receiver))
+      end,
+      __pow = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 300 + (tonumber(Receiver) ** tonumber(Other)) end
+         return 300 + (tonumber(Other) ** tonumber(Receiver))
+      end
    })
 
    jit.off()

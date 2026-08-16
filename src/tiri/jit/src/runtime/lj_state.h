@@ -61,8 +61,9 @@ extern "C" LJ_FUNC void lj_tab_designate_contextual(lua_State *L, uint32_t Slot)
 extern "C" LJ_FUNC void lj_context_begin_block(lua_State *L, uint32_t Slot, uint32_t BlockIndex);
 extern "C" LJ_FUNC void lj_context_end_block(lua_State *L, uint32_t BlockIndex) noexcept;
 extern "C" LJ_FUNC void lj_context_begin_block_jit(
-   lua_State *L, GCtab *Table, uint32_t BlockIndex, uint32_t EntrySlots);
-extern "C" LJ_FUNC void lj_context_end_block_jit(lua_State *L, uint32_t BlockIndex) noexcept;
+   lua_State *L, GCtab *Table, TValue *OwnerBase, uint32_t BlockIndex, uint32_t EntrySlots);
+extern "C" LJ_FUNC void lj_context_end_block_jit(
+   lua_State *L, TValue *OwnerBase, uint32_t BlockIndex) noexcept;
 extern "C" LJ_FUNC void lj_close_arm(lua_State *L, uint32_t Slot);
 extern "C" LJ_FUNC void lj_close_consume(lua_State *L, uint32_t Slot);
 LJ_FUNC uint64_t lj_close_take_armed(
