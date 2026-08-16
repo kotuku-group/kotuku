@@ -1,4 +1,8 @@
 // VERIFIED: 2028-08-06
+// UPDATED: 2026-08-15 - Added the `method` keyword and the sec-context-first-methods section; restoration now covers
+//                       context-first activations (commit ac4f30a67)
+// UPDATED: 2026-08-15 - Native framework callbacks capture the registration context; rewrote sec-context-and-callbacks
+//                       and listed the Tiri interfaces that still begin at the root (commit 1a38f18e0)
 
 [[ch-functions]]
 == Functions

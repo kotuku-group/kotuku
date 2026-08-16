@@ -3,6 +3,8 @@
 // UPDATED: 2026-08-06 - Added table.kind(), table.size() and the sequence requirements (commit 26e122ab7)
 // UPDATED: 2026-08-11 - Method-call syntax is now written with '.'; retitled every method entry accordingly (commit 7e6746950)
 // UPDATED: 2026-08-11 - table.clear() now dispatches to the __clear metamethod (commit 0e4d3a341)
+// UPDATED: 2026-08-15 - struct.size() now accepts a struct reference; removed the retired inst.structSize() method
+//                       (commit b900f2341)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -410,7 +412,7 @@ indexterm:[library, struct] See <<ch-structs>>.
 
 |`struct.new(StructName, [Fields])`   |Creates a structure instance, optionally initialised from a table.
 |`struct.new(StructName, Address)`    |Creates a structure that references existing memory.
-|`struct.size(StructName)`            |Returns the byte size of a structure definition.
+|`struct.size(Target)`                |Returns the byte size of a structure definition, named or reached through an instance.
 |`struct.clone(Source)`               |Returns a deep copy of a structure instance.
 |`struct.copy(Dest, Source)`          |Deep-copies `Source` into `Dest` and returns `Dest`.
 |===
@@ -421,7 +423,6 @@ indexterm:[library, struct] See <<ch-structs>>.
 |===
 |Signature |Description
 
-|`inst.structSize()`  |Returns the byte size of the instance.
 |`inst.ptr([Address])`|Retrieves or replaces the backing memory address.
 |===
 

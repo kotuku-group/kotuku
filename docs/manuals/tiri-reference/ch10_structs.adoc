@@ -1,4 +1,6 @@
 // VERIFIED: 2028-08-15
+// UPDATED: 2026-08-15 - Corrected the owned-string field category, which still named the retired 'string' spelling,
+//                       and documented struct.size() accepting a struct reference (commit b900f2341)
 
 [[ch-structs]]
 == Structs
@@ -284,9 +286,16 @@ tag = struct.new('XMLTag', address)
 
 ==== struct.size()
 
-[.api]`bytes = struct.size(StructName)`
+[.api]`bytes = struct.size(Target)`
 
-Returns the byte size of the struct definition identified by `StructName`.  Raises an exception if the definition is not found.
+Returns the byte size of a struct definition.  `Target` is either the name of a registered definition or a struct instance, in which case the size of that instance's definition is returned.  Raises an exception if `Target` names a definition that is not found, or if `Target` is neither a struct nor a string.
+
+[source,tiri]
+----
+record = struct.new('User')
+struct.size('User')    -- size of the definition
+struct.size(record)    -- the same size, reached through the instance
+----
 
 ==== struct.clone()
 
@@ -355,7 +364,7 @@ The value produced by a read, and the values accepted by a write, depend on the 
 |Object (`obj`, `obj<Class>`)
 |Reads as a native object (`type()` is `"object"`), or `nil` when unset.  Accepts an object or `nil` on assignment; assigning `nil` clears the field.  A constrained field (`obj<Class>`) accepts instances of the named class or a sub-class of it; any other class raises an exception.  Assigning a detached object wrapper raises an exception.
 
-|Owned string (`string`)
+|Owned string (`str`)
 |Reads and writes a string.  The struct owns the string storage.
 
 |Raw C string (`cstr`)

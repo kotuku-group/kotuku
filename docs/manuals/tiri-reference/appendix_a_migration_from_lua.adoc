@@ -1,4 +1,10 @@
 // VERIFIED: 2026-08-14
+// UPDATED: 2026-08-15 - Added the `method` literal to the Tiri-only feature list and to the extraction note in the
+//                       colon-syntax migration (commit ac4f30a67)
+// UPDATED: 2026-08-15 - Framework callbacks now capture the registration context; corrected the self-migration note
+//                       (commit 1a38f18e0)
+// UPDATED: 2026-08-15 - Added the sec-migration-arithmetic-coercion section; arithmetic no longer coerces string
+//                       operands (commit f54ecaf52)
 
 [[appendix-migration-from-lua]]
 [appendix]
@@ -85,6 +91,10 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |`bit.*` library
 |Native bitwise operators `&`, `\|`, `^`, `~`, `<<`, `>>`
 |<<sec-migration-operators>>
+
+|`'10' + 5` coerces to `15`
+|Raises an error; convert with `tonumber()`
+|<<sec-migration-arithmetic-coercion>>
 
 |One-based indexing
 |Zero-based indexing
@@ -209,6 +219,25 @@ shifted = 1 << 4
 
 Compound bitwise assignment operators (`&=`, `|=`, `^=`) do not exist.  Use `x = x & y` instead.
 
+[[sec-migration-arithmetic-coercion]]
+=== String Arithmetic Coercion
+
+indexterm:[Lua, coercion] indexterm:[coercion, arithmetic] Standard Lua coerces a string that represents a valid number into a number for arithmetic, so `'10' + 5` yields `15`.  Tiri performs no such coercion: a string operand raises an error in every arithmetic operator.  Convert the operand with `tonumber()`.
+
+[source,tiri]
+----
+-- Lua
+total = '10' + 5             -- 15
+
+-- Tiri
+total = '10' + 5             -- error: attempt to perform arithmetic on a string value
+total = tonumber('10') + 5   -- 15
+----
+
+This affects the values that arrive from string sources, including command-line arguments (<<sec-script-arguments>>), parsed configuration and text fields.  Apply `tonumber()` at the point the value is read.
+
+The bitwise operators are unaffected and still coerce a numeric string; see <<sec-bitwise-operators>>.
+
 [[sec-migration-indexing]]
 === Zero-Based Indexing
 indexterm:[Lua, indexing] Tiri uses zero-based indexing for tables, strings and arrays.  In standard Lua, the first element of a table is at index 1 and `string.sub()` starts at position 1.  In Tiri, the first element is at index 0.
@@ -277,7 +306,7 @@ account.deposit(50)
 The mapping from `self.` to `&`, and from `self` to `+&&+`, is direct, with four differences to check during migration:
 
 - The receiver must be an __entity__.  An ordinary table inherits the caller's context instead of the receiver, so designate the table at the point where it is constructed.
-- A function extracted from a table (`ref = t.method`) carries no association with a receiver.
+- A function extracted from a table (`ref = t.handler`) carries no association with a receiver.  Declare it as a `method` literal when it is written to be extracted, so that the subject is supplied as its first argument at each call; see <<sec-contextual-methods>>.
 - A callback registered with the framework begins in the root context, not on the table that registered it.  Capture the table as an upvalue.  See <<sec-context-and-callbacks>>.
 - A function that must operate on a table other than its receiver declares that table as an ordinary parameter.
 
@@ -902,6 +931,7 @@ The following Tiri features have no counterpart in standard Lua.  They do not re
 * **Pipe operator**: `x |> func()` (see <<ch-result-management>>)
 * **Deferred expressions**: `<{ expr }>` (see <<ch-resource-management>>)
 * **Thunk functions**: `thunk name():type pass:[...] end` (see <<ch-resource-management>>)
+* **Contextual methods**: `method(pass:[...]) pass:[...] end` (see <<sec-contextual-methods>>)
 * **Unicode operator aliases**: see <<sec-unicode-operator-aliases>>
 * **Approximate equality**: `a ≈ b` (see <<sec-approximate-equality>>)
 

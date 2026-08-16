@@ -1,4 +1,6 @@
 // VERIFIED: 2026-08-15
+// UPDATED: 2026-08-15 - Extracted methods now cover the `method` literal form; added the sec-extracted-methods anchor
+//                       (commit ac4f30a67)
 
 [[ch-tables]]
 == Tables
@@ -977,6 +979,7 @@ end
 
 `Shape.describe` is unchanged.  Each call binds `&area` to the implementation reached from that instance's chain.
 
+[[sec-extracted-methods]]
 ==== Extracted Methods
 
 Selecting a method without calling it yields an unbound function value.  It carries no receiver, so calling it later runs it in whatever context is current at the call site, not on the table it came from:
@@ -992,6 +995,19 @@ Pass the table and call the method on it, or wrap the call in a closure, when a 
 [source,tiri]
 ----
 handler = function(Amount:num) return savings.deposit(Amount) end
+----
+
+A method that is written to be extracted takes its subject as an argument.  Declaring it as a `method` literal (<<sec-context-first-methods>>) keeps the body written against the current context, and the subject is supplied at each call rather than by the call form:
+
+[%unbreakable]
+[source,tiri]
+----
+savings.report = method():str
+   return f'{&owner}: {&balance}'
+end
+
+handler = savings.report
+handler(savings)         -- operates on 'savings' wherever it is called
 ----
 
 [[sec-tables-vs-arrays]]

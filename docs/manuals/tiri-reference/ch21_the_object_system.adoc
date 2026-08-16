@@ -3,6 +3,10 @@
 // UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
 // CHANGED: 2026-07-31 — Standardised exception terminology and present-tense behaviour.
 // UPDATED: 2026-08-08 - Native results are nullable in the sense now defined by the required value annotation (commit db7996e3e)
+// UPDATED: 2026-08-15 - new() and _state() are canonical built-in methods dispatched with an explicit receiver; added
+//                       the sec-object-method-dispatch section (commit d26d1d4b9)
+// UPDATED: 2026-08-15 - Callbacks passed as method arguments or assigned to fields capture the registration context;
+//                       object.subscribe() still begins at the root (commit 1a38f18e0)
 
 [[ch-the-object-system]]
 == The Object System
@@ -106,6 +110,8 @@ An exception can be raised if:
 * The `fieldName` does not exist.
 * Permission restrictions are breached, such as writing a read-only field.
 * The field returns an error code (applies to fields that are represented by a function).
+
+Assigning a function to a field that accepts a callback registers that function with the object.  The registration captures the current context, which the callback observes on every invocation, and holds the captured table until the callback is replaced or the object is freed (<<sec-context-and-callbacks>>).
 
 ==== object.get()
 

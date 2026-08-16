@@ -4,6 +4,8 @@
 // UPDATED: 2026-08-13 - Noted the adjacency rule that separates the bitwise AND operator from self referencing
 //                       (commit d3638efc0)
 // UPDATED: 2026-08-14 - The array string element is now spelled 'str'; 'string' is rejected (commit 148480f9d)
+// UPDATED: 2026-08-15 - Arithmetic no longer coerces string operands; relocated the accepted numeric-string forms to
+//                       the bitwise section, which remains the sole coercing operator group (commit f54ecaf52)
 
 [[ch-operators]]
 == Operators
@@ -11,18 +13,15 @@ indexterm:[operators] This chapter defines all operators in Tiri: their syntax, 
 
 [[sec-arithmetic-operators]]
 === Arithmetic Operators
-indexterm:[operators, arithmetic] Arithmetic operators accept numeric operands.  The runtime coerces strings that represent valid numbers to numbers automatically.  If an operand is neither numeric nor string-coercible and no metamethod is defined, the runtime raises an error.
+indexterm:[operators, arithmetic] Arithmetic operators require numeric operands.  The runtime performs no string-to-number coercion: a string operand is rejected even when it represents a valid number.  An operand that is not a number routes to the corresponding metamethod (<<sec-arithmetic-metamethods>>), and the runtime raises an error when neither operand supplies one.
 
-A string operand is accepted if it matches the numeric literal syntax defined in <<sec-lexical-conventions>>, optionally surrounded by whitespace and preceded by a sign.  Decimal, hexadecimal and exponent forms are all accepted:
+Convert a string operand explicitly with `tonumber()`:
 
 [source,tiri]
 ----
-'10' + 5        -- 15
-'  10  ' + 5    -- 15   (surrounding whitespace)
-'-10' + 5       -- -5   (sign)
-'0x10' + 5      -- 21   (hexadecimal)
-'1e2' + 5       -- 105  (exponent)
-'abc' + 5       -- error: attempt to perform arithmetic on a string value
+'10' + 5              -- error: attempt to perform arithmetic on a string value
+'abc' + 5             -- error: attempt to perform arithmetic on a string value
+tonumber('10') + 5    -- 15
 ----
 
 [cols="2,3,3a,3",options="header"]
@@ -111,13 +110,12 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 
 **String comparison** is lexicographic and byte-by-byte.  The comparison applies no locale-aware collation.
 
-The ordering operators do not coerce their operands.  Comparing a number with a string raises an error, even when the string represents a valid number.  This differs from the arithmetic operators, which do coerce strings.
+The ordering operators do not coerce their operands.  Comparing a number with a string raises an error, even when the string represents a valid number.  The arithmetic operators reject a string operand on the same terms (<<sec-arithmetic-operators>>); the bitwise operators are the sole exception, and coerce a numeric string (<<sec-bitwise-operators>>).
 
 [source,tiri]
 ----
 1 < '1'      -- error: attempt to compare number with string
 '1' < 1      -- error: attempt to compare string with number
-'1' + 1      -- 2 (arithmetic coerces)
 ----
 
 The equality operators never raise on a type mismatch.  Values of different types are never equal, so `'0' is 0` is `false`.

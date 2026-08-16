@@ -2,6 +2,10 @@
 // UPDATED: 2026-08-14 - The array string element is now spelled 'str'; corrected the type_name and element_type
 //                       grammar, which listed 'number', 'string' and bare 'struct' as accepted names when the
 //                       parser rejects all three (commit 148480f9d)
+// UPDATED: 2026-08-15 - Removed 'function' from the type_name grammar; 'func' is now the sole function annotation
+//                       (commit 42c2f4520)
+// UPDATED: 2026-08-15 - The struct owned-string field is now spelled 'str'; retired the 'string' compatibility name
+//                       (commit b900f2341)
 
 [[ch-type-system]]
 == Type System
@@ -59,8 +63,7 @@ The two interfaces share a core of names but are not identical dialects, and the
 |`int64`                         |`int64` |Yes |Number
 |`uint64`                        |--   |Yes |Number
 |`float`, `double`               |Yes  |Yes |Number
-|`str`                           |`str` |--  |String
-|`string`                        |--   |Yes |String
+|`str`                           |`str` |Yes |String
 |`cstr`                          |--   |Yes |String
 |`table`                         |Yes  |--  |Table
 |`array`, `array<type>`, `type[N]`|`array` |Yes |Array
@@ -308,7 +311,7 @@ result_list       = type_name [ "!" ] { "," type_name [ "!" ] } ;
 (* native vocabulary *)
 type_name         = "any" | "nil" | "bool"
                   | "num" | "str"
-                  | "table" | "func" | "function"
+                  | "table" | "func"
                   | "obj" | "range" | "userdata"
                   | "struct" | "struct" "<" identifier ">"
                   | array_type ;
@@ -369,7 +372,7 @@ These are the names of the native vocabulary, and they are the complete set that
 |`struct<Name>`   |Structure constrained to the declared layout `Name` (see <<sec-struct-typed-references>>)
 |===
 
-An unrecognised type name raises a parse-time diagnostic, and a compatibility type name such as `int` or `double` is unrecognised here.
+An unrecognised type name raises a parse-time diagnostic, and a compatibility type name such as `int` or `double` is unrecognised here.  `function` is unrecognised on the same footing: `func` is the sole annotation for a function value, and `function` is the declaration keyword (<<ch-functions>>).
 
 The only constrained forms are `struct<Name>` and `array<element>`.  There is no `obj<Class>` annotation; a class constraint is expressible on a struct field (<<sec-struct-field-types>>) but not on a variable, parameter or return value, where `obj` accepts an object of any class.
 

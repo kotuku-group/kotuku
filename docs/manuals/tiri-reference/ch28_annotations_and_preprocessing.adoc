@@ -2,6 +2,8 @@
 // CHANGED: 2026-05-02 - Added parser annotation expressions and parser symbol metadata extraction.
 // VERIFIED: 2026-03-05
 // CHANGED: 2026-07-31 — Replaced ambiguous normative wording.
+// UPDATED: 2026-08-15 - Symbol metadata now reports the 'method' kind and the leading context parameter
+//                       (commit ac4f30a67)
 
 [[ch-annotations-and-preprocessing]]
 == Annotations & Preprocessing
@@ -586,7 +588,7 @@ Each symbol entry has the following fields:
 
 |`kind`
 |String
-|`'function'` or `'thunk'`.
+|`'function'`, `'thunk'` or `'method'`.
 
 |`signature`
 |String
