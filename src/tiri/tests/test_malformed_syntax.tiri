@@ -430,7 +430,7 @@ end
       },
       {
          name = 'ternary missing false branch',
-         source = "value = enabled ? 'yes' :>"
+         source = "value = enabled ? 'yes' :"
       },
       {
          name = 'ternary missing separator',

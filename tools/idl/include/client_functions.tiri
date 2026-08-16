@@ -92,7 +92,7 @@ global function outputLookup(Name:str, List):str
    end
 
    sorted.sort(function(a,b)
-      return (a.value is b.value) ? a.name < b.name :> a.value < b.value
+      return (a.value is b.value) ? a.name < b.name : a.value < b.value
    end)
 
    list = ''
@@ -853,7 +853,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
    cl.name = Name -- The name defined by class() has priority over any name defined by method()
    cl.src = Options.src
    cl.extended = Options.extended
-   cl.cppName = (Options.extended ? 'ext' :> 'obj') .. Name
+   cl.cppName = (Options.extended ? 'ext' : 'obj') .. Name
    cl.forwardDeclared = forward_declared
    if Options.base then
       cl.base = "obj" .. Options.base

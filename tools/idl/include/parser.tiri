@@ -383,7 +383,7 @@ function classStorageOrigin(Class:table):num
       end
 
       Class.storageOffsetSymbol = 'CLASS_OFFSET_' .. base.className.upper()
-      return (base.publicSize != 0) ? base.publicSize :> base.size
+      return (base.publicSize != 0) ? base.publicSize : base.size
    end
 
    Class.storageOffsetSymbol = 'CLASS_OFFSET'

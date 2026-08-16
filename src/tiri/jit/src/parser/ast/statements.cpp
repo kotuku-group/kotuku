@@ -882,12 +882,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
          "'method' is reserved for context-first function literals and cannot name a function");
    }
 
-   if (this->ctx.check(TokenKind::Colon)) {
-      return this->fail<StmtNodePtr>(ParserErrorCode::DeprecatedSyntax, this->ctx.tokens().current(),
-         "colon-qualified function declarations have been removed; use function receiver.member(...) with an "
-         "explicit receiver parameter instead");
-   }
-
    GCstr *funcname = nullptr;
    if (not path.segments.empty()) {
       funcname = path.segments.back().symbol;

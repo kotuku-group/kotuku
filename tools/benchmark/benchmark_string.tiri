@@ -344,8 +344,8 @@ rx_digits   = regex.new("^\\d+$")
       local r6 = rx_hexcolor.test(not_hex)
       local r7 = rx_digits.test(digits_only)
       local r8 = rx_digits.test(mixed)
-      checksum += (r1 ? 1 :> 0) + (r2 ? 1 :> 0) + (r3 ? 1 :> 0) + (r4 ? 1 :> 0) +
-                  (r5 ? 1 :> 0) + (r6 ? 1 :> 0) + (r7 ? 1 :> 0) + (r8 ? 1 :> 0)
+      checksum += (r1 ? 1 : 0) + (r2 ? 1 : 0) + (r3 ? 1 : 0) + (r4 ? 1 : 0) +
+                  (r5 ? 1 : 0) + (r6 ? 1 : 0) + (r7 ? 1 : 0) + (r8 ? 1 : 0)
    end
 
    return checksum
@@ -414,9 +414,9 @@ end
       -- Compare longer strings
       local eq_long = long1 is long2
       local lt_long = long1 < long2
-      checksum += (eq1 ? 1 :> 0) + (eq2 ? 1 :> 0) + (eq3 ? 1 :> 0) + (neq1 ? 1 :> 0) +
-                  (lt1 ? 1 :> 0) + (gt1 ? 1 :> 0) + (le1 ? 1 :> 0) + (ge1 ? 1 :> 0) +
-                  (eq_long ? 1 :> 0) + (lt_long ? 1 :> 0)
+      checksum += (eq1 ? 1 : 0) + (eq2 ? 1 : 0) + (eq3 ? 1 : 0) + (neq1 ? 1 : 0) +
+                  (lt1 ? 1 : 0) + (gt1 ? 1 : 0) + (le1 ? 1 : 0) + (ge1 ? 1 : 0) +
+                  (eq_long ? 1 : 0) + (lt_long ? 1 : 0)
    end
 
    return checksum
@@ -592,7 +592,7 @@ end
 
       -- Palindrome check pattern
       local is_palindrome = test is test.reverse()
-      checksum += #rev1 + #rev2 + #rev3 + #repeated_rev + (is_palindrome ? 1 :> 0)
+      checksum += #rev1 + #rev2 + #rev3 + #repeated_rev + (is_palindrome ? 1 : 0)
    end
 
    return checksum
@@ -619,9 +619,9 @@ end
 
       -- Variable prefix/suffix checks
       local chk = filename.endsWith(extensions[i % 4])
-      checksum += (starts_with_doc ? 1 :> 0) + (starts_with_http ? 1 :> 0) +
-                  (starts_with_slash ? 1 :> 0) + (ends_with_txt ? 1 :> 0) +
-                  (ends_with_pdf ? 1 :> 0) + (ends_with_com ? 1 :> 0) + (chk ? 1 :> 0)
+      checksum += (starts_with_doc ? 1 : 0) + (starts_with_http ? 1 : 0) +
+                  (starts_with_slash ? 1 : 0) + (ends_with_txt ? 1 : 0) +
+                  (ends_with_pdf ? 1 : 0) + (ends_with_com ? 1 : 0) + (chk ? 1 : 0)
    end
 
    return checksum

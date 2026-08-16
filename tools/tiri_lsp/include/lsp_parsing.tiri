@@ -88,6 +88,37 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       return isIdentStart(C) or (C >= '0' and C <= '9')
    end
 
+   function isTernarySeparator(ColonPos)
+      scan = ColonPos - 1
+      paren_depth = 0
+      brace_depth = 0
+      bracket_depth = 0
+
+      while scan >= 0 do
+         c = Source.sub(scan, scan + 1)
+         if c is '\n' or c is '\r' then return false end
+         if c is ')' then
+            paren_depth++
+         elseif c is '(' and paren_depth > 0 then
+            paren_depth -= 1
+         elseif c is '}' then
+            brace_depth++
+         elseif c is '{' and brace_depth > 0 then
+            brace_depth -= 1
+         elseif c is ']' then
+            bracket_depth++
+         elseif c is '[' and bracket_depth > 0 then
+            bracket_depth -= 1
+         elseif paren_depth is 0 and brace_depth is 0 and bracket_depth is 0 then
+            if c is '?' then return true end
+            if c is ',' or c is ';' then return false end
+         end
+         scan -= 1
+      end
+
+      return false
+   end
+
    -- Check if character is digit
    function isDigit(C)
       return C >= '0' and C <= '9'
@@ -685,12 +716,17 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       elseif c is ':' then
          op_start = col
          if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '>' then
-            -- :> ternary else
+            -- Deprecated :> ternary separator
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
+         elseif isTernarySeparator(pos) then
+            -- : ternary separator
+            addToken(line, op_start, 1, 1, 0)
+            pos++
+            col++
          else
-            -- : type annotation or method call (skip)
+            -- Type annotation
             pos++
             col++
          end

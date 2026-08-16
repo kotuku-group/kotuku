@@ -102,8 +102,8 @@ vfx.config_circle = function(State, Options)
    State.cy = 0.5 * State.v_height
    if type(Options.cy) is 'number' then State.cy = Options.cy * State.v_height end
 
-   ex = State.cx <= 0.5 ? State.v_width :> 0
-   ey = State.cy <= 0.5 ? State.v_height :> 0
+   ex = State.cx <= 0.5 ? State.v_width : 0
+   ey = State.cy <= 0.5 ? State.v_height : 0
 
    State.max_radius = vfx.dist(State.cx, State.cy, ex, ey)
 end
@@ -589,7 +589,7 @@ vfx.wipes.radial.animate = function(State, Options, Progress)
       size = (Progress / (i * State.interval)) * State.stroke_size
       if size > State.stroke_size + 0.25 then size = State.stroke_size + 0.25 end
       State.ellipses[i-1].strokeWidth = size
-      State.ellipses[i-1].visibility = (size < 0.5) ? VIS_HIDDEN :> VIS_VISIBLE
+      State.ellipses[i-1].visibility = (size < 0.5) ? VIS_HIDDEN : VIS_VISIBLE
    end
 end
 
@@ -694,7 +694,7 @@ vfx.initTimer = function(State:table!, Options:table)
             raise ERR_Terminate
          else
             progress = vfx.apply_easing(value, State.easing)
-            State.animate(State, Options, Options.invert ? 1.0 - progress :> progress)
+            State.animate(State, Options, Options.invert ? 1.0 - progress : progress)
             State.viewport.acDraw()
          end
       end

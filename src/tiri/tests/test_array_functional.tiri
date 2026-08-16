@@ -269,7 +269,7 @@ end
 
 @Test function ReduceMax()
    arr = array<int> { 3, 1, 4, 1, 5, 9, 2, 6 }
-   maxVal = arr.reduce(arr[0], (acc, v) => num: v > acc ? v :> acc)
+   maxVal = arr.reduce(arr[0], (acc, v) => num: v > acc ? v : acc)
    assert(maxVal is 9, "reduce() should find maximum value")
 end
 

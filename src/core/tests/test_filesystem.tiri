@@ -110,7 +110,7 @@ end
       err = mSys.ScanDir(dir)
       while err is ERR_Okay do
          fl = dir.info
-         names = not names ? fl.name :> names .. ' ' .. fl.name
+         names = not names ? fl.name : names .. ' ' .. fl.name
          volumes[fl.name] = true
          err = mSys.ScanDir(dir)
       end

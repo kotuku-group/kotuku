@@ -664,7 +664,7 @@ end
    local mismatch = ''
    for iteration in {0 to 500} do
       local key = keys[iteration % #keys]
-      local expected = key is 'alpha' ? 'keyword' :> key is 'bravo' ? 'annotation' :> 'missing'
+      local expected = key is 'alpha' ? 'keyword' : key is 'bravo' ? 'annotation' : 'missing'
       local result = resolve_safe_index_join(key)
       if result != expected then
          mismatch = f'Safe-index join failed at iteration {iteration}: key={key}, expected={expected}, result={result}'
@@ -3045,7 +3045,7 @@ end
 
    local t = {}
    for i in {0 to 100} do
-      local key = i < 80 ? 1000 + (i % 4) :> -1
+      local key = i < 80 ? 1000 + (i % 4) : -1
       t[key] = i
    end
 
@@ -3164,7 +3164,7 @@ end
 
 function string_keyed_side_exit(ExitAt, UseTemplate):any
    for i in {0 to 100} do
-      local temporary = UseTemplate ? { 1 } :> {}
+      local temporary = UseTemplate ? { 1 } : {}
       temporary.key = i
       if i is ExitAt then return temporary end
    end
@@ -3191,7 +3191,7 @@ end
 
 function boolean_keyed_side_exit(ExitAt, UseTemplate):any
    for i in {0 to 100} do
-      local temporary = UseTemplate ? { 1 } :> {}
+      local temporary = UseTemplate ? { 1 } : {}
       temporary[true] = i
       if i is ExitAt then return temporary end
    end

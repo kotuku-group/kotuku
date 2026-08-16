@@ -277,13 +277,13 @@ url.parse = function(URL:str):<table, str>
    frag_pos = remaining.find('#')
    if frag_pos then
       components.fragment = remaining.sub(frag_pos + 1)
-      remaining = frag_pos is 0 ? '' :> remaining.sub(0, frag_pos)
+      remaining = frag_pos is 0 ? '' : remaining.sub(0, frag_pos)
    end
 
    query_pos = remaining.find('?', 0, true)
    if query_pos then
       components.query = remaining.sub(query_pos + 1)
-      remaining = query_pos is 0 ? '' :> remaining.sub(0, query_pos)
+      remaining = query_pos is 0 ? '' : remaining.sub(0, query_pos)
    end
 
    scheme_match = rxScheme.extract(remaining)
@@ -455,7 +455,7 @@ url.defrag = function(URL:str):<str, str>
 
    frag_pos = URL.find('#')
    if frag_pos then
-      base = frag_pos is 0 ? '' :> URL.sub(0, frag_pos)
+      base = frag_pos is 0 ? '' : URL.sub(0, frag_pos)
       fragment = URL.sub(frag_pos + 1)
       return base, fragment
    end

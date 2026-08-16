@@ -438,7 +438,7 @@ function cpp_string(Value:any):str
 end
 
 function bool_literal(Value:any):str
-   return Value ? 'true' :> 'false'
+   return Value ? 'true' : 'false'
 end
 
 function sorted_field_names(Fields:table):array<str>
@@ -518,7 +518,7 @@ end
 
 function route_table_entry(Route:table):str
    path_names = Route.funcName .. '_path_param_names'
-   handler = Route.interface.transport is 'websocket' ? 'nullptr' :> Route.funcName
+   handler = Route.interface.transport is 'websocket' ? 'nullptr' : Route.funcName
 
    return '   BackstageRoute(\n' ..
       '      ' .. cpp_string(Route.method) .. ',\n' ..

@@ -816,7 +816,7 @@ end
    function run(Count:num):num
       local total = 0
       for i in {0 to Count} do
-         local target = i % 2 is 0 ? first :> second
+         local target = i % 2 is 0 ? first : second
          total += target.read()
       end
       return total

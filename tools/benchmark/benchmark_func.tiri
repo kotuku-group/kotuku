@@ -278,7 +278,7 @@ end
       local e1 = isEven(20)
       local o1 = isOdd(21)
       checksum += f1 + f2 + fib1 + fib2 + s1 + s2 + c1 + c2 +
-         (e1 ? 1 :> 0) + (o1 ? 1 :> 0)
+         (e1 ? 1 : 0) + (o1 ? 1 : 0)
    end
    return checksum
 end

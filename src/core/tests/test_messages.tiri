@@ -72,7 +72,7 @@ end
    local err
    err, handler = mSys.AddMsgHandler(msg_id, function(UID, Type, Data, Size)
       seen_count++
-      seen_data = Data ? ('' .. Data) :> ''
+      seen_data = Data ? ('' .. Data) : ''
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() failed: ' .. mSys.GetErrorMsg(err))
@@ -140,7 +140,7 @@ end
    local err
    err, first_handler = mSys.AddMsgHandler(first_id, function(UID, Type, Data, Size)
       sequence ..= 'A'
-      first_data = Data ? ('' .. Data) :> ''
+      first_data = Data ? ('' .. Data) : ''
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() for the first message failed: ' .. mSys.GetErrorMsg(err))
@@ -148,7 +148,7 @@ end
 
    err, second_handler = mSys.AddMsgHandler(second_id, function(UID, Type, Data, Size)
       sequence ..= 'B'
-      second_data = Data ? ('' .. Data) :> ''
+      second_data = Data ? ('' .. Data) : ''
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() for the second message failed: ' .. mSys.GetErrorMsg(err))

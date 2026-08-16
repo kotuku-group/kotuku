@@ -778,7 +778,7 @@ function replaceClassOffsetSection(Content:str, ModuleName:str, Sections:table, 
       return Content.sub(0, insert_at) .. Section .. '\n\n' .. Content.sub(insert_at)
    end
 
-   local separator = Content.endsWith('\n') ? '\n' :> '\n\n'
+   local separator = Content.endsWith('\n') ? '\n' : '\n\n'
    return Content .. separator .. Section .. '\n'
 end
 

@@ -18,12 +18,6 @@ local lStyle = thunk():str
    end
 end
 
-function setValue(Slider, Value)
-   Slider.value = Value
-   Slider.events?.activate(Slider, Value)
-   Slider.viewport.scene.surface.mtScheduleRedraw()
-end
-
 gui.slider = function(Options:table!)
    self = entity {
       min    = Options.min ?? 0,
@@ -36,8 +30,13 @@ gui.slider = function(Options:table!)
          assert(Max > Min, 'The min/max values are invalid.')
          &min = Min
          &max = Max
-         if &value < &min then setValue(&&, &min) end
-         if &value > &max then setValue(&&, &max) end
+         if &value < &min then &setValue(&min) end
+         if &value > &max then &setValue(&max) end
+      end,
+      setValue = function(Value:num)
+         &value = Value
+         &events?.activate(&&, Value)
+         &viewport.scene.surface.mtScheduleRedraw()
       end
    }
 
@@ -47,7 +46,7 @@ gui.slider = function(Options:table!)
       assert(&max > &min, 'The min/max values are invalid.')
 
       &prvTheme = gui.getTheme(target)
-      &orientation = (Options.orientation is 'vertical') ? 'V' :> 'H'
+      &orientation = (Options.orientation is 'vertical') ? 'V' : 'H'
       &prvLabelSize = 0
 
       if &orientation is 'V' then
@@ -64,7 +63,7 @@ gui.slider = function(Options:table!)
             if Viewport.y is Y then return end
 
             Viewport.y = Y
-            setValue(&&, &min + (&max - &min) * ((max_size - Y) / max_size))
+            &setValue(&min + (&max - &min) * ((max_size - Y) / max_size))
          end
 
          max_size = &prvSliderHostVP.height - BOX_SIZE
@@ -100,7 +99,7 @@ gui.slider = function(Options:table!)
             if Viewport.x is X then return end
 
             Viewport.x = X
-            setValue(&&, &min + (&max - &min) * (X / max_size))
+            &setValue(&min + (&max - &min) * (X / max_size))
          end
 
          &prvSliderVP.x = (&value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
@@ -115,11 +114,11 @@ gui.slider = function(Options:table!)
                   if &orientation is 'V' then
                      new_value = &min + ((Msg.y / &prvSliderHostVP.height) * (&max - &min))
                      &prvSliderVP.y = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.height - BOX_SIZE))
-                     setValue(&&, new_value)
+                     &setValue(new_value)
                   else
                      new_value = &min + ((Msg.x / &prvSliderHostVP.width) * (&max - &min))
                      &prvSliderVP.x = (new_value - &min) / ((&max - &min) / (&prvSliderHostVP.width - BOX_SIZE))
-                     setValue(&&, new_value)
+                     &setValue(new_value)
                   end
                end
                Msg = Msg.next

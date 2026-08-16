@@ -153,9 +153,9 @@ gui.mtRGB = { -- sRGB metatable
    end,
    __tostring = function(Self):str -- Returns an SVG compliant colour string
       if Self.a >= 1 or Self.a is nil then
-         return string.format('rgb(%d %d %d)', Self.r ? Self.r * 255 :> 0, Self.g ? Self.g * 255 :> 0, Self.b ? Self.b * 255 :> 0)
+         return string.format('rgb(%d %d %d)', Self.r ? Self.r * 255 : 0, Self.g ? Self.g * 255 : 0, Self.b ? Self.b * 255 : 0)
       else
-         return string.format('rgb(%d %d %d / %g)', Self.r ? Self.r * 255 :> 0, Self.g ? Self.g * 255 :> 0, Self.b ? Self.b * 255 :> 0, Self.a)
+         return string.format('rgb(%d %d %d / %g)', Self.r ? Self.r * 255 : 0, Self.g ? Self.g * 255 : 0, Self.b ? Self.b * 255 : 0, Self.a)
       end
    end
 }
@@ -177,7 +177,7 @@ gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
 end
 
 gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table -- Normalised RGB values
-   result = entity { r = R, g = G, b = B, a = A ? A :> 1 }
+   result = entity { r = R, g = G, b = B, a = A ? A : 1 }
    if KV then
       for k, v in pairs(KV) do
          result[k] = v
@@ -241,7 +241,7 @@ end
 
 function gui.mtRGB.linearise():table
    function lineariseRGB(u)
-      return (u <= 0.04045) ? (u / 12.92) :> (((u + 0.055) / 1.055) ** 2.4)
+      return (u <= 0.04045) ? (u / 12.92) : (((u + 0.055) / 1.055) ** 2.4)
    end
 
    return { r = lineariseRGB(&r), g = lineariseRGB(&g), b = lineariseRGB(&b), a = &a }
@@ -269,7 +269,7 @@ function gui.mtRGB.toHSL():table
    end
 
    local delta = max - min
-   local s = (l > 0.5) ? (delta / (2 - max - min)) :> (delta / (max + min))
+   local s = (l > 0.5) ? (delta / (2 - max - min)) : (delta / (max + min))
    local h
 
    if r >= max then
@@ -310,7 +310,7 @@ function gui.mtRGB.toDisplayP3():table
    local pb =  0.0358458 * x - 0.0761724 * y + 0.9568845 * z
 
    -- Apply sRGB-style gamma (Display P3 uses the same transfer function)
-   gamma = (u) => (u <= 0.0031308) ? (u * 12.92) :> (1.055 * (u ** (1 / 2.4)) - 0.055)
+   gamma = (u) => (u <= 0.0031308) ? (u * 12.92) : (1.055 * (u ** (1 / 2.4)) - 0.055)
 
    return { r = gamma(pr), g = gamma(pg), b = gamma(pb) }
 end
@@ -350,7 +350,7 @@ function gui.mtRGB.toOKLCH():table
    if h < 0 then h = h + 360 end
    return setmetatable({ okl = lab.okl, okc = c, okh = h, a = &a },
       { __tostring = () => &a is 1 ?
-         string.format('oklch(%.3f %.3f %.3f)', &okl, &okc, &okh) :>
+         string.format('oklch(%.3f %.3f %.3f)', &okl, &okc, &okh) :
          string.format('oklch(%.3f %.3f %.3f / %.3f)', &okl, &okc, &okh, &a)
       }
    )
@@ -418,7 +418,7 @@ gui.rgbToIconTheme = function(Value:any!):str
       Value = gui.strToRGB(Value)
    end
 
-   return (Value.brightness() > 0.5) ? 'pearl' :> 'carbon'
+   return (Value.brightness() > 0.5) ? 'pearl' : 'carbon'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -470,11 +470,11 @@ gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:n
    i = 0
    for col in values(colours) do
       vc = struct.new('GradientStop')
-      vc.offset    = col.offset ? col.offset :> (i / (#colours - 1))
+      vc.offset    = col.offset ? col.offset : (i / (#colours - 1))
       vc.rgb.red   = col.r
       vc.rgb.green = col.g
       vc.rgb.blue  = col.b
-      vc.rgb.alpha = col.a ? col.a :> 1.0
+      vc.rgb.alpha = col.a ? col.a : 1.0
       stops.insert(vc)
       i++
    end
@@ -802,7 +802,7 @@ gui.palettes = {
             paletteTheme = [_*]cfg.mtReadValue('Style', 'PaletteTheme')
             gui.theme = theme
             if gui.palettes[palette] then
-               gui.paletteTheme = gui.palettes?[palette]?[paletteTheme] ? paletteTheme :> 'light'
+               gui.paletteTheme = gui.palettes?[palette]?[paletteTheme] ? paletteTheme : 'light'
                gui.palette = gui.palettes[palette]
             end
          except ex

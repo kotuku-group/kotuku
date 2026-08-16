@@ -115,30 +115,30 @@ end
       local result = 0
 
       -- Simple ternary
-      result = x < 50 ? 1 :> 0
+      result = x < 50 ? 1 : 0
 
       -- Ternary with expressions
-      result = x % 2 is 0 ? x * 2 :> x * 3
+      result = x % 2 is 0 ? x * 2 : x * 3
 
       -- Chained ternary (nested)
-      result = x < 25 ? 1 :> (x < 50 ? 2 :> (x < 75 ? 3 :> 4))
+      result = x < 25 ? 1 : (x < 50 ? 2 : (x < 75 ? 3 : 4))
 
       -- Ternary in expressions
-      local a = 10 + (x < 50 ? 5 :> 15)
-      local b = (x > 30 ? x :> 30) * 2
+      local a = 10 + (x < 50 ? 5 : 15)
+      local b = (x > 30 ? x : 30) * 2
 
       -- Ternary with function-like usage
-      local min_val = x < 50 ? x :> 50
-      local max_val = x > 25 ? x :> 25
-      local clamped = x < 20 ? 20 :> (x > 80 ? 80 :> x)
+      local min_val = x < 50 ? x : 50
+      local max_val = x > 25 ? x : 25
+      local clamped = x < 20 ? 20 : (x > 80 ? 80 : x)
 
       -- Ternary with boolean results
-      local is_even = x % 2 is 0 ? true :> false
-      local in_range = (x >= 25 and x <= 75) ? true :> false
+      local is_even = x % 2 is 0 ? true : false
+      local in_range = (x >= 25 and x <= 75) ? true : false
 
       -- Consume the results so that the loop body cannot be eliminated by the JIT
       acc += result + a + b + min_val + max_val + clamped +
-             (is_even ? 1 :> 0) + (in_range ? 1 :> 0)
+             (is_even ? 1 : 0) + (in_range ? 1 : 0)
    end
 
    return acc
@@ -153,22 +153,22 @@ end
       local result = 0
 
       -- Basic ?? operator (nil coalescing)
-      local maybe_nil = i % 3 is 0 ? nil :> i
+      local maybe_nil = i % 3 is 0 ? nil : i
       result = maybe_nil ?? 42
 
       -- Chain of ?? operators
-      local a = i % 5 is 0 ? nil :> nil
-      local b = i % 3 is 0 ? nil :> i
+      local a = i % 5 is 0 ? nil : nil
+      local b = i % 3 is 0 ? nil : i
       local c = 100
       result = a ?? b ?? c
 
       -- ??= compound assignment
-      local value = i % 2 is 0 ? nil :> i
+      local value = i % 2 is 0 ? nil : i
       value ??= 99
       result = value
 
       -- ?? with expressions
-      local x = i % 7 is 0 ? nil :> i * 2
+      local x = i % 7 is 0 ? nil : i * 2
       result = (x ?? 0) + 10
 
       -- Consume the results so that the loop body cannot be eliminated by the JIT
@@ -188,7 +188,7 @@ end
    local acc = 0
    for i in {0 to 100000} do
       -- Nested nil coalescing
-      local outer = i % 4 is 0 ? nil :> { inner = i % 2 is 0 ? nil :> i }
+      local outer = i % 4 is 0 ? nil : { inner = i % 2 is 0 ? nil : i }
       local safe_val = outer ?? { inner = 0 }
 
       acc += (safe_val.inner ?? 0)
