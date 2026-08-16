@@ -1883,11 +1883,13 @@ static TRef rec_mm_arith(jit_State *J, RecordIndex* ix, MMS mm)
          ix->tab = right;
          copyTV(J->L, &ix->tabv, &rightv);
          if (lj_record_mm_lookup(J, ix, mm)) {  //  Lookup mm on 2nd operand.
-            receiver = right;
-            other = left;
-            copyTV(J->L, &receiverv, &rightv);
-            copyTV(J->L, &otherv, &leftv);
-            lhs_dispatch = false;
+            if (arithmetic) {
+               receiver = right;
+               other = left;
+               copyTV(J->L, &receiverv, &rightv);
+               copyTV(J->L, &otherv, &leftv);
+               lhs_dispatch = false;
+            }
             goto ok;
          }
       }

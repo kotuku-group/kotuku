@@ -1466,13 +1466,13 @@ end
 @input Duration value
 @result Instant value
 ]])
-tempus.mtInstant.__add = function(A:table!, B:table!, LhsDispatch:bool):table
-   a = tempus._fields(A, 'Instant')
-   if tempus.isDuration(B) then
-      b = tempus._fields(B, 'Duration')
+tempus.mtInstant.__add = metamethod(Other:table!, LhsDispatch:bool):table
+   a = tempus._fields(&&, 'Instant')
+   if tempus.isDuration(Other) then
+      b = tempus._fields(Other, 'Duration')
       return new_instant(a.epoch_second + b.seconds, a.nano + b.nano)
    end
-   unsupported_operation(A, '+', B)
+   unsupported_operation(&&, '+', Other)
 end
 
 @Doc(text=[[
@@ -1481,17 +1481,17 @@ end
 @input Duration or Instant value
 @result Instant or Duration value
 ]])
-tempus.mtInstant.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
+tempus.mtInstant.__sub = function(A:table!, Other:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Instant')
-   if tempus.isDuration(B) then
-      b = tempus._fields(B, 'Duration')
+   if tempus.isDuration(Other) then
+      b = tempus._fields(Other, 'Duration')
       return new_instant(a.epoch_second - b.seconds, a.nano - b.nano)
    end
-   if tempus.isInstant(B) then
-      b = tempus._fields(B, 'Instant')
+   if tempus.isInstant(Other) then
+      b = tempus._fields(Other, 'Instant')
       return new_duration(a.epoch_second - b.epoch_second, a.nano - b.nano)
    end
-   unsupported_operation(A, '-', B)
+   unsupported_operation(A, '-', Other)
 end
 
 @Doc(text=[[
@@ -1576,9 +1576,9 @@ end
 @input Second duration
 @result True when equal
 ]])
-tempus.mtDuration.__eq = function(A:table!, B:table!):bool
+tempus.mtDuration.__eq = function(A:table!, Other:table!):bool
    a = tempus._fields(A, 'Duration')
-   b = tempus._fields(B, 'Duration')
+   b = tempus._fields(Other, 'Duration')
    return a.seconds is b.seconds and a.nano is b.nano
 end
 
@@ -1588,9 +1588,9 @@ end
 @input Second duration
 @result True when first is shorter
 ]])
-tempus.mtDuration.__lt = function(A:table!, B:table!):bool
+tempus.mtDuration.__lt = function(A:table!, Other:table!):bool
    a = tempus._fields(A, 'Duration')
-   b = tempus._fields(B, 'Duration')
+   b = tempus._fields(Other, 'Duration')
    return compare_pair(a.seconds, a.nano, b.seconds, b.nano) < 0
 end
 
@@ -1600,9 +1600,9 @@ end
 @input Second duration
 @result True when first is not longer
 ]])
-tempus.mtDuration.__le = function(A:table!, B:table!):bool
+tempus.mtDuration.__le = function(A:table!, Other:table!):bool
    a = tempus._fields(A, 'Duration')
-   b = tempus._fields(B, 'Duration')
+   b = tempus._fields(Other, 'Duration')
    return compare_pair(a.seconds, a.nano, b.seconds, b.nano) <= 0
 end
 
@@ -1612,13 +1612,13 @@ end
 @input Second duration
 @result Duration value
 ]])
-tempus.mtDuration.__add = function(A:table!, B:table!, LhsDispatch:bool):table
+tempus.mtDuration.__add = function(A:table!, Other:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Duration')
-   if tempus.isDuration(B) then
-      b = tempus._fields(B, 'Duration')
+   if tempus.isDuration(Other) then
+      b = tempus._fields(Other, 'Duration')
       return new_duration(a.seconds + b.seconds, a.nano + b.nano)
    end
-   unsupported_operation(A, '+', B)
+   unsupported_operation(A, '+', Other)
 end
 
 @Doc(text=[[
@@ -1627,13 +1627,13 @@ end
 @input Second duration
 @result Duration value
 ]])
-tempus.mtDuration.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
+tempus.mtDuration.__sub = function(A:table!, Other:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Duration')
-   if tempus.isDuration(B) then
-      b = tempus._fields(B, 'Duration')
+   if tempus.isDuration(Other) then
+      b = tempus._fields(Other, 'Duration')
       return new_duration(a.seconds - b.seconds, a.nano - b.nano)
    end
-   unsupported_operation(A, '-', B)
+   unsupported_operation(A, '-', Other)
 end
 
 @Doc(text=[[
@@ -1682,8 +1682,8 @@ end
 @input Second offset
 @result True when equal
 ]])
-tempus.mtOffset.__eq = function(A:table!, B:table!):bool
-   return tempus._fields(A, 'Offset').seconds is tempus._fields(B, 'Offset').seconds
+tempus.mtOffset.__eq = function(A:table!, Other:table!):bool
+   return tempus._fields(A, 'Offset').seconds is tempus._fields(Other, 'Offset').seconds
 end
 
 @Doc(text=[[
