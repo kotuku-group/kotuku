@@ -350,7 +350,8 @@ namespace MetaCall {
    [[nodiscard]] inline TValue* invoke(lua_State* L, TValue* base, int slotsUsed, int nresults = 1) noexcept {
       L->top = base + slotsUsed;
       lj_vm_call(L, base, nresults + 1);
-      L->top -= slotsUsed + LJ_FR2;
+      // The result replaces the metamethod slot, so caller restoration is independent of the argument count.
+      L->top -= 2 + LJ_FR2;
       return Frame::result(L);
    }
 
