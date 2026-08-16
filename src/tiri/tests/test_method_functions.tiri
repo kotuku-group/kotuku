@@ -1,17 +1,17 @@
--- Flute coverage for context-first `method` function literals.
+-- Flute coverage for context-first `metamethod` function literals.
 
 @BeforeEach(hotpath=40)
 function enforce_hotpath() end
 
 @Test function MetamethodBodiesUseTheirFirstRuntimeTableArgument()
    local colour_mt = {
-      __tostring = method():str
+      __tostring = metamethod():str
          return f'colour:{&name}'
       end,
-      __eq = method(Other:table!):bool
+      __eq = metamethod(Other:table!):bool
          return &id is Other.id
       end,
-      __newindex = method(Key, Value)
+      __newindex = metamethod(Key, Value)
          error(f'Colour tables are immutable: {Key}')
       end
    }
@@ -32,17 +32,17 @@ function enforce_hotpath() end
    assert(failed, 'The context-first __newindex handler should run')
 end
 
-@Test function ExtractedMethodsRetainContextFirstBehaviour()
+@Test function ExtractedMetamethodsRetainContextFirstBehaviour()
    local receiver = setmetatable({ name = 'stored' }, {
-      __tostring = method():str
+      __tostring = metamethod():str
          return &name
       end
    })
    local render = getmetatable(receiver).__tostring
    local storage = { render = render }
 
-   assert(render(receiver) is 'stored', 'A directly-called extracted method should enter its first table argument')
-   assert(storage.render(receiver) is 'stored', 'Storing a method in another table must not remove its calling convention')
+   assert(render(receiver) is 'stored', 'A directly-called extracted metamethod should enter its first table argument')
+   assert(storage.render(receiver) is 'stored', 'Storing a metamethod in another table must not remove its calling convention')
 
    local failed = false
    try
@@ -50,13 +50,13 @@ end
    except e
       failed = true
       assert(e.message.find('table expected, got number') != nil,
-         'The hidden context argument should be validated at method entry')
+         'The hidden context argument should be validated at metamethod entry')
    end
    assert(failed, 'A non-table context argument must fail')
-   assert(&name is nil, 'A failed method entry must not leak a context activation')
+   assert(&name is nil, 'A failed metamethod entry must not leak a context activation')
 
    function renderer_factory():func
-      return method():str
+      return metamethod():str
          return &name
       end
    end
@@ -67,10 +67,10 @@ end
 
 @Test function ReceiverStableAndBinaryMetamethodsFollowTheirDocumentedRules()
    local indexed = setmetatable({ name = 'indexed' }, {
-      __index = method(Key):str
+      __index = metamethod(Key):str
          return f'{&name}:{Key}'
       end,
-      __len = method():num
+      __len = metamethod():num
          return &size
       end
    })
@@ -79,7 +79,7 @@ end
    assert(#indexed is 13, 'A context-first __len should enter its operand')
 
    local arithmetic_mt = {
-      __add = method(Other:table!):num
+      __add = metamethod(Other:table!):num
          return &value + Other.value
       end
    }
@@ -100,16 +100,16 @@ end
 
 @Test function ReceiverStableHandlersAndVarargsKeepTheirRuntimeLayout()
    local callable = setmetatable({ value = 8 }, {
-      __call = method(Amount:num):num
+      __call = metamethod(Amount:num):num
          return &value + Amount
       end
    })
    local negatable = setmetatable({ value = 6 }, {
-      __unm = method():num
+      __unm = metamethod():num
          return -&value
       end
    })
-   local collect = method(...):str
+   local collect = metamethod(...):str
       return f'{&prefix}:{...}'
    end
 
@@ -121,12 +121,12 @@ end
 
 @Test function BinaryConcatAndComparisonRejectRightProviders()
    local concat_mt = {
-      __concat = method(Other):str
+      __concat = metamethod(Other):str
          return &value .. Other
       end
    }
    local ordered_mt = {
-      __lt = method(Other:table!):bool
+      __lt = metamethod(Other:table!):bool
          return &value < Other.value
       end
    }
@@ -158,16 +158,16 @@ end
    assert(comparison_failed, 'A right-provider context-first ordering handler must fail')
 end
 
-@Test function MethodReturnsAndErrorsRestoreTheCallerContext()
-   local receiver = { name = 'method' }
+@Test function MetamethodReturnsAndErrorsRestoreTheCallerContext()
+   local receiver = { name = 'metamethod' }
    local caller = { name = 'caller' }
-   local read_or_fail = method(Fail:bool):str
+   local read_or_fail = metamethod(Fail:bool):str
       if Fail then error('expected method failure') end
       return &name
    end
 
    using caller do
-      assert(read_or_fail(receiver, false) is 'method', 'A normal return should run under the method context')
+      assert(read_or_fail(receiver, false) is 'metamethod', 'A normal return should run under the metamethod context')
       assert(&name is 'caller', 'A normal return should restore the caller context')
 
       local failed = false
@@ -182,11 +182,11 @@ end
    end
 end
 
-@Test function MethodCleanupRunsBeforeItsContextIsRestored()
+@Test function MetamethodCleanupRunsBeforeItsContextIsRestored()
    local events = {}
    local caller = { name = 'caller' }
    local receiver = { name = 'receiver' }
-   local read_with_cleanup = method():str
+   local read_with_cleanup = metamethod():str
       defer
          events.insert(&name)
       end
@@ -194,21 +194,21 @@ end
    end
 
    using caller do
-      assert(read_with_cleanup(receiver) is 'receiver', 'The method body should use its hidden table context')
-      assert(&name is 'caller', 'Method cleanup should restore the caller context before returning')
+      assert(read_with_cleanup(receiver) is 'receiver', 'The metamethod body should use its hidden table context')
+      assert(&name is 'caller', 'Metamethod cleanup should restore the caller context before returning')
    end
-   assert(events[0] is 'receiver', 'Deferred cleanup owned by a method should execute under its table context')
+   assert(events[0] is 'receiver', 'Deferred cleanup owned by a metamethod should execute under its table context')
 end
 
-@Test function MethodCannotNameDeclaredFunctions()
+@Test function MetamethodCannotNameDeclaredFunctions()
    local declarations = {
-      'function method() end',
-      'local function method() end',
-      'global function method() end',
-      'thunk method():num return 1 end',
-      'local thunk method():num return 1 end',
-      'global thunk method():num return 1 end',
-      'local receiver = {}; function receiver.method() end'
+      'function metamethod() end',
+      'local function metamethod() end',
+      'global function metamethod() end',
+      'thunk metamethod():num return 1 end',
+      'local thunk metamethod():num return 1 end',
+      'global thunk metamethod():num return 1 end',
+      'local receiver = {}; function receiver.metamethod() end'
    }
 
    for declaration in values(declarations) do
@@ -217,9 +217,17 @@ end
          exec(declaration)
       except e
          failed = true
-         assert(e.message.find("'method' is reserved") != nil,
-            'Rejected callable names should explain that method is reserved')
+         assert(e.message.find("'metamethod' is reserved") != nil,
+            'Rejected callable names should explain that metamethod is reserved')
       end
-      assert(failed, 'A declared function or method cannot be named method')
+      assert(failed, 'A declared function or metamethod cannot be named metamethod')
    end
+end
+
+@Test function MethodIsAnOrdinaryIdentifier()
+   local function method(Value:num):num
+      return Value + 1
+   end
+
+   assert(method(4) is 5, 'method should be available as an ordinary identifier')
 end

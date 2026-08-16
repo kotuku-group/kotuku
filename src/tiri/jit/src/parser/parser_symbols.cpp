@@ -641,7 +641,7 @@ static ParserSymbolMetadata make_function_symbol(const std::string &Name, const 
    ParserSymbolMetadata symbol;
    symbol.name = Name;
    symbol.kind = Function.is_thunk ? "thunk" :
-      (Function.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "method" : "function");
+      (Function.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function");
    symbol.span = Span;
    symbol.end_span = end_span_for(Function);
    symbol.signature = build_signature(Name, Function);

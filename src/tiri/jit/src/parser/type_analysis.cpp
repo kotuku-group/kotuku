@@ -83,8 +83,8 @@
 
    if (Expected.callable_kind != Actual.callable_kind) {
       return std::format("callable kind differs (expected {}, got {})",
-         Expected.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "method" : "function",
-         Actual.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "method" : "function");
+         Expected.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function",
+         Actual.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function");
    }
 
    if (Expected.parameters.size() != Actual.parameters.size()) {
