@@ -34,6 +34,8 @@ indexterm:[input subscriptions] Calling `mtSubscribeInput()` on any `Vector` or 
 
 The `Callback` prototype is `function(Viewport, Event)`.  `Event` is the first node of a linked list of `InputEvent` structures.  Traverse the chain by following the `next` field until it is `nil`:
 
+The subscription is registered with the framework, so `Callback` captures the context that is current at the point of subscription and observes it on every event (<<sec-context-and-callbacks>>).
+
 [source,tiri]
 ----
 viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT,

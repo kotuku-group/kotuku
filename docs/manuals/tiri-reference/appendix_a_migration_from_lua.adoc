@@ -5,6 +5,8 @@
 //                       (commit 1a38f18e0)
 // UPDATED: 2026-08-15 - Added the sec-migration-arithmetic-coercion section; arithmetic no longer coerces string
 //                       operands (commit f54ecaf52)
+// UPDATED: 2026-08-16 - Bitwise operators no longer coerce string operands; broadened sec-migration-arithmetic-coercion
+//                       to cover both operator groups and added a summary table row (commit 39e5f99fb)
 
 [[appendix-migration-from-lua]]
 [appendix]
@@ -93,6 +95,10 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |<<sec-migration-operators>>
 
 |`'10' + 5` coerces to `15`
+|Raises an error; convert with `tonumber()`
+|<<sec-migration-arithmetic-coercion>>
+
+|`bit.band('12', 5)` coerces to `4`
 |Raises an error; convert with `tonumber()`
 |<<sec-migration-arithmetic-coercion>>
 
@@ -220,23 +226,27 @@ shifted = 1 << 4
 Compound bitwise assignment operators (`&=`, `|=`, `^=`) do not exist.  Use `x = x & y` instead.
 
 [[sec-migration-arithmetic-coercion]]
-=== String Arithmetic Coercion
+=== String-to-Number Coercion
 
-indexterm:[Lua, coercion] indexterm:[coercion, arithmetic] Standard Lua coerces a string that represents a valid number into a number for arithmetic, so `'10' + 5` yields `15`.  Tiri performs no such coercion: a string operand raises an error in every arithmetic operator.  Convert the operand with `tonumber()`.
+indexterm:[Lua, coercion] indexterm:[coercion, arithmetic] Standard Lua coerces a string that represents a valid number into a number for arithmetic and for the `bit.*` library, so `'10' + 5` yields `15` and `bit.band('12', 5)` yields `4`.  Tiri performs no such coercion: a string operand raises an error in every arithmetic and bitwise operator.  Convert the operand with `tonumber()`.
 
 [source,tiri]
 ----
 -- Lua
 total = '10' + 5             -- 15
+masked = bit.band('12', 5)   -- 4
 
 -- Tiri
 total = '10' + 5             -- error: attempt to perform arithmetic on a string value
+masked = '12' & 5            -- error: number expected, got string
+
 total = tonumber('10') + 5   -- 15
+masked = tonumber('12') & 5  -- 4
 ----
 
-This affects the values that arrive from string sources, including command-line arguments (<<sec-script-arguments>>), parsed configuration and text fields.  Apply `tonumber()` at the point the value is read.
+The rule covers both operands of a binary operator, the shift count of `<<` and `>>`, and the operand of the `has` operator (<<sec-flag-testing-operator>>).  The ordering operators reject a string operand on the same terms, so no operator in Tiri coerces one; see <<sec-bitwise-operators>> and <<sec-comparison-operators>>.
 
-The bitwise operators are unaffected and still coerce a numeric string; see <<sec-bitwise-operators>>.
+This affects the values that arrive from string sources, including command-line arguments (<<sec-script-arguments>>), parsed configuration and text fields.  Apply `tonumber()` at the point the value is read, rather than at each operator that consumes it.
 
 [[sec-migration-indexing]]
 === Zero-Based Indexing

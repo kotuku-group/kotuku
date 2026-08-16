@@ -1,11 +1,4 @@
-// VERIFIED: 2026-08-06
-// UPDATED: 2026-08-11 - Safe method calls are written 'obj?.method()'; 'in' and pipe iteration lower to dot-form contains()
-//                       and each() (commit 7e6746950)
-// UPDATED: 2026-08-13 - Noted the adjacency rule that separates the bitwise AND operator from self referencing
-//                       (commit d3638efc0)
-// UPDATED: 2026-08-14 - The array string element is now spelled 'str'; 'string' is rejected (commit 148480f9d)
-// UPDATED: 2026-08-15 - Arithmetic no longer coerces string operands; relocated the accepted numeric-string forms to
-//                       the bitwise section, which remains the sole coercing operator group (commit f54ecaf52)
+// VERIFIED: 2026-08-16
 
 [[ch-operators]]
 == Operators
@@ -19,8 +12,7 @@ Convert a string operand explicitly with `tonumber()`:
 
 [source,tiri]
 ----
-'10' + 5              -- error: attempt to perform arithmetic on a string value
-'abc' + 5             -- error: attempt to perform arithmetic on a string value
+'10' + 5              -- error: arithmetic on a string value
 tonumber('10') + 5    -- 15
 ----
 
@@ -65,13 +57,12 @@ n = -42        -- unary negation
 
 [[sec-comparison-operators]]
 === Comparison Operators
-indexterm:[operators, comparison] Comparison operators return a boolean value.  The equality operators (`is`, `is not`, `!=`) accept operands of any type.  The ordering operators (`<`, `>`, `\<=`, `>=`) accept two numbers or two strings; comparing other types without a metamethod raises an error.
+indexterm:[operators, comparison] Comparison operators return a boolean value.  The equality operators (`is`, `!=`) accept operands of any type.  The ordering operators (`<`, `>`, `\<=`, `>=`) accept two numbers or two strings; comparing other types without a metamethod raises an error.
 
 [cols="2,3,3a,3",options="header"]
 |===
 |Operator |Syntax |Effect |Metamethod
 |Equal             |`a is b`  |`true` if `a` equals `b`              |`__eq`
-|Not equal         |`a is not b`|`true` if `a` does not equal `b`    |`__eq` (negated)
 |Not equal         |`a != b`  |`true` if `a` does not equal `b`      |`__eq` (negated)
 |Less than         |`a < b`   |`true` if `a` is less than `b`        |`__lt`
 |Greater than      |`a > b`   |`true` if `a` is greater than `b`     |`__lt` (swapped)
@@ -86,7 +77,7 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 
 **Arrays are the deliberate exception.** Although arrays are reference types, `is` compares them by content: two arrays are equal if they share the same element type, length, and element values.  This is implemented via a built-in `pass:[__]eq` metamethod on the array base metatable.  The rationale is that arrays model typed value sequences — they are routinely constructed, returned, and compared without the caller retaining a reference to the original.  Identity comparison would make array equality impractical in most use cases.  To test whether two array variables refer to the same underlying object, use `rawequal(a, b)`.
 
-`is not` and `!=` both negate the result of `is`.
+`!=` negates the result of `is`.
 
 `nil is nil` evaluates to `true`.  Values of different types are never equal.
 
@@ -110,12 +101,11 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 
 **String comparison** is lexicographic and byte-by-byte.  The comparison applies no locale-aware collation.
 
-The ordering operators do not coerce their operands.  Comparing a number with a string raises an error, even when the string represents a valid number.  The arithmetic operators reject a string operand on the same terms (<<sec-arithmetic-operators>>); the bitwise operators are the sole exception, and coerce a numeric string (<<sec-bitwise-operators>>).
+The ordering operators do not coerce their operands, as for <<sec-arithmetic-operators>>.
 
 [source,tiri]
 ----
-1 < '1'      -- error: attempt to compare number with string
-'1' < 1      -- error: attempt to compare string with number
+1 < '1'   -- error: attempt to compare number with string
 ----
 
 The equality operators never raise on a type mismatch.  Values of different types are never equal, so `'0' is 0` is `false`.
@@ -123,7 +113,6 @@ The equality operators never raise on a type mismatch.  Values of different type
 [source,tiri]
 ----
 print(1 is 1)          -- true
-print(1 is not 2)      -- true
 print('abc' is 'abc')  -- true
 print({} is {})        -- false (distinct tables)
 
@@ -168,7 +157,7 @@ end
 0 < sensor() < 100    -- sensor() is evaluated once
 ----
 
-Comparison chaining applies only to ordering operators.  The equality operators `is`, `is not` and `!=` do not participate in chains; they retain their standard left-associative behaviour.  An expression that mixes ordering and equality operators is parsed as an ordering chain for the ordering portion, with the result compared to the equality operand in the usual left-associative manner.
+Comparison chaining applies only to ordering operators.  The equality operators `is` and `!=` do not participate in chains; they retain their standard left-associative behaviour.  An expression that mixes ordering and equality operators is parsed as an ordering chain for the ordering portion, with the result compared to the equality operand in the usual left-associative manner.
 
 [source,tiri]
 ----
@@ -203,11 +192,12 @@ z = not false          -- true
 === Bitwise Operators
 indexterm:[operators, bitwise] Bitwise operators operate on 32-bit integers using two's-complement representation.  Shift operators mask the shift count to the range 0-31.
 
-Operands are converted to 32-bit integers before the operation, according to the following rules:
+Every operand must be a number.  The runtime performs no string-to-number coercion: a string operand raises an error even when it represents a valid number.  Convert it explicitly with `tonumber()`.  The requirement applies to both operands of a binary operator, to the operand of `~`, and to the shift count as well as the shifted value.
+
+A numeric operand is converted to a 32-bit integer before the operation, according to the following rules:
 
 * A fractional value is rounded to the nearest integer.  A value exactly halfway between two integers rounds to the even one.
 * A value outside the signed 32-bit range wraps modulo 2^32^.
-* A string that represents a valid number is coerced to a number and then converted by the preceding rules.  A string that does not represent a number raises an error.
 
 [source,tiri]
 ----
@@ -216,7 +206,14 @@ Operands are converted to 32-bit integers before the operation, according to the
 2.5 | 0        -- 2   (halfway, rounds to even)
 3.5 | 0        -- 4   (halfway, rounds to even)
 4294967296 & 0xFFFF -- 0   (wraps modulo 2^32)
-'3' & 1        -- 1   (string coerced)
+----
+
+A non-numeric operand of any other type is rejected on the same terms.  Because the bitwise operators have no metamethods, the error is raised without consulting a handler, which is where they differ from the arithmetic operators (<<sec-arithmetic-operators>>).
+
+[source,tiri]
+----
+1 << '3'             -- error: number expected, got string
+tonumber('3') & 1    -- 1
 ----
 
 [cols="2,3,5a",options="header"]
@@ -258,7 +255,7 @@ indexterm:[operators, flag testing] The `has` operator tests whether bitwise fla
 has_expr = expression "has" expression ;
 ----
 
-`a has b` evaluates to `true` if `(a & b) != 0`; `false` otherwise.  Both operands must be numeric.  If either operand is not a number, the runtime raises an error.
+`a has b` evaluates to `true` if `(a & b) != 0`; `false` otherwise.  Both operands must be numeric, otherwise the runtime raises an error.
 
 The right-hand operand binds loosely enough that bitwise OR expressions are consumed without parentheses.  `flags has FLAG_A | FLAG_B` tests whether `flags` contains _any_ of the specified flags; parentheses are not required around the right-hand side.
 
@@ -726,7 +723,7 @@ Pipe iteration returns the original range or array, enabling multiple iteration 
 [source,tiri]
 ----
 {1 to 4} |> function(i) log_value(i) end
-       |> function(i) process(i) end
+         |> function(i) process(i) end
 
 array<int> { 5, 10, 15 } |> function(v) validate(v) end
                          |> function(v) store(v) end
@@ -765,55 +762,5 @@ label = x ? 'a' ▷ 'b'
 
 [[sec-operator-precedence]]
 === Operator Precedence
-indexterm:[operators, precedence] The following table lists all operators from highest to lowest precedence.  Operators on the same row share the same precedence level.
 
-[cols="1,4a,2",options="header"]
-|===
-|Level |Operators |Associativity
-|13 |`pass:[**]`                          |Right
-|12 |`-` (unary), `not`, `#`, `~` (unary) |Unary (right)
-|11 |`*`, `/`, `%`                        |Left
-|10 |`+`, `-`                             |Left
-|9  |`<<`, `>>`                           |Left
-|8  |`&`                                  |Left
-|7  |`..`                                 |Right
-|6  |`^`                                  |Left
-|5  |`\|`                                 |Left
-|4  |`is`, `is not`, `!=`, `<`, `>`, `\<=`, `>=`, `in`, `has`, `≈` |Left
-|3  |`and`                                |Left
-|2  |`\|>`                                |Left
-|1  |`or`, `??`, `?!`, `? :>`, `?? :>`    |Left (ternary forms right)
-|===
-
-The three bitwise operators `&`, `^` and `\|` bind more tightly than the comparison operators, in that order.  An expression such as `a \| b is c` therefore evaluates as `(a \| b) is c`.
-
-Concatenation sits between `&` and `^`, so `6 & 3 .. 'x'` evaluates as `(6 & 3) .. 'x'` while `3 ^ 1 .. 'x'` evaluates as `3 ^ (1 .. 'x')`.  Parenthesise when mixing `..` with bitwise operators.
-
-The flag-testing and approximate-equality operators bind at the comparison level, above `and`.  `a has b and c has d` therefore evaluates as `(a has b) and (c has d)` and needs no parentheses.  The pipe operator binds below `and` and above `or`.
-
-Exponentiation binds more tightly than the unary operators, so `-x pass:[**] 2` evaluates as `-(x pass:[**] 2)`.  Parenthesise the unary expression to apply it before exponentiation.  The right operand of `pass:[**]` can still be unary, so `2 pass:[**] -2` evaluates as `2 pass:[**] (-2)`.
-
-Postfix operators (`++`, `??` postfix) bind tighter than all binary operators and evaluate immediately after suffix chains (field access, indexing, calls).
-
-Parentheses override precedence: `(a + b) * c` forces addition before multiplication.
-
-See <<appendix-operator-precedence>> for a quick-reference card.
-
-==== Precedence Examples
-
-[source,tiri]
-----
-2 + 3 * 4           -- 14 (multiplication before addition)
-2 ** 3 ** 2         -- 512 (right-associative: 2 ** (3 ** 2))
--x ** 2             -- -(x ** 2) (exponentiation before unary)
-'a' .. 'b' .. 'c'   -- 'abc' (right-associative)
-x > 0 and x < 10    -- comparison before logical
-a & 0xFF | 0x100    -- AND before OR (C-style)
-2 | 1 is 3          -- true: bitwise OR before comparison
-6 & 3 .. 'x'        -- '2x': & (level 8) before .. (level 7)
-3 ^ 1 .. 'x'        -- error: .. (level 7) before ^ (level 6)
-flags has F1 | F2   -- has (level 4) consumes bitwise OR on RHS
-0.1 + 0.2 ≈ 0.3     -- arithmetic (level 10) before approx (level 4)
-a has b and c has d -- (a has b) and (c has d): has (4) before and (3)
-x and y |> f()      -- (x and y) |> f(): and (3) before |> (2)
-----
+See <<appendix-operator-precedence>> in the appendix for a quick-reference card on operator precedence.
