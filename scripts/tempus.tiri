@@ -1692,8 +1692,8 @@ end
 @input Second offset
 @result True when first is smaller
 ]])
-tempus.mtOffset.__lt = function(A:table!, B:table!):bool
-   return tempus._fields(A, 'Offset').seconds < tempus._fields(B, 'Offset').seconds
+tempus.mtOffset.__lt = function(A:table!, Other:table!):bool
+   return tempus._fields(A, 'Offset').seconds < tempus._fields(Other, 'Offset').seconds
 end
 
 @Doc(text=[[
@@ -1702,8 +1702,8 @@ end
 @input Second offset
 @result True when first is not larger
 ]])
-tempus.mtOffset.__le = function(A:table!, B:table!):bool
-   return tempus._fields(A, 'Offset').seconds <= tempus._fields(B, 'Offset').seconds
+tempus.mtOffset.__le = function(A:table!, Other:table!):bool
+   return tempus._fields(A, 'Offset').seconds <= tempus._fields(Other, 'Offset').seconds
 end
 
 @Doc(text=[[
@@ -1843,8 +1843,8 @@ end
 @input Second date
 @result True when equal
 ]])
-tempus.mtLocalDate.__eq = function(A:table!, B:table!):bool
-   return compare_date_fields(tempus._fields(A, 'LocalDate'), tempus._fields(B, 'LocalDate')) is 0
+tempus.mtLocalDate.__eq = metamethod(Other:table!):bool
+   return compare_date_fields(tempus._fields(&&, 'LocalDate'), tempus._fields(Other, 'LocalDate')) is 0
 end
 
 @Doc(text=[[
@@ -1853,8 +1853,8 @@ end
 @input Second date
 @result True when first is earlier
 ]])
-tempus.mtLocalDate.__lt = function(A:table!, B:table!):bool
-   return compare_date_fields(tempus._fields(A, 'LocalDate'), tempus._fields(B, 'LocalDate')) < 0
+tempus.mtLocalDate.__lt = metamethod(Other:table!):bool
+   return compare_date_fields(tempus._fields(&&, 'LocalDate'), tempus._fields(Other, 'LocalDate')) < 0
 end
 
 @Doc(text=[[
