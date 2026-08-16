@@ -212,6 +212,19 @@ static void resolve_binary_operands(lua_State *L, TValue &FirstCopy, TValue &Sec
    if (lj_is_thunk(Second)) Second = lj_thunk_resolve(L, udataV(Second));
 }
 
+static void resolve_arithmetic_operands(lua_State *L, TValue &FirstCopy, TValue &SecondCopy,
+   cTValue *&First, cTValue *&Second)
+{
+   const bool lhs_dispatch = boolV(L->base + 2);
+   resolve_binary_operands(L, FirstCopy, SecondCopy, First, Second);
+   // Native arithmetic helpers calculate in source order even though the provider is now the first runtime argument.
+   if (not lhs_dispatch) {
+      cTValue *source_left = Second;
+      Second = First;
+      First = source_left;
+   }
+}
+
 //********************************************************************************************************************
 // Binary arithmetic metamethods
 
@@ -219,7 +232,7 @@ static int thunk_add(lua_State *L)
 {
    TValue a_copy, b_copy;
    cTValue *a, *b;
-   resolve_binary_operands(L, a_copy, b_copy, a, b);
+   resolve_arithmetic_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) + getnumvalue(b);
@@ -235,7 +248,7 @@ static int thunk_sub(lua_State *L)
 {
    TValue a_copy, b_copy;
    cTValue *a, *b;
-   resolve_binary_operands(L, a_copy, b_copy, a, b);
+   resolve_arithmetic_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) - getnumvalue(b);
@@ -251,7 +264,7 @@ static int thunk_mul(lua_State *L)
 {
    TValue a_copy, b_copy;
    cTValue *a, *b;
-   resolve_binary_operands(L, a_copy, b_copy, a, b);
+   resolve_arithmetic_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) * getnumvalue(b);
@@ -267,7 +280,7 @@ static int thunk_div(lua_State *L)
 {
    TValue a_copy, b_copy;
    cTValue *a, *b;
-   resolve_binary_operands(L, a_copy, b_copy, a, b);
+   resolve_arithmetic_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = getnumvalue(a) / getnumvalue(b);
@@ -283,7 +296,7 @@ static int thunk_mod(lua_State *L)
 {
    TValue a_copy, b_copy;
    cTValue *a, *b;
-   resolve_binary_operands(L, a_copy, b_copy, a, b);
+   resolve_arithmetic_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number na = getnumvalue(a);
@@ -301,7 +314,7 @@ static int thunk_pow(lua_State *L)
 {
    TValue a_copy, b_copy;
    cTValue *a, *b;
-   resolve_binary_operands(L, a_copy, b_copy, a, b);
+   resolve_arithmetic_operands(L, a_copy, b_copy, a, b);
 
    if (tvisnumber(a) and tvisnumber(b)) {
       lua_Number result = pow(getnumvalue(a), getnumvalue(b));

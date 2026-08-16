@@ -1859,19 +1859,37 @@ nocheck:
 
 static TRef rec_mm_arith(jit_State *J, RecordIndex* ix, MMS mm)
 {
-   // Set up metamethod call first to save ix->tab and ix->tabv.
+   // Preserve the source operand pair before metatable lookup repurposes RecordIndex scratch fields.
+   TRef left = ix->tab;
+   TRef right = ix->key;
+   TValue leftv, rightv;
+   copyTV(J->L, &leftv, &ix->tabv);
+   copyTV(J->L, &rightv, &ix->keyv);
+
+   bool arithmetic = mm >= MM_add and mm <= MM_pow;
    BCREG func = rec_mm_prep(J, mm IS MM_concat ? lj_cont_cat : lj_cont_ra);
    TRef* base = J->base + func;
    TValue* basev = J->L->base + func;
-   base[FRC::HEADER_SIZE] = ix->tab; base[FRC::HEADER_SIZE + 1] = ix->key;  // Args at base[2], base[3]
-   copyTV(J->L, basev + FRC::HEADER_SIZE, &ix->tabv);
-   copyTV(J->L, basev + FRC::HEADER_SIZE + 1, &ix->keyv);
+
+   TRef receiver = left;
+   TRef other = right;
+   TValue receiverv, otherv;
+   copyTV(J->L, &receiverv, &leftv);
+   copyTV(J->L, &otherv, &rightv);
+   bool lhs_dispatch = true;
+
    if (not lj_record_mm_lookup(J, ix, mm)) {  // Lookup mm on 1st operand.
       if (mm != MM_unm) {
-         ix->tab = ix->key;
-         copyTV(J->L, &ix->tabv, &ix->keyv);
-         if (lj_record_mm_lookup(J, ix, mm))  //  Lookup mm on 2nd operand.
+         ix->tab = right;
+         copyTV(J->L, &ix->tabv, &rightv);
+         if (lj_record_mm_lookup(J, ix, mm)) {  //  Lookup mm on 2nd operand.
+            receiver = right;
+            other = left;
+            copyTV(J->L, &receiverv, &rightv);
+            copyTV(J->L, &otherv, &leftv);
+            lhs_dispatch = false;
             goto ok;
+         }
       }
       lj_trace_err(J, LJ_TRERR_NOMM);
    }
@@ -1879,7 +1897,16 @@ ok:
    base[0] = ix->mobj;
    base[1] = 0;
    copyTV(J->L, basev + 0, &ix->mobjv);
-   lj_record_call(J, func, 2);
+   base[FRC::HEADER_SIZE] = receiver;
+   base[FRC::HEADER_SIZE + 1] = other;
+   copyTV(J->L, basev + FRC::HEADER_SIZE, &receiverv);
+   copyTV(J->L, basev + FRC::HEADER_SIZE + 1, &otherv);
+   if (arithmetic) {
+      base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+      setboolV(basev + FRC::HEADER_SIZE + 2, lhs_dispatch);
+      lj_record_call(J, func, 3);
+   }
+   else lj_record_call(J, func, 2);
    return 0;  //  No result yet.
 }
 

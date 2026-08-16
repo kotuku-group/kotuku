@@ -352,6 +352,15 @@ end
    -- Power
    assert(b ** 2 is 9, "3 ** 2 should be 9")
 
+   -- Right-hand thunk providers receive provider-first arguments but must preserve source-order arithmetic
+   assert(10 + b is 13, "10 + 3 should be 13 when the thunk provides the right-hand metamethod")
+   assert(10 - b is 7, "10 - 3 should be 7 when the thunk provides the right-hand metamethod")
+   assert(10 * b is 30, "10 * 3 should be 30 when the thunk provides the right-hand metamethod")
+   assert(10 / b > 3.3 and 10 / b < 3.4,
+      "10 / 3 should be ~3.33 when the thunk provides the right-hand metamethod")
+   assert(10 % b is 1, "10 % 3 should be 1 when the thunk provides the right-hand metamethod")
+   assert(2 ** b is 8, "2 ** 3 should be 8 when the thunk provides the right-hand metamethod")
+
    -- Unary minus
    assert(-a is -10, "-10 should be -10")
 end

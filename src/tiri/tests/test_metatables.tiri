@@ -56,26 +56,51 @@ end
 
 -- Helper: create a simple 2D vector type with arithmetic metamethods
 
+function source_arithmetic_operands(Receiver, Other, LhsDispatch):<any, any>
+   if LhsDispatch then return Receiver, Other end
+   return Other, Receiver
+end
+
 function newVec(X, Y):table
    vec_mt = {
-      __add = function(A, B) return newVec(A.x + B.x, A.y + B.y) end,
-      __sub = function(A, B) return newVec(A.x - B.x, A.y - B.y) end,
-      __mul = function(A, B)
-         if type(B) is 'number' then return newVec(A.x * B, A.y * B) end
-         if type(A) is 'number' then return newVec(A * B.x, A * B.y) end
-         return newVec(A.x * B.x, A.y * B.y)
+      __add = function(Receiver, Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+         return newVec(source_left.x + source_right.x, source_left.y + source_right.y)
       end,
-      __div = function(A, B)
-         if type(B) is 'number' then return newVec(A.x / B, A.y / B) end
-         return newVec(A.x / B.x, A.y / B.y)
+      __sub = function(Receiver, Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+         return newVec(source_left.x - source_right.x, source_left.y - source_right.y)
       end,
-      __mod = function(A, B)
-         if type(B) is 'number' then return newVec(A.x % B, A.y % B) end
-         return newVec(A.x % B.x, A.y % B.y)
+      __mul = function(Receiver, Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+         if type(source_right) is 'number' then
+            return newVec(source_left.x * source_right, source_left.y * source_right)
+         end
+         if type(source_left) is 'number' then
+            return newVec(source_left * source_right.x, source_left * source_right.y)
+         end
+         return newVec(source_left.x * source_right.x, source_left.y * source_right.y)
       end,
-      __pow = function(A, B)
-         if type(B) is 'number' then return newVec(A.x ** B, A.y ** B) end
-         return newVec(A.x ** B.x, A.y ** B.y)
+      __div = function(Receiver, Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+         if type(source_right) is 'number' then
+            return newVec(source_left.x / source_right, source_left.y / source_right)
+         end
+         return newVec(source_left.x / source_right.x, source_left.y / source_right.y)
+      end,
+      __mod = function(Receiver, Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+         if type(source_right) is 'number' then
+            return newVec(source_left.x % source_right, source_left.y % source_right)
+         end
+         return newVec(source_left.x % source_right.x, source_left.y % source_right.y)
+      end,
+      __pow = function(Receiver, Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+         if type(source_right) is 'number' then
+            return newVec(source_left.x ** source_right, source_left.y ** source_right)
+         end
+         return newVec(source_left.x ** source_right.x, source_left.y ** source_right.y)
       end,
       __unm = function(A) return newVec(-A.x, -A.y) end
    }
@@ -137,11 +162,66 @@ end
    assert(v2.y is 9, "__pow: y should be 9, got " .. v2.y)
 end
 
+@Test function ArithmeticMetamethodsUseReceiverFirstDispatch()
+   local function probe(Receiver:table!, Other, LhsDispatch:bool):str
+      return f'{Receiver.name}:{Other.name ?? Other}:{LhsDispatch}'
+   end
+
+   local arithmetic_mt = {
+      __add = probe, __sub = probe, __mul = probe, __div = probe, __mod = probe, __pow = probe
+   }
+   local left = setmetatable({ name = 'left' }, arithmetic_mt)
+   local right = setmetatable({ name = 'right' }, arithmetic_mt)
+
+   assert(left + right is 'left:right:true', '__add should retain the left provider')
+   assert(left - right is 'left:right:true', '__sub should retain the left provider')
+   assert(left * right is 'left:right:true', '__mul should retain the left provider')
+   assert(left / right is 'left:right:true', '__div should retain the left provider')
+   assert(left % right is 'left:right:true', '__mod should retain the left provider')
+   assert(left ** right is 'left:right:true', '__pow should retain the left provider')
+
+   local rhs = setmetatable({ name = 'right' }, arithmetic_mt)
+   assert({ name = 'left' } + rhs is 'right:left:false', '__add should reverse arguments for a right provider')
+   assert({ name = 'left' } - rhs is 'right:left:false', '__sub should reverse arguments for a right provider')
+   assert({ name = 'left' } * rhs is 'right:left:false', '__mul should reverse arguments for a right provider')
+   assert({ name = 'left' } / rhs is 'right:left:false', '__div should reverse arguments for a right provider')
+   assert({ name = 'left' } % rhs is 'right:left:false', '__mod should reverse arguments for a right provider')
+   assert({ name = 'left' } ** rhs is 'right:left:false', '__pow should reverse arguments for a right provider')
+
+   local left_priority = setmetatable({ name = 'left priority' }, { __add = probe })
+   local right_priority = setmetatable({ name = 'right priority' }, {
+      __add = function(Receiver:table!, Other, LhsDispatch:bool):str return Receiver.name end
+   })
+   assert(left_priority + right_priority is 'left priority:right priority:true',
+      'the left handler should win when the operands have different metatables')
+
+   local variadic_rhs = setmetatable({ name = 'variadic right' }, {
+      __add = function(Receiver:table!, ...):str
+         local other, lhs_dispatch = ...
+         return f'{Receiver.name}:{other.name}:{lhs_dispatch}'
+      end
+   })
+   assert({ name = 'variadic left' } + variadic_rhs is 'variadic right:variadic left:false',
+      'a variadic arithmetic handler should receive Other and LhsDispatch after its receiver')
+
+   local result:any = { name = 'left' }
+   result += rhs
+   assert(result is 'right:left:false', 'compound arithmetic should use the corresponding receiver-first operation')
+end
+
 @Test function MetaUnm()
    v = newVec(5, -3)
    v2 = -v
    assert(v2.x is -5, "__unm: x should be -5, got " .. v2.x)
    assert(v2.y is 3, "__unm: y should be 3, got " .. v2.y)
+
+   local operand = setmetatable({}, {
+      __unm = function(...):table return {...} end
+   })
+   local arguments = -operand
+   assert(#arguments is 2, '__unm should retain its two-argument compatibility ABI')
+   assert(arguments[0] is operand and arguments[1] is operand,
+      '__unm should receive the operand in both compatibility argument slots')
 end
 
 @Test function ArithmeticChaining()
@@ -707,7 +787,10 @@ function newWrapped(Val)
    return setmetatable({ val = Val }, wrapped_mt)
 end
 
-wrapped_mt.__add      = function(A, B):table return newWrapped(A.val + B.val) end
+wrapped_mt.__add      = function(Receiver, Other, LhsDispatch:bool):table
+   local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+   return newWrapped(source_left.val + source_right.val)
+end
 wrapped_mt.__tostring = function(Self):str return 'Wrapped(' .. Self.val .. ')' end
 wrapped_mt.__eq       = function(A, B):bool return A.val is B.val end
 wrapped_mt.__len      = function(Self):num return Self.val end

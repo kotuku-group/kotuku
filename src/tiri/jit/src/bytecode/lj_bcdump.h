@@ -50,7 +50,7 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // in struct.size, which shifts the generated fast-function ordering.  Older chunks are rejected rather than retaining
 // compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x90;
+constexpr uint8_t BCDUMP_VERSION = 0x91;
 
 // Compatibility flags.
 

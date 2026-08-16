@@ -202,6 +202,30 @@ TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *mo, cTValue *a, cTValue
    return top;  //  Return new base.
 }
 
+// Setup a receiver-first binary metamethod call.  This is intentionally separate from mmcall(): concat, ordering
+// and the receiver-stable binary metamethods retain their two-argument ABI until they are converted explicitly.
+
+static TValue * mmcall_arith(lua_State *L, ASMFunction cont, cTValue *Method, cTValue *Receiver,
+   cTValue *Other, bool LhsDispatch)
+{
+   //           |-- framesize -> top       top+1       top+2 top+3      top+4      top+5
+   // before:   [func slots ...]
+   // mm setup: [func slots ...] [cont|?]  [mo|tmtype] [receiver] [other] [lhs dispatch]
+   // in asm:   [func slots ...] [cont|PC] [mo|delta]  [receiver] [other] [lhs dispatch]
+   //           ^-- func base                          ^-- mm base
+
+   TValue *top = L->top;
+   if (curr_funcisL(L)) top = curr_topL(L);
+   setcont(top++, cont);
+   setnilV(top++);
+   copyTV(L, top++, Method);
+   setnilV(top++);
+   copyTV(L, top++, Receiver);
+   copyTV(L, top++, Other);
+   setboolV(top, LhsDispatch);
+   return top - 2;  //  Return new base.
+}
+
 // A context-first handler establishes its first actual table argument as the current context.  Binary metamethods
 // may find their callable on the right operand while preserving ordinary left/right argument order, which would make
 // that context silently wrong.  Reject that shape before a Lua frame is created.
@@ -366,18 +390,22 @@ TValue * lj_meta_arith(lua_State *L, TValue *ra, cTValue *rb, cTValue *rc, BCREG
    }
    else {
       cTValue *mo = lj_meta_lookup(L, rb, mm);
-      cTValue *provider = rb;
+      cTValue *receiver = rb;
+      cTValue *other = rc;
+      bool lhs_dispatch = true;
       if (tvisnil(mo)) {
          mo = lj_meta_lookup(L, rc, mm);
-         provider = rc;
+         receiver = rc;
+         other = rb;
+         lhs_dispatch = false;
          if (tvisnil(mo)) {
             if (str2num(rb, &tempb) IS nullptr) rc = rb;
             lj_err_optype(L, rc, ErrMsg::OPARITH);
             return nullptr;  //  unreachable
          }
       }
-      reject_context_first_binary_mismatch(L, mo, provider, rb, strdata(mmname_str(G(L), mm)) + 2);
-      return mmcall(L, lj_cont_ra, mo, rb, rc);
+      if (mm IS MM_unm) return mmcall(L, lj_cont_ra, mo, rb, rc);
+      return mmcall_arith(L, lj_cont_ra, mo, receiver, other, lhs_dispatch);
    }
 }
 

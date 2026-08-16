@@ -1466,7 +1466,7 @@ end
 @input Duration value
 @result Instant value
 ]])
-tempus.mtInstant.__add = function(A:table!, B:table!):table
+tempus.mtInstant.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Instant')
    if tempus.isDuration(B) then
       b = tempus._fields(B, 'Duration')
@@ -1481,7 +1481,7 @@ end
 @input Duration or Instant value
 @result Instant or Duration value
 ]])
-tempus.mtInstant.__sub = function(A:table!, B:table!):table
+tempus.mtInstant.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Instant')
    if tempus.isDuration(B) then
       b = tempus._fields(B, 'Duration')
@@ -1612,7 +1612,7 @@ end
 @input Second duration
 @result Duration value
 ]])
-tempus.mtDuration.__add = function(A:table!, B:table!):table
+tempus.mtDuration.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Duration')
    if tempus.isDuration(B) then
       b = tempus._fields(B, 'Duration')
@@ -1627,7 +1627,7 @@ end
 @input Second duration
 @result Duration value
 ]])
-tempus.mtDuration.__sub = function(A:table!, B:table!):table
+tempus.mtDuration.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Duration')
    if tempus.isDuration(B) then
       b = tempus._fields(B, 'Duration')
@@ -1800,7 +1800,7 @@ end
 @input Period value
 @result LocalDate value
 ]])
-tempus.mtLocalDate.__add = function(A:table!, B:table!):table
+tempus.mtLocalDate.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'LocalDate')
    if tempus.isPeriod(B) then
       fields = date_plus_period_fields(a, tempus._fields(B, 'Period'), 1)
@@ -1815,7 +1815,7 @@ end
 @input Period or LocalDate value
 @result LocalDate or Period value
 ]])
-tempus.mtLocalDate.__sub = function(A:table!, B:table!):table
+tempus.mtLocalDate.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'LocalDate')
    if tempus.isPeriod(B) then
       fields = date_plus_period_fields(a, tempus._fields(B, 'Period'), -1)
@@ -1959,7 +1959,7 @@ end
 @input Duration value
 @result LocalTime value
 ]])
-tempus.mtLocalTime.__add = function(A:table!, B:table!):table
+tempus.mtLocalTime.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    if tempus.isDuration(B) then
       fields = time_plus_duration_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'Duration'), 1)
       return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
@@ -1973,7 +1973,7 @@ end
 @input Duration value
 @result LocalTime value
 ]])
-tempus.mtLocalTime.__sub = function(A:table!, B:table!):table
+tempus.mtLocalTime.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    if tempus.isDuration(B) then
       fields = time_plus_duration_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'Duration'), -1)
       return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
@@ -2065,7 +2065,7 @@ end
 @input Duration or Period value
 @result LocalDateTime value
 ]])
-tempus.mtLocalDateTime.__add = function(A:table!, B:table!):table
+tempus.mtLocalDateTime.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'LocalDateTime')
    date_fields = tempus._fields(a.date, 'LocalDate')
    time_fields = tempus._fields(a.time, 'LocalTime')
@@ -2092,7 +2092,7 @@ end
 @input Duration or Period value
 @result LocalDateTime value
 ]])
-tempus.mtLocalDateTime.__sub = function(A:table!, B:table!):table
+tempus.mtLocalDateTime.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'LocalDateTime')
    date_fields = tempus._fields(a.date, 'LocalDate')
    time_fields = tempus._fields(a.time, 'LocalTime')
@@ -2279,7 +2279,7 @@ end
 @input Duration or Period value
 @result OffsetDateTime value
 ]])
-tempus.mtOffsetDateTime.__add = function(A:table!, B:table!):table
+tempus.mtOffsetDateTime.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    fields = tempus._fields(A, 'OffsetDateTime')
    if tempus.isDuration(B) then
       return offset_date_time_from_instant(offset_date_time_instant(A) + B, fields.offset)
@@ -2294,7 +2294,7 @@ end
 @input Duration, Period, or OffsetDateTime value
 @result OffsetDateTime or Duration value
 ]])
-tempus.mtOffsetDateTime.__sub = function(A:table!, B:table!):table
+tempus.mtOffsetDateTime.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    fields = tempus._fields(A, 'OffsetDateTime')
    if tempus.isDuration(B) then
       return offset_date_time_from_instant(offset_date_time_instant(A) - B, fields.offset)
@@ -2472,7 +2472,7 @@ end
 @input Duration or Period value
 @result ZonedDateTime value
 ]])
-tempus.mtZonedDateTime.__add = function(A:table!, B:table!):table
+tempus.mtZonedDateTime.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    fields = tempus._fields(A, 'ZonedDateTime')
    if tempus.isDuration(B) then return new_zoned_date_time(fields.instant + B, fields.zone) end
    if tempus.isPeriod(B) then
@@ -2488,7 +2488,7 @@ end
 @input Duration, Period, or ZonedDateTime value
 @result ZonedDateTime or Duration value
 ]])
-tempus.mtZonedDateTime.__sub = function(A:table!, B:table!):table
+tempus.mtZonedDateTime.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    fields = tempus._fields(A, 'ZonedDateTime')
    if tempus.isDuration(B) then return new_zoned_date_time(fields.instant - B, fields.zone) end
    if tempus.isPeriod(B) then
@@ -2544,7 +2544,7 @@ end
 @input Second period
 @result Period value
 ]])
-tempus.mtPeriod.__add = function(A:table!, B:table!):table
+tempus.mtPeriod.__add = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Period')
    if tempus.isPeriod(B) then
       b = tempus._fields(B, 'Period')
@@ -2559,7 +2559,7 @@ end
 @input Second period
 @result Period value
 ]])
-tempus.mtPeriod.__sub = function(A:table!, B:table!):table
+tempus.mtPeriod.__sub = function(A:table!, B:table!, LhsDispatch:bool):table
    a = tempus._fields(A, 'Period')
    if tempus.isPeriod(B) then
       b = tempus._fields(B, 'Period')
