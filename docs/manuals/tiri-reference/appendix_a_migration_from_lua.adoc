@@ -925,7 +925,7 @@ The following Tiri features have no counterpart in standard Lua.  They do not re
 * **Arrow functions**: `n pass:[=>] n * 2` (see <<ch-functions>>)
 * **String interpolation**: `f'Hello {name}'` (see <<sec-string-interpolation>>)
 * **Safe navigation**: `obj?.field` (see <<ch-operators>>)
-* **Ternary operator**: `cond ? a :> b` (see <<ch-operators>>)
+* **Ternary operator**: `cond ? a : b` (see <<ch-operators>>)
 * **If-nil assignment**: `x ?= default` (see <<ch-operators>>)
 * **If-empty operator**: `value ?? default` (see <<ch-operators>>)
 * **If-empty assignment**: `x ??= default` (see <<ch-operators>>)
@@ -974,7 +974,7 @@ end
 [discrete]
 ==== Ternary Operator
 
-The ternary operator `condition ? a :> b` replaces four-line if-then-else blocks when selecting between two values.  Only the selected branch is evaluated.
+The ternary operator `condition ? a : b` replaces four-line if-then-else blocks when selecting between two values.  Only the selected branch is evaluated.
 
 [source,tiri]
 ----
@@ -987,7 +987,7 @@ else
 end
 
 -- Tiri
-label = count > 1 ? 'items' :> 'item'
+label = count > 1 ? 'items' : 'item'
 ----
 
 [discrete]

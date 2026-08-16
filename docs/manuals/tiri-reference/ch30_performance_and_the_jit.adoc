@@ -3,6 +3,7 @@
 //                       materialisation cost of '&&' (commit d3638efc0)
 // UPDATED: 2026-08-15 - Documented the cost of capturing the context when a framework callback is registered
 //                       (commit 1a38f18e0)
+// UPDATED: 2026-08-16 - The ternary separator is now ':' rather than ':>' (commit 982d890de)
 [[ch-performance-and-the-jit]]
 == Performance & the JIT
 indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the Kōtuku JIT implementation and is not part of the language specification.
@@ -648,7 +649,7 @@ The most significant JIT performance issue is type instability within hot loops.
 -- Pitfall: mixed types in accumulator
 result = 0
 for i in {0 to 1000} do
-   result = (i > 500) ? tostring(i) :> i   -- type changes mid-loop
+   result = (i > 500) ? tostring(i) : i   -- type changes mid-loop
 end
 ----
 

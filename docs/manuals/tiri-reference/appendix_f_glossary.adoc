@@ -10,6 +10,8 @@
 // UPDATED: 2026-08-15 - Added the Bound context entry (commit 1a38f18e0)
 // UPDATED: 2026-08-13 - Added the Context block, Entity and Self referencing entries; context is now opt-in and
 //                       established only by an entity receiver (commit d3638efc0)
+// UPDATED: 2026-08-16 - The ternary separator is now ':'; corrected the Extended falsiness and Ternary operator
+//                       entries (commit 982d890de)
 
 [[appendix-glossary]]
 [appendix]
@@ -109,7 +111,7 @@ Extern declaration::
 A declaration using `extern` to mark a name as supplied by another parsed file or by the embedding host.  The declaration creates no variable and emits no bytecode; it only authorises strict name resolution to treat the name as a global reference.  See <<sec-the-extern-keyword>>.
 
 Extended falsiness::
-The broader falsiness rules used by the `??` binary and postfix operators, `??=`, the `?!` guard and the extended ternary `?? :>`.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty collections evaluate as falsey.  The plain ternary `? :>` uses standard falsiness instead, so the two ternary forms disagree on `0`, `""` and empty collections.  See <<sec-conditional-operators>>.
+The broader falsiness rules used by the `??` binary and postfix operators, `??=`, the `?!` guard and the extended ternary `?? :`.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty collections evaluate as falsey.  The plain ternary `? :` uses standard falsiness instead, so the two ternary forms disagree on `0`, `""` and empty collections.  See <<sec-conditional-operators>>.
 
 Field::
 A named property of an object or a string-keyed entry in a table.  Object fields are accessed as lower camel case names via dot notation.  See <<sec-field-access>>.
@@ -265,7 +267,7 @@ Tail call::
 A function call that is the last action performed by a function before returning.  The runtime reuses the current stack frame, preventing stack growth in recursive patterns.  See <<sec-tail-calls>>.
 
 Ternary operator::
-The conditional expression `condition ? true_expr :> false_expr`, which evaluates and returns one of two expressions based on the truthiness of the condition.  The `?` form applies standard falsiness; the `??` form (`condition pass:[??] true_expr :> false_expr`) applies extended falsiness.  See <<sec-ternary-operator>>.
+The conditional expression `condition ? true_expr : false_expr`, which evaluates and returns one of two expressions based on the truthiness of the condition.  The `?` form applies standard falsiness; the `??` form (`condition pass:[??] true_expr : false_expr`) applies extended falsiness.  See <<sec-ternary-operator>>.
 
 Thread::
 An independent execution context with its own Tiri state and stack.  Threads communicate through action queues and shared data pools, not shared mutable state.  See <<ch-threading>>.

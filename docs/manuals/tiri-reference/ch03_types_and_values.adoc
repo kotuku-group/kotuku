@@ -1,6 +1,7 @@
 // VERIFIED: 2026-08-01
 // UPDATED: 2026-08-11 - Removed '?:' from the safe navigation operator list (commit 7e6746950)
 // UPDATED: 2026-08-13 - Noted that a table can be designated an entity without changing its type (commit d3638efc0)
+// UPDATED: 2026-08-16 - The extended ternary is now spelled '?? :' (commit 982d890de)
 
 [[ch-types-and-values]]
 == Types & Values
@@ -170,7 +171,7 @@ Standard falsiness::
 The values `nil` and `false` are falsey.  All other values -- including `0`, `""`, and empty collections -- are truthy.  The `and`, `or` and `not` operators, the `if` and `while` statements, `assert()`, and `choose` case guards all use standard falsiness.
 
 Extended falsiness::
-The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are falsey.  All other values are truthy.  Extended falsiness is applied by the `??` binary operator, the postfix `??` operator, the `??=` compound assignment, the `?!` guard operator, and the extended ternary `?? :>`.  See <<sec-conditional-operators>>.
+The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are falsey.  All other values are truthy.  Extended falsiness is applied by the `??` binary operator, the postfix `??` operator, the `??=` compound assignment, the `?!` guard operator, and the extended ternary `?? :`.  See <<sec-conditional-operators>>.
 
 Nil-only tests::
 The safe navigation operators (`?.`, `?[]`) and the `?=` compound assignment test for `nil` alone.  See <<sec-safe-navigation>> and <<sec-compound-assignment>>.

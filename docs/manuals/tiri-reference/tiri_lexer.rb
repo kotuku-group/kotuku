@@ -81,13 +81,13 @@ module Rouge
             rule %r(⧺), Operator        # increment (++)
             rule %r(⁇), Operator        # null coalescing (??)
             rule %r(≠), Operator        # not equal (!=)
+            rule %r(≈), Operator        # approximate equality (no ASCII equivalent)
             rule %r(≤), Operator        # less or equal (<=)
             rule %r(≥), Operator        # greater or equal (>=)
             rule %r(«), Operator        # left shift (<<)
             rule %r(»), Operator        # right shift (>>)
             rule %r(‥), Operator        # concatenation (..)
             rule %r(…), Operator        # varargs (...)
-            rule %r(▷), Operator        # ternary separator (:>)
             rule %r(×), Operator        # multiplication (*)
             rule %r(÷), Operator        # division (/)
             rule %r(↑), Operator        # exponentiation (**)
@@ -100,7 +100,6 @@ module Rouge
             rule %r(\?\[), Operator
             rule %r(\?\:), Operator
             rule %r(=>), Operator
-            rule %r(:>), Operator
             rule %r(\|>), Operator
             rule %r(\+\+), Operator
             rule %r(\*\*), Operator

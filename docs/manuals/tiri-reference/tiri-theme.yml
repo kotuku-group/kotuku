@@ -37,8 +37,27 @@ font:
       bold: GEM_FONTS_DIR/mplus1mn-bold-subset.ttf
       italic: GEM_FONTS_DIR/mplus1mn-italic-subset.ttf
       bold_italic: GEM_FONTS_DIR/mplus1mn-bold_italic-subset.ttf
+    # Glyph fallbacks for the Tiri Unicode operator aliases (ch05 "Unicode Operator
+    # Aliases").  Neither Courier Prime (code blocks) nor Inconsolata (codespans) covers
+    # ⧺ U+29FA, ⁇ U+2047, ‥ U+2025 or ▷ U+25B7, and Courier Prime also lacks ↑ U+2191,
+    # so those characters would otherwise render as .notdef boxes.
+    DejaVu Sans Mono:
+      normal: ../../../data/fonts/truetype/DejaVuSansMono.ttf
+      bold: ../../../data/fonts/truetype/DejaVuSansMono-Bold.ttf
+      italic: ../../../data/fonts/truetype/DejaVuSansMono.ttf
+      bold_italic: ../../../data/fonts/truetype/DejaVuSansMono-Bold.ttf
+    DejaVu Sans:
+      normal: ../../../data/fonts/truetype/DejaVuSans.ttf
+      bold: ../../../data/fonts/truetype/DejaVuSans.ttf
+      italic: ../../../data/fonts/truetype/DejaVuSans.ttf
+      bold_italic: ../../../data/fonts/truetype/DejaVuSans.ttf
+  # Ordered chain: the monospace fallback is tried first so substituted glyphs keep the
+  # metrics of the surrounding code.  DejaVu Sans is the last resort and exists solely
+  # for ‥ U+2025, the one alias absent from DejaVu Sans Mono.
   fallbacks:
     - Noto Emoji
+    - DejaVu Sans Mono
+    - DejaVu Sans
 
 base:
   font-family: Noto Serif

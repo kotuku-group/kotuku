@@ -1,4 +1,9 @@
 // VERIFIED: 2026-08-16
+// UPDATED: 2026-08-16 - The ternary separator is now ':'; ':>' and its '▷' alias are deprecated but accepted with a
+//                       warning.  Added the separator/type-annotation disambiguation and the '??' single-line rule
+//                       (commit 982d890de)
+// CHANGED: 2026-08-16 - Corrected the expression-list note: a ternary terminates at a comma, so parentheses are
+//                       optional rather than required (pre-existing defect, verified against the parser)
 
 [[ch-operators]]
 == Operators
@@ -490,7 +495,7 @@ This feature is best used for ensuring that a collection, string or number type 
 === Ternary Operator
 [source,ebnf]
 ----
-ternary_expression = expression ("?" | "??") expression ":>" expression ;
+ternary_expression = expression ("?" | "??") expression ":" expression ;
 ----
 
 indexterm:[operators, ternary] Evaluates `condition`.  If truthy, evaluates and returns `true_expr`; if falsey, evaluates and returns `false_expr`.  Only the selected branch is evaluated (short-circuit).
@@ -501,38 +506,39 @@ Two forms are available, distinguished by the leading sigil and differing only i
 |===
 |Form |Condition rule
 
-|`cond pass:[?] a :> b`
+|`cond pass:[?] a : b`
 |Standard falsiness.  Only `nil` and `false` select `b`.  This is the same rule used by `if` and `while`.
 
-|`cond pass:[??] a :> b`
+|`cond pass:[??] a : b`
 |Extended falsiness.  `nil`, `false`, `0`, `""` and empty collections all select `b`.
 |===
 
 [source,tiri]
 ----
 s = ''
-s ? 'set' :> 'empty'    -- 'set'
-s ?? 'set' :> 'empty'   -- 'empty'
+s ? 'set' : 'empty'    -- 'set'
+s ?? 'set' : 'empty'   -- 'empty'
 
 n = 0
-n ? 'set' :> 'zero'     -- 'set'
-n ?? 'set' :> 'zero'    -- 'zero'
+n ? 'set' : 'zero'     -- 'set'
+n ?? 'set' : 'zero'    -- 'zero'
 ----
 
-Both forms are right-associative: `a ? b :> c ? d :> e` parses as `a ? b :> (c ? d :> e)`.
+Both forms are right-associative: `a ? b : c ? d : e` parses as `a ? b : (c ? d : e)`.
 
-In expression lists, parentheses are required to avoid ambiguity:
-
-[source,tiri]
-----
-local a, b = (cond ? x :> y), z
-----
+A ternary expression terminates at a comma, so it occupies exactly one element of an expression list.  This holds in multiple assignment, call arguments, return lists and table constructors.  Parentheses are optional and serve readability only:
 
 [source,tiri]
 ----
-status = user ? 'logged in' :> 'guest'
-max = a > b ? a :> b
-label = count is 0 ? 'none' :> f'{count} items'
+local a, b = cond ? x : y, z      -- a is the ternary result, b is z
+local a, b = (cond ? x : y), z    -- identical, parenthesised for clarity
+----
+
+[source,tiri]
+----
+status = user ? 'logged in' : 'guest'
+max = a > b ? a : b
+label = count is 0 ? 'none' : f'{count} items'
 ----
 
 [[sec-safe-navigation]]
@@ -745,20 +751,10 @@ indexterm:[operators, Unicode aliases] The lexer recognises a set of Unicode sym
 |`↑` (U+2191)  |`pass:[**]` |Exponentiation
 |`‥` (U+2025)  |`..`  |Concatenation
 |`⁇` (U+2047)  |`??`  |If-empty
-|`▷` (U+25B7)  |`:>`  |Ternary separator
 |`⧺` (U+29FA)  |`++`  |Postfix increment
 |===
 
 The approximate equality operator `≈` (see <<sec-approximate-equality>>) has no ASCII equivalent and is the only operator that requires a Unicode symbol.
-
-[source,tiri]
-----
-2 ↑ 10              -- 1024, identical to 2 ** 10
-6 × 7               -- 42
-3 ≠ 4               -- true
-label = x ? 'a' ▷ 'b'
-----
-
 
 [[sec-operator-precedence]]
 === Operator Precedence
