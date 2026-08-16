@@ -22,7 +22,7 @@ end
 -- If error: nil, nil, error_string
 -- If success: content_length, body_start_offset, nil
 
-function parseHeader(Buffer:str):<str,num,str>
+function parseHeader(Buffer:str):<num,num,str>
    header_end = Buffer.find('\r\n\r\n')
    separator_len = 4
    if not header_end then
