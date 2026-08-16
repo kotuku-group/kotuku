@@ -569,9 +569,10 @@ The interpreter implementation covers x64, ARM64 and PowerPC. The JIT can record
 - `a or b`: evaluate `a`; emit compare + `JMP` that branches into `b` only when `a` is falsey. Truthy `a` falls through and becomes the result; `b` is untouched.
 - Registers are normalised so the resulting value lives in the LHS register; `freereg` collapses after RHS evaluation to avoid leaks.
 
-### 7.2 Ternary Operators (`cond ? true_val :> false_val`, `cond ?? true_val :> false_val`)
-- Only one branch executes. The standard `? :>` form matches `if` falsey semantics: only `nil` and `false` branch to the false value.
-- The extended `?? :>` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty collections.
+### 7.2 Ternary Operators (`cond ? true_val : false_val`, `cond ?? true_val : false_val`)
+- Only one branch executes. The standard `? :` form matches `if` falsey semantics: only `nil` and `false` branch to the false value.
+- The extended `?? :` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty collections.
+- The former `:>` separator is accepted for compatibility but emits a deprecation warning.
 - `IrEmitter::emit_ternary_expr` places both branches so the selected branch materialises into a single result register. Each branch frees temporaries before convergence, and `freereg` is patched back to guarantee a single-slot result.
 - Example sketch:
   ```

@@ -138,12 +138,12 @@ function clone_definition(Definition:table!):table
 
    param.name      = canonical
    param.kind     ?= 'option'
-   param.type     ?= param.kind is 'flag' ? 'bool' :> 'str'
+   param.type     ?= param.kind is 'flag' ? 'bool' : 'str'
    param.required ?= false
    param.multiple ?= false
    param.hidden   ?= false
    param.names     = names
-   param.group    ?= param.kind is 'positional' ? 'Arguments' :> 'Options'
+   param.group    ?= param.kind is 'positional' ? 'Arguments' : 'Options'
    param.metavar  ?= string.upper(param.name)
 
    if param.kind != 'option' and param.kind != 'flag' and param.kind != 'positional' then
@@ -1001,7 +1001,7 @@ function usage_token(Param:table!):str
    text = ''
 
    if Param.kind is 'positional' then
-      text = Param.multiple ? f"<{metavar}...>" :> f"<{metavar}>"
+      text = Param.multiple ? f"<{metavar}...>" : f"<{metavar}>"
    elseif Param.kind is 'flag' then
       text = Param.name
    else
@@ -2507,7 +2507,7 @@ create_parser = function(Config:table):table
       add_param(parser, {
          name = parser.helpArg, type = 'str', hidden = true, implicit = true,
          exec = function(Parser:table!, ArgName:str!, Value:any!, Param:table!)
-            topic = (Value is true or Value is 'true') ? nil :> Value
+            topic = (Value is true or Value is 'true') ? nil : Value
             if Parser._try_process_active then
                Parser._help_result = make_help_result(Parser, topic)
             else
@@ -2524,7 +2524,7 @@ create_parser = function(Config:table):table
       end
 
       add_param(parser, {
-         name = 'config', type = 'path', default = type(parser.userConfig) is 'string' ? parser.userConfig :> nil, group = 'Configuration',
+         name = 'config', type = 'path', default = type(parser.userConfig) is 'string' ? parser.userConfig : nil, group = 'Configuration',
          comment = 'JSON config file with option defaults.'
       })
    end

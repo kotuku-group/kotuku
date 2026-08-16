@@ -103,7 +103,7 @@ gui.checkbox = function(Options)
       height = ICON_SIZE,
       fill   = chk_icon.fill,
       opacity = (function()
-         return self.state is 1 ? 1.0 :> 0.25
+         return self.state is 1 ? 1.0 : 0.25
       end)()
    })
 

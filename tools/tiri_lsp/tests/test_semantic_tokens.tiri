@@ -227,34 +227,34 @@ end
 
    assert(#result.diagnostics > 0, 'Removed colon call syntax should produce an LSP diagnostic.')
    diagnostic = result.diagnostics[0]
-   assert(diagnostic.code is 'DeprecatedSyntax', 'Colon diagnostics should preserve the DeprecatedSyntax code.')
+   assert(diagnostic.code is 'UnexpectedToken', 'Colon diagnostics should use the ordinary parser error code.')
    assert(diagnostic.severity is 1, 'Removed colon call syntax should be an LSP error.')
    assert(diagnostic.range.start.line is 1, 'Colon call diagnostic should identify the call line.')
 end
 
 @Test function TernaryModesReceiveSemanticTokens()
-   source = 'standard = value ? \'yes\' :> \'no\'\n' ..
-      'extended = value ?? \'yes\' :> \'no\'\n' ..
-      'comparison = options.scale is false ?? nil :> true\n' ..
+   source = 'standard = value ? \'yes\' : \'no\'\n' ..
+      'extended = value ?? \'yes\' : \'no\'\n' ..
+      'comparison = options.scale is false ?? nil : true\n' ..
       'coalesce = value ?? \'fallback\'\n'
 
    tokens = tokenizeTiri(source)
 
    assertOperatorToken(tokens, 0, 17, '?', 'Standard ternary condition should be highlighted as an operator.')
-   assertOperatorToken(tokens, 0, 25, ':>', 'Standard ternary separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 0, 25, ':', 'Standard ternary separator should be highlighted as an operator.')
    assertOperatorToken(tokens, 1, 17, '??', 'Extended ternary condition should be highlighted as an operator.')
-   assertOperatorToken(tokens, 1, 26, ':>', 'Extended ternary separator should be highlighted as an operator.')
+   assertOperatorToken(tokens, 1, 26, ':', 'Extended ternary separator should be highlighted as an operator.')
    assertOperatorToken(tokens, 2, 27, 'is', 'Comparison before extended ternary should remain an operator.')
    assertOperatorToken(tokens, 2, 36, '??', 'Extended ternary after comparison should be highlighted.')
-   assertOperatorToken(tokens, 2, 43, ':>', 'Extended ternary after comparison should keep its separator.')
+   assertOperatorToken(tokens, 2, 43, ':', 'Extended ternary after comparison should keep its separator.')
    assertOperatorToken(tokens, 3, 17, '??', 'Binary if-empty operator should remain highlighted.')
 end
 
 @Test function TernaryDiagnosticsUseCurrentParser()
-   doc = makeDoc('value = 0 ? \'truthy\' :> \'falsey\'\n' ..
-      'extended = 0 ?? \'truthy\' :> \'falsey\'\n' ..
+   doc = makeDoc('value = 0 ? \'truthy\' : \'falsey\'\n' ..
+      'extended = 0 ?? \'truthy\' : \'falsey\'\n' ..
       'options = { scale=false }\n' ..
-      'value = options.scale is false ?? nil :> true\n')
+      'value = options.scale is false ?? nil : true\n')
    result = computeDiagnostics(doc)
 
    assert(#result.diagnostics is 0, 'LSP diagnostics should accept standard and extended ternary syntax.')

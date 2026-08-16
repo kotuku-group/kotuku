@@ -14,7 +14,7 @@ Documentation is available in the Kotuku Wiki.
    end
 
 gui.scrollbar = function(Options)
-   self = { } -- Public variables
+   self = entity { } -- Public interface
    lTarget   = Options.target
    lPage     = Options.page
    lView     = Options.view

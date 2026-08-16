@@ -85,7 +85,7 @@ end
 @Test function DynamicTargetCanChangeCategory()
    function sum_dynamic(Target:any, UseSecond:bool):num
       local total = 0
-      for first, second in Target do total += UseSecond ? second :> first end
+      for first, second in Target do total += UseSecond ? second : first end
       return total
    end
 

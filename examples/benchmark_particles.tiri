@@ -90,10 +90,10 @@ function makeStarSequence(CentreX:num!, CentreY:num!, Radius:num!)
 
    for i in {0 to 10} do
       angle = -PI * 0.5 + i * PI / 5
-      radius = (i % 2 is 0) ? Radius :> inner_radius
+      radius = (i % 2 is 0) ? Radius : inner_radius
       x = CentreX + math.cos(angle) * radius
       y = CentreY + math.sin(angle) * radius
-      sequence ..= string.format('%s%f,%f', (i is 0) ? 'M' :> ' L', x, y)
+      sequence ..= string.format('%s%f,%f', (i is 0) ? 'M' : ' L', x, y)
    end
 
    return sequence .. ' Z'

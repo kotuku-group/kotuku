@@ -538,7 +538,7 @@ local fallback = 5
 if level > 10 then
    output = level
 elseif level ?? fallback then
-   output = level ? level :> fallback
+   output = level ? level : fallback
 else
    output = fallback
 end
@@ -899,31 +899,26 @@ static bool test_deprecated_numeric_for_rejected(kt::Log &Log)
 
 static bool test_colon_method_syntax_rejected(kt::Log &Log)
 {
-   struct ColonCase {
-      std::string_view source;
-      std::string_view expected_message;
-   };
-
-   constexpr std::array<ColonCase, 3> cases = { {
-      { "local values = {}\nvalues:clear()", "colon method syntax has been removed" },
-      { "local values:table = nil\nvalues?:clear()", "safe colon method syntax has been removed" },
-      { "local value = {}\nfunction value:clear() end", "colon-qualified function declarations have been removed" }
+   constexpr std::array<std::string_view, 3> cases = { {
+      "local values = {}\nvalues:clear()",
+      "local values:table = nil\nvalues?:clear()",
+      "local value = {}\nfunction value:clear() end"
    } };
 
-   for (const auto &test_case : cases) {
-      auto result = build_ast_from_source(test_case.source, true);
-      size_t matching = 0;
+   for (std::string_view source : cases) {
+      auto result = build_ast_from_source(source, true);
+      bool has_error = false;
       for (const ParserDiagnostic &diagnostic : result.diagnostics) {
-         if (diagnostic.code != ParserErrorCode::DeprecatedSyntax) continue;
-         if (diagnostic.message.find(test_case.expected_message) IS std::string::npos) {
-            Log.error("colon syntax diagnostic did not explain the migration path");
+         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
+            Log.error("removed colon method syntax emitted a deprecated-syntax diagnostic");
             log_diagnostics(result.diagnostics, Log);
             return false;
          }
-         matching++;
+         if (diagnostic.severity IS ParserDiagnosticSeverity::Error) has_error = true;
       }
-      if (matching != 1) {
-         Log.error("expected one colon syntax diagnostic, got %zu", matching);
+
+      if (not has_error) {
+         Log.error("removed colon method syntax did not emit an ordinary parser error");
          log_diagnostics(result.diagnostics, Log);
          return false;
       }
@@ -934,6 +929,67 @@ static bool test_colon_method_syntax_rejected(kt::Log &Log)
    if (not annotations.chunk.ok() or not annotations.diagnostics.empty()) {
       Log.error("colon removal interfered with type annotations");
       log_diagnostics(annotations.diagnostics, Log);
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_ternary_colon_separators(kt::Log &Log)
+{
+   auto result = build_ast_from_source("return true ? 1 : 2, false ?? 3 : 4");
+   if (not result.chunk.ok() or not result.diagnostics.empty()) {
+      Log.error("colon-separated ternaries did not parse cleanly");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   const BlockStmt& block = *result.chunk.value_ref();
+   StatementListView statements = block.view();
+   if (statements.size() != 1 or not (statements[0].kind IS AstNodeKind::ReturnStmt)) {
+      Log.error("colon-separated ternaries did not produce a return statement");
+      return false;
+   }
+
+   const auto* return_payload = std::get_if<ReturnStmtPayload>(&statements[0].data);
+   if (not return_payload or return_payload->values.size() != 2) {
+      Log.error("colon-separated ternaries did not produce two return values");
+      return false;
+   }
+
+   constexpr std::array<TernaryConditionMode, 2> expected_modes = { {
+      TernaryConditionMode::Standard, TernaryConditionMode::Extended
+   } };
+   for (size_t index = 0; index < return_payload->values.size(); index++) {
+      const ExprNodePtr &value = return_payload->values[index];
+      if (not value or not (value->kind IS AstNodeKind::TernaryExpr)) {
+         Log.error("colon-separated ternary return value %zu is not a ternary expression", index);
+         return false;
+      }
+
+      const auto* ternary = std::get_if<TernaryExprPayload>(&value->data);
+      if (not ternary or ternary->condition_mode != expected_modes[index]) {
+         Log.error("colon-separated ternary return value %zu has the wrong condition mode", index);
+         return false;
+      }
+   }
+
+   auto deprecated = build_ast_from_source("return true ? 1 :> 2");
+   if (not deprecated.chunk.ok() or deprecated.diagnostics.size() != 1) {
+      Log.error("deprecated ternary separator did not parse with exactly one diagnostic");
+      log_diagnostics(deprecated.diagnostics, Log);
+      return false;
+   }
+
+   const ParserDiagnostic &diagnostic = deprecated.diagnostics[0];
+   if (diagnostic.code != ParserErrorCode::DeprecatedSyntax or
+       diagnostic.severity != ParserDiagnosticSeverity::Warning or
+       diagnostic.token.kind() != TokenKind::TernarySep or
+       diagnostic.message.find("deprecated") IS std::string::npos) {
+      Log.error("deprecated ternary separator diagnostic has incorrect metadata");
+      log_diagnostics(deprecated.diagnostics, Log);
       return false;
    }
 
@@ -1142,7 +1198,7 @@ static bool test_ternary_presence_expr_ast(kt::Log &log)
    constexpr const char* source = R"(
 local value = nil
 local fallback = 10
-return (value ?? fallback) ? value :> fallback, value??, (value ?? fallback)??
+return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
 )";
 
    auto result = build_ast_from_source(source);
@@ -3871,16 +3927,16 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
    };
    for (std::string_view legacy_source : legacy_sources) {
       auto legacy = build_ast_from_source(legacy_source, false, false, true);
-      bool found_cutover_diagnostic = false;
-      for (const ParserDiagnostic &diagnostic : legacy.diagnostics) {
-         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax and
-             diagnostic.message.find("receiver.member") != std::string::npos) {
-            found_cutover_diagnostic = true;
-         }
-      }
-      if (not found_cutover_diagnostic) {
-         Log.error("colon syntax cut-over gate did not produce a dot-qualified replacement diagnostic");
+      if (legacy.diagnostics.empty()) {
+         Log.error("removed colon syntax did not emit a parser diagnostic");
          return false;
+      }
+
+      for (const ParserDiagnostic &diagnostic : legacy.diagnostics) {
+         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
+            Log.error("removed colon syntax emitted a deprecated-syntax diagnostic");
+            return false;
+         }
       }
    }
 
@@ -4263,71 +4319,71 @@ static bool test_if_empty_operator_constants(kt::Log &log)
 
 static bool test_ternary_falsey_semantics(kt::Log &log)
 {
-   // Test: nil ? "yes" :> "no" should evaluate to "no"
+   // Test: nil ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return nil ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return nil ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse 'nil ? yes :> no'");
+         log.error("failed to parse 'nil ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: false ? "yes" :> "no" should evaluate to "no"
+   // Test: false ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return false ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return false ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse 'false ? yes :> no'");
+         log.error("failed to parse 'false ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: 0 ? "yes" :> "no" should evaluate to "no"
+   // Test: 0 ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return 0 ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return 0 ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '0 ? yes :> no'");
+         log.error("failed to parse '0 ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: "" ? "yes" :> "no" should evaluate to "no"
+   // Test: "" ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return \"\" ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return \"\" ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '\"\" ? yes :> no'");
+         log.error("failed to parse '\"\" ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: true ? "yes" :> "no" should evaluate to "yes"
+   // Test: true ? "yes" : "no" should evaluate to "yes"
    {
-      auto result = build_ast_from_source("return true ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return true ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse 'true ? yes :> no'");
+         log.error("failed to parse 'true ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: 42 ? "yes" :> "no" should evaluate to "yes"
+   // Test: 42 ? "yes" : "no" should evaluate to "yes"
    {
-      auto result = build_ast_from_source("return 42 ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return 42 ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '42 ? yes :> no'");
+         log.error("failed to parse '42 ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: "hello" ? "yes" :> "no" should evaluate to "yes"
+   // Test: "hello" ? "yes" : "no" should evaluate to "yes"
    {
-      auto result = build_ast_from_source("return \"hello\" ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return \"hello\" ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '\"hello\" ? yes :> no'");
+         log.error("failed to parse '\"hello\" ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
@@ -5976,7 +6032,7 @@ static bool test_builtin_method_runtime(kt::Log &Log)
       "local order = ''\n"
       "local function mark():bool order ..= 'r'; return true end\n"
       "local function argument():num order ..= 'a'; return 7 end\n"
-      "(mark() ? values :> values).insert(argument())\n"
+      "(mark() ? values : values).insert(argument())\n"
       "local maybe:table = nil\n"
       "maybe?.insert(argument())\n"
       "maybe = {}\n"
@@ -6042,7 +6098,7 @@ static bool test_builtin_method_runtime(kt::Log &Log)
       "local function invoke(Value:any, Text:str):str return Value.echo(Text) end\n"
       "local matched = 0\n"
       "for i in {0 to 200} do\n"
-      "   local value:any = i % 2 is 0 ? test_marked_userdata :> test_ordinary_userdata\n"
+      "   local value:any = i % 2 is 0 ? test_marked_userdata : test_ordinary_userdata\n"
       "   if invoke(value, 'x') is 'x' then matched++ end\n"
       "end\n"
       "return matched\n";
@@ -8369,7 +8425,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 77> tests = { {
+   constexpr std::array<TestCase, 78> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8385,6 +8441,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "current_context_range_operands", test_current_context_range_operands },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
+      { "ternary_colon_separators", test_ternary_colon_separators },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
       { "bare_collection_iteration_emission", test_bare_collection_iteration_emission },

@@ -189,9 +189,9 @@ gui.toolbar = function(Options)
          elseif item.type is TI_GROUP then
             if not Options.flush then
                if self._horizontal then
-                  x += not item.prev ? groupOffset :> (self._iconSize * 0.25)
+                  x += not item.prev ? groupOffset : (self._iconSize * 0.25)
                else
-                  y += not item.prev ? groupOffset :> (self._iconSize * 0.25)
+                  y += not item.prev ? groupOffset : (self._iconSize * 0.25)
                end
 
                currentGroup = item
@@ -515,7 +515,7 @@ gui.toolbar = function(Options)
       self._current = Item
 
       if self._current and (not self._current.disabled) and (not self._disabled) then
-         self._vHover.fill = self._clicked ? self._selectFill :> self._hoverFill
+         self._vHover.fill = self._clicked ? self._selectFill : self._hoverFill
 
          if Item.icon and Item.iconAltFill then
             Item.icon.fill = Item.iconAltFill

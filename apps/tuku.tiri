@@ -809,7 +809,7 @@ function fetchOnce(Args:table!):table
       headers            = readResponseHeaders(http),
       body               = Args._bodyBuffer,
       transportError     = transport_error,
-      transportErrorText = (transport_error is ERR_Okay) ? 'Okay' :> mSys.GetErrorMsg(transport_error)
+      transportErrorText = (transport_error is ERR_Okay) ? 'Okay' : mSys.GetErrorMsg(transport_error)
    }
 end
 

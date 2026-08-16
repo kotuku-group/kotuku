@@ -242,7 +242,7 @@ end
       "A dynamic result should preserve tables without gaining a contract")
 
    for i in {0 to 250} do
-      local value:any = i % 2 is 0 ? i :> "dynamic"
+      local value:any = i % 2 is 0 ? i : "dynamic"
       assert(dynamicValue(value) is value, "Hot dynamic calls should retain interpreter and JIT behaviour")
    end
 end

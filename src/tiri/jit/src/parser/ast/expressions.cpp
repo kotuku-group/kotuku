@@ -60,6 +60,24 @@ ExprNodePtr make_builtin_call(ParserContext &Context, SourceSpan Span, FastFunc 
 } // namespace
 
 //********************************************************************************************************************
+// Consumes a ternary separator, retaining the former `:>` spelling as a warning-only compatibility alias.
+
+ParserResult<Token> AstBuilder::consume_ternary_separator()
+{
+   Token separator = this->ctx.tokens().current();
+   if (separator.kind() IS TokenKind::Colon or separator.kind() IS TokenKind::TernarySep) {
+      this->ctx.tokens().advance();
+      if (separator.kind() IS TokenKind::TernarySep) {
+         this->ctx.emit_warning(ParserErrorCode::DeprecatedSyntax, separator,
+            "the ':>' ternary separator is deprecated; use ':' instead (e.g. a ? b : c)");
+      }
+      return ParserResult<Token>::success(separator);
+   }
+
+   return this->fail<Token>(ParserErrorCode::ExpectedToken, separator, "expected ':' or ':>' ternary separator");
+}
+
+//********************************************************************************************************************
 // Parses expression statements, handling assignments, compound assignments, conditional shorthands, and standalone expressions.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
@@ -76,6 +94,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
    }
 
    Token op = this->ctx.tokens().current();
+
+   if (op.kind() IS TokenKind::Colon or op.kind() IS TokenKind::TernarySep or op.kind() IS TokenKind::SafeMethod) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, op, "unexpected token after expression");
+   }
+
    auto assignment_result = token_to_assignment_op(op.kind());
 
    if (assignment_result.has_value()) {
@@ -297,7 +320,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          this->ctx.tokens().advance();
          auto true_branch = this->parse_expression();
          if (not true_branch.ok()) return true_branch;
-         this->ctx.consume(TokenKind::TernarySep, ParserErrorCode::ExpectedToken);
+         auto separator = this->consume_ternary_separator();
+         if (not separator.ok()) return ParserResult<ExprNodePtr>::failure(separator.error_ref());
          auto false_branch = this->parse_expression();
          if (not false_branch.ok()) return false_branch;
          SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
@@ -316,7 +340,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          this->ctx.tokens().advance();
          auto true_branch = this->parse_expression();
          if (not true_branch.ok()) return true_branch;
-         this->ctx.consume(TokenKind::TernarySep, ParserErrorCode::ExpectedToken);
+         auto separator = this->consume_ternary_separator();
+         if (not separator.ok()) return ParserResult<ExprNodePtr>::failure(separator.error_ref());
          auto false_branch = this->parse_expression();
          if (not false_branch.ok()) return false_branch;
          SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
@@ -1181,16 +1206,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          continue;
       }
 
-      if (token.kind() IS TokenKind::Colon) {
-         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
-            "colon method syntax has been removed; use receiver.member(...) for built-in methods or pass the "
-            "receiver explicitly to an ordinary callable field");
-      }
-
-      if (token.kind() IS TokenKind::SafeMethod) {
-         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
-            "safe colon method syntax has been removed; use receiver?.member(...) instead");
-      }
+      if (token.kind() IS TokenKind::Colon or token.kind() IS TokenKind::TernarySep) break;
 
       if (token.kind() IS TokenKind::LeftParen or token.kind() IS TokenKind::LeftBrace or
             token.kind() IS TokenKind::String) {
@@ -1520,7 +1536,8 @@ bool AstBuilder::is_choose_relational_pattern(size_t StartPos) const
 }
 
 //********************************************************************************************************************
-// Checks whether the current `??` token starts an extended ternary expression by scanning ahead for a top-level `:>`.
+// Checks whether the current `??` token starts an extended ternary expression by scanning ahead for a top-level
+// separator.
 
 bool AstBuilder::is_extended_ternary_ahead() const
 {
@@ -1551,7 +1568,7 @@ bool AstBuilder::is_extended_ternary_ahead() const
       }
       else if (paren_depth IS 0 and brace_depth IS 0 and bracket_depth IS 0) {
          if (ahead.span().line.lineNumber() != start_line.lineNumber()) return false;
-         if (kind IS TokenKind::TernarySep) return true;
+         if (kind IS TokenKind::Colon or kind IS TokenKind::TernarySep) return true;
          if (kind IS TokenKind::Question) return false;
          if (kind IS TokenKind::EndToken or
              kind IS TokenKind::EndOfFile or

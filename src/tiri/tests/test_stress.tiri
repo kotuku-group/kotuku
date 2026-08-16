@@ -118,7 +118,7 @@ end
    a, b, c, d = 10, 20, 30, 40
 
    -- Test ternary operator chains
-   --result1 = a > 5 ? b > 15 ? c > 25 ? d :> c :> b :> a
+   --result1 = a > 5 ? b > 15 ? c > 25 ? d : c : b : a
    --assert(result1 is 40, "Nested ternary failed")
 
    -- Test compound operators
