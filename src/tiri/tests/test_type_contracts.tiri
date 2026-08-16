@@ -788,7 +788,7 @@ end
 
    local value = 1
    local overloaded:any = setmetatable({}, {
-      __add = function(Receiver, Other, LhsDispatch:bool):str return 'wrong' end
+      __add = metamethod(Other, LhsDispatch:bool):str return 'wrong' end
    })
    expect_contract_failure(function() value += overloaded end, 'overloaded compound assignment')
    assert(value is 1, 'A rejected overloaded compound result must preserve the sticky local')
@@ -796,7 +796,7 @@ end
 
 @Test function VariantMutationInvalidatesStaticProof()
    local overloaded:any = setmetatable({}, {
-      __add = function(Receiver, Other, LhsDispatch:bool):str return 'wrong' end
+      __add = metamethod(Other, LhsDispatch:bool):str return 'wrong' end
    })
 
    local compound_source:any = 1

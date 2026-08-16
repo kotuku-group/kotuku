@@ -68,16 +68,16 @@ end
 
 function newVec(X, Y):table
    vec_mt = {
-      __add = function(Receiver, Other, LhsDispatch)
-         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+      __add = metamethod(Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(&&, Other, LhsDispatch)
          return newVec(source_left.x + source_right.x, source_left.y + source_right.y)
       end,
-      __sub = function(Receiver, Other, LhsDispatch)
-         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+      __sub = metamethod(Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(&&, Other, LhsDispatch)
          return newVec(source_left.x - source_right.x, source_left.y - source_right.y)
       end,
-      __mul = function(Receiver, Other, LhsDispatch)
-         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+      __mul = metamethod(Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(&&, Other, LhsDispatch)
          if type(source_right) is 'number' then
             return newVec(source_left.x * source_right, source_left.y * source_right)
          end
@@ -86,28 +86,28 @@ function newVec(X, Y):table
          end
          return newVec(source_left.x * source_right.x, source_left.y * source_right.y)
       end,
-      __div = function(Receiver, Other, LhsDispatch)
-         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+      __div = metamethod(Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(&&, Other, LhsDispatch)
          if type(source_right) is 'number' then
             return newVec(source_left.x / source_right, source_left.y / source_right)
          end
          return newVec(source_left.x / source_right.x, source_left.y / source_right.y)
       end,
-      __mod = function(Receiver, Other, LhsDispatch)
-         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+      __mod = metamethod(Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(&&, Other, LhsDispatch)
          if type(source_right) is 'number' then
             return newVec(source_left.x % source_right, source_left.y % source_right)
          end
          return newVec(source_left.x % source_right.x, source_left.y % source_right.y)
       end,
-      __pow = function(Receiver, Other, LhsDispatch)
-         local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+      __pow = metamethod(Other, LhsDispatch)
+         local source_left, source_right = source_arithmetic_operands(&&, Other, LhsDispatch)
          if type(source_right) is 'number' then
             return newVec(source_left.x ** source_right, source_left.y ** source_right)
          end
          return newVec(source_left.x ** source_right.x, source_left.y ** source_right.y)
       end,
-      __unm = function(A) return newVec(-A.x, -A.y) end
+      __unm = metamethod() return newVec(-&x, -&y) end
    }
    return setmetatable({ x = X, y = Y }, vec_mt)
 end
@@ -168,8 +168,8 @@ end
 end
 
 @Test function ArithmeticMetamethodsUseReceiverFirstDispatch()
-   local function probe(Receiver:table!, Other, LhsDispatch:bool):str
-      return f'{Receiver.name}:{Other.name ?? Other}:{LhsDispatch}'
+   local probe = metamethod(Other, LhsDispatch:bool):str
+      return f'{&name}:{Other.name ?? Other}:{LhsDispatch}'
    end
 
    local arithmetic_mt = {
@@ -195,15 +195,15 @@ end
 
    local left_priority = setmetatable({ name = 'left priority' }, { __add = probe })
    local right_priority = setmetatable({ name = 'right priority' }, {
-      __add = function(Receiver:table!, Other, LhsDispatch:bool):str return Receiver.name end
+      __add = metamethod(Other, LhsDispatch:bool):str return &name end
    })
    assert(left_priority + right_priority is 'left priority:right priority:true',
       'the left handler should win when the operands have different metatables')
 
    local variadic_rhs = setmetatable({ name = 'variadic right' }, {
-      __add = function(Receiver:table!, ...):str
+      __add = metamethod(...):str
          local other, lhs_dispatch = ...
-         return f'{Receiver.name}:{other.name}:{lhs_dispatch}'
+         return f'{&name}:{other.name}:{lhs_dispatch}'
       end
    })
    assert({ name = 'variadic left' } + variadic_rhs is 'variadic right:variadic left:false',
@@ -253,12 +253,12 @@ end
 
 cmp_mt = {
    __eq = function(A, B) return A.val is B.val end,
-   __lt = function(Receiver, Other, LhsDispatch)
-      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+   __lt = metamethod(Other, LhsDispatch)
+      local source_left, source_right = source_binary_operands(&&, Other, LhsDispatch)
       return source_left.val < source_right.val
    end,
-   __le = function(Receiver, Other, LhsDispatch)
-      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+   __le = metamethod(Other, LhsDispatch)
+      local source_left, source_right = source_binary_operands(&&, Other, LhsDispatch)
       return source_left.val <= source_right.val
    end
 }
@@ -307,9 +307,9 @@ end
 end
 
 @Test function ProviderAmbiguousBinaryMetamethodsUseReceiverFirstDispatch()
-   local function concat_probe(Receiver:table!, Other, LhsDispatch:bool):str
-      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
-      return f'{Receiver.name}:{LhsDispatch}:{source_left.name ?? source_left}{source_right.name ?? source_right}'
+   local concat_probe = metamethod(Other, LhsDispatch:bool):str
+      local source_left, source_right = source_binary_operands(&&, Other, LhsDispatch)
+      return f'{&name}:{LhsDispatch}:{source_left.name ?? source_left}{source_right.name ?? source_right}'
    end
 
    local concat_mt = { __concat = concat_probe }
@@ -332,15 +332,15 @@ end
       if type(Value) is 'table' then return Value.value end
       return Value
    end
-   local function ordering_probe(Receiver:table!, Other, LhsDispatch:bool):bool
-      observed = f'{Receiver.name}:{LhsDispatch}'
-      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+   local ordering_probe = metamethod(Other, LhsDispatch:bool):bool
+      observed = f'{&name}:{LhsDispatch}'
+      local source_left, source_right = source_binary_operands(&&, Other, LhsDispatch)
       return operand_value(source_left) < operand_value(source_right)
    end
 
-   local function ordering_le_probe(Receiver:table!, Other, LhsDispatch:bool):bool
-      observed = f'{Receiver.name}:{LhsDispatch}'
-      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+   local ordering_le_probe = metamethod(Other, LhsDispatch:bool):bool
+      observed = f'{&name}:{LhsDispatch}'
+      local source_left, source_right = source_binary_operands(&&, Other, LhsDispatch)
       return operand_value(source_left) <= operand_value(source_right)
    end
 
@@ -498,8 +498,8 @@ end
 
 @Test function MetaConcat()
    mt = {
-      __concat = function(Receiver, Other, LhsDispatch):table
-         local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+      __concat = metamethod(Other, LhsDispatch):table
+         local source_left, source_right = source_binary_operands(&&, Other, LhsDispatch)
          if type(source_left) is 'table' and type(source_right) is 'table' then
             return setmetatable({ val = source_left.val .. source_right.val }, getmetatable(source_left))
          end
@@ -517,8 +517,8 @@ end
 
 @Test function MetaConcatWithString()
    mt = {
-      __concat = function(Receiver, Other, LhsDispatch)
-         local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+      __concat = metamethod(Other, LhsDispatch)
+         local source_left, source_right = source_binary_operands(&&, Other, LhsDispatch)
          if type(source_left) is 'table' then
             return source_left.val .. source_right
          end
@@ -859,15 +859,15 @@ function newWrapped(Val)
    return setmetatable({ val = Val }, wrapped_mt)
 end
 
-wrapped_mt.__add      = function(Receiver, Other, LhsDispatch:bool):table
-   local source_left, source_right = source_arithmetic_operands(Receiver, Other, LhsDispatch)
+wrapped_mt.__add      = metamethod(Other, LhsDispatch:bool):table
+   local source_left, source_right = source_arithmetic_operands(&&, Other, LhsDispatch)
    return newWrapped(source_left.val + source_right.val)
 end
-wrapped_mt.__tostring = function(Self):str return 'Wrapped(' .. Self.val .. ')' end
+wrapped_mt.__tostring = metamethod():str return 'Wrapped(' .. &val .. ')' end
 wrapped_mt.__eq       = function(A, B):bool return A.val is B.val end
-wrapped_mt.__len      = function(Self):num return Self.val end
-wrapped_mt.__call     = function(Self):num return Self.val end
-wrapped_mt.__unm      = function(Self):table return newWrapped(-Self.val) end
+wrapped_mt.__len      = metamethod():num return &val end
+wrapped_mt.__call     = metamethod():num return &val end
+wrapped_mt.__unm      = metamethod():table return newWrapped(-&val) end
 
 @Test function CombinedMetamethods()
 
