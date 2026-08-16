@@ -196,6 +196,10 @@ glKeywords = {
 
    -- Functions
    ['function'] = { comment = 'Defines a function.' },
+   ['metamethod'] = { comment = 'Creates an anonymous context-first callable that treats its first runtime argument ' ..
+      'as the current table context. The visible parameter list starts at the second argument; use `&field` for ' ..
+      'fields and `&&` for the table itself. Intended for receiver-stable handlers such as `__index`, `__tostring` ' ..
+      'and `__eq`.' },
    ['return'] = { comment = 'Returns values from a function.' },
 
    -- Variables
