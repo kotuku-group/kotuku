@@ -61,6 +61,11 @@ function source_arithmetic_operands(Receiver, Other, LhsDispatch):<any, any>
    return Other, Receiver
 end
 
+function source_binary_operands(Receiver, Other, LhsDispatch):<any, any>
+   if LhsDispatch then return Receiver, Other end
+   return Other, Receiver
+end
+
 function newVec(X, Y):table
    vec_mt = {
       __add = function(Receiver, Other, LhsDispatch)
@@ -248,8 +253,14 @@ end
 
 cmp_mt = {
    __eq = function(A, B) return A.val is B.val end,
-   __lt = function(A, B) return A.val < B.val end,
-   __le = function(A, B) return A.val <= B.val end
+   __lt = function(Receiver, Other, LhsDispatch)
+      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+      return source_left.val < source_right.val
+   end,
+   __le = function(Receiver, Other, LhsDispatch)
+      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+      return source_left.val <= source_right.val
+   end
 }
 
 function newComparable(Val)
@@ -293,6 +304,65 @@ end
    assert(a >= b, ">= should work via __le")
    c = newComparable(5)
    assert(a >= c, ">= with equal values should work via __le")
+end
+
+@Test function ProviderAmbiguousBinaryMetamethodsUseReceiverFirstDispatch()
+   local function concat_probe(Receiver:table!, Other, LhsDispatch:bool):str
+      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+      return f'{Receiver.name}:{LhsDispatch}:{source_left.name ?? source_left}{source_right.name ?? source_right}'
+   end
+
+   local concat_mt = { __concat = concat_probe }
+   local concat_left = setmetatable({ name = 'concat left' }, concat_mt)
+   local concat_right = setmetatable({ name = 'concat right' }, concat_mt)
+   assert(concat_left .. concat_right is 'concat left:true:concat leftconcat right',
+      '__concat should pass the left provider first')
+   assert({ name = 'concat source left' } .. concat_right is 'concat right:false:concat source leftconcat right',
+      '__concat should pass a right provider first')
+   assert(concat_left .. concat_right .. '!' is 'concat left:true:concat leftconcat right:true:concat right!',
+      'chained __concat should preserve the continuation result')
+
+   local concatenated:any = { name = 'concat source left' }
+   concatenated ..= concat_right
+   assert(concatenated is 'concat right:false:concat source leftconcat right',
+      '..= should use the receiver-first __concat convention')
+
+   local observed = ''
+   local function operand_value(Value):num
+      if type(Value) is 'table' then return Value.value end
+      return Value
+   end
+   local function ordering_probe(Receiver:table!, Other, LhsDispatch:bool):bool
+      observed = f'{Receiver.name}:{LhsDispatch}'
+      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+      return operand_value(source_left) < operand_value(source_right)
+   end
+
+   local function ordering_le_probe(Receiver:table!, Other, LhsDispatch:bool):bool
+      observed = f'{Receiver.name}:{LhsDispatch}'
+      local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+      return operand_value(source_left) <= operand_value(source_right)
+   end
+
+   local ordering_mt = { __lt = ordering_probe, __le = ordering_le_probe }
+   local order_left = setmetatable({ name = 'order left', value = 2 }, ordering_mt)
+   local order_right = setmetatable({ name = 'order right', value = 3 }, ordering_mt)
+   assert(order_left < order_right and observed is 'order left:true',
+      '__lt should retain left-provider priority')
+   assert(2 < order_right and observed is 'order right:false',
+      '__lt should identify a right provider')
+   assert(order_right > 2 and observed is 'order right:false',
+      '> should report the swapped effective pair')
+   assert(order_right >= 3 and observed is 'order right:false',
+      '>= should report the swapped effective pair')
+
+   local fallback_mt = { __lt = ordering_probe }
+   local fallback_left = setmetatable({ name = 'fallback left', value = 1 }, fallback_mt)
+   local fallback_right = setmetatable({ name = 'fallback right', value = 2 }, fallback_mt)
+   assert(fallback_left <= fallback_right and observed is 'fallback right:true',
+      '__le fallback should describe its reversed effective pair')
+   assert(fallback_left <= 2 and observed is 'fallback left:false',
+      '__le fallback should identify a provider on the effective right side')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -428,14 +498,15 @@ end
 
 @Test function MetaConcat()
    mt = {
-      __concat = function(A, B):table
-         if type(A) is 'table' and type(B) is 'table' then
-            return setmetatable({ val = A.val .. B.val }, getmetatable(A))
+      __concat = function(Receiver, Other, LhsDispatch):table
+         local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+         if type(source_left) is 'table' and type(source_right) is 'table' then
+            return setmetatable({ val = source_left.val .. source_right.val }, getmetatable(source_left))
          end
-         if type(A) is 'table' then
-            return setmetatable({ val = A.val .. B }, getmetatable(A))
+         if type(source_left) is 'table' then
+            return setmetatable({ val = source_left.val .. source_right }, getmetatable(source_left))
          end
-         return setmetatable({ val = A .. B.val }, getmetatable(B))
+         return setmetatable({ val = source_left .. source_right.val }, getmetatable(source_right))
       end
    }
    a = setmetatable({ val = 'hello' }, mt)
@@ -446,11 +517,12 @@ end
 
 @Test function MetaConcatWithString()
    mt = {
-      __concat = function(A, B)
-         if type(A) is 'table' then
-            return A.val .. B
+      __concat = function(Receiver, Other, LhsDispatch)
+         local source_left, source_right = source_binary_operands(Receiver, Other, LhsDispatch)
+         if type(source_left) is 'table' then
+            return source_left.val .. source_right
          end
-         return A .. B.val
+         return source_left .. source_right.val
       end
    }
    local obj = setmetatable({ val = 'data' }, mt)

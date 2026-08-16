@@ -2579,8 +2579,9 @@ static GCstr * array_concat_value(lua_State *L, cTValue *Value)
 
 static int array_concat_meta(lua_State *L)
 {
-   cTValue *left = L->base;
-   cTValue *right = L->base + 1;
+   const bool lhs_dispatch = boolV(L->base + 2);
+   cTValue *left = lhs_dispatch ? L->base : L->base + 1;
+   cTValue *right = lhs_dispatch ? L->base + 1 : L->base;
 
    GCstr *left_str = array_concat_value(L, left);
    if (not left_str) lj_err_optype(L, left, ErrMsg::OPCAT);

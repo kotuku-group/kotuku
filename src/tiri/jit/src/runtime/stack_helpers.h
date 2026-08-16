@@ -393,8 +393,10 @@ namespace MetaCall {
 
    inline int invokeConcat(lua_State* L, TValue* top) noexcept {
       int consumed = int(L->top - (top - 2 * LJ_FR2));
-      L->top = top + 2;
+      L->top = top + 3;
       lj_vm_call(L, top, 1 + 1);
+      // lj_vm_call() restores top to the metamethod base irrespective of its argument count.  Keep the
+      // concatenation result in the same replacement slot as the two-argument layout.
       L->top -= 1 + LJ_FR2;
       copyTV(L, L->top - 1, L->top + LJ_FR2);
       return consumed;

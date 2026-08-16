@@ -1855,9 +1855,9 @@ nocheck:
 }
 
 //********************************************************************************************************************
-// Record call to arithmetic metamethod.
+// Record call to arithmetic or concatenation metamethod.
 
-static TRef rec_mm_arith(jit_State *J, RecordIndex* ix, MMS mm)
+static TRef rec_mm_binop(jit_State *J, RecordIndex* ix, MMS mm)
 {
    // Preserve the source operand pair before metatable lookup repurposes RecordIndex scratch fields.
    TRef left = ix->tab;
@@ -1866,7 +1866,7 @@ static TRef rec_mm_arith(jit_State *J, RecordIndex* ix, MMS mm)
    copyTV(J->L, &leftv, &ix->tabv);
    copyTV(J->L, &rightv, &ix->keyv);
 
-   bool arithmetic = mm >= MM_add and mm <= MM_pow;
+   bool receiver_first = (mm >= MM_add and mm <= MM_pow) or mm IS MM_concat;
    BCREG func = rec_mm_prep(J, mm IS MM_concat ? lj_cont_cat : lj_cont_ra);
    TRef* base = J->base + func;
    TValue* basev = J->L->base + func;
@@ -1883,7 +1883,7 @@ static TRef rec_mm_arith(jit_State *J, RecordIndex* ix, MMS mm)
          ix->tab = right;
          copyTV(J->L, &ix->tabv, &rightv);
          if (lj_record_mm_lookup(J, ix, mm)) {  //  Lookup mm on 2nd operand.
-            if (arithmetic) {
+            if (receiver_first) {
                receiver = right;
                other = left;
                copyTV(J->L, &receiverv, &rightv);
@@ -1903,7 +1903,7 @@ ok:
    base[FRC::HEADER_SIZE + 1] = other;
    copyTV(J->L, basev + FRC::HEADER_SIZE, &receiverv);
    copyTV(J->L, basev + FRC::HEADER_SIZE + 1, &otherv);
-   if (arithmetic) {
+   if (receiver_first) {
       base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
       setboolV(basev + FRC::HEADER_SIZE + 2, lhs_dispatch);
       lj_record_call(J, func, 3);
@@ -1972,6 +1972,27 @@ static void rec_mm_callcomp(jit_State *J, RecordIndex* ix, int op)
 }
 
 //********************************************************************************************************************
+// Call a receiver-first ordered comparison metamethod.
+
+static void rec_mm_callcomp3(jit_State *J, RecordIndex* ix, int op, TRef receiver, TValue *ReceiverValue,
+   TRef other, TValue *OtherValue, bool lhs_dispatch)
+{
+   BCREG func = rec_mm_prep(J, (op & 1) ? lj_cont_condf : lj_cont_condt);
+   TRef* base = J->base + func;
+   TValue* tv = J->L->base + func;
+   base[0] = ix->mobj;
+   base[1] = 0;
+   base[FRC::HEADER_SIZE] = receiver;
+   base[FRC::HEADER_SIZE + 1] = other;
+   base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+   copyTV(J->L, tv, &ix->mobjv);
+   copyTV(J->L, tv + FRC::HEADER_SIZE, ReceiverValue);
+   copyTV(J->L, tv + FRC::HEADER_SIZE + 1, OtherValue);
+   setboolV(tv + FRC::HEADER_SIZE + 2, lhs_dispatch);
+   lj_record_call(J, func, 3);
+}
+
+//********************************************************************************************************************
 // Record call to equality comparison metamethod.
 
 static void rec_mm_equal(jit_State *J, RecordIndex* ix, int op)
@@ -2017,13 +2038,24 @@ static void rec_mm_comp(jit_State *J, RecordIndex* ix, int op)
    copyTV(J->L, &ix->tabv, &ix->valv);
    while (true) {
       MMS mm = (op & 2) ? MM_le : MM_lt;  //  Try __le + __lt or only __lt.
+      TRef receiver = ix->val;
+      TRef other = ix->key;
+      TValue receiverv, otherv;
+      copyTV(J->L, &receiverv, &ix->valv);
+      copyTV(J->L, &otherv, &ix->keyv);
+      bool lhs_dispatch = true;
       if (not lj_record_mm_lookup(J, ix, mm)) {  // Lookup mm on 1st operand.
          ix->tab = ix->key;
          copyTV(J->L, &ix->tabv, &ix->keyv);
          if (not lj_record_mm_lookup(J, ix, mm))  //  Lookup mm on 2nd operand.
             goto nomatch;
+         receiver = ix->key;
+         other = ix->val;
+         copyTV(J->L, &receiverv, &ix->keyv);
+         copyTV(J->L, &otherv, &ix->valv);
+         lhs_dispatch = false;
       }
-      rec_mm_callcomp(J, ix, op);
+      rec_mm_callcomp3(J, ix, op, receiver, &receiverv, other, &otherv, lhs_dispatch);
       return;
 
    nomatch:
@@ -2884,7 +2916,7 @@ static TRef rec_cat(jit_State *J, BCREG baseslot, BCREG topslot)
    ix.tab = top[-1];
    ix.key = top[0];
    memcpy(savetv, &J->L->base[topslot - 1], sizeof(savetv));  //  Save slots.
-   rec_mm_arith(J, &ix, MM_concat);  //  Call __concat metamethod.
+   rec_mm_binop(J, &ix, MM_concat);  //  Call __concat metamethod.
    memcpy(&J->L->base[topslot - 1], savetv, sizeof(savetv));  //  Restore slots.
    return 0;  //  No result yet.
 }
@@ -3182,7 +3214,7 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
          if (tref_isnumber(rc)) return lj_opt_narrow_unm(J, rc, rcv);
          ix->tab = rc;
          copyTV(J->L, &ix->tabv, rcv);
-         return rec_mm_arith(J, ix, MM_unm);
+         return rec_mm_binop(J, ix, MM_unm);
 
       case BC_ADDNV: case BC_SUBNV: case BC_MULNV: case BC_DIVNV: case BC_MODNV:
          // Swap rb/rc and rbv/rcv. rav is temp.
@@ -3193,7 +3225,7 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
          if (op IS BC_MODNV) {
             if (tref_isnumber(rb) and tref_isnumber(rc))
                return lj_opt_narrow_mod(J, rb, rc, rbv, rcv);
-            return rec_mm_arith(J, ix, MM_mod);
+            return rec_mm_binop(J, ix, MM_mod);
          }
          [[fallthrough]];
 
@@ -3202,18 +3234,18 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
          MMS mm = bcmode_mm(op);
          if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_arith(J, rb, rc, rbv, rcv, (IROp)((int)mm - (int)MM_add + (int)IR_ADD));
-         return rec_mm_arith(J, ix, mm);
+         return rec_mm_binop(J, ix, mm);
       }
 
       case BC_MODVN: case BC_MODVV:
          if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_mod(J, rb, rc, rbv, rcv);
-         return rec_mm_arith(J, ix, MM_mod);
+         return rec_mm_binop(J, ix, MM_mod);
 
       case BC_POW:
          if (tref_isnumber(rb) and tref_isnumber(rc))
             return lj_opt_narrow_pow(J, rb, rc, rbv, rcv);
-         return rec_mm_arith(J, ix, MM_pow);
+         return rec_mm_binop(J, ix, MM_pow);
 
       default:
          return 0;
@@ -4679,13 +4711,22 @@ void lj_record_ins(jit_State *J)
       // Block activations are installed physically. Materialise any virtual call receivers first so current-context
       // lookup observes the block before the enclosing receiver, matching interpreter stack order.
       rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
-      lj_ir_call(J, IRCALL_lj_context_begin_block_jit, ra, lj_ir_kint(J, int32_t(bc_d(*pc))),
-         lj_ir_kint(J, int32_t(bc_a(*pc)) + 1));
+      {
+         IRBuilder ir(J);
+         TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+         lj_ir_call(J, IRCALL_lj_context_begin_block_jit, ra, owner_base, lj_ir_kint(J, int32_t(bc_d(*pc))),
+            lj_ir_kint(J, int32_t(bc_a(*pc)) + 1));
+      }
       J->needsnap = 1;
       break;
 
    case BC_CTXEND:
-      lj_ir_call(J, IRCALL_lj_context_end_block_jit, lj_ir_kint(J, int32_t(bc_d(*pc))));
+      {
+         IRBuilder ir(J);
+         TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+         lj_ir_call(J, IRCALL_lj_context_end_block_jit, owner_base,
+            lj_ir_kint(J, int32_t(bc_d(*pc))));
+      }
       J->needsnap = 1;
       break;
 

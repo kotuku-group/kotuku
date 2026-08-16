@@ -377,6 +377,7 @@ end
 
    result = a .. " " .. b
    assert(result is "Hello World", "Concatenation should produce 'Hello World', got '" .. result .. "'")
+   assert("Start " .. b is "Start World", "A right-provider thunk concat should preserve source order")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -398,6 +399,8 @@ end
    -- Less than or equal
    assert(a <= b, "5 should be <= 10")
    assert(a <= c, "5 should be <= 5")
+   assert(5 < b, "5 should be < a right-provider thunk")
+   assert(5 <= b, "5 should be <= a right-provider thunk")
 
    -- Equality (thunk vs thunk - both must be thunks for __eq to trigger)
    assert(a is c, "Two thunks returning 5 should be equal") -- Note: This only works if both are thunks

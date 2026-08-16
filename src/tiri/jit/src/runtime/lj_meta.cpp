@@ -202,10 +202,10 @@ TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *mo, cTValue *a, cTValue
    return top;  //  Return new base.
 }
 
-// Setup a receiver-first binary metamethod call.  This is intentionally separate from mmcall(): concat, ordering
-// and the receiver-stable binary metamethods retain their two-argument ABI until they are converted explicitly.
+// Setup a receiver-first binary metamethod call.  This remains separate from mmcall() so receiver-stable binary
+// metamethods retain their two-argument ABI.
 
-static TValue * mmcall_arith(lua_State *L, ASMFunction cont, cTValue *Method, cTValue *Receiver,
+static TValue * mmcall_binop3(lua_State *L, ASMFunction cont, cTValue *Method, cTValue *Receiver,
    cTValue *Other, bool LhsDispatch)
 {
    //           |-- framesize -> top       top+1       top+2 top+3      top+4      top+5
@@ -224,18 +224,6 @@ static TValue * mmcall_arith(lua_State *L, ASMFunction cont, cTValue *Method, cT
    copyTV(L, top++, Other);
    setboolV(top, LhsDispatch);
    return top - 2;  //  Return new base.
-}
-
-// A context-first handler establishes its first actual table argument as the current context.  Binary metamethods
-// may find their callable on the right operand while preserving ordinary left/right argument order, which would make
-// that context silently wrong.  Reject that shape before a Lua frame is created.
-
-static void reject_context_first_binary_mismatch(lua_State *L, cTValue *Method, cTValue *Provider,
-   cTValue *FirstArgument, CSTRING Name)
-{
-   if (not tvisfunc(Method) or not func_context_first_argument(funcV(Method))) return;
-   if (tvistab(Provider) and tvistab(FirstArgument) and tabV(Provider) IS tabV(FirstArgument)) return;
-   lj_err_msgv(L, ErrMsg::CTXMMBIN, Name);
 }
 
 //********************************************************************************************************************
@@ -405,7 +393,7 @@ TValue * lj_meta_arith(lua_State *L, TValue *ra, cTValue *rb, cTValue *rc, BCREG
          }
       }
       if (mm IS MM_unm) return mmcall(L, lj_cont_ra, mo, rb, rc);
-      return mmcall_arith(L, lj_cont_ra, mo, receiver, other, lhs_dispatch);
+      return mmcall_binop3(L, lj_cont_ra, mo, receiver, other, lhs_dispatch);
    }
 }
 
@@ -431,10 +419,14 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
 
       if (not (tvisstr(top) or tvisnumber(top)) or !(tvisstr(top - 1) or tvisnumber(top - 1))) {
          cTValue *mo = lj_meta_lookup(L, top - 1, MM_concat);
-         cTValue *provider = top - 1;
+         cTValue *receiver = top - 1;
+         cTValue *other = top;
+         bool lhs_dispatch = true;
          if (tvisnil(mo)) {
             mo = lj_meta_lookup(L, top, MM_concat);
-            provider = top;
+            receiver = top;
+            other = top - 1;
+            lhs_dispatch = false;
             if (tvisnil(mo)) {
                if (tvisstr(top - 1) or tvisnumber(top - 1)) top++;
                lj_err_optype(L, top - 1, ErrMsg::OPCAT);
@@ -442,25 +434,25 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
             }
          }
 
-         reject_context_first_binary_mismatch(L, mo, provider, top - 1, "concat");
-
          // One of the top two elements is not a string, call __cat metamethod:
          //
          // before:    [...][CAT stack .........................]
          //                                 top-1     top         top+1 top+2
          // pick two:  [...][CAT stack ...] [o1]      [o2]
-         // setup mm:  [...][CAT stack ...] [cont|?]  [mo|tmtype] [o1]  [o2]
-         // in asm:    [...][CAT stack ...] [cont|PC] [mo|delta]  [o1]  [o2]
-         //            ^-- func base                              ^-- mm base
+         // setup mm:  [...][CAT stack ...] [cont|?]  [mo|tmtype] [receiver] [other] [lhs dispatch]
+         // in asm:    [...][CAT stack ...] [cont|PC] [mo|delta]  [receiver] [other] [lhs dispatch]
+         //            ^-- func base                                ^-- mm base
          // after mm:  [...][CAT stack ...] <--push-- [result]
          // next step: [...][CAT stack .............]
 
-         copyTV(L, top + 2 * LJ_FR2 + 2, top);  //  Carefully ordered stack copies!
-         copyTV(L, top + 2 * LJ_FR2 + 1, top - 1);
+         copyTV(L, top + 2 * LJ_FR2 + 3, other);  //  Carefully ordered stack copies!
+         copyTV(L, top + 2 * LJ_FR2 + 2, other);
+         copyTV(L, top + 2 * LJ_FR2 + 1, receiver);
          copyTV(L, top + LJ_FR2, mo);
          setcont(top - 1, lj_cont_cat);
          setnilV(top);
          setnilV(top + 2);
+         setboolV(top + 2 * LJ_FR2 + 3, lhs_dispatch);
          top += 2;
          return top + 1;  //  Trigger metamethod call.
       }
@@ -671,10 +663,14 @@ TValue * lj_meta_comp(lua_State *L, cTValue *o1, cTValue *o2, int op)
          ASMFunction cont = (op & 1) ? lj_cont_condf : lj_cont_condt;
          MMS mm = (op & 2) ? MM_le : MM_lt;
          cTValue *mo = lj_meta_lookup(L, o1, mm);
-         cTValue *provider = o1;
+         cTValue *receiver = o1;
+         cTValue *other = o2;
+         bool lhs_dispatch = true;
          if (tvisnil(mo)) {
             mo = lj_meta_lookup(L, o2, mm);
-            provider = o2;
+            receiver = o2;
+            other = o1;
+            lhs_dispatch = false;
          }
          if (tvisnil(mo)) {
             if (op & 2) {  // MM_le not found: retry with MM_lt.
@@ -685,8 +681,7 @@ TValue * lj_meta_comp(lua_State *L, cTValue *o1, cTValue *o2, int op)
             lj_err_comp(L, o1, o2);
             return nullptr;
          }
-         reject_context_first_binary_mismatch(L, mo, provider, o1, strdata(mmname_str(G(L), mm)) + 2);
-         return mmcall(L, cont, mo, o1, o2);
+         return mmcall_binop3(L, cont, mo, receiver, other, lhs_dispatch);
       }
    }
 }

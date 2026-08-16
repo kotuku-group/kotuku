@@ -112,15 +112,17 @@ end
       'Varargs should begin after the hidden context argument')
 end
 
-@Test function BinaryConcatAndComparisonRejectRightProviders()
+@Test function BinaryConcatAndComparisonUseReceiverFirstDispatch()
    local concat_mt = {
-      __concat = metamethod(Other):str
-         return &value .. Other
+      __concat = metamethod(Other, LhsDispatch:bool):str
+         if LhsDispatch then return &value .. Other end
+         return Other .. &value
       end
    }
    local ordered_mt = {
-      __lt = metamethod(Other:table!):bool
-         return &value < Other.value
+      __lt = metamethod(Other, LhsDispatch:bool):bool
+         if LhsDispatch then return &value < Other.value end
+         return Other < &value
       end
    }
    local concat_value = setmetatable({ value = 'left' }, concat_mt)
@@ -130,25 +132,8 @@ end
    assert(concat_value .. '!' is 'left!', 'A left-provider context-first concat handler should enter the left table')
    assert(first < second, 'A left-provider context-first ordering handler should enter the left table')
 
-   local concat_failed = false
-   try
-      local result = '!' .. concat_value
-   except e
-      concat_failed = true
-      assert(e.message.find('right operand') != nil,
-         'A right-provider context-first concat handler should report its ambiguity')
-   end
-   assert(concat_failed, 'A right-provider context-first concat handler must fail')
-
-   local comparison_failed = false
-   try
-      local result = 0 < first
-   except e
-      comparison_failed = true
-      assert(e.message.find('right operand') != nil,
-         'A right-provider context-first ordering handler should report its ambiguity')
-   end
-   assert(comparison_failed, 'A right-provider context-first ordering handler must fail')
+   assert('!' .. concat_value is '!left', 'A right-provider context-first concat handler should enter its provider')
+   assert(0 < first, 'A right-provider context-first ordering handler should enter its provider')
 end
 
 @Test function MetamethodReturnsAndErrorsRestoreTheCallerContext()

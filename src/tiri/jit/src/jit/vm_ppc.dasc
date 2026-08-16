@@ -1255,7 +1255,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  // Returns 0/1 or TValue * (metamethod).
   |3:
   |  cmplwi CRET1, 1
-  |  bgt ->vmeta_binop
+  |  bgt ->vmeta_binop3
   |  subfic CRET1, CRET1, 0
   |4:
   |  ld INS, 0(PC)                        // Fetch full 64-bit instruction
@@ -4425,7 +4425,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // Returns NULL (finished) or TValue * (metamethod).
     |  cmplwi CRET1, 0
     |   lp BASE, L->base
-    |  bne ->vmeta_binop
+    |  bne ->vmeta_binop3
     |  ins_next1
     |.if FPU
     |  lfdx f0, BASE, SAVE0		// Copy result from RB to RA.

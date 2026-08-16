@@ -1078,7 +1078,7 @@ static void build_subroutines(BuildCtx *ctx)
   |3:
   |  mov BASE, L:RB->base
   |  cmp RC, 1
-  |  ja ->vmeta_binop
+  |  ja ->vmeta_binop3
   |4:
   |  lea PC, [PC+8]               // Skip past 64-bit JMP instruction
   |  jb >6
@@ -3662,7 +3662,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // NULL (finished) or TValue * (metamethod) returned in eax (RC).
     |  mov BASE, L:RB->base
     |  test RC, RC
-    |  jnz ->vmeta_binop
+    |  jnz ->vmeta_binop3
     |  movzx RBd, PC_RB       // Copy result to Stk[RA] from Stk[RB].
     |  movzx RAd, PC_RA
     |  mov RC, [BASE+RB*8]

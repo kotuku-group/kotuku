@@ -865,7 +865,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  // Returns 0/1 or TValue * (metamethod).
   |3:
   |  cmp CRET1, #1
-  |  bhi ->vmeta_binop
+  |  bhi ->vmeta_binop3
   |4:
   |   ldrh RBw, [PC, # OFS_RD]
   |    add PC, PC, #8			// Skip past JMP instruction (64-bit BCIns)
@@ -2989,7 +2989,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // Returns NULL (finished) or TValue * (metamethod).
     |  ldrb RBw, [PC, #-8+OFS_RB]
     |   ldr BASE, L->base
-    |   cbnz CRET1, ->vmeta_binop
+    |   cbnz CRET1, ->vmeta_binop3
     |  ldr TMP0, [BASE, RB, lsl #3]
     |  str TMP0, [BASE, RA, lsl #3]	// Copy result to RA.
     |  ins_next

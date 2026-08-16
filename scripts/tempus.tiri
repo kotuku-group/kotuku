@@ -1442,7 +1442,8 @@ end
 @input Second instant
 @result True when first is earlier
 ]])
-tempus.mtInstant.__lt = function(A:table!, B:table!):bool
+tempus.mtInstant.__lt = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    a = tempus._fields(A, 'Instant')
    b = tempus._fields(B, 'Instant')
    return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano) < 0
@@ -1454,7 +1455,8 @@ end
 @input Second instant
 @result True when first is not later
 ]])
-tempus.mtInstant.__le = function(A:table!, B:table!):bool
+tempus.mtInstant.__le = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    a = tempus._fields(A, 'Instant')
    b = tempus._fields(B, 'Instant')
    return compare_pair(a.epoch_second, a.nano, b.epoch_second, b.nano) <= 0
@@ -1588,7 +1590,8 @@ end
 @input Second duration
 @result True when first is shorter
 ]])
-tempus.mtDuration.__lt = function(A:table!, Other:table!):bool
+tempus.mtDuration.__lt = function(A:table!, Other:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, Other = Other, A end
    a = tempus._fields(A, 'Duration')
    b = tempus._fields(Other, 'Duration')
    return compare_pair(a.seconds, a.nano, b.seconds, b.nano) < 0
@@ -1600,7 +1603,8 @@ end
 @input Second duration
 @result True when first is not longer
 ]])
-tempus.mtDuration.__le = function(A:table!, Other:table!):bool
+tempus.mtDuration.__le = function(A:table!, Other:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, Other = Other, A end
    a = tempus._fields(A, 'Duration')
    b = tempus._fields(Other, 'Duration')
    return compare_pair(a.seconds, a.nano, b.seconds, b.nano) <= 0
@@ -1692,7 +1696,8 @@ end
 @input Second offset
 @result True when first is smaller
 ]])
-tempus.mtOffset.__lt = function(A:table!, Other:table!):bool
+tempus.mtOffset.__lt = function(A:table!, Other:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, Other = Other, A end
    return tempus._fields(A, 'Offset').seconds < tempus._fields(Other, 'Offset').seconds
 end
 
@@ -1702,7 +1707,8 @@ end
 @input Second offset
 @result True when first is not larger
 ]])
-tempus.mtOffset.__le = function(A:table!, Other:table!):bool
+tempus.mtOffset.__le = function(A:table!, Other:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, Other = Other, A end
    return tempus._fields(A, 'Offset').seconds <= tempus._fields(Other, 'Offset').seconds
 end
 
@@ -1853,8 +1859,11 @@ end
 @input Second date
 @result True when first is earlier
 ]])
-tempus.mtLocalDate.__lt = metamethod(Other:table!):bool
-   return compare_date_fields(tempus._fields(&&, 'LocalDate'), tempus._fields(Other, 'LocalDate')) < 0
+tempus.mtLocalDate.__lt = metamethod(Other:table!, LhsDispatch:bool):bool
+   if LhsDispatch then
+      return compare_date_fields(tempus._fields(&&, 'LocalDate'), tempus._fields(Other, 'LocalDate')) < 0
+   end
+   return compare_date_fields(tempus._fields(Other, 'LocalDate'), tempus._fields(&&, 'LocalDate')) < 0
 end
 
 @Doc(text=[[
@@ -1863,7 +1872,8 @@ end
 @input Second date
 @result True when first is not later
 ]])
-tempus.mtLocalDate.__le = function(A:table!, B:table!):bool
+tempus.mtLocalDate.__le = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return compare_date_fields(tempus._fields(A, 'LocalDate'), tempus._fields(B, 'LocalDate')) <= 0
 end
 
@@ -1939,7 +1949,8 @@ end
 @input Second time
 @result True when first is earlier
 ]])
-tempus.mtLocalTime.__lt = function(A:table!, B:table!):bool
+tempus.mtLocalTime.__lt = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return compare_time_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'LocalTime')) < 0
 end
 
@@ -1949,7 +1960,8 @@ end
 @input Second time
 @result True when first is not later
 ]])
-tempus.mtLocalTime.__le = function(A:table!, B:table!):bool
+tempus.mtLocalTime.__le = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return compare_time_fields(tempus._fields(A, 'LocalTime'), tempus._fields(B, 'LocalTime')) <= 0
 end
 
@@ -2140,7 +2152,8 @@ end
 @input Second local date-time
 @result True when first is earlier
 ]])
-tempus.mtLocalDateTime.__lt = function(A:table!, B:table!):bool
+tempus.mtLocalDateTime.__lt = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    a = tempus._fields(A, 'LocalDateTime')
    b = tempus._fields(B, 'LocalDateTime')
    date_compare = compare_date_fields(tempus._fields(a.date, 'LocalDate'),
@@ -2155,7 +2168,8 @@ end
 @input Second local date-time
 @result True when first is not later
 ]])
-tempus.mtLocalDateTime.__le = function(A:table!, B:table!):bool
+tempus.mtLocalDateTime.__le = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return A < B or A is B
 end
 
@@ -2259,7 +2273,8 @@ end
 @input Second offset date-time
 @result True when first is earlier
 ]])
-tempus.mtOffsetDateTime.__lt = function(A:table!, B:table!):bool
+tempus.mtOffsetDateTime.__lt = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return offset_date_time_instant(A) < offset_date_time_instant(B)
 end
 
@@ -2269,7 +2284,8 @@ end
 @input Second offset date-time
 @result True when first is not later
 ]])
-tempus.mtOffsetDateTime.__le = function(A:table!, B:table!):bool
+tempus.mtOffsetDateTime.__le = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return offset_date_time_instant(A) <= offset_date_time_instant(B)
 end
 
@@ -2452,7 +2468,8 @@ end
 @input Second zoned date-time
 @result True when first is earlier
 ]])
-tempus.mtZonedDateTime.__lt = function(A:table!, B:table!):bool
+tempus.mtZonedDateTime.__lt = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return tempus._fields(A, 'ZonedDateTime').instant < tempus._fields(B, 'ZonedDateTime').instant
 end
 
@@ -2462,7 +2479,8 @@ end
 @input Second zoned date-time
 @result True when first is not later
 ]])
-tempus.mtZonedDateTime.__le = function(A:table!, B:table!):bool
+tempus.mtZonedDateTime.__le = function(A:table!, B:table!, LhsDispatch:bool):bool
+   if not LhsDispatch then A, B = B, A end
    return tempus._fields(A, 'ZonedDateTime').instant <= tempus._fields(B, 'ZonedDateTime').instant
 end
 
