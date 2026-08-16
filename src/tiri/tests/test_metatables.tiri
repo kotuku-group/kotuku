@@ -69,43 +69,43 @@ end
 function newVec(X, Y):table
    vec_mt = {
       __add = metamethod(Other, LHS)
-         local source_left, source_right = source_arithmetic_operands(&&, Other, LHS)
-         return newVec(source_left.x + source_right.x, source_left.y + source_right.y)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         return newVec(sl.x + sr.x, sl.y + sr.y)
       end,
       __sub = metamethod(Other, LHS)
-         local source_left, source_right = source_arithmetic_operands(&&, Other, LHS)
-         return newVec(source_left.x - source_right.x, source_left.y - source_right.y)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         return newVec(sl.x - sr.x, sl.y - sr.y)
       end,
       __mul = metamethod(Other, LHS)
-         local source_left, source_right = source_arithmetic_operands(&&, Other, LHS)
-         if type(source_right) is 'number' then
-            return newVec(source_left.x * source_right, source_left.y * source_right)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x * sr, sl.y * sr)
          end
-         if type(source_left) is 'number' then
-            return newVec(source_left * source_right.x, source_left * source_right.y)
+         if type(sl) is 'number' then
+            return newVec(sl * sr.x, sl * sr.y)
          end
-         return newVec(source_left.x * source_right.x, source_left.y * source_right.y)
+         return newVec(sl.x * sr.x, sl.y * sr.y)
       end,
       __div = metamethod(Other, LHS)
-         local source_left, source_right = source_arithmetic_operands(&&, Other, LHS)
-         if type(source_right) is 'number' then
-            return newVec(source_left.x / source_right, source_left.y / source_right)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x / sr, sl.y / sr)
          end
-         return newVec(source_left.x / source_right.x, source_left.y / source_right.y)
+         return newVec(sl.x / sr.x, sl.y / sr.y)
       end,
       __mod = metamethod(Other, LHS)
-         local source_left, source_right = source_arithmetic_operands(&&, Other, LHS)
-         if type(source_right) is 'number' then
-            return newVec(source_left.x % source_right, source_left.y % source_right)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x % sr, sl.y % sr)
          end
-         return newVec(source_left.x % source_right.x, source_left.y % source_right.y)
+         return newVec(sl.x % sr.x, sl.y % sr.y)
       end,
       __pow = metamethod(Other, LHS)
-         local source_left, source_right = source_arithmetic_operands(&&, Other, LHS)
-         if type(source_right) is 'number' then
-            return newVec(source_left.x ** source_right, source_left.y ** source_right)
+         local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+         if type(sr) is 'number' then
+            return newVec(sl.x ** sr, sl.y ** sr)
          end
-         return newVec(source_left.x ** source_right.x, source_left.y ** source_right.y)
+         return newVec(sl.x ** sr.x, sl.y ** sr.y)
       end,
       __unm = metamethod() return newVec(-&x, -&y) end
    }
@@ -254,12 +254,12 @@ end
 cmp_mt = {
    __eq = metamethod(Other) return &val is Other.val end,
    __lt = metamethod(Other, LHS)
-      local source_left, source_right = source_binary_operands(&&, Other, LHS)
-      return source_left.val < source_right.val
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return sl.val < sr.val
    end,
    __le = metamethod(Other, LHS)
-      local source_left, source_right = source_binary_operands(&&, Other, LHS)
-      return source_left.val <= source_right.val
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return sl.val <= sr.val
    end
 }
 
@@ -308,8 +308,8 @@ end
 
 @Test function ProviderAmbiguousBinaryMetamethodsUseReceiverFirstDispatch()
    local concat_probe = metamethod(Other, LHS:bool):str
-      local source_left, source_right = source_binary_operands(&&, Other, LHS)
-      return f'{&name}:{LHS}:{source_left.name ?? source_left}{source_right.name ?? source_right}'
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return f'{&name}:{LHS}:{sl.name ?? sl}{sr.name ?? sr}'
    end
 
    local concat_mt = { __concat = concat_probe }
@@ -334,14 +334,14 @@ end
    end
    local ordering_probe = metamethod(Other, LHS:bool):bool
       observed = f'{&name}:{LHS}'
-      local source_left, source_right = source_binary_operands(&&, Other, LHS)
-      return operand_value(source_left) < operand_value(source_right)
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return operand_value(sl) < operand_value(sr)
    end
 
    local ordering_le_probe = metamethod(Other, LHS:bool):bool
       observed = f'{&name}:{LHS}'
-      local source_left, source_right = source_binary_operands(&&, Other, LHS)
-      return operand_value(source_left) <= operand_value(source_right)
+      local sl, sr = source_binary_operands(&&, Other, LHS)
+      return operand_value(sl) <= operand_value(sr)
    end
 
    local ordering_mt = { __lt = ordering_probe, __le = ordering_le_probe }
@@ -499,14 +499,14 @@ end
 @Test function MetaConcat()
    mt = {
       __concat = metamethod(Other, LHS):table
-         local source_left, source_right = source_binary_operands(&&, Other, LHS)
-         if type(source_left) is 'table' and type(source_right) is 'table' then
-            return setmetatable({ val = source_left.val .. source_right.val }, getmetatable(source_left))
+         local sl, sr = source_binary_operands(&&, Other, LHS)
+         if type(sl) is 'table' and type(sr) is 'table' then
+            return setmetatable({ val = sl.val .. sr.val }, getmetatable(sl))
          end
-         if type(source_left) is 'table' then
-            return setmetatable({ val = source_left.val .. source_right }, getmetatable(source_left))
+         if type(sl) is 'table' then
+            return setmetatable({ val = sl.val .. sr }, getmetatable(sl))
          end
-         return setmetatable({ val = source_left .. source_right.val }, getmetatable(source_right))
+         return setmetatable({ val = sl .. sr.val }, getmetatable(sr))
       end
    }
    a = setmetatable({ val = 'hello' }, mt)
@@ -518,11 +518,11 @@ end
 @Test function MetaConcatWithString()
    mt = {
       __concat = metamethod(Other, LHS)
-         local source_left, source_right = source_binary_operands(&&, Other, LHS)
-         if type(source_left) is 'table' then
-            return source_left.val .. source_right
+         local sl, sr = source_binary_operands(&&, Other, LHS)
+         if type(sl) is 'table' then
+            return sl.val .. sr
          end
-         return source_left .. source_right.val
+         return sl .. sr.val
       end
    }
    local obj = setmetatable({ val = 'data' }, mt)
@@ -860,8 +860,8 @@ function newWrapped(Val)
 end
 
 wrapped_mt.__add      = metamethod(Other, LHS:bool):table
-   local source_left, source_right = source_arithmetic_operands(&&, Other, LHS)
-   return newWrapped(source_left.val + source_right.val)
+   local sl, sr = source_arithmetic_operands(&&, Other, LHS)
+   return newWrapped(sl.val + sr.val)
 end
 wrapped_mt.__tostring = metamethod():str return 'Wrapped(' .. &val .. ')' end
 wrapped_mt.__eq       = metamethod(Other):bool return &val is Other.val end
