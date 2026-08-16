@@ -14,7 +14,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    const bool context_first = Payload.callable_kind IS FunctionCallableKind::ContextFirstArgument;
    if (context_first and Payload.is_thunk) {
       return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UnexpectedToken,
-         "context-first method literals cannot be thunks"));
+         "context-first metamethod literals cannot be thunks"));
    }
 
    // Handle thunk functions via AST transformation
