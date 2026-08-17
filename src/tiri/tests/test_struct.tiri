@@ -374,12 +374,12 @@ end
    value.Int8 = array<byte> { 1, 2 }
    value.UInt8 = array<byte> { 3, 4 }
    value.Int16 = array<int16> { -12, 34 }
-   value.UInt16 = array<int16> { 123, 456 }
-   value.UInt = array<int> { 4000000000 }
+   value.UInt16 = array<uint16> { 123, 456 }
+   value.UInt = array<uint> { 4000000000 }
    value.Int32 = array<int> { -123456, 654321 }
-   value.UInt32 = array<int> { 123456, 654321 }
+   value.UInt32 = array<uint> { 123456, 654321 }
    value.Int64 = array<int64> { -9007199, 9007199 }
-   value.UInt64 = array<int64> { 9007199, 18014398 }
+   value.UInt64 = array<uint64> { 9007199, 18014398 }
    value.Float = array<float> { 1.25, 2.5 }
    value.Double = array<double> { 3.5, 7.25 }
 
@@ -389,9 +389,16 @@ end
       'Initialiser assignment should populate a string vector')
    assert(value.Bool is array<byte> { 0, 1 } and value.Char is array<byte> { 65, 66 },
       'Byte-sized vector categories should round-trip')
-   assert(value.Int16 is array<int16> { -12, 34 } and value.UInt16 is array<int16> { 123, 456 },
+   assert(value.Int16 is array<int16> { -12, 34 } and value.UInt16 is array<uint16> { 123, 456 },
       'Word-sized vector categories should round-trip')
    assert(value.Int64 is array<int64> { -9007199, 9007199 }, 'Int64 vectors should round-trip')
+
+   -- Unsigned vector fields must retain their unsigned element type through materialisation, not decay to signed.
+   assert(value.UInt16.type() is 'uint16', "UInt16 vector field should report 'uint16', got '" .. value.UInt16.type() .. "'")
+   assert(value.UInt.type() is 'uint', "UInt vector field should report 'uint', got '" .. value.UInt.type() .. "'")
+   assert(value.UInt32.type() is 'uint', "UInt32 vector field should report 'uint', got '" .. value.UInt32.type() .. "'")
+   assert(value.UInt64.type() is 'uint64', "UInt64 vector field should report 'uint64', got '" .. value.UInt64.type() .. "'")
+   assert(value.Int16.type() is 'int16', "Int16 vector field should retain signed 'int16', got '" .. value.Int16.type() .. "'")
    assert(value.Float is array<float> { 1.25, 2.5 } and value.Double is array<double> { 3.5, 7.25 },
       'Floating-point vectors should round-trip')
 

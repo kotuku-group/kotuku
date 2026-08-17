@@ -147,7 +147,7 @@ static CSTRING elemtype_name(AET Type)
       case AET::INT64:      return "int64";
       case AET::UINT8:      return "uint8";
       case AET::UINT16:     return "uint16";
-      case AET::UINT32:     return "uint32";
+      case AET::UINT32:     return "uint";
       case AET::UINT64:     return "uint64";
       case AET::FLOAT:      return "float";
       case AET::DOUBLE:     return "double";

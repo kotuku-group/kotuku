@@ -22,7 +22,7 @@ function expect_failure(Action:func, Description:str)
 end
 
 @Test function NumericStringsAreNeverElements()
-   local element_types = array<str> { 'byte', 'int16', 'int', 'int64', 'uint8', 'uint16', 'uint32', 'uint64',
+   local element_types = array<str> { 'byte', 'int16', 'int', 'int64', 'uint8', 'uint16', 'uint', 'uint64',
       'float', 'double' }
 
    for _, element_type in element_types do
@@ -83,7 +83,7 @@ end
 end
 
 @Test function NilUsesTheTypedEmptyValue()
-   local numeric_types = array<str> { 'byte', 'int16', 'int', 'int64', 'uint8', 'uint16', 'uint32', 'uint64',
+   local numeric_types = array<str> { 'byte', 'int16', 'int', 'int64', 'uint8', 'uint16', 'uint', 'uint64',
       'float', 'double' }
    for _, element_type in numeric_types do
       local values = array.new(1, element_type)
