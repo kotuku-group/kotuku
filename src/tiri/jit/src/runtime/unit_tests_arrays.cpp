@@ -150,6 +150,88 @@ static bool test_array_creation_int32(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+
+static bool test_unsigned_array_types(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+   luaL_openlibs(lua);
+
+   struct UnsignedArrayCase {
+      AET type;
+      uint8_t size;
+      uint64_t value;
+   };
+   constexpr std::array<UnsignedArrayCase, 4> cases = { {
+      { AET::UINT8, sizeof(uint8_t), 255 },
+      { AET::UINT16, sizeof(uint16_t), 65535 },
+      { AET::UINT32, sizeof(uint32_t), 4294967295ULL },
+      { AET::UINT64, sizeof(uint64_t), 9007199254740991ULL }
+   } };
+
+   for (const auto &test : cases) {
+      GCarray *array = lj_array_new(lua, 1, test.type);
+      if (not array or array->elemsize != test.size or array->elemtype != test.type) {
+         Log.error("unsigned array allocation has the wrong layout for type %d", int(test.type));
+         return false;
+      }
+
+      switch (test.type) {
+         case AET::UINT8:  array->get<uint8_t>()[0] = uint8_t(test.value); break;
+         case AET::UINT16: array->get<uint16_t>()[0] = uint16_t(test.value); break;
+         case AET::UINT32: array->get<uint32_t>()[0] = uint32_t(test.value); break;
+         case AET::UINT64: array->get<uint64_t>()[0] = uint64_t(test.value); break;
+         default: return false;
+      }
+
+      TValue result;
+      lj_arr_getidx(lua, array, 0, &result);
+      if (test.type IS AET::UINT8 or test.type IS AET::UINT16) {
+         const bool matches = (tvisint(&result) and intV(&result) IS int32_t(test.value)) or
+            (tvisnum(&result) and numberVint(&result) IS int32_t(test.value));
+         if (not matches) {
+            Log.error("unsigned small-width array readback failed for type %d", int(test.type));
+            return false;
+         }
+      }
+      else if (not tvisnum(&result) or numV(&result) != lua_Number(test.value)) {
+         Log.error("unsigned wide array readback failed for type %d", int(test.type));
+         return false;
+      }
+   }
+
+   GCarray *wrapped = lj_array_new(lua, 1, AET::UINT32);
+   TValue negative;
+   setintV(&negative, -1);
+   lj_arr_setidx(lua, wrapped, 0, &negative);
+   if (wrapped->get<uint32_t>()[0] != std::numeric_limits<uint32_t>::max()) {
+      Log.error("unsigned array negative conversion did not wrap modulo its width");
+      return false;
+   }
+
+   GCarray *wide_wrapped = lj_array_new(lua, 1, AET::UINT64);
+   TValue negative_number;
+   setnumV(&negative_number, -1.0);
+   lj_arr_setidx(lua, wide_wrapped, 0, &negative_number);
+   if (wide_wrapped->get<uint64_t>()[0] != std::numeric_limits<uint64_t>::max()) {
+      Log.error("uint64 array conversion lost a negative numeric value during modulo reduction");
+      return false;
+   }
+
+   setnumV(&negative_number, -4294967295.0);
+   lj_arr_setidx(lua, wide_wrapped, 0, &negative_number);
+   if (wide_wrapped->get<uint64_t>()[0] != UINT64_C(18446744069414584321)) {
+      Log.error("uint64 array conversion produced incorrect modulo bits for a wide negative number");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
 // Null-terminated pointer fields use a negative array size as a sentinel.  The struct reader must scan the pointed-to
 // values before creating the cached array rather than passing that sentinel to the unsigned array allocator.
 
@@ -1214,10 +1296,11 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 32> Tests = { {
+   constexpr std::array<TestCase, 33> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
+      { "unsigned_array_types", test_unsigned_array_types },
       { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
       { "struct_to_table_string_vector", test_struct_to_table_string_vector },
       { "array_creation_double", test_array_creation_double },

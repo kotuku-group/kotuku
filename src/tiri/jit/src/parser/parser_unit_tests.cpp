@@ -1471,7 +1471,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
       "   Value: int\n"
       "end\n"
       "local function outer(Value:num!, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
-      "Object:obj, Numbers:array<int>, Records:array<struct<SignatureLayout>>, ...):func\n"
+      "Object:obj, Numbers:array<int>, Records:array<struct<SignatureLayout>>, Masks:array<uint32>, ...):func\n"
       "   local function inner(Text:str!):<str!, num, ...>\n"
       "      return Text, Value, Value\n"
       "   end\n"
@@ -1494,7 +1494,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
 
    const ProtoSignature *outer_signature = proto_signature(outer);
    const ProtoSignature *inner_signature = proto_signature(inner);
-   if (not outer_signature or outer_signature->parameter_count != 8 or outer_signature->result_count != 1 or
+   if (not outer_signature or outer_signature->parameter_count != 9 or outer_signature->result_count != 1 or
        not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) or
        not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ParameterVariadic))) {
       Log.error("outer prototype signature header is incomplete");
@@ -1514,7 +1514,8 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
        outer_params[6].type != TiriType::Array or proto_array_member(outer_params[6]) != AET::INT32 or
        outer_params[6].constraint != 0 or outer_params[7].type != TiriType::Array or
        proto_array_member(outer_params[7]) != AET::STRUCT or
-       outer_params[7].constraint != struct_key("SignatureLayout")) {
+       outer_params[7].constraint != struct_key("SignatureLayout") or outer_params[8].type != TiriType::Array or
+       proto_array_member(outer_params[8]) != AET::UINT32 or outer_params[8].constraint != 0) {
       Log.error("outer prototype parameter entries lost type, provenance, strength or constraint data");
       return false;
    }
@@ -1716,7 +1717,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90) }) {
+      uint8_t(0x90), uint8_t(0x91) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -4555,6 +4556,12 @@ static bool test_static_descriptor_model(kt::Log &Log)
       Log.error("a mismatched array member descriptor satisfied an exact contract");
       return false;
    }
+   StaticValueDescriptor uint_array = int_array;
+   uint_array.array_element = { AET::UINT32, TiriType::Num, CLASSID::NIL, nullptr, true };
+   if (static_value_satisfies_contract(uint_array, int_array_contract)) {
+      Log.error("a signed and unsigned array member identity matched a contract");
+      return false;
+   }
    StaticValueDescriptor joined_arrays = join_static_descriptors(int_array, string_array);
    if (joined_arrays.primary != TiriType::Any or joined_arrays.array_element.known or
        joined_arrays.proof != StaticProof::Advisory) {
@@ -4567,13 +4574,17 @@ static bool test_static_descriptor_model(kt::Log &Log)
       AET storage;
       TiriType logical_type;
    };
-   constexpr std::array<ArrayMapping, 15> mappings = { {
+   constexpr std::array<ArrayMapping, 19> mappings = { {
       { "byte", AET::BYTE, TiriType::Num },
       { "char", AET::BYTE, TiriType::Num },
       { "int8", AET::BYTE, TiriType::Num },
       { "int16", AET::INT16, TiriType::Num },
       { "int", AET::INT32, TiriType::Num },
       { "int64", AET::INT64, TiriType::Num },
+      { "uint8", AET::UINT8, TiriType::Num },
+      { "uint16", AET::UINT16, TiriType::Num },
+      { "uint32", AET::UINT32, TiriType::Num },
+      { "uint64", AET::UINT64, TiriType::Num },
       { "float", AET::FLOAT, TiriType::Num },
       { "double", AET::DOUBLE, TiriType::Num },
       { "str", AET::STR_GC, TiriType::Str },

@@ -54,6 +54,10 @@ const void * lj_obj_ptr(global_State *g, cTValue *o)
       case AET::INT16:   return FD_WORD;
       case AET::INT32:   return FD_INT;
       case AET::INT64:   return FD_INT64;
+      case AET::UINT8:   return FD_BYTE;
+      case AET::UINT16:  return FD_WORD;
+      case AET::UINT32:  return FD_INT;
+      case AET::UINT64:  return FD_INT64;
       case AET::FLOAT:   return FD_FLOAT;
       case AET::DOUBLE:  return FD_DOUBLE;
       case AET::PTR:     return FD_POINTER;

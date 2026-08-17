@@ -535,9 +535,13 @@ static bool array_elem_irtype(AET ElemType, IRType &ResultType)
       case AET::BYTE:
       case AET::INT16:
       case AET::INT32:
+      case AET::UINT8:
+      case AET::UINT16:
          ResultType = LJ_DUALNUM ? IRT_INT : IRT_NUM;
          return true;
       case AET::INT64:
+      case AET::UINT32:
+      case AET::UINT64:
       case AET::FLOAT:
       case AET::DOUBLE:
          ResultType = IRT_NUM;
@@ -570,6 +574,10 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
    else if (TypeStr->len IS 4 and memcmp(type_name, "int8", 4) IS 0) *Result = AET::BYTE;
    else if (TypeStr->len IS 5 and memcmp(type_name, "int16", 5) IS 0) *Result = AET::INT16;
    else if (TypeStr->len IS 5 and memcmp(type_name, "int64", 5) IS 0) *Result = AET::INT64;
+   else if (TypeStr->len IS 5 and memcmp(type_name, "uint8", 5) IS 0) *Result = AET::UINT8;
+   else if (TypeStr->len IS 6 and memcmp(type_name, "uint16", 6) IS 0) *Result = AET::UINT16;
+   else if (TypeStr->len IS 6 and memcmp(type_name, "uint32", 6) IS 0) *Result = AET::UINT32;
+   else if (TypeStr->len IS 6 and memcmp(type_name, "uint64", 6) IS 0) *Result = AET::UINT64;
    else if (TypeStr->len IS 5 and memcmp(type_name, "float", 5) IS 0) *Result = AET::FLOAT;
    else if (TypeStr->len IS 6 and memcmp(type_name, "double", 6) IS 0) *Result = AET::DOUBLE;
    else if (TypeStr->len IS 6 and memcmp(type_name, "string", 6) IS 0) *Result = AET::STR_GC;
