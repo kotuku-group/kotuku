@@ -150,9 +150,7 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
 
    if ((object_id) and (GetClassID(object_id) != CLASSID::SURFACE)) luaL_argerror(Lua, 1, "Surface object required.");
 
-   int function_type = lua_type(Lua, 2);
-   if ((function_type IS LUA_TFUNCTION) or (function_type IS LUA_TSTRING));
-   else luaL_argerror(Lua, 2, "Function reference required.");
+   if (lua_type(Lua, 2) != LUA_TFUNCTION) luaL_argerror(Lua, 2, "Function reference required.");
 
    log.traceBranch("Surface: %d", object_id);
 
@@ -314,9 +312,7 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
 
    int device_id = lua_tointeger(Lua, 3); // Optional
 
-   int function_type = lua_type(Lua, 4);
-   if ((function_type IS LUA_TFUNCTION) or (function_type IS LUA_TSTRING));
-   else luaL_argerror(Lua, 4, "Function reference required.");
+   if (lua_type(Lua, 4) != LUA_TFUNCTION) luaL_argerror(Lua, 4, "Function reference required.");
 
    ERR error = ERR::Okay;
    {
