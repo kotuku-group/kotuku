@@ -150,12 +150,6 @@ ERR capture_tiri_function(lua_State *Lua, int ValueIndex, FUNCTION &Function)
    int value_index = ValueIndex;
    bool resolved_name = false;
 
-   if (lua_type(Lua, value_index) IS LUA_TSTRING) {
-      lua_getglobal(Lua, lua_tostring(Lua, value_index));
-      value_index = lua_gettop(Lua);
-      resolved_name = true;
-   }
-
    if (lua_type(Lua, value_index) != LUA_TFUNCTION) {
       if (resolved_name) lua_pop(Lua, 1);
       return ERR::SetValueNotFunction;
