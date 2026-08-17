@@ -371,7 +371,7 @@ end
    value.Bool = array<byte> { 0, 1 }
    value.Char = array<byte> { 65, 66 }
    value.Byte = array<byte> { 250, 251 }
-   value.Int8 = array<byte> { 1, 2 }
+   value.Int8 = array<int8> { -128, 127 }
    value.UInt8 = array<byte> { 3, 4 }
    value.Int16 = array<int16> { -12, 34 }
    value.UInt16 = array<uint16> { 123, 456 }
@@ -389,6 +389,8 @@ end
       'Initialiser assignment should populate a string vector')
    assert(value.Bool is array<byte> { 0, 1 } and value.Char is array<byte> { 65, 66 },
       'Byte-sized vector categories should round-trip')
+   assert(value.Int8 is array<int8> { -128, 127 } and value.Int8.type() is 'int8',
+      'Int8 vectors should preserve signed values and their distinct element identity')
    assert(value.Int16 is array<int16> { -12, 34 } and value.UInt16 is array<uint16> { 123, 456 },
       'Word-sized vector categories should round-trip')
    assert(value.Int64 is array<int64> { -9007199, 9007199 }, 'Int64 vectors should round-trip')

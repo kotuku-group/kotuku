@@ -62,6 +62,12 @@ extern MSGID glDelayedCallMsgID;
    else return AET::MAX;
 }
 
+[[maybe_unused]] static AET ff_to_aet(int Type, NativeStructType NativeType)
+{
+   if ((Type & FD_BYTE) and NativeType IS NativeStructType::Int8) return AET::INT8;
+   return ff_to_aet(Type);
+}
+
 //********************************************************************************************************************
 
 struct CaseInsensitiveHashView {

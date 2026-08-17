@@ -52,6 +52,7 @@ ArrayElementDescriptor describe_array_element(const GCarray *Array) noexcept
    result.known = true;
    switch (result.storage) {
       case AET::BYTE:
+      case AET::INT8:
       case AET::INT16:
       case AET::INT32:
       case AET::INT64:
@@ -86,6 +87,7 @@ std::string array_element_name(const ArrayElementDescriptor &Element)
    std::string_view name = "any";
    switch (public_array_storage(Element.storage)) {
       case AET::BYTE:   name = "byte"; break;
+      case AET::INT8:   name = "int8"; break;
       case AET::INT16:  name = "int16"; break;
       case AET::INT32:  name = "int"; break;
       case AET::INT64:  name = "int64"; break;
@@ -616,9 +618,10 @@ std::optional<ArrayElementDescriptor> describe_array_element(std::string_view Na
    ArrayElementDescriptor result;
    result.known = true;
 
-   if (Name IS "byte" or Name IS "char" or Name IS "int8") {
+   if (Name IS "byte" or Name IS "char") {
       result = { AET::BYTE, TiriType::Num, CLASSID::NIL, nullptr, true };
    }
+   else if (Name IS "int8") result = { AET::INT8, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "int16") result = { AET::INT16, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "int") result = { AET::INT32, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "int64") result = { AET::INT64, TiriType::Num, CLASSID::NIL, nullptr, true };
@@ -662,7 +665,9 @@ std::optional<ArrayElementDescriptor> describe_array_element(const struct_field 
    else if (Field.Type & FD_INT64) result.storage = (Field.Type & FD_UNSIGNED) ? AET::UINT64 : AET::INT64;
    else if (Field.Type & FD_INT) result.storage = (Field.Type & FD_UNSIGNED) ? AET::UINT32 : AET::INT32;
    else if (Field.Type & FD_WORD) result.storage = (Field.Type & FD_UNSIGNED) ? AET::UINT16 : AET::INT16;
-   else if (Field.Type & FD_BYTE) result.storage = AET::BYTE;
+   else if (Field.Type & FD_BYTE) {
+      result.storage = Field.NativeType IS NativeStructType::Int8 ? AET::INT8 : AET::BYTE;
+   }
    else return std::nullopt;
 
    return result;

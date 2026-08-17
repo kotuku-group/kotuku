@@ -1275,6 +1275,7 @@ enum class AET : uint8_t {
    UINT16,     // uint16_t
    UINT32,     // uint32_t
    UINT64,     // uint64_t
+   INT8,       // int8_t numeric storage
    MAX,
    VULNERABLE = PTR
 };
