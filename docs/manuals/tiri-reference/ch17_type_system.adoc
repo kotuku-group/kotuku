@@ -6,6 +6,8 @@
 //                       (commit 42c2f4520)
 // UPDATED: 2026-08-15 - The struct owned-string field is now spelled 'str'; retired the 'string' compatibility name
 //                       (commit b900f2341)
+// UPDATED: 2026-08-17 - Arrays now accept the uint8/uint16/uint32/uint64 element types; recorded the uint/uint32
+//                       naming split between arrays and struct fields (commit 6ca29f4c8)
 
 [[ch-type-system]]
 == Type System
@@ -55,13 +57,13 @@ The two interfaces share a core of names but are not identical dialects, and the
 |`bool`                          |--   |Yes |Boolean
 |`char`                          |Yes  |Yes |Number, but `char[N]` reads as a string
 |`byte`, `int8`                  |`byte` |Yes |Number
-|`uint8`                         |--   |Yes |Number
+|`uint8`                         |`uint8` |Yes |Number
 |`int16`                         |`int16` |Yes |Number
-|`uint16`                        |--   |Yes |Number
+|`uint16`                        |`uint16` |Yes |Number
 |`int`                           |`int` |Yes |Number
 |`uint`                          |--   |Yes |Number
 |`int64`                         |`int64` |Yes |Number
-|`uint64`                        |--   |Yes |Number
+|`uint64`                        |`uint64` |Yes |Number
 |`float`, `double`               |Yes  |Yes |Number
 |`str`                           |`str` |Yes |String
 |`cstr`                          |--   |Yes |String

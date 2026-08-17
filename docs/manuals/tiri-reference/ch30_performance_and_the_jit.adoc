@@ -4,6 +4,8 @@
 // UPDATED: 2026-08-15 - Documented the cost of capturing the context when a framework callback is registered
 //                       (commit 1a38f18e0)
 // UPDATED: 2026-08-16 - The ternary separator is now ':' rather than ':>' (commit 982d890de)
+// UPDATED: 2026-08-17 - Recorded the unsigned array element types; corrected the element type list and the
+//                       array construction example, which named the retired 'int32' (commit 6ca29f4c8)
 [[ch-performance-and-the-jit]]
 == Performance & the JIT
 indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the K≈çtuku JIT implementation and is not part of the language specification.
@@ -172,7 +174,7 @@ Use arrays for homogeneous, numerically indexed data where performance matters ‚
 [source,tiri]
 ----
 -- Array: ideal for homogeneous numeric data
-scores = array(100, 'int32')
+scores = array<int, 100>
 for i in {0 to 100} do
    scores[i] = i * 10
 end
