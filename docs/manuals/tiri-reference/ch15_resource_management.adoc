@@ -6,6 +6,9 @@
 // UPDATED: 2026-08-11 - Migrated method calls in the resource examples to dot syntax (commit 7e6746950)
 // UPDATED: 2026-08-11 - Documented the current context of a __close handler (commit 798665547)
 // UPDATED: 2026-08-13 - The __close example now designates its receiver as an entity; noted context blocks (commit d3638efc0)
+// UPDATED: 2026-08-16 - Migrated the __close examples to the `metamethod` form, which is now the standard for metatable
+//                       callables; added the Handler Context subsection covering the one case that still requires
+//                       `function` (commit 58e7bad8a)
 
 [[ch-resource-management]]
 == Resource Management
@@ -274,17 +277,13 @@ Because `<close>` is only meaningful on local variables, the parser treats `Name
 
 ==== The pass:[__]close Metamethod
 
-When a `<close>` variable's scope exits, the runtime invokes the `pass:[__]close` metamethod from the value's metatable.  The metamethod receives two arguments:
+When a `<close>` variable's scope exits, the runtime invokes the `pass:[__]close` metamethod from the value's metatable.  The value being closed is the subject of the metamethod, which declares one argument:
 
 [cols="1,1,3a",options="header"]
 |===
 |Argument |Type |Description
 
-|`self`
-|any
-|The value being closed.
-
-|`err`
+|`Error`
 |any or nil
 |`nil` for normal scope exit.  The error object if the scope is being unwound due to an exception caught by `try`.
 |===
@@ -292,10 +291,10 @@ When a `<close>` variable's scope exits, the runtime invokes the `pass:[__]close
 [source,tiri]
 ----
 mt = {
-   __close = function(self, err)
-      print('Closing: ' .. self.name)
-      if err then
-         print('Error: ' .. tostring(err))
+   __close = metamethod(Error)
+      print('Closing: ' .. &name)
+      if Error then
+         print('Error: ' .. tostring(Error))
       end
    end
 }
@@ -306,7 +305,15 @@ end
 -- Output: Closing: resource
 ----
 
-The handler runs in the current context of the activation that declares the variable (<<sec-the-current-context>>), on both the normal and the error path.  A `pass:[__]close` handler declared inside a method therefore reaches the receiver through self referencing.  The same rule applies to a handler declared inside a context block, which observes that block's activation (<<sec-context-blocks>>):
+[discrete]
+==== Handler Context
+
+The two declaration forms observe different contexts, and the choice determines what self referencing reaches in the body.  The distinction carries more weight for `pass:[__]close` than for other metamethods, because the handler is commonly written inline at the point the variable is declared, where the surrounding receiver is in scope:
+
+- A `metamethod` literal installs the value being closed as its context, as every metamethod literal does (<<sec-context-aware-metamethods>>).  The body reaches the closed value through self referencing.
+- A `function` handler installs no context of its own, so it runs in the current context of the activation that declares the variable (<<sec-the-current-context>>), on both the normal and the error path.  A handler declared inside a method therefore reaches that method's receiver, and a handler declared inside a context block observes that block's activation (<<sec-context-blocks>>).
+
+Write the handler with `metamethod` when it acts on the closed value, which is the ordinary case.  Write it with `function` only when it acts on the surrounding receiver:
 
 [%unbreakable]
 [source,tiri]
@@ -315,7 +322,7 @@ session = entity { name = 'session', open = true }
 
 function session.run()
    res <close> = setmetatable({}, {
-      __close = function()
+      __close = function()      -- `function`, not `metamethod`
          &open = false          -- clears the field on 'session'
       end
    })
@@ -331,10 +338,10 @@ Multiple `<close>` variables in the same scope execute their handlers in LIFO or
 ----
 do
    a <close> = setmetatable({}, {
-      __close = function() print('close a') end
+      __close = metamethod() print('close a') end
    })
    b <close> = setmetatable({}, {
-      __close = function() print('close b') end
+      __close = metamethod() print('close b') end
    })
 end
 -- Output:
@@ -354,7 +361,7 @@ do
       print('defer')
    end
    local obj <close> = setmetatable({}, {
-      __close = function() print('close') end
+      __close = metamethod() print('close') end
    })
 end
 -- Output:
@@ -386,7 +393,7 @@ A value with a metatable that does not define `pass:[__]close` is also safely ig
 
 [source,tiri]
 ----
-mt = { __close = function() print('closed') end }
+mt = { __close = metamethod() print('closed') end }
 
 -- On return
 function on_return()
@@ -420,9 +427,9 @@ Unlike `defer`, `<close>` handlers participate in error unwinding.  When an exce
 [source,tiri]
 ----
 mt = {
-   __close = function(self, err)
-      if err then
-         print('Error during close: ' .. tostring(err))
+   __close = metamethod(Error)
+      if Error then
+         print('Error during close: ' .. tostring(Error))
       end
    end
 }
@@ -442,8 +449,8 @@ If a `pass:[__]close` handler raises an error, it replaces the original exceptio
 
 [source,tiri]
 ----
-mt1 = { __close = function() error('close error') end }
-mt2 = { __close = function() print('still runs') end }
+mt1 = { __close = metamethod() error('close error') end }
+mt2 = { __close = metamethod() print('still runs') end }
 
 try
    b <close> = setmetatable({}, mt2)
@@ -661,8 +668,8 @@ Scarce resources must therefore not depend on `pass:[__]gc` for release.  File h
 [source,tiri]
 ----
 handle_mt = {
-   __close = function(Self:table, Error)
-      Self.file.close()
+   __close = metamethod(Error)
+      &file.close()
    end
 }
 
@@ -766,8 +773,8 @@ For cleanup that must survive error unwinding, use `<close>` variables:
 [source,tiri]
 ----
 closeable_mt = {
-   __close = function(self:table, err)
-      self.handle.release()
+   __close = metamethod(Error)
+      &handle.release()
    end
 }
 

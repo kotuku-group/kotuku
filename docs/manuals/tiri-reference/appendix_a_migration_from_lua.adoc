@@ -3,6 +3,7 @@
 //                       colon-syntax migration (commit ac4f30a67)
 // UPDATED: 2026-08-16 - Renamed the literal to `metamethod` and removed it from the extraction note; the keyword is
 //                       documented for metatable handlers only (commit 5c92d652a)
+// UPDATED: 2026-08-16 - Migrated the __close migration example to the `metamethod` form (commit 58e7bad8a)
 // UPDATED: 2026-08-15 - Framework callbacks now capture the registration context; corrected the self-migration note
 //                       (commit 1a38f18e0)
 // UPDATED: 2026-08-15 - Added the sec-migration-arithmetic-coercion section; arithmetic no longer coerces string
@@ -1091,8 +1092,8 @@ end
 
 -- Tiri
 handle_mt = {
-   __close = function(Self:table, Error)
-      Self.file.close()
+   __close = metamethod(Error)
+      &file.close()
    end
 }
 

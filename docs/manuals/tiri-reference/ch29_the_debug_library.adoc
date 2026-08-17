@@ -1,6 +1,7 @@
 // CHANGED: 2026-06-28 - debug.validate() now takes an options table ('symbols', 'path').
 // VERIFIED: 2026-03-06
 // CHANGED: 2026-07-31 — Added the required implementation-specific notice and standardised exception terminology.
+// UPDATED: 2026-08-16 - Migrated the setMetatable example to the `metamethod` form (commit 58e7bad8a)
 
 [[ch-the-debug-library]]
 == The Debug Library
@@ -248,7 +249,7 @@ Sets the metatable of `Object` to `Table` (which may be `nil` to remove the meta
 [source,tiri]
 ----
 t = {}
-debug.setMetatable(t, { __tostring = function() return 'custom' end })
+debug.setMetatable(t, { __tostring = metamethod() return 'custom' end })
 print(tostring(t))   -- 'custom'
 ----
 

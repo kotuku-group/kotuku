@@ -155,7 +155,7 @@ Metamethod::
 A function stored in a metatable under a reserved key (e.g. `__add`, `__index`, `__tostring`).  Metamethods intercept and customise operations on the value associated with the metatable.  See <<ch-metatables-and-metamethods>>.
 
 Metamethod literal::
-A metatable handler written with the `metamethod` keyword.  Its first argument is required, is absent from the parameter list, and becomes the current context of the activation, superseding the context inherited from the dispatch site, so the body reads the subject through self referencing.  See <<sec-metamethod-literals>> and <<sec-context-first-metamethods>>.
+A metatable handler written with the `metamethod` keyword.  See <<sec-metamethod-literals>> and <<sec-context-aware-metamethods>>.
 
 Metatable::
 A table that customises the behaviour of another table or userdata value.  Operations on the value dispatch to metamethods defined in its metatable.  See <<sec-metatable-basics>>.

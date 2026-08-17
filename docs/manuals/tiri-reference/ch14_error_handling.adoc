@@ -4,6 +4,7 @@
 // CHANGED: 2026-07-31 — Standardised exception terminology on raise and re-raise.
 // UPDATED: 2026-08-11 - Documented current-context restoration during unwinding (commit 798665547)
 // UPDATED: 2026-08-13 - The unwinding example now designates its receivers as entities (commit d3638efc0)
+// UPDATED: 2026-08-16 - Migrated the __close example to the `metamethod` form (commit 58e7bad8a)
 
 [[ch-error-handling]]
 == Error Handling
@@ -634,15 +635,15 @@ result ?! raise ERR_Failed
 [discrete]
 ==== Interaction with defer and <close>
 
-When an exception is caught, `<close>` handlers for variables declared in the `try` scope are called in LIFO order (last declared, first closed).  Each `<close>` handler receives the error as its second argument.  `defer` blocks do not execute during error unwinding; on the normal (no-exception) path, they execute after the exception frame is removed but before the `success` block (see <<ch-resource-management>>).
+When an exception is caught, `<close>` handlers for variables declared in the `try` scope are called in LIFO order (last declared, first closed).  Each `<close>` handler receives the error as its declared argument.  `defer` blocks do not execute during error unwinding; on the normal (no-exception) path, they execute after the exception frame is removed but before the `success` block (see <<ch-resource-management>>).
 
 If a `<close>` handler raises an error, it replaces the original exception.  All remaining `<close>` handlers still execute.
 
 [source,tiri]
 ----
 mt = {
-   __close = function(self, err)
-      print('Closing resource, error: ' .. tostring(err))
+   __close = metamethod(Error)
+      print('Closing resource, error: ' .. tostring(Error))
    end
 }
 

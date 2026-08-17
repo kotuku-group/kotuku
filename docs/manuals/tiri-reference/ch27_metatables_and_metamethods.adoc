@@ -1,4 +1,7 @@
 // VERIFIED: 2026-03-03
+// UPDATED: 2026-08-16 - Replaced the binary metamethod restriction with receiver-first dispatch, documented the
+//                       Other/LHS parameter convention, and made `metamethod` the required form for metatable
+//                       callables with `function` retained as legacy (commit 58e7bad8a)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -69,26 +72,26 @@ indexterm:[metamethods, arithmetic] When an arithmetic operator encounters a non
 |===
 |Operator |Syntax |Metamethod
 
-|Addition       |`a + b`  |`pass:[__]add(a, b)`
-|Subtraction    |`a - b`  |`pass:[__]sub(a, b)`
-|Multiplication |`a * b`  |`pass:[__]mul(a, b)`
-|Division       |`a / b`  |`pass:[__]div(a, b)`
-|Modulo         |`a % b`  |`pass:[__]mod(a, b)`
-|Exponentiation |`a ** b` |`pass:[__]pow(a, b)`
-|Unary negation |`-a`     |`pass:[__]unm(a)`
+|Addition       |`a + b`  |`pass:[__]add(Other, LHS)`
+|Subtraction    |`a - b`  |`pass:[__]sub(Other, LHS)`
+|Multiplication |`a * b`  |`pass:[__]mul(Other, LHS)`
+|Division       |`a / b`  |`pass:[__]div(Other, LHS)`
+|Modulo         |`a % b`  |`pass:[__]mod(Other, LHS)`
+|Exponentiation |`a ** b` |`pass:[__]pow(Other, LHS)`
+|Unary negation |`-a`     |`pass:[__]unm()`
 |===
+
+The binary handlers are dispatched receiver-first, so the subject is the operand that supplied the handler and `LHS` reports which side of the expression that operand occupied; see <<sec-binary-metamethod-dispatch>>.  `pass:[__]unm` is unary and declares no parameters.
 
 A string operand is not coerced to a number.  It is treated as any other non-numeric operand and reaches metamethod lookup, so a metamethod supplied by the other operand is invoked with the string in place:
 
 [source,tiri]
 ----
-mt = { __add = function(A, B) return 'handled' end }
+mt = { __add = metamethod(Other, LHS) return f'handled {Other} {LHS}' end }
 t  = setmetatable({}, mt)
-'1' + t     -- 'handled'
+'1' + t     -- 'handled 1 false'
 '1' + 1     -- error: neither operand supplies __add
 ----
-
-A handler written as a `metamethod` literal is restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
 
 See <<sec-arithmetic-operators>> for full operator semantics.
 
@@ -101,15 +104,20 @@ function Vec2.new(X, Y)
    return setmetatable({ x = X, y = Y }, Vec2)
 end
 
-Vec2.__add = metamethod(B:table!):table return Vec2.new(&x + B.x, &y + B.y) end
-Vec2.__sub = metamethod(B:table!):table return Vec2.new(&x - B.x, &y - B.y) end
-Vec2.__mul = metamethod(B):table
-   if type(B) is 'number' then return Vec2.new(&x * B, &y * B) end
-   return Vec2.new(&x * B.x, &y * B.y)
+Vec2.__add = metamethod(Other:table!):table return Vec2.new(&x + Other.x, &y + Other.y) end
+Vec2.__sub = metamethod(Other:table!, LHS:bool):table
+   if LHS then return Vec2.new(&x - Other.x, &y - Other.y) end
+   return Vec2.new(Other.x - &x, Other.y - &y)
+end
+Vec2.__mul = metamethod(Other):table
+   if type(Other) is 'number' then return Vec2.new(&x * Other, &y * Other) end
+   return Vec2.new(&x * Other.x, &y * Other.y)
 end
 Vec2.__unm = metamethod():table return Vec2.new(-&x, -&y) end
 
-v = Vec2.new(1, 2) + Vec2.new(3, 4)   -- Vec2(4, 6)
+v = Vec2.new(1, 2) + Vec2.new(3, 4)     -- Vec2(4, 6)
+w = 2 * Vec2.new(1, 2)                  -- Vec2(2, 4): __mul discards LHS
+u = { x = 9, y = 9 } - Vec2.new(1, 2)   -- Vec2(8, 7): __sub applies LHS
 ----
 
 [[sec-comparison-and-equality]]
@@ -120,7 +128,19 @@ indexterm:[metamethods, comparison] The `is` operator compares tables and userda
 
 The runtime invokes `pass:[__]eq` only when both operands share the same metatable, or when both metatables define the same function object as their `pass:[__]eq` field.  If neither condition holds, the operator falls back to identity comparison.
 
-The `is not` and `!=` operators negate the result of the `is` comparison, including any `pass:[__]eq` metamethod invocation.
+[.api]`pass:[__]eq(Other)`
+
+Because both operands are known to agree on the handler, `pass:[__]eq` is dispatched with the operands in written order.  The subject is always the left operand, and no dispatch flag is passed:
+
+[source,tiri]
+----
+mt = { __eq = metamethod(Other:table!):bool return &val is Other.val end }
+a = setmetatable({ val = 1 }, mt)
+b = setmetatable({ val = 1 }, mt)
+print(a is b)   -- true
+----
+
+The `!=` operator negates the result of the `is` comparison, including any `pass:[__]eq` metamethod invocation.
 
 `rawequal(A, B)` bypasses `pass:[__]eq` entirely and always compares by identity.
 
@@ -130,24 +150,40 @@ The `is not` and `!=` operators negate the result of the `is` comparison, includ
 |===
 |Operator |Syntax |Metamethod
 
-|Less than          |`a < b`  |`pass:[__]lt(a, b)`
-|Less than or equal |`a <= b` |`pass:[__]le(a, b)`
-|Greater than       |`a > b`  |`pass:[__]lt(b, a)` (swapped operands)
-|Greater than or equal |`a >= b` |`pass:[__]le(b, a)` (swapped operands)
+|Less than          |`a < b`  |`pass:[__]lt(Other, LHS)`
+|Less than or equal |`a <= b` |`pass:[__]le(Other, LHS)`
+|Greater than       |`a > b`  |`pass:[__]lt` over the swapped pair `b < a`
+|Greater than or equal |`a >= b` |`pass:[__]le` over the swapped pair `b \<= a`
 |===
 
-If `pass:[__]le` is absent but `pass:[__]lt` is defined, the runtime evaluates `a <= b` as `not (b < a)`.
+If `pass:[__]le` is absent but `pass:[__]lt` is defined, the runtime evaluates `a \<= b` as `not (b < a)`.
+
+Both handlers are dispatched receiver-first, so the subject is the operand that supplied the handler and `LHS` reports its position in the pair the runtime evaluates.  For `>`, `>=` and the `pass:[__]le` fallback that pair is the swapped one, not the pair as written; see <<sec-binary-metamethod-dispatch>>.
+
+[%unbreakable]
+[source,tiri]
+----
+mt = {
+   __lt = metamethod(Other, LHS:bool):bool
+      if LHS then return &rank < Other.rank end
+      return Other.rank < &rank
+   end
+}
+a = setmetatable({ rank = 1 }, mt)
+
+print(a < { rank = 2 })   -- true:  LHS is true
+print({ rank = 2 } < a)   -- false: LHS is false
+print(a > { rank = 2 })   -- false: dispatched as { rank = 2 } < a
+----
 
 For two string operands, the runtime performs a direct lexicographic comparison without consulting metamethods.  See <<sec-comparison-operators>> for full details.
-
-`pass:[__]lt` and `pass:[__]le` written as `metamethod` literals are restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
 
 [[sec-string-and-length]]
 === String & Length
 
 ==== __tostring
 
-[.api]`pass:[__]tostring(Self)`
+[.api]`pass:[__]tostring()`
 
 The `tostring` function and string interpolation invoke the `pass:[__]tostring` metamethod when one is present.  The return value becomes the string representation of the object.
 
@@ -164,17 +200,34 @@ print(tostring(p))   -- 'Point(10, 20)'
 
 ==== __concat
 
-[.api]`pass:[__]concat(A, B)`
+[.api]`pass:[__]concat(Other, LHS)`
 
 The `..` operator invokes `pass:[__]concat` when either operand is neither a string nor a number.  The runtime checks the left operand's metatable first, then the right operand's metatable.  See <<sec-string-concatenation>>.
 
-A handler written as a `metamethod` literal is restricted to the left operand; see <<sec-binary-metamethod-restriction>>.
+The handler is dispatched receiver-first, so the subject is the operand that supplied it and `LHS` reports which side of the `..` that operand occupied (<<sec-binary-metamethod-dispatch>>).  Concatenation is not commutative, so a handler that joins its operands applies `LHS`:
+
+[%unbreakable]
+[source,tiri]
+----
+mt = {
+   __concat = metamethod(Other, LHS:bool):str
+      if LHS then return &text .. Other end
+      return Other .. &text
+   end
+}
+t = setmetatable({ text = 'world' }, mt)
+
+print(t .. '!')      -- 'world!'
+print('hello ' .. t) -- 'hello world'
+----
+
+The operator is right-associative, so each handler in a chain observes only its own pair of operands.
 
 ==== __len
 
-[.api]`pass:[__]len(Self)`
+[.api]`pass:[__]len()`
 
-The `#` operator invokes `pass:[__]len` when present on the operand's metatable, overriding the default table length.  The metamethod receives the table as its sole argument and returns the custom length.
+The `#` operator invokes `pass:[__]len` when present on the operand's metatable, overriding the default table length.  The metamethod receives the table as its subject, declares no parameters, and returns the custom length.
 
 The metamethod is required to return a number.  Returning any other value, including `nil`, raises an error.
 
@@ -211,7 +264,7 @@ See <<sec-length-operator>> for full operator semantics.
 
 indexterm:[metamethods, indexing] The runtime invokes `pass:[__]index` when a table lookup finds no value for the given key.  Direct entries in the table always take precedence; the metamethod is consulted only for absent keys.
 
-**Function form**.  When `pass:[__]index` is a function, the runtime calls it with the table and the key as arguments.  The return value becomes the result of the lookup.
+**Callable form**.  When `pass:[__]index` is a metamethod, the runtime calls it with the key.  The return value becomes the result of the lookup.
 
 [source,tiri]
 ----
@@ -243,7 +296,7 @@ A self reference is itself an ordinary table lookup, so `pass:[__]index` and `pa
 
 The runtime invokes `pass:[__]newindex` when assigning to a key that does not already exist in the table.  Assignments to existing keys bypass the metamethod and modify the table directly.
 
-**Function form**.  When `pass:[__]newindex` is a function, the runtime calls it with the table, the key, and the value.  The function is responsible for storing the value if desired.
+**Callable form**.  When `pass:[__]newindex` is a metamethod, the runtime calls it with the key and the value.  The metamethod is responsible for storing the value if desired.
 
 [source,tiri]
 ----
@@ -333,9 +386,9 @@ A class function name must not collide with a built-in `table` method, because t
 
 [[sec-callable-tables]]
 === Callable Tables
-[.api]`pass:[__]call(Self, ...)`
+[.api]`pass:[__]call(...)`
 
-indexterm:[callable tables] The runtime invokes `pass:[__]call` when a table is used in a function-call expression.  The table itself is passed as the first argument, followed by the call arguments.  The metamethod may return any number of values.
+indexterm:[callable tables] The runtime invokes `pass:[__]call` when a table is used in a function-call expression.  The table becomes the subject, and the call arguments follow it.  The metamethod may return any number of values.
 
 [source,tiri]
 ----
@@ -360,9 +413,9 @@ The `pass:[__]call` metamethod enables factory and constructor patterns where a 
 
 [[sec-clearing]]
 === Clearing
-[.api]`pass:[__]clear(Self)`
+[.api]`pass:[__]clear()`
 
-indexterm:[metamethods, clear] The runtime invokes `pass:[__]clear` when `table.clear()` is applied to the table, in either the library form `table.clear(t)` or the built-in method form `t.clear()` (<<sec-built-in-method-calls>>).  The table is passed as the only argument.
+indexterm:[metamethods, clear] The runtime invokes `pass:[__]clear` when `table.clear()` is applied to the table, in either the library form `table.clear(t)` or the built-in method form `t.clear()` (<<sec-built-in-method-calls>>).  The table is the subject and no further arguments are passed.
 
 When the metamethod is present it replaces the default behaviour entirely: the receiver's own entries are left untouched, and the metamethod is responsible for whatever clearing the type requires.  Values returned by the metamethod become the results of the `table.clear()` call.  Errors raised inside the metamethod propagate to the caller.
 
@@ -395,9 +448,9 @@ end
 === Garbage Collection
 ==== __gc
 
-[.api]`pass:[__]gc(Self)`
+[.api]`pass:[__]gc()`
 
-indexterm:[metamethods, garbage collection] indexterm:[finalisers] The `pass:[__]gc` metamethod is a _finaliser_.  The garbage collector invokes it with the object as its only argument when that object is about to be reclaimed.  Tables and full userdata both support finalisers.  Any return value is discarded.
+indexterm:[metamethods, garbage collection] indexterm:[finalisers] The `pass:[__]gc` metamethod is a _finaliser_.  The garbage collector invokes it with the object as its subject when that object is about to be reclaimed, and passes no further arguments.  Tables and full userdata both support finalisers.  Any return value is discarded.
 
 Finalisation is nondeterministic.  The collector determines when an unreachable object is reclaimed, so a finaliser runs at an unspecified point after the last reference to the object is released, and possibly not until the interpreter shuts down.  Code that requires cleanup at a known point in the program must use `<close>` or `defer` instead; see <<sec-finalisers-and-scope-cleanup>>.
 
@@ -426,7 +479,7 @@ mt.__gc = metamethod() print('released') end
 setmetatable(subject, mt)   -- subject is now registered
 ----
 
-`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule.  The handler is written with `function`, because a `metamethod` literal requires a table subject:
+`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule.  This is one of the two cases in which the handler is written with `function` rather than `metamethod`, because a `metamethod` literal requires a table subject (<<sec-legacy-function-metamethods>>):
 
 [source,tiri]
 ----
@@ -537,36 +590,38 @@ The `pass:[__]pairs` and `pass:[__]ipairs` metamethods customise the behaviour o
 
 [[sec-metamethod-reference]]
 === Metamethod Reference
-indexterm:[metamethods, reference] The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.
+indexterm:[metamethods, reference] The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.  Signatures are given in the `metamethod` form, so the subject is implicit and the declared parameters are those written in the literal.
 
 [cols="3,4a,4a",options="header"]
 |===
-|Metamethod |Trigger |Signature
+|Metamethod |Trigger |Declared parameters
 
-|`pass:[__]index`      |Read of absent key           |`pass:[__]index(self, key)` or table
-|`pass:[__]newindex`   |Write to absent key          |`pass:[__]newindex(self, key, value)` or table
-|`pass:[__]gc`         |Table or userdata finalisation |`pass:[__]gc(self)`
+|`pass:[__]index`      |Read of absent key           |`metamethod(Key)` or table
+|`pass:[__]newindex`   |Write to absent key          |`metamethod(Key, Value)` or table
+|`pass:[__]gc`         |Table or userdata finalisation |`metamethod()`
 |`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
-|`pass:[__]eq`         |`is` / `is not` / `!=` comparison       |`pass:[__]eq(a, b)` pass:[->]bool
-|`pass:[__]len`        |`#` operator                 |`pass:[__]len(self)` pass:[->]number
-|`pass:[__]lt`         |`<` and `>` comparison       |`pass:[__]lt(a, b)` pass:[->]bool
-|`pass:[__]le`         |`\<=` and `>=` comparison |`pass:[__]le(a, b)` pass:[->]bool
-|`pass:[__]concat`     |`..` operator                |`pass:[__]concat(a, b)`
-|`pass:[__]call`       |Function call on table       |`pass:[__]call(self, ...)`
-|`pass:[__]add`        |`+` operator                 |`pass:[__]add(a, b)`
-|`pass:[__]sub`        |`-` operator                 |`pass:[__]sub(a, b)`
-|`pass:[__]mul`        |`*` operator                 |`pass:[__]mul(a, b)`
-|`pass:[__]div`        |`/` operator                 |`pass:[__]div(a, b)`
-|`pass:[__]mod`        |`%` operator                 |`pass:[__]mod(a, b)`
-|`pass:[__]pow`        |`**` operator                |`pass:[__]pow(a, b)`
-|`pass:[__]unm`        |Unary `-` operator           |`pass:[__]unm(a)`
+|`pass:[__]eq`         |`is` / `!=` comparison       |`metamethod(Other)` pass:[->]bool
+|`pass:[__]len`        |`#` operator                 |`metamethod()` pass:[->]number
+|`pass:[__]lt`         |`<` and `>` comparison       |`metamethod(Other, LHS)` pass:[->]bool
+|`pass:[__]le`         |`\<=` and `>=` comparison |`metamethod(Other, LHS)` pass:[->]bool
+|`pass:[__]concat`     |`..` operator                |`metamethod(Other, LHS)`
+|`pass:[__]call`       |Function call on table       |`metamethod(...)`
+|`pass:[__]add`        |`+` operator                 |`metamethod(Other, LHS)`
+|`pass:[__]sub`        |`-` operator                 |`metamethod(Other, LHS)`
+|`pass:[__]mul`        |`*` operator                 |`metamethod(Other, LHS)`
+|`pass:[__]div`        |`/` operator                 |`metamethod(Other, LHS)`
+|`pass:[__]mod`        |`%` operator                 |`metamethod(Other, LHS)`
+|`pass:[__]pow`        |`**` operator                |`metamethod(Other, LHS)`
+|`pass:[__]unm`        |Unary `-` operator           |`metamethod()`
 |`pass:[__]metatable`  |Metatable protection (value) |Not callable; value returned by `getmetatable`
-|`pass:[__]tostring`   |`tostring()` conversion      |`pass:[__]tostring(self)` pass:[->]string
-|`pass:[__]close`      |`<close>` scope exit         |`pass:[__]close(self, err)`
-|`pass:[__]pairs`      |`pairs()` iteration          |`pass:[__]pairs(self)` pass:[->]iterator, state, initial
-|`pass:[__]ipairs`     |`ipairs()` iteration         |`pass:[__]ipairs(self)` pass:[->]iterator, state, initial
-|`pass:[__]clear`      |`table.clear()` call         |`pass:[__]clear(self)`
+|`pass:[__]tostring`   |`tostring()` conversion      |`metamethod()` pass:[->]string
+|`pass:[__]close`      |`<close>` scope exit         |`metamethod(Error)`
+|`pass:[__]pairs`      |`pairs()` iteration          |`metamethod()` pass:[->]iterator, state, initial
+|`pass:[__]ipairs`     |`ipairs()` iteration         |`metamethod()` pass:[->]iterator, state, initial
+|`pass:[__]clear`      |`table.clear()` call         |`metamethod()`
 |`pass:[__]context`    |Entity designation on `setmetatable()` |Not callable; value must be the boolean `true`
 |===
+
+A handler written in the legacy `function` form declares the subject as its own first parameter, ahead of the parameters listed above.  See <<sec-legacy-function-metamethods>>.
 
 `pass:[__]context` is a designation input rather than a metamethod: the runtime samples it once, when the metatable is attached, and never dispatches to it.  See <<sec-context-metafield>>.

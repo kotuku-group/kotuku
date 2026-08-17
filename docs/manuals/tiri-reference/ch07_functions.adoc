@@ -3,6 +3,8 @@
 //                       context-first activations (commit ac4f30a67)
 // UPDATED: 2026-08-16 - Renamed the keyword to `metamethod` and narrowed the section to metatable handlers; the
 //                       extraction and standalone-literal uses have been removed (commit 5c92d652a)
+// UPDATED: 2026-08-16 - Retargeted the sec-metamethod-literals cross-reference at the receiver-first binary
+//                       convention, replacing the removed binary restriction (commit 58e7bad8a)
 // UPDATED: 2026-08-15 - Native framework callbacks capture the registration context; rewrote sec-context-and-callbacks
 //                       and listed the Tiri interfaces that still begin at the root (commit 1a38f18e0)
 
