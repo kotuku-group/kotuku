@@ -34,23 +34,24 @@ gui.fontList = thunk():table
    end
 
    -- Merge
-   for group_name, option_group in pairs(options) do
+   for group_name, option_group in options do
       local cat_group:table = catalogue[group_name]
-      if cat_group is nil then
+      if not cat_group then
          cat_group = { }
          catalogue[group_name] = cat_group
       end
 
-      for key, value in pairs(option_group) do
+      for key, value in option_group do
          cat_group[key] = value
       end
    end
 
-   for group_name, entry in pairs(catalogue) do
+   for group_name, entry in catalogue do
       local name = entry.Name ?? group_name
       local font = { name=name }
 
       if entry.Alias then font.alias = entry.Alias end
+
       if entry.Styles then
          font.styles = entry.Styles.split(',')
       else
@@ -79,17 +80,17 @@ end
 
 gui.mtHSV = { -- HSV metatable
    __context = true,
-   __newindex = function(Self, Key, Value)
+   __newindex = metamethod(Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
-   __eq = function(A:table, B:table!):bool
-      return A.h is B.h and A.s is B.s and A.v is B.v and A.a is B.a
+   __eq = metamethod(Other:table!):bool
+      return &h is Other.h and &s is Other.s and &v is Other.v and &a is Other.a
    end,
-   __tostring = function(Self):str -- Returns an SVG compliant colour string
-      if Self.a is 1 or Self.a is nil then
-         return string.format('hsv(%d %d %d)', Self.r ?? -1, Self.g ?? -1, Self.b ?? -1)
+   __tostring = metamethod():str -- Returns an SVG compliant colour string
+      if &a is 1 or &a is nil then
+         return string.format('hsv(%d %d %d)', &r ?? -1, &g ?? -1, &b ?? -1)
       else
-         return string.format('hsv(%d %d %d / %g)', Self.r ?? -1, Self.g ?? -1, Self.b ?? -1, Self.a)
+         return string.format('hsv(%d %d %d / %g)', &r ?? -1, &g ?? -1, &b ?? -1, &a)
       end
    end
 }
@@ -145,17 +146,17 @@ end
 
 gui.mtRGB = { -- sRGB metatable
    __context = true,
-   __newindex = function(Self, Key, Value)
+   __newindex = metamethod(Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
-   __eq = function(A:table, B:table!):bool
-      return A.r is B.r and A.g is B.g and A.b is B.b and A.a is B.a
+   __eq = metamethod(Other:table!):bool
+      return &r is Other.r and &g is Other.g and &b is Other.b and &a is Other.a
    end,
-   __tostring = function(Self):str -- Returns an SVG compliant colour string
-      if Self.a >= 1 or Self.a is nil then
-         return string.format('rgb(%d %d %d)', Self.r ? Self.r * 255 : 0, Self.g ? Self.g * 255 : 0, Self.b ? Self.b * 255 : 0)
+   __tostring = metamethod():str -- Returns an SVG compliant colour string
+      if &a >= 1 or &a is nil then
+         return string.format('rgb(%d %d %d)', &r ? &r * 255 : 0, &g ? &g * 255 : 0, &b ? &b * 255 : 0)
       else
-         return string.format('rgb(%d %d %d / %g)', Self.r ? Self.r * 255 : 0, Self.g ? Self.g * 255 : 0, Self.b ? Self.b * 255 : 0, Self.a)
+         return string.format('rgb(%d %d %d / %g)', &r ? &r * 255 : 0, &g ? &g * 255 : 0, &b ? &b * 255 : 0, &a)
       end
    end
 }
@@ -169,7 +170,7 @@ gui.srgb = function(R:num, G:num, B:num, A:num, KV:table):table -- sRGB values
    A ?= 255
    result = entity { r = R/255, g = G/255, b = B/255, a = A/255 }
    if KV then
-      for k, v in pairs(KV) do
+      for k, v in KV do
          result[k] = v
       end
    end
@@ -179,7 +180,7 @@ end
 gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table -- Normalised RGB values
    result = entity { r = R, g = G, b = B, a = A ? A : 1 }
    if KV then
-      for k, v in pairs(KV) do
+      for k, v in KV do
          result[k] = v
       end
    end
