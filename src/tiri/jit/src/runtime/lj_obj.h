@@ -1270,6 +1270,11 @@ enum class AET : uint8_t {
    ANY,        // TValue (mixed type storage)
    STRUCT,     // Structured data (uses structdef)
    OBJECT,     // OBJECTPTR for external object references originating from the Kotuku API; otherwise GCobject
+   // Appended to preserve the serialised ordinals above.
+   UINT8,      // uint8_t numeric storage (not a byte buffer)
+   UINT16,     // uint16_t
+   UINT32,     // uint32_t
+   UINT64,     // uint64_t
    MAX,
    VULNERABLE = PTR
 };

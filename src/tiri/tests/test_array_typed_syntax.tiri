@@ -134,6 +134,30 @@ end
    assert(table_arr.type() is 'table', "table should be 'table'")
 end
 
+@Test function ArrayTypedUnsignedTypes()
+   local uint8_arr = array<uint8>
+   local uint16_arr = array<uint16, 2>
+   local uint32_arr = array<uint32> { 0, 4294967295 }
+   local uint64_arr = array<uint64, 2> { 1, 9007199254740991 }
+   local legacy_new = array.new(1, 'uint16')
+   local legacy_of = array.of('uint8', 255)
+
+   assert(uint8_arr.type() is 'uint8' and tostring(uint8_arr) is 'array<uint8, 0>', 'uint8 identity was not preserved')
+   assert(uint16_arr.type() is 'uint16' and #uint16_arr is 2, 'uint16 fixed-size syntax failed')
+   assert(uint32_arr.type() is 'uint32' and uint32_arr[1] is 4294967295, 'uint32 literal lost its range')
+   assert(uint64_arr.type() is 'uint64' and uint64_arr[1] is 9007199254740991, 'uint64 literal lost exact data')
+   assert(legacy_new.type() is 'uint16' and legacy_of.type() is 'uint8' and legacy_of[0] is 255,
+      'legacy unsigned constructors did not retain their element types')
+
+   local failed = false
+   try
+      uint8_arr.push('A')
+   except error_value
+      failed = true
+   end
+   assert(failed, 'array<uint8> accepted byte-buffer string input')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Whitespace handling
 

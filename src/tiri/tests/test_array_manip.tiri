@@ -92,6 +92,28 @@ end
    assert(arr.getString() is 'ABCD', 'getString should return ABCD')
 end
 
+@Test function UnsignedArrayMutationAndAlgorithms()
+   local bytes = array<uint8> { -1, 256, 1.9 }
+   assert(bytes[0] is 255 and bytes[1] is 0 and bytes[2] is 1, 'uint8 construction did not wrap and truncate')
+   bytes.push(2)
+   bytes.insert(1, 257)
+   bytes.fill(-1, 2, 1)
+   assert(bytes[1] is 1 and bytes[2] is 255, 'uint8 mutation did not preserve modulo conversion')
+
+   local values = array<uint32> { 2147483648, 3, 4294967295 }
+   values.sort()
+   assert(values[0] is 3 and values[1] is 2147483648 and values.find(4294967295) is 2,
+      'uint32 ordering or find used signed comparison')
+   local copy = values.clone().slice({0 into 1})
+   assert(copy.type() is 'uint32' and copy[1] is 2147483648, 'uint32 clone or slice lost its identity')
+
+   local words = array<uint16> { 1, 2, 3 }
+   local mapped = words.map(Value => num: Value + 65535).filter(Value => bool: Value is 0)
+   assert(mapped.type() is 'uint16' and #mapped is 1 and mapped[0] is 0, 'unsigned map/filter lost modulo storage')
+   assert(array<uint64> { 9007199254740991 }.concat('', '%llu') is '9007199254740991',
+      'uint64 concat did not use an unsigned long long format')
+end
+
 @Test function ArrayPushByteString()
    empty = array<byte>
    len = empty.push('')
