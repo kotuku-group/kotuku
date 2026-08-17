@@ -1008,20 +1008,22 @@ LJLIB_CF(debug_traceback)
 // Returns a table with:
 //   success     - boolean: true if no errors
 //   diagnostics - array of diagnostic entries, each containing:
-//     line      - 0-based line number
-//     column    - 0-based column number
-//     endColumn - 0-based end column (column + 1 as approximation)
+//     line      - 1-based line number
+//     column    - 1-based column number
+//     endColumn - 1-based exclusive end column (column + 1 as approximation)
 //     severity  - 0=Info, 1=Warning, 2=Error
 //     code      - string error code (e.g., "UnexpectedToken")
 //     message   - human-readable error message
 //   tips        - array of code improvement hints (LSP severity 4), each containing:
-//     line      - 0-based line number
-//     column    - 0-based column number
-//     endColumn - 0-based end column
+//     line      - 1-based line number
+//     column    - 1-based column number
+//     endColumn - 1-based exclusive end column
 //     severity  - 3 (Hint - maps to LSP severity 4)
 //     priority  - 1=critical, 2=medium, 3=low
 //     category  - hint category (e.g., "performance", "code-quality")
 //     message   - human-readable improvement suggestion
+//
+// All source positions returned by debug.validate() are 1-based.  A value of zero indicates an unavailable position.
 //
 // The optional second argument may be an options table for richer control:
 //   flags - a string of comma/space separated flags (e.g. "symbols" to include parsed symbol metadata)
@@ -1071,6 +1073,13 @@ static void set_table_int(lua_State *L, CSTRING Key, int Value)
 {
    lua_pushinteger(L, Value);
    lua_setfield(L, -2, Key);
+}
+
+static int source_position(BCLine Position)
+{
+   if (not Position.isValid()) return 0;
+   int position = Position.lineNumber();
+   return position > 0 ? position : 0;
 }
 
 static void push_annotation_metadata(lua_State *L, const std::vector<ParserAnnotationMetadata> &Annotations)
@@ -1162,10 +1171,8 @@ static void push_fields_metadata(lua_State *L, const std::vector<ParserStructFie
       set_table_string(L, "name", field.name);
       set_table_string(L, "type", field.type);
       set_table_string(L, "doc", field.doc);
-      int32_t line = field.span.line.lineNumber();
-      int32_t column = field.span.column.lineNumber();
-      set_table_int(L, "line", line > 0 ? line - 1 : 0);
-      set_table_int(L, "column", column > 0 ? column - 1 : 0);
+      set_table_int(L, "line", source_position(field.span.line));
+      set_table_int(L, "column", source_position(field.span.column));
       lua_rawseti(L, -2, idx++);
    }
 }
@@ -1182,10 +1189,10 @@ static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Sym
       set_table_string(L, "name", symbol.name);
       set_table_string(L, "kind", symbol.kind);
       set_table_string(L, "signature", symbol.signature);
-      set_table_int(L, "line", symbol.span.line > 0 ? int(symbol.span.line) - 1 : 0);
-      set_table_int(L, "column", symbol.span.column > 0 ? int(symbol.span.column) - 1 : 0);
-      set_table_int(L, "endLine", symbol.end_span.line > 0 ? int(symbol.end_span.line) - 1 : 0);
-      set_table_int(L, "endColumn", symbol.end_span.column > 0 ? int(symbol.end_span.column) - 1 : 0);
+      set_table_int(L, "line", source_position(symbol.span.line));
+      set_table_int(L, "column", source_position(symbol.span.column));
+      set_table_int(L, "endLine", source_position(symbol.end_span.line));
+      set_table_int(L, "endColumn", source_position(symbol.end_span.column));
 
       push_params_metadata(L, symbol.params);
       lua_setfield(L, -2, "params");
@@ -1276,12 +1283,11 @@ LJLIB_CF(debug_validate)
          lua_newtable(L);  // diagnostic entry
 
          SourceSpan span = entry.token.span();
-         // LSP uses 0-based line/column, Tiri parser uses 1-based
-         int32_t line = span.line.lineNumber();
-         int32_t column = span.column.lineNumber();
-         settabsi(L, "line", line > 0 ? line - 1 : 0);
-         settabsi(L, "column", column > 0 ? column - 1 : 0);
-         settabsi(L, "endColumn", column);  // Already correct after -1 adjustment
+         int line = source_position(span.line);
+         int column = source_position(span.column);
+         settabsi(L, "line", line);
+         settabsi(L, "column", column);
+         settabsi(L, "endColumn", column > 0 ? column + 1 : 0);
          settabsi(L, "severity", int(entry.severity));
          settabss(L, "code", diagnostic_code_name(entry.code));
          settabss(L, "message", entry.message.empty() ? "Syntax error" : entry.message.c_str());
@@ -1311,12 +1317,11 @@ LJLIB_CF(debug_validate)
          lua_newtable(L);  // tip entry
 
          SourceSpan span = entry.token.span();
-         // LSP uses 0-based line/column, Tiri parser uses 1-based
-         int32_t line = span.line.lineNumber();
-         int32_t column = span.column.lineNumber();
-         settabsi(L, "line", line > 0 ? line - 1 : 0);
-         settabsi(L, "column", column > 0 ? column - 1 : 0);
-         settabsi(L, "endColumn", column);  // Already correct after -1 adjustment
+         int line = source_position(span.line);
+         int column = source_position(span.column);
+         settabsi(L, "line", line);
+         settabsi(L, "column", column);
+         settabsi(L, "endColumn", column > 0 ? column + 1 : 0);
          settabsi(L, "severity", 3);  // Hint severity (maps to LSP severity 4)
          settabsi(L, "priority", entry.priority);
          settabss(L, "category", category_name(entry.category));
