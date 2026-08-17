@@ -3,6 +3,8 @@
 // UPDATED: 2026-08-11 - async.pool.clear() is restored as an equivalent of reset() via __clear (commit 0e4d3a341)
 // UPDATED: 2026-08-14 - async.pool.reset() is removed; clearing is dispatched solely through the __clear metamethod (commit 148480f9d)
 // UPDATED: 2026-08-15 - Documented that async callbacks begin in the root context (commit 1a38f18e0)
+// UPDATED: 2026-08-17 - async callbacks capture the submission context; rewrote the Callback Execution note
+//                       (commit f052ec04d)
 
 [[ch-threading]]
 == Threading
@@ -186,6 +188,8 @@ proc.sleep()
 ===== Callback Execution
 
 Callbacks for `async.action()` and `async.method()` are delivered via the message system.  They execute on the main thread during the event processing loop — this requires an active `processing.sleep()` call to dispatch.
+
+The callback captures the context that is current at the point of submission, and observes that table on every invocation.  See <<sec-context-and-callbacks>>.
 
 After each callback returns, the next queued action for the same object is dispatched.  A long-running callback delays subsequent queued actions.  If no callback was provided, the next queued action is dispatched immediately upon completion of the current one.  If thread preparation fails before the thread starts, an exception is raised immediately and no callback occurs.
 

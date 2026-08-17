@@ -7,6 +7,11 @@
 //                       convention, replacing the removed binary restriction (commit 58e7bad8a)
 // UPDATED: 2026-08-15 - Native framework callbacks capture the registration context; rewrote sec-context-and-callbacks
 //                       and listed the Tiri interfaces that still begin at the root (commit 1a38f18e0)
+// UPDATED: 2026-08-17 - Tiri's own subscription interfaces capture the registration context as well; replaced the
+//                       "Interfaces That Begin at the Root" section with sec-tiri-subscription-callbacks and
+//                       documented that a dispatch-point context is never inherited (commit f052ec04d)
+// UPDATED: 2026-08-17 - A callback must be a function value; a string naming a global function is rejected
+//                       (commit 8ec1562e5)
 
 [[ch-functions]]
 == Functions

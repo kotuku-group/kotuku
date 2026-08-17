@@ -6,6 +6,8 @@
 // UPDATED: 2026-08-16 - Migrated the __close migration example to the `metamethod` form (commit 58e7bad8a)
 // UPDATED: 2026-08-15 - Framework callbacks now capture the registration context; corrected the self-migration note
 //                       (commit 1a38f18e0)
+// UPDATED: 2026-08-17 - Tiri's own subscription interfaces capture the registration context as well; corrected the
+//                       self-migration note (commit f052ec04d)
 // UPDATED: 2026-08-15 - Added the sec-migration-arithmetic-coercion section; arithmetic no longer coerces string
 //                       operands (commit f54ecaf52)
 // UPDATED: 2026-08-16 - Bitwise operators no longer coerce string operands; broadened sec-migration-arithmetic-coercion
@@ -319,8 +321,8 @@ account.deposit(50)
 The mapping from `self.` to `&`, and from `self` to `+&&+`, is direct, with four differences to check during migration:
 
 - The receiver must be an __entity__.  An ordinary table inherits the caller's context instead of the receiver, so designate the table at the point where it is constructed.
-- A function extracted from a table (`ref = t.handler`) carries no association with a receiver.  Declare it as a `method` literal when it is written to be extracted, so that the subject is supplied as its first argument at each call; see <<sec-contextual-methods>>.
-- A callback registered with the framework begins in the root context, not on the table that registered it.  Capture the table as an upvalue.  See <<sec-context-and-callbacks>>.
+- A function extracted from a table (`ref = t.handler`) carries no association with a receiver.  Pass the table and call the method on it, or wrap the call in a closure, when a receiver must survive the extraction; see <<sec-extracted-methods>>.
+- A callback registered as a function value captures the context that is current at the point of registration, and observes that table on every invocation.  This covers framework callbacks and Tiri's own subscription interfaces -- `processing.delayedCall()`, `object.subscribe()`, `subscribeEvent()`, `input` and `async`.  See <<sec-context-and-callbacks>>.
 - A function that must operate on a table other than its receiver declares that table as an ordinary parameter.
 
 The `pass:[__]index` class pattern carries over apart from this substitution and the addition of `pass:[__]context = true` to the class table; see <<sec-class-pattern>>.

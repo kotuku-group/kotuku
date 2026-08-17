@@ -3,6 +3,8 @@
 // UPDATED: 2026-08-11 - Migrated method calls in the input examples to dot syntax (commit 7e6746950)
 // UPDATED: 2026-08-15 - Vector subscriptions capture the registration context; the input namespace still begins
 //                       at the root (commit 1a38f18e0)
+// UPDATED: 2026-08-17 - input.subscribe(), input.keyboard() and input.requestItem() capture the registration context
+//                       and require a function value (commit f052ec04d)
 
 [[ch-input-handling]]
 == Input Handling
@@ -260,7 +262,9 @@ The `input.subscribe()` function creates a subscription for raw device events at
 
 `Mask` uses the same `JTYPE` flags as vector subscriptions.  `SurfaceFilter` restricts events to those targeting a specific `Surface` (pass `nil` to receive all).  `DeviceFilter` is reserved for future use and must be set to `0`.
 
-The callback prototype is `function(Handle, Event)`.  `Handle` is the input subscription object.  `Event` is the first node of an `InputEvent` chain.
+The `Callback` prototype is `function(Handle, Event)`.  `Handle` is the input subscription object.  `Event` is the first node of an `InputEvent` chain.
+
+The `Callback` is captured with the context that is current at the point of subscription and observes that table on every invocation.  `input.keyboard()` and `input.requestItem()` follow the same rule.  See <<sec-context-and-callbacks>>.
 
 [source,tiri]
 ----

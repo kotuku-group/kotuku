@@ -7,6 +7,8 @@
 // UPDATED: 2026-08-13 - The callback example now designates its receiver as an entity (commit d3638efc0)
 // UPDATED: 2026-08-15 - Native callbacks (including timer callbacks) capture the registration context; delayedCall(),
 //                       subscribeEvent() and object.subscribe() still begin at the root (commit 1a38f18e0)
+// UPDATED: 2026-08-17 - delayedCall(), subscribeEvent() and object.subscribe() capture the registration context;
+//                       rewrote sec-callback-context (commit f052ec04d)
 
 [[ch-processing-and-events]]
 == Processing & Events
@@ -130,9 +132,7 @@ The scheduled function executes exactly once.  To schedule recurring work, call 
 [[sec-callback-context]]
 ==== Callback Context
 
-A callback entered from outside the script's own control flow begins in the root context (<<sec-the-root-context>>), whatever context was current when it was registered.  This applies to `processing.delayedCall()`, timer callbacks, and object subscriptions (<<sec-subscriptions>>).
-
-A callback that operates on a table captures it as an upvalue:
+`processing.delayedCall()` captures the context that is current at the point of registration, and installs it as the current context each time the scheduled function runs.  `subscribeEvent()` (<<sec-the-event-subsystem>>) and `object.subscribe()` (<<sec-subscriptions>>) behave the same way.
 
 [%unbreakable]
 [source,tiri]
@@ -141,12 +141,14 @@ monitor = entity { name = 'monitor', ready = false }
 
 function monitor.arm()
    processing.delayedCall(function()
-      monitor.ready = true      -- '&ready' resolves against _G here
+      &ready = true       -- 'monitor', captured at registration
    end)
 end
 ----
 
-A callback passed to the framework as a function value captures the context that is current at the point of registration, and observes it on every invocation.  This covers module function arguments such as `mSys.SubscribeTimer()` (<<sec-timers-and-scheduling>>), object action and method arguments, and object fields that hold a function.  <<sec-context-and-callbacks>> defines the rule and the complete list of interfaces that begin at the root.
+The context that is active at the point of dispatch is not inherited.  A delayed call that fires while a `using` block surrounds `processing.sleep()` observes its captured context, not the block's activation, and the dispatch point's context is restored when the callback returns.
+
+A callback passed to the framework as a function value follows the same rule.  This covers module function arguments such as `mSys.SubscribeTimer()` (<<sec-timers-and-scheduling>>), object action and method arguments, and object fields that hold a function.  <<sec-context-and-callbacks>> defines the rule and lists every interface that captures a context.
 
 ==== processing.task()
 
@@ -292,7 +294,7 @@ Subscribes to the event identified by `EventName`.  Returns a handle for later u
 
 `EventName` is a string in the format `group.subgroup.name`.  A single-character wildcard `pass:[*]` is permitted in the subgroup and name positions to match all events within that level.
 
-`Callback` receives one argument: the numeric event identifier.
+`Callback` must be a function value and receives one argument: the numeric event identifier.  It observes the context that was current at the point of subscription (<<sec-callback-context>>).
 
 [source,tiri]
 ----

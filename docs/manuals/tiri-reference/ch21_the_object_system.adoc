@@ -7,6 +7,8 @@
 //                       the sec-object-method-dispatch section (commit d26d1d4b9)
 // UPDATED: 2026-08-15 - Callbacks passed as method arguments or assigned to fields capture the registration context;
 //                       object.subscribe() still begins at the root (commit 1a38f18e0)
+// UPDATED: 2026-08-17 - object.subscribe() captures the subscription context and requires a function value; rewrote
+//                       the Subscription Context section (commit f052ec04d)
 
 [[ch-the-object-system]]
 == The Object System
