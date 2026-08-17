@@ -39,24 +39,24 @@ end
 @Test function UnsignedArrayBindingAndHotIndexing()
    function identity_uint8(Value:array<uint8>):array<uint8> return Value end
    function identity_uint16(Value:array<uint16>):array<uint16> return Value end
-   function identity_uint32(Value:array<uint32>):array<uint32> return Value end
+   function identity_uint(Value:array<uint>):array<uint> return Value end
    function identity_uint64(Value:array<uint64>):array<uint64> return Value end
 
    assert(identity_uint8(array<uint8> {}) != nil and identity_uint16(array<uint16> {}) != nil,
       'small unsigned array contracts were rejected')
-   assert(identity_uint32(array<uint32> {}) != nil and identity_uint64(array<uint64> {}) != nil,
+   assert(identity_uint(array<uint> {}) != nil and identity_uint64(array<uint64> {}) != nil,
       'wide unsigned array contracts were rejected')
 
    local contract_failed = false
    try
-      identity_uint32(array<int> {})
+      identity_uint(array<int> {})
    except error_value
       contract_failed = true
    end
    assert(contract_failed, 'signed array satisfied an unsigned array contract')
 
    local words = array<uint16, 1>
-   local masks = array<uint32, 1>
+   local masks = array<uint, 1>
    local counters = array<uint64, 1>
    for i in {0 to 400} do
       words[0] = 32768 + i

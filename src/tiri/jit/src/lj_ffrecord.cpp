@@ -576,7 +576,7 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
    else if (TypeStr->len IS 5 and memcmp(type_name, "int64", 5) IS 0) *Result = AET::INT64;
    else if (TypeStr->len IS 5 and memcmp(type_name, "uint8", 5) IS 0) *Result = AET::UINT8;
    else if (TypeStr->len IS 6 and memcmp(type_name, "uint16", 6) IS 0) *Result = AET::UINT16;
-   else if (TypeStr->len IS 6 and memcmp(type_name, "uint32", 6) IS 0) *Result = AET::UINT32;
+   else if (TypeStr->len IS 4 and memcmp(type_name, "uint", 4) IS 0) *Result = AET::UINT32;
    else if (TypeStr->len IS 6 and memcmp(type_name, "uint64", 6) IS 0) *Result = AET::UINT64;
    else if (TypeStr->len IS 5 and memcmp(type_name, "float", 5) IS 0) *Result = AET::FLOAT;
    else if (TypeStr->len IS 6 and memcmp(type_name, "double", 6) IS 0) *Result = AET::DOUBLE;
