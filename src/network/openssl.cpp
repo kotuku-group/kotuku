@@ -694,9 +694,23 @@ static ERR tls_connect(extNetSocket *Self)
 // handshake and then ceases monitoring of the FD.  If SSL then needs to continue its handshake then it will tell us in
 // the RECEIVE() and SEND() functions.
 
+template <class T> bool valid_ssl_handshake_callback(HOSTHANDLE SocketFD, T *Self)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (not Self) { log.warning(ERR::InvalidState); return false; }
+   if (not Self->Handle.is_valid()) { log.warning(ERR::InvalidState); return false; }
+   if (Self->Handle.hosthandle() != SocketFD) { log.warning(ERR::InvalidState); return false; }
+   if (not Self->TLS.Handle) { log.warning(ERR::InvalidState); return false; }
+
+   return Self->Handle.is_valid() and (Self->Handle.hosthandle() IS SocketFD) and Self->TLS.Handle;
+}
+
 template <class T> void ssl_handshake_write_impl(HOSTHANDLE SocketFD, T *Self)
 {
    kt::Log log(__FUNCTION__);
+   if (!valid_ssl_handshake_callback(SocketFD, Self)) return;
+
    auto Socket = network_platform().socket_from_hosthandle(SocketFD);
 
    log.trace("Socket: %" PF64, (MAXINT)SocketFD);
@@ -731,6 +745,8 @@ template <class T> void ssl_handshake_write_impl(HOSTHANDLE SocketFD, T *Self)
 template <class T> void ssl_handshake_read_impl(HOSTHANDLE SocketFD, T *Self)
 {
    kt::Log log(__FUNCTION__);
+   if (!valid_ssl_handshake_callback(SocketFD, Self)) return;
+
    auto Socket = network_platform().socket_from_hosthandle(SocketFD);
 
    log.trace("Socket: %" PF64, (MAXINT)SocketFD);
