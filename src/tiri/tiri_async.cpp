@@ -30,7 +30,7 @@ additional functionality in the future.
 // Message payload for thread completion callbacks (used by script, action, and method)
 
 struct ThreadMsg {
-   int      Callback; // Client callback reference
+   FUNCTION Callback; // Client callback and captured context
    int      ObjRef;   // Registry reference that pins the GCobject from GC collection
    extTiri *Owner;    // The parent script that owns the registry references
    double   Key;      // Client-provided key value forwarded to the callback
@@ -55,13 +55,12 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
    auto tiri = (extTiri *)Msg->Owner;
    auto lua = tiri->Lua;
 
-   if (Msg->Callback != LUA_NOREF) {
-      LuaContextRootGuard context_guard(lua);
+   if (Msg->Callback.defined()) {
       if ((Object) and (Object->baseClassID() IS CLASSID::SCRIPT)) {
          auto args = std::to_array<ScriptArg>({
             { "Object", Object, FD_OBJECTPTR }
          });
-         Msg->Owner->callback(Msg->Callback, args.data(), int(args.size()), nullptr);
+         Msg->Owner->callback(Msg->Callback.scriptValue(), args.data(), int(args.size()), nullptr);
       }
       else {
          auto args = std::to_array<ScriptArg>({
@@ -70,9 +69,9 @@ static void msg_thread_complete(ACTIONID ActionID, OBJECTPTR Object, ERR Error, 
             { "Error",    int(Error) },
             { "Key",      Msg->Key }
          });
-         Msg->Owner->callback(Msg->Callback, args.data(), int(args.size()), nullptr);
+         Msg->Owner->callback(Msg->Callback.scriptValue(), args.data(), int(args.size()), nullptr);
       }
-      luaL_unref(lua, LUA_REGISTRYINDEX, Msg->Callback); // Drop the procedure reference
+      release_tiri_function(lua, &Msg->Callback);
    }
 
    // Unpin the GCobject from the registry and release the pin on the underlying object.
@@ -122,10 +121,11 @@ static int async_script(lua_State *Lua)
       }
    }
 
-   int client_callback = LUA_NOREF;
+   FUNCTION client_callback;
    if (lua_isfunction(Lua, 2)) {
-      lua_pushvalue(Lua, 2);
-      client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      if (capture_tiri_function(Lua, 2, client_callback) != ERR::Okay) {
+         luaL_argerror(Lua, 2, "Function expected.");
+      }
    }
 
    // Pin the script in the registry so the GC cannot collect it while the thread is running.
@@ -138,7 +138,7 @@ static int async_script(lua_State *Lua)
    if (AsyncAction(AC::Activate, gc_script->ptr, nullptr, &callback) != ERR::Okay) {
       gc_script->ptr->unpin(true);
       luaL_unref(Lua, LUA_REGISTRYINDEX, obj_ref);
-      luaL_unref(Lua, LUA_REGISTRYINDEX, client_callback);
+      release_tiri_function(Lua, &client_callback);
       delete msg;
       luaL_error(Lua, "Failed to run script in new thread.");
    }
@@ -148,17 +148,14 @@ static int async_script(lua_State *Lua)
 
 //********************************************************************************************************************
 
-static int ref_async_callback(lua_State *Lua, int ArgIndex)
+static FUNCTION capture_async_callback(lua_State *Lua, int ArgIndex)
 {
-   int client_callback = LUA_NOREF;
+   FUNCTION client_callback;
    auto type = lua_type(Lua, ArgIndex);
-   if (type IS LUA_TSTRING) {
-      lua_getglobal(Lua, lua_tostring(Lua, ArgIndex));
-      client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   }
-   else if (type IS LUA_TFUNCTION) {
-      lua_pushvalue(Lua, ArgIndex);
-      client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
+      if (capture_tiri_function(Lua, ArgIndex, client_callback) != ERR::Okay) {
+         luaL_argerror(Lua, ArgIndex, "Function reference expected.");
+      }
    }
 
    return client_callback;
@@ -167,7 +164,7 @@ static int ref_async_callback(lua_State *Lua, int ArgIndex)
 static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING Name, const FunctionField *Args,
    int ArgsSize, AC ActionID, bool HasResults, CSTRING ResultError)
 {
-   int client_callback = ref_async_callback(Lua, 3);
+   FUNCTION client_callback = capture_async_callback(Lua, 3);
 
    // Pin the object and GCobject to prevent destruction while the thread is running.
 
@@ -182,7 +179,7 @@ static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING N
    auto abort = [&]() {
       GcObj->ptr->unpin(true);
       luaL_unref(Lua, LUA_REGISTRYINDEX, obj_ref);
-      luaL_unref(Lua, LUA_REGISTRYINDEX, client_callback);
+      release_tiri_function(Lua, &client_callback);
       delete msg;
    };
 

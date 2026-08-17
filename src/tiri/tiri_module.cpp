@@ -438,8 +438,8 @@ static ERR callable_arg_type(const FunctionField &Field, ffi_type *&Type, std::s
 
 //********************************************************************************************************************
 // Accumulate the bridge-owned temporaries one argument can require.  The classification must agree with the
-// marshalling loop in module_call_inner(); a temporary counted here but not used is merely wasteful, whereas one used
-// but not counted would overflow a bounded store.
+// marshalling loop in module_call_inner().  A temporary counted here but not used is merely wasteful, whereas one
+// used but not counted would overflow a bounded store.
 
 static void profile_arg(const FunctionField &Field, marshalling_profile &Profile)
 {
@@ -457,7 +457,7 @@ static void profile_arg(const FunctionField &Field, marshalling_profile &Profile
       return;
    }
 
-   if (argtype & FD_FUNCTION) return; // The single FUNCTION reserve lives in the frame, not a store
+   if (argtype & FD_FUNCTION) return; // Isolated function lives in the frame, not a store
 
    if (argtype & FD_STR) {
       if (argtype & FD_CPP) {

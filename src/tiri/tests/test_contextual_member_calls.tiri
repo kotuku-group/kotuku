@@ -470,7 +470,7 @@ end
    assert(&name is nil, 'Stack and collection lifecycle work should restore the root context')
 end
 
-@Test function DelayedCallbacksAreUnbound()
+@Test function DelayedCallbacksCaptureTheirRegistrationContext()
    &glDelayedContextName = 'root'
    &glDelayedObservedContext = nil
    local receiver = entity { glDelayedContextName = 'receiver' }
@@ -484,13 +484,14 @@ end
 
    receiver.schedule()
    check processing.sleep(1.0)
-   assert(&glDelayedObservedContext is 'root',
-      'A delayed callback should begin unbound in the state root context')
+   assert(receiver.glDelayedObservedContext is 'receiver',
+      'A delayed callback should observe the context active when it was registered')
+   assert(&glDelayedObservedContext is nil, 'A delayed callback should restore the root context after it returns')
    &glDelayedContextName = nil
    &glDelayedObservedContext = nil
 end
 
-@Test function ActionCallbacksAreUnbound()
+@Test function ActionCallbacksCaptureTheirRegistrationContext()
    &glActionContextName = 'root'
    &glActionObservedContext = nil
    local receiver = entity { glActionContextName = 'receiver' }
@@ -521,8 +522,9 @@ end
    end
 
    receiver.wait_for_free()
-   assert(&glActionObservedContext is 'root',
-      'An out-of-band action callback should begin unbound in the state root context')
+   assert(receiver.glActionObservedContext is 'receiver',
+      'An out-of-band action callback should observe the context active when it was registered')
+   assert(&glActionObservedContext is nil, 'An action callback should restore the root context after it returns')
 end
 
 @Test function ContextualTailCallsTransferOwnership()

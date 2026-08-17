@@ -171,6 +171,28 @@ ERR capture_tiri_function(lua_State *Lua, int ValueIndex, FUNCTION &Function)
    return ERR::Okay;
 }
 
+ERR push_tiri_function(lua_State *Lua, const FUNCTION &Function, LuaCallbackContextGuard &ContextGuard)
+{
+   if ((not Function.isScript()) or (Function.Context != Lua->script)) return ERR::Args;
+
+   if (Function.contextID() > 0) {
+      lua_rawgeti(Lua, LUA_REGISTRYINDEX, Function.contextID());
+      if (lua_type(Lua, -1) != LUA_TTABLE) {
+         lua_pop(Lua, 1);
+         return ERR::InvalidData;
+      }
+
+      ContextGuard.activate(tabV(Lua->top - 1));
+      lua_pop(Lua, 1);
+   }
+
+   lua_rawgeti(Lua, LUA_REGISTRYINDEX, int(Function.procedureID()));
+   if (lua_type(Lua, -1) IS LUA_TFUNCTION) return ERR::Okay;
+
+   lua_pop(Lua, 1);
+   return ERR::NotFound;
+}
+
 void release_tiri_function(lua_State *Lua, FUNCTION *Function)
 {
    if ((not Function) or (not Function->isScript())) return;

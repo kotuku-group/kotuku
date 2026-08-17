@@ -194,7 +194,7 @@ struct code_reader_handle {
 struct actionmonitor {
    GCobject *Object;           // Native GCobject for the subscription.
    const FunctionField *Args;  // The args of the action/method are stored here so that we can build the arg value table later.
-   int     Function;          // Index of function to call back.
+   FUNCTION Function;         // Function and context to call back.
    int     Reference;         // A custom reference to pass to the callback (optional)
    ACTIONID ActionID;          // Action being monitored.
    OBJECTID ObjectID;          // Object being monitored
@@ -236,12 +236,12 @@ struct actionmonitor {
 //********************************************************************************************************************
 
 struct eventsub {
-   int    Function;     // Lua function index
+   std::unique_ptr<FUNCTION> Function; // Stable callback storage used as the native subscription metadata.
    EVENTID EventID;      // Event message ID
    APTR    EventHandle;
 
-   eventsub(int pFunction, EVENTID pEventID, APTR pEventHandle) :
-      Function(pFunction), EventID(pEventID), EventHandle(pEventHandle) { }
+   eventsub(std::unique_ptr<FUNCTION> pFunction, EVENTID pEventID, APTR pEventHandle) :
+      Function(std::move(pFunction)), EventID(pEventID), EventHandle(pEventHandle) { }
 
    ~eventsub() {
       if (EventHandle) UnsubscribeEvent(EventHandle);
@@ -251,14 +251,14 @@ struct eventsub {
    eventsub& operator=(const eventsub &) = delete;
 
    eventsub(eventsub &&move) noexcept :
-      Function(move.Function), EventID(move.EventID), EventHandle(move.EventHandle) {
+      Function(std::move(move.Function)), EventID(move.EventID), EventHandle(move.EventHandle) {
       move.EventHandle = nullptr;
    }
 
    eventsub& operator=(eventsub &&move) noexcept {
       if (this != &move) {
          if (EventHandle) UnsubscribeEvent(EventHandle);
-         Function = move.Function;
+         Function = std::move(move.Function);
          EventID = move.EventID;
          EventHandle = move.EventHandle;
          move.EventHandle = nullptr;
@@ -271,10 +271,10 @@ struct eventsub {
 
 struct datarequest {
    OBJECTID SourceID;
-   int Callback;
+   FUNCTION Callback;
    int64_t TimeCreated;
 
-   datarequest(OBJECTID pSourceID, int pCallback) : SourceID(pSourceID), Callback(pCallback) {
+   datarequest(OBJECTID pSourceID, FUNCTION pCallback) : SourceID(pSourceID), Callback(pCallback) {
       TimeCreated = PreciseTime();
    }
 };
@@ -324,7 +324,7 @@ struct finput {
    APTR   KeyEvent;
    OBJECTID SurfaceID;
    int    InputHandle;
-   int    Callback;
+   FUNCTION Callback;
    int    InputValue;
    JTYPE  Mask;
    int8_t Mode;
@@ -411,6 +411,7 @@ ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *
    CSTRING &);
 void cleanup_argbuffer(lua_State *, const struct FunctionField *, int, int8_t *, bool);
 [[nodiscard]] ERR capture_tiri_function(lua_State *, int, FUNCTION &);
+[[nodiscard]] ERR push_tiri_function(lua_State *, const FUNCTION &, LuaCallbackContextGuard &);
 void release_tiri_function(lua_State *, FUNCTION *);
 void release_consumed_tiri_function(lua_State *, FUNCTION *);
 const char * code_reader(lua_State *, void *, size_t *);

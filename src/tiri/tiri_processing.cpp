@@ -448,7 +448,7 @@ static int processing_get(lua_State *Lua)
 
 struct delay_msg {
    lua_State *lua;
-   int ref;
+   FUNCTION function;
 };
 
 ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte> Message)
@@ -457,14 +457,15 @@ ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte
 
    auto msg = (delay_msg *)Message.data();
    auto lua = msg->lua;
-   lua_rawgeti(lua, LUA_REGISTRYINDEX, msg->ref); // Get the function from the registry
-   luaL_unref(lua, LUA_REGISTRYINDEX, msg->ref); // Remove it
 
    kt::SwitchContext ctx(lua->script);
-   LuaContextRootGuard context_guard(lua);
-   if (lua_pcall(lua, 0, 0, 0)) {
-      process_error(lua->script, "delayedCall()");
+   LuaCallbackContextGuard callback_context(lua);
+   auto callback_error = push_tiri_function(lua, msg->function, callback_context);
+   if (callback_error IS ERR::Okay) {
+      if (lua_pcall(lua, 0, 0, 0)) process_error(lua->script, "delayedCall()");
    }
+   else kt::Log(__FUNCTION__).warning("Delayed callback is no longer valid: %s", GetErrorMsg(callback_error));
+   release_tiri_function(lua, &msg->function);
    collect_garbage(lua);
    return ERR::Okay;
 }
@@ -472,9 +473,12 @@ ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte
 static int processing_delayed_call(lua_State *Lua)
 {
    if (lua_type(Lua, 1) IS LUA_TFUNCTION) {
-      delay_msg msg = { Lua, luaL_ref(Lua, LUA_REGISTRYINDEX) };
+      delay_msg msg = { Lua, FUNCTION() };
+      if (capture_tiri_function(Lua, 1, msg.function) != ERR::Okay) {
+         luaL_error(Lua, "Expected a function to register as a message hook.");
+      }
       if (SendMessage(glDelayedCallMsgID, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg))) != ERR::Okay) {
-         luaL_unref(Lua, LUA_REGISTRYINDEX, msg.ref);
+         release_tiri_function(Lua, &msg.function);
          luaL_error(Lua, ERR::MessageOperation);
       }
    }
