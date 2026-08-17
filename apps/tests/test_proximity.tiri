@@ -712,7 +712,6 @@ function ConnectTunnelPassesSSLHandshake()
                ssl_server_done = true
                local response = 'SSL_TUNNEL_ECHO:' .. received
                check Client.acWrite(response)
-               Server.mtDisconnectSocket(Client)
             end
          elseif err != ERR_Disconnected then
             error('SSL tunnel server read failed: ' .. mSys.GetErrorMsg(err))
@@ -721,6 +720,7 @@ function ConnectTunnelPassesSSLHandshake()
    })
 
    assert(ssl_server and ssl_server.error is ERR_Okay, 'Failed to create SSL tunnel server')
+   -- Defer both endpoints so that TLS cleanup occurs after active socket callbacks have unwound.
    defer ssl_server.free() end
 
    local socket = obj.new('netsocket', {
@@ -761,7 +761,6 @@ function ConnectTunnelPassesSSLHandshake()
                ssl_echo ..= data
                if ssl_echo.find('SSL_TUNNEL_ECHO:' .. ssl_payload) != nil then
                   Socket.acSignal()
-                  Socket.acDeactivate()
                end
             end
          elseif err is ERR_Disconnected then

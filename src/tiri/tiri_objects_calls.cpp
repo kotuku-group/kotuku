@@ -150,12 +150,6 @@ ERR capture_tiri_function(lua_State *Lua, int ValueIndex, FUNCTION &Function)
    int value_index = ValueIndex;
    bool resolved_name = false;
 
-   if (lua_type(Lua, value_index) IS LUA_TSTRING) {
-      lua_getglobal(Lua, lua_tostring(Lua, value_index));
-      value_index = lua_gettop(Lua);
-      resolved_name = true;
-   }
-
    if (lua_type(Lua, value_index) != LUA_TFUNCTION) {
       if (resolved_name) lua_pop(Lua, 1);
       return ERR::SetValueNotFunction;
@@ -175,6 +169,28 @@ ERR capture_tiri_function(lua_State *Lua, int ValueIndex, FUNCTION &Function)
    if (resolved_name) lua_pop(Lua, 1);
    Function = FUNCTION(Lua->script, uint32_t(procedure_id), context_id);
    return ERR::Okay;
+}
+
+ERR push_tiri_function(lua_State *Lua, const FUNCTION &Function, LuaCallbackContextGuard &ContextGuard)
+{
+   if ((not Function.isScript()) or (Function.Context != Lua->script)) return ERR::Args;
+
+   if (Function.contextID() > 0) {
+      lua_rawgeti(Lua, LUA_REGISTRYINDEX, Function.contextID());
+      if (lua_type(Lua, -1) != LUA_TTABLE) {
+         lua_pop(Lua, 1);
+         return ERR::InvalidData;
+      }
+
+      ContextGuard.activate(tabV(Lua->top - 1));
+      lua_pop(Lua, 1);
+   }
+
+   lua_rawgeti(Lua, LUA_REGISTRYINDEX, int(Function.procedureID()));
+   if (lua_type(Lua, -1) IS LUA_TFUNCTION) return ERR::Okay;
+
+   lua_pop(Lua, 1);
+   return ERR::NotFound;
 }
 
 void release_tiri_function(lua_State *Lua, FUNCTION *Function)

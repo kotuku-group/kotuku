@@ -97,7 +97,7 @@ end
    glScanItems = { }
    glScanCount = 0
 
-   err = cmp.mtScan('', '', 'compressionScanCallback')
+   err = cmp.mtScan('', '', compressionScanCallback)
    assert(err is ERR_Okay, 'Scan() failed: ' .. mSys.GetErrorMsg(err))
    assert(glScanCount is 2, 'Root Scan() returned ' .. glScanCount .. ' entries.')
    assert(glScanItems['gui.tiri'], 'Root Scan() did not return gui.tiri.')
@@ -106,7 +106,7 @@ end
    glScanItems = { }
    glScanCount = 0
 
-   err = cmp.mtScan('', 'gui.tiri', 'compressionScanCallback')
+   err = cmp.mtScan('', 'gui.tiri', compressionScanCallback)
    assert(err is ERR_Okay, 'Filtered Scan() failed: ' .. mSys.GetErrorMsg(err))
    assert(glScanCount is 1, 'Filtered Scan() returned ' .. glScanCount .. ' entries.')
    assert(glScanItems['gui.tiri'], 'Filtered Scan() did not return gui.tiri.')
@@ -230,11 +230,11 @@ end
       while err is ERR_Okay do
          err, len = file.acRead(input)
          if (err != ERR_Okay) or (len <= 0) then break end
-         err = cmp.mtCompressStream(input.sub(0, len), 'streamedOutput')
+         err = cmp.mtCompressStream(input.sub(0, len), streamedOutput)
       end
 
       assert(err is ERR_Okay, 'Inner compression loop failed: ' .. mSys.GetErrorMsg(err))
-      err = cmp.mtCompressStreamEnd('streamedOutput')
+      err = cmp.mtCompressStreamEnd(streamedOutput)
    end
 
    assert(glOutFile.size > 0, "The size of the compressed output file is zero.")
@@ -298,12 +298,12 @@ end
       err, len = file.acRead(input)
       if err is ERR_Okay then
          if len <= 0 then break end
-         err = cmp.mtDecompressStream(input.sub(0, len), 'streamedOutput')
+         err = cmp.mtDecompressStream(input.sub(0, len), streamedOutput)
       end
    end
 
    assert(err is ERR_Okay, 'Inner decompression loop failed: ' .. mSys.GetErrorMsg(err))
-   err = cmp.mtDecompressStreamEnd('streamedOutput')
+   err = cmp.mtDecompressStreamEnd(streamedOutput)
    assert(err is ERR_Okay, 'DecompressStreamEnd() failed: ' .. mSys.GetErrorMsg(err))
    glOutFile = nil
    processing.collect() -- Flush the decompressed output to disk

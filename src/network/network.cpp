@@ -25,6 +25,7 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
 
 #include <unordered_set>
 #include <type_traits>
+#include <cassert>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>

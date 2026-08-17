@@ -247,7 +247,11 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 
             log.msg(VLF::BRANCH|VLF::DETAIL, "Action notification for object #%d, action %d.  Top: %d", Object->UID, int(ActionID), lua_gettop(Self->Lua));
 
-            lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, scan.Function); // +1 stack: Get the function reference
+            LuaCallbackContextGuard callback_context(Self->Lua);
+            if (push_tiri_function(Self->Lua, scan.Function, callback_context) != ERR::Okay) {
+               log.warning("Action subscription callback is no longer valid.");
+               return;
+            }
             push_object_id(Self->Lua, Object->UID);  // +1: Pass the object ID
             lua_newtable(Self->Lua);  // +1: Table to store the parameters
 
@@ -273,9 +277,8 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
          if (ActionID IS AC::Free) {
             std::erase_if(Self->ActionList, [&](auto &item) {
                if (item.ObjectID IS Object->UID) {
-                  if (item.Function) {
-                     luaL_unref(Self->Lua, LUA_REGISTRYINDEX, item.Function);
-                     item.Function = 0;
+                  if (item.Function.defined()) {
+                     release_tiri_function(Self->Lua, &item.Function);
                   }
                   if (item.Reference) {
                      luaL_unref(Self->Lua, LUA_REGISTRYINDEX, item.Reference);
@@ -375,7 +378,14 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 
             int step = GetResource(RES::LOG_DEPTH); // Required as thrown errors cause the debugger to lose its step position
 
-               lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, it->Callback); // +1 Reference to callback
+            {
+               LuaCallbackContextGuard callback_context(Self->Lua);
+               if (push_tiri_function(Self->Lua, it->Callback, callback_context) != ERR::Okay) {
+                  SetResource(RES::LOG_DEPTH, step);
+                  release_tiri_function(Self->Lua, &it->Callback);
+                  it = Self->Requests.erase(it);
+                  continue;
+               }
                lua_newtable(Self->Lua); // +1 Item table
 
                if (auto xml = objXML::create::local(fl::Statement(
@@ -412,10 +422,11 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
                   }
                }
                else lua_pop(Self->Lua, 2);
+            }
 
             SetResource(RES::LOG_DEPTH, step);
 
-            if (it->Callback) luaL_unref(Self->Lua, LUA_REGISTRYINDEX, it->Callback);
+            release_tiri_function(Self->Lua, &it->Callback);
             it = Self->Requests.erase(it);
             continue;
          }
