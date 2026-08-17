@@ -696,12 +696,12 @@ static ERR tls_connect(extNetSocket *Self)
 
 template <class T> bool valid_ssl_handshake_callback(HOSTHANDLE SocketFD, T *Self)
 {
-   assert(Self);
-   if (!Self) return false;
+   kt::Log log(__FUNCTION__);
 
-   assert(Self->Handle.is_valid());
-   assert(Self->Handle.hosthandle() IS SocketFD);
-   assert(Self->TLS.Handle);
+   if (not Self) { log.warning(ERR::InvalidState); return false; }
+   if (not Self->Handle.is_valid()) { log.warning(ERR::InvalidState); return false; }
+   if (Self->Handle.hosthandle() != SocketFD) { log.warning(ERR::InvalidState); return false; }
+   if (not Self->TLS.Handle) { log.warning(ERR::InvalidState); return false; }
 
    return Self->Handle.is_valid() and (Self->Handle.hosthandle() IS SocketFD) and Self->TLS.Handle;
 }
