@@ -179,6 +179,19 @@ struct ParserSymbolMetadata {
 };
 ```
 
+For this source, the function name begins at line 5, column 10, and the terminating `end` token begins at line 7,
+column 1:
+
+```lua
+@Doc(text=[[
+@desc Returns a greeting.
+@input Person to greet
+]])
+function greet(Name: str):str
+   return "Hello " .. Name
+end
+```
+
 The table exposed to Tiri is zero-indexed and has this shape:
 
 ```lua
@@ -188,10 +201,10 @@ The table exposed to Tiri is zero-indexed and has this shape:
          name = "greet",
          kind = "function",
          signature = "greet(Name: str):str",
-         line = 1,
-         column = 1,
+         line = 5,
+         column = 10,
          endLine = 7,
-         endColumn = 2,
+         endColumn = 1,
          annotations = {
             [0] = { name = "Doc", args = { text = "..." } }
          },

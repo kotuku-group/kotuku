@@ -335,6 +335,12 @@ static std::string function_name_to_string(const FunctionNamePath &Path)
    return name;
 }
 
+static SourceSpan function_name_span(const FunctionNamePath &Path)
+{
+   if (Path.segments.empty()) return {};
+   return Path.segments.front().span;
+}
+
 static std::string expression_name_to_string(const ExprNode &Expression)
 {
    if (Expression.kind IS AstNodeKind::IdentifierExpr) {
@@ -351,6 +357,21 @@ static std::string expression_name_to_string(const ExprNode &Expression)
    }
 
    return {};
+}
+
+static SourceSpan expression_name_span(const ExprNode &Expression)
+{
+   if (Expression.kind IS AstNodeKind::IdentifierExpr) {
+      if (const auto *name = std::get_if<NameRef>(&Expression.data)) return name->identifier.span;
+   }
+
+   if (Expression.kind IS AstNodeKind::MemberExpr) {
+      if (const auto *member = std::get_if<MemberExprPayload>(&Expression.data)) {
+         if (member->table) return expression_name_span(*member->table);
+      }
+   }
+
+   return Expression.span;
 }
 
 static std::string annotation_type_to_string(
@@ -671,7 +692,7 @@ inline void collect_nested_function_body(ParserSymbolCollection &Collection, con
 }
 
 static void collect_assignment_functions(ParserSymbolCollection &Collection, const ExprNodeList &Targets,
-   const ExprNodeList &Values, SourceSpan Span)
+   const ExprNodeList &Values)
 {
    size_t count = Targets.size() < Values.size() ? Targets.size() : Values.size();
 
@@ -684,14 +705,15 @@ static void collect_assignment_functions(ParserSymbolCollection &Collection, con
       if (not function) continue;
 
       std::string name = expression_name_to_string(*target);
-      if (not name.empty()) Collection.symbols.push_back(make_function_symbol(name, *function, Span));
+      if (not name.empty()) {
+         Collection.symbols.push_back(make_function_symbol(name, *function, expression_name_span(*target)));
+      }
       collect_nested_function_body(Collection, *function);
    }
 }
 
 template <typename DeclPayload>
-static void collect_decl_functions(ParserSymbolCollection &Collection, const DeclPayload &Payload,
-   SourceSpan Span)
+static void collect_decl_functions(ParserSymbolCollection &Collection, const DeclPayload &Payload)
 {
    size_t count = Payload.names.size() < Payload.values.size() ? Payload.names.size() : Payload.values.size();
 
@@ -702,7 +724,8 @@ static void collect_decl_functions(ParserSymbolCollection &Collection, const Dec
       const auto *function = std::get_if<FunctionExprPayload>(&value->data);
       if (not function) continue;
 
-      Collection.symbols.push_back(make_function_symbol(identifier_to_string(Payload.names[i]), *function, Span));
+      Collection.symbols.push_back(make_function_symbol(identifier_to_string(Payload.names[i]), *function,
+         Payload.names[i].span));
       collect_nested_function_body(Collection, *function);
    }
 }
@@ -714,7 +737,7 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
          const auto &payload = std::get<LocalFunctionStmtPayload>(Statement.data);
          if (payload.function) {
             Collection.symbols.push_back(make_function_symbol(identifier_to_string(payload.name),
-               *payload.function, Statement.span));
+               *payload.function, payload.name.span));
             collect_nested_function_body(Collection, *payload.function);
          }
          break;
@@ -723,24 +746,24 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
          const auto &payload = std::get<FunctionStmtPayload>(Statement.data);
          if (payload.function) {
             Collection.symbols.push_back(make_function_symbol(function_name_to_string(payload.name),
-               *payload.function, Statement.span));
+               *payload.function, function_name_span(payload.name)));
             collect_nested_function_body(Collection, *payload.function);
          }
          break;
       }
       case AstNodeKind::LocalDeclStmt: {
          const auto &payload = std::get<LocalDeclStmtPayload>(Statement.data);
-         collect_decl_functions(Collection, payload, Statement.span);
+         collect_decl_functions(Collection, payload);
          break;
       }
       case AstNodeKind::GlobalDeclStmt: {
          const auto &payload = std::get<GlobalDeclStmtPayload>(Statement.data);
-         collect_decl_functions(Collection, payload, Statement.span);
+         collect_decl_functions(Collection, payload);
          break;
       }
       case AstNodeKind::AssignmentStmt: {
          const auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
-         collect_assignment_functions(Collection, payload.targets, payload.values, Statement.span);
+         collect_assignment_functions(Collection, payload.targets, payload.values);
          break;
       }
       case AstNodeKind::IfStmt: {
