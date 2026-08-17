@@ -15,6 +15,8 @@
 // UPDATED: 2026-08-14 - Corrected the type() examples, which still used the retired colon call syntax (commit 7e6746950)
 // UPDATED: 2026-08-17 - Added the uint8/uint16/uint32/uint64 element types, their modulo conversion rules, the
 //                       uint64 precision limit and the concat() unsigned format requirement (commit 6ca29f4c8)
+// UPDATED: 2026-08-17 - The unsigned 32-bit element type is renamed from 'uint32' to 'uint'; the array and struct
+//                       vocabularies now agree on the 32-bit spellings (commit 47d7d0060)
 
 [[ch-arrays]]
 == Arrays
@@ -69,7 +71,7 @@ The names below are the complete set accepted in an `array<pass:[...]>` declarat
 |2
 |Unsigned 16-bit integer (0--65535)
 
-|`uint32`
+|`uint`
 |4
 |Unsigned 32-bit integer (0--4294967295)
 
@@ -152,7 +154,7 @@ names.push(tostring(42))  -- '42'
 
 indexterm:[arrays, numeric conversion] Storing a number in a numeric element type narrower than a double converts the value by the following rules.  The result is defined for every accepted value and does not vary between platforms.
 
-* Integer element types (`byte`, `int16`, `int`, `int64`) truncate the value towards zero, then wrap modulo the width of the type.  The signed types wrap into two's complement range; `byte` wraps into the range 0--255.
+* Integer element types truncate the value towards zero, then wrap modulo the width of the type.  The signed types (`int16`, `int`, `int64`) wrap into two's complement range.  The unsigned types (`byte`, `uint8`, `uint16`, `uint`, `uint64`) wrap into the range 0 to 2^__N__^−1, where __N__ is the width of the type in bits; a negative value therefore wraps to the top of that range.
 * Integer element types reject infinity and NaN with an out-of-range error.
 * The `float` element type rejects a finite value whose magnitude exceeds the largest representable single-precision number (approximately 3.4×10^38^) with an out-of-range error.  Infinity and NaN are stored unchanged.  All other values are rounded to the nearest representable single-precision value.
 * The `double` element type accepts every number, including infinity and NaN.
@@ -167,7 +169,22 @@ vals = array<int> { 1.9, -1.9, 3000000000, nil }
 bytes = array<byte> { 300, -1 }
 -- bytes = {44, 255}
 
+words = array<uint16> { -1, 65536, 1.9 }
+-- words = {65535, 0, 1}
+
 vals[0] = math.huge   -- error: value out of range; vals[0] remains 1
+----
+
+[discrete]
+==== Precision of Wide Integer Elements
+
+indexterm:[arrays, uint64] A number is a double-precision value, so whole numbers are exact only up to 2^53^ (<<sec-numbers>>).  The `int64` and `uint64` element types store the full width of the type, but a value written from or read back into a number is subject to that limit.  A `uint64` element is read as the nearest representable double, and a written value beyond 2^53^ is rounded before it is stored.  `concat()` reports the stored value exactly, because it formats the element directly.
+
+[source,tiri]
+----
+counters = array<uint64> { -1 }
+counters.concat('', '%llu')   -- '18446744073709551615'
+counters[0]                   -- 1.844674407371e+19 (nearest double)
 ----
 
 [[sec-array-atomic-mutation]]
@@ -196,6 +213,7 @@ array<int>.type()            -- 'int'
 array<float>.type()          -- 'float'
 array<byte>.type()           -- 'char'
 array<uint8>.type()          -- 'uint8'
+array<uint>.type()           -- 'uint'
 array<array<str>>.type()     -- 'array'
 array<struct<Vec>>.type()    -- 'struct'
 ----
@@ -232,7 +250,7 @@ Equality rules depend on the element type:
 |===
 |Element Category |Comparison Method
 
-|Primitive (`byte`, `int16`, `int`, `int64`, `uint8`, `uint16`, `uint32`, `uint64`, `float`, `double`)
+|Primitive (`byte`, `int16`, `int`, `int64`, `uint8`, `uint16`, `uint`, `uint64`, `float`, `double`)
 |Raw memory comparison of the underlying data.
 
 |`str`
@@ -758,7 +776,14 @@ arr.getString(0, 5)   -- 'Greet'
 
 Concatenates array elements into a string.  `Separator` is inserted between each element (default: empty string).  `Format` is an optional C-style format specifier applied to each element (e.g. `'%d'`, `'%.2f'`, `'%s'`).  `Start` and `End` are optional zero-based, inclusive indexes that restrict the operation to a sub-range of the array.
 
-When `Format` is provided, it must contain exactly one format specifier.  An error is raised if `Format` contains zero or multiple specifiers, or if the format specifier is incomplete.  For non-string arrays without a format specifier, elements are converted to their default string representation, which is a more optimal conversion path.
+When `Format` is provided, it must contain exactly one format specifier.  An error is raised if `Format` contains zero or multiple specifiers, or if the format specifier is incomplete.  For non-string arrays without a format specifier, elements are converted to their default string representation, which is a more optimal conversion path.  Unsigned elements are converted to unsigned decimal text on that path.
+
+An unsigned array constrains the permitted conversion, because the element is passed to the formatter at its own width:
+
+* `uint8`, `uint16` and `uint` arrays require an unsigned conversion (`%u`, `%o`, `%x` or `%X`) with no length modifier.
+* `uint64` arrays require one of the same conversions with the `ll` length modifier, e.g. `%llu` or `%llx`.
+
+Every other conversion, including `%d` and `%s`, raises an error.
 
 Concatenation is only available for primitive array types that consist of string and number elements.  Attempting to concatenate table, struct or object elements raises an error.
 

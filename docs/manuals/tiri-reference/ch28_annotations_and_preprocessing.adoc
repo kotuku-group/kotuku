@@ -5,6 +5,10 @@
 // UPDATED: 2026-08-15 - Symbol metadata now reports the 'method' kind and the leading context parameter
 //                       (commit ac4f30a67)
 // UPDATED: 2026-08-16 - The symbol kind is now reported as 'metamethod' (commit 5c92d652a)
+// UPDATED: 2026-08-17 - Symbol metadata positions are 1-based with zero as the unavailable sentinel;
+//                       corrected the sample entry's positions (commit 3dbd62b09)
+// UPDATED: 2026-08-17 - Symbol start positions are anchored to the declared name across all declaration
+//                       forms (commit 059e8b445)
 
 [[ch-annotations-and-preprocessing]]
 == Annotations & Preprocessing
@@ -575,6 +579,11 @@ print(symbol.params[0].doc)   -- 'Person to greet'
 The parser emits symbol entries for function declarations and function expressions assigned to variables or members.
 Nested functions are emitted in the same zero-indexed `symbols` array.
 
+An entry's start position identifies the declared name rather than the statement that introduces it, and this holds for
+every declaration form.  `function greet()`, `local greet = function()`, `greet = function()`, `local function greet()`
+and `global function greet()` each report the position of `greet`.  For a dotted name, the position is that of the
+first segment, so `function obj.method()` and `obj.method = function()` each report the position of `obj`.
+
 ==== Symbol Entry Structure
 
 Each symbol entry has the following fields:
@@ -597,11 +606,11 @@ Each symbol entry has the following fields:
 
 |`line`, `column`
 |Number
-|0-based start position.
+|1-based position of the declared name.  For a dotted name such as `obj.method`, the position is that of the first segment.  Zero indicates an unavailable position.
 
 |`endLine`, `endColumn`
 |Number
-|0-based end position.
+|1-based position of the token that terminates the declaration.  Zero indicates an unavailable position.
 
 |`annotations`
 |Array
@@ -630,9 +639,9 @@ Each symbol entry has the following fields:
    name = 'greet',
    kind = 'function',
    signature = 'greet(Name: str):str',
-   line = 0,
-   column = 0,
-   endLine = 8,
+   line = 10,
+   column = 10,
+   endLine = 12,
    endColumn = 1,
    annotations = array<table> {
       { name = 'Doc', args = { text = '...' } }

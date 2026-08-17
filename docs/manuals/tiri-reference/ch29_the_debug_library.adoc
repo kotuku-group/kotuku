@@ -2,6 +2,8 @@
 // VERIFIED: 2026-03-06
 // CHANGED: 2026-07-31 — Added the required implementation-specific notice and standardised exception terminology.
 // UPDATED: 2026-08-16 - Migrated the setMetatable example to the `metamethod` form (commit 58e7bad8a)
+// UPDATED: 2026-08-17 - debug.validate() now reports 1-based positions with zero as the unavailable
+//                       sentinel, and an exclusive endColumn (commit 3dbd62b09)
 
 [[ch-the-debug-library]]
 == The Debug Library
@@ -459,6 +461,8 @@ The `fileIndex` field returned by `debug.getInfo()` (with the `S` option) corres
 
 Parses `Code` as a Tiri statement without executing it.  Returns a table describing the parse result.
 
+Every source position reported by `debug.validate()` is 1-based, so the first character of the source is line 1, column 1.  A value of zero indicates that the position is unavailable.
+
 [cols="1,1,3a",options="header"]
 |===
 |Field |Type |Description
@@ -484,15 +488,15 @@ Each entry in the `diagnostics` array contains:
 
 |`line`
 |integer
-|0-based line number.
+|1-based line number.
 
 |`column`
 |integer
-|0-based column number.
+|1-based column number of the first character of the offending token.
 
 |`endColumn`
 |integer
-|0-based end column.
+|1-based exclusive end column, one past `column`.
 
 |`severity`
 |integer
@@ -515,15 +519,15 @@ Each entry in the `tips` array contains:
 
 |`line`
 |integer
-|0-based line number.
+|1-based line number.
 
 |`column`
 |integer
-|0-based column number.
+|1-based column number of the first character of the token the hint refers to.
 
 |`endColumn`
 |integer
-|0-based end column.
+|1-based exclusive end column, one past `column`.
 
 |`severity`
 |integer
@@ -548,9 +552,11 @@ result = debug.validate([[local x = !!!]])
 
 if not result.success then
    for d in values(result.diagnostics) do
-      print(f'line {d.line}: [{d.code}] {d.message}')
+      print(f'{d.line}:{d.column}: [{d.code}] {d.message}')
    end
 end
+
+-- 1:11: [UnexpectedToken] Expected expression, got '!'
 ----
 
 The optional `Options` argument controls how the code is parsed.  Pass a table with any of the following fields:

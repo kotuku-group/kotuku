@@ -8,6 +8,8 @@
 //                       (commit b900f2341)
 // UPDATED: 2026-08-17 - Arrays now accept the uint8/uint16/uint32/uint64 element types; recorded the uint/uint32
 //                       naming split between arrays and struct fields (commit 6ca29f4c8)
+// UPDATED: 2026-08-17 - The array element type formerly spelled 'uint32' is now 'uint', closing the naming split;
+//                       unsigned struct vector fields materialise as unsigned arrays (commit 47d7d0060)
 
 [[ch-type-system]]
 == Type System
@@ -61,7 +63,7 @@ The two interfaces share a core of names but are not identical dialects, and the
 |`int16`                         |`int16` |Yes |Number
 |`uint16`                        |`uint16` |Yes |Number
 |`int`                           |`int` |Yes |Number
-|`uint`                          |--   |Yes |Number
+|`uint`                          |`uint` |Yes |Number
 |`int64`                         |`int64` |Yes |Number
 |`uint64`                        |`uint64` |Yes |Number
 |`float`, `double`               |Yes  |Yes |Number
@@ -321,6 +323,7 @@ array_type        = "array" "<" element_type ">" ;
 
 (* compatibility vocabulary *)
 element_type      = "byte" | "char" | "int8" | "int16" | "int" | "int64"
+                  | "uint8" | "uint16" | "uint" | "uint64"
                   | "float" | "double" | "str" | "table"
                   | "array" | "obj" | "any"
                   | "struct" "<" identifier ">" ;

@@ -1,6 +1,8 @@
 // VERIFIED: 2028-08-15
 // UPDATED: 2026-08-15 - Corrected the owned-string field category, which still named the retired 'string' spelling,
 //                       and documented struct.size() accepting a struct reference (commit b900f2341)
+// UPDATED: 2026-08-17 - Documented the element type of a materialised dynamic array field; unsigned fields now
+//                       retain their unsigned identity instead of decaying to signed (commit 47d7d0060)
 
 [[ch-structs]]
 == Structs
@@ -231,6 +233,21 @@ The element type may be any scalar numeric type from the table above, `str`, or 
 A dynamic array field cannot declare a dimension: both `array<type, N>` and `array<type>[N]` raise a parse error.  A newly constructed instance reads dynamic array fields as empty arrays.
 
 Reading a dynamic array field produces an array holding a copy of the field's current elements; the result does not track subsequent changes to the field.  `struct.clone()` and `struct.copy()` deep-copy dynamic array fields, so the copy holds independent storage.
+
+The materialised array retains the signedness and width of the declared field, so `arr.type()` reports the unsigned element type for an unsigned field:
+
+[source,tiri]
+----
+struct Counters
+   Signed:   array<int16>
+   Unsigned: array<uint>
+end
+
+value = struct<Counters> { Unsigned=array<uint> { 4000000000 } }
+value.Unsigned.type()   -- 'uint'
+value.Signed.type()     -- 'int16'
+----
+
 
 [[sec-struct-typed-references]]
 === Typed References

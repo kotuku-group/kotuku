@@ -6,6 +6,8 @@
 // UPDATED: 2026-08-16 - The ternary separator is now ':' rather than ':>' (commit 982d890de)
 // UPDATED: 2026-08-17 - Recorded the unsigned array element types; corrected the element type list and the
 //                       array construction example, which named the retired 'int32' (commit 6ca29f4c8)
+// UPDATED: 2026-08-17 - The unsigned 32-bit element type is renamed from 'uint32' to 'uint' (commit 47d7d0060)
+
 [[ch-performance-and-the-jit]]
 == Performance & the JIT
 indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the Kōtuku JIT implementation and is not part of the language specification.
@@ -151,7 +153,7 @@ indexterm:[arrays, performance] indexterm:[tables, performance] Arrays and table
 
 ==== Arrays
 
-Arrays are strongly typed, contiguous data structures with a fixed element type determined at creation time.  Supported element types include byte, int16, int32, int64, float, double, pointer, string, table, array, any, struct, and object types.
+Arrays are strongly typed, contiguous data structures with a fixed element type determined at creation time.  Supported element types cover integers, floats, strings, tables, structs, and objects.  The complete list is defined in <<sec-array-fundamentals>>.
 
 * **Indexing** — O(1) direct memory access by offset.  No hashing or lookup required.
 * **Iteration** — sequential memory access benefits from CPU cache locality.
