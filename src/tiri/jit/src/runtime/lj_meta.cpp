@@ -825,12 +825,13 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
       const char *member = "any";
       switch (Entry.array_element_type) {
          case AET::BYTE:   member = "byte"; break;
+         case AET::INT8:   member = "int8"; break;
          case AET::INT16:  member = "int16"; break;
          case AET::INT32:  member = "int"; break;
          case AET::INT64:  member = "int64"; break;
          case AET::UINT8:  member = "uint8"; break;
          case AET::UINT16: member = "uint16"; break;
-         case AET::UINT32: member = "uint32"; break;
+         case AET::UINT32: member = "uint"; break;
          case AET::UINT64: member = "uint64"; break;
          case AET::FLOAT:  member = "float"; break;
          case AET::DOUBLE: member = "double"; break;

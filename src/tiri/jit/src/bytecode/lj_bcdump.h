@@ -48,10 +48,10 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // activation bytecodes.  Version 0x8e adds the canonical regex.new identity used by regex literals.  Version 0x8f
 // separates object.create, object.new and object._state callable identities.  Version 0x90 accepts a struct reference
 // in struct.size, which shifts the generated fast-function ordering.  Version 0x92 expands private array member
-// identities with uint8, uint16, uint32 and uint64.  Older chunks are rejected rather than retaining compatibility
-// shims.
+// identities with uint8, uint16, uint32 and uint64.  Version 0x93 gives int8 its own signed array member identity.
+// Older chunks are rejected rather than retaining compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x92;
+constexpr uint8_t BCDUMP_VERSION = 0x93;
 
 // Compatibility flags.
 

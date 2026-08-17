@@ -55,11 +55,17 @@ extern MSGID glDelayedCallMsgID;
    }
    else if (Type & FD_FLOAT)   return AET::FLOAT;
    else if (Type & FD_DOUBLE)  return AET::DOUBLE;
-   else if (Type & FD_INT64)   return AET::INT64;
-   else if (Type & FD_INT)     return AET::INT32;
-   else if (Type & FD_WORD)    return AET::INT16;
-   else if (Type & FD_BYTE)    return AET::BYTE;
+   else if (Type & FD_INT64)   return (Type & FD_UNSIGNED) ? AET::UINT64 : AET::INT64;
+   else if (Type & FD_INT)     return (Type & FD_UNSIGNED) ? AET::UINT32 : AET::INT32;
+   else if (Type & FD_WORD)    return (Type & FD_UNSIGNED) ? AET::UINT16 : AET::INT16;
+   else if (Type & FD_BYTE)    return AET::BYTE; // Bare byte storage is unsigned (uint8_t); no signed variant exists
    else return AET::MAX;
+}
+
+[[maybe_unused]] static AET ff_to_aet(int Type, NativeStructType NativeType)
+{
+   if ((Type & FD_BYTE) and NativeType IS NativeStructType::Int8) return AET::INT8;
+   return ff_to_aet(Type);
 }
 
 //********************************************************************************************************************

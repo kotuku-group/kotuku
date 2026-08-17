@@ -79,7 +79,8 @@ const array_meta glArrayConversion[size_t(AET::MAX)] = {
    { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT8
    { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT16
    { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT32
-   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true }          // AET::UINT64
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT64
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true }          // AET::INT8
 };
 
 //********************************************************************************************************************
@@ -142,12 +143,13 @@ static CSTRING elemtype_name(AET Type)
 {
    switch (Type) {
       case AET::BYTE:       return "char";
+      case AET::INT8:       return "int8";
       case AET::INT16:      return "int16";
       case AET::INT32:      return "int";
       case AET::INT64:      return "int64";
       case AET::UINT8:      return "uint8";
       case AET::UINT16:     return "uint16";
-      case AET::UINT32:     return "uint32";
+      case AET::UINT32:     return "uint";
       case AET::UINT64:     return "uint64";
       case AET::FLOAT:      return "float";
       case AET::DOUBLE:     return "double";
@@ -658,8 +660,11 @@ LJLIB_CF(array_concat)
             case AET::INT16:
                append_formatted(result, format, arr->get<int16_t>()[i]);
                break;
+            case AET::INT8:
+               append_formatted(result, format, int(arr->get<int8_t>()[i]));
+               break;
             case AET::BYTE:
-               append_formatted(result, format, arr->get<int8_t>()[i]);
+               append_formatted(result, format, unsigned(arr->get<uint8_t>()[i]));
                break;
             default:
                luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
@@ -711,6 +716,9 @@ LJLIB_CF(array_concat)
                break;
             case AET::INT16:
                append_integer(result, arr->get<int16_t>()[i]);
+               break;
+            case AET::INT8:
+               append_integer(result, arr->get<int8_t>()[i]);
                break;
             case AET::BYTE:
                append_integer(result, arr->get<uint8_t>()[i]);
@@ -805,6 +813,7 @@ LJLIB_CF(array_first)
 
    switch (arr->elemtype) {
       case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
@@ -884,6 +893,7 @@ LJLIB_CF(array_last)
 
    switch (arr->elemtype) {
       case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
@@ -1127,6 +1137,7 @@ LJLIB_CF(array_pop)
       // Push the value to the stack
       switch (arr->elemtype) {
          case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+         case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
          case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
          case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
          case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
@@ -1419,6 +1430,7 @@ static void fill_array_elements(lua_State *L, GCarray *Arr, cTValue *Value, int3
 
    switch (Arr->elemtype) {
       case AET::BYTE:   ARRAY_FILL_TYPE(uint8_t);
+      case AET::INT8:   ARRAY_FILL_TYPE(int8_t);
       case AET::INT16:  ARRAY_FILL_TYPE(int16_t);
       case AET::INT32:  ARRAY_FILL_TYPE(int32_t);
       case AET::INT64:  ARRAY_FILL_TYPE(int64_t);
@@ -1569,6 +1581,7 @@ static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int3
    if (Step IS 1) {
       switch (Arr->elemtype) {
          case AET::BYTE:   return find_forward_contiguous<uint8_t>(data, Start, Stop, Value);
+         case AET::INT8:   return find_forward_contiguous<int8_t>(data, Start, Stop, Value);
          case AET::INT16:  return find_forward_contiguous<int16_t>(data, Start, Stop, Value);
          case AET::INT32:  return find_forward_contiguous<int32_t>(data, Start, Stop, Value);
          case AET::INT64:  return find_forward_contiguous<int64_t>(data, Start, Stop, Value);
@@ -1585,6 +1598,7 @@ static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int3
    // Stepped search path (non-contiguous or reverse direction)
    switch (Arr->elemtype) {
       case AET::BYTE:   return find_stepped<uint8_t>(data, Start, Stop, Step, Value);
+      case AET::INT8:   return find_stepped<int8_t>(data, Start, Stop, Step, Value);
       case AET::INT16:  return find_stepped<int16_t>(data, Start, Stop, Step, Value);
       case AET::INT32:  return find_stepped<int32_t>(data, Start, Stop, Step, Value);
       case AET::INT64:  return find_stepped<int64_t>(data, Start, Stop, Step, Value);
@@ -1743,6 +1757,7 @@ LJLIB_CF(array_reverse)
 
    switch (arr->elemtype) {
       case AET::BYTE:   { auto *p = (uint8_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::INT8:   { auto *p = (int8_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT16:  { auto *p = (int16_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT32:  { auto *p = (int32_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT64:  { auto *p = (int64_t *)data; std::reverse(p, p + arr->len); break; }
@@ -1983,6 +1998,7 @@ LJLIB_CF(array_sort)
 
    switch (arr->elemtype) {
       case AET::BYTE: quicksort(arr->get<uint8_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::INT8: quicksort(arr->get<int8_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT16: quicksort(arr->get<int16_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT32: quicksort(arr->get<int32_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT64: quicksort(arr->get<int64_t>(), 0, int32_t(arr->len - 1), descending); break;
@@ -2033,6 +2049,7 @@ static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx)
 
    switch (Arr->elemtype) {
       case AET::BYTE:   lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::INT8:   lua_pushinteger(L, *(int8_t *)elem); break;
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;

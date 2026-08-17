@@ -839,6 +839,43 @@ end
    assert(symbol.fields[0].column is 4, f"Expected field at column 4, got {symbol.fields[0].column}")
 end
 
+@Test function ValidateFunctionSymbolCoordinatesIdentifyNames()
+   result = debug.validate([[
+function named()
+end
+local assigned = function()
+end
+target = {}
+target.method = function()
+end
+local function localNamed()
+end
+global function globalNamed()
+end
+function outer()
+   function inner()
+   end
+end
+]], { symbols = true })
+   assert(result.success is true, 'Function declarations should validate')
+
+   symbols = {}
+   for symbol in values(result.symbols) do symbols[symbol.name] = symbol end
+
+   assert(symbols.named.column is 10, f"Expected named at column 10, got {symbols.named.column}")
+   assert(symbols.assigned.column is 7, f"Expected assigned at column 7, got {symbols.assigned.column}")
+   assert(symbols['target.method'].column is 1,
+      f"Expected target.method at column 1, got {symbols['target.method'].column}")
+   assert(symbols.localNamed.column is 16,
+      f"Expected localNamed at column 16, got {symbols.localNamed.column}")
+   assert(symbols.globalNamed.column is 17,
+      f"Expected globalNamed at column 17, got {symbols.globalNamed.column}")
+   assert(symbols.inner.column is 13, f"Expected inner at column 13, got {symbols.inner.column}")
+   assert(symbols.inner.endLine is 14, f"Expected inner to end on line 14, got {symbols.inner.endLine}")
+   assert(symbols.inner.endColumn is 4,
+      f"Expected inner end token at column 4, got {symbols.inner.endColumn}")
+end
+
 @Test function ValidateStructRevalidationIsSideEffectFree()
    -- Validation must not permanently register declared structs: an edited declaration would otherwise conflict
    -- with the version registered by an earlier validation of the same document.

@@ -45,7 +45,8 @@ static const uint8_t glElemSizes[] = {
    sizeof(uint8_t),      // AET::UINT8
    sizeof(uint16_t),     // AET::UINT16
    sizeof(uint32_t),     // AET::UINT32
-   sizeof(uint64_t)      // AET::UINT64
+   sizeof(uint64_t),     // AET::UINT64
+   sizeof(int8_t)        // AET::INT8
 };
 
 //********************************************************************************************************************
@@ -109,6 +110,7 @@ static LJ_AINLINE ArrayElementResult array_validate_element(GCarray *Array, cTVa
    if (tvisnil(Value)) {
       switch (Array->elemtype) {
          case AET::BYTE:
+         case AET::INT8:
          case AET::INT16:
          case AET::INT32:
          case AET::INT64:
@@ -133,6 +135,7 @@ static LJ_AINLINE ArrayElementResult array_validate_element(GCarray *Array, cTVa
 
    switch (Array->elemtype) {
       case AET::BYTE:
+      case AET::INT8:
       case AET::INT16:
       case AET::INT64:
       case AET::UINT8:
@@ -248,6 +251,21 @@ static LJ_AINLINE void array_store_validated(lua_State *L, GCarray *Array, MSize
          }
          else *(uint8_t *)element = uint8_t(array_unsigned_integer(numV(Value), 8));
          return;
+      case AET::INT8: {
+         if (tvisint(Value) and intV(Value) >= std::numeric_limits<int8_t>::min() and
+               intV(Value) <= std::numeric_limits<int8_t>::max()) {
+            *(int8_t *)element = int8_t(intV(Value));
+            return;
+         }
+         if (tvisnum(Value) and numV(Value) >= std::numeric_limits<int8_t>::min() and
+               numV(Value) <= std::numeric_limits<int8_t>::max()) {
+            *(int8_t *)element = int8_t(numV(Value));
+            return;
+         }
+         uint8_t bits = tvisint(Value) ? uint8_t(intV(Value)) : uint8_t(array_unsigned_integer(numV(Value), 8));
+         std::memcpy(element, &bits, sizeof(bits));
+         return;
+      }
       case AET::INT16: {
          if (tvisint(Value) and intV(Value) >= std::numeric_limits<int16_t>::min() and
                intV(Value) <= std::numeric_limits<int16_t>::max()) {
@@ -363,6 +381,7 @@ void lj_array_store_new_values(lua_State *L, GCarray *Array, cTValue *Values, MS
       bool stored = false;
       switch (Array->elemtype) {
          case AET::BYTE:   stored = array_store_integer_sequence<uint8_t>(Array, Values, Count); break;
+         case AET::INT8:   stored = array_store_integer_sequence<int8_t>(Array, Values, Count); break;
          case AET::INT16:  stored = array_store_integer_sequence<int16_t>(Array, Values, Count); break;
          case AET::INT32:  stored = array_store_integer_sequence<int32_t>(Array, Values, Count); break;
          case AET::INT64:  stored = array_store_integer_sequence<int64_t>(Array, Values, Count); break;
@@ -716,6 +735,7 @@ GCtab * lj_array_to_table(lua_State *L, GCarray *Array)
 
       switch (Array->elemtype) {
          case AET::BYTE:   setintV(slot, *(uint8_t*)elem); break;
+         case AET::INT8:   setintV(slot, *(int8_t*)elem); break;
          case AET::INT16:  setintV(slot, *(int16_t*)elem); break;
          case AET::INT32:  setintV(slot, *(int32_t*)elem); break;
          case AET::INT64:  setnumV(slot, lua_Number(*(int64_t*)elem)); break;

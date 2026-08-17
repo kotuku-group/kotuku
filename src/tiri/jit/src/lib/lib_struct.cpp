@@ -176,7 +176,7 @@ static void write_array_field(lua_State *L, APTR Address, const struct_field &Fi
    }
 
    auto source = lua_toarray(L, StackIndex);
-   auto expected_type = ff_to_aet(Field.Type);
+   auto expected_type = ff_to_aet(Field.Type, Field.NativeType);
 
    if ((Field.Type & FD_VECTOR) and (Field.Type & FD_STRUCT) and (not (Field.Type & FD_PTR))) {
       if (not Field.TrivialElements) {
@@ -409,7 +409,7 @@ static bool read_primitive_field(lua_State *L, APTR Address, const struct_field 
          while (length < size_t(ArraySize) and ((CSTRING)Address)[length]) length++;
          lua_pushlstring(L, (CSTRING)Address, length);
       }
-      else lua_createarray(L, ArraySize, ff_to_aet(Type), (APTR *)Address, ARRAY_CACHED);
+      else lua_createarray(L, ArraySize, ff_to_aet(Type, Field.NativeType), (APTR *)Address, ARRAY_CACHED);
    }
    else if (Field.NativeType IS NativeStructType::Bool) lua_pushboolean(L, ((bool *)Address)[0]);
    else if (Field.NativeType IS NativeStructType::Char or Field.NativeType IS NativeStructType::Int8) {
@@ -627,16 +627,29 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
    }
    else if ((Field.Type & FD_POINTER) and (Field.Type & FD_ARRAY)) {
       if (((APTR *)Address)[0]) {
-         make_array(L, ff_to_aet(Field.Type & ~FD_POINTER), -1, ((APTR *)Address)[0]);
+         make_array(L, ff_to_aet(Field.Type & ~FD_POINTER, Field.NativeType), -1, ((APTR *)Address)[0]);
       }
       else lua_pushnil(L);
    }
    else if ((Field.Type & FD_VECTOR) and (not (Field.Type & FD_STRING))) {
+      const bool uns = (Field.Type & FD_UNSIGNED) != 0;
       if (Field.Type & FD_FLOAT) push_vector_array<float>(L, Address, AET::FLOAT);
       else if (Field.Type & FD_DOUBLE) push_vector_array<double>(L, Address, AET::DOUBLE);
-      else if (Field.Type & FD_INT64) push_vector_array<int64_t>(L, Address, AET::INT64);
-      else if (Field.Type & FD_INT) push_vector_array<int>(L, Address, AET::INT32);
-      else if (Field.Type & FD_WORD) push_vector_array<int16_t>(L, Address, AET::INT16);
+      else if (Field.Type & FD_INT64) {
+         if (uns) push_vector_array<uint64_t>(L, Address, AET::UINT64);
+         else push_vector_array<int64_t>(L, Address, AET::INT64);
+      }
+      else if (Field.Type & FD_INT) {
+         if (uns) push_vector_array<uint32_t>(L, Address, AET::UINT32);
+         else push_vector_array<int>(L, Address, AET::INT32);
+      }
+      else if (Field.Type & FD_WORD) {
+         if (uns) push_vector_array<uint16_t>(L, Address, AET::UINT16);
+         else push_vector_array<int16_t>(L, Address, AET::INT16);
+      }
+      else if ((Field.Type & FD_BYTE) and Field.NativeType IS NativeStructType::Int8) {
+         push_vector_array<int8_t>(L, Address, AET::INT8);
+      }
       else if (Field.Type & FD_BYTE) push_vector_array<uint8_t>(L, Address, AET::BYTE);
       else struct_field_error(L, CurrentFrame, ERR::NoSupport,
          "Vector field '%s' uses an unsupported element type.", Field.Name.c_str());

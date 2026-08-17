@@ -3274,6 +3274,7 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
 
    switch (et) {
       case AET::BYTE:   shift = 0; break;
+      case AET::INT8:   shift = 0; break;
       case AET::INT16:  shift = 1; break;
       case AET::INT32:  shift = 2; break;
       case AET::UINT8:  shift = 0; break;
@@ -3316,6 +3317,10 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
          val = emitir(IRT(IR_XLOAD, IRT_U8), addr, 0);
          if (not LJ_DUALNUM)
             val = emitir(IRTN(IR_CONV), val, IRCONV_NUM_INT);
+         break;
+      case AET::INT8:
+         val = emitir(IRT(IR_XLOAD, IRT_I8), addr, 0);
+         if (not LJ_DUALNUM) val = emitir(IRTN(IR_CONV), val, IRCONV_NUM_INT);
          break;
       case AET::INT16:
          val = emitir(IRT(IR_XLOAD, IRT_I16), addr, 0);
@@ -3392,6 +3397,7 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
 
    switch (et) {
       case AET::BYTE:   shift = 0; break;
+      case AET::INT8:   shift = 0; break;
       case AET::INT16:  shift = 1; break;
       case AET::INT32:  shift = 2; break;
       case AET::UINT8:  shift = 0; break;
@@ -3416,7 +3422,7 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
        (et IS AET::UINT8 or et IS AET::UINT16 or et IS AET::UINT32 or et IS AET::UINT64)) return false;
 
    if (tref_isnum(ValRef)) {
-      if (et IS AET::BYTE or et IS AET::INT16 or et IS AET::INT32 or et IS AET::INT64 or
+      if (et IS AET::BYTE or et IS AET::INT8 or et IS AET::INT16 or et IS AET::INT32 or et IS AET::INT64 or
           et IS AET::UINT8 or et IS AET::UINT16 or et IS AET::UINT32 or et IS AET::UINT64) {
          emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -DBL_MAX));
          emitir(IRTG(IR_LE, IRT_NUM), ValRef, lj_ir_knum(J, DBL_MAX));
@@ -3454,6 +3460,12 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
             ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY)
             : ValRef;
          emitir(IRT(IR_XSTORE, IRT_U8), addr, store_val);
+         break;
+      case AET::INT8:
+         store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)
+            ? emitir(IRTI(IR_CONV), ValRef, IRCONV_INT_NUM | IRCONV_ANY)
+            : ValRef;
+         emitir(IRT(IR_XSTORE, IRT_I8), addr, store_val);
          break;
       case AET::INT16:
          store_val = tref_isnil(ValRef) ? ir.kint(0) : tref_isnum(ValRef)

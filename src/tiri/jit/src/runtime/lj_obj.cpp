@@ -51,6 +51,7 @@ const void * lj_obj_ptr(global_State *g, cTValue *o)
 {
    switch(elemtype) {
       case AET::BYTE:    return FD_BYTE;
+      case AET::INT8:    return FD_BYTE;
       case AET::INT16:   return FD_WORD;
       case AET::INT32:   return FD_INT;
       case AET::INT64:   return FD_INT64;

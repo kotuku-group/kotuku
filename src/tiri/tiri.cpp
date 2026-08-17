@@ -635,8 +635,11 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
             case AET::INT16:
                for (i=0; ((int16_t *)Data)[i]; i++);
                break;
-            case AET::BYTE:
+            case AET::INT8:
                for (i=0; ((int8_t *)Data)[i]; i++);
+               break;
+            case AET::BYTE:
+               for (i=0; ((uint8_t *)Data)[i]; i++);
                break;
             case AET::STRUCT: // Use make_struct_*() interfaces instead
             case AET::STR_GC:

@@ -1471,7 +1471,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
       "   Value: int\n"
       "end\n"
       "local function outer(Value:num!, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
-      "Object:obj, Numbers:array<int>, Records:array<struct<SignatureLayout>>, Masks:array<uint32>, ...):func\n"
+      "Object:obj, Numbers:array<int>, Records:array<struct<SignatureLayout>>, Masks:array<uint>, ...):func\n"
       "   local function inner(Text:str!):<str!, num, ...>\n"
       "      return Text, Value, Value\n"
       "   end\n"
@@ -4577,13 +4577,13 @@ static bool test_static_descriptor_model(kt::Log &Log)
    constexpr std::array<ArrayMapping, 19> mappings = { {
       { "byte", AET::BYTE, TiriType::Num },
       { "char", AET::BYTE, TiriType::Num },
-      { "int8", AET::BYTE, TiriType::Num },
+      { "int8", AET::INT8, TiriType::Num },
       { "int16", AET::INT16, TiriType::Num },
       { "int", AET::INT32, TiriType::Num },
       { "int64", AET::INT64, TiriType::Num },
       { "uint8", AET::UINT8, TiriType::Num },
       { "uint16", AET::UINT16, TiriType::Num },
-      { "uint32", AET::UINT32, TiriType::Num },
+      { "uint", AET::UINT32, TiriType::Num },
       { "uint64", AET::UINT64, TiriType::Num },
       { "float", AET::FLOAT, TiriType::Num },
       { "double", AET::DOUBLE, TiriType::Num },
