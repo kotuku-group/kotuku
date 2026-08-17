@@ -36,7 +36,7 @@ ERR reg_iface_prototype(std::string_view Interface, std::string_view Method,
 
 ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
    BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None);
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None, bool AllowAlias = false);
 
 // Register a hidden instance method.  Unlike reg_iface_method(), this does not require a matching public interface
 // field and stores only the receiver/member prototype entry.

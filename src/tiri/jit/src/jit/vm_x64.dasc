@@ -2051,9 +2051,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  checknumtp [BASE+16], ->fff_fallback
   |  cvttsd2si TMPRd, qword [BASE+16]
   |.endif
-  |  // Convert exclusive end to inclusive: end = end - 1 (only for positive values)
+  |  // Convert the explicit exclusive stop to the inclusive endpoint used below.
   |  test TMPRd, TMPRd
-  |  jle >1
+  |  jz ->fff_emptystr
   |  sub TMPRd, 1
   |1:
   |  mov STR:RB, [BASE]

@@ -1658,6 +1658,8 @@ static void build_subroutines(BuildCtx *ctx)
   |   blo ->fff_fallback
   |    checkint CARG3, ->fff_fallback
   |    sxtw RB, CARG3w
+  |   cbz RB, ->fff_emptystr
+  |   sub RB, RB, #1		// Convert explicit exclusive stop to the inclusive endpoint used below.
   |1:
   |  ldr CARG2, [BASE, #8]
   |  checkstr CARG1, ->fff_fallback

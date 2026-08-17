@@ -26,7 +26,7 @@ end
    assert(text.upper() is 'HELLO WORLD', 'String transformations should use dot calls')
    assert(text.contains('World') and text.startsWith('Hello'), 'String query methods should use dot calls')
 
-   local first, second = 'AB'.byte(0, 1)
+   local first, second = 'AB'.byte(0, 2)
    assert(first is 65 and second is 66, 'Variadic string methods should preserve multiple results')
    local parts = 'a,b,c'.split(',')
    assert(#parts is 3 and parts[1] is 'b', 'String array results should retain their inferred type')
@@ -76,7 +76,7 @@ end
       record=struct<BuiltinMethodRecord> { Value=9 },
       file=obj.new('file')
    }
-   local first, second = holder.text.byte(0, 1)
+   local first, second = holder.text.byte(0, 2)
    holder.values.push(2)
    local clone = holder.record.clone()
    assert(first is 65 and second is 66 and holder.values[1] is 2 and holder.sequence.contains(2) and

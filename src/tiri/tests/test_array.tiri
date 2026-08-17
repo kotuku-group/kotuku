@@ -736,6 +736,10 @@ end
    -- Find with start index
    assert(arr.find(50, 5) is 5, "find(50, 5) should return 5")
    assert(arr.find(50, 6) is nil, "find(50, 6) should return nil")
+   assert(arr.find(50, 0, 5) is nil, "an exclusive stop should exclude index 5")
+   assert(arr.find(50, 0, 6) is 5, "an exclusive stop should include index 5")
+   assert(arr.find(90, 9, #arr) is 9, "a stop equal to array length should be valid")
+   assert(arr.find(50, 5, 5) is nil, "an empty span should not find a value")
 end
 
 @Test function ArrayFindFloat()
@@ -1761,32 +1765,32 @@ end
 
 @Test function ArrayConcatRangeString()
    arr = array<str> { 'a', 'b', 'c', 'd' }
-   result = arr.concat(',', nil, 1, 2)
+   result = arr.concat(',', nil, 1, 3)
    assert(result is 'b,c', "concat with indexes 1 to 2 should return 'b,c', got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeIntFormat()
    arr = array<int> { 1, 2, 3, 4 }
-   result = arr.concat('-', '%02d', 1, 3)
+   result = arr.concat('-', '%02d', 1, 4)
    assert(result is '02-03-04', "formatted concat with indexes 1 to 3 should return '02-03-04', got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeNilSeparator()
    arr = array<int> { 1, 2, 3, 4 }
-   result = arr.concat(nil, '%d', 1, 3)
+   result = arr.concat(nil, '%d', 1, 4)
    assert(result is '234', "concat with nil separator and indexes 1 to 3 should return '234', got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeSingleElement()
    arr = array<str> { 'zero', 'one', 'two' }
-   result = arr.concat(', ', nil, 1, 1)
+   result = arr.concat(', ', nil, 1, 2)
    assert(result is 'one', "single-element concat range should return only that element, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeEmptySpan()
    arr = array<str> { 'zero', 'one', 'two' }
    result = arr.concat(', ', nil, 2, 1)
-   assert(result is '', "concat range with End before Start should return an empty string, got '" .. result .. "'")
+   assert(result is '', "concat range with Stop before Start should return an empty string, got '" .. result .. "'")
 end
 
 @Test function ArrayConcatRangeOmittedIndexes()
@@ -1810,24 +1814,11 @@ end
       error('concat should reject negative End indexes')
    end
 
-   try
-      arr.concat(',', nil, 3, 3)
-   success
-      error('concat should reject Start indexes beyond the array length')
-   end
-
-   try
-      arr.concat(',', nil, 0, 3)
-   success
-      error('concat should reject End indexes beyond the array length')
-   end
+   assert(arr.concat(',', nil, 3, 3) is '', 'an empty span at the array end should be valid')
+   assert(arr.concat(',', nil, 0, 3) is 'a,b,c', 'a stop equal to array length should be valid')
 
    empty = array<str>
-   try
-      empty.concat(',', nil, 0, 0)
-   success
-      error('concat should reject explicit ranges on empty arrays')
-   end
+   assert(empty.concat(',', nil, 0, 0) is '', 'an empty span on an empty array should be valid')
 end
 
 @Test function ArrayConcatFloat()

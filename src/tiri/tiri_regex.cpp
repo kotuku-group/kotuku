@@ -278,9 +278,9 @@ static int regex_extract(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Method: regex.findFirst(text, [pos], [flags]) -> start, end, [captures]
+// Method: regex.findFirst(text, [pos], [flags]) -> start, stop, [captures]
 // This is the fastest available means for searching for the position of a match.
-// Returns nil on failure, or the start and end of the first match/capture.
+// Returns nil on failure, or the half-open start and stop of the first match/capture.
 
 static int regex_findFirst(lua_State *Lua)
 {
@@ -351,7 +351,7 @@ static int regex_findAll_iter(lua_State *Lua)
 //********************************************************************************************************************
 // Method: regex.findAll(text, [pos], [flags]) -> iterator
 // Returns an iterator function for use in for loops:
-//    for start, end, cap in rx.findAll(text) do ... end
+//    for start, stop, cap in rx.findAll(text) do ... end
 
 static int regex_findAll(lua_State *Lua)
 {

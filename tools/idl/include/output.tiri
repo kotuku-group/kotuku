@@ -114,7 +114,7 @@ end
 
 function fieldSetIDName(FieldName:str):str
    local id = FieldName.sub(-3)
-   if rx_lowercase_id.test(id) then return FieldName.sub(0, -3) end
+   if rx_lowercase_id.test(id) then return FieldName.sub(0, -2) end
 
    return FieldName
 end
@@ -166,8 +166,8 @@ end
 function fieldArrayElementType(Field:table):str
    local field_type = Field.innerType ?? Field.type
 
-   if field_type.endsWith('[]') then return field_type.sub(0, -3).trim() end
-   if field_type.endsWith('*') then return field_type.sub(0, -2).trim() end
+   if field_type.endsWith('[]') then return field_type.sub(0, -2).trim() end
+   if field_type.endsWith('*') then return field_type.sub(0, -1).trim() end
 
    return field_type
 end
@@ -460,7 +460,7 @@ function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
          output(f'   inline ERR set{FidName}(std::span<{fieldArraySetterElementType(Field)}> Value) noexcept {{')
       end
    elseif FieldType.endsWith('[]') then
-      local array_type = FieldType.sub(0,-3).trim()
+      local array_type = FieldType.sub(0,-2).trim()
       output(f'   inline ERR set{FidName}(std::span<{array_type}> Value) noexcept {{')
    elseif Field.flags has FD_STRING then -- std::string internally, accessed as std::string_view.
       output(f'   inline ERR set{FidName}(const std::string_view &Value) noexcept {{')
@@ -866,7 +866,7 @@ global function saveOutput()
       end
    end
 
-   if content.endsWith('\n\n') then content = content.sub(0, -3) end
+   if content.endsWith('\n\n') then content = content.sub(0, -2) end
 
    local offset_output = prepareClassOffsetOutput()
    if offset_output then

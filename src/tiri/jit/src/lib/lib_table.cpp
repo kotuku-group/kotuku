@@ -103,7 +103,7 @@ LJLIB_CF(table_move)
 {
    GCtab *a1 = lj_lib_checktab(L, 1);
    int32_t f = lj_lib_checkint(L, 2);  // Start index
-   int32_t e = lj_lib_checkint(L, 3);  // End index
+   int32_t e = lj_lib_checkint(L, 3);  // Exclusive stop index
    int32_t t = lj_lib_checkint(L, 4);  // Target index
 
    // If a2 is nil, use a1 as destination
@@ -117,19 +117,19 @@ LJLIB_CF(table_move)
       lua_pushvalue(L, 5);  // Push a2 as return value
    }
 
-   if (e >= f) {
+   if (e > f) {
       int32_t d = t - f;
       // Choose iteration direction to handle overlapping regions correctly
-      if (t > e or t <= f or a2 != a1) {
+      if (t >= e or t <= f or a2 != a1) {
          // Forward iteration: no overlap or different tables
-         for (int32_t i = f; i <= e; i++) {
+         for (int32_t i = f; i < e; i++) {
             lua_rawgeti(L, 1, i);  // Get a1[i]
             lua_rawseti(L, (a2 IS a1) ? 1 : 5, i + d);  // Set a2[i+d]
          }
       }
       else {
          // Backward iteration: overlapping region requires reverse copy
-         for (int32_t i = e; i >= f; i--) {
+         for (int32_t i = e - 1; i >= f; i--) {
             lua_rawgeti(L, 1, i);  // Get a1[i]
             lua_rawseti(L, 1, i + d);  // Set a1[i+d] (same table)
          }
@@ -145,11 +145,12 @@ LJLIB_CF(table_concat) LJLIB_REC(.)
 {
    // An explicit end index supplies the numerical domain, so any classification is acceptable.  Without one the
    // boundary is inferred from lj_tab_len(), which requires a sequence.
-   const int explicit_end = (L->base + 3 < L->top and !tvisnil(L->base + 3));
-   GCtab* t = explicit_end ? lj_lib_checktab(L, 1) : lj_lib_checksequence(L, 1, "concat");
+   const int explicit_stop = (L->base + 3 < L->top and !tvisnil(L->base + 3));
+   GCtab* t = explicit_stop ? lj_lib_checktab(L, 1) : lj_lib_checksequence(L, 1, "concat");
    GCstr* sep = lj_lib_optstr(L, 2);
    int32_t i = lj_lib_optint(L, 3, 0);  // 0-based: default start
-   int32_t e = explicit_end ? lj_lib_checkint(L, 4) : (int32_t)lj_tab_len(t) - 1;  // 0-based: last index = len-1
+   int32_t stop = explicit_stop ? lj_lib_checkint(L, 4) : (int32_t)lj_tab_len(t);
+   int32_t e = stop > INT32_MIN ? stop - 1 : INT32_MIN;  // lj_buf_puttab() uses an inclusive endpoint.
 
    SBuf* sb = lj_buf_tmp_(L);
    SBuf* sbx = lj_buf_puttab(sb, t, sep, i, e);
