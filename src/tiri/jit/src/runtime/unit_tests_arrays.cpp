@@ -212,6 +212,22 @@ static bool test_unsigned_array_types(kt::Log &Log)
       Log.error("unsigned array negative conversion did not wrap modulo its width");
       return false;
    }
+
+   GCarray *wide_wrapped = lj_array_new(lua, 1, AET::UINT64);
+   TValue negative_number;
+   setnumV(&negative_number, -1.0);
+   lj_arr_setidx(lua, wide_wrapped, 0, &negative_number);
+   if (wide_wrapped->get<uint64_t>()[0] != std::numeric_limits<uint64_t>::max()) {
+      Log.error("uint64 array conversion lost a negative numeric value during modulo reduction");
+      return false;
+   }
+
+   setnumV(&negative_number, -4294967295.0);
+   lj_arr_setidx(lua, wide_wrapped, 0, &negative_number);
+   if (wide_wrapped->get<uint64_t>()[0] != UINT64_C(18446744069414584321)) {
+      Log.error("uint64 array conversion produced incorrect modulo bits for a wide negative number");
+      return false;
+   }
    return true;
 }
 

@@ -3409,6 +3409,12 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
    // For numeric types, the value must be a number
    if (not is_gc_type and not (tref_isnumber(ValRef) or tref_isnil(ValRef))) return false;
 
+   // Floating-point to unsigned conversions do not consistently implement the interpreter's modulo semantics across
+   // widths and backends.  Keep integer values on the inline path, but use the checked runtime store for numeric
+   // values.
+   if (tref_isnum(ValRef) and
+       (et IS AET::UINT8 or et IS AET::UINT16 or et IS AET::UINT32 or et IS AET::UINT64)) return false;
+
    if (tref_isnum(ValRef)) {
       if (et IS AET::BYTE or et IS AET::INT16 or et IS AET::INT32 or et IS AET::INT64 or
           et IS AET::UINT8 or et IS AET::UINT16 or et IS AET::UINT32 or et IS AET::UINT64) {

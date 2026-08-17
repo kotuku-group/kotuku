@@ -65,6 +65,20 @@ end
    end
    assert(words[0] is 33167 and masks[0] is 2147484047 and counters[0] is 9007199254740399,
       'hot unsigned array indexing diverged from interpreter behaviour')
+
+   local bytes = array<uint8, 1>
+   local wide_words = array<uint16, 1>
+   local negative_counters = array<uint64, 2>
+   for i in {0 to 400} do
+      bytes[0] = 4294967295.0
+      wide_words[0] = 4294967295.0
+      negative_counters[0] = -1.0
+      negative_counters[1] = -4294967295.0
+   end
+   assert(bytes.concat('', '%u') is '255' and wide_words.concat('', '%u') is '65535',
+      'hot small-width unsigned stores narrowed numeric values before modulo conversion')
+   assert(negative_counters.concat(',', '%llu') is '18446744073709551615,18446744069414584321',
+      'hot uint64 stores did not preserve negative numeric values modulo 64 bits')
 end
 
 @Test function IntegerArrayConcat()

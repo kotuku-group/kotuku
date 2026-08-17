@@ -203,7 +203,7 @@ static uint64_t array_unsigned_integer(lua_Number Value, unsigned Bits)
 {
    double modulus = std::ldexp(1.0, int(Bits));
    double reduced = std::fmod(std::trunc(Value), modulus);
-   if (reduced < 0) reduced += modulus;
+   if (reduced < 0) return uint64_t(0) - uint64_t(-reduced);
    return uint64_t(reduced);
 }
 
