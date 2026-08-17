@@ -188,10 +188,10 @@ The table exposed to Tiri is zero-indexed and has this shape:
          name = "greet",
          kind = "function",
          signature = "greet(Name: str):str",
-         line = 0,
-         column = 0,
-         endLine = 6,
-         endColumn = 1,
+         line = 1,
+         column = 1,
+         endLine = 7,
+         endColumn = 2,
          annotations = {
             [0] = { name = "Doc", args = { text = "..." } }
          },

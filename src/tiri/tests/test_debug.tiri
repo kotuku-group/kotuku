@@ -412,6 +412,16 @@ end
    assert(type(result.tips) is 'table', "tips should be a table")
 end
 
+@Test function ValidateTipCoordinatesAreOneBased()
+   result = debug.validate('local unused_validate_position = 1')
+   assert(#result.tips > 0, 'An unused local should produce a tip')
+
+   tip = result.tips[0]
+   assert(tip.line is 1, f"Expected tip on line 1, got {tip.line}")
+   assert(tip.column is 7, f"Expected tip at column 7, got {tip.column}")
+   assert(tip.endColumn is 8, f"Expected tip to end after column 7, got {tip.endColumn}")
+end
+
 function hasTipMessage(Result, Message)
    if not Result.tips then return false end
    for tip in values(Result.tips) do
@@ -791,8 +801,8 @@ end
    assert(point and point.kind is 'struct', "Expected a struct symbol for ValidatePoint")
    assert(point.signature is 'struct ValidatePoint', "Unexpected struct signature: " .. tostring(point.signature))
    assert(#point.fields is 2, "Expected two ValidatePoint fields, got " .. #point.fields)
-   assert(point.line is 0, "Struct symbol line should be 0-based, got " .. point.line)
-   assert(point.endLine is 3, "Struct endLine should sit on the end keyword, got " .. point.endLine)
+   assert(point.line is 1, "Struct symbol line should be 1-based, got " .. point.line)
+   assert(point.endLine is 4, "Struct endLine should sit on the end keyword, got " .. point.endLine)
 
    assert(user and user.kind is 'struct', "Expected a struct symbol for ValidateUser")
    assert(#user.fields is 8, "Expected eight ValidateUser fields, got " .. #user.fields)
@@ -809,10 +819,24 @@ end
    assert(fields.Home.type is 'struct<ValidatePoint>', "Embedded struct types should be preserved")
    assert(fields.Next.type is 'ptr<ValidatePoint>', "Struct pointer types should be preserved")
    assert(fields.List.type is 'ptr<ValidatePoint[]>', "Null-terminated list types should be preserved")
-   assert(fields.Name.line is 7, "Field lines should be 0-based, got " .. fields.Name.line)
+   assert(fields.Name.line is 8, "Field lines should be 1-based, got " .. fields.Name.line)
 
    -- Functions should carry an empty fields array rather than nil for consistency.
    assert(greet.fields != nil and #greet.fields is 0, "Function symbols should have an empty fields array")
+end
+
+@Test function ValidateSymbolCoordinatesAreOneBased()
+   result = debug.validate('struct ValidateCoordinates\n   Value: int\nend', { symbols = true })
+   assert(result.success is true, 'Struct declaration should validate')
+   assert(#result.symbols is 1, 'Expected one struct symbol')
+
+   symbol = result.symbols[0]
+   assert(symbol.line is 1, f"Expected symbol on line 1, got {symbol.line}")
+   assert(symbol.column is 8, f"Expected symbol at column 8, got {symbol.column}")
+   assert(symbol.endLine is 3, f"Expected symbol to end on line 3, got {symbol.endLine}")
+   assert(#symbol.fields is 1, 'Expected one struct field')
+   assert(symbol.fields[0].line is 2, f"Expected field on line 2, got {symbol.fields[0].line}")
+   assert(symbol.fields[0].column is 4, f"Expected field at column 4, got {symbol.fields[0].column}")
 end
 
 @Test function ValidateStructRevalidationIsSideEffectFree()

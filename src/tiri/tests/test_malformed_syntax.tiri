@@ -58,8 +58,9 @@ end
    diag = result.diagnostics[0]
    assert(diag.code is 'DeprecatedSyntax', f"Expected DeprecatedSyntax, got {diag.code}")
    assert(diag.severity is 2, f"Expected error severity, got {diag.severity}")
-   assert(diag.line is 0, f"Expected diagnostic on line 0, got {diag.line}")
-   assert(diag.column is 6, f"Expected diagnostic on '=' at column 6, got {diag.column}")
+   assert(diag.line is 1, f"Expected diagnostic on line 1, got {diag.line}")
+   assert(diag.column is 7, f"Expected diagnostic on '=' at column 7, got {diag.column}")
+   assert(diag.endColumn is 8, f"Expected diagnostic to end after column 7, got {diag.endColumn}")
    assert(diag.message.find('inclusive range'), "Diagnostic should identify inclusive range syntax")
 
    replacement = debug.validate("for i in {0 into 8} do print(i) end")
