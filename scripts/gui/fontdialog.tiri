@@ -81,7 +81,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    function refreshExample()
       if not self.guidelines then
          local page_colour = gui.strToRGB(lWindow.theme.page.bkgd)
-         line_col = (page_colour.luminance(page_colour) > 0.5) ? 'rgb(0 0 0 / .25)' :>
+         line_col = (page_colour.luminance(page_colour) > 0.5) ? 'rgb(0 0 0 / .25)' :
             'rgb(255 255 255 / .15)'
          self.guidelines = self.examplePage.new('VectorPath', { strokeWidth = 0.5, stroke = line_col })
       end
@@ -357,7 +357,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
       new_font = { id=font.name, name=font.name }
       if font.alias then font = lFonts[font.alias] end
-      new_font.icon = font.scalable ? 'items/font' :> 'layout/text_sans'
+      new_font.icon = font.scalable ? 'items/font' : 'layout/text_sans'
       faces.insert(new_font)
    end
    vwFace.loadItems(faces)

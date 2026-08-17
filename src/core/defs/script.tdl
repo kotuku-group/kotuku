@@ -83,12 +83,12 @@ struct ScriptArg { // For use with sc::Exec
   c_insert([==[
 namespace sc {
 inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
+   struct Callback args = { Function.scriptValue(), Args.data(), int(Args.size()), ERR::Okay };
    return Action(sc::Callback::id, Function.Context, &args);
 }
 
 inline ERR Call(const FUNCTION &Function, std::span<const ScriptArg> Args, ERR &Result) noexcept {
-   struct Callback args = { Function.ProcedureID, Args.data(), int(Args.size()), ERR::Okay };
+   struct Callback args = { Function.scriptValue(), Args.data(), int(Args.size()), ERR::Okay };
    ERR error = Action(sc::Callback::id, Function.Context, &args);
    Result = args.Error;
    return(error);

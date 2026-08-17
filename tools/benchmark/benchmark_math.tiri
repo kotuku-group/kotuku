@@ -196,33 +196,33 @@ end
 
       -- Equality comparisons (using 'is' per Tiri convention)
       result = (i % 10) is 0
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
       result = x is y
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
       result = (i & 0xFF) is 0
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
 
       -- Inequality comparisons
       result = x != y
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
       result = i != 0
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
 
       -- Ordering comparisons
       result = x < y
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
       result = x <= y
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
       result = x > z
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
       result = x >= z
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
 
       -- Chained comparisons (evaluated left-to-right)
       result = z < x and x < y
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
       result = x >= z and x <= y
-      checksum += (result ? 1 :> 0)
+      checksum += (result ? 1 : 0)
 
       -- Conditional assignments based on comparisons
       a = x < y and 1 or 0
@@ -231,9 +231,9 @@ end
       checksum += a + b + c
 
       -- Ternary operator
-      d = x < y ? x :> y
-      a = i % 2 is 0 ? i * 2 :> i * 3
-      b = x > 100 ? (x > 1000 ? 2 :> 1) :> 0
+      d = x < y ? x : y
+      a = i % 2 is 0 ? i * 2 : i * 3
+      b = x > 100 ? (x > 1000 ? 2 : 1) : 0
       checksum += a + b + c + d
    end
    return checksum

@@ -202,6 +202,30 @@ TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *mo, cTValue *a, cTValue
    return top;  //  Return new base.
 }
 
+// Setup a receiver-first binary metamethod call.  This remains separate from mmcall() so receiver-stable binary
+// metamethods retain their two-argument ABI.
+
+static TValue * mmcall_binop3(lua_State *L, ASMFunction cont, cTValue *Method, cTValue *Receiver,
+   cTValue *Other, bool LhsDispatch)
+{
+   //           |-- framesize -> top       top+1       top+2 top+3      top+4      top+5
+   // before:   [func slots ...]
+   // mm setup: [func slots ...] [cont|?]  [mo|tmtype] [receiver] [other] [lhs dispatch]
+   // in asm:   [func slots ...] [cont|PC] [mo|delta]  [receiver] [other] [lhs dispatch]
+   //           ^-- func base                          ^-- mm base
+
+   TValue *top = L->top;
+   if (curr_funcisL(L)) top = curr_topL(L);
+   setcont(top++, cont);
+   setnilV(top++);
+   copyTV(L, top++, Method);
+   setnilV(top++);
+   copyTV(L, top++, Receiver);
+   copyTV(L, top++, Other);
+   setboolV(top, LhsDispatch);
+   return top - 2;  //  Return new base.
+}
+
 //********************************************************************************************************************
 // Helpers for some instructions, called from assembler VM
 
@@ -334,7 +358,9 @@ static cTValue * str2num(cTValue *o, TValue *n)
 {
    if (tvisnum(o)) return o;
    else if (tvisint(o)) return (setnumV(n, (lua_Number)intV(o)), n);
-   else if (tvisstr(o) and lj_strscan_num(strV(o), n)) return n;
+   // String-to-number coercion is intentionally not performed for arithmetic; callers must use
+   // tonumber() explicitly, e.g. 1 + tonumber('2').  Non-numeric operands fall through to the
+   // metamethod path and, failing that, raise an arithmetic type error.
    else return nullptr;
 }
 
@@ -352,15 +378,22 @@ TValue * lj_meta_arith(lua_State *L, TValue *ra, cTValue *rb, cTValue *rc, BCREG
    }
    else {
       cTValue *mo = lj_meta_lookup(L, rb, mm);
+      cTValue *receiver = rb;
+      cTValue *other = rc;
+      bool lhs_dispatch = true;
       if (tvisnil(mo)) {
          mo = lj_meta_lookup(L, rc, mm);
+         receiver = rc;
+         other = rb;
+         lhs_dispatch = false;
          if (tvisnil(mo)) {
             if (str2num(rb, &tempb) IS nullptr) rc = rb;
             lj_err_optype(L, rc, ErrMsg::OPARITH);
             return nullptr;  //  unreachable
          }
       }
-      return mmcall(L, lj_cont_ra, mo, rb, rc);
+      if (mm IS MM_unm) return mmcall(L, lj_cont_ra, mo, rb, rc);
+      return mmcall_binop3(L, lj_cont_ra, mo, receiver, other, lhs_dispatch);
    }
 }
 
@@ -386,8 +419,14 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
 
       if (not (tvisstr(top) or tvisnumber(top)) or !(tvisstr(top - 1) or tvisnumber(top - 1))) {
          cTValue *mo = lj_meta_lookup(L, top - 1, MM_concat);
+         cTValue *receiver = top - 1;
+         cTValue *other = top;
+         bool lhs_dispatch = true;
          if (tvisnil(mo)) {
             mo = lj_meta_lookup(L, top, MM_concat);
+            receiver = top;
+            other = top - 1;
+            lhs_dispatch = false;
             if (tvisnil(mo)) {
                if (tvisstr(top - 1) or tvisnumber(top - 1)) top++;
                lj_err_optype(L, top - 1, ErrMsg::OPCAT);
@@ -400,18 +439,20 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
          // before:    [...][CAT stack .........................]
          //                                 top-1     top         top+1 top+2
          // pick two:  [...][CAT stack ...] [o1]      [o2]
-         // setup mm:  [...][CAT stack ...] [cont|?]  [mo|tmtype] [o1]  [o2]
-         // in asm:    [...][CAT stack ...] [cont|PC] [mo|delta]  [o1]  [o2]
-         //            ^-- func base                              ^-- mm base
+         // setup mm:  [...][CAT stack ...] [cont|?]  [mo|tmtype] [receiver] [other] [lhs dispatch]
+         // in asm:    [...][CAT stack ...] [cont|PC] [mo|delta]  [receiver] [other] [lhs dispatch]
+         //            ^-- func base                                ^-- mm base
          // after mm:  [...][CAT stack ...] <--push-- [result]
          // next step: [...][CAT stack .............]
 
-         copyTV(L, top + 2 * LJ_FR2 + 2, top);  //  Carefully ordered stack copies!
-         copyTV(L, top + 2 * LJ_FR2 + 1, top - 1);
+         copyTV(L, top + 2 * LJ_FR2 + 3, other);  //  Carefully ordered stack copies!
+         copyTV(L, top + 2 * LJ_FR2 + 2, other);
+         copyTV(L, top + 2 * LJ_FR2 + 1, receiver);
          copyTV(L, top + LJ_FR2, mo);
          setcont(top - 1, lj_cont_cat);
          setnilV(top);
          setnilV(top + 2);
+         setboolV(top + 2 * LJ_FR2 + 3, lhs_dispatch);
          top += 2;
          return top + 1;  //  Trigger metamethod call.
       }
@@ -622,7 +663,16 @@ TValue * lj_meta_comp(lua_State *L, cTValue *o1, cTValue *o2, int op)
          ASMFunction cont = (op & 1) ? lj_cont_condf : lj_cont_condt;
          MMS mm = (op & 2) ? MM_le : MM_lt;
          cTValue *mo = lj_meta_lookup(L, o1, mm);
-         if (tvisnil(mo) and tvisnil((mo = lj_meta_lookup(L, o2, mm)))) {
+         cTValue *receiver = o1;
+         cTValue *other = o2;
+         bool lhs_dispatch = true;
+         if (tvisnil(mo)) {
+            mo = lj_meta_lookup(L, o2, mm);
+            receiver = o2;
+            other = o1;
+            lhs_dispatch = false;
+         }
+         if (tvisnil(mo)) {
             if (op & 2) {  // MM_le not found: retry with MM_lt.
                cTValue *ot = o1; o1 = o2; o2 = ot;  //  Swap operands.
                op ^= 3;  //  Use LT and flip condition.
@@ -631,7 +681,7 @@ TValue * lj_meta_comp(lua_State *L, cTValue *o1, cTValue *o2, int op)
             lj_err_comp(L, o1, o2);
             return nullptr;
          }
-         return mmcall(L, cont, mo, o1, o2);
+         return mmcall_binop3(L, cont, mo, receiver, other, lhs_dispatch);
       }
    }
 }

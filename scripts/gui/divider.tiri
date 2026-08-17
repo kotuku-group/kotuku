@@ -162,7 +162,7 @@ gui.divider = function(Options:table)
       while ev do
          if ev.type is JET_ABS_XY then
             if self._buttonHeld then
-               arrangeAll(self, (self._orientation is 'h') ? ev.absX - self._vp.absX :> ev.absY - self._vp.absY)
+               arrangeAll(self, (self._orientation is 'h') ? ev.absX - self._vp.absX : ev.absY - self._vp.absY)
                self._pct = (self._div[self._anchor] + HALF_GAP) / self._vp[self._length]
             end
          elseif ev.type is JET_BUTTON_1 then -- LMB

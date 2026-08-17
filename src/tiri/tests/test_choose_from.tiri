@@ -842,7 +842,7 @@ end
 
 @Test(hotpath=true) function ChooseWithTernary()
    flag = true
-   result = choose (flag ? 1 :> 2) from
+   result = choose (flag ? 1 : 2) from
       1 -> 'one'
       2 -> 'two'
       else -> 'other'

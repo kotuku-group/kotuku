@@ -32,6 +32,7 @@ static bool is_builtin_interface_namespace(uint32_t Hash)
       case kt::strhash("debug"):
       case kt::strhash("array"):
       case kt::strhash("range"):
+      case kt::strhash("struct"):
          return true;
       default:
          return false;
@@ -866,6 +867,10 @@ private:
    void resolve_builtin_method(CallExprPayload &Call)
    {
       Call.runtime_builtin_method.reset();
+      if (Call.compiler_callable != BuiltinCallableID::Invalid) {
+         Call.builtin_method.reset();
+         return;
+      }
       const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
       if (not direct or not direct->callable or
           (Call.argument_syntax != CallArgumentSyntax::Parenthesised and

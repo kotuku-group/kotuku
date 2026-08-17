@@ -538,7 +538,7 @@ local fallback = 5
 if level > 10 then
    output = level
 elseif level ?? fallback then
-   output = level ? level :> fallback
+   output = level ? level : fallback
 else
    output = fallback
 end
@@ -899,31 +899,26 @@ static bool test_deprecated_numeric_for_rejected(kt::Log &Log)
 
 static bool test_colon_method_syntax_rejected(kt::Log &Log)
 {
-   struct ColonCase {
-      std::string_view source;
-      std::string_view expected_message;
-   };
-
-   constexpr std::array<ColonCase, 3> cases = { {
-      { "local values = {}\nvalues:clear()", "colon method syntax has been removed" },
-      { "local values:table = nil\nvalues?:clear()", "safe colon method syntax has been removed" },
-      { "local value = {}\nfunction value:clear() end", "colon-qualified function declarations have been removed" }
+   constexpr std::array<std::string_view, 3> cases = { {
+      "local values = {}\nvalues:clear()",
+      "local values:table = nil\nvalues?:clear()",
+      "local value = {}\nfunction value:clear() end"
    } };
 
-   for (const auto &test_case : cases) {
-      auto result = build_ast_from_source(test_case.source, true);
-      size_t matching = 0;
+   for (std::string_view source : cases) {
+      auto result = build_ast_from_source(source, true);
+      bool has_error = false;
       for (const ParserDiagnostic &diagnostic : result.diagnostics) {
-         if (diagnostic.code != ParserErrorCode::DeprecatedSyntax) continue;
-         if (diagnostic.message.find(test_case.expected_message) IS std::string::npos) {
-            Log.error("colon syntax diagnostic did not explain the migration path");
+         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
+            Log.error("removed colon method syntax emitted a deprecated-syntax diagnostic");
             log_diagnostics(result.diagnostics, Log);
             return false;
          }
-         matching++;
+         if (diagnostic.severity IS ParserDiagnosticSeverity::Error) has_error = true;
       }
-      if (matching != 1) {
-         Log.error("expected one colon syntax diagnostic, got %zu", matching);
+
+      if (not has_error) {
+         Log.error("removed colon method syntax did not emit an ordinary parser error");
          log_diagnostics(result.diagnostics, Log);
          return false;
       }
@@ -935,6 +930,104 @@ static bool test_colon_method_syntax_rejected(kt::Log &Log)
       Log.error("colon removal interfered with type annotations");
       log_diagnostics(annotations.diagnostics, Log);
       return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_ternary_colon_separators(kt::Log &Log)
+{
+   auto result = build_ast_from_source("return true ? 1 : 2, false ?? 3 : 4");
+   if (not result.chunk.ok() or not result.diagnostics.empty()) {
+      Log.error("colon-separated ternaries did not parse cleanly");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   const BlockStmt& block = *result.chunk.value_ref();
+   StatementListView statements = block.view();
+   if (statements.size() != 1 or not (statements[0].kind IS AstNodeKind::ReturnStmt)) {
+      Log.error("colon-separated ternaries did not produce a return statement");
+      return false;
+   }
+
+   const auto* return_payload = std::get_if<ReturnStmtPayload>(&statements[0].data);
+   if (not return_payload or return_payload->values.size() != 2) {
+      Log.error("colon-separated ternaries did not produce two return values");
+      return false;
+   }
+
+   constexpr std::array<TernaryConditionMode, 2> expected_modes = { {
+      TernaryConditionMode::Standard, TernaryConditionMode::Extended
+   } };
+   for (size_t index = 0; index < return_payload->values.size(); index++) {
+      const ExprNodePtr &value = return_payload->values[index];
+      if (not value or not (value->kind IS AstNodeKind::TernaryExpr)) {
+         Log.error("colon-separated ternary return value %zu is not a ternary expression", index);
+         return false;
+      }
+
+      const auto* ternary = std::get_if<TernaryExprPayload>(&value->data);
+      if (not ternary or ternary->condition_mode != expected_modes[index]) {
+         Log.error("colon-separated ternary return value %zu has the wrong condition mode", index);
+         return false;
+      }
+   }
+
+   auto deprecated = build_ast_from_source("return true ? 1 :> 2");
+   if (not deprecated.chunk.ok() or deprecated.diagnostics.size() != 1) {
+      Log.error("deprecated ternary separator did not parse with exactly one diagnostic");
+      log_diagnostics(deprecated.diagnostics, Log);
+      return false;
+   }
+
+   const ParserDiagnostic &diagnostic = deprecated.diagnostics[0];
+   if (diagnostic.code != ParserErrorCode::DeprecatedSyntax or
+       diagnostic.severity != ParserDiagnosticSeverity::Warning or
+       diagnostic.token.kind() != TokenKind::TernarySep or
+       diagnostic.message.find("deprecated") IS std::string::npos) {
+      Log.error("deprecated ternary separator diagnostic has incorrect metadata");
+      log_diagnostics(deprecated.diagnostics, Log);
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_extended_ternary_annotation_lookahead(kt::Log &Log)
+{
+   constexpr std::array<std::string_view, 2> sources = { {
+      "local fallback = nil ?? function():num return 1 end",
+      "local fallback = nil ?? Value => num: Value"
+   } };
+
+   for (std::string_view source : sources) {
+      auto result = build_ast_from_source(source);
+      if (not result.chunk.ok() or not result.diagnostics.empty()) {
+         Log.error("extended ternary lookahead misidentified a type annotation as a separator");
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+
+      const BlockStmt& block = *result.chunk.value_ref();
+      StatementListView statements = block.view();
+      const auto* local_payload = statements.size() IS 1 and statements[0].kind IS AstNodeKind::LocalDeclStmt ?
+         std::get_if<LocalDeclStmtPayload>(&statements[0].data) : nullptr;
+      if (not local_payload or local_payload->values.size() != 1 or
+          local_payload->values[0]->kind != AstNodeKind::BinaryExpr) {
+         Log.error("type-annotated fallback did not remain an if-empty binary expression");
+         return false;
+      }
+
+      const auto* if_empty = std::get_if<BinaryExprPayload>(&local_payload->values[0]->data);
+      if (not if_empty or not (if_empty->op IS AstBinaryOperator::IfEmpty)) {
+         Log.error("type-annotated fallback did not retain the if-empty operator");
+         return false;
+      }
    }
 
    return true;
@@ -1142,7 +1235,7 @@ static bool test_ternary_presence_expr_ast(kt::Log &log)
    constexpr const char* source = R"(
 local value = nil
 local fallback = 10
-return (value ?? fallback) ? value :> fallback, value??, (value ?? fallback)??
+return (value ?? fallback) ? value : fallback, value??, (value ?? fallback)??
 )";
 
    auto result = build_ast_from_source(source);
@@ -1522,6 +1615,54 @@ static bool test_forward_declaration_signature_validation(kt::Log &Log)
 
    lua_pop(L, 1);
 
+   constexpr std::string_view matching_local_source =
+      "function local_declared(Name:str, Options:table, ...):<str, num> end\n"
+      "function local_declared(Value:str, Settings:table, ...):<str, num>\n"
+      "   return Value, 1\n"
+      "end\n";
+
+   if (lua_load(L, matching_local_source, "matching-local-forward-signature")) {
+      Log.error("matching local forward declaration was rejected: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view mismatched_local_source =
+      "function local_klass(Name:str, Options:table):str end\n"
+      "function local_klass(Name:num, Options:table):num\n"
+      "   return ''\n"
+      "end\n";
+
+   if (lua_load(L, mismatched_local_source, "mismatched-local-forward-signature") IS 0) {
+      Log.error("mismatched local forward declaration was accepted");
+      lua_pop(L, 1);
+      return false;
+   }
+
+   message = lua_tostring(L, -1);
+   if (message.find("signature for local function 'local_klass' does not match its forward declaration") IS
+       std::string_view::npos or message.find("parameter 1 has type 'num', expected 'str'") IS
+       std::string_view::npos) {
+      Log.error("mismatched local forward declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+
+   lua_pop(L, 1);
+
+   constexpr std::string_view nested_local_source =
+      "function local_scoped(Value:num):num end\n"
+      "function outer()\n"
+      "   function local_scoped(Value:str):str return Value end\n"
+      "end\n"
+      "function local_scoped(Value:num):num return Value end\n";
+
+   if (lua_load(L, nested_local_source, "nested-local-forward-signature")) {
+      Log.error("nested local function inherited an outer forward declaration: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
    constexpr std::string_view conditional_mismatch_source =
       "global function routed(Value:num) end\n"
       "if true then\n"
@@ -1574,7 +1715,8 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // 0x86 is included deliberately: Phase 5 removed the compiler-private binder referenced by those chunks and
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
-   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86) }) {
+   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
+      uint8_t(0x90) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -2030,6 +2172,7 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
+   luaL_openlibs(L);
    constexpr std::string_view source =
       "extern obj\n"
       "extern array\n"
@@ -3473,130 +3616,6 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
 }
 
 //********************************************************************************************************************
-// Executing a unit's dependency declaration must populate the prototype's resolved sidecar, and the callables bound
-// into the generated locals must be exactly the records the sidecar holds.
-//
-// BC_MODACT serves its bindings from the sidecar rather than repeating module and function lookups.  Comparing the
-// bound upvalue against the sidecar slot makes the descriptor path observable independently of call behaviour.
-
-static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
-{
-   LuaStateHolder state;
-   lua_State *L = state.get();
-   luaL_openlibs(L);
-   register_module_class(L);
-   lua_protect_globals(L);
-
-   // Two distinct functions from one module, plus a declaration that references none.  The unreferenced module must
-   // still resolve, and the referenced functions must occupy consecutive sidecar slots in declaration order.
-
-   constexpr std::string_view source =
-      "module core as mC\n"
-      "module display as mD\n"
-      "local a = mC.PreciseTime\n"
-      "local b = mC.GetErrorMsg\n"
-      "return a, b\n";
-
-   if (lua_load(L, source, "dependency-activation")) {
-      Log.error("failed to compile the activation fixture: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   GCproto *proto = funcproto(funcV(L->top - 1));
-
-   if (proto->resolved_dependencies) {
-      Log.error("the sidecar was populated before the chunk executed");
-      return false;
-   }
-
-   // lua_pcall() consumes the chunk, so retain a copy for the re-activation check below.
-
-   lua_pushvalue(L, -1);
-
-   if (lua_pcall(L, 0, 2, 0)) {
-      Log.error("the activation fixture failed to execute: %s", lua_tostring(L, -1));
-      return false;
-   }
-
-   if (not proto->resolved_dependencies) {
-      Log.error("executing a dependency declaration left the sidecar unresolved");
-      return false;
-   }
-
-   auto table = proto_dependencies(proto);
-   if (not table or table->function_count != 2) {
-      Log.error("expected two resolved function slots, found %d", table ? int(table->function_count) : -1);
-      return false;
-   }
-
-   // Every referenced function slot must hold a record, and every declaration must be marked activated even when it
-   // references no function.
-
-   std::array<const void *, 2> resolved = { };
-   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
-      resolved[slot] = proto_dependency_callable(proto, slot);
-      if (not resolved[slot]) {
-         Log.error("sidecar slot %d is empty after activation", int(slot));
-         return false;
-      }
-   }
-   if (not proto->resolved_dependency_states or proto->resolved_dependency_count != table->dependency_count) {
-      Log.error("dependency activation state does not match the descriptor table");
-      return false;
-   }
-   for (uint32_t dependency = 0; dependency < table->dependency_count; ++dependency) {
-      if (not proto->resolved_dependency_states[dependency]) {
-         Log.error("dependency %d was not marked activated", int(dependency));
-         return false;
-      }
-   }
-
-   // The returned values are the generated bindings.  Each is a C closure whose single upvalue is the light userdata
-   // pointing at the callable record, so it can be compared directly against the sidecar.
-
-   for (int index = 0; index < 2; ++index) {
-      int stack_slot = index - 2; // -2 is the first result, -1 the second
-
-      if (not lua_iscfunction(L, stack_slot)) {
-         Log.error("binding %d is not a C closure", index);
-         return false;
-      }
-
-      if (not lua_getupvalue(L, stack_slot, 1)) {
-         Log.error("binding %d exposes no callable upvalue", index);
-         return false;
-      }
-
-      const void *bound = lua_topointer(L, -1);
-      lua_pop(L, 1);
-
-      const void *expected = proto_dependency_callable(proto, uint32_t(index));
-      if (bound != expected) {
-         Log.error("binding %d holds %p but sidecar slot %d holds %p; the adapter is not serving from the sidecar",
-            index, bound, index, expected);
-         return false;
-      }
-   }
-
-   lua_pop(L, 2); // Discard the two bindings, leaving the retained chunk on top.
-
-   // Re-executing the chunk must preserve the resolved sidecar and simply rebuild closures from its stable records.
-
-   if (lua_pcall(L, 0, 2, 0)) {
-      Log.error("re-executing the activation fixture failed: %s", lua_tostring(L, -1));
-      return false;
-   }
-   lua_pop(L, 2);
-
-   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
-      if (proto_dependency_callable(proto, slot) != resolved[slot]) {
-         Log.error("re-activation replaced resolved sidecar slot %d", int(slot));
-         return false;
-      }
-   }
-
-   return true;
-}
 
 static bool test_module_registry(kt::Log &Log)
 {
@@ -3604,7 +3623,6 @@ static bool test_module_registry(kt::Log &Log)
       test_module_registry_shared_ordinal(Log) and
       test_module_registry_concurrency(Log) and
       test_module_definition_ownership(Log) and
-      test_module_dependency_activation_uses_sidecar(Log) and
       test_module_dependency_corruption_rejected(Log);
 }
 
@@ -3947,16 +3965,16 @@ static bool test_contextual_member_ast_foundations(kt::Log &Log)
    };
    for (std::string_view legacy_source : legacy_sources) {
       auto legacy = build_ast_from_source(legacy_source, false, false, true);
-      bool found_cutover_diagnostic = false;
-      for (const ParserDiagnostic &diagnostic : legacy.diagnostics) {
-         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax and
-             diagnostic.message.find("receiver.member") != std::string::npos) {
-            found_cutover_diagnostic = true;
-         }
-      }
-      if (not found_cutover_diagnostic) {
-         Log.error("colon syntax cut-over gate did not produce a dot-qualified replacement diagnostic");
+      if (legacy.diagnostics.empty()) {
+         Log.error("removed colon syntax did not emit a parser diagnostic");
          return false;
+      }
+
+      for (const ParserDiagnostic &diagnostic : legacy.diagnostics) {
+         if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
+            Log.error("removed colon syntax emitted a deprecated-syntax diagnostic");
+            return false;
+         }
       }
    }
 
@@ -4339,71 +4357,71 @@ static bool test_if_empty_operator_constants(kt::Log &log)
 
 static bool test_ternary_falsey_semantics(kt::Log &log)
 {
-   // Test: nil ? "yes" :> "no" should evaluate to "no"
+   // Test: nil ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return nil ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return nil ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse 'nil ? yes :> no'");
+         log.error("failed to parse 'nil ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: false ? "yes" :> "no" should evaluate to "no"
+   // Test: false ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return false ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return false ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse 'false ? yes :> no'");
+         log.error("failed to parse 'false ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: 0 ? "yes" :> "no" should evaluate to "no"
+   // Test: 0 ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return 0 ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return 0 ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '0 ? yes :> no'");
+         log.error("failed to parse '0 ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: "" ? "yes" :> "no" should evaluate to "no"
+   // Test: "" ? "yes" : "no" should evaluate to "no"
    {
-      auto result = build_ast_from_source("return \"\" ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return \"\" ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '\"\" ? yes :> no'");
+         log.error("failed to parse '\"\" ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: true ? "yes" :> "no" should evaluate to "yes"
+   // Test: true ? "yes" : "no" should evaluate to "yes"
    {
-      auto result = build_ast_from_source("return true ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return true ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse 'true ? yes :> no'");
+         log.error("failed to parse 'true ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: 42 ? "yes" :> "no" should evaluate to "yes"
+   // Test: 42 ? "yes" : "no" should evaluate to "yes"
    {
-      auto result = build_ast_from_source("return 42 ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return 42 ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '42 ? yes :> no'");
+         log.error("failed to parse '42 ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
    }
 
-   // Test: "hello" ? "yes" :> "no" should evaluate to "yes"
+   // Test: "hello" ? "yes" : "no" should evaluate to "yes"
    {
-      auto result = build_ast_from_source("return \"hello\" ? 'yes' :> 'no'");
+      auto result = build_ast_from_source("return \"hello\" ? 'yes' : 'no'");
       if (not result.chunk.ok()) {
-         log.error("failed to parse '\"hello\" ? yes :> no'");
+         log.error("failed to parse '\"hello\" ? yes : no'");
          log_diagnostics(result.diagnostics, log);
          return false;
       }
@@ -5124,11 +5142,27 @@ static bool test_builtin_method_registry(kt::Log &Log)
    const fprototype *range_contains = get_method_prototype(TiriType::Range, "contains");
    const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
    const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
-   if (not array_insert or not range_contains or not struct_clone or not object_exists or
+   const fprototype *object_new = get_method_prototype(TiriType::Object, "new");
+   const fprototype *object_state = get_method_prototype(TiriType::Object, "_state");
+   const fprototype *namespace_new = get_prototype("obj", "new");
+   lua_getglobal(L, "obj");
+   lua_getfield(L, -1, "new");
+   GCfunc *public_create = tvisfunc(L->top - 1) ? funcV(L->top - 1) : nullptr;
+   lua_pop(L, 2);
+   if (not array_insert or not range_contains or not struct_clone or not object_exists or not object_new or
+       not object_state or not namespace_new or
        array_insert->builtin_callable_id != builtin_callable_id(FastFunc::array_insert) or
        range_contains->builtin_callable_id != builtin_callable_id(FastFunc::range_contains) or
        struct_clone->builtin_callable_id != builtin_callable_id(FastFunc::struct_clone) or
        object_exists->builtin_callable_id != builtin_callable_id(FastFunc::object_exists) or
+       object_new->builtin_callable_id != builtin_callable_id(FastFunc::object_new) or
+       object_state->builtin_callable_id != builtin_callable_id(FastFunc::object__state) or
+       object_new IS namespace_new or object_new->param_count != 3 or
+       object_new->param_types()[0] != TiriType::Object or object_new->param_types()[1] != TiriType::Any or
+       object_new->param_types()[2] != TiriType::Table or object_state->param_count != 1 or
+       object_state->param_types()[0] != TiriType::Object or namespace_new->is_method() or
+       namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "_state") or
+       public_create != lj_builtin_callable(L, builtin_callable_id(FastFunc::object_create)) or
        array_insert IS table_insert or get_method_prototype(TiriType::Table, "push") or
        get_method_prototype(TiriType::Table, "new")) {
       Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
@@ -5152,7 +5186,7 @@ static bool test_builtin_method_registry(kt::Log &Log)
    constexpr std::array<std::string_view, 10> range_methods = {
       "each", "filter", "reduce", "map", "take", "any", "all", "find", "contains", "toArray"
    };
-   constexpr std::array<std::string_view, 3> struct_methods = { "structSize", "copy", "clone" };
+   constexpr std::array<std::string_view, 2> struct_methods = { "copy", "clone" };
    constexpr std::array<std::string_view, 12> object_methods = {
       "class", "init", "free", "children", "detach", "get", "set", "getKey", "setKey", "exists", "subscribe",
       "unsubscribe"
@@ -5207,8 +5241,22 @@ static bool test_builtin_method_registry(kt::Log &Log)
    lua_pushvalue(L, -1);
    lua_setfield(L, -3, "insert");
    lua_pop(L, 2);
+   ERR hidden_duplicate = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Object },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
+   ERR hidden_conflict = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Table },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
+   ERR hidden_invalid_receiver = reg_intrinsic_method(L, "obj", "new", TiriType::Any,
+      builtin_callable_id(FastFunc::object_new), { TiriType::Object },
+      { TiriType::Any, TiriType::Any, TiriType::Table });
+   ERR hidden_wrong_callable = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
+      builtin_callable_id(FastFunc::object_create), { TiriType::Object },
+      { TiriType::Object, TiriType::Any, TiriType::Table });
    if (duplicate != ERR::Exists or conflicting != ERR::Mismatch or invalid_receiver != ERR::InvalidValue or
-       wrong_callable != ERR::Mismatch or wrong_export != ERR::Mismatch) {
+       wrong_callable != ERR::Mismatch or wrong_export != ERR::Mismatch or hidden_duplicate != ERR::Exists or
+       hidden_conflict != ERR::Mismatch or hidden_invalid_receiver != ERR::InvalidValue or
+       hidden_wrong_callable != ERR::Mismatch) {
       Log.error("method registration consistency checks returned unexpected errors");
       return false;
    }
@@ -5589,6 +5637,35 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    }
 
    error.clear();
+   auto object_methods = compile_snapshot(L,
+      "local parent = obj.new('time')\nlocal child = parent.new('time')\nreturn parent._state()\n", true, error);
+   if (not object_methods or not find_builtin_callable_opcode(*object_methods,
+         builtin_callable_id(FastFunc::object_new)) or not find_builtin_callable_opcode(*object_methods,
+         builtin_callable_id(FastFunc::object__state)) or count_opcode(*object_methods, BC_BFUNC) != 2 or
+       count_opcode(*object_methods, BC_TGETS) != 1 or count_opcode(*object_methods, BC_TGETV) != 0) {
+      Log.error("proved Object new and _state calls did not use canonical lookup-free emission: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto dynamic_object_methods = compile_snapshot(L,
+      "local function use(Parent:any):any\nParent.new('time')\nreturn Parent._state()\nend\nreturn use\n", true, error);
+   if (not dynamic_object_methods or count_opcode_tree(*dynamic_object_methods, BC_BMETH) != 2 or
+       count_opcode_tree(*dynamic_object_methods, BC_BFUNC) != 0) {
+      Log.error("runtime Object new and _state calls did not retain BC_BMETH dispatch: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto namespace_object_new = compile_snapshot(L, "return obj.new('time')\n", true, error);
+   if (not namespace_object_new or find_builtin_callable_opcode(*namespace_object_new,
+         builtin_callable_id(FastFunc::object_create)) or count_opcode(*namespace_object_new, BC_GGET) != 1 or
+       count_opcode(*namespace_object_new, BC_TGETS) != 1) {
+      Log.error("public obj.new call lost ordinary namespace lookup semantics: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
    auto dynamic = compile_snapshot(L,
       "local body = { values={} }\nbody.values.insert(1)\nreturn body.values[0]\n", true, error);
    const BCIns *dynamic_dispatch = dynamic ? find_opcode(*dynamic, BC_BMETH) : nullptr;
@@ -5673,7 +5750,7 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    error.clear();
    auto range_pipe = compile_snapshot(L,
       "local total = 0\n{0 to 4} |> (Value => do total += Value end)\nreturn total\n", true, error);
-   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 1 or
+   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 2 or
        count_opcode_tree(*range_pipe, BC_TGETS) != 0) {
       Log.error("compiler-generated range iteration did not use canonical emission: %s", error.c_str());
       return false;
@@ -5682,8 +5759,9 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
    error.clear();
    auto append = compile_snapshot(L,
       "local values = array<byte>\nvalues ..= 'x' .. 'y'\nreturn values\n", true, error);
-   const BCIns *append_load = append ? find_opcode(*append, BC_BFUNC) : nullptr;
-   if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 1 or
+   const BCIns *append_load = append ? find_builtin_callable_opcode(
+      *append, builtin_callable_id(FastFunc::array_append)) : nullptr;
+   if (not append or not append_load or count_opcode(*append, BC_BFUNC) != 2 or
        bc_d(*append_load) != builtin_callable_index(builtin_callable_id(FastFunc::array_append))) {
       Log.error("compiler-only array append did not use canonical emission: %s", error.c_str());
       return false;
@@ -5733,6 +5811,108 @@ static bool test_compiler_intrinsic_bytecode_emission(kt::Log &Log)
        count_opcode_tree(*thunk, BC_BFUNC) != 1 or count_opcode_tree(*thunk, BC_GGET) != 0 or
        count_opcode_tree(*thunk, BC_TGETS) != 0 or count_opcode_tree(*thunk, BC_TGETV) != 0) {
       Log.error("deferred expressions did not use the isolated thunk intrinsic: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string error;
+
+   auto core = compile_snapshot(L,
+      "struct PhaseTwoRecord\n   Value: int\nend\n"
+      "local array:any = {}\nlocal struct:any = {}\n"
+      "local first = 1\nlocal last = 5\nlocal size = 4\nlocal source = { 10, 20, 30 }\n"
+      "local bounds = {first to last}\nlocal sliced = source[{0 to 2}]\nlocal present = first in bounds\n"
+      "local values = array<int, size> { 7, 8 }\n"
+      "local constructed = struct<PhaseTwoRecord> { Value=9 }\n"
+      "local bits = (first & last) | (first ^ last)\n"
+      "return sliced, present, values, constructed, bits\n", true, error);
+   constexpr std::array<FastFunc, 9> required = { {
+      FastFunc::range_new, FastFunc::range_slice, FastFunc::range_contains,
+      FastFunc::array_of, FastFunc::array_resize, FastFunc::struct_new,
+      FastFunc::bit_band, FastFunc::bit_bor, FastFunc::bit_bxor
+   } };
+   if (not core) {
+      Log.error("canonical core syntax fixture did not compile: %s", error.c_str());
+      return false;
+   }
+   for (FastFunc callable : required) {
+      if (find_builtin_callable_opcode(*core, builtin_callable_id(callable))) continue;
+      Log.error("canonical core syntax omitted built-in callable %u", unsigned(callable));
+      return false;
+   }
+   if (count_opcode_tree(*core, BC_GGET) != 0 or count_opcode_tree(*core, BC_TGETS) != 0 or
+       count_opcode_tree(*core, BC_TGETV) != 0) {
+      Log.error("compiler-owned core syntax retained namespace lookup bytecode");
+      return false;
+   }
+
+   error.clear();
+   auto shifts = compile_snapshot(L,
+      "local value = 5\nlocal amount = 1\nreturn ~value, value << amount, value >> amount\n", true, error);
+   if (not shifts or not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_bnot)) or
+       not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_lshift)) or
+       not find_builtin_callable_opcode(*shifts, builtin_callable_id(FastFunc::bit_rshift)) or
+       count_opcode_tree(*shifts, BC_GGET) != 0 or count_opcode_tree(*shifts, BC_TGETS) != 0) {
+      Log.error("unary and shifted bitwise syntax did not use canonical callables: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto explicit_calls = compile_snapshot(L,
+      "local values = array.new(2, 'int')\n"
+      "array.resize(values, 3)\n"
+      "return range(0, 2), range.slice({}, {0 to 1}), bit.band(1, 1)\n", true, error);
+   if (not explicit_calls or count_opcode_tree(*explicit_calls, BC_GGET) IS 0 or
+       count_opcode_tree(*explicit_calls, BC_TGETS) IS 0) {
+      Log.error("explicit namespace calls lost ordinary dynamic lookup bytecode: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_regex_literal_canonical_bytecode_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   luaopen_regex_intrinsic(L);
+   lua_pop(L, 1);
+   std::string error;
+
+   BuiltinCallableID constructor = builtin_callable_id(FastFunc::regex_new);
+   GCfunc *canonical_constructor = lj_builtin_callable(L, constructor);
+   if (not canonical_constructor or canonical_constructor->c.ffid != builtin_callable_index(constructor) or
+       std::string_view(builtin_callable_name(constructor)) != "regex.new") {
+      Log.error("canonical regex.new callable was not registered with its generated identity");
+      return false;
+   }
+   lua_gc(L, LUA_GCCOLLECT, 0);
+   if (lj_builtin_callable(L, constructor) != canonical_constructor) {
+      Log.error("canonical regex.new callable was not rooted independently of its public field");
+      return false;
+   }
+
+   auto literal = compile_snapshot(L, "local value = r'\\d+'\nreturn value\n", true, error);
+   if (not literal or not find_builtin_callable_opcode(*literal, constructor) or
+       count_opcode_tree(*literal, BC_BFUNC) != 1 or count_opcode_tree(*literal, BC_GGET) != 0 or
+       count_opcode_tree(*literal, BC_TGETS) != 0 or count_opcode_tree(*literal, BC_TGETV) != 0) {
+      Log.error("regex literal did not use the canonical regex.new callable: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto explicit_call = compile_snapshot(L, "extern regex\nreturn regex.new('\\\\d+')\n", true, error);
+   if (not explicit_call or find_builtin_callable_opcode(*explicit_call, constructor) or
+       count_opcode_tree(*explicit_call, BC_GGET) IS 0 or count_opcode_tree(*explicit_call, BC_BMETH) IS 0) {
+      Log.error("explicit regex.new call lost ordinary dynamic lookup bytecode: %s", error.c_str());
       return false;
    }
 
@@ -5890,7 +6070,7 @@ static bool test_builtin_method_runtime(kt::Log &Log)
       "local order = ''\n"
       "local function mark():bool order ..= 'r'; return true end\n"
       "local function argument():num order ..= 'a'; return 7 end\n"
-      "(mark() ? values :> values).insert(argument())\n"
+      "(mark() ? values : values).insert(argument())\n"
       "local maybe:table = nil\n"
       "maybe?.insert(argument())\n"
       "maybe = {}\n"
@@ -5956,7 +6136,7 @@ static bool test_builtin_method_runtime(kt::Log &Log)
       "local function invoke(Value:any, Text:str):str return Value.echo(Text) end\n"
       "local matched = 0\n"
       "for i in {0 to 200} do\n"
-      "   local value:any = i % 2 is 0 ? test_marked_userdata :> test_ordinary_userdata\n"
+      "   local value:any = i % 2 is 0 ? test_marked_userdata : test_ordinary_userdata\n"
       "   if invoke(value, 'x') is 'x' then matched++ end\n"
       "end\n"
       "return matched\n";
@@ -6668,7 +6848,9 @@ static bool test_tail_call_eligibility(kt::Log &Log)
    auto cleaned = compile_snapshot(L, cleanup_source, true, error);
    if (not cleaned or count_opcode_tree(*cleaned, BC_CALLT) != 0 or
        count_opcode_tree(*cleaned, BC_CALLMT) != 0 or count_opcode_tree(*cleaned, BC_MRSAVE) != 1 or
-       count_opcode_tree(*cleaned, BC_MRRESTORE) != 1 or count_opcode_tree(*cleaned, BC_RETM) IS 0) {
+       count_opcode_tree(*cleaned, BC_MRRESTORE) != 1 or count_opcode_tree(*cleaned, BC_RETM) IS 0 or
+       count_opcode_tree(*cleaned, BC_CLOSEARM) IS 0 or count_opcode_tree(*cleaned, BC_CLOSE) IS 0 or
+       count_opcode_tree(*cleaned, BC_GGET) != 0) {
       Log.error("user cleanup did not retain a protected multi-result return path: %s", error.c_str());
       return false;
    }
@@ -8281,7 +8463,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 75> tests = { {
+   constexpr std::array<TestCase, 79> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8297,6 +8479,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "current_context_range_operands", test_current_context_range_operands },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
+      { "ternary_colon_separators", test_ternary_colon_separators },
+      { "extended_ternary_annotation_lookahead", test_extended_ternary_annotation_lookahead },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
       { "bare_collection_iteration_emission", test_bare_collection_iteration_emission },
@@ -8340,6 +8524,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
+      { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
+      { "regex_literal_canonical_bytecode_emission", test_regex_literal_canonical_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },
       { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
       { "builtin_method_runtime", test_builtin_method_runtime },

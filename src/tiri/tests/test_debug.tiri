@@ -760,7 +760,7 @@ end
 
 -- Leading description.
 struct ValidateUser
-   Name: string -- The user name.
+   Name: str -- The user name.
    Age: int
    Sock: obj<NetSocket>
    Buf: char[16]
@@ -800,7 +800,7 @@ end
    fields = {}
    for f in values(user.fields) do fields[f.name] = f end
 
-   assert(fields.Name.type is 'string', "Name field type should be preserved")
+   assert(fields.Name.type is 'str', "Name field type should be preserved")
    assert(fields.Name.doc is 'The user name.', "Trailing field doc comment should be captured")
    assert(fields.Age.type is 'int', "Age field type should be preserved")
    assert(fields.Sock.type is 'obj<NetSocket>', "Object class constraints should be preserved")

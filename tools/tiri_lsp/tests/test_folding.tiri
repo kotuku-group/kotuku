@@ -34,13 +34,13 @@ end
 end
 
 @Test function StructBlockFolds()
-   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n')
+   doc = makeDoc('struct User\n   Name: str\n   Age: int\nend\n')
    ranges = extractFoldingRanges(doc)
    assert(findRange(ranges, 0, 3), 'Struct declaration blocks should fold to the end keyword.')
 end
 
 @Test function StructFollowedByFunctionFoldsBoth()
-   doc = makeDoc('struct User\n   Name: string\nend\n\nfunction greet()\n   print(2)\nend\n')
+   doc = makeDoc('struct User\n   Name: str\nend\n\nfunction greet()\n   print(2)\nend\n')
    ranges = extractFoldingRanges(doc)
    assert(findRange(ranges, 0, 2), 'The struct block should fold.')
    assert(findRange(ranges, 4, 6), 'A function after the struct should fold normally.')
@@ -59,7 +59,7 @@ end
 end
 
 @Test function StructNameOnOpeningLineFolds()
-   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n')
+   doc = makeDoc('struct User\n   Name: str\n   Age: int\nend\n')
    ranges = extractFoldingRanges(doc)
    assert(findRange(ranges, 0, 3), 'An end-terminated struct should fold from its declaration.')
 end

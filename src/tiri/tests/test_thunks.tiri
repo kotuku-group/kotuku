@@ -352,6 +352,15 @@ end
    -- Power
    assert(b ** 2 is 9, "3 ** 2 should be 9")
 
+   -- Right-hand thunk providers receive provider-first arguments but must preserve source-order arithmetic
+   assert(10 + b is 13, "10 + 3 should be 13 when the thunk provides the right-hand metamethod")
+   assert(10 - b is 7, "10 - 3 should be 7 when the thunk provides the right-hand metamethod")
+   assert(10 * b is 30, "10 * 3 should be 30 when the thunk provides the right-hand metamethod")
+   assert(10 / b > 3.3 and 10 / b < 3.4,
+      "10 / 3 should be ~3.33 when the thunk provides the right-hand metamethod")
+   assert(10 % b is 1, "10 % 3 should be 1 when the thunk provides the right-hand metamethod")
+   assert(2 ** b is 8, "2 ** 3 should be 8 when the thunk provides the right-hand metamethod")
+
    -- Unary minus
    assert(-a is -10, "-10 should be -10")
 end
@@ -368,6 +377,7 @@ end
 
    result = a .. " " .. b
    assert(result is "Hello World", "Concatenation should produce 'Hello World', got '" .. result .. "'")
+   assert("Start " .. b is "Start World", "A right-provider thunk concat should preserve source order")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -389,6 +399,8 @@ end
    -- Less than or equal
    assert(a <= b, "5 should be <= 10")
    assert(a <= c, "5 should be <= 5")
+   assert(5 < b, "5 should be < a right-provider thunk")
+   assert(5 <= b, "5 should be <= a right-provider thunk")
 
    -- Equality (thunk vs thunk - both must be thunks for __eq to trigger)
    assert(a is c, "Two thunks returning 5 should be equal") -- Note: This only works if both are thunks

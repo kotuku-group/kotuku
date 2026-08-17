@@ -206,12 +206,12 @@ end
 
 @Test function DeferredTernary()
    flag = true
-   x = <{ flag ? 'yes' :> 'no' }>
+   x = <{ flag ? 'yes' : 'no' }>
    result = resolve(x)
    assert(result is 'yes', 'Expected ternary deferred to resolve to "yes"')
 
    flag = false
-   y = <{ flag ? 'yes' :> 'no' }>
+   y = <{ flag ? 'yes' : 'no' }>
    result2 = resolve(y)
    assert(result2 is 'no', 'Expected ternary deferred to resolve to "no"')
 end

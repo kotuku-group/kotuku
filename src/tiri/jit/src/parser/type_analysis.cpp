@@ -81,6 +81,12 @@
          Expected.is_thunk ? "thunk" : "function", Actual.is_thunk ? "thunk" : "function");
    }
 
+   if (Expected.callable_kind != Actual.callable_kind) {
+      return std::format("callable kind differs (expected {}, got {})",
+         Expected.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function",
+         Actual.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function");
+   }
+
    if (Expected.parameters.size() != Actual.parameters.size()) {
       return std::format("parameter count differs (expected {}, got {})",
          Expected.parameters.size(), Actual.parameters.size());
@@ -233,6 +239,7 @@ private:
    void discover_global_decl_policy(const GlobalDeclStmtPayload &, bool PublishStaticPolicy);
    void analyse_local_function(const LocalFunctionStmtPayload &);
    void analyse_function_stmt(const FunctionStmtPayload &);
+   void declare_local_function(GCstr *, const FunctionExprPayload *, SourceSpan);
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
    void analyse_expression(const ExprNode &);
    void analyse_call_expr(const CallExprPayload &, SourceSpan);
@@ -580,6 +587,9 @@ void TypeAnalyser::pop_scope() {
       auto unused = this->scope_stack_.back().get_unused_variables();
       for (const auto& var : unused) {
          std::string_view name_view(strdata(var.name), var.name->len);
+         // Skip compiler-generated hidden bindings (e.g. \x1fmodfn:... module-function locals). Their names carry an
+         // internal encoding that must never surface in user-facing diagnostics.
+         if (not name_view.empty() and (name_view.front() IS '\x1f')) continue;
          if (var.is_parameter) {
             this->emit_tip(2, TipCategory::CodeQuality,
                std::format("Unused function parameter '{}'", name_view),
@@ -664,20 +674,34 @@ void TypeAnalyser::leave_function()
          if (position.concrete.primary != TiriType::Any and position.concrete.primary != TiriType::Unknown) {
             diag.expected = position.concrete.primary;
             diag.message = std::format(
-               "cannot infer result {} as '{}' from a dynamic value; declare ': {}' to check it at runtime or "
-               "': any' to allow a variant result",
+               "cannot infer result {} as '{}' from a dynamic value; declare ':{}' to check it at runtime or "
+               "':any' to allow a variant result",
                i + 1, type_name(position.concrete.primary), type_name(position.concrete.primary));
          }
          else {
             diag.message = std::format(
                "cannot infer result {} from a dynamic value; declare a concrete result type to check it at "
-               "runtime or ': any' to allow a variant result", i + 1);
+               "runtime or ':any' to allow a variant result", i + 1);
          }
          this->record_diagnostic(std::move(diag));
          ctx.inference_failed = true;
       }
 
       if (inferred_return_count > 0 and not ctx.inference_failed) {
+         #ifdef INCLUDE_TIPS
+         if (this->should_emit_tip(1)) {
+            for (size_t i = 0; i < inferred_return_count; ++i) {
+               const InferredReturnPosition &position = ctx.inferred_returns[i];
+               if (position.state != ReturnInferenceState::ExplicitAny) continue;
+
+               this->emit_tip(1, TipCategory::TypeSafety,
+                  "Function infers an 'any' result type; declare ':any' to make the variant result explicit",
+                  Token::from_span(position.location, TokenKind::ReturnToken));
+               break;
+            }
+         }
+         #endif
+
          FunctionReturnTypes &published = ctx.function->return_types;
          published.count = uint8_t(inferred_return_count);
          published.is_inferred = true;
@@ -1481,6 +1505,9 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   not (result_position IS 0 and is_table_read_expression(*Payload.values[source]));
                inferred.is_fixed = inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
                   inferred.primary != TiriType::Unknown;
+               if (result_position IS 0 and is_table_read_expression(*Payload.values[source])) {
+                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
+               }
                if (Payload.op != AssignmentOperator::Plain and not inferred.requires_destination_type) {
                   this->current_scope().declare_local(name, inferred, target.span);
                   this->publish_binding_type(name_ref->binding_id, inferred);
@@ -1513,6 +1540,7 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          if (Payload.values.empty()) continue;
          size_t source = std::min(i, Payload.values.size() - 1);
          size_t result_position = i - source;
+         const bool is_table_read = result_position IS 0 and is_table_read_expression(*Payload.values[source]);
          InferredType value_type;
          if (result_position IS 0) value_type = this->infer_expression_type(*Payload.values[source]);
          else {
@@ -1619,7 +1647,11 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             // But don't fix if the variable was explicitly declared as 'any'
             if (existing->primary IS TiriType::Nil and
                 (value_type.primary IS TiriType::Any or value_type.primary IS TiriType::Unknown)) {
-               this->mark_dynamic_ingress(name, is_global);
+               if (is_table_read and not is_global) {
+                  this->fix_local_type(name, name_ref->binding_id, TiriType::Any);
+                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
+               }
+               else this->mark_dynamic_ingress(name, is_global);
             }
             else if ((existing->primary != TiriType::Any) and (value_type.primary != TiriType::Nil)) {
                if (is_global) {
@@ -1774,7 +1806,8 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       #endif
 
       this->current_scope().declare_local(name.symbol, inferred, name.span, name.has_const);
-      if (name.type IS TiriType::Any and name.binding_id) {
+      if ((name.type IS TiriType::Any or (initialiser and is_table_read_expression(*initialiser))) and
+          name.binding_id) {
          this->explicit_variant_bindings_.insert(name.binding_id);
       }
       this->publish_binding_type(name.binding_id, inferred);
@@ -1974,9 +2007,30 @@ void TypeAnalyser::analyse_local_function(const LocalFunctionStmtPayload &Payloa
    #endif
 
    const FunctionExprPayload* function = Payload.function.get();
-   this->current_scope().declare_function(Payload.name.symbol, function, Payload.name.span);
+   this->declare_local_function(Payload.name.symbol, function, Payload.name.span);
 
    if (function) this->analyse_function_payload(*function, Payload.name.symbol);
+}
+
+//********************************************************************************************************************
+// Local Function Declaration: Retains an empty declaration as a lexical-scope-local signature contract for the
+// next definition of the same simple name.
+
+void TypeAnalyser::declare_local_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location)
+{
+   const FunctionExprPayload *forward_declaration = this->current_scope().lookup_function(Name);
+   if (forward_declaration and Function and is_function_forward_declaration(*forward_declaration)) {
+      if (auto mismatch = function_signature_mismatch(*forward_declaration, *Function)) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.code = ParserErrorCode::FunctionSignatureMismatch;
+         diag.message = std::format("signature for local function '{}' does not match its forward declaration: {}",
+            std::string_view(strdata(Name), Name->len), *mismatch);
+         this->record_diagnostic(std::move(diag));
+      }
+   }
+
+   this->current_scope().declare_function(Name, Function, Location);
 }
 
 //********************************************************************************************************************
@@ -1995,7 +2049,8 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
    if (not Payload.name.is_explicit_global) {
       if (not Payload.name.segments.empty()) {
          const Identifier& terminal = Payload.name.segments.back();
-         this->current_scope().declare_function(terminal.symbol, function, terminal.span);
+         if (Payload.name.segments.size() IS 1) this->declare_local_function(terminal.symbol, function, terminal.span);
+         else this->current_scope().declare_function(terminal.symbol, function, terminal.span);
          function_name = terminal.symbol;
          function_location = terminal.span;
       }
@@ -2380,6 +2435,32 @@ void TypeAnalyser::check_arguments(
    }
 
    size_t param_index = 0;
+   if (Function.callable_kind IS FunctionCallableKind::ContextFirstArgument) {
+      if (Call.arguments.empty()) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.expected = TiriType::Table;
+         diag.actual = TiriType::Nil;
+         diag.code = ParserErrorCode::TypeMismatchArgument;
+         diag.message = "required context argument is missing";
+         this->record_diagnostic(std::move(diag));
+      }
+      else {
+         InferredType actual = this->infer_expression_type(*Call.arguments.front());
+         if (actual.primary != TiriType::Unknown and actual.primary != TiriType::Any and
+             not actual.matches(TiriType::Table)) {
+            TypeDiagnostic diag;
+            diag.location = Call.arguments.front()->span;
+            diag.expected = TiriType::Table;
+            diag.actual = actual.primary;
+            diag.code = ParserErrorCode::TypeMismatchArgument;
+            diag.message = std::format("type mismatch: context argument expects 'table', got '{}'",
+               type_name(actual.primary));
+            this->record_diagnostic(std::move(diag));
+         }
+      }
+      param_index = 1;
+   }
    for (const auto &param : Function.parameters) {
       if (param_index >= Call.arguments.size()) {
          if (dynamic_tail) {
@@ -2468,9 +2549,9 @@ void TypeAnalyser::check_argument_type(
 // - Binary ops: Depends on operator (comparisons -> bool, arithmetic -> num, etc.)
 // - Unary ops: Depends on operator (not -> bool, negate -> num, length -> num)
 
-// Reads from a resolved untyped table yield 'any' because element types are not tracked.  Such a value is dynamic by
-// nature rather than by an unresolved ingress, so it must not lock the destination into requiring an annotation.
-// Struct fields and typed array elements infer concrete types and never reach this path.
+// Reads from an untyped table, including an unannotated parameter, yield 'any' because element types are not tracked.
+// Such a value is dynamic by nature rather than by an unresolved ingress, so it must not lock the destination into
+// requiring an annotation.  Struct fields and typed array elements infer concrete types and never reach this path.
 
 bool TypeAnalyser::is_table_read_expression(const ExprNode &Expr)
 {
@@ -2511,7 +2592,10 @@ bool TypeAnalyser::is_table_read_expression(const ExprNode &Expr)
          return false;
    }
 
-   return base and this->infer_expression_type(*base).primary IS TiriType::Table;
+   if (not base) return false;
+
+   const TiriType base_type = this->infer_expression_type(*base).primary;
+   return base_type IS TiriType::Table or base_type IS TiriType::Any;
 }
 
 InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)

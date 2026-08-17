@@ -211,17 +211,47 @@ static bool test_active_context_survives_full_collection(kt::Log &Log)
    return passed;
 }
 
+static bool test_pending_close_error_is_thread_local_gc_root(kt::Log &Log)
+{
+   lua_State *first = luaL_newstate(nullptr);
+   lua_State *second = luaL_newstate(nullptr);
+   if (not first or not second) {
+      if (first) lua_close(first);
+      if (second) lua_close(second);
+      Log.error("failed to create Lua states");
+      return false;
+   }
+
+   GCtab *pending = lj_tab_new(first, 0, 1);
+   GCstr *key = lj_str_newlit(first, "pending_close_marker");
+   TValue *slot = lj_tab_setstr(first, pending, key);
+   setintV(slot, 91);
+   settabV(first, &first->pending_close_error, pending);
+   lj_gc_fullgc(first);
+
+   cTValue *retained = lj_tab_getstr(tabV(&first->pending_close_error), key);
+   bool passed = retained and tvisnumber(retained) and numberVnum(retained) IS 91 and
+      tvisnil(&second->pending_close_error);
+   if (not passed) Log.error("pending close-error state was not rooted and isolated per Lua state");
+
+   setnilV(&first->pending_close_error);
+   lua_close(second);
+   lua_close(first);
+   return passed;
+}
+
 } // namespace
 
 extern void gc_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 5> Tests = { {
+   constexpr std::array<TestCase, 6> Tests = { {
       { "shutdown_drains_pre_registered_finalisers_after_error",
          test_shutdown_drains_pre_registered_finalisers_after_error },
       { "shutdown_does_not_run_new_finalisers", test_shutdown_does_not_run_new_finalisers },
       { "context_root_tracks_environment_replacement", test_context_root_tracks_environment_replacement },
       { "nested_context_ownership_and_stack_relocation", test_nested_context_ownership_and_stack_relocation },
-      { "active_context_survives_full_collection", test_active_context_survives_full_collection }
+      { "active_context_survives_full_collection", test_active_context_survives_full_collection },
+      { "pending_close_error_is_thread_local_gc_root", test_pending_close_error_is_thread_local_gc_root }
    } };
 
    for (const TestCase& Test : Tests) {

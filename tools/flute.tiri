@@ -267,7 +267,7 @@ function runTests()
                   if label_present then break end
                end
 
-               disabled = inverse ? label_present :> not label_present
+               disabled = inverse ? label_present : not label_present
             end
          end
 

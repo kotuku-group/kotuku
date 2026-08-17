@@ -869,7 +869,7 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       else if (Self->Incoming.isScript()) {
          // For speed, the client will receive a direct pointer to the buffer memory via the 'mem' interface.
 
-         log.trace("Calling script procedure %" PRId64, Self->Incoming.ProcedureID);
+         log.trace("Calling script procedure %u", Self->Incoming.procedureID());
 
          std::span<std::byte> span((std::byte *)(Buffer), Length);
          if (sc::Call(Self->Incoming, std::to_array<ScriptArg>({

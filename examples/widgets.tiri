@@ -137,8 +137,9 @@ end
       x=win.margins.left, y=y, string='Kōtuku interfaces are drawn using real-time vector graphics',
       face='Noto Sans', fontSize=20, fill=win.theme.window.text, textFlags='!editable'
    })
-   text.y += text.fontSize
-   y += text.fontSize + 14
+   font_size = tonumber(text.fontSize)
+   text.y += font_size
+   y += font_size + 14
 
    msgButton = gui.button({
       target = viewport,

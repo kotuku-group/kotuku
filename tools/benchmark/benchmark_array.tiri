@@ -205,11 +205,11 @@ end
       local idx8 = str_arr.find("apple")
       local idx9 = str_arr.find("grape")
       local idx10 = str_arr.find("mango")  -- Not found
-      checksum += (idx1 is nil ? -1 :> idx1) + (idx2 is nil ? -1 :> idx2) +
-         (idx3 is nil ? -1 :> idx3) + (idx4 is nil ? -1 :> idx4) +
-         (idx5 is nil ? -1 :> idx5) + (idx6 is nil ? -1 :> idx6) +
-         (idx7 is nil ? -1 :> idx7) + (idx8 is nil ? -1 :> idx8) +
-         (idx9 is nil ? -1 :> idx9) + (idx10 is nil ? -1 :> idx10)
+      checksum += (idx1 is nil ? -1 : idx1) + (idx2 is nil ? -1 : idx2) +
+         (idx3 is nil ? -1 : idx3) + (idx4 is nil ? -1 : idx4) +
+         (idx5 is nil ? -1 : idx5) + (idx6 is nil ? -1 : idx6) +
+         (idx7 is nil ? -1 : idx7) + (idx8 is nil ? -1 : idx8) +
+         (idx9 is nil ? -1 : idx9) + (idx10 is nil ? -1 : idx10)
    end
    return checksum
 end
@@ -236,8 +236,8 @@ end
       -- Check string array
       local has6 = str_arr.contains("blue")
       local has7 = str_arr.contains("orange")  -- false
-      checksum += (has1 ? 1 :> 0) + (has2 ? 1 :> 0) + (has3 ? 1 :> 0) +
-         (has4 ? 1 :> 0) + (has5 ? 1 :> 0) + (has6 ? 1 :> 0) + (has7 ? 1 :> 0)
+      checksum += (has1 ? 1 : 0) + (has2 ? 1 : 0) + (has3 ? 1 : 0) +
+         (has4 ? 1 : 0) + (has5 ? 1 : 0) + (has6 ? 1 : 0) + (has7 ? 1 : 0)
    end
    return checksum
 end
@@ -636,7 +636,7 @@ end
       for _, v in arr do
          sum += v
       end
-      checksum += idx1 + idx2 + (has1 ? 1 :> 0) + (has2 ? 1 :> 0) + #slice + sum
+      checksum += idx1 + idx2 + (has1 ? 1 : 0) + (has2 ? 1 : 0) + #slice + sum
    end
    return checksum
 end

@@ -30,11 +30,10 @@ ERRDEF(SETLOOP,  "Loop in settable")
 ERRDEF(OPCALL,   "call")
 ERRDEF(OPINDEX,  "index")
 ERRDEF(BADKEY,   "String key not recognised")
-ERRDEF(OPARITH,  "Perform arithmetic on")
+ERRDEF(OPARITH,  "perform arithmetic on")
 ERRDEF(OPCAT,    "Concatenate")
 ERRDEF(OPLEN,    "Get length of")
 ERRDEF(LENMM,    "__len metamethod must return a number")
-
 // Type checks.
 ERRDEF(BADSELF,  "Calling " LUA_QS " on bad self (%s)")
 ERRDEF(BADARG,   "Bad argument #%d to " LUA_QS " (%s)")

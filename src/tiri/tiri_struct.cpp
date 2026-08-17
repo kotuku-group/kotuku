@@ -3,8 +3,8 @@
 To create a struct from a registered definition:  xmltag = struct.new('XTag')
 To create a struct with pre-configured values:    xmltag = struct.new('XTag', { name='Hello' })
 To get the byte size of any structure definition: size = struct.size('XTag')
+To get the byte size of a created structure:      size = struct.size(xmltag)
 To get the total number of fields in a structure: #xmltag
-To get the byte size of a created structure:      xmltag.structSize()
 
 Acceptable short-hand field definitions, for MAKESTRUCT() and IDL usage only:
 

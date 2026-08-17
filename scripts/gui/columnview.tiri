@@ -163,7 +163,7 @@ function arrangeColumns(View:table!)
 
    pc = struct.new('PathCommand')
    for col in values(View.columns) do
-      col.vecTitle.x = col.align is 'right' ? col.px_width - MARGIN :> MARGIN
+      col.vecTitle.x = col.align is 'right' ? col.px_width - MARGIN : MARGIN
 
       pc.type = PE_Move
       pc.x    = col.x + col.px_width
@@ -215,7 +215,7 @@ function arrangeColumns(View:table!)
 
    if View._sort then
       col = View._sort.col
-      View._sort.icon.x = col.align is 'right' ? MARGIN :> col.px_width - MARGIN - glIconSize
+      View._sort.icon.x = col.align is 'right' ? MARGIN : col.px_width - MARGIN - glIconSize
    end
 
    if View.scrollbar then
@@ -269,7 +269,7 @@ function bannerZoneClick(View, Col, X, Y, Value)
       end
    end
 
-   View._sort.icon.x = Col.align is 'right' ? MARGIN :> Col.px_width - MARGIN - glIconSize
+   View._sort.icon.x = Col.align is 'right' ? MARGIN : Col.px_width - MARGIN - glIconSize
 
    View.sortColumn(View, Col, View._sort.ascending)
    View.viewport.acDraw()
@@ -284,7 +284,7 @@ function rearrangeItems(View)
    for item in values(View.items) do
       item._y = y
       if item._vectors.viewport then
-         vis = item.hidden ? VIS_HIDDEN :> VIS_VISIBLE
+         vis = item.hidden ? VIS_HIDDEN : VIS_VISIBLE
 
          item._vectors.viewport.visibility = vis
          if item._vectors.iconImage then
@@ -399,7 +399,7 @@ gui.columnView = function(Options):table
 
          col.x = x
          col.minWidth = x + MARGIN
-         col.px_width = col.width * View.fontSize * (4 / 3)
+         col.px_width = col.width * tonumber(View.fontSize) * (4 / 3)
 
          if not col.bannerVP then
             -- Each banner viewport hosts the title and sorting icon
@@ -521,7 +521,7 @@ gui.columnView = function(Options):table
          item._vectors ?= { }
          item._col ?= { }
 
-         vis = item.hidden ? VIS_HIDDEN :> VIS_VISIBLE
+         vis = item.hidden ? VIS_HIDDEN : VIS_VISIBLE
 
          item._y = y
 
@@ -688,18 +688,18 @@ gui.columnView = function(Options):table
             if type(View.items[0][attrib]) is 'table' then
                if View.items[0][attrib]['sort'] then
                   View.items.sort(function(a,b)
-                     return Ascending ? a[attrib].sort < b[attrib].sort :> a[attrib].sort > b[attrib].sort
+                     return Ascending ? a[attrib].sort < b[attrib].sort : a[attrib].sort > b[attrib].sort
                   end)
                else
                   View.items.sort(function(a,b)
-                     return Ascending ? a[attrib].value < b[attrib].value :> a[attrib].value > b[attrib].value
+                     return Ascending ? a[attrib].value < b[attrib].value : a[attrib].value > b[attrib].value
                   end)
                end
             elseif type(View.items[0][attrib]) then
                View.items.sort(function(a,b)
-                  al = a[attrib] ? tostring(a[attrib]) :> ''
-                  bl = b[attrib] ? tostring(b[attrib]) :> ''
-                  return Ascending ? al.lower() < bl.lower() :> al.lower() > bl.lower()
+                  al = a[attrib] ? tostring(a[attrib]) : ''
+                  bl = b[attrib] ? tostring(b[attrib]) : ''
+                  return Ascending ? al.lower() < bl.lower() : al.lower() > bl.lower()
                end)
             end
          end

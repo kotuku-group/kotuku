@@ -28,7 +28,54 @@ ExprNodePtr make_direct_method_call(ParserContext &Context, SourceSpan Span, std
    return call;
 }
 
+ExprNodePtr make_builtin_call(ParserContext &Context, SourceSpan Span, FastFunc Callable,
+   ExprNodeList Arguments, TiriType ResultType)
+{
+   std::string_view interface_name;
+   std::string_view member_name;
+   switch (Callable) {
+      case FastFunc::array_new: interface_name = "array"; member_name = "new"; break;
+      case FastFunc::array_of: interface_name = "array"; member_name = "of"; break;
+      case FastFunc::array_resize: interface_name = "array"; member_name = "resize"; break;
+      case FastFunc::struct_new: interface_name = "struct"; member_name = "new"; break;
+      case FastFunc::regex_new: interface_name = "regex"; member_name = "new"; break;
+      default:
+         assert_node(false, "unsupported compiler-owned callable");
+         interface_name = "<invalid>";
+         member_name = "<invalid>";
+         break;
+   }
+   NameRef interface_ref;
+   interface_ref.identifier = Identifier::from_keepstr(Context.lex().keepstr(interface_name), Span);
+   ExprNodePtr callable = make_member_expr(Span, make_identifier_expr(Span, interface_ref),
+      Identifier::from_keepstr(Context.lex().keepstr(member_name), Span));
+   ExprNodePtr call = make_call_expr(Span, std::move(callable), std::move(Arguments), false,
+      CallArgumentSyntax::Synthetic);
+   auto &payload = std::get<CallExprPayload>(call->data);
+   payload.compiler_callable = builtin_callable_id(Callable);
+   payload.result_type = ResultType;
+   return call;
+}
+
 } // namespace
+
+//********************************************************************************************************************
+// Consumes a ternary separator, retaining the former `:>` spelling as a warning-only compatibility alias.
+
+ParserResult<Token> AstBuilder::consume_ternary_separator()
+{
+   Token separator = this->ctx.tokens().current();
+   if (separator.kind() IS TokenKind::Colon or separator.kind() IS TokenKind::TernarySep) {
+      this->ctx.tokens().advance();
+      if (separator.kind() IS TokenKind::TernarySep) {
+         this->ctx.emit_warning(ParserErrorCode::DeprecatedSyntax, separator,
+            "the ':>' ternary separator is deprecated; use ':' instead (e.g. a ? b : c)");
+      }
+      return ParserResult<Token>::success(separator);
+   }
+
+   return this->fail<Token>(ParserErrorCode::ExpectedToken, separator, "expected ':' or ':>' ternary separator");
+}
 
 //********************************************************************************************************************
 // Parses expression statements, handling assignments, compound assignments, conditional shorthands, and standalone expressions.
@@ -47,6 +94,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
    }
 
    Token op = this->ctx.tokens().current();
+
+   if (op.kind() IS TokenKind::Colon or op.kind() IS TokenKind::TernarySep or op.kind() IS TokenKind::SafeMethod) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, op, "unexpected token after expression");
+   }
+
    auto assignment_result = token_to_assignment_op(op.kind());
 
    if (assignment_result.has_value()) {
@@ -268,7 +320,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          this->ctx.tokens().advance();
          auto true_branch = this->parse_expression();
          if (not true_branch.ok()) return true_branch;
-         this->ctx.consume(TokenKind::TernarySep, ParserErrorCode::ExpectedToken);
+         auto separator = this->consume_ternary_separator();
+         if (not separator.ok()) return ParserResult<ExprNodePtr>::failure(separator.error_ref());
          auto false_branch = this->parse_expression();
          if (not false_branch.ok()) return false_branch;
          SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
@@ -287,7 +340,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          this->ctx.tokens().advance();
          auto true_branch = this->parse_expression();
          if (not true_branch.ok()) return true_branch;
-         this->ctx.consume(TokenKind::TernarySep, ParserErrorCode::ExpectedToken);
+         auto separator = this->consume_ternary_separator();
+         if (not separator.ok()) return ParserResult<ExprNodePtr>::failure(separator.error_ref());
          auto false_branch = this->parse_expression();
          if (not false_branch.ok()) return false_branch;
          SourceSpan span = combine_spans(left.value_ref()->span, false_branch.value_ref()->span);
@@ -470,17 +524,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          GCstr *pattern = current.payload().as_string();
          this->ctx.tokens().advance();
 
-         Identifier regex_id = Identifier::from_keepstr(this->ctx.lex().keepstr("regex"), span);
-         NameRef regex_ref;
-         regex_ref.identifier = regex_id;
-         ExprNodePtr regex_base = make_identifier_expr(span, regex_ref);
-
-         Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr regex_new = make_member_expr(span, std::move(regex_base), new_id);
-
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(pattern)));
-         node = make_call_expr(span, std::move(regex_new), std::move(args), false);
+         node = make_builtin_call(this->ctx, span, FastFunc::regex_new, std::move(args), TiriType::Userdata);
          break;
       }
 
@@ -604,6 +650,24 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          auto fn = this->parse_function_literal(function_token, false);
          if (not fn.ok()) return fn;
 
+         node = std::move(fn.value_ref());
+         break;
+      }
+
+      case TokenKind::Metamethod: {
+         Token metamethod_token = this->ctx.tokens().current();
+         if (this->ctx.tokens().peek(1).kind() != TokenKind::LeftParen) {
+            Identifier id = make_identifier(metamethod_token);
+            NameRef name;
+            name.identifier = id;
+            this->ctx.tokens().advance();
+            node = make_identifier_expr(metamethod_token.span(), name);
+            break;
+         }
+         this->ctx.tokens().advance();
+         auto fn = this->parse_function_literal(metamethod_token, false, nullptr,
+            FunctionCallableKind::ContextFirstArgument);
+         if (not fn.ok()) return fn;
          node = std::move(fn.value_ref());
          break;
       }
@@ -812,19 +876,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
          SourceSpan span = start.span();
 
-         // Build identifier for 'array' global
-         Identifier array_id = Identifier::from_keepstr(this->ctx.lex().keepstr("array"), span);
-         NameRef array_ref;
-         array_ref.identifier = array_id;
-         ExprNodePtr array_base = make_identifier_expr(span, array_ref);
-
          if (has_initialiser and not init_values.empty()) {
             // array<type> { values } -> array.of('type', v1, v2, ...)
             // Build: array.of('type', values...)
-
-            // Create member access for .of
-            Identifier of_id = Identifier::from_keepstr(this->ctx.lex().keepstr("of"), span);
-            ExprNodePtr array_of = make_member_expr(span, std::move(array_base), of_id);
 
             // Build argument list: ('type', v1, v2, ...)
             ExprNodeList args;
@@ -837,7 +891,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                args.push_back(std::move(val));
             }
 
-            ExprNodePtr array_of_call = make_call_expr(span, std::move(array_of), std::move(args), false);
+            ExprNodePtr array_of_call = make_builtin_call(
+               this->ctx, span, FastFunc::array_of, std::move(args), TiriType::Array);
 
             // If size was specified (literal or expression) and may be larger than values count, wrap in IIFE to resize
             // For literal sizes, we only wrap if size > values count
@@ -861,14 +916,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
                // Build array.resize(_arr, size_expr_or_literal)
 
-               Identifier array_id2 = Identifier::from_keepstr(this->ctx.lex().keepstr("array"), span);
-               NameRef array_ref2;
-               array_ref2.identifier = array_id2;
-               ExprNodePtr array_base2 = make_identifier_expr(span, array_ref2);
-
-               Identifier resize_id = Identifier::from_keepstr(this->ctx.lex().keepstr("resize"), span);
-               ExprNodePtr array_resize = make_member_expr(span, std::move(array_base2), resize_id);
-
                // Arguments for resize: (_arr, size)
 
                ExprNodeList resize_args;
@@ -881,7 +928,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                if (size_expr) resize_args.push_back(std::move(size_expr));
                else resize_args.push_back(make_literal_expr(span, LiteralValue::number(double(specified_size))));
 
-               ExprNodePtr resize_call = make_call_expr(span, std::move(array_resize), std::move(resize_args), false);
+               ExprNodePtr resize_call = make_builtin_call(
+                  this->ctx, span, FastFunc::array_resize, std::move(resize_args), TiriType::Array);
 
                // Statement 2: array.resize(_arr, size)
                StmtNodePtr resize_stmt = make_expression_stmt(span, std::move(resize_call));
@@ -913,10 +961,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
             // Empty braces {} or no initialiser: use array.new()
             // array<type> or array<type, size> -> array.new(size, 'type')
 
-            // Create member access for .new
-            Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-            ExprNodePtr array_new = make_member_expr(span, std::move(array_base), new_id);
-
             // Build argument list: (size, 'type')
 
             ExprNodeList args;
@@ -925,7 +969,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
             args.push_back(make_literal_expr(span, LiteralValue::string(type_str)));
 
-            node = make_call_expr(span, std::move(array_new), std::move(args), false);
+            node = make_builtin_call(this->ctx, span, FastFunc::array_new, std::move(args), TiriType::Array);
          }
 
          // Mark the result as TiriType::Array so downstream index expressions emit AGET/ASET opcodes
@@ -959,18 +1003,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          }
          else initialiser = make_table_expr(span, {}, false);
 
-         // Build struct.new('Name', { fields })
-         Identifier struct_id = Identifier::from_keepstr(this->ctx.lex().keepstr("struct"), span);
-         NameRef struct_ref;
-         struct_ref.identifier = struct_id;
-         ExprNodePtr struct_base = make_identifier_expr(span, struct_ref);
-         Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
-         ExprNodePtr struct_new = make_member_expr(span, std::move(struct_base), new_id);
-
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(name_str)));
          args.push_back(std::move(initialiser));
-         node = make_call_expr(span, std::move(struct_new), std::move(args), false);
+         node = make_builtin_call(this->ctx, span, FastFunc::struct_new, std::move(args), TiriType::Struct);
          break;
       }
 
@@ -1170,16 +1206,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          continue;
       }
 
-      if (token.kind() IS TokenKind::Colon) {
-         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
-            "colon method syntax has been removed; use receiver.member(...) for built-in methods or pass the "
-            "receiver explicitly to an ordinary callable field");
-      }
-
-      if (token.kind() IS TokenKind::SafeMethod) {
-         return this->fail<ExprNodePtr>(ParserErrorCode::DeprecatedSyntax, token,
-            "safe colon method syntax has been removed; use receiver?.member(...) instead");
-      }
+      if (token.kind() IS TokenKind::Colon or token.kind() IS TokenKind::TernarySep) break;
 
       if (token.kind() IS TokenKind::LeftParen or token.kind() IS TokenKind::LeftBrace or
             token.kind() IS TokenKind::String) {
@@ -1509,7 +1536,8 @@ bool AstBuilder::is_choose_relational_pattern(size_t StartPos) const
 }
 
 //********************************************************************************************************************
-// Checks whether the current `??` token starts an extended ternary expression by scanning ahead for a top-level `:>`.
+// Checks whether the current `??` token starts an extended ternary expression by scanning ahead for a top-level
+// separator.
 
 bool AstBuilder::is_extended_ternary_ahead() const
 {
@@ -1518,6 +1546,7 @@ bool AstBuilder::is_extended_ternary_ahead() const
    int paren_depth = 0;
    int brace_depth = 0;
    int bracket_depth = 0;
+   bool function_return_annotation_pending = false;
 
    while (pos < 200) {
       Token ahead = this->ctx.tokens().peek(pos);
@@ -1540,7 +1569,33 @@ bool AstBuilder::is_extended_ternary_ahead() const
       }
       else if (paren_depth IS 0 and brace_depth IS 0 and bracket_depth IS 0) {
          if (ahead.span().line.lineNumber() != start_line.lineNumber()) return false;
-         if (kind IS TokenKind::TernarySep) return true;
+         if (kind IS TokenKind::Function) {
+            function_return_annotation_pending = true;
+         }
+         else if (function_return_annotation_pending) {
+            if (kind IS TokenKind::Colon) {
+               function_return_annotation_pending = false;
+               pos++;
+               continue;
+            }
+            function_return_annotation_pending = false;
+         }
+
+         if (kind IS TokenKind::Colon or kind IS TokenKind::TernarySep) {
+            bool arrow_return_annotation = false;
+            if (kind IS TokenKind::Colon and pos >= 2 and
+                this->ctx.tokens().peek(pos - 2).kind() IS TokenKind::Arrow) {
+               Token type_token = this->ctx.tokens().peek(pos - 1);
+               if (type_token.is_identifier()) {
+                  std::string_view type_name(strdata(type_token.identifier()), type_token.identifier()->len);
+                  arrow_return_annotation = parse_type_name(type_name) != TiriType::Unknown;
+               }
+            }
+            if (arrow_return_annotation) {
+               return false;
+            }
+            return true;
+         }
          if (kind IS TokenKind::Question) return false;
          if (kind IS TokenKind::EndToken or
              kind IS TokenKind::EndOfFile or

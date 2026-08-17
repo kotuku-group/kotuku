@@ -17,7 +17,6 @@ extern bool lj_struct_stale(GCstruct *);
 extern void lj_struct_check_lifecycle(lua_State *, GCstruct *, const char *, bool CurrentFrame = false);
 extern void lj_struct_getfield_core(lua_State *, GCstruct *, struct_field &, void *, bool CurrentFrame = false);
 extern void lj_struct_setfield_core(lua_State *, GCstruct *, struct_field &, void *, bool CurrentFrame = false);
-extern void lj_struct_push_size_closure(lua_State *, GCstruct *);
 
 // Fast path bytecode handlers for BC_STGETF and BC_STSETF.
 // Ins points to the current instruction for inline caching (nullptr disables caching in JIT traces).

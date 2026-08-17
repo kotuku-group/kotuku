@@ -61,8 +61,9 @@ extern "C" LJ_FUNC void lj_tab_designate_contextual(lua_State *L, uint32_t Slot)
 extern "C" LJ_FUNC void lj_context_begin_block(lua_State *L, uint32_t Slot, uint32_t BlockIndex);
 extern "C" LJ_FUNC void lj_context_end_block(lua_State *L, uint32_t BlockIndex) noexcept;
 extern "C" LJ_FUNC void lj_context_begin_block_jit(
-   lua_State *L, GCtab *Table, uint32_t BlockIndex, uint32_t EntrySlots);
-extern "C" LJ_FUNC void lj_context_end_block_jit(lua_State *L, uint32_t BlockIndex) noexcept;
+   lua_State *L, GCtab *Table, TValue *OwnerBase, uint32_t BlockIndex, uint32_t EntrySlots);
+extern "C" LJ_FUNC void lj_context_end_block_jit(
+   lua_State *L, TValue *OwnerBase, uint32_t BlockIndex) noexcept;
 extern "C" LJ_FUNC void lj_close_arm(lua_State *L, uint32_t Slot);
 extern "C" LJ_FUNC void lj_close_consume(lua_State *L, uint32_t Slot);
 LJ_FUNC uint64_t lj_close_take_armed(
@@ -170,6 +171,39 @@ public:
 
 private:
    lua_State *state_;
+};
+
+// A native FUNCTION callback starts from the state root, then may restore the table captured when the callback was
+// marshalled.  Context depth is retained rather than a TValue pointer so stack growth, error unwinding and nested
+// callbacks cannot invalidate the guard's ownership.
+
+class LuaCallbackContextGuard {
+public:
+   explicit LuaCallbackContextGuard(lua_State *State) noexcept :
+      root_(State), state_(State), depth_(State->context_stack.size())
+   {
+   }
+
+   void activate(GCtab *Table) noexcept
+   {
+      if (not Table) return;
+
+      lj_context_push(this->state_, Table, this->state_->base);
+      this->state_->context_stack.back().owner_kind = lua_State::ContextFrame::OwnerKind::Callback;
+   }
+
+   ~LuaCallbackContextGuard() noexcept
+   {
+      lj_context_restore_depth(this->state_, this->depth_);
+   }
+
+   LuaCallbackContextGuard(const LuaCallbackContextGuard &) = delete;
+   LuaCallbackContextGuard & operator=(const LuaCallbackContextGuard &) = delete;
+
+private:
+   LuaContextRootGuard root_;
+   lua_State *state_;
+   size_t depth_;
 };
 
 // Function name registry for tostring() support on named functions.

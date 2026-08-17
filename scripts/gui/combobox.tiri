@@ -25,7 +25,7 @@ end
 function reportFeedback(self:table!)
    self.events.activate ?! return
    text = self.text.string
-   hash = text ? string.hash(text) :> 0
+   hash = text ? string.hash(text) : 0
    if hash != self.hash then
       self.hash = hash
       self.events.activate(self, text)
@@ -45,7 +45,7 @@ function toggleMenu(self:table)
 end
 
 gui.combobox = function(Options)
-   self = { -- Public variables
+   self = entity { -- Public interface
       events         = Options.events ?? { },
       label          = Options.label,
       parentViewport = Options.target,
@@ -57,21 +57,21 @@ gui.combobox = function(Options)
    -- Change the active state of the combobox box to disabled or enabled
 
    self.disable = function()
-      self.disabled = true
-      self.viewport.acDisable()
-      self.text.opacity = 0.5
-      self.bkgd.fill = self.theme.page.bkgd
-      self.events?.disable(self)
-      self.viewport.acDraw()
+      &disabled = true
+      &viewport.acDisable()
+      &text.opacity = 0.5
+      &bkgd.fill = &theme.page.bkgd
+      &events?.disable(&&)
+      &viewport.acDraw()
    end
 
    self.enable = function()
-      self.disabled = false
-      self.viewport.acDisable()
-      self.text.opacity = 1.0
-      self.bkgd.fill = self.theme.page.bkgd
-      self.events?.enable(self)
-      self.viewport.acDraw()
+      &disabled = false
+      &viewport.acEnable()
+      &text.opacity = 1.0
+      &bkgd.fill = &theme.page.bkgd
+      &events?.enable(&&)
+      &viewport.acDraw()
    end
 
    -- Main entry point --

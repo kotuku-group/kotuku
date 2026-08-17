@@ -408,14 +408,157 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- String-to-number arithmetic coercion
 
-@Test function StringToNumberCoercionInArithmetic()
-   -- Tiri may or may not coerce strings in arithmetic; test the actual behaviour
+function expect_string_arithmetic_error(Operation:func, Description:str)
+   local raised = false
    try
-      result = 3 + '4'
-      -- If we get here, coercion happened
-      assert(result is 7, 'If string coercion occurs, 3 + "4" should be 7')
+      Operation()
    except
-      -- If we get here, coercion is not supported (which is safer)
-      assert(true, 'String-to-number coercion in arithmetic correctly raises error')
+      raised = true
    end
+   assert(raised, Description .. ' must raise an arithmetic type error')
+end
+
+function string_arithmetic_metamethod_workload(Iterations:num):num
+   local text = '4'
+   local other_text = '5'
+   local total = 0
+
+   for _ in {0 to Iterations} do
+      total += 3 + text
+      total += text + 3
+      total += text + other_text
+      total += text % 3
+      total += 3 % text
+      total += 2 ** text
+      total += -text
+   end
+   return total
+end
+
+@Test function StringToNumberCoercionInArithmetic()
+   local text = '4'
+   local other_text = '5'
+
+   -- Arithmetic does not coerce strings; the operand must be converted explicitly with tonumber().
+   expect_string_arithmetic_error(function() return -text end, 'Unary minus on a string')
+   expect_string_arithmetic_error(function() return 3 + text end, 'Number plus string')
+   expect_string_arithmetic_error(function() return text + 3 end, 'String plus number')
+   expect_string_arithmetic_error(function() return text + other_text end, 'String plus string')
+   expect_string_arithmetic_error(function() return text % 3 end, 'String modulo number')
+   expect_string_arithmetic_error(function() return 3 % text end, 'Number modulo string')
+   expect_string_arithmetic_error(function() return 2 ** text end, 'Number to a string power')
+   assert(3 + tonumber('4') is 7, '3 + tonumber("4") should be 7')
+
+   -- A string arithmetic metamethod must run instead of implicit conversion in both the interpreter and JIT.
+   local original_metatable = debug.getMetatable('')
+   defer
+      debug.setMetatable('', original_metatable)
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   debug.setMetatable('', {
+      __unm = function(Value):num return 400 - tonumber(Value) end,
+      __add = function(Receiver, Other, LhsDispatch:bool):num
+         return 100 + tonumber(Receiver) + tonumber(Other)
+      end,
+      __mod = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 200 + (tonumber(Receiver) % tonumber(Other)) end
+         return 200 + (tonumber(Other) % tonumber(Receiver))
+      end,
+      __pow = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 300 + (tonumber(Receiver) ** tonumber(Other)) end
+         return 300 + (tonumber(Other) ** tonumber(Receiver))
+      end
+   })
+
+   jit.off()
+   jit.flush()
+   local expected = string_arithmetic_metamethod_workload(10)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local actual = 0
+   for _ in {0 into 50} do actual = string_arithmetic_metamethod_workload(10) end
+
+   assert(actual is expected, 'JIT string arithmetic must match the interpreter metamethod result')
+
+   jit.off()
+   local trace_count = 0
+   for trace_no in {1 into 30} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.on()
+   assert(trace_count > 0, 'String arithmetic metamethod workload must produce a JIT trace')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- String-to-number bitwise coercion
+
+function expect_string_bitwise_error(Operation:func, Description:str)
+   local raised = false
+   try
+      Operation()
+   except
+      raised = true
+   end
+   assert(raised, Description .. ' must raise a bitwise type error')
+end
+
+@Test function StringToNumberCoercionInBitwise()
+   local text = '12'
+   local other_text = '5'
+
+   -- Bitwise operations do not coerce strings; the operand must be converted with tonumber().
+   expect_string_bitwise_error(function() return bit.band(text, 5) end, 'bit.band with string first argument')
+   expect_string_bitwise_error(function() return bit.band(12, other_text) end, 'bit.band with string second argument')
+   expect_string_bitwise_error(function() return bit.bor(text, 1) end, 'bit.bor with a string')
+   expect_string_bitwise_error(function() return bit.bxor(text, other_text) end, 'bit.bxor with two strings')
+   expect_string_bitwise_error(function() return bit.bnot(text) end, 'bit.bnot with a string')
+   expect_string_bitwise_error(function() return bit.lshift(text, 4) end, 'bit.lshift with a string value')
+   expect_string_bitwise_error(function() return bit.lshift(1, other_text) end, 'bit.lshift with a string count')
+   expect_string_bitwise_error(function() return bit.rshift(text, 4) end, 'bit.rshift with a string')
+   expect_string_bitwise_error(function() return bit.tobit(text) end, 'bit.tobit with a string')
+
+   -- The native C-style operators route to the same bit library and must not coerce either.
+   expect_string_bitwise_error(function() return text & 5 end, 'Native & with a string')
+   expect_string_bitwise_error(function() return text | 1 end, 'Native | with a string')
+   expect_string_bitwise_error(function() return ~text end, 'Native ~ with a string')
+   expect_string_bitwise_error(function() return text << 4 end, 'Native << with a string')
+
+   -- Explicit conversion with tonumber() restores the numeric result.
+   assert(bit.band(tonumber('12'), 5) is 4, 'bit.band(tonumber("12"), 5) should be 4')
+   assert((tonumber('12') & 5) is 4, 'tonumber("12") & 5 should be 4')
+   assert(bit.lshift(tonumber('1'), tonumber('4')) is 16, 'bit.lshift(tonumber("1"), tonumber("4")) should be 16')
+end
+
+function string_bitwise_workload(Iterations:num)
+   local text = '12'
+   for _ in {0 to Iterations} do
+      local ignore = bit.band(text, 5)
+   end
+end
+
+@Test function StringToNumberBitwiseUnderJIT()
+   -- A hot loop compiles a trace; a string operand must abort back to the interpreter and raise the
+   -- type error rather than silently coercing on the compiled path.
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local raised = false
+   try
+      string_bitwise_workload(200)
+   except
+      raised = true
+   end
+   assert(raised, 'JIT bitwise on a string must raise a type error, not coerce')
 end

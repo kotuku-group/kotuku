@@ -1078,7 +1078,7 @@ static void build_subroutines(BuildCtx *ctx)
   |3:
   |  mov BASE, L:RB->base
   |  cmp RC, 1
-  |  ja ->vmeta_binop
+  |  ja ->vmeta_binop3
   |4:
   |  lea PC, [PC+8]               // Skip past 64-bit JMP instruction
   |  jb >6
@@ -1233,6 +1233,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov BASE, L:RB->base
   |  test RC, RC
   |  jz ->cont_nop
+  |  cmp PC_OP, BC_UNM
+  |  je ->vmeta_binop
+  |  jmp ->vmeta_binop3
   |
   |  // Call metamethod for binary op.
   |->vmeta_binop:
@@ -1242,6 +1245,15 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov [RA-24], PC       // [cont|PC]
   |  lea PC, [RC+FRAME_CONT]
   |  mov NARGS:RDd, 2+1       // 2 args for func(o1, o2).
+  |  jmp ->vm_call_dispatch
+  |
+  |->vmeta_binop3:
+  |  // BASE = base, RC = new base, stack = cont/func/receiver/other/lhs_dispatch
+  |  mov RA, RC
+  |  sub RC, BASE
+  |  mov [RA-24], PC       // [cont|PC]
+  |  lea PC, [RC+FRAME_CONT]
+  |  mov NARGS:RDd, 3+1       // 3 args for func(receiver, other, lhs_dispatch).
   |  jmp ->vm_call_dispatch
   |
   |->vmeta_len:
@@ -3650,7 +3662,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // NULL (finished) or TValue * (metamethod) returned in eax (RC).
     |  mov BASE, L:RB->base
     |  test RC, RC
-    |  jnz ->vmeta_binop
+    |  jnz ->vmeta_binop3
     |  movzx RBd, PC_RB       // Copy result to Stk[RA] from Stk[RB].
     |  movzx RAd, PC_RA
     |  mov RC, [BASE+RB*8]

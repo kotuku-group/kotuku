@@ -546,10 +546,10 @@ and replaces P, so a single polymorphic instruction site can safely alternate be
 
 ### 6.3 Interpreter Semantics
 
-| Bytecode | Operation | Fast-type failure | Cached value |
-|----------|-----------|-------------------|--------------|
-| `STGETF` | Load a named field or the bound `structSize` closure | `vmeta_tgets` | Field index |
-| `STSETF` | Store a named writable field | `vmeta_tsets` | Field index |
+| Bytecode | Operation                    | Fast-type failure | Cached value |
+|----------|------------------------------|-------------------|--------------|
+| `STGETF` | Load a declared named field  | `vmeta_tgets`     | Field index  |
+| `STSETF` | Store a named writable field | `vmeta_tsets`     | Field index  |
 
 The x64, ARM64 and PowerPC handlers call `bc_struct_getfield` and `bc_struct_setfield`. The helpers synchronise the Lua
 frame before any operation that may allocate, protect setter values from garbage collection and restore the
@@ -559,7 +559,7 @@ site falls back to the ordinary metamethod path.
 ### 6.4 Parser and Platform Status
 
 `ExpKind::IndexedStruct` lowers constant string member access to `STGETF`/`STSETF`. A struct member used as a callee is
-downgraded to normal indexed access so helpers such as `value.structSize()` still resolve through `__index`.
+downgraded to normal indexed access so method-style helpers still resolve through `__index`.
 
 The interpreter implementation covers x64, ARM64 and PowerPC. The JIT can record these opcodes: scalar numeric fields may lower to guarded XLOAD/XSTORE, while complex or lifecycle-bound fields fall back to the C helpers.
 
@@ -569,9 +569,10 @@ The interpreter implementation covers x64, ARM64 and PowerPC. The JIT can record
 - `a or b`: evaluate `a`; emit compare + `JMP` that branches into `b` only when `a` is falsey. Truthy `a` falls through and becomes the result; `b` is untouched.
 - Registers are normalised so the resulting value lives in the LHS register; `freereg` collapses after RHS evaluation to avoid leaks.
 
-### 7.2 Ternary Operators (`cond ? true_val :> false_val`, `cond ?? true_val :> false_val`)
-- Only one branch executes. The standard `? :>` form matches `if` falsey semantics: only `nil` and `false` branch to the false value.
-- The extended `?? :>` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty collections.
+### 7.2 Ternary Operators (`cond ? true_val : false_val`, `cond ?? true_val : false_val`)
+- Only one branch executes. The standard `? :` form matches `if` falsey semantics: only `nil` and `false` branch to the false value.
+- The extended `?? :` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty collections.
+- The former `:>` separator is accepted for compatibility but emits a deprecation warning.
 - `IrEmitter::emit_ternary_expr` places both branches so the selected branch materialises into a single result register. Each branch frees temporaries before convergence, and `freereg` is patched back to guarantee a single-slot result.
 - Example sketch:
   ```

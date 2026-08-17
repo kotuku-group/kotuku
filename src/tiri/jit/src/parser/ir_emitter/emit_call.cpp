@@ -814,8 +814,10 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
 
 ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 {
-   if (Payload.builtin_method) return this->emit_builtin_method_call(Payload);
-   if (Payload.runtime_builtin_method) return this->emit_runtime_builtin_method_call(Payload);
+   if (Payload.compiler_callable IS BuiltinCallableID::Invalid) {
+      if (Payload.builtin_method) return this->emit_builtin_method_call(Payload);
+      if (Payload.runtime_builtin_method) return this->emit_runtime_builtin_method_call(Payload);
+   }
 
    kt::Log log(__FUNCTION__);
 
@@ -905,10 +907,16 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
          index_node = index->index.get();
       }
 
-      is_contextual_call = receiver_node and receiver_uses_contextual_call(this->ctx, *receiver_node);
+      is_contextual_call = Payload.compiler_callable IS BuiltinCallableID::Invalid and receiver_node and
+         receiver_uses_contextual_call(this->ctx, *receiver_node);
       context_receiver_node = receiver_node;
 
-      if (is_contextual_call) {
+      if (Payload.compiler_callable != BuiltinCallableID::Invalid) {
+         BCReg call_base = this->func_state.free_reg();
+         callee = bcemit_builtin_callable(&this->func_state, Payload.compiler_callable, call_base.raw());
+         bcreg_reserve(&this->func_state, 1);
+      }
+      else if (is_contextual_call) {
          auto receiver_result = this->emit_expression(*receiver_node);
          if (not receiver_result.ok()) return receiver_result;
          ExpDesc receiver = receiver_result.value_ref();
@@ -1193,7 +1201,7 @@ void IrEmitter::optimise_assert(ExprNodeList &Args)
 }
 
 //********************************************************************************************************************
-// Result filter expression: [_*]func(), [*_]obj:method(), etc.
+// Result filter expression: [_*]func(), [*_]obj.method(), etc.
 // Transforms to: __filter(mask, count, trailing_keep, func(...))
 // The __filter function is a built-in that selectively returns values based on the filter pattern.
 

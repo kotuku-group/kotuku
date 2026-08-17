@@ -299,7 +299,7 @@ global function cType(Field:table, Origin:str):table
          if ptr_struct then struct = ptr_struct end
 
          Field.struct = struct
-         Field.type = ptr_struct ? 'p' :> 'e'
+         Field.type = ptr_struct ? 'p' : 'e'
          Field.name ..= ':' .. struct
 
          return Field
@@ -310,7 +310,7 @@ global function cType(Field:table, Origin:str):table
       object = rx_obj_type.extract(Field.type)
       if object then
          local ptr_struct = rx_ptr_extract.extract(object)
-         Field.type = ptr_struct ? 'p' :> 'o'
+         Field.type = ptr_struct ? 'p' : 'o'
          return Field
       end
    end
@@ -355,7 +355,7 @@ global function cType(Field:table, Origin:str):table
    do -- Char arrays
       local unsigned, count = rx_uchar_array.extract(Field.type)
       if count then
-         Field.type = unsigned ? 'uc' :> 'c'
+         Field.type = unsigned ? 'uc' : 'c'
          Field.name ..= f'[{count}]'
          return Field
       end
@@ -364,7 +364,7 @@ global function cType(Field:table, Origin:str):table
    do -- Integer arrays
       local unsigned, count = rx_uint_array.extract(Field.type)
       if count then
-         Field.type = unsigned ? 'ul' :> 'l'
+         Field.type = unsigned ? 'ul' : 'l'
          Field.name ..= f'[{count}]'
          return Field
       end

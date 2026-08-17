@@ -642,7 +642,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
             if (callback->Routine IS Args->Callback.Routine) break;
          }
          else if ((callback->isScript()) and (Args->Callback.isScript())) {
-            if (callback->ProcedureID IS Args->Callback.ProcedureID) break;
+            if (callback->scriptValue() IS Args->Callback.scriptValue()) break;
          }
       }
    }
@@ -1897,7 +1897,7 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
       if ((callback->isC()) and (callback->Routine IS Args->Callback.Routine)) break;
 
       if ((callback->isScript()) and
-          (callback->ProcedureID IS Args->Callback.ProcedureID)) break;
+          (callback->scriptValue() IS Args->Callback.scriptValue())) break;
    }
 
    if (callback != Self->Callback.end()) {

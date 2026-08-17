@@ -33,7 +33,7 @@ gui.dropdown = function(Options)
    }
 
    function initVectorScene()
-      showIcons = Options.showIcons is false ? nil :> true
+      showIcons = Options.showIcons is false ? nil : true
       TEXT_X = HMARGIN
 
       if showIcons then
@@ -127,7 +127,7 @@ gui.dropdown = function(Options)
 
    lastTime = 0
    self.toggle = function(TimeLapse:num)
-      timelapse = TimeLapse and TimeLapse >= 0 ? TimeLapse * 1000 :> 5000
+      timelapse = TimeLapse and TimeLapse >= 0 ? TimeLapse * 1000 : 5000
 
       currentTime = mSys.PreciseTime()
       if self.timeShow > self.timeHide then -- Hide the menu

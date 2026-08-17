@@ -260,7 +260,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
       response = { type='void' }
    end
 
-   func.tags = Def.tags ? Def.tags :> array<str>
+   func.tags = Def.tags ? Def.tags : array<str>
    func.tags = getTagsFromField(func.result, func.tags) -- User defined tags
    func.tags = getTagsFromCollection(func.tags, func.input) -- IDL defined tags
 

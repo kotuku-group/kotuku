@@ -39,6 +39,7 @@ struct BlockBinding {
 enum class ContextSourceKind : uint8_t {
    Inherited,
    UsingReference,
+   MethodArgument,
    ContextualArgument
 };
 

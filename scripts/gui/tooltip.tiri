@@ -54,7 +54,7 @@ gui.tooltip = function(Options)
       textFlags = VTXF_RASTER
    })
 
-   self.surface.height = (gui.fonts.button.size*1.5) + self.text.fontSize
+   self.surface.height = (gui.fonts.button.size*1.5) + tonumber(self.text.fontSize)
    self.surface.y = ptr.y - self.surface.height
    self.text.y = math.floor((self.viewport.height * 0.5) + (self.text.displaySize * 0.5))
 

@@ -173,22 +173,12 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field
 
 static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
-   int ref = 0;
-   int type = lua_type(Lua, ValueIndex);
-   if (type IS LUA_TSTRING) {
-      lua_getglobal(Lua, lua_tostring(Lua, ValueIndex));
-      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   }
-   else if (type IS LUA_TFUNCTION) {
-      lua_pushvalue(Lua, ValueIndex);
-      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   }
-   else return ERR::SetValueNotFunction;
+   FUNCTION func;
+   if (auto error = capture_tiri_function(Lua, ValueIndex, func); error != ERR::Okay) return error;
 
-   auto func = FUNCTION(Lua->script, ref);
    auto error = Object->set(Field, &func);
    // Drop the reference if the setter failed, otherwise the object owns it and must call DerefProcedure()
-   if ((error != ERR::Okay) and (ref > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
+   if (error != ERR::Okay) release_tiri_function(Lua, &func);
    return error;
 }
 

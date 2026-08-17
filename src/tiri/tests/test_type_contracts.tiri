@@ -142,7 +142,7 @@ end
    local captured = 1
    function capture() return captured end
    local pointer = debug.upvalueID(capture, 0)
-   local callable = setmetatable({}, { __call = function(Self):table return Self end })
+   local callable = setmetatable({}, { __call = metamethod():table return && end })
 
    assert(accept_nil(nil) is nil, 'nil should satisfy nil')
    assert(accept_bool(true) is true, 'true should satisfy bool')
@@ -423,7 +423,7 @@ end
    local object = obj.new('time')
    local sequence = {0 to 3}
    local proxy = newproxy(true)
-   local callable = setmetatable({}, { __call = function() return true end })
+   local callable = setmetatable({}, { __call = metamethod():bool return true end })
 
    assert(checked_nil(nil) is nil, 'nil should satisfy a nil result contract')
    assert(checked_bool(true), 'bool should satisfy a bool result contract')
@@ -520,7 +520,7 @@ end
    global glContractClosed:bool = false
    function checked_close():num
       local resource <close> = setmetatable({}, {
-         __close = function(Self, Error)
+         __close = metamethod(Error)
             glContractClosed = true
          end
       })
@@ -646,7 +646,7 @@ end
    local closed = false
    expect_contract_failure(function()
       local resource <close>:num = dynamic_value(setmetatable({}, {
-         __close = function(Self, Error)
+         __close = metamethod(Error)
             closed = true
          end
       }))
@@ -656,7 +656,7 @@ end
    local grouped_closed = false
    function dynamic_close_pair():<any, any>
       return setmetatable({}, {
-         __close = function(Self, Error)
+         __close = metamethod(Error)
             grouped_closed = true
          end
       }), 'wrong'
@@ -788,7 +788,7 @@ end
 
    local value = 1
    local overloaded:any = setmetatable({}, {
-      __add = function(Left, Right):str return 'wrong' end
+      __add = metamethod(Other, LHS:bool):str return 'wrong' end
    })
    expect_contract_failure(function() value += overloaded end, 'overloaded compound assignment')
    assert(value is 1, 'A rejected overloaded compound result must preserve the sticky local')
@@ -796,7 +796,7 @@ end
 
 @Test function VariantMutationInvalidatesStaticProof()
    local overloaded:any = setmetatable({}, {
-      __add = function(Left, Right):str return 'wrong' end
+      __add = metamethod(Other, LHS:bool):str return 'wrong' end
    })
 
    local compound_source:any = 1
@@ -1058,6 +1058,67 @@ global thunk glContractForwardKind():num end
 global function glContractForwardKind():num return 1 end
 ]])
    end, 'global callable kind')
+end
+
+@Test function LocalCallableForwardSignatures()
+   local result = exec([[
+function local_contract_forward(Value:num):num end
+function local_contract_forward(Value:num):num return Value end
+return local_contract_forward(4)
+]])
+   assert(result is 4, 'A matching local function definition must satisfy its forward declaration')
+
+   local mismatch_failed = false
+   try
+      exec([[
+function local_contract_forward_mismatch(Value:num):num end
+function local_contract_forward_mismatch(Value:str):str return Value end
+]])
+   except e
+      mismatch_failed = true
+      assert(e.message.find("signature for local function 'local_contract_forward_mismatch'") != nil,
+         'The local-forward diagnostic must identify the function: ' .. e.message)
+      assert(e.message.find("parameter 1 has type 'str', expected 'num'") != nil,
+         'The local-forward diagnostic must identify the parameter mismatch: ' .. e.message)
+   end
+   assert(mismatch_failed, 'An incompatible local function definition must fail compilation')
+
+   local return_mismatch_failed = false
+   try
+      exec([[
+function local_contract_return(Value:num):num end
+function local_contract_return(Value:num):str return '' end
+]])
+   except e
+      return_mismatch_failed = true
+      assert(e.message.find("return 1 has type 'str', expected 'num'") != nil,
+         'The local-forward diagnostic must identify the return mismatch: ' .. e.message)
+   end
+   assert(return_mismatch_failed, 'An incompatible local function return declaration must fail compilation')
+
+   local explicit_result = exec([[
+local function explicit_local_contract(Value:num):num end
+local function explicit_local_contract(Value:num):num return Value end
+return explicit_local_contract(6)
+]])
+   assert(explicit_result is 6, 'An explicit local function definition must satisfy its forward declaration')
+
+   expect_contract_failure(function()
+      exec([[
+local function explicit_local_contract_mismatch(Value:num):num end
+local function explicit_local_contract_mismatch(Value:str):num return 0 end
+]])
+   end, 'explicit local function forward signature')
+
+   local scoped_result = exec([[
+function local_contract_scoped(Value:num):num end
+function outer()
+   function local_contract_scoped(Value:str):str return Value end
+end
+function local_contract_scoped(Value:num):num return Value end
+return local_contract_scoped(5)
+]])
+   assert(scoped_result is 5, 'A nested local function must not inherit an outer forward declaration')
 end
 
 @Test function CompiledGlobalWriterObservesVariantPolicy()

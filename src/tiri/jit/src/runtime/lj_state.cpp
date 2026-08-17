@@ -381,35 +381,42 @@ extern "C" void lj_context_begin_block(lua_State *L, uint32_t Slot, uint32_t Blo
    frame.entry_slots = proto->context_blocks[BlockIndex].entry_slots;
 }
 
-extern "C" void lj_context_end_block(lua_State *L, uint32_t BlockIndex) noexcept
+static void context_end_block(lua_State *L, const TValue *OwnerBase, uint32_t BlockIndex) noexcept
 {
    lj_assertL(not L->context_stack.empty(), "temporary context block stack underflow");
    if (L->context_stack.empty()) return;
+   ptrdiff_t owner_base = savestack(L, OwnerBase);
    lua_State::ContextFrame &frame = L->context_stack.back();
    lj_assertL(frame.owner_kind IS lua_State::ContextFrame::OwnerKind::Block and
-      frame.owner_base IS savestack(L, L->base) and frame.block_index IS BlockIndex,
+      frame.owner_base IS owner_base and frame.block_index IS BlockIndex,
       "unbalanced temporary context block");
    if (frame.owner_kind IS lua_State::ContextFrame::OwnerKind::Block and
-       frame.owner_base IS savestack(L, L->base) and frame.block_index IS BlockIndex) {
+       frame.owner_base IS owner_base and frame.block_index IS BlockIndex) {
       L->context_stack.pop_back();
       lj_context_debug_physical_leave(L);
       L->context_active = context_has_visible_override(L);
    }
 }
 
-extern "C" void lj_context_begin_block_jit(
-   lua_State *L, GCtab *Table, uint32_t BlockIndex, uint32_t EntrySlots)
+extern "C" void lj_context_end_block(lua_State *L, uint32_t BlockIndex) noexcept
 {
-   lj_context_push(L, Table, L->base);
+   context_end_block(L, L->base, BlockIndex);
+}
+
+extern "C" void lj_context_begin_block_jit(
+   lua_State *L, GCtab *Table, TValue *OwnerBase, uint32_t BlockIndex, uint32_t EntrySlots)
+{
+   lj_context_push(L, Table, OwnerBase);
    lua_State::ContextFrame &frame = L->context_stack.back();
    frame.owner_kind = lua_State::ContextFrame::OwnerKind::Block;
    frame.block_index = uint16_t(BlockIndex);
    frame.entry_slots = BCREG(EntrySlots);
 }
 
-extern "C" void lj_context_end_block_jit(lua_State *L, uint32_t BlockIndex) noexcept
+extern "C" void lj_context_end_block_jit(
+   lua_State *L, TValue *OwnerBase, uint32_t BlockIndex) noexcept
 {
-   lj_context_end_block(L, BlockIndex);
+   context_end_block(L, OwnerBase, BlockIndex);
 }
 
 extern "C" void lj_close_arm(lua_State *L, uint32_t Slot)
@@ -753,7 +760,7 @@ extern lua_State * lua_newstate(lua_Alloc allocf, void* allocd)
    L->gct = ~LJ_TSTRUCT;  // Tag shared with GCstruct; this is the only lua_State per interpreter.
    L->marked = LJ_GC_WHITE0 | LJ_GC_FIXED | LJ_GC_SFIXED;  //  Prevent free.
    L->dummy_ffid = FF_C;
-   setnilV(&L->close_err);  // Initialize __close error to nil
+   setnilV(&L->pending_close_error);
    L->try_handler_pc = nullptr;
    setmref(L->glref, g);
    g->gc.currentwhite = LJ_GC_WHITE0 | LJ_GC_FIXED;

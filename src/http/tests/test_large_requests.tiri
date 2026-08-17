@@ -279,7 +279,7 @@ end
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
          if Buffer then
-            table.insert(chunks, Buffer.getString())
+            chunks.insert(Buffer.getString())
             totalReceived += #Buffer
          end
       end,

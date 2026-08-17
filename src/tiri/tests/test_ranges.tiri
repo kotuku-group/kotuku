@@ -1908,6 +1908,23 @@ end
    end
 end
 
+@Test function RangeMethodsUseExplicitReceiver()
+   -- Colon-era bound-receiver closures were removed: range.contains and range.toArray are dispatched as canonical
+   -- built-in methods with the range supplied as an explicit receiver.
+
+   r = {0 to 10}
+   assert(r.contains(5), "member call should confirm an in-range value")
+   assert(not r.contains(11), "member call should reject an out-of-range value")
+   assert(5 in r, "membership operator should resolve range.contains canonically")
+
+   arr = r.toArray()
+   assert(arr[0] is 0 and arr[9] is 9, "toArray should materialise the range through the explicit receiver")
+
+   -- A bare member read no longer yields a callable bound to the receiver upvalue.
+   assert(r.contains is nil, "range.contains must not be exposed as a bound-receiver closure")
+   assert(r.toArray is nil, "range.toArray must not be exposed as a bound-receiver closure")
+end
+
 @Test function FloatingRangeJitParity()
    jit.off()
    interpreter_sum = 0

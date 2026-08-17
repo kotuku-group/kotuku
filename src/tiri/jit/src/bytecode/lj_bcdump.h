@@ -45,9 +45,12 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // ordering part of the private bytecode ABI.  Version 0x8a adds BC_BMETH runtime method dispatch.  Version 0x8c adds
 // BC_TCTX contextual table designation and cuts over to opt-in table context, which changes the meaning of every
 // existing contextual call sequence.  Version 0x8d adds materialised temporary context blocks and consuming close
-// activation bytecodes.  Older chunks are rejected rather than retaining compatibility shims.
+// activation bytecodes.  Version 0x8e adds the canonical regex.new identity used by regex literals.  Version 0x8f
+// separates object.create, object.new and object._state callable identities.  Version 0x90 accepts a struct reference
+// in struct.size, which shifts the generated fast-function ordering.  Older chunks are rejected rather than retaining
+// compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x8d;
+constexpr uint8_t BCDUMP_VERSION = 0x91;
 
 // Compatibility flags.
 
