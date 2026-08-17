@@ -55,6 +55,10 @@ ArrayElementDescriptor describe_array_element(const GCarray *Array) noexcept
       case AET::INT16:
       case AET::INT32:
       case AET::INT64:
+      case AET::UINT8:
+      case AET::UINT16:
+      case AET::UINT32:
+      case AET::UINT64:
       case AET::FLOAT:
       case AET::DOUBLE: result.logical_type = TiriType::Num; break;
       case AET::STR_GC: result.logical_type = TiriType::Str; break;
@@ -85,6 +89,10 @@ std::string array_element_name(const ArrayElementDescriptor &Element)
       case AET::INT16:  name = "int16"; break;
       case AET::INT32:  name = "int"; break;
       case AET::INT64:  name = "int64"; break;
+      case AET::UINT8:  name = "uint8"; break;
+      case AET::UINT16: name = "uint16"; break;
+      case AET::UINT32: name = "uint32"; break;
+      case AET::UINT64: name = "uint64"; break;
       case AET::FLOAT:  name = "float"; break;
       case AET::DOUBLE: name = "double"; break;
       case AET::STR_GC: name = "str"; break;
@@ -614,6 +622,10 @@ std::optional<ArrayElementDescriptor> describe_array_element(std::string_view Na
    else if (Name IS "int16") result = { AET::INT16, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "int") result = { AET::INT32, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "int64") result = { AET::INT64, TiriType::Num, CLASSID::NIL, nullptr, true };
+   else if (Name IS "uint8") result = { AET::UINT8, TiriType::Num, CLASSID::NIL, nullptr, true };
+   else if (Name IS "uint16") result = { AET::UINT16, TiriType::Num, CLASSID::NIL, nullptr, true };
+   else if (Name IS "uint32") result = { AET::UINT32, TiriType::Num, CLASSID::NIL, nullptr, true };
+   else if (Name IS "uint64") result = { AET::UINT64, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "float") result = { AET::FLOAT, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "double") result = { AET::DOUBLE, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "str") result = { AET::STR_GC, TiriType::Str, CLASSID::NIL, nullptr, true };

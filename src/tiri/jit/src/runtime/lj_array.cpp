@@ -15,6 +15,7 @@
 
 #include <cstring>
 #include <cfloat>
+#include <climits>
 #include <cmath>
 #include <limits>
 #include <kotuku/main.h>
@@ -40,7 +41,11 @@ static const uint8_t glElemSizes[] = {
    sizeof(GCRef),        // AET::ARRAY
    sizeof(TValue),       // AET::ANY
    0,                    // AET::STRUCT (variable)
-   sizeof(GCRef)         // AET::OBJECT
+   sizeof(GCRef),        // AET::OBJECT
+   sizeof(uint8_t),      // AET::UINT8
+   sizeof(uint16_t),     // AET::UINT16
+   sizeof(uint32_t),     // AET::UINT32
+   sizeof(uint64_t)      // AET::UINT64
 };
 
 //********************************************************************************************************************
@@ -107,6 +112,10 @@ static LJ_AINLINE ArrayElementResult array_validate_element(GCarray *Array, cTVa
          case AET::INT16:
          case AET::INT32:
          case AET::INT64:
+         case AET::UINT8:
+         case AET::UINT16:
+         case AET::UINT32:
+         case AET::UINT64:
          case AET::FLOAT:
          case AET::DOUBLE:
          case AET::STR_GC:
@@ -126,6 +135,10 @@ static LJ_AINLINE ArrayElementResult array_validate_element(GCarray *Array, cTVa
       case AET::BYTE:
       case AET::INT16:
       case AET::INT64:
+      case AET::UINT8:
+      case AET::UINT16:
+      case AET::UINT32:
+      case AET::UINT64:
          return array_validate_integer(Value);
       case AET::INT32: {
          uint32_t bits;
@@ -190,12 +203,6 @@ static uint64_t array_unsigned_integer(lua_Number Value, unsigned Bits)
 {
    double modulus = std::ldexp(1.0, int(Bits));
    double reduced = std::fmod(std::trunc(Value), modulus);
-   if (Bits IS 64) {
-      double signed_limit = std::ldexp(1.0, 63);
-      if (reduced >= signed_limit) reduced -= modulus;
-      else if (reduced < -signed_limit) reduced += modulus;
-      return uint64_t(int64_t(reduced));
-   }
    if (reduced < 0) reduced += modulus;
    return uint64_t(reduced);
 }
@@ -210,6 +217,15 @@ static LJ_AINLINE void array_store_int32(void *Element, cTValue *Value)
       return;
    }
    std::memcpy(Element, &bits, sizeof(bits));
+}
+
+//********************************************************************************************************************
+
+template<typename T>
+static LJ_AINLINE void array_store_unsigned(void *Element, cTValue *Value)
+{
+   T value = tvisint(Value) ? T(intV(Value)) : T(array_unsigned_integer(numV(Value), sizeof(T) * CHAR_BIT));
+   std::memcpy(Element, &value, sizeof(value));
 }
 
 //********************************************************************************************************************
@@ -261,6 +277,18 @@ static LJ_AINLINE void array_store_validated(lua_State *L, GCarray *Array, MSize
          std::memcpy(element, &bits, sizeof(bits));
          return;
       }
+      case AET::UINT8:
+         array_store_unsigned<uint8_t>(element, Value);
+         return;
+      case AET::UINT16:
+         array_store_unsigned<uint16_t>(element, Value);
+         return;
+      case AET::UINT32:
+         array_store_unsigned<uint32_t>(element, Value);
+         return;
+      case AET::UINT64:
+         array_store_unsigned<uint64_t>(element, Value);
+         return;
       case AET::FLOAT:
          *(float *)element = tvisint(Value) ? float(intV(Value)) : float(numV(Value));
          return;
@@ -338,6 +366,10 @@ void lj_array_store_new_values(lua_State *L, GCarray *Array, cTValue *Values, MS
          case AET::INT16:  stored = array_store_integer_sequence<int16_t>(Array, Values, Count); break;
          case AET::INT32:  stored = array_store_integer_sequence<int32_t>(Array, Values, Count); break;
          case AET::INT64:  stored = array_store_integer_sequence<int64_t>(Array, Values, Count); break;
+         case AET::UINT8:  stored = array_store_integer_sequence<uint8_t>(Array, Values, Count); break;
+         case AET::UINT16: stored = array_store_integer_sequence<uint16_t>(Array, Values, Count); break;
+         case AET::UINT32: stored = array_store_integer_sequence<uint32_t>(Array, Values, Count); break;
+         case AET::UINT64: stored = array_store_integer_sequence<uint64_t>(Array, Values, Count); break;
          case AET::FLOAT:  stored = array_store_integer_sequence<float>(Array, Values, Count); break;
          case AET::DOUBLE: stored = array_store_integer_sequence<double>(Array, Values, Count); break;
          default: break;
@@ -687,6 +719,10 @@ GCtab * lj_array_to_table(lua_State *L, GCarray *Array)
          case AET::INT16:  setintV(slot, *(int16_t*)elem); break;
          case AET::INT32:  setintV(slot, *(int32_t*)elem); break;
          case AET::INT64:  setnumV(slot, lua_Number(*(int64_t*)elem)); break;
+         case AET::UINT8:  setintV(slot, *(uint8_t*)elem); break;
+         case AET::UINT16: setintV(slot, *(uint16_t*)elem); break;
+         case AET::UINT32: setnumV(slot, lua_Number(*(uint32_t*)elem)); break;
+         case AET::UINT64: setnumV(slot, lua_Number(*(uint64_t*)elem)); break;
          case AET::FLOAT:  setnumV(slot, *(float*)elem); break;
          case AET::DOUBLE: setnumV(slot, *(double*)elem); break;
          case AET::TABLE: {

@@ -47,6 +47,10 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
       case AET::INT16:  setintV(Result, *(int16_t*)elem); break;
       case AET::INT32:  setintV(Result, *(int32_t*)elem); break;
       case AET::INT64:  setnumV(Result, lua_Number(*(int64_t*)elem)); break;
+      case AET::UINT8:  setintV(Result, *(uint8_t*)elem); break;
+      case AET::UINT16: setintV(Result, *(uint16_t*)elem); break;
+      case AET::UINT32: setnumV(Result, lua_Number(*(uint32_t*)elem)); break;
+      case AET::UINT64: setnumV(Result, lua_Number(*(uint64_t*)elem)); break;
       case AET::FLOAT:  setnumV(Result, *(float*)elem); break;
       case AET::DOUBLE: setnumV(Result, *(double*)elem); break;
 

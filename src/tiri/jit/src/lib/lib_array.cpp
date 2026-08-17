@@ -75,7 +75,11 @@ const array_meta glArrayConversion[size_t(AET::MAX)] = {
    { uint8_t(LJ_TARRAY),   LUA_TARRAY, false },         // AET::ARRAY
    { uint8_t(LJ_TNIL),     0, false },                  // AET::ANY
    { uint8_t(LJ_TUDATA),   LUA_TUSERDATA, false },      // AET::STRUCT
-   { uint8_t(LJ_TOBJECT),  LUA_TOBJECT, false }         // AET::OBJECT
+   { uint8_t(LJ_TOBJECT),  LUA_TOBJECT, false },        // AET::OBJECT
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT8
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT16
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true },         // AET::UINT32
+   { uint8_t(LJ_TNUMX),    LUA_TNUMBER, true }          // AET::UINT64
 };
 
 //********************************************************************************************************************
@@ -141,6 +145,10 @@ static CSTRING elemtype_name(AET Type)
       case AET::INT16:      return "int16";
       case AET::INT32:      return "int";
       case AET::INT64:      return "int64";
+      case AET::UINT8:      return "uint8";
+      case AET::UINT16:     return "uint16";
+      case AET::UINT32:     return "uint32";
+      case AET::UINT64:     return "uint64";
       case AET::FLOAT:      return "float";
       case AET::DOUBLE:     return "double";
       case AET::PTR:        return "pointer";
@@ -231,6 +239,59 @@ static void append_integer(std::string &Result, int64_t Value)
 
       Result.append(text, size_t(end - text));
    }
+}
+
+//********************************************************************************************************************
+
+static void append_unsigned_integer(std::string &Result, uint64_t Value)
+{
+   constexpr size_t BUFFER_SIZE = 20;
+
+   if ((Result.capacity() - Result.size()) >= BUFFER_SIZE) {
+      const auto start = Result.size();
+      Result.resize(start + BUFFER_SIZE);
+
+      char *end = Result.data() + start + BUFFER_SIZE;
+      char *text = write_integer(end, Value, false);
+      const auto used = size_t(end - text);
+
+      memmove(Result.data() + start, text, used);
+      Result.resize(start + used);
+   }
+   else {
+      char buffer[BUFFER_SIZE];
+      char *end = buffer + BUFFER_SIZE;
+      char *text = write_integer(end, Value, false);
+      Result.append(text, size_t(end - text));
+   }
+}
+
+//********************************************************************************************************************
+
+static bool is_unsigned_format(CSTRING Format, bool Wide)
+{
+   for (const char *p = Format; *p; ++p) {
+      if (*p != '%') continue;
+      if (*(p + 1) IS '%') {
+         ++p;
+         continue;
+      }
+
+      unsigned long_count = 0;
+      for (++p; *p; ++p) {
+         if (*p IS 'l') {
+            ++long_count;
+            continue;
+         }
+         if (*p IS 'u' or *p IS 'o' or *p IS 'x' or *p IS 'X') {
+            return Wide ? long_count IS 2 : long_count IS 0;
+         }
+         if (*p IS 'd' or *p IS 'i' or *p IS 'c' or *p IS 's' or *p IS 'p' or *p IS 'f' or *p IS 'F' or
+             *p IS 'e' or *p IS 'E' or *p IS 'g' or *p IS 'G') return false;
+      }
+      return false;
+   }
+   return false;
 }
 
 //********************************************************************************************************************
@@ -532,6 +593,15 @@ LJLIB_CF(array_concat)
       if (format_count != 1) {
          luaL_error(L, ERR::Syntax, "Format string must contain exactly one format specifier, found %d", format_count);
       }
+
+      if (arr->elemtype IS AET::UINT8 or arr->elemtype IS AET::UINT16 or arr->elemtype IS AET::UINT32) {
+         if (not is_unsigned_format(format, false)) {
+            luaL_error(L, ERR::Syntax, "Unsigned arrays require an unsigned format without an l modifier");
+         }
+      }
+      else if (arr->elemtype IS AET::UINT64 and not is_unsigned_format(format, true)) {
+         luaL_error(L, ERR::Syntax, "array<uint64> requires an unsigned long long format such as %%llu");
+      }
    }
 
    std::string result;
@@ -569,6 +639,18 @@ LJLIB_CF(array_concat)
                break;
             case AET::INT64:
                append_formatted(result, format, arr->get<long long>()[i]);
+               break;
+            case AET::UINT8:
+               append_formatted(result, format, unsigned(arr->get<uint8_t>()[i]));
+               break;
+            case AET::UINT16:
+               append_formatted(result, format, unsigned(arr->get<uint16_t>()[i]));
+               break;
+            case AET::UINT32:
+               append_formatted(result, format, unsigned(arr->get<uint32_t>()[i]));
+               break;
+            case AET::UINT64:
+               append_formatted(result, format, (unsigned long long)arr->get<uint64_t>()[i]);
                break;
             case AET::INT32:
                append_formatted(result, format, arr->get<int>()[i]);
@@ -611,6 +693,18 @@ LJLIB_CF(array_concat)
                break;
             case AET::INT64:
                append_integer(result, arr->get<int64_t>()[i]);
+               break;
+            case AET::UINT8:
+               append_unsigned_integer(result, arr->get<uint8_t>()[i]);
+               break;
+            case AET::UINT16:
+               append_unsigned_integer(result, arr->get<uint16_t>()[i]);
+               break;
+            case AET::UINT32:
+               append_unsigned_integer(result, arr->get<uint32_t>()[i]);
+               break;
+            case AET::UINT64:
+               append_unsigned_integer(result, arr->get<uint64_t>()[i]);
                break;
             case AET::INT32:
                append_integer(result, arr->get<int32_t>()[i]);
@@ -714,6 +808,10 @@ LJLIB_CF(array_first)
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+      case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+      case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+      case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
       case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
       case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
 
@@ -789,6 +887,10 @@ LJLIB_CF(array_last)
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+      case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+      case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+      case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
       case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
       case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
       case AET::STR_GC: {
@@ -1028,6 +1130,10 @@ LJLIB_CF(array_pop)
          case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
          case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
          case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+         case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+         case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+         case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+         case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
          case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
          case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
 
@@ -1316,6 +1422,10 @@ static void fill_array_elements(lua_State *L, GCarray *Arr, cTValue *Value, int3
       case AET::INT16:  ARRAY_FILL_TYPE(int16_t);
       case AET::INT32:  ARRAY_FILL_TYPE(int32_t);
       case AET::INT64:  ARRAY_FILL_TYPE(int64_t);
+      case AET::UINT8:  ARRAY_FILL_TYPE(uint8_t);
+      case AET::UINT16: ARRAY_FILL_TYPE(uint16_t);
+      case AET::UINT32: ARRAY_FILL_TYPE(uint32_t);
+      case AET::UINT64: ARRAY_FILL_TYPE(uint64_t);
       case AET::FLOAT:  ARRAY_FILL_TYPE(float);
       case AET::DOUBLE: ARRAY_FILL_TYPE(double);
       case AET::STR_GC:
@@ -1462,6 +1572,10 @@ static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int3
          case AET::INT16:  return find_forward_contiguous<int16_t>(data, Start, Stop, Value);
          case AET::INT32:  return find_forward_contiguous<int32_t>(data, Start, Stop, Value);
          case AET::INT64:  return find_forward_contiguous<int64_t>(data, Start, Stop, Value);
+         case AET::UINT8:  return find_forward_contiguous<uint8_t>(data, Start, Stop, Value);
+         case AET::UINT16: return find_forward_contiguous<uint16_t>(data, Start, Stop, Value);
+         case AET::UINT32: return find_forward_contiguous<uint32_t>(data, Start, Stop, Value);
+         case AET::UINT64: return find_forward_contiguous<uint64_t>(data, Start, Stop, Value);
          case AET::FLOAT:  return find_forward_contiguous<float>(data, Start, Stop, Value);
          case AET::DOUBLE: return find_forward_contiguous<double>(data, Start, Stop, Value);
          default: return -1;
@@ -1474,6 +1588,10 @@ static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int3
       case AET::INT16:  return find_stepped<int16_t>(data, Start, Stop, Step, Value);
       case AET::INT32:  return find_stepped<int32_t>(data, Start, Stop, Step, Value);
       case AET::INT64:  return find_stepped<int64_t>(data, Start, Stop, Step, Value);
+      case AET::UINT8:  return find_stepped<uint8_t>(data, Start, Stop, Step, Value);
+      case AET::UINT16: return find_stepped<uint16_t>(data, Start, Stop, Step, Value);
+      case AET::UINT32: return find_stepped<uint32_t>(data, Start, Stop, Step, Value);
+      case AET::UINT64: return find_stepped<uint64_t>(data, Start, Stop, Step, Value);
       case AET::FLOAT:  return find_stepped<float>(data, Start, Stop, Step, Value);
       case AET::DOUBLE: return find_stepped<double>(data, Start, Stop, Step, Value);
       default: return -1;
@@ -1628,6 +1746,10 @@ LJLIB_CF(array_reverse)
       case AET::INT16:  { auto *p = (int16_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT32:  { auto *p = (int32_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::INT64:  { auto *p = (int64_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT8:  { auto *p = (uint8_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT16: { auto *p = (uint16_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT32: { auto *p = (uint32_t *)data; std::reverse(p, p + arr->len); break; }
+      case AET::UINT64: { auto *p = (uint64_t *)data; std::reverse(p, p + arr->len); break; }
       case AET::FLOAT:  { auto *p = (float *)data; std::reverse(p, p + arr->len); break; }
       case AET::DOUBLE: { auto *p = (double *)data; std::reverse(p, p + arr->len); break; }
       case AET::PTR:    { auto *p = (void **)data; std::reverse(p, p + arr->len); break; }
@@ -1864,6 +1986,10 @@ LJLIB_CF(array_sort)
       case AET::INT16: quicksort(arr->get<int16_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT32: quicksort(arr->get<int32_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::INT64: quicksort(arr->get<int64_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT8: quicksort(arr->get<uint8_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT16: quicksort(arr->get<uint16_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT32: quicksort(arr->get<uint32_t>(), 0, int32_t(arr->len - 1), descending); break;
+      case AET::UINT64: quicksort(arr->get<uint64_t>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::FLOAT: quicksort(arr->get<float>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::DOUBLE: quicksort(arr->get<double>(), 0, int32_t(arr->len - 1), descending); break;
       case AET::STR_GC: {
@@ -1910,6 +2036,10 @@ static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx)
       case AET::INT16:  lua_pushinteger(L, *(int16_t *)elem); break;
       case AET::INT32:  lua_pushinteger(L, *(int32_t *)elem); break;
       case AET::INT64:  lua_pushnumber(L, lua_Number(*(int64_t *)elem)); break;
+      case AET::UINT8:  lua_pushinteger(L, *(uint8_t *)elem); break;
+      case AET::UINT16: lua_pushinteger(L, *(uint16_t *)elem); break;
+      case AET::UINT32: lua_pushnumber(L, lua_Number(*(uint32_t *)elem)); break;
+      case AET::UINT64: lua_pushnumber(L, lua_Number(*(uint64_t *)elem)); break;
       case AET::FLOAT:  lua_pushnumber(L, *(float *)elem); break;
       case AET::DOUBLE: lua_pushnumber(L, *(double *)elem); break;
       case AET::STR_GC: {

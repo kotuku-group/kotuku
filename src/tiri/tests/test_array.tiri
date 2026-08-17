@@ -36,6 +36,37 @@ end
       'named-structure binding identity should be accepted')
 end
 
+@Test function UnsignedArrayBindingAndHotIndexing()
+   function identity_uint8(Value:array<uint8>):array<uint8> return Value end
+   function identity_uint16(Value:array<uint16>):array<uint16> return Value end
+   function identity_uint32(Value:array<uint32>):array<uint32> return Value end
+   function identity_uint64(Value:array<uint64>):array<uint64> return Value end
+
+   assert(identity_uint8(array<uint8> {}) != nil and identity_uint16(array<uint16> {}) != nil,
+      'small unsigned array contracts were rejected')
+   assert(identity_uint32(array<uint32> {}) != nil and identity_uint64(array<uint64> {}) != nil,
+      'wide unsigned array contracts were rejected')
+
+   local contract_failed = false
+   try
+      identity_uint32(array<int> {})
+   except error_value
+      contract_failed = true
+   end
+   assert(contract_failed, 'signed array satisfied an unsigned array contract')
+
+   local words = array<uint16, 1>
+   local masks = array<uint32, 1>
+   local counters = array<uint64, 1>
+   for i in {0 to 400} do
+      words[0] = 32768 + i
+      masks[0] = 2147483648 + i
+      counters[0] = 9007199254740000 + i
+   end
+   assert(words[0] is 33167 and masks[0] is 2147484047 and counters[0] is 9007199254740399,
+      'hot unsigned array indexing diverged from interpreter behaviour')
+end
+
 @Test function IntegerArrayConcat()
    int_array = array<int, 5>
    int_array[0] = 10
