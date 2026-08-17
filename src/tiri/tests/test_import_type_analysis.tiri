@@ -31,7 +31,7 @@ local y:num = probe_add(1, 2)
    local diag = result.diagnostics[0]
    assert(diag.file is 'import_type_error_helper.tiri',
       f"Diagnostic should be attributed to the imported file, got '{tostring(diag.file)}'")
-   assert(diag.line is 5, f"Expected 0-based line 5 for the helper's type error, got {diag.line}")
+   assert(diag.line is 6, f"Expected line 6 for the helper's type error, got {diag.line}")
    assert(diag.code is 'TypeMismatchAssignment', f"Unexpected diagnostic code '{diag.code}'")
    assert(diag.message.find('cannot assign', 0, true) != nil,
       f"Unexpected diagnostic message: {diag.message}")
@@ -73,7 +73,7 @@ local bad:num = 'oops'
    local diag = result.diagnostics[0]
    assert(diag.file is nil,
       f"Main buffer diagnostics should carry no file attribution, got '{tostring(diag.file)}'")
-   assert(diag.line is 1, f"Expected 0-based line 1 for the main source error, got {diag.line}")
+   assert(diag.line is 2, f"Expected line 2 for the main source error, got {diag.line}")
    assert(diag.code is 'TypeMismatchAssignment', f"Unexpected diagnostic code '{diag.code}'")
 end
 

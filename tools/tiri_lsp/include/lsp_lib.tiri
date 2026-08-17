@@ -427,6 +427,14 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Compute diagnostics for a document using debug.validate()
 
+-- Convert a 1-based debug.validate() source position to the 0-based LSP equivalent.  Zero remains the sentinel for
+-- an unavailable source position.
+
+function validationPositionToLsp(Position:num):num
+   if Position > 0 then return Position - 1 end
+   return 0
+end
+
 -- Helper to check if character is alphanumeric or underscore
 
 function isIdentChar(C)
@@ -515,6 +523,10 @@ global function computeDiagnostics(Doc:table)
       rebuildLineIndex(Doc)
 
       for diag in values(result.diagnostics) do
+         source_line = validationPositionToLsp(diag.line)
+         source_column = validationPositionToLsp(diag.column)
+         source_end_column = validationPositionToLsp(diag.endColumn)
+
          -- Map severity: C++ (0=Info,1=Warn,2=Error) -> LSP (1=Error,2=Warn,3=Info)
          lsp_severity = 3  -- Default to Info
          if diag.severity is 2 then lsp_severity = 1      -- Error
@@ -522,21 +534,21 @@ global function computeDiagnostics(Doc:table)
          end
 
          -- Compute a meaningful range if not provided by the parser
-         start_col = diag.column
-         end_col = diag.endColumn
+         start_col = source_column
+         end_col = source_end_column
          if end_col <= start_col+1 then
-            start_col, end_col = computeErrorRange(Doc, diag.line, diag.column)
+            start_col, end_col = computeErrorRange(Doc, source_line, source_column)
          end
 
-         -- The parser reports byte columns; convert to UTF-16 for the client.
-         diag_line = getLine(Doc, diag.line) or ''
+         -- debug.validate() reports 1-based byte columns; convert them to UTF-16 after adapting to LSP coordinates.
+         diag_line = getLine(Doc, source_line) or ''
          start_col = byteColToUtf16Col(diag_line, start_col)
          end_col = byteColToUtf16Col(diag_line, end_col)
 
          lsp_diags.push({
             range = {
-               start = { line = diag.line, character = start_col },
-               ['end'] = { line = diag.line, character = end_col }
+               start = { line = source_line, character = start_col },
+               ['end'] = { line = source_line, character = end_col }
             },
             severity = lsp_severity,
             source = 'tiri',
@@ -549,21 +561,24 @@ global function computeDiagnostics(Doc:table)
    -- Add tips as LSP Hint diagnostics (severity 4)
    if result.tips then
       for tip in values(result.tips) do
-         start_col = tip.column
-         end_col = tip.endColumn
+         source_line = validationPositionToLsp(tip.line)
+         source_column = validationPositionToLsp(tip.column)
+         source_end_column = validationPositionToLsp(tip.endColumn)
+         start_col = source_column
+         end_col = source_end_column
          if end_col <= start_col+1 then
-            start_col, end_col = computeErrorRange(Doc, tip.line, tip.column)
+            start_col, end_col = computeErrorRange(Doc, source_line, source_column)
          end
 
-         -- The parser reports byte columns; convert to UTF-16 for the client.
-         tip_line = getLine(Doc, tip.line) or ''
+         -- debug.validate() reports 1-based byte columns; convert them to UTF-16 after adapting to LSP coordinates.
+         tip_line = getLine(Doc, source_line) or ''
          start_col = byteColToUtf16Col(tip_line, start_col)
          end_col = byteColToUtf16Col(tip_line, end_col)
 
          lsp_diags.push({
             range = {
-               start = { line = tip.line, character = start_col },
-               ['end'] = { line = tip.line, character = end_col }
+               start = { line = source_line, character = start_col },
+               ['end'] = { line = source_line, character = end_col }
             },
             severity = 4,  -- LSP Hint
             source = 'tiri',
