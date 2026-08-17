@@ -305,11 +305,12 @@ template <typename T> static ERR array_values_to_vector(GCarray *Source, APTR Ad
    return ERR::Okay;
 }
 
-static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Address)
+static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, const struct_field &Field, APTR Address)
 {
+   const int type = Field.Type;
    if (lua_isarray(Lua, StackIndex)) {
       auto source = lua_toarray(Lua, StackIndex);
-      if (Type & FD_STRING) {
+      if (type & FD_STRING) {
          if ((source->elemtype != AET::STR_GC) and (source->elemtype != AET::CSTR) and
                (source->elemtype != AET::STR_CPP)) return ERR::InvalidType;
          auto &dest = ((kt::vector<std::string> *)Address)[0];
@@ -324,18 +325,21 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
          }
          return ERR::Okay;
       }
-      if (source->elemtype != ff_to_aet(Type)) return ERR::InvalidType;
-      if (Type & FD_FLOAT) return array_values_to_vector<float>(source, Address);
-      if (Type & FD_DOUBLE) return array_values_to_vector<double>(source, Address);
-      if (Type & FD_INT64) return array_values_to_vector<int64_t>(source, Address);
-      if (Type & FD_INT) return array_values_to_vector<int>(source, Address);
-      if (Type & FD_WORD) return array_values_to_vector<int16_t>(source, Address);
-      if (Type & FD_BYTE) return array_values_to_vector<uint8_t>(source, Address);
+      if (source->elemtype != ff_to_aet(type, Field.NativeType)) return ERR::InvalidType;
+      if (type & FD_FLOAT) return array_values_to_vector<float>(source, Address);
+      if (type & FD_DOUBLE) return array_values_to_vector<double>(source, Address);
+      if (type & FD_INT64) return array_values_to_vector<int64_t>(source, Address);
+      if (type & FD_INT) return array_values_to_vector<int>(source, Address);
+      if (type & FD_WORD) return array_values_to_vector<int16_t>(source, Address);
+      if ((type & FD_BYTE) and Field.NativeType IS NativeStructType::Int8) {
+         return array_values_to_vector<int8_t>(source, Address);
+      }
+      if (type & FD_BYTE) return array_values_to_vector<uint8_t>(source, Address);
       return ERR::NoSupport;
    }
 
    if (not lua_istable(Lua, StackIndex)) return ERR::InvalidType;
-   if (Type & FD_STRING) {
+   if (type & FD_STRING) {
       auto &dest = ((kt::vector<std::string> *)Address)[0];
       size_t elements = lua_objlen(Lua, StackIndex);
       dest.resize(elements);
@@ -352,12 +356,15 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
       }
       return ERR::Okay;
    }
-   if (Type & FD_FLOAT) return table_values_to_vector<float>(Lua, StackIndex, Type, Address);
-   if (Type & FD_DOUBLE) return table_values_to_vector<double>(Lua, StackIndex, Type, Address);
-   if (Type & FD_INT64) return table_values_to_vector<int64_t>(Lua, StackIndex, Type, Address);
-   if (Type & FD_INT) return table_values_to_vector<int>(Lua, StackIndex, Type, Address);
-   if (Type & FD_WORD) return table_values_to_vector<int16_t>(Lua, StackIndex, Type, Address);
-   if (Type & FD_BYTE) return table_values_to_vector<uint8_t>(Lua, StackIndex, Type, Address);
+   if (type & FD_FLOAT) return table_values_to_vector<float>(Lua, StackIndex, type, Address);
+   if (type & FD_DOUBLE) return table_values_to_vector<double>(Lua, StackIndex, type, Address);
+   if (type & FD_INT64) return table_values_to_vector<int64_t>(Lua, StackIndex, type, Address);
+   if (type & FD_INT) return table_values_to_vector<int>(Lua, StackIndex, type, Address);
+   if (type & FD_WORD) return table_values_to_vector<int16_t>(Lua, StackIndex, type, Address);
+   if ((type & FD_BYTE) and Field.NativeType IS NativeStructType::Int8) {
+      return table_values_to_vector<int8_t>(Lua, StackIndex, type, Address);
+   }
+   if (type & FD_BYTE) return table_values_to_vector<uint8_t>(Lua, StackIndex, type, Address);
    return ERR::NoSupport;
 }
 
@@ -429,7 +436,7 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
                      assign_trivial_struct_vector(address, serial.data(), source->len, field.ElementStride);
                   }
                   else if (type & FD_VECTOR) {
-                     if (auto error = value_to_cpp_vector(Lua, -1, type, address); error != ERR::Okay) {
+                     if (auto error = value_to_cpp_vector(Lua, -1, field, address); error != ERR::Okay) {
                         destroy_struct_cpp_strings(Lua, struct_def, memory.get());
                         return error;
                      }
@@ -516,7 +523,7 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
             }
             else {
                auto vector = (kt::vector<int> *)(address); // Uses int as a type-stable layout placeholder
-               make_array(Lua, ff_to_aet(type), vector->size(), vector->data());
+               make_array(Lua, ff_to_aet(type, field.NativeType), vector->size(), vector->data());
             }
          }
          else if (field.ArraySize IS -1) { // Pointer to a null-terminated array.
@@ -529,7 +536,7 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
                }
                else lua_pushnil(Lua);
             }
-            else make_array(Lua, ff_to_aet(type), -1, ((CPTR *)address)[0]);
+            else make_array(Lua, ff_to_aet(type, field.NativeType), -1, ((CPTR *)address)[0]);
          }
          else { // It's an embedded array of fixed size.
             if (type & FD_STRUCT) {
@@ -538,7 +545,7 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
                }
                else lua_pushnil(Lua);
             }
-            else make_array(Lua, ff_to_aet(type), field.ArraySize, address);
+            else make_array(Lua, ff_to_aet(type, field.NativeType), field.ArraySize, address);
          }
       }
       else if (type & FD_STRUCT) {
@@ -573,7 +580,10 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
          if (type & FD_UNSIGNED) lua_pushinteger(Lua, ((uint16_t *)address)[0]);
          else lua_pushinteger(Lua, ((int16_t *)address)[0]);
       }
-      else if (type & FD_BYTE)   lua_pushinteger(Lua, ((uint8_t *)address)[0]);
+      else if ((type & FD_BYTE) and field.NativeType IS NativeStructType::Int8) {
+         lua_pushinteger(Lua, ((int8_t *)address)[0]);
+      }
+      else if (type & FD_BYTE) lua_pushinteger(Lua, ((uint8_t *)address)[0]);
       else lua_pushnil(Lua);
 
       lua_settable(Lua, -3);

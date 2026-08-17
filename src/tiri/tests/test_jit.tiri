@@ -1908,6 +1908,35 @@ end
    assert(trace_found is true, "Expected array.new(size, literal_type) to produce a JIT trace")
 end
 
+@Test(hotpath=80) function SignedInt8ArrayAccessTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_signed_int8_array(Count)
+      local source = array<int8> { -128 }
+      local destination = array<int8, 1>
+      local total = 0
+
+      for i in {1 into Count} do
+         destination[0] = source[0] + i - 1
+         total += destination[0]
+      end
+
+      return total, destination[0]
+   end
+
+   local total = 0
+   local last = 0
+   for i in {0 to 80} do
+      total, last = traced_signed_int8_array(10)
+   end
+
+   assert(total is -1235 and last is -119,
+      f"Expected signed int8 trace result -1235/-119, got {total}/{last}")
+   assert(count_jit_traces(20) > 0, "Expected signed int8 array access to produce a JIT trace")
+end
+
 @Test(hotpath=80) function ArrayNewObjTypeTraces()
    jit.on()
    jit.flush()

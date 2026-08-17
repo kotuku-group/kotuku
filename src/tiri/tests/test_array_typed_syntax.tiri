@@ -174,6 +174,47 @@ end
    assert(failed, 'array<uint8> accepted byte-buffer string input')
 end
 
+@Test function ArrayTypedInt8IsSignedAndDistinctFromByte()
+   local signed_values = array<int8> { -128, -1, 0, 127, 128, 255 }
+   local bytes = array<byte> { -1, 255 }
+   local legacy = array.of('int8', -128, 127)
+
+   assert(signed_values.type() is 'int8' and tostring(signed_values) is 'array<int8, 6>',
+      'int8 identity was not preserved')
+   assert(signed_values[0] is -128 and signed_values[1] is -1 and signed_values[3] is 127,
+      'int8 did not preserve signed values')
+   assert(signed_values[4] is -128 and signed_values[5] is -1, 'int8 values did not wrap as signed 8-bit integers')
+   assert(bytes.type() is 'char' and bytes[0] is 255 and bytes[1] is 255,
+      'byte did not remain an unsigned byte buffer')
+   assert(legacy.type() is 'int8' and legacy[0] is -128 and legacy[1] is 127,
+      'legacy int8 construction did not retain signed storage')
+
+   signed_values[0] = 255
+   signed_values.push(-129)
+   assert(signed_values[0] is -1 and signed_values.last() is 127, 'int8 mutation did not retain signed semantics')
+
+   local failed = false
+   try
+      signed_values.push('A')
+   except error_value
+      failed = true
+   end
+   assert(failed, 'array<int8> incorrectly exposed byte-buffer string operations')
+
+   local function accept_int8(Values:array<int8>):num
+      return Values[0]
+   end
+
+   assert(accept_int8(signed_values) is -1, 'array<int8> did not satisfy its own binding contract')
+   failed = false
+   try
+      accept_int8(bytes)
+   except error_value
+      failed = true
+   end
+   assert(failed, 'array<byte> incorrectly satisfied an array<int8> binding contract')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Whitespace handling
 
