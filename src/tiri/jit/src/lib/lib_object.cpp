@@ -883,6 +883,12 @@ static int object_subscribe(lua_State *Lua)
    kt::Log log("obj.subscribe");
    log.trace("Object: %d, Action: %s (ID %d)", def->uid, action, action_id);
 
+   FUNCTION client_function;
+   if (auto error = capture_tiri_function(Lua, function_argument, client_function); error != ERR::Okay) {
+      release_object(def);
+      luaL_argerror(Lua, function_argument, "Function expected.");
+   }
+
    auto callback = C_FUNCTION(notify_action);
    callback.Context = Lua->script;
    if (auto error = SubscribeAction(obj, action_id, &callback); !error) {
@@ -894,8 +900,7 @@ static int object_subscribe(lua_State *Lua)
       }
       else acsub.Reference = 0;
 
-      lua_pushvalue(Lua, function_argument);
-      acsub.Function = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      acsub.Function = client_function;
       acsub.Object   = def;
       acsub.Args     = arglist;
       acsub.ObjectID = def->uid;
@@ -905,6 +910,7 @@ static int object_subscribe(lua_State *Lua)
    }
    else {
       release_object(def);
+      release_tiri_function(Lua, &client_function);
       luaL_error(Lua, error);
    }
    return 0;
@@ -932,7 +938,7 @@ static int object_unsubscribe(lua_State *Lua)
    std::erase_if(Lua->script->ActionList, [&](auto& item) {
       bool should_remove = (item.ObjectID IS def->uid) and ((action_id IS AC::NIL) or (item.ActionID IS action_id));
       if (should_remove) {
-         luaL_unref(Lua, LUA_REGISTRYINDEX, item.Function);
+         release_tiri_function(Lua, &item.Function);
          if (item.Reference) luaL_unref(Lua, LUA_REGISTRYINDEX, item.Reference);
       }
       return should_remove;

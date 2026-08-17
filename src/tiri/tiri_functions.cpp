@@ -90,12 +90,16 @@ static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
 {
    auto tiri = (extTiri *)CurrentContext();
    auto lua = tiri->Lua;
-   LuaContextRootGuard context_guard(lua);
+   LuaCallbackContextGuard callback_context(lua);
 
    kt::Log log(__FUNCTION__);
    log.trace("Received event $%.8x%.8x", (int)((Info->EventID>>32) & 0xffffffff), (int)(Info->EventID & 0xffffffff));
 
-   lua_rawgeti(lua, LUA_REGISTRYINDEX, intptr_t(CallbackMeta));
+   auto function = (FUNCTION *)CallbackMeta;
+   if (push_tiri_function(lua, *function, callback_context) != ERR::Okay) {
+      log.warning("Event subscription callback is no longer valid.");
+      return;
+   }
 
    lua_pushnumber(lua, Info->EventID);
    lua_newtable(lua);
@@ -117,7 +121,7 @@ int fcmd_unsubscribe_event(lua_State *Lua)
 
       auto erased = std::erase_if(Lua->script->EventList, [&](const auto& event) {
          if (event.EventHandle IS handle) {
-            luaL_unref(Lua, LUA_REGISTRYINDEX, event.Function);
+            release_tiri_function(Lua, event.Function.get());
             return true;
          }
          return false;
@@ -196,17 +200,20 @@ int fcmd_subscribe_event(lua_State *Lua)
 
    if (not event_id) luaL_argerror(Lua, 1, "Failed to build event ID.");
 
+   auto client_function = std::make_unique<FUNCTION>();
+   if (capture_tiri_function(Lua, 2, *client_function) != ERR::Okay) {
+      luaL_argerror(Lua, 2, "Function expected.");
+   }
+
    APTR handle;
-   lua_settop(Lua, 2);
-   auto client_function = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function), &handle); !error) {
+   if (auto error = SubscribeEvent(event_id, C_FUNCTION(receive_event, client_function.get()), &handle); !error) {
       auto Self = Lua->script;
-      Self->EventList.emplace_back(client_function, event_id, handle);
+      Self->EventList.emplace_back(std::move(client_function), event_id, handle);
       lua_pushinteger(Lua, int(error)); // 1: Error code
       lua_pushlightuserdata(Lua, handle); // 2: Handle
    }
    else {
-      luaL_unref(Lua, LUA_REGISTRYINDEX, client_function);
+      release_tiri_function(Lua, client_function.get());
       lua_pushinteger(Lua, int(error)); // Error code
       lua_pushnil(Lua); // Handle
    }

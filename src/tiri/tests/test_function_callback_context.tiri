@@ -234,3 +234,20 @@ end
    assert(context.observed is 'jit callback context', 'JIT registration should retain its context')
    assert(&value is nil, 'JIT callback completion should restore the root context')
 end
+
+@Test function AsyncCallbacksCaptureTheirRegistrationContext()
+   local owner = entity { name = 'async callback context', observed = nil }
+   local script = obj.new('tiri', { statement=[[ ]] })
+
+   using owner do
+      async.script(script, function()
+         &observed = &name
+         processing.signal()
+      end)
+   end
+
+   wait_for_callback('async callback capture')
+   assert(owner.observed is 'async callback context',
+      'An async callback should observe the context active when it was registered')
+   assert(&name is nil, 'An async callback should restore the root context after it returns')
+end
