@@ -10,6 +10,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
    FuncState* fs = &this->func_state;
    GCtab* template_table = nullptr;
    int vcall = 0;
+   BCPOS vcall_primary = NO_JMP;
    BCPOS vcall_alternate = NO_JMP;
    int needarr = 0;
    int fixt = 0;
@@ -74,6 +75,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
       if (not value_result.ok()) return value_result;
 
       ExpDesc val = value_result.value_ref();
+      vcall_primary = val.k IS ExpKind::Call ? val.u.s.info : NO_JMP;
       vcall_alternate = val.alternate_call;
 
       bool emit_constant = key.is_constant() and key.k != ExpKind::Nil and (key.k IS ExpKind::Str or val.is_constant_nojump());
@@ -125,7 +127,8 @@ ParserResult<ExpDesc> IrEmitter::emit_table_expr(const TableExprPayload &Payload
          ilp--;
       }
       ilp->ins = BCINS_AD(BC_TSETM, freg, const_num(fs, &en));
-      setbc_b(&ilp[-1].ins, 0);
+      fs_check_assert(fs, vcall_primary != NO_JMP, "multi-result table field has no call instruction");
+      setbc_b(&fs->bcbase[vcall_primary].ins, 0);
       if (vcall_alternate != NO_JMP) setbc_b(&fs->bcbase[vcall_alternate].ins, 0);
    }
 
