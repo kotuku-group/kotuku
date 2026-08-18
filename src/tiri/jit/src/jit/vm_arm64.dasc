@@ -1680,7 +1680,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  cmp CARG2, #0
   |  cinc CARG2, TMP0, lt		// if (start < 0) start += len
   |   cmp RB, #0
-  |   csel RB, RB, xzr, ge		// if (end < 0) end = 0
+  |   blt ->fff_emptystr		// An exclusive stop before the string remains an empty span.
   |  cmp CARG2, #0
   |  csel CARG2, CARG2, xzr, ge	// if (start < 0) start = 0 (zero-indexed)
   |   cmp RB, TMP1

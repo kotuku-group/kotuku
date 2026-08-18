@@ -462,6 +462,13 @@ end
       empty = s.sub(5, 5)
       assert(empty is "", "Expected empty string, got '" .. empty .. "'")
 
+      -- Stops before the beginning remain empty after negative-index resolution.
+      underflow = s.sub(0, -12)
+      assert(underflow is "", "Expected an underflowed stop to produce an empty string")
+
+      minimum = s.sub(0, -2147483648)
+      assert(minimum is "", "Expected the minimum integer stop to produce an empty string")
+
       -- Beyond string length
       beyond = s.sub(0, 100)
       assert(#beyond is #s, "Expected length to match original string length, got " .. #beyond)
@@ -504,6 +511,10 @@ end
       -- Empty range
       empty = string.byte("hello", 5, 3)
       assert(empty is nil, "Expected nil for empty range, got " .. tostring(empty))
+
+      -- Extreme negative stops return no results without overflowing the recorder.
+      minimum = string.byte("hello", 0, -2147483648)
+      assert(minimum is nil, "Expected the minimum integer stop to return no bytes")
 
       -- Single character at last position
       last = string.byte("hello", 4)

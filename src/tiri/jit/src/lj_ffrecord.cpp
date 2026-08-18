@@ -1405,6 +1405,11 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
             J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
             return;
          }
+         if (end IS INT32_MIN) {
+            emitir(IRTGI(IR_EQ), trend, lj_ir_kint(J, INT32_MIN));
+            J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
+            return;
+         }
          // The recorder uses an inclusive endpoint internally.  Convert every non-zero exclusive stop.
          end--;
          trend = emitir(IRTI(IR_ADD), trend, lj_ir_kint(J, -1));
@@ -1424,6 +1429,11 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
          trend = lj_opt_narrow_toint(J, J->base[2]);
          end = argv2int(J, &rd->argv[2]);
          if (end IS 0) {
+            rd->nres = 0;
+            return;
+         }
+         if (end IS INT32_MIN) {
+            emitir(IRTGI(IR_EQ), trend, lj_ir_kint(J, INT32_MIN));
             rd->nres = 0;
             return;
          }

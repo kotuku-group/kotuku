@@ -2054,6 +2054,8 @@ static void build_subroutines(BuildCtx *ctx)
   |  // Convert the explicit exclusive stop to the inclusive endpoint used below.
   |  test TMPRd, TMPRd
   |  jz ->fff_emptystr
+  |  cmp TMPRd, INT32_MIN
+  |  je ->fff_emptystr
   |  sub TMPRd, 1
   |1:
   |  mov STR:RB, [BASE]
