@@ -130,6 +130,7 @@ end
    pos, stop = sample_regex.findFirst('abc123def', 0)
    assert(pos is 3, f'Expected position 3, got {pos}')
    assert(stop is 6, f'Expected stop 6, got {stop}')
+   assert('abc123def'.sub(pos, stop) is '123', 'findFirst positions should compose with sub')
 
    pos2, stop = sample_regex.findFirst('no digits here', 0)
    assert(pos2 is nil and stop is nil, 'Expected no match, got position ' .. tostring(pos2))
@@ -373,6 +374,8 @@ end
    assert(matches[0].pos is 3 and matches[0].stop is 6, 'First match at pos 3, stop 6')
    assert(matches[1].pos is 9 and matches[1].stop is 12, 'Second match at pos 9, stop 12')
    assert(matches[2].pos is 15 and matches[2].stop is 18, 'Third match at pos 15, stop 18')
+   assert('abc123def456ghi789'.sub(matches[1].pos, matches[1].stop) is '456',
+      'findAll positions should compose with sub')
 
    -- Test with starting position (pos 6 skips past '123' entirely)
    matches2 = {}

@@ -215,7 +215,7 @@ end
       local last_part = text.sub(-10)
 
       -- Extract with negative indices
-      local from_end = text.sub(-20, -11)
+      local from_end = text.sub(-20, -10)
 
       -- Variable position extraction
       local pos = (i % 40) + 1
@@ -482,7 +482,7 @@ end
       -- Get character at specific position using string.sub
       local char1 = text.sub(1, 1)   -- 'H'
       local char2 = text.sub(7, 7)   -- ' '
-      local char3 = text.sub(-1, -1) -- '!'
+      local char3 = text.sub(-1)     -- '!'
 
       -- Get character code (byte value)
       local code1 = text.byte(1)     -- 72 ('H')

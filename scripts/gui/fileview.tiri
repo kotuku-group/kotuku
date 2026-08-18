@@ -1085,7 +1085,7 @@ gui.fileview = function(Options)
       self.path ?! return
       if self.limitPath and self.limitPath.lower() is self.path.lower() then return end
 
-      reduced_path, count = rxParentFolder.extract(self.path.sub(0, -2))
+      reduced_path, count = rxParentFolder.extract(self.path.sub(0, -1))
 
       if count is 0 then
          self.browse(nil)

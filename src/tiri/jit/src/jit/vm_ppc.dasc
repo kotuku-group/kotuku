@@ -2523,11 +2523,19 @@ static void build_subroutines(BuildCtx *ctx)
   |  checknum CARG3
   |   lwz TMP2, 20(BASE)
   |  bne ->fff_fallback
+  |  cmpwi TMP2, 0; beq ->fff_emptystr
+  |  lis TMP3, 0x8000
+  |  cmpw TMP2, TMP3; beq ->fff_emptystr
+  |  addi TMP2, TMP2, -1		// Convert explicit exclusive stop to the inclusive endpoint used below.
   |1:
   |  checknum CARG2; bne ->fff_fallback
   |.else
   |  checknum CARG3; bge ->fff_fallback
   |  toint TMP2, f0
+  |  cmpwi TMP2, 0; beq ->fff_emptystr
+  |  lis TMP3, 0x8000
+  |  cmpw TMP2, TMP3; beq ->fff_emptystr
+  |  addi TMP2, TMP2, -1		// Convert explicit exclusive stop to the inclusive endpoint used below.
   |1:
   |  checknum CARG2; bge ->fff_fallback
   |.endif

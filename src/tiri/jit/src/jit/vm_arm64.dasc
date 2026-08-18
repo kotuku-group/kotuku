@@ -1658,6 +1658,8 @@ static void build_subroutines(BuildCtx *ctx)
   |   blo ->fff_fallback
   |    checkint CARG3, ->fff_fallback
   |    sxtw RB, CARG3w
+  |   cbz RB, ->fff_emptystr
+  |   sub RB, RB, #1		// Convert explicit exclusive stop to the inclusive endpoint used below.
   |1:
   |  ldr CARG2, [BASE, #8]
   |  checkstr CARG1, ->fff_fallback
@@ -1678,7 +1680,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  cmp CARG2, #0
   |  cinc CARG2, TMP0, lt		// if (start < 0) start += len
   |   cmp RB, #0
-  |   csel RB, RB, xzr, ge		// if (end < 0) end = 0
+  |   blt ->fff_emptystr		// An exclusive stop before the string remains an empty span.
   |  cmp CARG2, #0
   |  csel CARG2, CARG2, xzr, ge	// if (start < 0) start = 0 (zero-indexed)
   |   cmp RB, TMP1

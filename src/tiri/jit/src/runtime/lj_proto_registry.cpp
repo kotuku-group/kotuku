@@ -191,7 +191,7 @@ static cTValue * exported_interface_member(
 }
 
 static ERR validate_method_state(lua_State *L, std::string_view Interface, std::string_view Method,
-   BuiltinCallableID Callable, bool RequireExportedMember)
+   BuiltinCallableID Callable, bool RequireExportedMember, bool AllowAlias)
 {
    if (not L or not builtin_callable_valid(Callable)) return ERR::InvalidValue;
    const char *canonical_name = builtin_callable_name(Callable);
@@ -202,7 +202,7 @@ static ERR validate_method_state(lua_State *L, std::string_view Interface, std::
    if (expected_name != canonical_name) {
       std::string object_alias("object.");
       object_alias.append(Method);
-      if (Interface != "obj" or object_alias != canonical_name) return ERR::Mismatch;
+      if (not AllowAlias and (Interface != "obj" or object_alias != canonical_name)) return ERR::Mismatch;
    }
 
    GCfunc *canonical = lj_builtin_callable(L, Callable);
@@ -280,14 +280,14 @@ ERR reg_iface_prototype(std::string_view Interface, std::string_view Method, std
 
 ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
    BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags)
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags, bool AllowAlias)
 {
    if (Interface.empty() or Method.empty() or ReceiverType IS TiriType::Any or
        ReceiverType IS TiriType::Unknown or ReceiverType IS TiriType::Nil or
        ParamTypes.size() IS 0 or *ParamTypes.begin() != ReceiverType) return ERR::InvalidValue;
    ERR limits = validate_prototype_limits(ResultTypes, ParamTypes);
    if (limits != ERR::Okay) return limits;
-   ERR state_validation = validate_method_state(L, Interface, Method, Callable, true);
+   ERR state_validation = validate_method_state(L, Interface, Method, Callable, true, AllowAlias);
    if (state_validation != ERR::Okay) return state_validation;
    if ((Flags & FProtoFlags::ContextIndependent) != FProtoFlags::None) {
       lj_builtin_set_context_independent(L, Callable);
@@ -351,7 +351,7 @@ ERR reg_intrinsic_method(lua_State *L, std::string_view Interface, std::string_v
        *ParamTypes.begin() != ReceiverType) return ERR::InvalidValue;
    ERR limits = validate_prototype_limits(ResultTypes, ParamTypes);
    if (limits != ERR::Okay) return limits;
-   ERR state_validation = validate_method_state(L, Interface, Method, Callable, false);
+   ERR state_validation = validate_method_state(L, Interface, Method, Callable, false, false);
    if (state_validation != ERR::Okay) return state_validation;
    if ((Flags & FProtoFlags::ContextIndependent) != FProtoFlags::None) {
       lj_builtin_set_context_independent(L, Callable);

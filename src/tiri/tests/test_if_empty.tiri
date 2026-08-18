@@ -267,9 +267,9 @@ end
 @Test function IfEmptyStringFindError()
    local function_value = { status = 'Hello' }
 
-   start_index, end_index = (function_value.status ?? 'then').find('e')
+   start_index, stop_index = (function_value.status ?? 'then').find('e')
    assert(start_index is 1, "Expected search to start at index 1, got '" .. tostring(start_index) .. "'")
-   assert(end_index is 1, "Expected search to end at index 1, got '" .. tostring(end_index) .. "'")
+   assert(stop_index is 2, "Expected search to stop at index 2, got '" .. tostring(stop_index) .. "'")
 end
 
 @Test function MethodCallInOptionalForm()
