@@ -246,11 +246,11 @@ end
    -- table.move() does not create its destination, so a caller-supplied ordinary destination stays ordinary and a
    -- contextual destination stays contextual because the flag is permanent.
    local ordinary_destination = { name = 'destination', read = probe_name }
-   table.move(designated, 0, 0, 0, ordinary_destination)
+   table.move(designated, 0, 1, 0, ordinary_destination)
    assert(ordinary_destination.read() is nil, 'table.move() should not promote a caller-supplied destination')
 
    local contextual_destination = entity { name = 'contextual destination', read = probe_name }
-   table.move({ 1 }, 0, 0, 0, contextual_destination)
+   table.move({ 1 }, 0, 1, 0, contextual_destination)
    assert(contextual_destination.read() is 'contextual destination',
       'A contextual destination should remain contextual after table.move()')
 end

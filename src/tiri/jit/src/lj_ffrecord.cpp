@@ -1377,7 +1377,7 @@ static TRef recff_string_start(jit_State* J, GCstr* s, int32_t* st, TRef tr, TRe
 }
 
 //********************************************************************************************************************
-// Handle string.byte (rd->data = 0) and string.sub (rd->data = 1).
+// Handle string.byte (rd->data = 0) and string.sub/string.substr (rd->data = 1).
 
 static void recff_string_range(jit_State* J, RecordFFData* rd)
 {
@@ -1390,7 +1390,7 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
    TRef trstart, trend;
    GCstr* str = argv2str(J, &rd->argv[0]);
    int32_t start, end;
-   if (rd->data) {  // string.sub(str, start [,end]) - end is exclusive
+   if (rd->data) {  // string.sub(str, start [,stop]) - stop is exclusive
       start = argv2int(J, &rd->argv[1]);
       trstart = lj_opt_narrow_toint(J, J->base[1]);
       trend = J->base[2];
@@ -1401,14 +1401,21 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
       else {
          trend = lj_opt_narrow_toint(J, trend);
          end = argv2int(J, &rd->argv[2]);
-         // Convert exclusive end to inclusive (only for positive values)
-         if (end > 0) {
-            end--;
-            trend = emitir(IRTI(IR_ADD), trend, lj_ir_kint(J, -1));
+         if (end IS 0) {
+            J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
+            return;
          }
+         if (end IS INT32_MIN) {
+            emitir(IRTGI(IR_EQ), trend, lj_ir_kint(J, INT32_MIN));
+            J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
+            return;
+         }
+         // The recorder uses an inclusive endpoint internally.  Convert every non-zero exclusive stop.
+         end--;
+         trend = emitir(IRTI(IR_ADD), trend, lj_ir_kint(J, -1));
       }
    }
-   else {  // string.byte(str, [,start [,end]])
+   else {  // string.byte(str, [,start [,stop]])
       if (tref_isnil(J->base[1])) {
          start = 0;  // 0-based: default start is 0
          trstart = lj_ir_kint(J, 0);
@@ -1421,6 +1428,17 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
       if (J->base[1] and !tref_isnil(J->base[2])) {
          trend = lj_opt_narrow_toint(J, J->base[2]);
          end = argv2int(J, &rd->argv[2]);
+         if (end IS 0) {
+            rd->nres = 0;
+            return;
+         }
+         if (end IS INT32_MIN) {
+            emitir(IRTGI(IR_EQ), trend, lj_ir_kint(J, INT32_MIN));
+            rd->nres = 0;
+            return;
+         }
+         end--;
+         trend = emitir(IRTI(IR_ADD), trend, lj_ir_kint(J, -1));
       }
       else {
          trend = trstart;
@@ -1434,7 +1452,7 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
       end = end + (int32_t)str->len;
    }
    else {
-      // 0-based: end is inclusive, max valid is len-1
+      // The recorder uses an inclusive endpoint internally, whose maximum valid value is len-1.
       TRef trmax = emitir(IRTI(IR_ADD), trlen, lj_ir_kint(J, -1));
       if ((MSize)end < str->len) {
          emitir(IRTGI(IR_ULE), trend, trmax);
@@ -1446,7 +1464,7 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
       }
    }
    trstart = recff_string_start(J, str, &start, trstart, trlen, tr0);
-   if (rd->data) {  // Return string.sub result.
+   if (rd->data) {  // Return string.sub/string.substr result.
       if (end - start >= 0) {
          // 0-based inclusive: length = end - start + 1
          TRef trptr, trslen = emitir(IRTI(IR_SUB), trend, trstart);
@@ -1587,10 +1605,9 @@ static void recff_string_find(jit_State* J, RecordFFData* rd)
          emitir(IRTG(IR_NE, IRT_PGC), tr, trp0);
          // Recompute offset. trsptr may not point into trstr after folding.
          pos = emitir(IRTI(IR_ADD), emitir(IRTI(IR_SUB), tr, trsptr), trstart);
-         // 0-based: return start position and inclusive end position
+         // 0-based: return a half-open span.
          J->base[0] = pos;
-         J->base[1] = emitir(IRTI(IR_ADD), pos,
-            emitir(IRTI(IR_ADD), trplen, lj_ir_kint(J, -1)));
+         J->base[1] = emitir(IRTI(IR_ADD), pos, trplen);
          rd->nres = 2;
       }
       else {
@@ -1739,12 +1756,12 @@ static void recff_table_concat(jit_State* J, RecordFFData* rd)
 {
    TRef tab = J->base[0];
    if (tref_istab(tab)) {
-      const bool explicit_end = J->base[1] and J->base[2] and not tref_isnil(J->base[3]);
-      if (not explicit_end and not recff_guard_sequence(J, rd, tab, tabV(&rd->argv[0]))) return;
+      const bool explicit_stop = J->base[1] and J->base[2] and not tref_isnil(J->base[3]);
+      if (not explicit_stop and not recff_guard_sequence(J, rd, tab, tabV(&rd->argv[0]))) return;
       TRef sep = !tref_isnil(J->base[1]) ? lj_ir_tostr(J, J->base[1]) : lj_ir_knull(J, IRT_STR);
       TRef tri = (J->base[1] and !tref_isnil(J->base[2])) ? lj_opt_narrow_toint(J, J->base[2]) : lj_ir_kint(J, 0);  // 0-based: default start
-      TRef tre = explicit_end ?
-         lj_opt_narrow_toint(J, J->base[3]) : emitir(IRTI(IR_ADD), emitir(IRTI(IR_ALEN), tab, TREF_NIL), lj_ir_kint(J, -1));  // 0-based: end = len - 1
+      TRef tre = explicit_stop ? emitir(IRTI(IR_SUB), lj_opt_narrow_toint(J, J->base[3]), lj_ir_kint(J, 1)) :
+         emitir(IRTI(IR_ADD), emitir(IRTI(IR_ALEN), tab, TREF_NIL), lj_ir_kint(J, -1));  // Internal endpoint is inclusive.
       TRef hdr = recff_bufhdr(J);
       TRef tr = lj_ir_call(J, IRCALL_lj_buf_puttab, hdr, tab, sep, tri, tre);
       emitir(IRTG(IR_NE, IRT_PTR), tr, lj_ir_kptr(J, nullptr));

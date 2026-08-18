@@ -1014,7 +1014,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
             return 'const std::string_view &'
          elseif Param.resultValue and Param.mutable and Param.type.endsWith('*') then
             Param.byRef = true
-            return Param.type.sub(0,-2) .. '&'
+            return Param.type.sub(0,-1) .. '&'
          elseif Param.isSpan then
             return Param.type .. ' '
          elseif Param.isComplex then

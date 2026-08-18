@@ -1432,7 +1432,7 @@ static bool test_asm_string_sub_negative_start(kt::Log& Log)
    return false;
 }
 
-// Tests negative end index (assembly handles via label 5)
+// Tests negative exclusive stop index (assembly handles via label 5)
 static bool test_asm_string_sub_negative_end(kt::Log& Log)
 {
    LuaStateHolder Holder;
@@ -1456,9 +1456,9 @@ static bool test_asm_string_sub_negative_end(kt::Log& Log)
 #endif
 
    const char* Result = lua_tostring(L, -1);
-   if (Result and std::string_view(Result) IS std::string_view("ABCD")) return true;
+   if (Result and std::string_view(Result) IS std::string_view("ABC")) return true;
 
-   Log.error("expected 'ABCD', got '%s'", Result ? Result : "(nil)");
+   Log.error("expected 'ABC', got '%s'", Result ? Result : "(nil)");
    return false;
 }
 
@@ -1605,9 +1605,9 @@ static bool test_asm_string_sub_both_negative(kt::Log& Log)
 #endif
 
    const char* Result = lua_tostring(L, -1);
-   if (Result and std::string_view(Result) IS std::string_view("BCD")) return true;
+   if (Result and std::string_view(Result) IS std::string_view("BC")) return true;
 
-   Log.error("expected 'BCD', got '%s'", Result ? Result : "(nil)");
+   Log.error("expected 'BC', got '%s'", Result ? Result : "(nil)");
    return false;
 }
 

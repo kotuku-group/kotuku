@@ -416,19 +416,13 @@ static int32_t array_default_remaining(MSize Length, int32_t Start)
    return int32_t(Length - MSize(Start));
 }
 
-static array_range_span array_strict_inclusive_span(lua_State *L, MSize Length, int32_t Start, int32_t Stop,
-   bool Explicit)
+static array_range_span array_strict_half_open_span(lua_State *L, MSize Length, int32_t Start, int32_t Stop)
 {
-   if (Length IS 0) {
-      if (Explicit) lj_err_caller(L, ErrMsg::IDXRNG);
-      return { 0, -1, 1, true };
-   }
-
-   if (Start < 0 or Stop < 0 or MSize(Start) >= Length or MSize(Stop) >= Length) {
+   if (Start < 0 or Stop < 0 or MSize(Start) > Length or MSize(Stop) > Length) {
       lj_err_caller(L, ErrMsg::IDXRNG);
    }
 
-   if (Stop < Start) return { Start, Stop, 1, true };
+   if (Stop <= Start) return { Start, Stop, 1, true };
    return { Start, Stop, 1, false };
 }
 
@@ -530,13 +524,13 @@ static int array_push_find_result(lua_State *L, int32_t Result)
 }
 
 //********************************************************************************************************************
-// Usage: array.concat([Separator], [StringFormat], [Start], [End])
+// Usage: array.concat([Separator], [StringFormat], [Start], [Stop])
 //
 // Concatenates array elements into a string using the specified separator and optional format.
 //
 // Separator is placed between each concatenated element.  StringFormat optionally specifies how each element should be
 // formatted (e.g., "%d", "%f", "%s").  If no format is provided, the fastest available conversion path is used.
-// Start and End are optional zero-based, inclusive indexes.
+// Start and Stop are optional zero-based indexes defining a half-open span.
 
 LJLIB_CF(array_concat)
 {
@@ -548,9 +542,9 @@ LJLIB_CF(array_concat)
    auto separator = luaL_optlstring(L, 2, "", &separator_len);
    auto format = lua_isnoneornil(L, 3) ? nullptr : luaL_checkstring(L, 3);
    auto start = start_provided ? lj_lib_checkint(L, 4) : 0;
-   auto end = end_provided ? lj_lib_checkint(L, 5) : array_default_remaining(arr->len, 0) - 1;
+   auto stop = end_provided ? lj_lib_checkint(L, 5) : int32_t(arr->len);
 
-   auto span = array_strict_inclusive_span(L, arr->len, start, end, start_provided or end_provided);
+   auto span = array_strict_half_open_span(L, arr->len, start, stop);
    if (span.empty) {
       lua_pushstring(L, "");
       return 1;
@@ -607,9 +601,9 @@ LJLIB_CF(array_concat)
    }
 
    std::string result;
-   result.reserve(MSize(span.stop - span.start + 1) * 16);
+   result.reserve(MSize(span.stop - span.start) * 16);
 
-   for (MSize i = MSize(span.start); i <= MSize(span.stop); i++) {
+   for (MSize i = MSize(span.start); i < MSize(span.stop); i++) {
       if (i > MSize(span.start)) result.append(separator, separator_len);
 
       if (format) {
@@ -1693,6 +1687,12 @@ static int32_t find_string_in_array(GCarray *Arr, GCstr *SearchStr, int32_t Star
 LJLIB_CF(array_find)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
+   const bool stop_provided = not lua_isnoneornil(L, 4);
+   int32_t stop = stop_provided ? lj_lib_checkint(L, 4) : int32_t(arr->len);
+
+   if (stop < 0) stop += int32_t(arr->len);
+   if (stop < 0) stop = 0;
+   if (MSize(stop) > arr->len) stop = int32_t(arr->len);
 
    if (arr->elemtype IS AET::OBJECT) {
       auto search_uid = object_uid_from_value(L, 2);
@@ -1704,7 +1704,8 @@ LJLIB_CF(array_find)
 
       auto start = lj_lib_optint(L, 3, 0);
       if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
-      return array_push_find_result(L, find_object_in_array(arr, search_uid, start, int32_t(arr->len - 1), 1));
+      if (start >= stop) return array_push_find_result(L, -1);
+      return array_push_find_result(L, find_object_in_array(arr, search_uid, start, stop - 1, 1));
    }
    else if (arr->elemtype IS AET::STR_GC) { // Handle string arrays (STR_GC)
       GCstr *search_str = lj_lib_checkstr(L, 2);
@@ -1717,7 +1718,8 @@ LJLIB_CF(array_find)
 
       auto start = lj_lib_optint(L, 3, 0);
       if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
-      return array_push_find_result(L, find_string_in_array(arr, search_str, start, int32_t(arr->len - 1), 1));
+      if (start >= stop) return array_push_find_result(L, -1);
+      return array_push_find_result(L, find_string_in_array(arr, search_str, start, stop - 1, 1));
    }
 
    int ok;
@@ -1733,7 +1735,8 @@ LJLIB_CF(array_find)
    // Original integer-based find
    auto start = lj_lib_optint(L, 3, 0);
    if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
-   return array_push_find_result(L, find_in_array(arr, value, start, int32_t(arr->len - 1), 1));
+   if (start >= stop) return array_push_find_result(L, -1);
+   return array_push_find_result(L, find_in_array(arr, value, start, stop - 1, 1));
 }
 
 //********************************************************************************************************************

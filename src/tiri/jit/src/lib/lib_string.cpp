@@ -87,15 +87,17 @@ LJLIB_ASM(string_byte)      LJLIB_REC(string_range 0)
    GCstr *s = lj_lib_checkstr(L, 1);
    int32_t len = (int32_t)s->len;
    int32_t start = lj_lib_optint(L, 2, 0);  // 0-based: default start is 0
-   int32_t stop = lj_lib_optint(L, 3, start);
+   const bool stop_provided = not lua_isnoneornil(L, 3);
+   int32_t stop = stop_provided ? lj_lib_checkint(L, 3) : 0;
    int32_t n, i;
    const unsigned char *p;
-   if (stop < 0) stop += len;   // 0-based: -1 → len-1 (last char)
    if (start < 0) start += len;
    if (start < 0) start = 0;
-   if (stop > len - 1) stop = len - 1;  // 0-based: max valid index is len-1
-   if (start > stop) return FFH_RES(0);  //  Empty interval: return no results.
-   n = stop - start + 1;
+   if (not stop_provided) stop = start + 1;
+   else if (stop < 0) stop += len;
+   if (stop > len) stop = len;
+   if (start >= stop) return FFH_RES(0);  // Empty interval: return no results.
+   n = stop - start;
    if ((uint32_t)n > LUAI_MAXCSTACK) lj_err_caller(L, ErrMsg::STRSLC);
    lj_state_checkstack(L, (MSize)n);
    p = (const unsigned char*)strdata(s) + start;
@@ -125,11 +127,7 @@ LJLIB_ASM(string_sub)      LJLIB_REC(string_range 1)
 {
    lj_lib_checkstr(L, 1);
    lj_lib_checkint(L, 2);
-   int32_t end_val = lj_lib_optint(L, 3, -1);
-   // Convert exclusive end to inclusive by subtracting 1, but only for positive indices.
-   // Negative indices already reference positions from the end, so no adjustment needed.
-   if (end_val > 0) end_val--;
-   setintV(L->base + 2, end_val);
+   if (not lua_isnoneornil(L, 3)) lj_lib_checkint(L, 3);
    return FFH_RETRY;
 }
 
@@ -744,7 +742,7 @@ LJLIB_CF(string_find)      LJLIB_REC(.)
 
    if (auto q = lj_str_findsv({strdata(s) + st, s->len - st}, {strdata(p), p->len})) {
       setintV(L->top - 2, (int32_t)(q - strdata(s)));  // 0-based start
-      setintV(L->top - 1, (int32_t)(q - strdata(s)) + (int32_t)p->len - 1);  // 0-based end (inclusive)
+      setintV(L->top - 1, (int32_t)(q - strdata(s)) + (int32_t)p->len);  // 0-based stop (exclusive)
       return 2;
    }
 
@@ -831,6 +829,10 @@ extern int luaopen_string(lua_State *L)
    LJ_LIB_REG(L, "string", string);
    // At this point, L->top - 1 has the string library table on the Lua stack
 
+   // `sub()` is the canonical spelling.  Keep `substr()` as a deprecated compatibility alias.
+   lua_getfield(L, -1, "sub");
+   lua_setfield(L, -2, "substr");
+
    GCtab *mt = lj_tab_new(L, 0, 1);
 
    // NOBARRIER: basemt is a GC root.
@@ -911,6 +913,8 @@ extern int luaopen_string(lua_State *L)
       { TiriType::Bool }, { TiriType::Str, TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "sub", TiriType::Str, builtin_callable_id(FastFunc::string_sub),
       { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_method(L, "string", "substr", TiriType::Str, builtin_callable_id(FastFunc::string_sub),
+      { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None, true);
    reg_iface_method(L, "string", "trim", TiriType::Str, builtin_callable_id(FastFunc::string_trim),
       { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "unescapeXML", TiriType::Str,

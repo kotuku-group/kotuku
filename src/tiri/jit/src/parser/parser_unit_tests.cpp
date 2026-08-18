@@ -7618,7 +7618,7 @@ static bool test_builtin_callable_bytecode(kt::Log &Log)
 
    BuiltinCallableID byte_id = builtin_callable_id(FastFunc::string_byte);
    if (not run_patched_call(
-       "local f = string.byte\nlocal first, second = f('AB', 0, 1)\nreturn first, second\n",
+       "local f = string.byte\nlocal first, second = f('AB', 0, 2)\nreturn first, second\n",
        byte_id, 2, BC_CALL) or lua_tointeger(first, -2) != 65 or lua_tointeger(first, -1) != 66) {
       Log.error("BC_BFUNC multi-result call did not preserve string.byte results");
       return false;

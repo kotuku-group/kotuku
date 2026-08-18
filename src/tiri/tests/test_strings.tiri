@@ -429,9 +429,8 @@ end
    assert(ue is "<<>>", "Received string is incorrect: " .. tostring(ue))
 end
 
-@Test function SubStr()
-   -- string.sub() uses exclusive end index (like JavaScript substring/Python slicing)
-   -- s.sub(start, end) extracts chars from start to end-1
+@Test function Sub()
+   -- string.sub() uses an exclusive stop index (like JavaScript substring/Python slicing).
    s = "hello world"
 
    for i in {0 to 1000} do
@@ -443,9 +442,9 @@ end
       mid = s.sub(6, 11) -- Indices 6,7,8,9,10 (not 11)
       assert(mid is "world", "Expected 'world', got '" .. mid .. "'")
 
-      -- Negative indices (count from end)
+      -- Negative stops remain exclusive after they are resolved from the end.
       neg = s.sub(-5, -1)
-      assert(neg is "world", "Expected 'world' from negative indices, got '" .. neg .. "'")
+      assert(neg is "worl", "Expected 'worl' from negative indices, got '" .. neg .. "'")
 
       -- Negative start, positive end
       mixed = s.sub(-5, 11)
@@ -463,6 +462,13 @@ end
       empty = s.sub(5, 5)
       assert(empty is "", "Expected empty string, got '" .. empty .. "'")
 
+      -- Stops before the beginning remain empty after negative-index resolution.
+      underflow = s.sub(0, -12)
+      assert(underflow is "", "Expected an underflowed stop to produce an empty string")
+
+      minimum = s.sub(0, -2147483648)
+      assert(minimum is "", "Expected the minimum integer stop to produce an empty string")
+
       -- Beyond string length
       beyond = s.sub(0, 100)
       assert(#beyond is #s, "Expected length to match original string length, got " .. #beyond)
@@ -471,6 +477,9 @@ end
       -- Empty string
       emptyStr = "".sub(0, 0)
       assert(emptyStr is "", "Expected empty string, got '" .. emptyStr .. "'")
+
+      -- The deprecated spelling remains an exact behavioural alias.
+      assert(s.substr(0, 5) is s.sub(0, 5), "string.substr() should match string.sub()")
    end
 end
 
@@ -481,7 +490,7 @@ end
       assert(b is 104, "Expected 104 (h), got " .. b)
 
       -- Multiple characters
-      b1, b2, b3 = string.byte("abc", 0, 2)
+      b1, b2, b3 = string.byte("abc", 0, 3)
       assert(b1 is 97, "Expected 97 (a), got " .. b1)
       assert(b2 is 98, "Expected 98 (b), got " .. b2)
       assert(b3 is 99, "Expected 99 (c), got " .. b3)
@@ -495,7 +504,7 @@ end
       assert(neg is 111, "Expected 111 (o), got " .. neg)
 
       -- Range with negative end
-      b4, b5 = string.byte("hello", -2, -1)
+      b4, b5 = string.byte("hello", -2, 5)
       assert(b4 is 108, "Expected 108 (l), got " .. b4)
       assert(b5 is 111, "Expected 111 (o), got " .. b5)
 
@@ -503,9 +512,33 @@ end
       empty = string.byte("hello", 5, 3)
       assert(empty is nil, "Expected nil for empty range, got " .. tostring(empty))
 
+      -- Extreme negative stops return no results without overflowing the recorder.
+      minimum = string.byte("hello", 0, -2147483648)
+      assert(minimum is nil, "Expected the minimum integer stop to return no bytes")
+
       -- Single character at last position
       last = string.byte("hello", 4)
       assert(last is 111, "Expected 111 (o), got " .. last)
+   end
+end
+
+@Test function FindAndSubComposition()
+   text = 'prefix needle suffix needle'
+
+   for i in {0 to 1000} do
+      start, stop = text.find('needle')
+      assert(start is 7 and stop is 13, 'find should return the first half-open span')
+      assert(text.sub(start, stop) is 'needle', 'find results should compose directly with sub')
+
+      final_start, final_stop = text.find('needle', 14)
+      assert(final_start is 21 and final_stop is 27, 'find should return the final half-open span')
+      assert(text.sub(final_start, final_stop) is 'needle', 'the final match should slice without adjustment')
+
+      empty_start, empty_stop = 'abc'.find('')
+      assert(empty_start is 0 and empty_stop is 0, 'an empty match should be an empty half-open span')
+
+      missing_start, missing_stop = text.find('absent')
+      assert(missing_start is nil and missing_stop is nil, 'a missing literal should return nil results')
    end
 end
 
@@ -631,12 +664,12 @@ end
    s = "hello world"
    start, finish = s.find("world")
    assert(start is 6, "Expected start at 6, got " .. tostring(start))
-   assert(finish is 10, "Expected finish at 10, got " .. tostring(finish))
+   assert(finish is 11, "Expected stop at 11, got " .. tostring(finish))
 
    -- Find at beginning
    start2, finish2 = s.find("hello")
    assert(start2 is 0, "Expected start at 0, got " .. tostring(start2))
-   assert(finish2 is 4, "Expected finish at 4, got " .. tostring(finish2))
+   assert(finish2 is 5, "Expected stop at 5, got " .. tostring(finish2))
 
    -- Not found
    notFound = s.find("xyz")
@@ -645,7 +678,7 @@ end
    -- With start position
    start3, finish3 = s.find("o", 5)
    assert(start3 is 7, "Expected start at 7, got " .. tostring(start3))
-   assert(finish3 is 7, "Expected finish at 7, got " .. tostring(finish3))
+   assert(finish3 is 8, "Expected stop at 8, got " .. tostring(finish3))
 end
 
 @Test function Count()

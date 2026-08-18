@@ -23,13 +23,13 @@ function parseSize(SizeStr:str!):<any, any>
    last_char = SizeStr.sub(-1).upper()
    if last_char is 'K' then
       multiplier = 1024
-      SizeStr = SizeStr.sub(0, -2)
+      SizeStr = SizeStr.sub(0, -1)
    elseif last_char is 'M' then
       multiplier = 1048576
-      SizeStr = SizeStr.sub(0, -2)
+      SizeStr = SizeStr.sub(0, -1)
    elseif last_char is 'G' then
       multiplier = 1073741824
-      SizeStr = SizeStr.sub(0, -2)
+      SizeStr = SizeStr.sub(0, -1)
    end
 
    bytes = tonumber(SizeStr) * multiplier
@@ -67,7 +67,7 @@ function parseModified(ModStr:str!):<any, any>
    assert(prefix is '+' or prefix is '-', f'Modified value must start with + or -: {ModStr}')
 
    unit = ModStr.sub(-1)
-   num = tonumber(ModStr.sub(1, -2))
+   num = tonumber(ModStr.sub(1, -1))
    assert(num, f'Invalid modified value: {ModStr}')
 
    offset_seconds = 0
@@ -268,7 +268,7 @@ Examples:
       -- For directories, FileName from io.splitPath() is empty; extract from the full path
       if display_name is '' or not display_name then
          trimmed = full_path
-         if trimmed.sub(-1) is '/' then trimmed = trimmed.sub(0, -2) end
+         if trimmed.sub(-1) is '/' then trimmed = trimmed.sub(0, -1) end
          _, display_name = io.splitPath(trimmed)
       end
 
