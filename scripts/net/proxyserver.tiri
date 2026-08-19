@@ -94,7 +94,7 @@ function parseProxyAddress(Value:any):<table, str>
 end
 
 function exceptionMessage(Error:any):str
-   if type(Error) is 'table' and Error.message then return tostring(Error.message) end
+   if Error is <table> and Error.message then return tostring(Error.message) end
    return tostring(Error)
 end
 
@@ -279,11 +279,10 @@ function createFlowManager(self)
 
    manager.copyHeaders = function(Headers:table!):table
       local headers = {}
-      if type(Headers) != 'table' then return headers end
+      if Headers != <table> then return headers end
 
       for name, value in pairs(Headers) do
-         local value_type = type(value)
-         if value_type is 'string' or value_type is 'number' or value_type is 'bool' then
+         if value is <str> or value is <num> or value is <bool> then
             headers[tostring(name)] = value
          end
       end
@@ -292,7 +291,7 @@ function createFlowManager(self)
    end
 
    manager.copyMessage = function(Message:table!):any
-      if type(Message) != 'table' then return nil end
+      if Message != <table> then return nil end
 
       local copy = {
          method = Message.method,
@@ -305,7 +304,7 @@ function createFlowManager(self)
          raw = Message.raw
       }
 
-      if not copy.streamed and type(Message.body) is 'string' then
+      if not copy.streamed and Message.body is <str> then
          copy.body = Message.body
       end
 
@@ -326,15 +325,15 @@ function createFlowManager(self)
    end
 
    manager.normaliseFlow = function(Flow:table, Key:any!):any
-      if type(Flow) != 'table' then return nil end
+      if Flow != <table> then return nil end
 
       local id = tonumber(Flow.id) or tonumber(Key)
       if not id then return nil end
 
       return {
          id = id,
-         timestamp = type(Flow.timestamp) is 'string' and Flow.timestamp or timestamp(),
-         clientIP = type(Flow.clientIP) is 'string' and Flow.clientIP or 'unknown',
+         timestamp = Flow.timestamp is <str> and Flow.timestamp or timestamp(),
+         clientIP = Flow.clientIP is <str> and Flow.clientIP or 'unknown',
          request = manager.copyMessage(Flow.request),
          response = manager.copyMessage(Flow.response),
          duration = tonumber(Flow.duration) or 0,
@@ -400,7 +399,7 @@ function createFlowManager(self)
          return false
       end
 
-      if type(encoded) != 'string' then return false end
+      if encoded != <str> then return false end
 
       local fl:any = nil
       try
@@ -449,7 +448,7 @@ function createFlowManager(self)
          return false
       end
 
-      if type(decoded) != 'table' and type(decoded) != 'array' then return false end
+      if decoded != <table> and decoded != <array> then return false end
 
       local imported_flows = {}
       local max_id = 0
@@ -471,7 +470,7 @@ function createFlowManager(self)
    end
 
    manager.importTable = function(Flows:table!):bool
-      if type(Flows) != 'table' and type(Flows) != 'array' then return false end
+      if Flows != <table> and Flows != <array> then return false end
 
       local imported_flows = {}
       local max_id = 0
@@ -559,7 +558,7 @@ function createInterceptorEngine(self)
 
    -- Add request interceptor
    engine.addRequestInterceptor = function(interceptor)
-      if type(interceptor) is 'function' then
+      if interceptor is <func> then
          engine._requestInterceptors.insert(interceptor)
          logMessage(self, 'INFO', 'Request interceptor added')
       end
@@ -567,7 +566,7 @@ function createInterceptorEngine(self)
 
    -- Add response interceptor
    engine.addResponseInterceptor = function(interceptor)
-      if type(interceptor) is 'function' then
+      if interceptor is <func> then
          engine._responseInterceptors.insert(interceptor)
          logMessage(self, 'INFO', 'Response interceptor added')
       end

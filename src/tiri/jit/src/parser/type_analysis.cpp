@@ -872,6 +872,9 @@ void TypeAnalyser::lower_unanalysed_expression(ExprNode &Expression)
       case AstNodeKind::UpdateExpr:
          lower(std::get<UpdateExprPayload>(Expression.data).target);
          break;
+      case AstNodeKind::TypeTestExpr:
+         lower(std::get<TypeTestExprPayload>(Expression.data).value);
+         break;
       case AstNodeKind::BinaryExpr: {
          auto &payload = std::get<BinaryExprPayload>(Expression.data);
          lower(payload.left);
@@ -2195,6 +2198,11 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
          if (payload and payload->target) this->analyse_expression(*payload->target);
          break;
       }
+      case AstNodeKind::TypeTestExpr: {
+         auto *payload = std::get_if<TypeTestExprPayload>(&Expression.data);
+         if (payload and payload->value) this->analyse_expression(*payload->value);
+         break;
+      }
       case AstNodeKind::BinaryExpr: {
          auto *payload = std::get_if<BinaryExprPayload>(&Expression.data);
          if (payload) {
@@ -2571,6 +2579,10 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    InferredType result;
 
    switch (Expr.kind) {
+      case AstNodeKind::TypeTestExpr:
+         result.primary = TiriType::Bool;
+         result.is_nullable = false;
+         return result;
       case AstNodeKind::CurrentContextExpr:
          result.primary = TiriType::Table;
          result.is_nullable = false;
@@ -3753,6 +3765,10 @@ bool TypeAnalyser::expression_contains_call_to(const ExprNode& Expr, GCstr *Name
             return this->expression_contains_call_to(*payload->operand, Name);
          }
          break;
+      }
+      case AstNodeKind::TypeTestExpr: {
+         auto *payload = std::get_if<TypeTestExprPayload>(&Expr.data);
+         return payload and payload->value and this->expression_contains_call_to(*payload->value, Name);
       }
       case AstNodeKind::TernaryExpr: {
          auto *payload = std::get_if<TernaryExprPayload>(&Expr.data);

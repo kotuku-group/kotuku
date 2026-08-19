@@ -1,0 +1,145 @@
+-- Boolean type-test expressions for primitive and constrained runtime types.
+
+include 'vector'
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+struct TypeTestAlpha
+   Value: int
+end
+
+struct TypeTestBravo
+   Value: int
+end
+
+function dynamic_value(Value):any
+   return Value
+end
+
+@Test function PrimitiveDescriptors()
+   assert(nil is <nil>, 'nil should match <nil>')
+   assert(nil is <any>, '<any> should include nil')
+   assert(true is <bool>, 'boolean should match <bool>')
+   assert(12.5 is <num>, 'number should match <num>')
+   assert('text' is <str>, 'string should match <str>')
+   assert({} is <table>, 'table should match <table>')
+   assert((function() end) is <func>, 'function should match <func>')
+   assert({0 to 2} is <range>, 'range should match <range>')
+   assert(newproxy(true) is <userdata>, 'full userdata should match <userdata>')
+
+   assert(1 is not <str>, 'negated mismatch should be true')
+   assert(not (1 is not <num>), 'negated match should be false')
+   assert(1 != <str>, 'symbolic negated mismatch should be true')
+   assert(not (1 != <num>), 'symbolic negated match should be false')
+   assert(dynamic_value(1) is <num>, 'dynamic values should be tested at runtime')
+end
+
+@Test function EqualityRemainsUnchanged()
+   local left = 4
+   local right = 4
+   assert(left is right, 'ordinary is should remain equality')
+   assert(left is not 5, 'ordinary is not should remain inequality')
+   assert(left != 5, 'ordinary != should remain inequality')
+end
+
+@Test function AggregateDescriptors()
+   local ints = array<int> { 1, 2 }
+   local words = array<str> { 'one', 'two' }
+   local table_value = { 1, 2 }
+
+   assert(ints is <array>, 'unconstrained array should match every native array')
+   assert(ints is <array int>, 'array member identity should match')
+   assert(ints is not <array str>, 'array member identity should reject a mismatch')
+   assert(words is <array str>, 'string arrays should match their public storage identity')
+   assert(table_value is not <array>, 'tables are not native arrays')
+
+   local alpha = struct<TypeTestAlpha> { Value=1 }
+   local bravo = struct<TypeTestBravo> { Value=2 }
+   local alpha_array = array<struct<TypeTestAlpha>> { alpha }
+   assert(alpha is <struct>, 'unconstrained struct should match')
+   assert(alpha is <struct TypeTestAlpha>, 'named structure identity should match')
+   assert(bravo is not <struct TypeTestAlpha>, 'different structure definitions should not match')
+   assert(alpha_array is <array TypeTestAlpha>, 'structure-array identity should match')
+end
+
+@Test function ObjectDescriptorsAndInheritance()
+   local time_value = obj.new('Time')
+   local rectangle = obj.new('VectorRectangle')
+
+   assert(time_value is <obj>, 'unconstrained obj should match every object wrapper')
+   assert(time_value is <object Time>, 'object alias should be accepted')
+   assert(time_value is not <obj File>, 'unrelated object classes should not match')
+   assert(rectangle is <obj Vector>, 'derived objects should match their base class')
+   assert(nil is not <obj>, 'nil should not match obj')
+end
+
+@Test function LeftOperandRunsOnce()
+   local count = 0
+   function next_value():any
+      count++
+      return 10, 'ignored'
+   end
+
+   assert(next_value() is <num>, 'only the first result should be tested')
+   assert(count is 1, 'the left operand should execute exactly once')
+end
+
+@Test function DeferredDeclaredTypes()
+   local executed = false
+   thunk deferred_number():num
+      executed = true
+      return 42
+   end
+
+   local value = deferred_number()
+   assert(value is <num>, 'a declared deferred type should be tested without forcing its body')
+   assert(executed is false, 'an unconstrained declared deferred test should not force evaluation')
+end
+
+@Test function BytecodeContainsTypeTest()
+   local script = obj.find('self')
+   local _, disassembly = script.mtDebugLog('disasm')
+   assert(disassembly.find('TYPETEST') != nil, 'dynamic type tests should emit TYPETEST bytecode')
+end
+
+@Test function BytecodeRoundTrip()
+   function factory():func
+      return function(Value:any):bool
+         return Value is <array int>
+      end
+   end
+
+   local restored_test = exec(string.dump(factory, true))
+   assert(restored_test(array<int> { 1 }), 'reloaded bytecode should preserve a matching descriptor')
+   assert(not restored_test(array<str> { 'one' }), 'reloaded bytecode should preserve a mismatching descriptor')
+end
+
+@Test function InterpreterAndJitParity()
+   local matches = 0
+   local value:any
+   for index in {0 to 1000} do
+      if index % 2 is 0 then value = index
+      else value = tostring(index) end
+      if value is <num> then matches++ end
+   end
+   assert(matches is 500, 'hot type tests should preserve matching and non-matching paths')
+end
+
+@Test function MalformedDescriptorDiagnostics()
+   local failed = false
+   try
+      exec([[return 1 is <integer>]])
+   except error_value
+      failed = error_value.message.find("Unknown type-test name 'integer'") != nil
+   end
+   assert(failed, 'unknown type-test names should have a focused diagnostic')
+
+   failed = false
+   try
+      exec([[return 1 is <array int str>]])
+   except error_value
+      failed = error_value.message.find('at most one inner name') != nil
+   end
+   assert(failed, 'surplus descriptor names should have a focused diagnostic')
+end

@@ -97,9 +97,8 @@ ErrorCallback: Optional callback invoked when the value cannot be encoded
 string: JSON text
 ]])
 json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
-   local kind = type(Value)
    ErrorCallback ?= error
-   if kind is 'array' then
+   if Value is <array> then
       s = array<str>
       if AsKey then
          ErrorCallback('Can\'t encode array as key.')
@@ -112,7 +111,7 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
          s.push(']')
       end
       return s.concat()
-   elseif kind is 'table' then
+   elseif Value is <table> then
       s = array<str>
       if AsKey then
          ErrorCallback('Can\'t encode table as key.')
@@ -125,19 +124,19 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
          s.push('}')
       end
       return s.concat()
-   elseif kind is 'string' then
+   elseif Value is <str> then
       return '"' .. escape_str(Value) .. '"'
-   elseif kind is 'number' then
+   elseif Value is <num> then
       if AsKey then return '"' .. tostring(Value) .. '"' end
       return tostring(Value)
-   elseif kind is 'bool' then
+   elseif Value is <bool> then
       return tostring(Value)
-   elseif kind is 'nil' then
+   elseif Value is <nil> then
       return 'null'
-   elseif kind is 'function' then
+   elseif Value is <func> then
       return 'function'
    else
-      ErrorCallback('Unsupported type: ' .. kind .. '.')
+      ErrorCallback('Unsupported type: ' .. type(Value) .. '.')
       return ''
    end
 end

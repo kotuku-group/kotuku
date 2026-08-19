@@ -19,6 +19,8 @@ function enforce_hotpath() end
    local second = setmetatable({ name = 'blue', id = 7 }, colour_mt)
 
    assert(tostring(first) is 'colour:red', 'A dispatched __tostring should expose its receiver context')
+   assert(string.format('%s', first) is 'colour:red',
+      'A formatted __tostring should expose its receiver context without a visible receiver argument')
    assert(first is second, 'A dispatched __eq should receive the other operand as its visible argument')
 
    local failed = false

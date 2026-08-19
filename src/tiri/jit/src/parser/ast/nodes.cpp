@@ -108,6 +108,9 @@ TiriType infer_expression_type(const ExprNode &Expr)
          break;
       }
 
+      case AstNodeKind::TypeTestExpr:
+         return TiriType::Bool;
+
       case AstNodeKind::ComparisonChainExpr:
          return TiriType::Bool;
 
@@ -271,6 +274,10 @@ struct ExpressionChildCounter {
 
    [[nodiscard]] inline size_t operator()(const UpdateExprPayload &Payload) const {
       return Payload.target ? 1 : 0;
+   }
+
+   [[nodiscard]] inline size_t operator()(const TypeTestExprPayload &Payload) const {
+      return Payload.value ? 1 : 0;
    }
 
    [[nodiscard]] inline size_t operator()(const BinaryExprPayload &Payload) const {
@@ -528,6 +535,7 @@ struct StatementChildCounter {
 DirectCallTarget::~DirectCallTarget() = default;
 UnaryExprPayload::~UnaryExprPayload() = default;
 UpdateExprPayload::~UpdateExprPayload() = default;
+TypeTestExprPayload::~TypeTestExprPayload() = default;
 BinaryExprPayload::~BinaryExprPayload() = default;
 ComparisonChainExprPayload::~ComparisonChainExprPayload() = default;
 TernaryExprPayload::~TernaryExprPayload() = default;
@@ -647,6 +655,21 @@ ExprNodePtr make_binary_expr(SourceSpan Span, AstBinaryOperator op, ExprNodePtr 
    payload.right = std::move(right);
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::BinaryExpr;
+   node->span = Span;
+   node->data = std::move(payload);
+   return node;
+}
+
+ExprNodePtr make_type_test_expr(
+   SourceSpan Span, ExprNodePtr Value, TypeTestDescriptor Descriptor, bool Negated)
+{
+   assert_node(ensure_operand(Value), "type-test expression requires a value");
+   TypeTestExprPayload payload;
+   payload.value = std::move(Value);
+   payload.descriptor = Descriptor;
+   payload.negated = Negated;
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::TypeTestExpr;
    node->span = Span;
    node->data = std::move(payload);
    return node;

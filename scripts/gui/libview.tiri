@@ -543,7 +543,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
 
       if #vw.items <= 1 then return end
 
-      if type(vw.items[0][Attrib]) is 'table' then
+      if vw.items[0][Attrib] is <table> then
          if vw.items[0][Attrib]['sort'] then
             vw.items.sort(function(a,b)
                return Ascending ? (a[Attrib].sort < b[Attrib].sort) : (a[Attrib].sort > b[Attrib].sort)
@@ -553,7 +553,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
                return Ascending ? (a[Attrib].value < b[Attrib].value) : (a[Attrib].value > b[Attrib].value)
             end)
          end
-      elseif type(vw.items[1][Attrib]) is 'string' then
+      elseif vw.items[1][Attrib] is <str> then
          vw.items.sort(function(a,b)
             return Ascending ? (string.lower(a[Attrib]) < string.lower(b[Attrib])) :
                (string.lower(a[Attrib]) > string.lower(b[Attrib]))

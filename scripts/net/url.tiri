@@ -158,7 +158,7 @@ url.parseQuery = function(Query:str):table
          value = url.decodePlus(value)
          if params[key] then
             -- Handle multiple values for same key
-            if type(params[key]) != 'table' then
+            if params[key] != <table> then
                params[key] = { params[key] }
             end
             params[key].insert(value)
@@ -215,7 +215,7 @@ url.buildQuery = function(Params:any):str
 
    parts = array<str>
 
-   if type(Params) is 'array' then
+   if Params is <array> then
       for param in values(Params) do
          parts.push(url.encodePlus(tostring(param.key)) .. '=' .. url.encodePlus(tostring(param.value or '')))
       end
@@ -223,7 +223,7 @@ url.buildQuery = function(Params:any):str
       -- Hash-like table
       for key, value in pairs(Params) do
          key = url.encodePlus(tostring(key))
-         if type(value) is 'table' then
+         if value is <table> then
             -- Handle multiple values for same key
             for _, v in ipairs(value) do
                encodedValue = url.encodePlus(tostring(v))

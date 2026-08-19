@@ -30,7 +30,8 @@ enum class ContractEntryFlag : uint8_t {
    Required = 1 << 1,
    Const = 1 << 2,
    Initialising = 1 << 3,
-   GlobalHint = 1 << 4
+   GlobalHint = 1 << 4,
+   Negated = 1 << 5
 };
 
 [[nodiscard]] constexpr inline uint8_t contract_flag(ContractDescriptorFlag Flag) noexcept
@@ -303,6 +304,7 @@ private:
       uint8_t allowed_entry_flags = contract_flag(ContractEntryFlag::Nullable) |
          contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
          contract_flag(ContractEntryFlag::Initialising) | contract_flag(ContractEntryFlag::GlobalHint);
+      allowed_entry_flags |= contract_flag(ContractEntryFlag::Negated);
       if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
           not reader.read_byte(entry.flags) or
           (entry.flags & ~allowed_entry_flags) != 0 or

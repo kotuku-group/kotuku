@@ -138,6 +138,11 @@ private:
             if (payload.target) this->discover_expression(*payload.target, true);
             break;
          }
+         case AstNodeKind::TypeTestExpr: {
+            auto &payload = std::get<TypeTestExprPayload>(Expression.data);
+            if (payload.value) this->discover_expression(*payload.value);
+            break;
+         }
          case AstNodeKind::BinaryExpr: {
             auto &payload = std::get<BinaryExprPayload>(Expression.data);
             if (payload.left) this->discover_expression(*payload.left);
@@ -1522,6 +1527,11 @@ private:
             this->propagate_function(function);
             break;
          }
+         case AstNodeKind::TypeTestExpr:
+            value.primary = TiriType::Bool;
+            value.proof = StaticProof::Closed;
+            value.nullable = false;
+            break;
          case AstNodeKind::CallExpr:
          case AstNodeKind::SafeCallExpr: {
             auto &call = std::get<CallExprPayload>(Expression.data);
@@ -2104,6 +2114,7 @@ private:
       switch (Expression.kind) {
          case AstNodeKind::UnaryExpr: visit(std::get<UnaryExprPayload>(Expression.data).operand); break;
          case AstNodeKind::UpdateExpr: visit(std::get<UpdateExprPayload>(Expression.data).target); break;
+         case AstNodeKind::TypeTestExpr: visit(std::get<TypeTestExprPayload>(Expression.data).value); break;
          case AstNodeKind::BinaryExpr: {
             auto &p = std::get<BinaryExprPayload>(Expression.data); visit(p.left); visit(p.right); break;
          }

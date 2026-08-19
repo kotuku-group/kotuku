@@ -5883,6 +5883,17 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_TYPETEST:
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2, PC
+    |  mov L:CARG1, L:RB
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_type_test_pc
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

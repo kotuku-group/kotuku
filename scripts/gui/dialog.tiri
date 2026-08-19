@@ -112,7 +112,7 @@ gui.dialog.message = function(Options)
 
       -- At minimum, there must be an OK option.
 
-      if not ((type(self.options) is 'table') and (#self.options > 0)) then
+      if not ((self.options is <table>) and (#self.options > 0)) then
          self.options = { { id=1, text='Close Dialog', icon='items/cancel' } }
       end
 
@@ -168,7 +168,7 @@ gui.dialog.message = function(Options)
          inputOptions = ''
          if Options.secret then inputOptions = 'secret="true"' end
 
-         msg = type(Options.userInput) is 'string' ? Options.userInput : ''
+         msg = Options.userInput is <str> ? Options.userInput : ''
 
          doc ..= f'<p><input name="input" {inputOptions} width="16em" value="{msg}"/></p>\n'
       end

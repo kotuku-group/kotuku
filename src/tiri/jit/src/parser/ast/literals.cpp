@@ -296,6 +296,97 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
    return finish_annotation();
 }
 
+//********************************************************************************************************************
+// Parses the contextual descriptor following `is` or `is not`.  Aggregate type tests permit an optional,
+// whitespace-separated inner name, unlike declaration annotations.
+
+ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
+{
+   auto opened = this->ctx.consume(TokenKind::Less, ParserErrorCode::ExpectedToken);
+   if (not opened.ok()) return ParserResult<TypeTestDescriptor>::failure(opened.error_ref());
+
+   Token type_token = this->ctx.tokens().current();
+   std::string_view type_name_view;
+   if (type_token.kind() IS TokenKind::Identifier) {
+      GCstr *symbol = type_token.identifier();
+      type_name_view = std::string_view(strdata(symbol), symbol->len);
+      this->ctx.tokens().advance();
+   }
+   else if (type_token.kind() IS TokenKind::Nil) {
+      type_name_view = "nil";
+      this->ctx.tokens().advance();
+   }
+   else {
+      return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedTypeName, type_token,
+         "Type-test descriptor requires a Tiri type name");
+   }
+
+   TypeTestDescriptor descriptor;
+   descriptor.type = type_name_view IS "object" ? TiriType::Object : parse_type_name(type_name_view);
+   if (descriptor.type IS TiriType::Unknown) {
+      return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, type_token,
+         std::format("Unknown type-test name '{}'; expected a Tiri type", type_name_view));
+   }
+
+   if (not this->ctx.check(TokenKind::Greater)) {
+      Token constraint_token = this->ctx.tokens().current();
+      if (descriptor.type != TiriType::Array and descriptor.type != TiriType::Object and
+          descriptor.type != TiriType::Struct) {
+         return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, constraint_token,
+            std::format("Type-test descriptor '<{}>' does not accept an inner name", type_name_view));
+      }
+      if (constraint_token.kind() != TokenKind::Identifier) {
+         return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedIdentifier, constraint_token,
+            "Expected one inner name in type-test descriptor");
+      }
+
+      GCstr *constraint_symbol = constraint_token.identifier();
+      std::string_view constraint_name(strdata(constraint_symbol), constraint_symbol->len);
+      this->ctx.tokens().advance();
+      descriptor.constrained = true;
+
+      if (descriptor.type IS TiriType::Array) {
+         auto element = describe_array_element(constraint_name IS "obj" ? "object" : constraint_name,
+            &this->ctx.lua());
+         if (element and element->storage != AET::PTR and
+             (element->storage != AET::STRUCT or element->struct_def)) descriptor.array_element = *element;
+         else if (struct_record *definition = find_struct(&this->ctx.lua(), constraint_name)) {
+            descriptor.array_element = { AET::STRUCT, TiriType::Struct, CLASSID::NIL, definition, true };
+         }
+         else {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Unknown array element type '{}'", constraint_name));
+         }
+      }
+      else if (descriptor.type IS TiriType::Object) {
+         descriptor.object_class_id = ResolveClassName(constraint_name);
+         if (descriptor.object_class_id IS CLASSID::NIL) {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Unknown Kōtuku class '{}'", constraint_name));
+         }
+      }
+      else {
+         descriptor.struct_def = find_struct(&this->ctx.lua(), constraint_name);
+         if (not descriptor.struct_def) {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Unknown structure '{}'; declarations must precede use", constraint_name));
+         }
+      }
+
+      if (not this->ctx.check(TokenKind::Greater)) {
+         return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "Type-test descriptors accept at most one inner name");
+      }
+   }
+
+   auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+   if (not close.ok()) {
+      return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+         "Type-test descriptor is missing '>'");
+   }
+   return ParserResult<TypeTestDescriptor>::success(descriptor);
+}
+
 ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
 {
    std::vector<Identifier> names;

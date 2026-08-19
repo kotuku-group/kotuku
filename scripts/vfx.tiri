@@ -55,24 +55,24 @@ vfx.apply_easing = function(Value:num!, Easing):num
    if not Easing then return progress end
 
    local easing:func
-   if type(Easing) is 'string' then
+   if Easing is <str> then
       easing = vfx.ease[easing]
       if not easing then error(f"Unsupported VFX easing '{Easing}'") end
-   elseif type(Easing) is 'function' then
+   elseif Easing is <func> then
       easing = Easing
    else
       error('VFX easing must be a string or function')
    end
 
    eased = easing(progress)
-   assert(type(eased) is 'number', 'VFX easing function must return a number')
+   assert(eased is <num>, 'VFX easing function must return a number')
 
    return eased
 end
 
 vfx.effect_config = function(Options)
    Options ?= { }
-   assert(type(Options) is 'table', 'VFX effect options must be supplied as a table')
+   assert(Options is <table>, 'VFX effect options must be supplied as a table')
 
    return {
       seconds  = Options.seconds ?? 1.0,
@@ -97,10 +97,10 @@ end
 
 vfx.config_circle = function(State, Options)
    State.cx = 0.5 * State.v_width
-   if type(Options.cx) is 'number' then State.cx = Options.cx * State.v_width end
+   if Options.cx is <num> then State.cx = Options.cx * State.v_width end
 
    State.cy = 0.5 * State.v_height
-   if type(Options.cy) is 'number' then State.cy = Options.cy * State.v_height end
+   if Options.cy is <num> then State.cy = Options.cy * State.v_height end
 
    ex = State.cx <= 0.5 ? State.v_width : 0
    ey = State.cy <= 0.5 ? State.v_height : 0
@@ -139,7 +139,7 @@ end
 
 vfx.wipe = function(Viewport:obj!, Options:table)
    Options ?= { }
-   assert(type(Options) is 'table', 'VFX wipe options must be supplied as a table')
+   assert(Options is <table>, 'VFX wipe options must be supplied as a table')
 
    config = vfx.effect_config(Options)
    style = Options.style ?? 'shutter'
@@ -332,7 +332,7 @@ end
 
 vfx.shake = function(Viewport:obj!, Options:table)
    Options ?= { }
-   assert(type(Options) is 'table', 'VFX shake options must be supplied as a table')
+   assert(Options is <table>, 'VFX shake options must be supplied as a table')
 
    config = vfx.effect_config(Options)
    intensity = Options.intensity ?? 1.0
