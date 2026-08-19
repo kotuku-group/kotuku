@@ -467,7 +467,7 @@ function parseQueryString(QueryString:str):table
          value = urlDecode(value)
          if query[key] then
             -- Handle multiple values for same key by converting to array
-            if type(query[key]) != 'table' then
+            if query[key] != <table> then
                query[key] = { query[key] }
             end
             query[key].insert(value)
@@ -701,7 +701,7 @@ function sendHttpResponse(self, Client, statusCode, statusText, headers, body, C
    end
 
    for name, value in pairs(headers) do
-      if type(value) is 'table' then
+      if value is <table> then
          for header_value in values(value) do
             response ..= name .. ": " .. tostring(header_value) .. "\r\n"
          end
@@ -792,7 +792,7 @@ function createResponseObject(self, Client)
       -- Handle multiple cookies by making set-cookie an array
       existing = res._headers['set-cookie']
       if existing then
-         if type(existing) != 'table' then
+         if existing != <table> then
             existing = { existing }
          end
          existing.insert(cookieStr)
@@ -807,7 +807,7 @@ function createResponseObject(self, Client)
    res.json = function(data)
       assert(not res._sent, 'Response already sent')
 
-      jsonStr = type(data) is 'string' ? data : json.encode(data)
+      jsonStr = data is <str> ? data : json.encode(data)
 
       res._headers['content-type'] = 'application/json'
       sendHttpResponse(res._self, res._client, res._statusCode, res._statusText, res._headers, jsonStr)
@@ -1332,11 +1332,11 @@ function addRoute(self:table, route:table)
 
       if not self._routes[method] then self._routes[method] = {} end
 
-      if type(route.handler) is 'function' then
+      if route.handler is <func> then
          -- Validate route-specific middleware
-         if type(route.middleware) is 'table' then
+         if route.middleware is <table> then
             for j, mw in ipairs(route.middleware) do
-               if type(mw) != 'function' then
+               if mw != <func> then
                   error('Invalid middleware for route ' .. method .. ' ' .. pattern .. ' at index ' .. j .. ' - must be a function')
                end
             end
@@ -1662,7 +1662,7 @@ function serverIncoming(self, ClientSocket)
                sendHttpResponse(self, ClientSocket, 400, "Bad Request", { ['content-type'] = 'text/html' }, errorBody)
                state.invalid_header = true
                state.phase = 'CANCELLED'
-            elseif type(vres) is 'table' and vres.status then
+            elseif vres is <table> and vres.status then
                -- Custom error response from validateHeader
                statusCode = vres.status or 400
                statusText = vres.statusText or 'Bad Request'
@@ -1955,7 +1955,7 @@ hslib.start = function(Options)
    self.folder ?? error('The folder option is required')
 
    if Options.verbose then
-      if type(Options.verbose) is 'bool' then
+      if Options.verbose is <bool> then
          self.verbose = Options.verbose
       else
          verbose = tostring(Options.verbose).lower()
@@ -1991,7 +1991,7 @@ hslib.start = function(Options)
    end
 
    if Options.autoIndex then
-      if type(Options.autoIndex) is 'bool' then
+      if Options.autoIndex is <bool> then
          self.autoIndex = Options.autoIndex
       else
          autoindex = tostring(Options.autoIndex).lower()
@@ -2018,7 +2018,7 @@ hslib.start = function(Options)
    end
 
    if Options.logMessage then
-      if type(Options.logMessage) is 'function' then
+      if Options.logMessage is <func> then
          self.logMessage = Options.logMessage
       elseif Options.logMessage is true then
          self.logMessage = msg
@@ -2030,10 +2030,10 @@ hslib.start = function(Options)
    -- Process middleware configuration
    middlewareCount = 0
    if Options.middleware then
-      if type(Options.middleware) is 'table' or type(Options.middleware) is 'array' then
+      if Options.middleware is <table> or Options.middleware is <array> then
          self._middleware = array<any> {}
          for middleware in values(Options.middleware) do
-            if type(middleware) is 'function' then
+            if middleware is <func> then
                array.push(self._middleware, middleware)
                middlewareCount++
                logMessage(self, f'Global middleware configured at index {middlewareCount}')
@@ -2049,9 +2049,9 @@ hslib.start = function(Options)
    -- Process routes configuration
    routeCount = 0
    if Options.routes then
-      if type(Options.routes) is 'table' then
+      if Options.routes is <table> then
          for route in values(Options.routes) do
-            if type(route) is 'table' then
+            if route is <table> then
                addRoute(self, route)
                routeCount++
             end
@@ -2122,7 +2122,7 @@ hslib.start = function(Options)
    self.newMiddleware = function(middleware)
       self._middleware ?= {}
 
-      if type(middleware) is 'function' then
+      if middleware is <func> then
          self._middleware.insert(middleware)
          logMessage(self, 'Global middleware added')
       else

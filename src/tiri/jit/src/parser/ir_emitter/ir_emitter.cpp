@@ -257,6 +257,8 @@ private:
             return this->expression_uses_context_ptr(std::get<UnaryExprPayload>(Expression.data).operand);
          case AstNodeKind::UpdateExpr:
             return this->expression_uses_context_ptr(std::get<UpdateExprPayload>(Expression.data).target);
+         case AstNodeKind::TypeTestExpr:
+            return this->expression_uses_context_ptr(std::get<TypeTestExprPayload>(Expression.data).value);
          case AstNodeKind::BinaryExpr: {
             const auto &payload = std::get<BinaryExprPayload>(Expression.data);
             return this->expression_uses_context_ptr(payload.left) or this->expression_uses_context_ptr(payload.right);
@@ -860,6 +862,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::IdentifierExpr: return "IdentifierExpr";
       case AstNodeKind::VarArgExpr:     return "VarArgExpr";
       case AstNodeKind::UnaryExpr:      return "UnaryExpr";
+      case AstNodeKind::TypeTestExpr:   return "TypeTestExpr";
       case AstNodeKind::BinaryExpr:     return "BinaryExpr";
       case AstNodeKind::ComparisonChainExpr: return "ComparisonChainExpr";
       case AstNodeKind::UpdateExpr:     return "UpdateExpr";
@@ -2075,6 +2078,11 @@ bool IrEmitter::can_elide_expression(const ExprNode &Expression) const
          return payload.operand and this->can_elide_expression(*payload.operand);
       }
 
+      case AstNodeKind::TypeTestExpr: {
+         const auto &payload = std::get<TypeTestExprPayload>(Expression.data);
+         return payload.value and this->can_elide_expression(*payload.value);
+      }
+
       case AstNodeKind::BinaryExpr: {
          const auto &payload = std::get<BinaryExprPayload>(Expression.data);
          return payload.left and payload.right and
@@ -3116,6 +3124,9 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
       case AstNodeKind::UpdateExpr:
          result = this->emit_update_expr(std::get<UpdateExprPayload>(expr.data));
          break;
+      case AstNodeKind::TypeTestExpr:
+         result = this->emit_type_test_expr(std::get<TypeTestExprPayload>(expr.data));
+         break;
       case AstNodeKind::BinaryExpr:
          result = this->emit_binary_expr(std::get<BinaryExprPayload>(expr.data));
          break;
@@ -3427,6 +3438,88 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
    }
 
    return ParserResult<ExpDesc>::success(infix);
+}
+
+//********************************************************************************************************************
+// Emits a boolean type test using the portable runtime-contract descriptor representation.  The VM replaces the
+// tested register with a canonical boolean, so the left operand is evaluated exactly once.
+
+ParserResult<ExpDesc> IrEmitter::emit_type_test_expr(const TypeTestExprPayload &Payload)
+{
+   if (not Payload.value) return this->unsupported_expr(AstNodeKind::TypeTestExpr, SourceSpan{});
+   auto value_result = this->emit_expression(*Payload.value);
+   if (not value_result.ok()) return value_result;
+
+   ExpDesc value = value_result.value_ref();
+   RegisterAllocator allocator(&this->func_state);
+   allocator.discharge_to_next_register(value);
+   BCReg value_reg(value.u.s.info);
+
+   auto append_uleb32 = [](std::string &Output, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         if (Value) byte |= 0x80;
+         Output.push_back(char(byte));
+      } while (Value);
+   };
+   auto append_text = [](std::string &Output, std::string_view Text) {
+      Output.push_back(char(uint8_t(Text.size())));
+      Output.append(Text);
+   };
+
+   const TypeTestDescriptor &type_test = Payload.descriptor;
+   std::string descriptor;
+   descriptor.reserve(24);
+   descriptor.push_back(char(uint8_t(ContractBoundary::Local)));
+   descriptor.push_back(char(0));
+   descriptor.push_back(char(1));
+   descriptor.push_back(char(1));
+   descriptor.push_back(char(uint8_t(type_test.type)));
+
+   uint8_t entry_flags = 0;
+   if (type_test.type IS TiriType::Any or type_test.type IS TiriType::Nil) {
+      entry_flags |= contract_flag(ContractEntryFlag::Nullable);
+   }
+   if (Payload.negated) entry_flags |= contract_flag(ContractEntryFlag::Negated);
+   descriptor.push_back(char(entry_flags));
+   descriptor.push_back(char(1));
+
+   CLASSID class_id = type_test.type IS TiriType::Object ? type_test.object_class_id : CLASSID::NIL;
+   append_uleb32(descriptor, uint32_t(class_id));
+
+   std::string_view struct_name;
+   if (type_test.type IS TiriType::Struct and type_test.struct_def) struct_name = type_test.struct_def->Name;
+   if (struct_name.size() > UINT8_MAX) {
+      return ParserResult<ExpDesc>::failure(this->make_error(
+         ParserErrorCode::UnexpectedToken, "Type-test structure name is too long"));
+   }
+   append_text(descriptor, struct_name);
+
+   if (type_test.type IS TiriType::Array) {
+      AET element_type = type_test.constrained ? type_test.array_element.storage : AET::ANY;
+      descriptor.push_back(char(uint8_t(element_type)));
+      std::string_view element_struct_name;
+      if (element_type IS AET::STRUCT and type_test.array_element.struct_def) {
+         element_struct_name = type_test.array_element.struct_def->Name;
+      }
+      if (element_struct_name.size() > UINT8_MAX) {
+         return ParserResult<ExpDesc>::failure(this->make_error(
+            ParserErrorCode::UnexpectedToken, "Type-test array structure name is too long"));
+      }
+      append_text(descriptor, element_struct_name);
+   }
+   append_text(descriptor, {});
+
+   GCstr *encoded = this->lex_state.keepstr(std::string_view(descriptor.data(), descriptor.size()));
+   ExpDesc constant(encoded);
+   bcemit_AD(&this->func_state, BC_TYPETEST, value_reg.raw(), const_str(&this->func_state, &constant));
+
+   value.init(ExpKind::NonReloc, value_reg.raw());
+   value.result_type = TiriType::Bool;
+   value.object_class_id = CLASSID::NIL;
+   value.struct_def = nullptr;
+   return ParserResult<ExpDesc>::success(value);
 }
 
 //********************************************************************************************************************

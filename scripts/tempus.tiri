@@ -74,7 +74,7 @@ function require_type_name(TypeName:str!)
 end
 
 function tempus._typeOf(Value:any):any
-   if type(Value) != 'table' then return nil end
+   if Value != <table> then return nil end
 
    local state = value_storage[Value]
    if state is nil then return nil end
@@ -133,7 +133,7 @@ function tempus._makeValue(TypeName:str!, Fields:table!):table
 end
 
 function tempus._requireNumber(Name:str!, Value:any!):num
-   if type(Value) != 'number' then
+   if Value != <num> then
       raise ERR_InvalidValue, f"{Name} must be a number."
    end
    return Value
@@ -148,7 +148,7 @@ function tempus._requireInteger(Name:str!, Value:any!):num
 end
 
 function tempus._requireTable(Name:str!, Value:any!):table
-   if type(Value) != 'table' then
+   if Value != <table> then
       raise ERR_InvalidValue, f"{Name} must be a table."
    end
    return Value
@@ -352,7 +352,7 @@ function is_format_token_start(Text:str):bool
 end
 
 function format_temporal(Pattern:any!, Values:table!):str
-   if type(Pattern) != 'string' then raise ERR_InvalidValue, 'Format pattern must be a string.' end
+   if Pattern != <str> then raise ERR_InvalidValue, 'Format pattern must be a string.' end
 
    local result = ''
    local index = 0
@@ -714,7 +714,7 @@ function get_time_zone_info(ZoneID:any, StartYear:any!, EndYear:any!):table
 end
 
 function new_zone(ZoneID:any):table
-   if ZoneID != nil and type(ZoneID) != 'string' then raise ERR_InvalidValue, 'Zone ID must be a string.' end
+   if ZoneID != nil and ZoneID != <str> then raise ERR_InvalidValue, 'Zone ID must be a string.' end
 
    local info = get_time_zone_info(ZoneID, ZONE_PROBE_YEAR, ZONE_PROBE_YEAR)
    return tempus._makeValue('Zone', {
@@ -934,7 +934,7 @@ function offset_date_time_from_instant(Instant:table!, Offset:table!):table
 end
 
 function parse_date_text(Text:any!):<num, num, num>
-   if type(Text) != 'string' then raise ERR_Syntax, 'LocalDate text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'LocalDate text must be a string.' end
 
    year_text, month_text, day_text = rx_date.extract(Text)
    if year_text is nil then raise ERR_Syntax, f"Invalid LocalDate string '{Text}'." end
@@ -943,7 +943,7 @@ function parse_date_text(Text:any!):<num, num, num>
 end
 
 function parse_time_text(Text:any!):<num, num, num, num>
-   if type(Text) != 'string' then raise ERR_Syntax, 'LocalTime text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'LocalTime text must be a string.' end
 
    hour_text, minute_text, second_text, fraction_text = rx_time.extract(Text)
    if hour_text is nil then raise ERR_Syntax, f"Invalid LocalTime string '{Text}'." end
@@ -952,7 +952,7 @@ function parse_time_text(Text:any!):<num, num, num, num>
 end
 
 function parse_local_date_time_text(Text:any!):<table, table>
-   if type(Text) != 'string' then raise ERR_Syntax, 'LocalDateTime text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'LocalDateTime text must be a string.' end
 
    date_text, time_text = rx_local_date_time.extract(Text)
    if date_text is nil then raise ERR_Syntax, f"Invalid LocalDateTime string '{Text}'." end
@@ -1062,7 +1062,7 @@ end
 @result Duration value
 ]])
 tempus.duration.parse = function(Text:str!):table
-   if type(Text) != 'string' then raise ERR_Syntax, 'Duration text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'Duration text must be a string.' end
 
    sign_text, hours_text, minutes_text, seconds_text, fraction_text = rx_duration.extract(Text)
    if (hours_text is nil or hours_text is '') and (minutes_text is nil or minutes_text is '') and
@@ -1112,7 +1112,7 @@ end
 @result Offset value
 ]])
 tempus.offset.parse = function(Text:str!):table
-   if type(Text) != 'string' then raise ERR_Syntax, 'Offset text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'Offset text must be a string.' end
 
    full_text, sign_text, hour_text, minute_text = rx_offset.extract(Text)
    if full_text is nil then raise ERR_Syntax, f"Invalid Offset string '{Text}'." end
@@ -1266,7 +1266,7 @@ end
 @result OffsetDateTime value
 ]])
 tempus.offsetDateTime.parse = function(Text:str!):table
-   if type(Text) != 'string' then raise ERR_Syntax, 'OffsetDateTime text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'OffsetDateTime text must be a string.' end
 
    local_text, offset_text = rx_offset_date_time.extract(Text)
    if local_text is nil then raise ERR_Syntax, f"Invalid OffsetDateTime string '{Text}'." end
@@ -1327,7 +1327,7 @@ end
 @result Period value
 ]])
 tempus.period.parse = function(Text:str!):table
-   if type(Text) != 'string' then raise ERR_Syntax, 'Period text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'Period text must be a string.' end
 
    sign_text, years_text, months_text, weeks_text, days_text = rx_period.extract(Text)
    if (years_text is nil or years_text is '') and (months_text is nil or months_text is '') and
@@ -2944,7 +2944,7 @@ end
 @result ZonedDateTime value
 ]])
 tempus.zonedDateTime.parse = function(Text:str!):table
-   if type(Text) != 'string' then raise ERR_Syntax, 'ZonedDateTime text must be a string.' end
+   if Text != <str> then raise ERR_Syntax, 'ZonedDateTime text must be a string.' end
 
    offset_text, zone_text = rx_zoned_date_time.extract(Text)
    if offset_text is nil then raise ERR_Syntax, f"Invalid ZonedDateTime string '{Text}'." end

@@ -27,7 +27,7 @@ function validate_text(Text:str!, Description:str!)
 end
 
 function validate_name(Name:any!, Description:str!):str
-   if type(Name) != 'string' then error(Description .. ' must be a string.') end
+   if Name != <str> then error(Description .. ' must be a string.') end
    if Name is '' then error(Description .. ' cannot be empty.') end
    validate_text(Name, Description)
    return Name
@@ -121,7 +121,7 @@ config.encode = function(Value:table!):str
 
    for group_name, group in Value.sortByKeys() do
       group_name = validate_group_name(group_name)
-      if type(group) != 'table' then error(f'Config group "{group_name}" must be a table.') end
+      if group != <table> then error(f'Config group "{group_name}" must be a table.') end
 
       if group_count > 0 then output.push('\n') end
       output.push('[', group_name, ']\n')

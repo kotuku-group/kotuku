@@ -762,6 +762,13 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 //              struct_name_length, struct_name_bytes, optional array member and structure name,
 //              label_length, label_bytes }
 
+bool lj_meta_object_class_matches(const GCobject *Object, CLASSID ExpectedClassId) noexcept
+{
+   if (not Object or not Object->classptr) return false;
+   return ExpectedClassId IS CLASSID::NIL or Object->classptr->ClassID IS ExpectedClassId or
+      Object->classptr->BaseClassID IS ExpectedClassId;
+}
+
 namespace {
 
 [[nodiscard]] static bool contract_is_range(lua_State *L, cTValue *Value)
@@ -827,9 +834,7 @@ namespace {
       }
       case TiriType::Object: {
          if (not tvisobject(Value)) return false;
-         if (Entry.object_class_id IS CLASSID::NIL) return true;
-         GCobject *object = objectV(Value);
-         return object->classptr and object->classptr->ClassID IS Entry.object_class_id;
+         return lj_meta_object_class_matches(objectV(Value), Entry.object_class_id);
       }
       case TiriType::Range:    return contract_is_range(L, Value);
       case TiriType::Userdata: return contract_is_userdata(L, Value);
@@ -1064,6 +1069,40 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
 }
 
 } // namespace
+
+extern "C" void lj_meta_type_test_pc(lua_State *L, const BCIns *PC)
+{
+   GCproto *prototype = funcproto(curr_func(L));
+   BCIns instruction = PC[-1];
+   if (bc_op(instruction) != BC_TYPETEST) lj_err_callermsg(L, "invalid type-test resume point");
+
+   GCstr *encoded = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(instruction)));
+   RuntimeContractDescriptor descriptor;
+   decode_contract_or_error(L, encoded, descriptor);
+   if (descriptor.contract_count != 1) lj_err_callermsg(L, "invalid type-test descriptor");
+
+   RuntimeContractEntry &entry = descriptor.entries[0];
+   TValue *value = L->base + bc_a(instruction);
+   bool matched;
+   if (lj_is_thunk(value)) {
+      ThunkPayload *payload = thunk_payload(udataV(value));
+      if (entry.type IS TiriType::Any) matched = true;
+      else if (payload->resolved) matched = contract_matches(L, &payload->cached_value, entry);
+      else if (payload->expected_type != 0xff and
+          entry.object_class_id IS CLASSID::NIL and entry.constraint_name.empty() and
+          (entry.type != TiriType::Array or entry.array_element_type IS AET::ANY)) {
+         matched = entry.type IS TiriType(payload->expected_type);
+      }
+      else {
+         TValue *resolved = lj_thunk_resolve(L, udataV(value));
+         value = L->base + bc_a(instruction);
+         matched = contract_matches(L, resolved, entry);
+      }
+   }
+   else matched = contract_matches(L, value, entry);
+   if ((entry.flags & contract_flag(ContractEntryFlag::Negated)) != 0) matched = not matched;
+   setboolV(value, matched);
+}
 
 void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
 {

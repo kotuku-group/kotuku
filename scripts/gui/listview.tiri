@@ -177,7 +177,7 @@ gui.listView = function(Options:table!):table
 
             item._vectors.text.x = MARGIN + ICON_MARGIN
             item._vectors.text.y = LINE_OFFSET
-            if type(item_name) is 'table' then
+            if item_name is <table> then
                item._vectors.text.string = item_name.value
             else
                item._vectors.text.string = item_name

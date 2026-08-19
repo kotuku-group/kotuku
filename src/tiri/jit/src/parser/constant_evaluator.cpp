@@ -173,6 +173,22 @@ std::optional<CompileTimeValue> ConstantEvaluator::evaluate(const ExprNode &Expr
          return std::nullopt;
       case AstNodeKind::UnaryExpr:
          return this->evaluate_unary(std::get<UnaryExprPayload>(Expression.data));
+      case AstNodeKind::TypeTestExpr: {
+         const auto &payload = std::get<TypeTestExprPayload>(Expression.data);
+         if (not payload.value) return std::nullopt;
+         auto value = this->evaluate(*payload.value);
+         if (not value) return std::nullopt;
+         TiriType actual = TiriType::Unknown;
+         switch (value->kind) {
+            case LiteralKind::Nil: actual = TiriType::Nil; break;
+            case LiteralKind::Boolean: actual = TiriType::Bool; break;
+            case LiteralKind::Number: actual = TiriType::Num; break;
+            case LiteralKind::String: actual = TiriType::Str; break;
+         }
+         bool matched = payload.descriptor.type IS TiriType::Any or payload.descriptor.type IS actual;
+         if (payload.negated) matched = not matched;
+         return CompileTimeValue::from_literal(LiteralValue::boolean(matched));
+      }
       case AstNodeKind::BinaryExpr:
          return this->evaluate_binary(std::get<BinaryExprPayload>(Expression.data));
       case AstNodeKind::TernaryExpr:

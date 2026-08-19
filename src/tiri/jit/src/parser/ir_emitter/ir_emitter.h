@@ -232,6 +232,7 @@ private:
    ParserResult<ExpDesc> emit_vararg_expr();
    ParserResult<ExpDesc> emit_unary_expr(const UnaryExprPayload& payload);
    ParserResult<ExpDesc> emit_update_expr(const UpdateExprPayload& payload);
+   ParserResult<ExpDesc> emit_type_test_expr(const TypeTestExprPayload& payload);
    ParserResult<ExpDesc> emit_binary_expr(const BinaryExprPayload& payload);
    ParserResult<ExpDesc> emit_comparison_chain_expr(const ComparisonChainExprPayload& payload);
    ParserResult<ExpDesc> emit_ternary_expr(const TernaryExprPayload& payload);

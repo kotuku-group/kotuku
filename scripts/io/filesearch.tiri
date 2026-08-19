@@ -209,7 +209,7 @@ io.search = function(Path:str!, Options:table!)
 
    -- Entry point for the search
 
-   if lOptions.nameFilter and type(lOptions.nameFilter) != 'string' then
+   if lOptions.nameFilter and lOptions.nameFilter != <str> then
       -- Check if it's a regex object by testing for regex methods
       if lOptions.nameFilter.test and lOptions.nameFilter.match then
          isRegexFilter = true
@@ -224,7 +224,7 @@ io.search = function(Path:str!, Options:table!)
       lOptions.minDateSet = true
    end
 
-   if type(Path) is 'table' or type(Path) is 'array' then
+   if Path is <table> or Path is <array> then
       for v in values(Path) do
          processPath(v)
       end

@@ -129,7 +129,7 @@ Examples:
    end
 
    glOptions.onError = function(Error:any!)
-      if type(Error) is 'table' then
+      if Error is <table> then
          print('[ERROR] ' .. (Error.message ?? Error.code ?? 'Proxy error'))
       else
          print('[ERROR] ' .. tostring(Error))

@@ -393,15 +393,46 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
       // Handled here rather than in match_binary_operator() to avoid lookahead
       // side-effects that corrupt the token stream for f-strings with expressions.
 
+      if (next.kind() IS TokenKind::NotEqual) {
+         constexpr uint8_t not_equal_left = 3;
+         constexpr uint8_t not_equal_right = 3;
+         if (not_equal_left <= precedence) break;
+         this->ctx.tokens().advance(); // Consume '!='
+         if (this->ctx.check(TokenKind::Less)) {
+            auto descriptor = this->parse_type_test_descriptor();
+            if (not descriptor.ok()) return ParserResult<ExprNodePtr>::failure(descriptor.error_ref());
+            SourceSpan span = combine_spans(left.value_ref()->span, next.span());
+            left = ParserResult<ExprNodePtr>::success(make_type_test_expr(
+               span, std::move(left.value_ref()), descriptor.value_ref(), true));
+            continue;
+         }
+         auto right = this->parse_expression(not_equal_right);
+         if (not right.ok()) return right;
+         SourceSpan span = combine_spans(left.value_ref()->span, right.value_ref()->span);
+         left = ParserResult<ExprNodePtr>::success(make_binary_expr(
+            span, AstBinaryOperator::NotEqual, std::move(left.value_ref()), std::move(right.value_ref())));
+         continue;
+      }
+
       if (next.kind() IS TokenKind::IsToken) {
          constexpr uint8_t is_left = 3;
          constexpr uint8_t is_right = 3;
          if (is_left <= precedence) break;
          this->ctx.tokens().advance(); // Consume 'is'
          AstBinaryOperator is_op = AstBinaryOperator::Equal;
+         bool negated = false;
          if (this->ctx.tokens().current().kind() IS TokenKind::NotToken) {
             this->ctx.tokens().advance(); // Consume 'not'
             is_op = AstBinaryOperator::NotEqual;
+            negated = true;
+         }
+         if (this->ctx.check(TokenKind::Less)) {
+            auto descriptor = this->parse_type_test_descriptor();
+            if (not descriptor.ok()) return ParserResult<ExprNodePtr>::failure(descriptor.error_ref());
+            SourceSpan span = combine_spans(left.value_ref()->span, next.span());
+            left = ParserResult<ExprNodePtr>::success(make_type_test_expr(
+               span, std::move(left.value_ref()), descriptor.value_ref(), negated));
+            continue;
          }
          auto right = this->parse_expression(is_right);
          if (not right.ok()) return right;

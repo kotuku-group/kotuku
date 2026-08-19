@@ -436,7 +436,7 @@ gui.toolbar = function(Options)
       end
 
       if Content then
-         if type(Content) is 'number' then
+         if Content is <num> then
             if Content > 9 then
                size = math.floor(self._iconSize * 0.33)
                gui.createIcon(self.viewport.scene, 'items/add', size, 'pearl', 'sticker_plus')
@@ -449,7 +449,7 @@ gui.toolbar = function(Options)
             end
          end
 
-         if type(Content) is 'string' then
+         if Content is <str> then
             if #Content > 1 then Content = Content.sub(0,1) end
          end
 

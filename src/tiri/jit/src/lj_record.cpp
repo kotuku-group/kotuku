@@ -459,7 +459,7 @@ static RecordedContract rec_contract_guard_object(
    if (ExpectedClassId IS CLASSID::NIL) return RecordedContract::Basic;
 
    GCobject *object = objectV(Value);
-   if (not object->classptr or object->classptr->ClassID != ExpectedClassId) {
+   if (not lj_meta_object_class_matches(object, ExpectedClassId)) {
       return RecordedContract::Mismatch;
    }
 
@@ -580,6 +580,88 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
       if (result != RecordedContract::Basic) return result;
    }
    return RecordedContract::Basic;
+}
+
+static TRef rec_type_test(jit_State *J, BCREG Slot, GCstr *Encoded)
+{
+   RuntimeContractDescriptor descriptor;
+   if (not decode_runtime_contract(Encoded, descriptor) or descriptor.contract_count != 1) return 0;
+
+   const RuntimeContractEntry &entry = descriptor.entries[0];
+   cTValue *value = J->L->base + Slot;
+   if (lj_is_thunk(value)) return 0;
+
+   TRef value_ref = getslot(J, Slot);
+   bool matched = false;
+   RecordedContract guard = RecordedContract::Basic;
+   if (tvisnil(value)) matched = entry.type IS TiriType::Any or entry.type IS TiriType::Nil;
+   else {
+      switch (entry.type) {
+         case TiriType::Any: matched = true; break;
+         case TiriType::Unknown: matched = true; break;
+         case TiriType::Nil: matched = false; break;
+         case TiriType::Bool: matched = tvisbool(value); break;
+         case TiriType::Num: matched = tvisnumber(value); break;
+         case TiriType::Str: matched = tvisstr(value); break;
+         case TiriType::Table: matched = tvistab(value); break;
+         case TiriType::Array:
+            guard = rec_contract_guard_array(J, value_ref, value, entry);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Func:
+            guard = rec_contract_guard_callable(J, value_ref, value);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Struct:
+            guard = rec_contract_guard_struct(J, value_ref, value, entry.constraint_name);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Object:
+            guard = rec_contract_guard_object(J, value_ref, value, entry.object_class_id);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Range:
+            guard = rec_contract_guard_range(J, value_ref, value, true);
+            matched = guard IS RecordedContract::Basic;
+            break;
+         case TiriType::Userdata:
+            guard = rec_contract_guard_userdata(J, value_ref, value);
+            matched = guard IS RecordedContract::Basic;
+            break;
+      }
+   }
+
+   // A failed constrained check needs a guard for the observed aggregate metadata, not merely its outer TValue tag.
+   if (not matched) {
+      if (tvisarray(value)) {
+         RuntimeContractEntry observed;
+         observed.type = TiriType::Array;
+         observed.array_element_type = arrayV(value)->elemtype;
+         if (arrayV(value)->elemtype IS AET::STRUCT and arrayV(value)->structdef) {
+            observed.constraint_name = arrayV(value)->structdef->Name;
+         }
+         if (rec_contract_guard_array(J, value_ref, value, observed) != RecordedContract::Basic) return 0;
+      }
+      else if (tvisobject(value)) {
+         GCobject *object = objectV(value);
+         if (not object->classptr or
+             rec_contract_guard_object(J, value_ref, value, object->classptr->ClassID) != RecordedContract::Basic) {
+            return 0;
+         }
+      }
+      else if (tvisstruct(value)) {
+         struct_record *definition = structV(value)->def;
+         if (not definition or
+             rec_contract_guard_struct(J, value_ref, value, definition->Name) != RecordedContract::Basic) return 0;
+      }
+      else if (tvisudata(value)) {
+         bool observed_range = rec_contract_is_range(J, value);
+         if (rec_contract_guard_range(J, value_ref, value, observed_range) != RecordedContract::Basic) return 0;
+      }
+   }
+
+   if ((entry.flags & contract_flag(ContractEntryFlag::Negated)) != 0) matched = not matched;
+   return matched ? TREF_TRUE : TREF_FALSE;
 }
 
 //********************************************************************************************************************
@@ -5144,6 +5226,18 @@ void lj_record_ins(jit_State *J)
       }
       setintV(&J->errinfo, int32_t(op));
       lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      break;
+   }
+
+   case BC_TYPETEST:
+   {
+      TRef result = rec_type_test(J, bc_a(ins), strV(rcv));
+      if (not result) {
+         // Deferred tests may enter a protected call and resume in the interpreter without disabling the prototype.
+         lj_snap_add(J);
+         lj_record_stop(J, TraceLink::INTERP, 0);
+      }
+      J->base[bc_a(ins)] = result;
       break;
    }
 
