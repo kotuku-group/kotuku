@@ -13,6 +13,7 @@
 #include "lj_str.h"
 #include "lj_meta.h"
 #include "lj_state.h"
+#include "lj_vm.h"
 #include "lj_char.h"
 #include "lj_strfmt.h"
 #include "lib.h"
@@ -450,8 +451,19 @@ int lj_strfmt_putarg(lua_State* L, SBuf* sb, int arg, int retry)
             if (!tvisstr(o) and retry >= 0 and !tvisnil(mo = lj_meta_lookup(L, o, MM_tostring))) [[unlikely]] {
                // Call __tostring metamethod once.
                copyTV(L, L->top++, mo);
-               copyTV(L, L->top++, o);
-               lua_call(L, 1, 1);
+               if (tvistab(o)) {
+                  TValue receiver;
+                  copyTV(L, &receiver, o);
+                  setnilV(L->top++);
+                  TValue *base = L->top;
+                  uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, base, 0, 1);
+                  lj_assertL(argument_count IS 0, "formatted table metamethod retained its receiver argument");
+                  lj_vm_call(L, base, 2);
+               }
+               else {
+                  copyTV(L, L->top++, o);
+                  lua_call(L, 1, 1);
+               }
                o = &L->base[arg - 1];  //  Stack may have been reallocated.
                copyTV(L, o, --L->top);  //  Replace inline for retry.
                if (retry < 2) {  // Global buffer may have been overwritten.
@@ -650,4 +662,3 @@ const char* lj_strfmt_pushf(lua_State* L, const char* fmt, ...)
    va_end(argp);
    return msg;
 }
-
