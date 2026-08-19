@@ -495,6 +495,12 @@ end
       assert(b2 is 98, "Expected 98 (b), got " .. b2)
       assert(b3 is 99, "Expected 99 (c), got " .. b3)
 
+      -- A final multi-result call expands into successive table elements.
+      captured = { string.byte("ABC", 0, 3) }
+      assert(#captured is 3, "Expected three captured bytes, got " .. tostring(#captured))
+      assert(captured[0] is 65 and captured[1] is 66 and captured[2] is 67,
+         "Expected captured bytes 65, 66, 67")
+
       -- Default range (single character at index 0)
       def = string.byte("hello")
       assert(def is 104, "Expected 104 (h) as default, got " .. def)
