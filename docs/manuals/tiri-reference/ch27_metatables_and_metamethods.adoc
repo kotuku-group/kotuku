@@ -1,18 +1,37 @@
-// VERIFIED: 2026-03-03
-// UPDATED: 2026-08-16 - Replaced the binary metamethod restriction with receiver-first dispatch, documented the
-//                       Other/LHS parameter convention, and made `metamethod` the required form for metatable
-//                       callables with `function` retained as legacy (commit 58e7bad8a)
-// UPDATED: 2026-08-18 - The explicit table.concat() boundary parameter is now named `Stop` and is exclusive
-//                       (commit 3e99d69ac)
-// UPDATED: 2026-08-19 - Removed the `metamethod` keyword; handlers are ordinary functions whose receiver is
-//                       installed as context on dispatch, with non-table receivers passed as the first
-//                       argument (commit 81aa5f3)
+// VERIFIED: 2026-08-19
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
-indexterm:[metatables] indexterm:[metamethods] A metatable is a regular table that the runtime attaches to another table or userdata to customise its behaviour.  When an operation has no native implementation for a given operand -- for example, adding two tables -- the runtime looks up a specially named field in the operand's metatable.  If the field exists and holds a callable value, the runtime invokes it.  That callable value is called a _metamethod_.
+indexterm:[metatables] indexterm:[metamethods] A metatable is a regular table that the runtime attaches to a table to customise its behaviour.  When an operation has no native implementation for a given operand -- for example, adding two tables -- the runtime looks up a specially named field in the operand's metatable.  If the field exists and holds a callable value, the runtime invokes it.  That callable value is called a _metamethod_.
 
-Every table and full userdata can carry exactly one metatable.  Strings share a single metatable provided by the string library.  Numbers, booleans, and `nil` do not carry per-value metatables, but the runtime can attach shared base metatables to non-table values via `debug.setMetatable`.
+NOTE: Internally, the Tiri runtime uses metatables in conjunction with tables, userdata and string types, but only the __table__ usage pattern is permitted in user code.  Other forms of use with non-tables may not be stable between language releases.
+
+[[sec-metamethod-handler-form]]
+=== Metamethod Handlers
+
+indexterm:[metamethods, handler form] A metamethod is an ordinary function value stored in a metatable under a reserved key.  It carries no special declaration: the syntax that defines any function defines a handler, and the value remains a plain function that can be extracted from the metatable, stored elsewhere, and called directly.
+
+When the runtime dispatches a handler in response to an operation, it installs the operand that supplied the handler -- the _receiver_ -- as the handler's current context.  The body reaches the receiver through self referencing: `&field` reads and writes a field of it, and `+&&+` yields the receiver itself.  The receiver is not a declared parameter; the handler declares only the operation's own arguments.
+
+Dispatch establishes the context for any table receiver.  Unlike a contextual call, the receiver is not required to be an entity: attaching a metatable is sufficient to make the receiver's fields reachable from the handler.
+
+A handler is context-first only when the runtime dispatches it.  The same function value called directly is an ordinary call that inherits the caller's context and installs nothing of its own, so a handler extracted from a metatable and invoked by hand observes the caller's context, not the table it was found on.
+
+[%unbreakable]
+[source,tiri]
+----
+mt = { __tostring = function():str return &name end }
+p  = setmetatable({ name = 'red' }, mt)
+print(tostring(p))       -- 'red': dispatch installs p as context
+
+render = mt.__tostring
+caller = { name = 'caller' }
+using caller do
+   print(render())       -- 'caller': a direct call inherits the context
+end
+----
+
+The receiver context is restored when the handler activation ends, on every exit path, including an error raised in the body and a deferred block that runs during the exit (<<sec-context-restoration>>).
 
 [[sec-metatable-basics]]
 === Metatable Basics
@@ -68,6 +87,45 @@ The following functions bypass all metamethods and operate directly on the under
 |===
 
 Raw access suppresses metamethod dispatch, not the global environment policy.  A `rawset()` into a global environment is still validated for protected names and global type contracts, and a `pass:[__]newindex` metamethod installed on a global environment still receives non-raw stores.
+[[sec-binary-metamethod-dispatch]]
+==== Binary Operators
+
+indexterm:[metamethods, receiver-first dispatch] A binary operator searches the left operand's metatable and then the right operand's.  The operand that supplies the handler becomes the _receiver_, and the operator dispatches receiver-first: the receiver is passed in first position, the remaining operand follows, and a boolean records which side of the expression the receiver occupied.  The handler is an ordinary function whose declared parameters are the two trailing arguments; the receiver arrives as context (<<sec-metamethod-handler-form>>):
+
+[.api]`pass:[__]op(Other, LHS)`
+
+`Other` is the operand that did not supply the handler.  `LHS` is `true` when the receiver is the left operand and `false` when it is the right operand.  The handler is therefore invoked with the same context whichever operand supplies it, and `LHS` restores the written order when the operation requires it:
+
+[%unbreakable]
+[source,tiri]
+----
+mt = {
+   __sub = function(Other:table!, LHS:bool):num
+      if LHS then return &value - Other.value end
+      return Other.value - &value
+   end
+}
+a = setmetatable({ value = 10 }, mt)
+
+print(a - { value = 4 })   -- 6:  LHS is true
+print({ value = 4 } - a)   -- -6: LHS is false
+----
+
+A commutative operation ignores `LHS`.  A handler that declares `Other` alone is valid and discards the flag.
+
+The convention applies to `pass:[__]add`, `pass:[__]sub`, `pass:[__]mul`, `pass:[__]div`, `pass:[__]mod`, `pass:[__]pow`, `pass:[__]concat`, `pass:[__]lt` and `pass:[__]le`.  Two metamethods are exempt:
+
+- `pass:[__]unm` is unary.  It is dispatched with the operand alone, declares no parameters, and receives no flag.
+- `pass:[__]eq` is invoked only when both operands share a metatable or the same handler.  It is dispatched with the operands in written order, so the receiver is always the left operand, and it receives no flag.
+
+Unary and single-operand metamethods, including `pass:[__]len`, `pass:[__]tostring`, `pass:[__]index`, `pass:[__]newindex` and `pass:[__]call`, have one candidate operand and are unaffected.
+
+===== Effective Operand Order
+
+`LHS` describes the pair the runtime evaluates, which is not always the pair as written.  Two rewrites reorder the operands before dispatch:
+
+- `a > b` evaluates as `b < a` and `a >= b` evaluates as `b \<= a`, so `LHS` reports the receiver's position in the swapped pair.
+- When `pass:[__]le` is absent and `pass:[__]lt` is present, `a \<= b` evaluates as `not (b < a)`, and `LHS` reports the receiver's position in that reversed pair.
 
 [[sec-arithmetic-metamethods]]
 === Arithmetic Metamethods
@@ -156,7 +214,7 @@ The `!=` operator negates the result of the `is` comparison, including any `pass
 |Operator |Syntax |Metamethod
 
 |Less than          |`a < b`  |`pass:[__]lt(Other, LHS)`
-|Less than or equal |`a <= b` |`pass:[__]le(Other, LHS)`
+|Less than or equal |`a \<= b` |`pass:[__]le(Other, LHS)`
 |Greater than       |`a > b`  |`pass:[__]lt` over the swapped pair `b < a`
 |Greater than or equal |`a >= b` |`pass:[__]le` over the swapped pair `b \<= a`
 |===
@@ -340,7 +398,7 @@ end
 
 The `pass:[__]index` metamethod enables a simple class/inheritance pattern.  Setting a table's `pass:[__]index` to a class table causes method lookups on instances to fall through to the class.
 
-A class function reaches the instance through the current context (<<sec-the-current-context>>).  The instance is the receiver of the call, so the method operates on it even though the function value was found on the class.  The instance must therefore be an entity, which the class table declares by carrying `pass:[__]context = true` alongside `pass:[__]index` (<<sec-context-metafield>>):
+A class function reaches the instance through the current context (<<sec-context>>).  The instance is the receiver of the call, so the method operates on it even though the function value was found on the class.  The instance must therefore be an entity, which the class table declares by carrying `pass:[__]context = true` alongside `pass:[__]index` (<<sec-context-metafield>>):
 
 [%unbreakable]
 [source,tiri]
@@ -391,10 +449,11 @@ A class function name must not collide with a built-in `table` method, because t
 
 [[sec-callable-tables]]
 === Callable Tables
-[.api]`pass:[__]call(...)`
+[.api]`pass:[__]call(pass:[...])`
 
 indexterm:[callable tables] The runtime invokes `pass:[__]call` when a table is used in a function-call expression.  The table becomes the subject, and the call arguments follow it.  The metamethod may return any number of values.
 
+[%unbreakable]
 [source,tiri]
 ----
 Counter = {}
@@ -420,7 +479,7 @@ The `pass:[__]call` metamethod enables factory and constructor patterns where a 
 === Clearing
 [.api]`pass:[__]clear()`
 
-indexterm:[metamethods, clear] The runtime invokes `pass:[__]clear` when `table.clear()` is applied to the table, in either the library form `table.clear(t)` or the built-in method form `t.clear()` (<<sec-built-in-method-calls>>).  The table is the subject and no further arguments are passed.
+indexterm:[metamethods, clear] The runtime invokes `pass:[__]clear` when `table.clear()` is applied to the table.
 
 When the metamethod is present it replaces the default behaviour entirely: the receiver's own entries are left untouched, and the metamethod is responsible for whatever clearing the type requires.  Values returned by the metamethod become the results of the `table.clear()` call.  Errors raised inside the metamethod propagate to the caller.
 
@@ -484,14 +543,7 @@ mt.__gc = function() print('released') end
 setmetatable(subject, mt)   -- subject is now registered
 ----
 
-`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule.  A full userdata is not a table, so its handler receives the userdata as its first visible argument rather than as context (<<sec-non-table-receivers>>):
-
-[source,tiri]
-----
-debug.setMetatable(handle, { __gc = function(Self) print('released') end })
-----
-
-Registration is permanent for the lifetime of the object and cannot be cancelled.  Whether a call takes place is decided at finalisation time by looking up `pass:[__]gc` in the object's current metatable, so removing the field, or detaching the metatable, suppresses the call:
+`setmetatable()` accepts tables only.  Registration is permanent for the lifetime of the object and cannot be cancelled.  Whether a call takes place is decided at finalisation time by looking up `pass:[__]gc` in the object's current metatable, so removing the field, or detaching the metatable, suppresses the call:
 
 [source,tiri]
 ----
@@ -595,16 +647,18 @@ The `pass:[__]pairs` and `pass:[__]ipairs` metamethods customise the behaviour o
 
 [[sec-metamethod-reference]]
 === Metamethod Reference
-indexterm:[metamethods, reference] The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.  The signatures show the declared parameters for a table receiver, which the handler reaches as context rather than as a parameter (<<sec-metamethod-handler-form>>).  A non-table receiver is passed as an additional first argument (<<sec-non-table-receivers>>).
+indexterm:[metamethods, reference] The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.
 
-[cols="3,4a,4a",options="header"]
+[cols="4,8a,8a",options="header"]
 |===
 |Metamethod |Trigger |Declared parameters
 
+|`pass:[__]context`    |Restricts metatable use to entity tables only |Not callable; value must be the boolean `true`
+|`pass:[__]metatable`  |Metatable protection (value) |Not callable; value returned by `getmetatable`
+|`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
 |`pass:[__]index`      |Read of absent key           |`function(Key)` or table
 |`pass:[__]newindex`   |Write to absent key          |`function(Key, Value)` or table
 |`pass:[__]gc`         |Table or userdata finalisation |`function()`
-|`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
 |`pass:[__]eq`         |`is` / `!=` comparison       |`function(Other)` pass:[->]bool
 |`pass:[__]len`        |`#` operator                 |`function()` pass:[->]number
 |`pass:[__]lt`         |`<` and `>` comparison       |`function(Other, LHS)` pass:[->]bool
@@ -618,13 +672,9 @@ indexterm:[metamethods, reference] The following table lists every metamethod re
 |`pass:[__]mod`        |`%` operator                 |`function(Other, LHS)`
 |`pass:[__]pow`        |`**` operator                |`function(Other, LHS)`
 |`pass:[__]unm`        |Unary `-` operator           |`function()`
-|`pass:[__]metatable`  |Metatable protection (value) |Not callable; value returned by `getmetatable`
 |`pass:[__]tostring`   |`tostring()` conversion      |`function()` pass:[->]string
 |`pass:[__]close`      |`<close>` scope exit         |`function(Error)`
 |`pass:[__]pairs`      |`pairs()` iteration          |`function()` pass:[->]iterator, state, initial
 |`pass:[__]ipairs`     |`ipairs()` iteration         |`function()` pass:[->]iterator, state, initial
 |`pass:[__]clear`      |`table.clear()` call         |`function()`
-|`pass:[__]context`    |Entity designation on `setmetatable()` |Not callable; value must be the boolean `true`
 |===
-
-`pass:[__]context` is a designation input rather than a metamethod: the runtime samples it once, when the metatable is attached, and never dispatches to it.  See <<sec-context-metafield>>.

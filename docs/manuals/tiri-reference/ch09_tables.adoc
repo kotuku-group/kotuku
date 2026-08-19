@@ -746,7 +746,7 @@ t[{5 to 10}]    -- {} (beyond table length)
 [[sec-table-entities]]
 === Entities
 
-indexterm:[entities] indexterm:[tables, entities] An __entity__ is a table that has been permitted to establish itself as the context of a call made on it (<<sec-the-current-context>>).  Tables without this designation are ordinary and cannot be used as context.
+indexterm:[entities] indexterm:[tables, entities] An __entity__ is a table that has been permitted to establish itself as the context of a call made on it (<<sec-context>>).  Tables without this designation are ordinary and cannot be used as context.
 
 An entity is elevated above the ordinary table type and loses none of its properties.  It is a `table` for the purposes of `type()`, indexing, iteration, length, classification, identity, equality and every function of the table library.  Designation adds one capability and changes nothing else.
 
@@ -835,7 +835,7 @@ No other operation propagates designation.  A manually populated constructor, a 
 [[sec-tables-as-objects]]
 === Tables as Objects
 
-indexterm:[tables, objects] indexterm:[objects, tables] indexterm:[methods] A table entity whose fields hold functions is an object, and those functions are its methods.  Calling a function as a member of an entity establishes that entity as the current context, so the function reaches the receiver's fields through a leading `&` without declaring a parameter for it.  <<sec-the-current-context>> defines the mechanism, <<sec-table-entities>> defines designation, and this section applies both.
+indexterm:[tables, objects] indexterm:[objects, tables] indexterm:[methods] A table entity whose fields hold functions is an object, and those functions are its methods.  Calling a function as a member of an entity establishes that entity as the current context, so the function reaches the receiver's fields through a leading `&` without declaring a parameter for it.  <<sec-context>> defines the mechanism, <<sec-table-entities>> defines designation, and this section applies both.
 
 The capability requires no library, but it does require designation.  A table that is not an entity holds functions as ordinary fields, and calling one of them establishes no context.
 

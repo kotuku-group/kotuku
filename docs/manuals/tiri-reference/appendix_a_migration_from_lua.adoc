@@ -315,7 +315,7 @@ text.sub(start, stop)   -- the matched text
 [[sec-migration-method-calls]]
 === Method Calls and the Colon
 
-indexterm:[Lua, method calls] indexterm:[colon syntax] Tiri has no colon call syntax and no `self` parameter.  A function called as a member of a table entity receives that table as its current context and reaches it through self referencing, so the receiver is neither declared nor passed.  See <<sec-the-current-context>>.
+indexterm:[Lua, method calls] indexterm:[colon syntax] Tiri has no colon call syntax and no `self` parameter.  A function called as a member of a table entity receives that table as its current context and reaches it through self referencing, so the receiver is neither declared nor passed.  See <<sec-context>>.
 
 The context feature is opt-in.  A Lua table that carries methods becomes an entity by constructing it with the `entity` prefix, or by attaching a metatable that declares `pass:[__]context = true`.  Without designation the table remains ordinary and its methods observe the caller's context, not the receiver.  See <<sec-table-entities>>.
 

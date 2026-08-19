@@ -85,7 +85,7 @@ Contextual call::
 A call that selects its callable from a receiver: `receiver.name(...)`, `receiver[key](...)`, or their safe forms.  When the receiver is a table entity, it becomes the current context for the activation, and the caller's context is restored when the activation ends.  See <<sec-contextual-calls>>.
 
 Current context::
-The single table that a function activation reaches through self referencing (`&name`) or through the current context expression (`+&&+`), without naming it.  Established by a contextual call on an entity receiver or by a context block; otherwise inherited from the caller.  Tiri's equivalent of `this` or `self`.  See <<sec-the-current-context>>.
+The single table that a function activation reaches through self referencing (`&name`) or through the current context expression (`+&&+`), without naming it.  Established by a contextual call on an entity receiver or by a context block; otherwise inherited from the caller.  Tiri's equivalent of `this` or `self`.  See <<sec-context>>.
 
 Defer statement::
 Registers a code block for execution when the enclosing scope exits via normal completion, `return`, `break`, or `continue`.  Does not execute during error unwinding; use `<close>` for error-safe cleanup.  Multiple defers execute in LIFO order.  See <<sec-defer-statement>>.

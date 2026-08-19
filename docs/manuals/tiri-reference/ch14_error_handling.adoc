@@ -208,7 +208,7 @@ end
 [discrete]
 ==== Context During Unwinding
 
-Unwinding restores the current context (<<sec-the-current-context>>) of every activation that survives.  An `except` handler therefore runs in the context of the activation that declares the `try` statement, whatever contexts the abandoned activations established:
+Unwinding restores the current context (<<sec-context>>) of every activation that survives.  An `except` handler therefore runs in the context of the activation that declares the `try` statement, whatever contexts the abandoned activations established:
 
 [%unbreakable]
 [source,tiri]
