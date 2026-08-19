@@ -1,4 +1,4 @@
-// VERIFIED: 2026-02-13
+// VERIFIED: 2026-08-19
 
 [[ch-result-management]]
 == Result Management
@@ -51,6 +51,7 @@ end
 
 Function parameters:: The parameter receives the argument value but discards it.
 +
+[%unbreakable]
 [source,tiri]
 ----
 function second(_, X)
@@ -120,11 +121,6 @@ a, b, c = [_***_]five()    -- drop 1st, keep 2-4, drop rest
 a, b = [_*_*]five()        -- drop 1st, keep 2nd, drop 3rd, keep 4th+
 x = []five()               -- drop all: x=nil
 ----
-
-[discrete]
-==== Maximum Pattern Length
-
-The filter pattern supports a maximum of 64 positions.  Patterns exceeding this limit raise a parse error.
 
 [discrete]
 ==== Interaction with Assignment

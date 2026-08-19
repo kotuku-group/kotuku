@@ -4,6 +4,9 @@
 //                       callables with `function` retained as legacy (commit 58e7bad8a)
 // UPDATED: 2026-08-18 - The explicit table.concat() boundary parameter is now named `Stop` and is exclusive
 //                       (commit 3e99d69ac)
+// UPDATED: 2026-08-19 - Removed the `metamethod` keyword; handlers are ordinary functions whose receiver is
+//                       installed as context on dispatch, with non-table receivers passed as the first
+//                       argument (commit 81aa5f3)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -21,7 +24,7 @@ indexterm:[metatables, basics] Sets the metatable of `Table` to `Metatable` and 
 
 [source,tiri]
 ----
-mt = { __index = metamethod(Key) return 0 end }
+mt = { __index = function(Key) return 0 end }
 t = setmetatable({}, mt)
 ----
 
@@ -89,7 +92,7 @@ A string operand is not coerced to a number.  It is treated as any other non-num
 
 [source,tiri]
 ----
-mt = { __add = metamethod(Other, LHS) return f'handled {Other} {LHS}' end }
+mt = { __add = function(Other, LHS) return f'handled {Other} {LHS}' end }
 t  = setmetatable({}, mt)
 '1' + t     -- 'handled 1 false'
 '1' + 1     -- error: neither operand supplies __add
@@ -106,16 +109,16 @@ function Vec2.new(X, Y)
    return setmetatable({ x = X, y = Y }, Vec2)
 end
 
-Vec2.__add = metamethod(Other:table!):table return Vec2.new(&x + Other.x, &y + Other.y) end
-Vec2.__sub = metamethod(Other:table!, LHS:bool):table
+Vec2.__add = function(Other:table!):table return Vec2.new(&x + Other.x, &y + Other.y) end
+Vec2.__sub = function(Other:table!, LHS:bool):table
    if LHS then return Vec2.new(&x - Other.x, &y - Other.y) end
    return Vec2.new(Other.x - &x, Other.y - &y)
 end
-Vec2.__mul = metamethod(Other):table
+Vec2.__mul = function(Other):table
    if type(Other) is 'number' then return Vec2.new(&x * Other, &y * Other) end
    return Vec2.new(&x * Other.x, &y * Other.y)
 end
-Vec2.__unm = metamethod():table return Vec2.new(-&x, -&y) end
+Vec2.__unm = function():table return Vec2.new(-&x, -&y) end
 
 v = Vec2.new(1, 2) + Vec2.new(3, 4)     -- Vec2(4, 6)
 w = 2 * Vec2.new(1, 2)                  -- Vec2(2, 4): __mul discards LHS
@@ -136,7 +139,7 @@ Because both operands are known to agree on the handler, `pass:[__]eq` is dispat
 
 [source,tiri]
 ----
-mt = { __eq = metamethod(Other:table!):bool return &val is Other.val end }
+mt = { __eq = function(Other:table!):bool return &val is Other.val end }
 a = setmetatable({ val = 1 }, mt)
 b = setmetatable({ val = 1 }, mt)
 print(a is b)   -- true
@@ -166,7 +169,7 @@ Both handlers are dispatched receiver-first, so the subject is the operand that 
 [source,tiri]
 ----
 mt = {
-   __lt = metamethod(Other, LHS:bool):bool
+   __lt = function(Other, LHS:bool):bool
       if LHS then return &rank < Other.rank end
       return Other.rank < &rank
    end
@@ -192,7 +195,7 @@ The `tostring` function and string interpolation invoke the `pass:[__]tostring` 
 [source,tiri]
 ----
 mt = {
-   __tostring = metamethod():str
+   __tostring = function():str
       return f'Point({&x}, {&y})'
    end
 }
@@ -212,7 +215,7 @@ The handler is dispatched receiver-first, so the subject is the operand that sup
 [source,tiri]
 ----
 mt = {
-   __concat = metamethod(Other, LHS:bool):str
+   __concat = function(Other, LHS:bool):str
       if LHS then return &text .. Other end
       return Other .. &text
    end
@@ -235,7 +238,7 @@ The metamethod is required to return a number.  Returning any other value, inclu
 
 [source,tiri]
 ----
-mt = { __len = metamethod():num return &size end }
+mt = { __len = function():num return &size end }
 t = setmetatable({ size = 42 }, mt)
 print(#t)   -- 42
 ----
@@ -244,7 +247,7 @@ print(#t)   -- 42
 
 [source,tiri]
 ----
-t = setmetatable({ 1, 2 }, { __len = metamethod():num return 7 end })
+t = setmetatable({ 1, 2 }, { __len = function():num return 7 end })
 t.name  = 'x'
 t[-1]   = 'y'
 print(#t)   -- 7: the metamethod overrides the classification
@@ -271,7 +274,7 @@ indexterm:[metamethods, indexing] The runtime invokes `pass:[__]index` when a ta
 [source,tiri]
 ----
 mt = {
-   __index = metamethod(Key)
+   __index = function(Key)
       return f'default({Key})'
    end
 }
@@ -303,7 +306,7 @@ The runtime invokes `pass:[__]newindex` when assigning to a key that does not al
 [source,tiri]
 ----
 mt = {
-   __newindex = metamethod(Key, Value)
+   __newindex = function(Key, Value)
       error(f'read-only table: cannot set {Key}')
    end
 }
@@ -401,7 +404,7 @@ function Counter.new(Start)
    return setmetatable({ count = Start ?? 0 }, Counter)
 end
 
-Counter.__call = metamethod():num
+Counter.__call = function():num
    &count++
    return &count
 end
@@ -426,7 +429,7 @@ The global-environment restriction is applied before the lookup, so `table.clear
 [source,tiri]
 ----
 target = setmetatable({ value = 42 }, {
-   __clear = metamethod() print('cleared') end
+   __clear = function() print('cleared') end
 })
 
 target.clear()      -- 'cleared'
@@ -441,7 +444,7 @@ function create_proxy(Backing)
    return setmetatable({}, {
       __index    = Backing,
       __newindex = Backing,
-      __clear    = metamethod() table.clear(Backing) end
+      __clear    = function() table.clear(Backing) end
    })
 end
 ----
@@ -463,12 +466,12 @@ An object acquires a finaliser only at the moment a metatable that *already cont
 [source,tiri]
 ----
 -- Registered: __gc is present when the metatable is attached.
-resource = setmetatable({}, { __gc = metamethod() print('released') end })
+resource = setmetatable({}, { __gc = function() print('released') end })
 
 -- Not registered: __gc is added after attachment.
 mt = {}
 ignored = setmetatable({}, mt)
-mt.__gc = metamethod() print('never called') end
+mt.__gc = function() print('never called') end
 ----
 
 Attaching the metatable again registers the object, because the field is present at the time of that call:
@@ -477,11 +480,11 @@ Attaching the metatable again registers the object, because the field is present
 ----
 mt = {}
 subject = setmetatable({}, mt)
-mt.__gc = metamethod() print('released') end
+mt.__gc = function() print('released') end
 setmetatable(subject, mt)   -- subject is now registered
 ----
 
-`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule.  This is one of the two cases in which the handler is written with `function` rather than `metamethod`, because a `metamethod` literal requires a table subject (<<sec-legacy-function-metamethods>>):
+`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule.  A full userdata is not a table, so its handler receives the userdata as its first visible argument rather than as context (<<sec-non-table-receivers>>):
 
 [source,tiri]
 ----
@@ -492,7 +495,7 @@ Registration is permanent for the lifetime of the object and cannot be cancelled
 
 [source,tiri]
 ----
-mt = { __gc = metamethod() print('released') end }
+mt = { __gc = function() print('released') end }
 subject = setmetatable({}, mt)
 setmetatable(subject, nil)   -- no finaliser call takes place
 ----
@@ -512,7 +515,7 @@ indexterm:[resurrection] A finaliser that stores its subject in a location that 
 registry = nil
 
 pending = setmetatable({ id = 1 }, {
-   __gc = metamethod() registry = && end   -- resurrects the subject
+   __gc = function() registry = && end   -- resurrects the subject
 })
 pending = nil
 
@@ -592,38 +595,36 @@ The `pass:[__]pairs` and `pass:[__]ipairs` metamethods customise the behaviour o
 
 [[sec-metamethod-reference]]
 === Metamethod Reference
-indexterm:[metamethods, reference] The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.  Signatures are given in the `metamethod` form, so the subject is implicit and the declared parameters are those written in the literal.
+indexterm:[metamethods, reference] The following table lists every metamethod recognised by the runtime, ordered by dispatch priority.  The signatures show the declared parameters for a table receiver, which the handler reaches as context rather than as a parameter (<<sec-metamethod-handler-form>>).  A non-table receiver is passed as an additional first argument (<<sec-non-table-receivers>>).
 
 [cols="3,4a,4a",options="header"]
 |===
 |Metamethod |Trigger |Declared parameters
 
-|`pass:[__]index`      |Read of absent key           |`metamethod(Key)` or table
-|`pass:[__]newindex`   |Write to absent key          |`metamethod(Key, Value)` or table
-|`pass:[__]gc`         |Table or userdata finalisation |`metamethod()`
+|`pass:[__]index`      |Read of absent key           |`function(Key)` or table
+|`pass:[__]newindex`   |Write to absent key          |`function(Key, Value)` or table
+|`pass:[__]gc`         |Table or userdata finalisation |`function()`
 |`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
-|`pass:[__]eq`         |`is` / `!=` comparison       |`metamethod(Other)` pass:[->]bool
-|`pass:[__]len`        |`#` operator                 |`metamethod()` pass:[->]number
-|`pass:[__]lt`         |`<` and `>` comparison       |`metamethod(Other, LHS)` pass:[->]bool
-|`pass:[__]le`         |`\<=` and `>=` comparison |`metamethod(Other, LHS)` pass:[->]bool
-|`pass:[__]concat`     |`..` operator                |`metamethod(Other, LHS)`
-|`pass:[__]call`       |Function call on table       |`metamethod(...)`
-|`pass:[__]add`        |`+` operator                 |`metamethod(Other, LHS)`
-|`pass:[__]sub`        |`-` operator                 |`metamethod(Other, LHS)`
-|`pass:[__]mul`        |`*` operator                 |`metamethod(Other, LHS)`
-|`pass:[__]div`        |`/` operator                 |`metamethod(Other, LHS)`
-|`pass:[__]mod`        |`%` operator                 |`metamethod(Other, LHS)`
-|`pass:[__]pow`        |`**` operator                |`metamethod(Other, LHS)`
-|`pass:[__]unm`        |Unary `-` operator           |`metamethod()`
+|`pass:[__]eq`         |`is` / `!=` comparison       |`function(Other)` pass:[->]bool
+|`pass:[__]len`        |`#` operator                 |`function()` pass:[->]number
+|`pass:[__]lt`         |`<` and `>` comparison       |`function(Other, LHS)` pass:[->]bool
+|`pass:[__]le`         |`\<=` and `>=` comparison |`function(Other, LHS)` pass:[->]bool
+|`pass:[__]concat`     |`..` operator                |`function(Other, LHS)`
+|`pass:[__]call`       |Function call on table       |`function(...)`
+|`pass:[__]add`        |`+` operator                 |`function(Other, LHS)`
+|`pass:[__]sub`        |`-` operator                 |`function(Other, LHS)`
+|`pass:[__]mul`        |`*` operator                 |`function(Other, LHS)`
+|`pass:[__]div`        |`/` operator                 |`function(Other, LHS)`
+|`pass:[__]mod`        |`%` operator                 |`function(Other, LHS)`
+|`pass:[__]pow`        |`**` operator                |`function(Other, LHS)`
+|`pass:[__]unm`        |Unary `-` operator           |`function()`
 |`pass:[__]metatable`  |Metatable protection (value) |Not callable; value returned by `getmetatable`
-|`pass:[__]tostring`   |`tostring()` conversion      |`metamethod()` pass:[->]string
-|`pass:[__]close`      |`<close>` scope exit         |`metamethod(Error)`
-|`pass:[__]pairs`      |`pairs()` iteration          |`metamethod()` pass:[->]iterator, state, initial
-|`pass:[__]ipairs`     |`ipairs()` iteration         |`metamethod()` pass:[->]iterator, state, initial
-|`pass:[__]clear`      |`table.clear()` call         |`metamethod()`
+|`pass:[__]tostring`   |`tostring()` conversion      |`function()` pass:[->]string
+|`pass:[__]close`      |`<close>` scope exit         |`function(Error)`
+|`pass:[__]pairs`      |`pairs()` iteration          |`function()` pass:[->]iterator, state, initial
+|`pass:[__]ipairs`     |`ipairs()` iteration         |`function()` pass:[->]iterator, state, initial
+|`pass:[__]clear`      |`table.clear()` call         |`function()`
 |`pass:[__]context`    |Entity designation on `setmetatable()` |Not callable; value must be the boolean `true`
 |===
-
-A handler written in the legacy `function` form declares the subject as its own first parameter, ahead of the parameters listed above.  See <<sec-legacy-function-metamethods>>.
 
 `pass:[__]context` is a designation input rather than a metamethod: the runtime samples it once, when the metatable is attached, and never dispatches to it.  See <<sec-context-metafield>>.

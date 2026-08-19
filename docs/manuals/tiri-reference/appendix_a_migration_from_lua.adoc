@@ -4,6 +4,8 @@
 // UPDATED: 2026-08-16 - Renamed the literal to `metamethod` and removed it from the extraction note; the keyword is
 //                       documented for metatable handlers only (commit 5c92d652a)
 // UPDATED: 2026-08-16 - Migrated the __close migration example to the `metamethod` form (commit 58e7bad8a)
+// UPDATED: 2026-08-19 - Removed the `metamethod` literal from the feature list and reverted the __close example to
+//                       the ordinary `function` form; the keyword is gone (commit 81aa5f3)
 // UPDATED: 2026-08-15 - Framework callbacks now capture the registration context; corrected the self-migration note
 //                       (commit 1a38f18e0)
 // UPDATED: 2026-08-17 - Tiri's own subscription interfaces capture the registration context as well; corrected the
@@ -993,7 +995,6 @@ The following Tiri features have no counterpart in standard Lua.  They do not re
 * **Pipe operator**: `x |> func()` (see <<ch-result-management>>)
 * **Deferred expressions**: `<{ expr }>` (see <<ch-resource-management>>)
 * **Thunk functions**: `thunk name():type pass:[...] end` (see <<ch-resource-management>>)
-* **Metamethod literals**: `metamethod(pass:[...]) pass:[...] end` (see <<sec-metamethod-literals>>)
 * **Unicode operator aliases**: see <<sec-unicode-operator-aliases>>
 * **Approximate equality**: `a ≈ b` (see <<sec-approximate-equality>>)
 
@@ -1141,7 +1142,7 @@ end
 
 -- Tiri
 handle_mt = {
-   __close = metamethod(Error)
+   __close = function(Error)
       &file.close()
    end
 }

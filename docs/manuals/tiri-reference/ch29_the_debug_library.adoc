@@ -2,6 +2,8 @@
 // VERIFIED: 2026-03-06
 // CHANGED: 2026-07-31 — Added the required implementation-specific notice and standardised exception terminology.
 // UPDATED: 2026-08-16 - Migrated the setMetatable example to the `metamethod` form (commit 58e7bad8a)
+// UPDATED: 2026-08-19 - Reverted the setMetatable example to the ordinary `function` form; the `metamethod`
+//                       keyword is removed (commit 81aa5f3)
 // UPDATED: 2026-08-17 - debug.validate() now reports 1-based positions with zero as the unavailable
 //                       sentinel, and an exclusive endColumn (commit 3dbd62b09)
 
@@ -251,7 +253,7 @@ Sets the metatable of `Object` to `Table` (which may be `nil` to remove the meta
 [source,tiri]
 ----
 t = {}
-debug.setMetatable(t, { __tostring = metamethod() return 'custom' end })
+debug.setMetatable(t, { __tostring = function() return 'custom' end })
 print(tostring(t))   -- 'custom'
 ----
 

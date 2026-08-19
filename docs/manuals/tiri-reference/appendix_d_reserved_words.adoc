@@ -6,6 +6,8 @@
 //                        identifier (commit ac4f30a67).
 // UPDATED: 2026-08-16 -- Renamed the reserved word `method` to `metamethod`; `method` is now an ordinary identifier
 //                        (commit 5c92d652a).
+// UPDATED: 2026-08-19 -- Removed the reserved word `metamethod`; it is now an ordinary identifier and metatable
+//                        handlers are ordinary functions (commit 81aa5f3).
 [[appendix-reserved-words]]
 [appendix]
 == Reserved Words & Keywords
@@ -19,10 +21,9 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 |`defer`    |`do`      |`else`    |`elseif`   |`end`     |`enum`
 |`except`   |`extern`  |`false`   |`for`      |`from`    |`function`
 |`global`   |`has`     |`if`      |`import`   |`in`      |`is`
-|`local`    |`metamethod`|`namespace`|`nil`   |`not`     |`or`
-|`raise`    |`repeat`  |`return`  |`success`  |`then`    |`thunk`
-|`true`     |`try`     |`until`   |`using`    |`when`    |`while`
-|`with`     |          |          |           |          |
+|`local`    |`namespace`|`nil`    |`not`      |`or`      |`raise`
+|`repeat`   |`return`  |`success` |`then`     |`thunk`   |`true`
+|`try`      |`until`   |`using`   |`when`     |`while`   |`with`
 |===
 
 A reserved word remains available as a table member name, so `t.using` and `t.with` are valid field accesses.
@@ -51,7 +52,6 @@ A reserved word remains available as a table member name, so `t.using` and `t.wi
 |`extern`   |Declares that a symbol is supplied externally and resolves as a global reference.  See <<sec-the-extern-keyword>>.
 |`enum`     |Declares a group of named integer constants.  See <<sec-enum-declarations>>.
 |`function` |Declares a named or anonymous function.  See <<ch-functions>>.
-|`metamethod`|Introduces a metatable handler literal whose first argument supplies the current context.  See <<sec-metamethod-literals>>.
 |`return`   |Returns values from a function.  See <<ch-functions>>.
 |`thunk`    |Declares a lazily evaluated expression.
 |===

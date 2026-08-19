@@ -4,6 +4,8 @@
 // CHANGED: 2026-07-31 — Standardised exception terminology on raise and re-raise.
 // UPDATED: 2026-08-11 - Documented current-context restoration during unwinding (commit 798665547)
 // UPDATED: 2026-08-13 - The unwinding example now designates its receivers as entities (commit d3638efc0)
+// UPDATED: 2026-08-19 - The __close handler is written in the ordinary `function` form; the `metamethod` keyword
+//                       is removed (commit 81aa5f3)
 // UPDATED: 2026-08-16 - Migrated the __close example to the `metamethod` form (commit 58e7bad8a)
 
 [[ch-error-handling]]
@@ -642,7 +644,7 @@ If a `<close>` handler raises an error, it replaces the original exception.  All
 [source,tiri]
 ----
 mt = {
-   __close = metamethod(Error)
+   __close = function(Error)
       print('Closing resource, error: ' .. tostring(Error))
    end
 }

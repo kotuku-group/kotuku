@@ -363,6 +363,24 @@ Removes the subscription for the named action or method.  Associated resources h
 http.unsubscribe('deactivate')
 ----
 
+==== Subscription Context
+
+`subscribe()` captures the context that is current at the point of subscription, and re-instates it on every invocation of `Callback`.
+
+[%unbreakable]
+[source,tiri]
+----
+monitor = entity { name = 'monitor', closed = false }
+
+function monitor.watch(Target)
+   Target.subscribe('free', function(UID, Args, Ref)
+      &closed = true         -- 'monitor', captured at subscription
+   end)
+end
+----
+
+A callback that must operate on a different table captures it as an upvalue, or receives it through `CustomRef`.  Callbacks handed to the framework as an argument to an action or method, and fields that hold a function, capture the context on the same terms.  See <<sec-context-and-callbacks>>.
+
 [[sec-object-locking]]
 === Object Locking
 indexterm:[objects, locking] The `with` statement locks one or more Kōtuku objects for the duration of a block.  Objects are automatically unlocked when the scope exits through any path: normal completion, `return`, `break`, `continue`, or exception unwinding.

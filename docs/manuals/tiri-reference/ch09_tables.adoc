@@ -5,6 +5,8 @@
 //                       documented for metatable handlers only (commit 5c92d652a)
 // UPDATED: 2026-08-18 - table.move() and table.concat() migrated to half-open (exclusive stop) range semantics; the
 //                       explicit boundary parameter is now named `Stop` (commit 3e99d69ac)
+// UPDATED: 2026-08-19 - The `metamethod` keyword is removed; handlers such as __newindex and __pairs are ordinary
+//                       functions (commit 81aa5f3)
 
 [[ch-tables]]
 == Tables

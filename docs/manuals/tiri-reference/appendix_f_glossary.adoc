@@ -17,6 +17,8 @@
 // UPDATED: 2026-08-16 - The ternary separator is now ':'; corrected the Extended falsiness and Ternary operator
 //                       entries (commit 982d890de)
 // UPDATED: 2026-08-18 - Added the Half-open span entry; every library Stop index is exclusive (commit 3e99d69ac)
+// UPDATED: 2026-08-19 - Removed the Metamethod literal entry; handlers are ordinary functions whose receiver is
+//                       installed as context on dispatch (commit 81aa5f3)
 
 [[appendix-glossary]]
 [appendix]
@@ -161,10 +163,7 @@ LuaJIT::
 The high-performance Lua virtual machine and JIT compiler that serves as the foundation for the Tiri runtime.
 
 Metamethod::
-A function stored in a metatable under a reserved key (e.g. `__add`, `__index`, `__tostring`).  Metamethods intercept and customise operations on the value associated with the metatable.  See <<ch-metatables-and-metamethods>>.
-
-Metamethod literal::
-A metatable handler written with the `metamethod` keyword.  See <<sec-metamethod-literals>> and <<sec-context-aware-metamethods>>.
+An ordinary function stored in a metatable under a reserved key (e.g. `__add`, `__index`, `__tostring`).  Metamethods intercept and customise operations on the value associated with the metatable.  On dispatch the runtime installs the receiver as the handler's current context, reached through self referencing.  See <<ch-metatables-and-metamethods>> and <<sec-metamethod-handler-form>>.
 
 Metatable::
 A table that customises the behaviour of another table or userdata value.  Operations on the value dispatch to metamethods defined in its metatable.  See <<sec-metatable-basics>>.

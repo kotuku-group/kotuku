@@ -63,6 +63,14 @@ module Rouge
             rule %r/f"/, Str::Double, :fstring_dq
             rule %r/f'/, Str::Single, :fstring_sq
 
+            # Regex string shorthand: r'...', r"...", r[[...]], r[=[...]=]
+            # Content is raw (no escape processing), so match the whole literal
+            # in one rule to avoid the string states flagging \d, \w etc. as
+            # illegal escape sequences (which render with an Error background).
+            rule %r/r\[(=*)\[.*?\]\1\]/m, Str::Regex
+            rule %r/r'[^']*'/, Str::Regex
+            rule %r/r"[^"]*"/, Str::Regex
+
             # Numbers
             rule %r((?i)(\d*\.\d+|\d+\.\d*)(e[+-]?\d+)?), Num::Float
             rule %r((?i)\d+e[+-]?\d+), Num::Float

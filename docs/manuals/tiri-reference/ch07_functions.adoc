@@ -1,17 +1,4 @@
-// VERIFIED: 2028-08-06
-// UPDATED: 2026-08-15 - Added the `method` keyword and the sec-context-first-methods section; restoration now covers
-//                       context-first activations (commit ac4f30a67)
-// UPDATED: 2026-08-16 - Renamed the keyword to `metamethod` and narrowed the section to metatable handlers; the
-//                       extraction and standalone-literal uses have been removed (commit 5c92d652a)
-// UPDATED: 2026-08-16 - Retargeted the sec-metamethod-literals cross-reference at the receiver-first binary
-//                       convention, replacing the removed binary restriction (commit 58e7bad8a)
-// UPDATED: 2026-08-15 - Native framework callbacks capture the registration context; rewrote sec-context-and-callbacks
-//                       and listed the Tiri interfaces that still begin at the root (commit 1a38f18e0)
-// UPDATED: 2026-08-17 - Tiri's own subscription interfaces capture the registration context as well; replaced the
-//                       "Interfaces That Begin at the Root" section with sec-tiri-subscription-callbacks and
-//                       documented that a dispatch-point context is never inherited (commit f052ec04d)
-// UPDATED: 2026-08-17 - A callback must be a function value; a string naming a global function is rejected
-//                       (commit 8ec1562e5)
+// VERIFIED: 2028-08-19
 
 [[ch-functions]]
 == Functions
@@ -200,10 +187,10 @@ end
 table.sort(items, function(A, B) return A < B end)
 ----
 
-[[sec-the-current-context]]
-=== The Current Context
+[[sec-context]]
+=== Context
 
-indexterm:[current context] indexterm:[context] indexterm:[receiver] Every function activation runs within a __context__, represented by a table that the activation reaches without naming it.  A leading `&` on a name reads or writes a field of that table, and `+&&+` yields the table itself.  The current context is Tiri's equivalent of the receiver that other languages expose as `this` or `self`.
+indexterm:[current context] indexterm:[context] indexterm:[receiver] Every function activation runs within a __context__, represented by a table that the activation reaches without naming it.  A leading `&` on a name reads or writes a field of that table, and `+&&+` yields the table itself.  Context is Tiri's equivalent of the receiver that other languages expose as `this` or `self`.  A key difference is that Tiri maintains context on a stack and can be referenceed from anywhere, thus it is not restricted to the scope of a method call.
 
 The capability is opt-in.  A receiver becomes the current context of a call made on it only when it is a table that has been designated an __entity__ (<<sec-table-entities>>).  An ordinary table receiver leaves the context unchanged, as does a receiver of any other type.  Designation belongs to the table identity, not to the functions stored in it, so one function behaves according to the receiver used for each call.
 
@@ -514,25 +501,57 @@ Root writes cross the environment mutation boundary described in <<sec-environme
 Because the root resolves through the environment rather than through a stored table, an environment replacement made with `debug.setEnv()` is visible to the next self reference.
 
 [[sec-context-and-callbacks]]
-==== Asynchronous Callbacks
+==== Callbacks
 
-A callback entered from outside the script's own control flow begins in the root context, not in the context that was current when the callback was registered.  This applies to `processing.delayedCall()` (<<sec-processing-callbacks>>), timer callbacks, and object subscriptions (<<sec-subscriptions>>).
+indexterm:[callbacks, context] indexterm:[current context, callbacks] indexterm:[bound context] A function value registered as a callback captures the context that is current at the point of registration.  That context is re-instated each time the callback is invoked, then restored when the callback returns.  Four registration forms capture the context:
+
+- An argument to a module function, such as `mSys.SubscribeTimer()`.
+- An argument to an object action or method, such as `obj<File>.mtCopy()`.
+- An object field that holds a function, such as `obj<VectorViewport>.dragCallback`.
+- An argument to a subscription interface implemented by Tiri, listed in <<sec-tiri-subscription-callbacks>>.
 
 [%unbreakable]
 [source,tiri]
 ----
-monitor = entity { name = 'monitor' }
+monitor = entity { name = 'monitor', ticks = 0 }
 
 function monitor.watch()
-   processing.delayedCall(function()
-      report(monitor)                     -- the context here is _G, not 'monitor'
+   err, handle = mSys.SubscribeTimer(0.1, function()
+      &ticks++             -- 'monitor', captured at registration
    end)
 end
 ----
 
-A callback that needs the receiver captures it as an upvalue, as shown above, or is invoked as a member of it.
+A callback must be a function value.  The context is captured whether it was established by a contextual call, a context block or metamethod dispatch, and the captured table is not required to be an entity: `using` can activate ordinary tables, and a callback registered inside such a block captures the ordinary table.
 
-Synchronous re-entry through the host, including `exec()`, is not a callback boundary and inherits the active context.
+The capture belongs to the registration and not to the function value.  One function value registered twice observes the context of the registration that invoked it:
+
+[%unbreakable]
+[source,tiri]
+----
+left  = entity { name = 'left', observed = nil }
+right = entity { name = 'right', observed = nil }
+
+observe = function()
+   &observed = &name
+end
+
+using left do
+   err, leftTimer = mSys.SubscribeTimer(0.1, observe)
+end
+
+using right do
+   err, rightTimer = mSys.SubscribeTimer(0.1, observe)
+end
+----
+
+A registration made in the root context captures no table, and the callback runs in the root context (<<sec-the-root-context>>).
+
+Restoration follows <<sec-context-restoration>> on every exit path, including an error raised in the callback body.  A callback registered inside another callback captures the outer callback's context, and the outer context is restored when the inner activation ends.
+
+===== Lifetime
+
+The registration holds the captured table, so the table remains reachable for as long as the registration exists, even when the script releases every other reference to it.  The table is released when the registration is released: the owning object is freed, the field is assigned a different callback, the subscription is cancelled, or the native call consumes the callback.
 
 [[sec-parameters-and-arguments]]
 === Parameters & Arguments
