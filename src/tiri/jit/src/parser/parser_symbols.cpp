@@ -387,11 +387,6 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
    std::string signature = Name + "(";
    bool first = true;
 
-   if (Function.callable_kind IS FunctionCallableKind::ContextFirstArgument) {
-      signature += "context table!";
-      first = false;
-   }
-
    for (const FunctionParameter &param : Function.parameters) {
 
       if (not first) signature += ", ";
@@ -661,8 +656,7 @@ static ParserSymbolMetadata make_function_symbol(const std::string &Name, const 
 {
    ParserSymbolMetadata symbol;
    symbol.name = Name;
-   symbol.kind = Function.is_thunk ? "thunk" :
-      (Function.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function");
+   symbol.kind = Function.is_thunk ? "thunk" : "function";
    symbol.span = Span;
    symbol.end_span = end_span_for(Function);
    symbol.signature = build_signature(Name, Function);

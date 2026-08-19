@@ -26,7 +26,7 @@ end
 
 @Test function BareTableHonoursPairsMetamethod()
    local values = setmetatable({ ignored = 1 }, {
-      __pairs = function(Self):<func, table, nil>
+      __pairs = function():<func, table, nil>
          return next, { custom = 42 }, nil
       end
    })
@@ -49,7 +49,8 @@ end
    for _, case in pairs(cases) do
       local total = 0
       for value in case.value do total += value end
-      assert(total is case.expected, 'Bare stored range iteration produced the wrong values')
+      assert(total is case.expected,
+         f'Bare stored range iteration produced {total}; expected {case.expected} for {case.value}')
    end
 end
 
@@ -68,9 +69,9 @@ end
 @Test function CallableTableUsesPairsWhenBare()
    local call_count = 0
    local values = setmetatable({ amount = 7 }, {
-      __call = function(Self):num
+      __call = function():num
          call_count++
-         return Self.amount
+         return &amount
       end
    })
 

@@ -176,9 +176,13 @@ int lj_meta_tailcall(lua_State *L, cTValue *tv)
 #endif
 
 //********************************************************************************************************************
-// Setup call to metamethod to be run by Assembler VM.
+// Setup a metamethod call to be run by the assembler VM. Table receivers are captured as context and omitted from
+// the visible argument area; non-table receivers retain their native ABI.
 
-TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *mo, cTValue *a, cTValue *b)
+enum class MetamethodCallKind : uint8_t { Index, NewIndex, Unary };
+
+static TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *Method, cTValue *Receiver, cTValue *Argument,
+   MetamethodCallKind Kind)
 {
    //           |-- framesize -> top       top+1       top+2 top+3
    // before:   [func slots ...]
@@ -195,11 +199,22 @@ TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *mo, cTValue *a, cTValue
    if (curr_funcisL(L)) top = curr_topL(L);
    setcont(top++, cont);  //  Assembler VM stores PC in upper word or FR2.
    setnilV(top++);
-   copyTV(L, top++, mo);  //  Store metamethod and two arguments.
+   copyTV(L, top++, Method);
    setnilV(top++);
-   copyTV(L, top, a);
-   copyTV(L, top + 1, b);
-   return top;  //  Return new base.
+   TValue *base = top;
+   uint32_t visible_count = Kind IS MetamethodCallKind::Unary ? 0 : 1;
+   uint32_t native_count = 2;
+   uint32_t argument_count = lj_context_prepare_metamethod_call(
+      L, Receiver, base, visible_count, native_count);
+   if (tvistab(Receiver)) {
+      if (visible_count) copyTV(L, base, Argument);
+   }
+   else {
+      copyTV(L, base, Receiver);
+      copyTV(L, base + 1, Argument);
+   }
+   lj_assertL(argument_count IS L->metamethod_argument_count, "metamethod argument count was not retained");
+   return base;
 }
 
 // Setup a receiver-first binary metamethod call.  This remains separate from mmcall() so receiver-stable binary
@@ -220,10 +235,18 @@ static TValue * mmcall_binop3(lua_State *L, ASMFunction cont, cTValue *Method, c
    setnilV(top++);
    copyTV(L, top++, Method);
    setnilV(top++);
-   copyTV(L, top++, Receiver);
-   copyTV(L, top++, Other);
+   TValue *base = top;
+   uint32_t argument_count = lj_context_prepare_metamethod_call(L, Receiver, base, 2, 3);
+   if (tvistab(Receiver)) {
+      copyTV(L, top++, Other);
+   }
+   else {
+      copyTV(L, top++, Receiver);
+      copyTV(L, top++, Other);
+   }
    setboolV(top, LhsDispatch);
-   return top - 2;  //  Return new base.
+   lj_assertL(uint32_t(top - base + 1) IS argument_count, "binary metamethod prepared the wrong arguments");
+   return base;
 }
 
 //********************************************************************************************************************
@@ -269,7 +292,7 @@ cTValue *lj_meta_tget(lua_State *L, cTValue *o, cTValue *k)
       }
 
       if (tvisfunc(mo)) {
-         L->top = mmcall(L, lj_cont_ra, mo, o, k);
+         L->top = mmcall(L, lj_cont_ra, mo, o, k, MetamethodCallKind::Index);
          return nullptr;  //  Trigger metamethod call.
       }
       o = mo;
@@ -339,7 +362,7 @@ TValue * lj_meta_tset(lua_State *L, cTValue *o, cTValue *k)
       }
 
       if (tvisfunc(mo)) {
-         L->top = mmcall(L, lj_cont_nop, mo, o, k);
+         L->top = mmcall(L, lj_cont_nop, mo, o, k, MetamethodCallKind::NewIndex);
          // L->top+2 = v filled in by caller.
          return nullptr;  //  Trigger metamethod call.
       }
@@ -392,7 +415,7 @@ TValue * lj_meta_arith(lua_State *L, TValue *ra, cTValue *rb, cTValue *rc, BCREG
             return nullptr;  //  unreachable
          }
       }
-      if (mm IS MM_unm) return mmcall(L, lj_cont_ra, mo, rb, rc);
+      if (mm IS MM_unm) return mmcall(L, lj_cont_ra, mo, rb, rc, MetamethodCallKind::Unary);
       return mmcall_binop3(L, lj_cont_ra, mo, receiver, other, lhs_dispatch);
    }
 }
@@ -439,22 +462,33 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
          // before:    [...][CAT stack .........................]
          //                                 top-1     top         top+1 top+2
          // pick two:  [...][CAT stack ...] [o1]      [o2]
-         // setup mm:  [...][CAT stack ...] [cont|?]  [mo|tmtype] [receiver] [other] [lhs dispatch]
-         // in asm:    [...][CAT stack ...] [cont|PC] [mo|delta]  [receiver] [other] [lhs dispatch]
-         //            ^-- func base                                ^-- mm base
+         // setup mm:  [...][CAT stack ...] [cont|?]  [mo|tmtype] [visible arguments ...]
+         // in asm:    [...][CAT stack ...] [cont|PC] [mo|delta]  [visible arguments ...]
+         //            ^-- func base                    ^-- mm base
          // after mm:  [...][CAT stack ...] <--push-- [result]
          // next step: [...][CAT stack .............]
 
-         copyTV(L, top + 2 * LJ_FR2 + 3, other);  //  Carefully ordered stack copies!
-         copyTV(L, top + 2 * LJ_FR2 + 2, other);
-         copyTV(L, top + 2 * LJ_FR2 + 1, receiver);
+         TValue receiver_copy, other_copy;
+         copyTV(L, &receiver_copy, receiver);
+         copyTV(L, &other_copy, other);
          copyTV(L, top + LJ_FR2, mo);
          setcont(top - 1, lj_cont_cat);
          setnilV(top);
          setnilV(top + 2);
-         setboolV(top + 2 * LJ_FR2 + 3, lhs_dispatch);
-         top += 2;
-         return top + 1;  //  Trigger metamethod call.
+         TValue *base = top + 2 * LJ_FR2 + 1;
+         uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver_copy, base, 2, 3);
+         if (tvistab(&receiver_copy)) {
+            copyTV(L, base, &other_copy);
+            setboolV(base + 1, lhs_dispatch);
+         }
+         else {
+            copyTV(L, base, &receiver_copy);
+            copyTV(L, base + 1, &other_copy);
+            setboolV(base + 2, lhs_dispatch);
+         }
+         lj_assertL(argument_count IS L->metamethod_argument_count,
+            "concatenation metamethod argument count was not retained");
+         return base;  // Trigger metamethod call.
       }
       else {
          // Pick as many strings as possible from the top and concatenate them:
@@ -517,7 +551,7 @@ TValue * lj_meta_len(lua_State *L, cTValue *o)
       else lj_err_optype(L, o, ErrMsg::OPLEN);
       return nullptr;
    }
-   return mmcall(L, lj_cont_len, mo, o, o);
+   return mmcall(L, lj_cont_len, mo, o, o, MetamethodCallKind::Unary);
 }
 
 //********************************************************************************************************************
@@ -541,9 +575,18 @@ TValue * lj_meta_equal(lua_State *L, GCobj* o1, GCobj* o2, int ne)
       copyTV(L, top++, mo);
       setnilV(top++);
       it = ~(uint32_t)o1->gch.gct;
-      setgcV(L, top, o1, it);
-      setgcV(L, top + 1, o2, it);
-      return top;  //  Trigger metamethod call.
+      TValue receiver, other;
+      setgcV(L, &receiver, o1, it);
+      setgcV(L, &other, o2, it);
+      uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, top, 1, 2);
+      if (tvistab(&receiver)) copyTV(L, top, &other);
+      else {
+         copyTV(L, top, &receiver);
+         copyTV(L, top + 1, &other);
+      }
+      lj_assertL(argument_count IS L->metamethod_argument_count,
+         "equality metamethod argument count was not retained");
+      return top;  // Trigger metamethod call.
    }
    return (TValue *)(intptr_t)ne;
 }
@@ -1342,14 +1385,22 @@ extern "C" GCstr * lj_vm_envcheck(lua_State *L, GCtab *Environment, GCstr *Name,
 //********************************************************************************************************************
 // Helper for calls. __call metamethod.
 
-void lj_meta_call(lua_State *L, TValue *func, TValue *top)
+int lj_meta_call(lua_State *L, TValue *func, TValue *top, bool TailTransfer)
 {
    cTValue *mo = lj_meta_lookup(L, func, MM_call);
-   TValue *p;
    if (not tvisfunc(mo)) lj_err_optype_call(L, func);
+   if (tvistab(func)) {
+      TValue *owner_base = TailTransfer ? L->base : func + 2;
+      uint32_t visible_count = uint32_t(top - (func + 2));
+      lj_context_prepare_metamethod_call(L, func, owner_base, visible_count, visible_count + 1, TailTransfer);
+      copyTV(L, func, mo);
+      return 0;
+   }
+   TValue *p;
    for (p = top; p > func + 2; p--) copyTV(L, p, p - 1);
    copyTV(L, func + 2, func);
    copyTV(L, func, mo);
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -1362,6 +1413,7 @@ void lj_meta_call(lua_State *L, TValue *func, TValue *top)
 
 int lj_meta_close(lua_State *L, TValue *o, TValue *err)
 {
+   size_t context_depth = lj_context_depth(L);
    const ptrdiff_t object_offset = savestack(L, o);
    const bool has_error = err != nullptr;
    const ptrdiff_t error_offset = has_error ? savestack(L, err) : 0;
@@ -1393,17 +1445,22 @@ int lj_meta_close(lua_State *L, TValue *o, TValue *err)
       copyTV(L, top++, mo);         // Push __close function
       setnilV(top++);               // Frame slot for LJ_FR2
       TValue *argbase = top;        // First argument position (for lj_vm_pcall base)
-      copyTV(L, top++, o);          // Push object (first argument)
+      uint32_t argument_count = lj_context_prepare_metamethod_call(L, o, argbase, 1, 2);
+      if (not tvistab(o)) copyTV(L, top++, o);
       if (err) copyTV(L, top++, err); // Push error value (second argument)
       else setnilV(top++);            // Push nil for normal scope exit
+      lj_assertL(uint32_t(top - argbase) IS argument_count,
+         "__close call prepared an unexpected argument count");
       L->top = top;
 
-      // Call __close(obj, err) with protection. nres1=1 means 0 results expected.
+      // Call __close with protection. nres1=1 means 0 results expected.
       // Suspend the caller's Tiri try handlers so an error from __close unwinds to this protected-call frame.
       // The caller will then continue running any remaining close handlers with the replacement error.
       L->try_stack.depth = 0;
       L->try_handler_pc = nullptr;
       errcode = lj_vm_pcall(L, argbase, 1, -1);
+      lj_assertL(lj_context_depth(L) IS context_depth,
+         "__close returned with unbalanced contextual activations");
       std::copy_n(saved_try_frames.begin(), saved_try_depth, L->try_stack.frames);
       L->try_stack.depth = saved_try_depth;
       L->try_handler_pc = saved_try_handler;

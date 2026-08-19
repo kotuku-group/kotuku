@@ -260,7 +260,7 @@ global FLUID_KEYWORDS = {
    ['choose'] = true, ['from'] = true, ['when'] = true,
 
    -- Declarations
-   ['function'] = true, ['metamethod'] = true, ['local'] = true, ['global'] = true, ['extern'] = true,
+   ['function'] = true, ['local'] = true, ['global'] = true, ['extern'] = true,
    ['thunk'] = true,
    ['import'] = true, ['as'] = true, ['enum'] = true,
 

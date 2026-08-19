@@ -628,8 +628,7 @@ static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCRea
    constexpr uint8_t known_flags = proto_signature_flag(ProtoSignatureFlag::ParameterVariadic) |
       proto_signature_flag(ProtoSignatureFlag::ResultVariadic) |
       proto_signature_flag(ProtoSignatureFlag::ExplicitResults) |
-      proto_signature_flag(ProtoSignatureFlag::DynamicResults) |
-      proto_signature_flag(ProtoSignatureFlag::ContextFirstArgument);
+      proto_signature_flag(ProtoSignatureFlag::DynamicResults);
    if (flags & ~known_flags) bcread_error(State, ErrMsg::BCBAD);
 
    uint32_t parameter_count = 0;

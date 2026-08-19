@@ -18,6 +18,7 @@
 #include "lj_buf.h"
 #include "lj_tab.h"
 #include "lj_meta.h"
+#include "lj_state.h"
 #include "lj_ff.h"
 #include "lj_strfmt.h"
 #include "lib.h"
@@ -354,7 +355,8 @@ LJLIB_ASM(table_clear)   LJLIB_REC(.)
 
    cTValue *metamethod = lj_meta_lookup(L, L->base, MM_clear);
    if (not tvisnil(metamethod)) {
-      L->top = L->base + 1;
+      lj_context_prepare_metamethod_call(L, L->base, L->base, 0, 1, true);
+      L->top = L->base;
       copyTV(L, L->base - 2, metamethod);
       return FFH_TAILCALL;
    }

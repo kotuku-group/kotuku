@@ -153,19 +153,16 @@ end
    assert(extern_keyword and extern_keyword.type is 0, 'extern should be highlighted as a keyword.')
 end
 
-@Test function MetamethodKeywordReceivesSemanticTokens()
-   -- The keyword is immediately followed by '(', so without an entry in FLUID_KEYWORDS the tokenizer
-   -- would fall back to emitting it as a function call rather than a keyword.
-   source = 'local mt = { __tostring = metamethod():str\n' ..
-      'return &name\n' ..
-      'end }\n'
+@Test function MetamethodIdentifierIsNotAKeyword()
+   source = 'local metamethod = function() end\n' ..
+      'metamethod()\n'
 
    tokens = tokenizeTiri(source)
 
-   metamethod_keyword = findToken(tokens, 0, 26, 'metamethod')
+   metamethod_call = findToken(tokens, 1, 0, 'metamethod')
 
-   assert(metamethod_keyword and metamethod_keyword.type is 0,
-      'metamethod should be highlighted as a keyword, not a function call.')
+   assert(metamethod_call and metamethod_call.type is 3,
+      'metamethod should be available as an ordinary identifier and function call.')
 end
 
 @Test function ExternDiagnosticsUseCurrentParser()

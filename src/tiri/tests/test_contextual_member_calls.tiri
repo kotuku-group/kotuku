@@ -377,13 +377,13 @@ end
    assert(&name is nil, 'Protected calls should restore the root context after returning')
 end
 
-@Test function ErrorCleanupHandlersObserveOwningContexts()
+@Test function ErrorCleanupHandlersObserveDispatchContexts()
    local observed = {}
    local outer = entity { name = 'outer' }
    local inner = entity { name = 'inner' }
 
    function make_resource(Label:str):table
-      return setmetatable({}, {
+      return setmetatable({ name = Label }, {
          __close = function()
             observed[#observed] = Label .. ':' .. &name
          end
@@ -406,8 +406,8 @@ end
       assert(e.message.find('cleanup failure') != nil, 'The cleanup fixture should preserve the original error')
    end
 
-   assert(observed[0] is 'inner:inner', 'An inner error cleanup should retain the inner activation context')
-   assert(observed[1] is 'outer:outer', 'An outer error cleanup should restore the outer activation context')
+   assert(observed[0] is 'inner:inner', 'An inner error cleanup should expose the inner resource as context')
+   assert(observed[1] is 'outer:outer', 'An outer error cleanup should expose the outer resource as context')
    assert(&name is nil, 'Error cleanup should finish in the root context')
 end
 

@@ -2017,7 +2017,7 @@ end
 
    local calls = 0
    local target = setmetatable({ value=42 }, {
-      ['__clear'] = function(Self)
+      ['__clear'] = function()
          calls += 1
       end
    })
@@ -3255,7 +3255,7 @@ end
 
 @Test function JITLenRejectsNonNumericMetamethodResult()
    local metamethod_result:any = 4
-   local value = setmetatable({}, { __len = function(Self):any return metamethod_result end })
+   local value = setmetatable({}, { __len = function():any return metamethod_result end })
 
    jit.flush()
    jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')

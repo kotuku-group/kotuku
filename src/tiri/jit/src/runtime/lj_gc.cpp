@@ -963,6 +963,7 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    lj_assertG_(G, tvisfunc(Metamethod), "attempt to call a non-function finaliser");
    lj_trace_abort(G);
 
+   size_t context_depth = lj_context_depth(L);
    ptrdiff_t saved_top = savestack(L, L->top);
    const BCIns *saved_try_handler = L->try_handler_pc;
    CapturedStackTrace *saved_pending_trace = L->pending_trace;
@@ -991,14 +992,21 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
       copyTV(L, top++, Metamethod);
       if (LJ_FR2) setnilV(top++);
       TValue *argument = top;
-      setgcV(L, top, Object, ~Object->gch.gct);
-      L->top = top + 1;
+      TValue receiver;
+      setgcV(L, &receiver, Object, ~Object->gch.gct);
+      uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, argument, 0, 1);
+      if (not tvistab(&receiver)) copyTV(L, top++, &receiver);
+      L->top = top;
+      lj_assertG_(G, uint32_t(L->top - argument) IS argument_count,
+         "__gc call prepared an unexpected argument count");
 
       // Call the finaliser. Stack: |metamethod|object| -> |
       // Suspend the caller's Tiri try handlers so finaliser errors unwind to this protected-call frame.
       L->try_stack.depth = 0;
       L->try_handler_pc = nullptr;
       errcode = lj_vm_pcall(L, argument, 1, -1);
+      lj_assertG_(G, lj_context_depth(L) IS context_depth,
+         "__gc returned with unbalanced contextual activations");
       std::copy_n(saved_try_frames.begin(), saved_try_depth, L->try_stack.frames);
       L->try_stack.depth = saved_try_depth;
       L->try_handler_pc = saved_try_handler;

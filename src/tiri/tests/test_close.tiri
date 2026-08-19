@@ -8,7 +8,7 @@ function enforce_hotpath() end
 @Test function BasicClose()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -18,14 +18,14 @@ function enforce_hotpath() end
    assert(closed, 'Basic close: __close should be called when scope ends')
 end
 
--- __close receives self as first argument
+-- __close exposes the closed table as dispatch context
 
 @Test function CloseSelfArg()
    received_self = nil
    obj_value = { data = 'test_value' }
    mt = {
-      __close = function(self, err)
-         received_self = self
+      __close = function(Error)
+         received_self = &&
       end
    }
    do
@@ -40,8 +40,8 @@ end
 @Test function CloseNilErrArg()
    received_err = 'not_nil'
    mt = {
-      __close = function(self, err)
-         received_err = err
+      __close = function(Error)
+         received_err = Error
       end
    }
    do
@@ -72,7 +72,7 @@ end
    order = {}
    function makeMt(n)
       return {
-         __close = function(self, err)
+         __close = function(Error)
             order.insert(n)
          end
       }
@@ -133,7 +133,7 @@ end
 @Test function CloseOnReturn()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -237,9 +237,9 @@ end
    closed = false
    received_err = nil
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
-         received_err = err
+         received_err = Error
       end
    }
 
@@ -269,7 +269,7 @@ end
 
    function inner()
       local obj <close> = setmetatable({}, {
-         __close = function(Self, Error)
+         __close = function(Error)
             processing.collect('full')
             received_message = tostring(Error)
             global_during_close = _G.__close_err
@@ -295,14 +295,14 @@ end
    outer_messages = {}
 
    inner_mt = {
-      __close = function(Self, Error)
+      __close = function(Error)
          processing.collect('full')
          inner_message = tostring(Error)
       end
    }
 
    nesting_mt = {
-      __close = function(Self, Error)
+      __close = function(Error)
          outer_messages.insert(tostring(Error))
 
          function nested_failure()
@@ -318,7 +318,7 @@ end
    }
 
    trailing_mt = {
-      __close = function(Self, Error)
+      __close = function(Error)
          outer_messages.insert(tostring(Error))
       end
    }
@@ -364,9 +364,9 @@ end
    errors_received = {}
    function makeMt(n)
       return {
-         __close = function(self, err)
+         __close = function(Error)
             order.insert(n)
-            errors_received[n] = err
+            errors_received[n] = Error
          end
       }
    end
@@ -530,13 +530,13 @@ end
 @Test function CloseHandlerError()
    order = {}
    mt1 = {
-      __close = function(self, err)
+      __close = function(Error)
          order.insert('close1')
          error('close1 error')
       end
    }
    mt2 = {
-      __close = function(self, err)
+      __close = function(Error)
          order.insert('close2')
          -- This handler should receive the error from close1 (or original)
       end
@@ -569,14 +569,14 @@ end
 @Test function MultipleCloseErrors()
    order = {}
    mt1 = {
-      __close = function(self, err)
+      __close = function(Error)
          msg('mt1 __close called')
          order.insert('close1')
          error('close1 error')
       end
    }
    mt2 = {
-      __close = function(self, err)
+      __close = function(Error)
          msg('mt2 __close called')
          order.insert('close2')
          error('close2 error')

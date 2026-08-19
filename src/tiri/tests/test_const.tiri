@@ -371,7 +371,7 @@ end
    local global_name = f"glRetriedConst{failed_const_test_id}"
    failed_const_test_id++
 
-   setmetatable(_G, { __newindex = function(Table, Key, Value) error('blocked const store') end })
+   setmetatable(_G, { __newindex = function(Key, Value) error('blocked const store') end })
    try
       exec(f"global {global_name} <const> = 'first'")
    except e

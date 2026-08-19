@@ -67,8 +67,10 @@ static void push_concat_value_string(lua_State *L, cTValue *Value)
 
 static int exception_tostring(lua_State *L)
 {
-   TValue *value = L->base;
-   if (is_exception_table(L, value)) push_exception_string(L, tabV(value));
+   GCtab *exception = lj_context_current(L);
+   TValue value;
+   settabV(L, &value, exception);
+   if (is_exception_table(L, &value)) push_exception_string(L, exception);
    else setstrV(L, L->top++, lj_str_newlit(L, "exception"));
 
    return 1;
@@ -76,8 +78,12 @@ static int exception_tostring(lua_State *L)
 
 static int exception_concat(lua_State *L)
 {
-   push_concat_value_string(L, L->base);
-   push_concat_value_string(L, L->base + 1);
+   TValue receiver;
+   settabV(L, &receiver, lj_context_current(L));
+   cTValue *other = L->base;
+   bool lhs_dispatch = tvistrue(L->base + 1);
+   push_concat_value_string(L, lhs_dispatch ? &receiver : other);
+   push_concat_value_string(L, lhs_dispatch ? other : &receiver);
    lua_concat(L, 2);
    return 1;
 }

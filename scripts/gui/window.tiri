@@ -40,9 +40,9 @@ gui.window = function(Options:table!)
       surface      = nil, -- Client access to the surface is permitted
       viewport     = nil -- The window's top-level viewport
    }, {
-      __gc = function(Window)
-         local surface = Window.surface
-         Window.surface = nil
+      __gc = function()
+         local surface = &surface
+         &surface = nil
          surface?.free()
       end
    })

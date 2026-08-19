@@ -15,6 +15,7 @@
 #include "runtime/lj_contract.h"
 #include "runtime/lj_meta.h"
 #include "runtime/lj_proto_registry.h"
+#include "runtime/lj_state.h"
 #include "runtime/lj_str.h"
 #include "runtime/lj_tab.h"
 #include "debug/dump_bytecode.h"
@@ -4761,9 +4762,10 @@ static int envstore_contract_attempt(lua_State *L)
 
 static int envstore_newindex_capture(lua_State *L)
 {
+   settabV(L, L->top++, lj_context_current(L));
    lua_pushstring(L, "glUnitEnvMetaCapture");
-   lua_pushvalue(L, 3);
-   lua_rawset(L, 1);
+   lua_pushvalue(L, 2);
+   lua_rawset(L, 3);
    return 0;
 }
 
