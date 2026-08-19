@@ -359,6 +359,26 @@ struct UpdateExprPayload {
    ~UpdateExprPayload();
 };
 
+struct TypeTestDescriptor {
+   TiriType type = TiriType::Unknown;
+   ArrayElementDescriptor array_element{};
+   CLASSID object_class_id = CLASSID::NIL;
+   struct_record *struct_def = nullptr;
+   bool constrained = false;
+};
+
+struct TypeTestExprPayload {
+   TypeTestExprPayload() = default;
+   TypeTestExprPayload(const TypeTestExprPayload&) = delete;
+   TypeTestExprPayload& operator=(const TypeTestExprPayload&) = delete;
+   TypeTestExprPayload(TypeTestExprPayload&&) noexcept = default;
+   TypeTestExprPayload& operator=(TypeTestExprPayload&&) noexcept = default;
+   ExprNodePtr value;
+   TypeTestDescriptor descriptor{};
+   bool negated = false;
+   ~TypeTestExprPayload();
+};
+
 struct BinaryExprPayload {
    BinaryExprPayload() = default;
    BinaryExprPayload(const BinaryExprPayload&) = delete;
@@ -673,7 +693,7 @@ struct ExprNode {
    mutable StaticValueHandle static_value = 0;
    mutable StaticResultSetHandle static_results = 0;
    std::variant<LiteralValue, NameRef, CurrentContextExprPayload, VarArgExprPayload, UnaryExprPayload,
-      UpdateExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
+      UpdateExprPayload, TypeTestExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,
       IndexExprPayload, SafeMemberExprPayload, SafeIndexExprPayload,
       ResultFilterPayload, TableExprPayload, FunctionExprPayload, DeferredExprPayload,
@@ -1132,6 +1152,8 @@ ExprNodePtr make_current_context_expr(SourceSpan span);
 ExprNodePtr make_vararg_expr(SourceSpan span);
 ExprNodePtr make_unary_expr(SourceSpan span, AstUnaryOperator op, ExprNodePtr operand);
 ExprNodePtr make_update_expr(SourceSpan span, AstUpdateOperator op, bool is_postfix, ExprNodePtr target);
+ExprNodePtr make_type_test_expr(
+   SourceSpan span, ExprNodePtr value, TypeTestDescriptor descriptor, bool negated);
 ExprNodePtr make_binary_expr(SourceSpan span, AstBinaryOperator op, ExprNodePtr left, ExprNodePtr right);
 ExprNodePtr make_comparison_chain_expr(SourceSpan span, std::vector<AstBinaryOperator> operators,
    ExprNodeList operands);

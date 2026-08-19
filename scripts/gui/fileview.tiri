@@ -248,7 +248,7 @@ function getFilters(self):array<str>
    if self.filterList then
       for filter in values(self.filterList) do
          if filter.selected then
-            if type(filter.ext) is 'table' or type(filter.ext) is 'array' then
+            if filter.ext is <table> or filter.ext is <array> then
                for ext in values(filter.ext) do
                   self._filters.push(ext)
                end
@@ -1418,7 +1418,7 @@ gui.fileview = function(Options)
          local tbo
          if (Options.toolBar is true) or (Options.toolBar is 'all') then
             tbo = { navigation=true, clipboard=true, actions=true, views=true }
-         elseif type(Options.toolBar) is 'table' then
+         elseif Options.toolBar is <table> then
             tbo = Options.toolBar
          else
             error('Invalid value passed to fileview.toolBar')

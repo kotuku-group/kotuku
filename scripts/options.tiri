@@ -113,7 +113,7 @@ end
 -- Verify that a parameter name is usable as a command-line token name.
 
 function validate_name(Name:any!)
-   if type(Name) != 'string' or Name is '' then
+   if Name != <str> or Name is '' then
       raise ERR_EmptyString, 'Parameter names must be non-empty strings.'
    end
 
@@ -235,11 +235,11 @@ end
 -- Convert a comma-separated string into an array of trimmed strings.
 
 function convert_csv(Value:any!, Param:table!):array<str>
-   if type(Value) is 'array' or type(Value) is 'table' then
+   if Value is <array> or Value is <table> then
       return string_array(Value)
    end
 
-   if type(Value) != 'string' then
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a comma-separated string."
    end
 
@@ -255,11 +255,11 @@ end
 -- Convert a raw value into an array of strings.
 
 function convert_array(Value:any!, Param:table!):array<str>
-   if type(Value) is 'array' or type(Value) is 'table' then
+   if Value is <array> or Value is <table> then
       return string_array(Value)
    end
 
-   if type(Value) != 'string' then
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an array value."
    end
 
@@ -275,7 +275,7 @@ end
 -- Split a string into a number and trailing unit suffix.
 
 function split_number_unit(Value:any!, Param:table!, Description:str!):<num, str>
-   if type(Value) != 'string' then
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
    end
 
@@ -307,7 +307,7 @@ end
 -- Convert a duration string into seconds.
 
 function convert_duration(Value:any!, Param:table!):num
-   if type(Value) is 'number' then return Value end
+   if Value is <num> then return Value end
 
    number, unit = split_number_unit(Value, Param, "a duration with an ms, s, m, h, or d suffix")
    multiplier = duration_multipliers[unit]
@@ -323,7 +323,7 @@ end
 -- Convert a size string into bytes.
 
 function convert_size(Value:any!, Param:table!):num
-   if type(Value) is 'number' then return Value end
+   if Value is <num> then return Value end
 
    number, unit = split_number_unit(Value, Param, "a size with a b, kb, mb, gb, or tb suffix")
    multiplier = size_multipliers[unit]
@@ -339,7 +339,7 @@ end
 -- Convert a percent value into a normalised fraction.
 
 function convert_percent(Value:any!, Param:table!):num
-   if type(Value) is 'number' then return Value end
+   if Value is <num> then return Value end
 
    text = tostring(Value.trim())
    if text.endsWith('%') then
@@ -362,8 +362,8 @@ end
 -- Compile a regular expression parameter.
 
 function convert_regex(Value:any!, Param:table!):any
-   if type(Value) is 'userdata' then return Value end
-   if type(Value) != 'string' then
+   if Value is <userdata> then return Value end
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a regex pattern."
    end
 
@@ -379,7 +379,7 @@ end
 -- Decode a JSON parameter and reject trailing non-whitespace input.
 
 function convert_json(Value:any, Param:table!):any
-   if type(Value) != 'string' then return Value end
+   if Value != <str> then return Value end
 
    local param_name = Param.name
    try
@@ -398,7 +398,7 @@ end
 -- Validate an ISO date string in YYYY-MM-DD form.
 
 function convert_date(Value:any!, Param:table!):str
-   if type(Value) != 'string' then
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
    end
 
@@ -414,7 +414,7 @@ end
 -- Validate an ISO time string in HH:MM or HH:MM:SS form, with optional fractional seconds.
 
 function convert_time(Value:any!, Param:table!):str
-   if type(Value) != 'string' then
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO time value."
    end
 
@@ -430,7 +430,7 @@ end
 -- Validate an ISO date-time string with an optional timezone offset.
 
 function convert_datetime(Value:any!, Param:table!):str
-   if type(Value) != 'string' then
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date-time value."
    end
 
@@ -446,7 +446,7 @@ end
 -- Validate supported CSS colour function syntax.
 
 function convert_colour(Value:any!, Param:table!):str
-   if type(Value) != 'string' then
+   if Value != <str> then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a supported CSS colour value."
    end
 
@@ -463,10 +463,10 @@ end
 
 function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
    if TypeName is 'str' or TypeName is 'string' or TypeName is 'enum' then
-      if type(Value) is 'string' then return Value end
+      if Value is <str> then return Value end
       return tostring(Value)
    elseif TypeName is 'num' or TypeName is 'number' then
-      if type(Value) is 'number' then return Value end
+      if Value is <num> then return Value end
 
       number = tonumber(Value)
       if number is nil then
@@ -475,7 +475,7 @@ function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
       return number
    elseif TypeName is 'int' then
       local number:any
-      if type(Value) is 'number' then
+      if Value is <num> then
          number = Value
       else
          number = tonumber(Value)
@@ -486,7 +486,7 @@ function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
       end
       return number
    elseif TypeName is 'bool' then
-      if type(Value) is 'bool' then return Value end
+      if Value is <bool> then return Value end
 
       local text = tostring(Value).lower()
       if text is 'true' or text is '1' or text is 'yes' or text is 'on' then return true end
@@ -494,7 +494,7 @@ function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
 
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a boolean value."
    elseif TypeName is 'path' or TypeName is 'file' or TypeName is 'folder' then
-      if type(Value) is 'string' then return Value end
+      if Value is <str> then return Value end
       return tostring(Value)
    elseif TypeName is 'csv' then
       return convert_csv(Value, Param)
@@ -529,7 +529,7 @@ end
 function convert_value(Parser:table!, Param:table!, Value:any!):any
    converter = Param.type
 
-   if type(converter) is 'function' then
+   if converter is <func> then
       try
          return converter(Value, Param, Parser)
       except e
@@ -537,7 +537,7 @@ function convert_value(Parser:table!, Param:table!, Value:any!):any
       end
    end
 
-   assert(type(converter) is 'string', f"Parameter '{Param.name}' type must be a string or function.")
+   assert(converter is <str>, f"Parameter '{Param.name}' type must be a string or function.")
 
    return convert_builtin(converter, Value, Param)
 end
@@ -575,7 +575,7 @@ function set_source_result(Result:table, ArgNames:table, Presence:table, Param:t
    if Param.multiple then
       result_values = array<any>
 
-      if type(RawValue) is 'array' then
+      if RawValue is <array> then
          for value in values(RawValue) do
             result_values.push(value)
          end
@@ -599,7 +599,7 @@ end
 
 function add_observed_result(Result:table!, ArgNames:table!, Presence:table!, Param:table!, ArgName:str!,
    RawValue:any!):table
-   if Param.multiple and type(RawValue) is 'array' then
+   if Param.multiple and RawValue is <array> then
       for value in values(RawValue) do
          add_result_value(Result, ArgNames, Presence, Param, ArgName, value, true)
       end
@@ -730,7 +730,7 @@ function get_script_arguments(Parameters:array<str>!):array<str>
 
    while index < #Parameters do
       token = Parameters[index]
-      assert(type(token) is 'string', 'Task parameters must contain strings')
+      assert(token is <str>, 'Task parameters must contain strings')
 
       if not script_seen then
          if token.startsWith('--') then
@@ -759,7 +759,7 @@ end
 
 function get_task_parameters(Options:table):array<str>
    if Options and Options.taskParameters != nil then
-      assert(type(Options.taskParameters) is 'array', 'Options.taskParameters must be an array.')
+      assert(Options.taskParameters is <array>, 'Options.taskParameters must be an array.')
       return Options.taskParameters
    end
 
@@ -806,7 +806,7 @@ function parse_ordered_input(Parser:table!, Result:table!, ArgNames:table!, Pres
    pos_index = 0
    token_index = 0
    for token in values(Input) do
-      assert(type(token) is 'string', 'Command-line input must contain strings')
+      assert(token is <str>, 'Command-line input must contain strings')
       name = split_token(token)
       pos_index = parse_ordered_token(Parser, Result, ArgNames, Presence, token, pos_index)
       if token_index is 0 and name is Parser.helpArg and Result[Parser.helpArg] != nil then
@@ -866,7 +866,7 @@ function convert_result(Parser:table!, RawResult:table!, ArgNames:table!, Presen
       if raw_value != nil then
          try
             if param.multiple then
-               assert(type(raw_value) is 'array', f"Parameter '{param.name}' should contain an array of values.")
+               assert(raw_value is <array>, f"Parameter '{param.name}' should contain an array of values.")
 
                if converts_repeated_values(param) then
                   result[param.name] = convert_value(Parser, param, raw_value)
@@ -1265,7 +1265,7 @@ function build_param_help(Parser:table!, Topic:str!):str
    lines.push('')
    lines.push('Usage: ' .. param_invocation(param))
    lines.push('Kind: ' .. param.kind)
-   if type(param.type) is 'string' then
+   if param.type is <str> then
       lines.push('Type: ' .. param.type)
    else
       lines.push('Type: custom')
@@ -1411,7 +1411,7 @@ function convert_param_default(Parser:table!, Param:table!):<bool, any>
 
       result_values = array<any>
 
-      if type(Param.default) is 'array' then
+      if Param.default is <array> then
          for item in values(Param.default) do
             result_values.push(convert_value(Parser, Param, item))
          end
@@ -1474,7 +1474,7 @@ end
 
 function validate_scalar_value(Param:table!, Value:any!)
    if Param.choices then
-      assert(type(Param.choices) is 'array' or type(Param.choices) is 'table',
+      assert(Param.choices is <array> or Param.choices is <table>,
          f"Parameter '{Param.name}' choices must be an array or table.")
 
       if not contains_choice(Param.choices, Value) then
@@ -1486,7 +1486,7 @@ function validate_scalar_value(Param:table!, Value:any!)
       local pattern:any = Param._pattern
       if pattern is nil or Param._pattern_source != Param.pattern then
          pattern = Param.pattern
-         if type(pattern) is 'string' then
+         if pattern is <str> then
             pattern = regex.new(pattern)
          end
 
@@ -1494,7 +1494,7 @@ function validate_scalar_value(Param:table!, Value:any!)
          Param._pattern_source = Param.pattern
       end
 
-      assert(type(pattern) is 'userdata', f"Parameter '{Param.name}' pattern must be a regex or string.")
+      assert(pattern is <userdata>, f"Parameter '{Param.name}' pattern must be a regex or string.")
       if not pattern.test(tostring(Value)) then
          raise ERR_Args, f"Parameter '{Param.name}' does not match the required pattern."
       end
@@ -1508,7 +1508,7 @@ end
 
 function validate_param_value(Parser:table!, Param:table!, ArgName:str!, Value:any!)
    if Param.multiple then
-      assert(type(Value) is 'array', f"Parameter '{Param.name}' should contain an array of values.")
+      assert(Value is <array>, f"Parameter '{Param.name}' should contain an array of values.")
       for item in values(Value) do
          validate_scalar_value(Param, item)
       end
@@ -1517,7 +1517,7 @@ function validate_param_value(Parser:table!, Param:table!, ArgName:str!, Value:a
    end
 
    if Param.exec then
-      assert(type(Param.exec) is 'function', f"Parameter '{Param.name}' exec must be a function.")
+      assert(Param.exec is <func>, f"Parameter '{Param.name}' exec must be a function.")
       Param.exec(Parser, ArgName, Value, Param)
    end
 
@@ -1530,7 +1530,7 @@ end
 function relationship_names(Parser:table!, Param:table!, Field:str!, Value:any!):array<str>
    names = array<str>
 
-   if type(Value) is 'string' then
+   if Value is <str> then
       item = Parser._lookup[Value]
       if item is nil then
          raise ERR_ParameterUnknown, f"Parameter '{Param.name}' references unknown parameter '{Value}' in {Field}."
@@ -1539,7 +1539,7 @@ function relationship_names(Parser:table!, Param:table!, Field:str!, Value:any!)
       return names
    end
 
-   assert(type(Value) is 'array' or type(Value) is 'table',
+   assert(Value is <array> or Value is <table>,
       f"Parameter '{Param.name}' {Field} must be a string, array, or table.")
 
    for name in values(Value) do
@@ -1764,7 +1764,7 @@ function load_user_config_defaults(Parser:table!, RawResult:table!):table
       raise ERR_WrongType, f"User config '{config_path}' requires valid JSON."
    end
 
-   if type(defaults) != 'table' then
+   if defaults != <table> then
       raise ERR_WrongType, f"User config '{config_path}' requires a JSON object."
    end
 
@@ -1785,7 +1785,7 @@ function resolve_input_result(Parser:table!, InputResult:table!, InputArgNames:t
    function apply_default_table(Parser:table!, Result:table!, ArgNames:table!, Defaults:table):table
       if Defaults is nil then return nil end
 
-      assert(type(Defaults) is 'table', 'Parser defaults must be a table.')
+      assert(Defaults is <table>, 'Parser defaults must be a table.')
 
       for name, value in pairs(Defaults) do
          param = Parser._lookup[name]
@@ -1940,7 +1940,7 @@ function parse_command_ordered_input(Parser:table, Input:array<str>!):table
 
    while index < #Input do
       token = Input[index]
-      assert(type(token) is 'string', 'Command-line input must contain strings')
+      assert(token is <str>, 'Command-line input must contain strings')
       name, _, has_explicit_value = split_token(token)
 
       if not is_global_ordered_token(Parser, name, has_explicit_value) and not has_explicit_value and
@@ -1965,7 +1965,7 @@ function parse_command_ordered_input(Parser:table, Input:array<str>!):table
 
    while index < #Input do
       token = Input[index]
-      assert(type(token) is 'string', 'Command-line input must contain strings')
+      assert(token is <str>, 'Command-line input must contain strings')
       command_input.push(token)
       index++
    end
@@ -1994,8 +1994,8 @@ function parse_command_table_input(Parser:table!, Input:table!):table
    globals = Input.globals ?? {}
    args = Input.args ?? {}
 
-   assert(type(globals) is 'table', 'Command globals input must be a table.')
-   assert(type(args) is 'table', 'Command args input must be a table.')
+   assert(globals is <table>, 'Command globals input must be a table.')
+   assert(args is <table>, 'Command args input must be a table.')
 
    return {
       command = command.name,
@@ -2028,10 +2028,10 @@ function parse_input(Parser:table!, Input:any, Options:table):table
       else
          return make_help_result(Parser, nil)
       end
-   elseif type(Input) is 'array' then
+   elseif Input is <array> then
       if has_commands then return parse_command_ordered_input(Parser, Input) end
       parse_ordered_input(Parser, input_result, input_arg_names, input_presence, Input)
-   elseif type(Input) is 'table' then
+   elseif Input is <table> then
       if has_commands then return parse_command_table_input(Parser, Input) end
       parse_table_input(Parser, input_result, input_arg_names, input_presence, Input)
    else
@@ -2082,7 +2082,7 @@ end
 -- Validate, normalise, and register a parameter definition with a parser.
 
 function add_param(Parser:table!, Definition:table!):table
-   assert(type(Definition) is 'table', 'Parameter definition must be a table.')
+   assert(Definition is <table>, 'Parameter definition must be a table.')
 
    local param = clone_definition(Definition)
 
@@ -2121,7 +2121,7 @@ end
 -- Validate, normalise, and register a command definition with a parser.
 
 function add_command(Parser:table!, Definition:table!):table
-   assert(type(Definition) is 'table', 'Command definition must be a table.')
+   assert(Definition is <table>, 'Command definition must be a table.')
 
    command = clone_command_definition(Parser, Definition)
 
@@ -2142,7 +2142,7 @@ function add_command(Parser:table!, Definition:table!):table
    end
 
    if Definition.args then
-      assert(type(Definition.args) is 'array' or type(Definition.args) is 'table',
+      assert(Definition.args is <array> or Definition.args is <table>,
          'Command args must be an array of parameter definitions.')
 
       for param_definition in values(Definition.args) do
@@ -2180,7 +2180,7 @@ function definitions_have_name(Definitions:any, Name:str!):bool
    if Definitions is nil then return false end
 
    for definition in values(Definitions) do
-      assert(type(definition) is 'table', 'Parameter definition must be a table.')
+      assert(definition is <table>, 'Parameter definition must be a table.')
       if definition_has_name(definition, Name) then return true end
    end
 
@@ -2192,7 +2192,7 @@ end
 
 create_parser = function(Config:table):table
    Config ?= {}
-   assert(type(Config) is 'table', 'options() expects a configuration table.')
+   assert(Config is <table>, 'options() expects a configuration table.')
 
    local parser = {
       name        = Config.name,
@@ -2216,9 +2216,9 @@ create_parser = function(Config:table):table
    parser.autoHelp ?= true
    parser.helpArg  ?= 'help' -- In future, allow translations to user's locale
    validate_name(parser.helpArg)
-   assert(parser.userConfig is nil or (type(parser.userConfig) is 'string') or (type(parser.userConfig) is 'bool'), 'userConfig must be a string or boolean.')
-   assert(parser.onError is nil or type(parser.onError) is 'function', 'onError must be a function.')
-   assert(parser.onHelp is nil or type(parser.onHelp) is 'function', 'onHelp must be a function.')
+   assert(parser.userConfig is nil or (parser.userConfig is <str>) or (parser.userConfig is <bool>), 'userConfig must be a string or boolean.')
+   assert(parser.onError is nil or parser.onError is <func>, 'onError must be a function.')
+   assert(parser.onHelp is nil or parser.onHelp is <func>, 'onHelp must be a function.')
 
    parser._params         = array<table>
    parser._positionals    = array<table>
@@ -2317,7 +2317,7 @@ create_parser = function(Config:table):table
    table: This parser.
    ]])
    parser.setDefaults = function(Defaults:table):table
-      assert(Defaults is nil or type(Defaults) is 'table', 'setDefaults() expects a table or nil.')
+      assert(Defaults is nil or Defaults is <table>, 'setDefaults() expects a table or nil.')
       parser._set_defaults = Defaults
       return parser
    end
@@ -2340,7 +2340,7 @@ create_parser = function(Config:table):table
    table: Converted and validated argument table.
    ]])
    parser.validate = function(Args:table!):table
-      assert(type(Args) is 'table', 'validate() expects an argument table.')
+      assert(Args is <table>, 'validate() expects an argument table.')
 
       raw_result = {}
       arg_names = {}
@@ -2495,7 +2495,7 @@ create_parser = function(Config:table):table
    end
 
    if Config.args then
-      assert(type(Config.args) is 'array' or type(Config.args) is 'table',
+      assert(Config.args is <array> or Config.args is <table>,
          'Parser args must be an array of parameter definitions.')
    end
 
@@ -2524,7 +2524,7 @@ create_parser = function(Config:table):table
       end
 
       add_param(parser, {
-         name = 'config', type = 'path', default = type(parser.userConfig) is 'string' ? parser.userConfig : nil, group = 'Configuration',
+         name = 'config', type = 'path', default = parser.userConfig is <str> ? parser.userConfig : nil, group = 'Configuration',
          comment = 'JSON config file with option defaults.'
       })
    end
@@ -2536,7 +2536,7 @@ create_parser = function(Config:table):table
    end
 
    if Config.commands then
-      assert(type(Config.commands) is 'array' or type(Config.commands) is 'table',
+      assert(Config.commands is <array> or Config.commands is <table>,
          'Parser commands must be an array of command definitions.')
 
       for definition in values(Config.commands) do

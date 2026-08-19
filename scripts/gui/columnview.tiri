@@ -30,7 +30,7 @@ lColours = {
 ----------------------------------------------------------------------------------------------------------------------
 
 function columnText(Value:any, Type:str):any
-   if type(Value) is 'table' then
+   if Value is <table> then
       Value = Value.value
    end
 
@@ -671,21 +671,21 @@ gui.columnView = function(Options):table
    -- NB: Attrib values that evaluate to nil are not permitted/supported.
 
    vw.sortColumn = function(View:table!, Column:any!, Ascending:bool!)
-      if type(Column) is 'string' then
+      if Column is <str> then
          for col in values(View.columns) do
             if col['attrib'] is Column then
                Column = col
                break
             end
          end
-      elseif type(Column) is 'number' then
+      elseif Column is <num> then
          Column = View.columns[Column]
       end
 
-      if type(Column) is 'table' then
+      if Column is <table> then
          if #View.items > 0 then
             attrib = Column['attrib']
-            if type(View.items[0][attrib]) is 'table' then
+            if View.items[0][attrib] is <table> then
                if View.items[0][attrib]['sort'] then
                   View.items.sort(function(a,b)
                      return Ascending ? a[attrib].sort < b[attrib].sort : a[attrib].sort > b[attrib].sort

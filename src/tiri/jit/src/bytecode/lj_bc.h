@@ -294,7 +294,9 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(CTXBEGIN,  var,  ___, lit, ___) \
   _(CTXEND,    ___,  ___, lit, ___) \
   _(CLOSEARM,  var,  ___, ___, ___) \
-  _(CLOSE,     var,  ___, ___, ___)
+  _(CLOSE,     var,  ___, ___, ___) \
+  /* Boolean contextual type test. */ \
+  _(TYPETEST,  var,  ___, str, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -470,8 +472,9 @@ typedef enum {
    BC_CTXEND = 131,
    BC_CLOSEARM = 132,
    BC_CLOSE = 133,
+   BC_TYPETEST = 134,
 
-   BC__MAX   = 134
+   BC__MAX   = 135
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

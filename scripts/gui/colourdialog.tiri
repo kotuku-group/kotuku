@@ -501,15 +501,15 @@ function loadColours(self)
       js = io.readAll('user:config/colours.json')
       if js?? then
          self._userColours = json.decode(js)
-         if type(self._userColours) != 'array' then
+         if self._userColours != <array> then
             print('Invalid user:config/colours.json file detected.')
             self._userColours = array<table>
          end
 
          for i, col in self._userColours do
-            if type(col) is 'table' then -- Legacy format; remove in 2027
+            if col is <table> then -- Legacy format; remove in 2027
                self._userColours[i] = gui.srgb(col.r, col.g, col.b)
-            elseif type(col) is 'string' then
+            elseif col is <str> then
                self._userColours[i] = gui.strToRGB(col)
             end
          end

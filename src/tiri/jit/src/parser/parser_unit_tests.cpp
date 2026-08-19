@@ -336,6 +336,46 @@ static bool test_literal_binary_expr(kt::Log &log)
 }
 
 //********************************************************************************************************************
+
+static bool test_type_test_ast(kt::Log &Log)
+{
+   auto ast = build_ast_from_source(
+      "local value:any = 1\nreturn value is <num>, value is not <array int>, value != <str>");
+   if (not ast.chunk.ok()) {
+      Log.error("failed to parse type-test expressions");
+      log_diagnostics(ast.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = ast.chunk.value_ref()->view();
+   if (statements.size() != 2 or statements[1].kind != AstNodeKind::ReturnStmt) {
+      Log.error("type-test fixture did not produce the expected return statement");
+      return false;
+   }
+   const auto *returned = std::get_if<ReturnStmtPayload>(&statements[1].data);
+   if (not returned or returned->values.size() != 3) {
+      Log.error("type-test fixture returned the wrong arity");
+      return false;
+   }
+
+   const auto *primitive = std::get_if<TypeTestExprPayload>(&returned->values[0]->data);
+   const auto *array = std::get_if<TypeTestExprPayload>(&returned->values[1]->data);
+   const auto *not_equal = std::get_if<TypeTestExprPayload>(&returned->values[2]->data);
+   if (returned->values[0]->kind != AstNodeKind::TypeTestExpr or not primitive or
+       primitive->descriptor.type != TiriType::Num or primitive->negated or
+       returned->values[1]->kind != AstNodeKind::TypeTestExpr or not array or
+       array->descriptor.type != TiriType::Array or not array->descriptor.constrained or not array->negated or
+       array->descriptor.array_element.storage != AET::INT32 or
+       returned->values[2]->kind != AstNodeKind::TypeTestExpr or not not_equal or
+       not_equal->descriptor.type != TiriType::Str or not not_equal->negated) {
+      Log.error("type-test AST descriptors lost their resolved type metadata");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
 // Expression parsing entry point tests.
 
 static bool test_expression_entry_point(kt::Log &log)
@@ -8476,10 +8516,11 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 79> tests = { {
+   constexpr std::array<TestCase, 80> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
+      { "type_test_ast", test_type_test_ast },
       { "expression_entry_point", test_expression_entry_point },
       { "expression_list_entry_point", test_expression_list_entry_point },
       { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },

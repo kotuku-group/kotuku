@@ -415,7 +415,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.rgbToIconTheme = function(Value:any!):str
-   if type(Value) is 'string' then
+   if Value is <str> then
       Value = gui.strToRGB(Value)
    end
 
@@ -516,9 +516,9 @@ gui.createIcon = function(Scene:obj!, Path:str!, Size:num, Theme:any!, Name:str)
    gui._counter++
    gname = 'icon_grd' .. gui._counter
 
-   if type(Theme) is 'table' then
+   if Theme is <table> then
       lGradient = Theme
-   elseif type(Theme) is 'string' then
+   elseif Theme is <str> then
       gname = f'icon_{Theme}'
       if gui.iconThemes[Theme] then
          lGradient = gui.iconThemes[Theme]
@@ -576,7 +576,7 @@ gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any,
       options.xOffset = MarginB ?? 0
       options.height  = gui.sizing.widget.strokeWidth
 
-      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
+      if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
          options.yOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
          subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
@@ -588,7 +588,7 @@ gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any,
       options.y       = MarginA ?? 0
       options.yOffset = MarginB ?? 0
       options.width   = gui.sizing.widget.strokeWidth
-      if type(Pos) is 'number' and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
+      if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
          options.xOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
          subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
