@@ -178,7 +178,8 @@ static void snapshot_stack(jit_State* J, SnapShot* snap, MSize nsnapmap)
    snap->context_count = 0;
    snap->count = 0;
    for (size_t function_slot = 0; function_slot < std::size(J->context_call_state); function_slot++) {
-      if (J->context_call_state[function_slot] != CONTEXT_CALL_VIRTUAL) continue;
+      uint8_t context_state = J->context_call_state[function_slot];
+      if (context_state != CONTEXT_CALL_VIRTUAL and context_state != CONTEXT_CALL_METAMETHOD_VIRTUAL) continue;
       lj_assertJ(snap->context_count < LJ_MAX_VIRTUAL_CONTEXTS, "too many virtual contexts for snapshot");
       TRef receiver = J->context_call_receiver[function_slot];
       lj_assertJ(tref_istab(receiver), "snapshot virtual context is not a table");
@@ -884,8 +885,8 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
 
    // Make sure the stack is big enough for the slots from the snapshot.
    if (L->base + snap->topslot >= tvref(L->maxstack)) [[unlikely]] {
-      L->top = curr_topL(L);
-      lj_state_growstack(L, snap->topslot - curr_proto(L)->framesize);
+      L->top = curr_top(L);
+      lj_state_growstack(L, MSize(L->base + snap->topslot - L->top));
    }
 
    // Fill stack slots with data from the registers and spill slots.
@@ -982,7 +983,7 @@ const BCIns * lj_snap_restore(jit_State *J, void *exptr)
    BCOp op = bc_op(*pc);
    switch (op) {
    default:
-      if (bc_is_func_header(op)) L->top = frame + snap->nslots;
+      if (bc_is_func_header(op) or not curr_funcisL(L)) L->top = frame + snap->nslots;
       else L->top = curr_topL(L);
       break;
    case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM: case BC_CTXLEAVE: case BC_RETM: case BC_TSETM:

@@ -51,7 +51,7 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // identities with uint8, uint16, uint32 and uint64.  Version 0x93 gives int8 its own signed array member identity.
 // Older chunks are rejected rather than retaining compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x93;
+constexpr uint8_t BCDUMP_VERSION = 0x94;
 
 // Compatibility flags.
 

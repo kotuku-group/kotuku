@@ -462,12 +462,12 @@ static SharedPool * get_pool(lua_State *Lua)
 
 //********************************************************************************************************************
 // async.pool.__index — Thread-safe read from the shared pool.
-// Stack: [1] = pool table, [2] = key string
+// Stack: [1] = key string.  The pool table is available through the dispatch context.
 
 static int pool_get(lua_State *Lua)
 {
    size_t key_len;
-   auto key = luaL_checklstring(Lua, 2, &key_len);
+   auto key = luaL_checklstring(Lua, 1, &key_len);
    auto pool = get_pool(Lua);
 
    // Copy the value under lock, then release before touching the Lua stack.
@@ -499,40 +499,40 @@ static int pool_get(lua_State *Lua)
 
 //********************************************************************************************************************
 // async.pool.__newindex — Thread-safe write to the shared pool.
-// Stack: [1] = pool table, [2] = key string, [3] = value
+// Stack: [1] = key string, [2] = value.  The pool table is available through the dispatch context.
 
 static int pool_set(lua_State *Lua)
 {
    size_t key_len;
-   auto key = luaL_checklstring(Lua, 2, &key_len);
+   auto key = luaL_checklstring(Lua, 1, &key_len);
 
    // Validate the value type and extract it before acquiring the mutex lock.  This prevents
    // luaL_argerror's longjmp from leaving the mutex permanently locked.
 
-   auto value_type = lua_type(Lua, 3);
+   auto value_type = lua_type(Lua, 2);
 
    PoolValue pv;
    switch (value_type) {
       case LUA_TNIL:
          break; // Deletion — no value needed
       case LUA_TNUMBER:
-         pv = PoolValue(lua_tonumber(Lua, 3));
+         pv = PoolValue(lua_tonumber(Lua, 2));
          break;
       case LUA_TSTRING: {
-         pv = PoolValue(std::string(lua_tostringview(Lua, 3)));
+         pv = PoolValue(std::string(lua_tostringview(Lua, 2)));
          break;
       }
       case LUA_TBOOLEAN:
-         pv = PoolValue(bool(lua_toboolean(Lua, 3)));
+         pv = PoolValue(bool(lua_toboolean(Lua, 2)));
          break;
       case LUA_TOBJECT: {
-         auto gc_obj = lua_toobject(Lua, 3);
-         if (not gc_obj) luaL_argerror(Lua, 3, "Invalid object.");
+         auto gc_obj = lua_toobject(Lua, 2);
+         if (not gc_obj) luaL_argerror(Lua, 2, "Invalid object.");
          pv = PoolValue::object(gc_obj->uid);
          break;
       }
       default:
-         luaL_argerror(Lua, 3, "async.pool supports number, string, boolean, and object values.");
+         luaL_argerror(Lua, 2, "async.pool supports number, string, boolean, and object values.");
    }
 
    auto pool = get_pool(Lua);

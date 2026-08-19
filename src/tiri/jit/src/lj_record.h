@@ -35,6 +35,7 @@ LJ_FUNC TRef lj_record_constify(jit_State* J, cTValue* o);
 LJ_FUNC TRef lj_record_vload(jit_State* J, TRef ref, MSize idx, IRType t);
 LJ_FUNC void lj_record_call(jit_State* J, BCREG func, ptrdiff_t nargs);
 LJ_FUNC void lj_record_tailcall(jit_State* J, BCREG func, ptrdiff_t nargs);
+LJ_FUNC void lj_record_metamethod_tailcall(jit_State* J, BCREG Func, ptrdiff_t ArgumentCount, TRef Receiver);
 LJ_FUNC void lj_record_ret(jit_State* J, BCREG rbase, ptrdiff_t gotresults);
 LJ_FUNC int lj_record_mm_lookup(jit_State* J, RecordIndex* ix, MMS mm);
 LJ_FUNC TRef lj_record_idx(jit_State* J, RecordIndex* ix);

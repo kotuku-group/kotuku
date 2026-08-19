@@ -261,6 +261,20 @@ static void rec_check_ir(jit_State *J)
 //********************************************************************************************************************
 // Compare stack slots and frames of the recorder and the VM.
 
+static bool rec_is_live_frame_slot(cTValue *StackBase, cTValue *CurrentBase, cTValue *Candidate)
+{
+   cTValue *frame = CurrentBase - 1;
+   cTValue *root_frame = StackBase + FRC::MIN_BASESLOT - 1;
+   while (frame >= root_frame) {
+      if (frame IS Candidate) return true;
+      if (frame IS root_frame) break;
+      cTValue *previous_frame = frame_prev(frame);
+      lj_assertX(previous_frame < frame, "frame chain does not descend");
+      frame = previous_frame;
+   }
+   return false;
+}
+
 static void rec_check_slots(jit_State *J)
 {
    BCREG s, nslots = J->baseslot + J->maxslot;
@@ -284,16 +298,15 @@ static void rec_check_slots(jit_State *J)
          if (s IS 0) lj_assertJ(tref_isfunc(tr), "frame slot 0 is not a function");
          else if (s IS 1) lj_assertJ((tr & ~TREF_FRAME) IS 0, "bad frame slot 1");
          else if ((tr & TREF_FRAME)) {
-            // Check if this is a valid frame slot or a stale marker from a returned call.
-            // Stale TREF_FRAME can remain in slots after an inlined call returns and the slot
-            // is reused by subsequent code. Only validate frame slots that are actually part
-            // of the current frame chain (reachable from baseslot-1 via frame_delta).
-            GCobj* frame_obj = frame_gc(tv);
-            if (frame_obj and frame_obj->gch.gct IS ~LJ_TFUNC) {
-               // Valid frame - perform full validation
-               GCfunc* fn = gco_to_function(frame_obj);
+            // Stale frame markers can remain after an inlined call returns.  A reused VM stack cell may contain a
+            // function and resemble a frame, so validate only markers reachable through the live VM frame chain.
+            if (rec_is_live_frame_slot(base, J->L->base, tv)) {
+               GCfunc* fn = frame_func(tv);
                BCREG delta = (BCREG)(tv - frame_prev(tv));
-               lj_assertJ(not ref or ir_knum(ir)->u64 IS tv->u64, "frame slot %d PC mismatch", s);
+               lj_assertJ(not ref or ir_knum(ir)->u64 IS tv->u64,
+                  "frame slot %d PC mismatch: recorded=%p live=%p baseslot=%d maxslot=%d parent=%d exit=%d",
+                  s, (void*)(uintptr_t)ir_knum(ir)->u64, (void*)(uintptr_t)tv->u64, J->baseslot, J->maxslot,
+                  J->parent, J->exitno);
                tr = J->slot[s - 1];
                ir = IR(tref_ref(tr));
                lj_assertJ(tref_isfunc(tr), "frame slot %d is not a function", s - 1);
@@ -303,7 +316,6 @@ static void rec_check_slots(jit_State *J)
                depth++;
             }
             else {
-               // Stale TREF_FRAME from a returned inlined call. Clear it to avoid confusion.
                J->slot[s] = 0;
             }
          }
@@ -1288,22 +1300,30 @@ static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool P
 //********************************************************************************************************************
 // Record call setup.
 
-static void rec_call_setup(jit_State *J, BCREG func, ptrdiff_t nargs)
+static GCfunc *rec_call_setup(
+   jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef *MetamethodReceiver = nullptr)
 {
    RecordIndex ix;
-   TValue* functv = &J->L->base[func];
-   TRef kfunc, * fbase = &J->base[func];
+   TValue* functv = &J->L->base[Func];
+   TRef kfunc, * fbase = &J->base[Func];
    ptrdiff_t i;
+   TRef metamethod_receiver = 0;
 
-   (void)getslot(J, func); //  Ensure func has a reference.
-   for (i = 1; i <= nargs; i++) (void)getslot(J, func + FRC::HEADER_SIZE + i - 1);  //  Ensure all args have a reference (args start at func+2).
+   (void)getslot(J, Func); //  Ensure func has a reference.
+   for (i = 1; i <= ArgumentCount; i++) {
+      (void)getslot(J, Func + FRC::HEADER_SIZE + i - 1);  //  Args start after the frame header.
+   }
 
    if (not tref_isfunc(fbase[0])) {  // Resolve __call metamethod.
+      TRef receiver = fbase[0];
       ix.tab = fbase[0];
       copyTV(J->L, &ix.tabv, functv);
       if (not lj_record_mm_lookup(J, &ix, MM_call) or !tref_isfunc(ix.mobj)) lj_trace_err(J, LJ_TRERR_NOMM);
-      for (i = ++nargs; i > 1; i--) fbase[i + 1] = fbase[i];
-      fbase[2] = fbase[0];
+      if (tref_istab(receiver)) metamethod_receiver = receiver;
+      else {
+         for (i = ++ArgumentCount; i > 1; i--) fbase[i + 1] = fbase[i];
+         fbase[FRC::HEADER_SIZE] = receiver;
+      }
       fbase[0] = ix.mobj;  //  Replace function.
       functv = &ix.mobjv;
    }
@@ -1315,8 +1335,10 @@ static void rec_call_setup(jit_State *J, BCREG func, ptrdiff_t nargs)
    // parent trace instead of repeatedly taking an exit whose snapshot cannot grow a side trace.
    kfunc = rec_call_specialise(J, funcV(functv), fbase[0], contextual_call);
    fbase[0] = kfunc;
-   fbase[1] = TREF_FRAME;
-   J->maxslot = (BCREG)nargs;
+   fbase[1] = 0;
+   J->maxslot = (BCREG)ArgumentCount;
+   if (MetamethodReceiver) *MetamethodReceiver = metamethod_receiver;
+   return funcV(functv);
 }
 
 // Record an ordinary contextual activation. The table reference remains live in IR and the owner address is derived
@@ -1336,10 +1358,20 @@ static bool rec_context_is_tail_call(jit_State *J, BCREG CallBase)
    return false;
 }
 
+static bool rec_context_state_is_virtual(uint8_t State)
+{
+   return State IS CONTEXT_CALL_VIRTUAL or State IS CONTEXT_CALL_METAMETHOD_VIRTUAL;
+}
+
+static bool rec_context_state_is_metamethod(uint8_t State)
+{
+   return State IS CONTEXT_CALL_METAMETHOD_VIRTUAL or State IS CONTEXT_CALL_METAMETHOD_MATERIALISED;
+}
+
 static TRef rec_context_current(jit_State *J)
 {
    for (int32_t slot = int32_t(J->baseslot) - 1; slot >= 0; slot--) {
-      if (J->context_call_state[slot] IS CONTEXT_CALL_VIRTUAL) return J->context_call_receiver[slot];
+      if (rec_context_state_is_virtual(J->context_call_state[slot])) return J->context_call_receiver[slot];
    }
    return lj_ir_call(J, IRCALL_lj_context_current_jit);
 }
@@ -1348,7 +1380,7 @@ static uint32_t rec_context_virtual_count(const jit_State *J)
 {
    uint32_t count = 0;
    for (size_t slot = 0; slot < std::size(J->context_call_state); slot++) {
-      if (J->context_call_state[slot] IS CONTEXT_CALL_VIRTUAL) count++;
+      if (rec_context_state_is_virtual(J->context_call_state[slot])) count++;
    }
    return count;
 }
@@ -1361,18 +1393,75 @@ static void rec_context_materialise(
    lj_context_debug_materialise(J->L, Reason, Callable);
    IRBuilder ir(J);
    for (size_t function_slot = 0; function_slot < std::size(J->context_call_state); function_slot++) {
-      if (J->context_call_state[function_slot] != CONTEXT_CALL_VIRTUAL) continue;
+      uint8_t context_state = J->context_call_state[function_slot];
+      if (not rec_context_state_is_virtual(context_state)) continue;
       TRef receiver = J->context_call_receiver[function_slot];
       lj_assertJ(tref_istab(receiver), "virtual context receiver is not a table");
       int32_t owner_slot = int32_t(function_slot) + 1 + LJ_FR2;
       TRef owner_base = rec_stack_slot_addr(J, ir, owner_slot);
       lj_ir_call(J, IRCALL_lj_context_enter_jit, receiver, owner_base);
       lj_context_debug_virtual_leave(J->L);
-      J->context_call_state[function_slot] = CONTEXT_CALL_MATERIALISED;
+      J->context_call_state[function_slot] = context_state IS CONTEXT_CALL_METAMETHOD_VIRTUAL ?
+         CONTEXT_CALL_METAMETHOD_MATERIALISED : CONTEXT_CALL_MATERIALISED;
    }
    J->context_virtual_slot = -1;
    // Guards emitted later in the same bytecode must not reuse a snapshot that still describes virtual state.
    lj_snap_add(J);
+}
+
+static void rec_context_enter_metamethod(jit_State *J, BCREG CallBase, TRef Receiver)
+{
+   if (not tref_istab(Receiver)) return;
+
+   int32_t function_slot = int32_t(J->baseslot) + int32_t(CallBase);
+   J->context_call_func[function_slot] = getslot(J, CallBase);
+   J->context_call_receiver[function_slot] = Receiver;
+   uint32_t virtual_count = rec_context_virtual_count(J);
+   if (virtual_count >= LJ_MAX_VIRTUAL_CONTEXTS) {
+      cTValue *callable = &J->L->base[CallBase];
+      rec_context_materialise(
+         J, ContextMaterialisationReason::UnsupportedBoundary, tvisfunc(callable) ? funcV(callable) : nullptr);
+      virtual_count = 0;
+   }
+   J->context_call_state[function_slot] = CONTEXT_CALL_METAMETHOD_VIRTUAL;
+   J->context_call_activation_count++;
+   J->context_virtual_slot = function_slot;
+   lj_context_debug_virtual_enter(J->L, virtual_count + 1);
+   J->needsnap = 1;
+}
+
+static void rec_context_leave_metamethod(jit_State *J)
+{
+   int32_t function_slot = int32_t(J->baseslot) + FRC::FUNC_SLOT_OFFSET;
+   TValue *frame = J->L->base - 1;
+   if (frame_isvarg(frame)) function_slot -= int32_t(frame_delta(frame));
+   uint8_t context_state = J->context_call_state[function_slot];
+   if (not rec_context_state_is_metamethod(context_state)) return;
+
+   if (context_state IS CONTEXT_CALL_METAMETHOD_VIRTUAL) {
+      lj_assertJ(J->context_virtual_slot IS function_slot, "virtual metamethod context leave has inconsistent owner");
+      J->context_virtual_slot = -1;
+      for (int32_t slot = function_slot - 1; slot >= 0; slot--) {
+         if (rec_context_state_is_virtual(J->context_call_state[slot])) {
+            J->context_virtual_slot = slot;
+            break;
+         }
+      }
+      lj_context_debug_virtual_leave(J->L);
+   }
+   else {
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, function_slot + 1 + LJ_FR2);
+      lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+   }
+
+   lj_assertJ(J->context_call_activation_count > 0, "metamethod context activation count underflow");
+   J->context_call_activation_count--;
+   J->context_call_func[function_slot] = 0;
+   J->context_call_receiver[function_slot] = 0;
+   J->context_call_result[function_slot] = 0;
+   J->context_call_state[function_slot] = CONTEXT_CALL_NONE;
+   J->needsnap = 1;
 }
 
 static void rec_context_enter(jit_State *J, BCREG CallBase)
@@ -1454,7 +1543,7 @@ static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc
          lj_assertJ(J->context_virtual_slot IS function_slot, "virtual context leave has inconsistent owner");
          J->context_virtual_slot = -1;
          for (int32_t slot = function_slot - 1; slot >= 0; slot--) {
-            if (J->context_call_state[slot] IS CONTEXT_CALL_VIRTUAL) {
+            if (rec_context_state_is_virtual(J->context_call_state[slot])) {
                J->context_virtual_slot = slot;
                break;
             }
@@ -1501,15 +1590,53 @@ static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc
 //********************************************************************************************************************
 // Record call.
 
-void lj_record_call(jit_State *J, BCREG func, ptrdiff_t nargs)
+static void rec_record_call(jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef MetamethodReceiver)
 {
-   cTValue *callable = &J->L->base[func];
-   bool context_independent = tvisfunc(callable) and
-      lj_builtin_context_independent(J->L, funcV(callable));
-   if ((not tvisfunc(callable) or not isluafunc(funcV(callable))) and not context_independent) {
-      uint32_t virtual_count = rec_context_virtual_count(J);
-      rec_context_materialise(
-         J, ContextMaterialisationReason::NativeCall, tvisfunc(callable) ? funcV(callable) : nullptr);
+   cTValue *callable_value = &J->L->base[Func];
+   GCfunc *direct_callable = tvisfunc(callable_value) ? funcV(callable_value) : nullptr;
+   bool direct_context_independent = direct_callable and lj_builtin_context_independent(J->L, direct_callable);
+   bool direct_native_target = direct_callable and not isluafunc(direct_callable) and not direct_context_independent;
+   bool materialised_direct_target = direct_native_target and not MetamethodReceiver;
+   uint32_t virtual_count = rec_context_virtual_count(J);
+   if (materialised_direct_target) {
+      rec_context_materialise(J, ContextMaterialisationReason::NativeCall, direct_callable);
+      if (virtual_count > 1) {
+         J->needsnap = 1;
+         lj_trace_err(J, LJ_TRERR_NYICALL);
+         return;
+      }
+   }
+
+   TRef resolved_receiver = 0;
+   GCfunc *callable = rec_call_setup(J, Func, ArgumentCount, &resolved_receiver);
+   if (not MetamethodReceiver) MetamethodReceiver = resolved_receiver;
+   bool context_independent = lj_builtin_context_independent(J->L, callable);
+   bool native_target = not isluafunc(callable) and not context_independent;
+   if (MetamethodReceiver and iscfunc(callable)) {
+      lj_trace_err(J, LJ_TRERR_NYICALL);
+      return;
+   }
+   if (MetamethodReceiver) {
+      bool has_table_argument = false;
+      for (ptrdiff_t i = 0; i < ArgumentCount; i++) {
+         int32_t argument_slot = int32_t(Func) + int32_t(FRC::HEADER_SIZE) + int32_t(i);
+         if (tref_istab(J->base[argument_slot])) has_table_argument = true;
+         else {
+            // Loop folding can revisit receiver-elided scalar arguments after their temporary frame has returned.
+            J->context_call_result[int32_t(J->baseslot) + argument_slot] = J->base[argument_slot];
+         }
+      }
+      rec_context_enter_metamethod(J, Func, MetamethodReceiver);
+      if (has_table_argument) {
+         // Table-valued arguments may alias fresh results while loop snapshots are substituted.  Keep the receiver
+         // physical across that boundary until alias-safe virtual substitution is available.
+         rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary, callable);
+         virtual_count = 0;
+      }
+      else virtual_count++;
+   }
+   if (native_target and not materialised_direct_target) {
+      rec_context_materialise(J, ContextMaterialisationReason::NativeCall, callable);
       // A context-observing native boundary can resume through a native frame whose stack top is not represented by
       // a multi-context snapshot. Hand the call back to the interpreter after materialising the complete prefix.
       if (virtual_count > 1) {
@@ -1517,12 +1644,21 @@ void lj_record_call(jit_State *J, BCREG func, ptrdiff_t nargs)
          return;
       }
    }
-   rec_call_setup(J, func, nargs);
+   J->base[Func + 1] = TREF_FRAME;
    FrameManager fm(J);
-   // Bump frame.
    FRC::inc_depth(J);
-   fm.push_call_frame(func);
+   fm.push_call_frame(Func);
    if (fm.would_overflow(J->maxslot)) lj_trace_err(J, LJ_TRERR_STACKOV);
+}
+
+void lj_record_call(jit_State *J, BCREG func, ptrdiff_t nargs)
+{
+   rec_record_call(J, func, nargs, 0);
+}
+
+static void rec_record_metamethod_call(jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef Receiver)
+{
+   rec_record_call(J, Func, ArgumentCount, Receiver);
 }
 
 //********************************************************************************************************************
@@ -1552,7 +1688,22 @@ void lj_record_tailcall(jit_State *J, BCREG func, ptrdiff_t nargs)
 {
    rec_context_materialise(J, ContextMaterialisationReason::TailCall);
    rec_call_setup(J, func, nargs);
+   J->base[func + 1] = TREF_FRAME;
    rec_tailcall_compact(J, func);
+}
+
+void lj_record_metamethod_tailcall(jit_State *J, BCREG Func, ptrdiff_t ArgumentCount, TRef Receiver)
+{
+   rec_context_materialise(J, ContextMaterialisationReason::TailCall);
+   rec_call_setup(J, Func, ArgumentCount);
+   if (tref_istab(Receiver)) {
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_context_prepare_metamethod_tail_jit, Receiver, owner_base);
+      J->needsnap = 1;
+   }
+   J->base[Func + 1] = TREF_FRAME;
+   rec_tailcall_compact(J, Func);
 }
 
 static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t ArgumentCount)
@@ -1588,6 +1739,7 @@ static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t Argumen
       J->needsnap = 1;
    }
 
+   J->base[CallBase + 1] = TREF_FRAME;
    rec_tailcall_compact(J, CallBase);
 }
 
@@ -1624,6 +1776,8 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
    ptrdiff_t i;
    FrameManager fm(J);
    SlotView slots(J);
+
+   rec_context_leave_metamethod(J);
 
    if (not J->L->context_stack.empty() and J->L->context_stack.back().tail_transfer and
          J->L->context_stack.back().owner_base IS savestack(J->L, J->L->base)) {
@@ -1678,7 +1832,11 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       BCIns callins = *(frame_pc(frame) - 1);
       ptrdiff_t nresults = bc_b(callins) ? (ptrdiff_t)bc_b(callins) - 1 : gotresults;
       BCREG cbase = bc_a(callins);
-      GCproto* pt = funcproto(frame_func(frame - (cbase + FRC::HEADER_SIZE)));
+      GCfunc *caller = frame_func(frame - (cbase + FRC::HEADER_SIZE));
+      lj_assertJ(isluafunc(caller),
+         "Lua return resolved a native caller: op=%d cbase=%d baseslot=%d framedepth=%d retdepth=%d",
+         bc_op(callins), cbase, J->baseslot, J->framedepth, J->retdepth);
+      GCproto* pt = funcproto(caller);
       if (pt->flags & PROTO_NOJIT) lj_trace_err(J, LJ_TRERR_CJITOFF);
       if (FRC::at_root_depth(J) and J->pt and frame IS J->L->base - 1) {
          if (check_downrec_unroll(J, pt)) {
@@ -1724,11 +1882,11 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       BCREG cbase = (BCREG)frame_delta(frame);
       if (FRC::dec_depth_by(J, 2) < 0) lj_trace_err(J, LJ_TRERR_NYIRETL);
       fm.pop_delta_frame(cbase);
+      TRef result = gotresults ? slots[cbase + rbase] : TREF_NIL;
       slots.set_maxslot(cbase - FRC::CONT_FRAME_SIZE);
       if (cont IS lj_cont_ra or cont IS lj_cont_len) {
          // Copy result to destination slot.
          BCREG dst = bc_a(*(frame_contpc(frame) - 1));
-         TRef result = gotresults ? slots[cbase + rbase] : TREF_NIL;
          if (cont IS lj_cont_len and not tref_isnumber(result)) lj_trace_err(J, LJ_TRERR_BADTYPE);
          slots[dst] = result;
          slots.ensure_slot(dst);
@@ -1738,7 +1896,7 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       }
       else if (cont IS lj_cont_cat) {
          BCREG bslot = bc_b(*(frame_contpc(frame) - 1));
-         TRef tr = gotresults ? slots[cbase + rbase] : TREF_NIL;
+         TRef tr = result;
          if (bslot != slots.maxslot()) {  // Concatenate the remainder.
             TValue* b = J->L->base, save;  //  Simulate lower frame and result.
             // Can't handle MM_concat + CALLT + fast func side-effects.
@@ -1899,16 +2057,27 @@ ok:
    base[0] = ix->mobj;
    base[1] = 0;
    copyTV(J->L, basev + 0, &ix->mobjv);
-   base[FRC::HEADER_SIZE] = receiver;
-   base[FRC::HEADER_SIZE + 1] = other;
-   copyTV(J->L, basev + FRC::HEADER_SIZE, &receiverv);
-   copyTV(J->L, basev + FRC::HEADER_SIZE + 1, &otherv);
-   if (receiver_first) {
-      base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
-      setboolV(basev + FRC::HEADER_SIZE + 2, lhs_dispatch);
-      lj_record_call(J, func, 3);
+   if (tref_istab(receiver)) {
+      if (receiver_first) {
+         base[FRC::HEADER_SIZE] = other;
+         base[FRC::HEADER_SIZE + 1] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+         copyTV(J->L, basev + FRC::HEADER_SIZE, &otherv);
+         setboolV(basev + FRC::HEADER_SIZE + 1, lhs_dispatch);
+      }
+      rec_record_metamethod_call(J, func, receiver_first ? 2 : 0, receiver);
    }
-   else lj_record_call(J, func, 2);
+   else {
+      base[FRC::HEADER_SIZE] = receiver;
+      base[FRC::HEADER_SIZE + 1] = other;
+      copyTV(J->L, basev + FRC::HEADER_SIZE, &receiverv);
+      copyTV(J->L, basev + FRC::HEADER_SIZE + 1, &otherv);
+      if (receiver_first) {
+         base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+         setboolV(basev + FRC::HEADER_SIZE + 2, lhs_dispatch);
+         lj_record_call(J, func, 3);
+      }
+      else lj_record_call(J, func, 2);
+   }
    return 0;  //  No result yet.
 }
 
@@ -1925,10 +2094,15 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
       TRef* base = J->base + func;
       TValue* basev = J->L->base + func;
       base[0] = ix.mobj; copyTV(J->L, basev + 0, &ix.mobjv);
-      // Args start at base[2] (after func slot and frame marker)
-      base[FRC::HEADER_SIZE] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE, tv);
-      base[FRC::HEADER_SIZE + 1] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE + 1, tv);
-      lj_record_call(J, func, 2);
+      if (tref_istab(tr)) {
+         rec_record_metamethod_call(J, func, 0, tr);
+      }
+      else {
+         // Args start at base[2] (after func slot and frame marker).
+         base[FRC::HEADER_SIZE] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE, tv);
+         base[FRC::HEADER_SIZE + 1] = tr; copyTV(J->L, basev + FRC::HEADER_SIZE + 1, tv);
+         lj_record_call(J, func, 2);
+      }
    }
    else {
       if (tref_istab(tr)) {
@@ -1961,14 +2135,22 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
 static void rec_mm_callcomp(jit_State *J, RecordIndex* ix, int op)
 {
    BCREG func = rec_mm_prep(J, (op & 1) ? lj_cont_condf : lj_cont_condt);
-   // base points to first arg slot (after frame header)
-   TRef* base = J->base + func + 1;
-   TValue* tv = J->L->base + func + 1;
-   base[-1] = ix->mobj; base[1] = ix->val; base[2] = ix->key;
-   copyTV(J->L, tv - 1, &ix->mobjv);
-   copyTV(J->L, tv + 1, &ix->valv);
-   copyTV(J->L, tv + 2, &ix->keyv);
-   lj_record_call(J, func, 2);
+   TRef* base = J->base + func;
+   TValue* tv = J->L->base + func;
+   base[0] = ix->mobj;
+   copyTV(J->L, tv, &ix->mobjv);
+   if (tref_istab(ix->val)) {
+      base[FRC::HEADER_SIZE] = ix->key;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, &ix->keyv);
+      rec_record_metamethod_call(J, func, 1, ix->val);
+   }
+   else {
+      base[FRC::HEADER_SIZE] = ix->val;
+      base[FRC::HEADER_SIZE + 1] = ix->key;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, &ix->valv);
+      copyTV(J->L, tv + FRC::HEADER_SIZE + 1, &ix->keyv);
+      lj_record_call(J, func, 2);
+   }
 }
 
 //********************************************************************************************************************
@@ -1982,14 +2164,23 @@ static void rec_mm_callcomp3(jit_State *J, RecordIndex* ix, int op, TRef receive
    TValue* tv = J->L->base + func;
    base[0] = ix->mobj;
    base[1] = 0;
-   base[FRC::HEADER_SIZE] = receiver;
-   base[FRC::HEADER_SIZE + 1] = other;
-   base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
    copyTV(J->L, tv, &ix->mobjv);
-   copyTV(J->L, tv + FRC::HEADER_SIZE, ReceiverValue);
-   copyTV(J->L, tv + FRC::HEADER_SIZE + 1, OtherValue);
-   setboolV(tv + FRC::HEADER_SIZE + 2, lhs_dispatch);
-   lj_record_call(J, func, 3);
+   if (tref_istab(receiver)) {
+      base[FRC::HEADER_SIZE] = other;
+      base[FRC::HEADER_SIZE + 1] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, OtherValue);
+      setboolV(tv + FRC::HEADER_SIZE + 1, lhs_dispatch);
+      rec_record_metamethod_call(J, func, 2, receiver);
+   }
+   else {
+      base[FRC::HEADER_SIZE] = receiver;
+      base[FRC::HEADER_SIZE + 1] = other;
+      base[FRC::HEADER_SIZE + 2] = lhs_dispatch ? TREF_TRUE : TREF_FALSE;
+      copyTV(J->L, tv + FRC::HEADER_SIZE, ReceiverValue);
+      copyTV(J->L, tv + FRC::HEADER_SIZE + 1, OtherValue);
+      setboolV(tv + FRC::HEADER_SIZE + 2, lhs_dispatch);
+      lj_record_call(J, func, 3);
+   }
 }
 
 //********************************************************************************************************************
@@ -2340,21 +2531,29 @@ handlemm:
          TValue* tv = J->L->base + func + 1;
          // Setup call frame: slots[func] = mobj, slots[func+2..] = args
          slots[func] = ix->mobj;
-         slots[func + FRC::HEADER_SIZE] = ix->tab;
-         slots[func + FRC::HEADER_SIZE + 1] = ix->key;
          setfuncV(J->L, tv - 1, funcV(&ix->mobjv));
-         copyTV(J->L, tv + 1, &ix->tabv);
-         copyTV(J->L, tv + 2, &ix->keyv);
-         if (ix->val) {
-            slots[func + FRC::HEADER_SIZE + 2] = ix->val;
-            copyTV(J->L, tv + 3, &ix->valv);
-            lj_record_call(J, func, 3);  //  mobj(tab, key, val)
-            return 0;
+         if (tref_istab(ix->tab)) {
+            slots[func + FRC::HEADER_SIZE] = ix->key;
+            copyTV(J->L, tv + 1, &ix->keyv);
+            if (ix->val) {
+               slots[func + FRC::HEADER_SIZE + 1] = ix->val;
+               copyTV(J->L, tv + 2, &ix->valv);
+            }
+            rec_record_metamethod_call(J, func, ix->val ? 2 : 1, ix->tab);
          }
          else {
-            lj_record_call(J, func, 2);  //  res = mobj(tab, key)
-            return 0;  //  No result yet.
+            slots[func + FRC::HEADER_SIZE] = ix->tab;
+            slots[func + FRC::HEADER_SIZE + 1] = ix->key;
+            copyTV(J->L, tv + 1, &ix->tabv);
+            copyTV(J->L, tv + 2, &ix->keyv);
+            if (ix->val) {
+               slots[func + FRC::HEADER_SIZE + 2] = ix->val;
+               copyTV(J->L, tv + 3, &ix->valv);
+               lj_record_call(J, func, 3);
+            }
+            else lj_record_call(J, func, 2);
          }
+         return 0;  //  No result yet.
       }
 
       // Otherwise retry lookup with metaobject.

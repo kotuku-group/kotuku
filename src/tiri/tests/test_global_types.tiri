@@ -86,7 +86,7 @@ end
    local previous_metatable = getmetatable(_G)
    local trapped = false
 
-   setmetatable(_G, { __newindex = function(Table, Key, Value) error('blocked global store') end })
+   setmetatable(_G, { __newindex = function(Key, Value) error('blocked global store') end })
    defer
       setmetatable(_G, previous_metatable)
       rawset(_G, 'glGTFailedDeclaration', nil)
@@ -115,7 +115,7 @@ end
    rawset(_G, 'glGTJitVariantOverride', nil)
 
    local previous_metatable = getmetatable(_G)
-   setmetatable(_G, { __newindex = function(Table, Key, Value) error('blocked JIT variant store') end })
+   setmetatable(_G, { __newindex = function(Key, Value) error('blocked JIT variant store') end })
    defer
       setmetatable(_G, previous_metatable)
       rawset(_G, 'glGTJitVariantOverride', nil)

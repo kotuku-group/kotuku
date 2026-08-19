@@ -217,8 +217,8 @@ end
 
 @Test function CallableMetamethodRemainsGeneric()
    local callable = setmetatable({ offset=8 }, {
-      __call = function(Self, Value)
-         return Self.offset + Value
+      __call = function(Value)
+         return &offset + Value
       end
    })
    assert(callable(4) is 12, 'Callable table metamethod semantics must remain unchanged')

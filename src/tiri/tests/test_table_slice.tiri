@@ -339,7 +339,7 @@ end
    -- This test verifies the slice operation works correctly even with a custom __index.
    t = {10, 20, 30, 40, 50}
    setmetatable(t, {
-      __index = function(tbl, key)
+      __index = function(Key)
          return 999  -- Would return 999 for non-existent keys
       end
    })

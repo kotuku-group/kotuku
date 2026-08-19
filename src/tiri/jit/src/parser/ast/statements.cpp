@@ -39,10 +39,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
          Token function_token = local_token;  // Use local_token as span start
          auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
          if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
-         if (name_token.value_ref().kind() IS TokenKind::Metamethod) {
-            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
-               "'metamethod' is reserved for context-first function literals and cannot name a function");
-         }
          if (this->is_module_namespace_name(name_token.value_ref().identifier())) {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
                "Module namespaces cannot be declared as functions");
@@ -144,10 +140,6 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
       Token function_token = global_token;
       auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
       if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
-      if (name_token.value_ref().kind() IS TokenKind::Metamethod) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
-            "'metamethod' is reserved for context-first function literals and cannot name a function");
-      }
       if (this->is_module_namespace_name(name_token.value_ref().identifier())) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
             "Module namespaces cannot be declared as functions");
@@ -868,18 +860,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
          "Module namespaces cannot be declared as functions or have members replaced");
    }
    path.segments.push_back(make_identifier(name_token.value_ref()));
-   Token callable_name_token = name_token.value_ref();
 
    while (this->ctx.match(TokenKind::Dot).ok()) {
       auto seg = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
       if (not seg.ok()) return ParserResult<StmtNodePtr>::failure(seg.error_ref());
       path.segments.push_back(make_identifier(seg.value_ref()));
-      callable_name_token = seg.value_ref();
-   }
-
-   if (callable_name_token.kind() IS TokenKind::Metamethod) {
-      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, callable_name_token,
-         "'metamethod' is reserved for context-first function literals and cannot name a function");
    }
 
    GCstr *funcname = nullptr;

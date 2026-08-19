@@ -41,7 +41,7 @@ extern "C" void lj_env_check(lua_State *, GCtab *, GCstr *, cTValue *);
 extern "C" void lj_env_check_override(lua_State *, GCtab *, GCstr *, cTValue *, GCstr *);
 extern "C" void lj_env_store(lua_State *, GCtab *, GCstr *, cTValue *);
 extern "C" GCstr * lj_vm_envcheck(lua_State *, GCtab *, GCstr *, TValue *);
-extern "C" void lj_meta_call(lua_State* L, TValue* func, TValue* top);
+extern "C" int lj_meta_call(lua_State *L, TValue *func, TValue *top, bool TailTransfer);
 extern "C" void lj_meta_for(lua_State* L, TValue* o);
 
 // Helper for __close metamethod during scope exit. Returns error code (0 = success).
@@ -49,6 +49,3 @@ extern "C" int lj_meta_close(lua_State* L, TValue* o, TValue* err);
 extern "C" void lj_meta_multres_save(lua_State *L, TValue *Base, uint32_t Count);
 extern "C" uint32_t lj_meta_multres_restore(lua_State *L, TValue *Base);
 extern "C" void lj_meta_multres_unwind(lua_State *L, TValue *TargetBase);
-
-// Setup call to metamethod to be run by Assembler VM.
-TValue* mmcall(lua_State* L, ASMFunction cont, cTValue* mo, cTValue* a, cTValue* b);

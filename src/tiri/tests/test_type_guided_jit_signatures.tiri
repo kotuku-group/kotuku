@@ -182,8 +182,8 @@ end
    end
 
    local metatable = {
-      __call = function(Self, Value)
-         return Self.offset + Value
+      __call = function(Value)
+         return &offset + Value
       end
    }
    local callable = setmetatable({ offset=5 }, metatable)
@@ -344,7 +344,7 @@ end
    local sequence = {0 to 4}
    local proxy = newproxy(true)
    local callable = setmetatable({ offset=2 }, {
-      __call = function(Self, Value) return Self.offset + Value end
+      __call = function(Value) return &offset + Value end
    })
 
    jit.off()

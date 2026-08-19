@@ -469,10 +469,16 @@ static void recff_tonumber(jit_State* J, RecordFFData* rd)
 
 //********************************************************************************************************************
 
+struct RecordMetamethodTailCall {
+   jit_State *state;
+   TRef receiver;
+   ptrdiff_t argument_count;
+};
+
 static TValue* recff_metacall_cp(lua_State* L, lua_CFunction dummy, void* ud)
 {
-   jit_State* J = (jit_State*)ud;
-   lj_record_tailcall(J, 0, 1);
+   RecordMetamethodTailCall *call = (RecordMetamethodTailCall*)ud;
+   lj_record_metamethod_tailcall(call->state, 0, call->argument_count, call->receiver);
    return nullptr;
 }
 
@@ -486,14 +492,16 @@ static int recff_metacall(jit_State* J, RecordFFData* rd, MMS mm)
    if (lj_record_mm_lookup(J, &ix, mm)) {  // Has metamethod?
       int errcode;
       TValue argv0;
+      bool table_receiver = tref_istab(ix.tab);
+      RecordMetamethodTailCall call { J, ix.tab, table_receiver ? 0 : 1 };
       // Temporarily insert metamethod below object.
-      J->base[1 + LJ_FR2] = J->base[0];
+      if (not table_receiver) J->base[1 + LJ_FR2] = J->base[0];
       J->base[0] = ix.mobj;
       copyTV(J->L, &argv0, &rd->argv[0]);
-      copyTV(J->L, &rd->argv[1 + LJ_FR2], &rd->argv[0]);
+      if (not table_receiver) copyTV(J->L, &rd->argv[1 + LJ_FR2], &rd->argv[0]);
       copyTV(J->L, &rd->argv[0], &ix.mobjv);
       // Need to protect lj_record_tailcall because it may throw.
-      errcode = lj_vm_cpcall(J->L, nullptr, J, recff_metacall_cp);
+      errcode = lj_vm_cpcall(J->L, nullptr, &call, recff_metacall_cp);
       // Always undo Lua stack changes to avoid confusing the interpreter.
       copyTV(J->L, &rd->argv[0], &argv0);
       if (errcode)

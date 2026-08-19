@@ -705,7 +705,8 @@ static void build_subroutines(BuildCtx *ctx)
   |  // BASE = base, L->top = new base, stack = cont/func/t/k
   |   sub TMP1, BASE, #FRAME_CONT
   |  ldr BASE, L->top
-  |    mov NARGS8:RC, #16		// 2 args for func(t, k).
+  |    ldrb RCw, L->metamethod_argument_count
+  |    lsl NARGS8:RC, RC, #3
   |  ldr LFUNC:CARG3, [BASE, FRAME_FUNC]  // Guaranteed to be a function here.
   |    str PC, [BASE, #-24]		// [cont|PC]
   |   sub PC, BASE, TMP1
@@ -784,9 +785,17 @@ static void build_subroutines(BuildCtx *ctx)
   |  // BASE = base, L->top = new base, stack = cont/func/t/k/(v)
   |   sub TMP1, BASE, #FRAME_CONT
   |  ldr BASE, L->top
-  |    mov NARGS8:RC, #24		// 3 args for func(t, k, v).
+  |    ldrb RCw, L->metamethod_argument_count
+  |    add RC, RC, #1
+  |    lsl NARGS8:RC, RC, #3
   |  ldr LFUNC:CARG3, [BASE, FRAME_FUNC]  // Guaranteed to be a function here.
-  |   str TMP0, [BASE, #16]		// Copy value to third argument.
+  |   cmp NARGS8:RC, #16
+  |   bne >4
+  |   str TMP0, [BASE, #8]
+  |   b >5
+  |4:
+  |   str TMP0, [BASE, #16]
+  |5:
   |    str PC, [BASE, #-24]		// [cont|PC]
   |   sub PC, BASE, TMP1
   |  and LFUNC:CARG3, CARG3, #LJ_GCVMASK
@@ -986,7 +995,8 @@ static void build_subroutines(BuildCtx *ctx)
   |   str PC, [CRET1, #-24]		// [cont|PC]
   |  add PC, TMP1, #FRAME_CONT
   |  mov BASE, CRET1
-  |   mov NARGS8:RC, #16		// 2 args for func(o1, o2).
+  |   ldrb RCw, L->metamethod_argument_count
+  |   lsl NARGS8:RC, RC, #3
   |  b ->vm_call_dispatch
   |
   |->vmeta_binop3:
@@ -995,7 +1005,8 @@ static void build_subroutines(BuildCtx *ctx)
   |   str PC, [CRET1, #-24]		// [cont|PC]
   |  add PC, TMP1, #FRAME_CONT
   |  mov BASE, CRET1
-  |   mov NARGS8:RC, #24		// 3 args for func(receiver, other, lhs_dispatch).
+  |   ldrb RCw, L->metamethod_argument_count
+  |   lsl NARGS8:RC, RC, #3
   |  b ->vm_call_dispatch
   |
   |->vmeta_len:
@@ -1030,9 +1041,10 @@ static void build_subroutines(BuildCtx *ctx)
   |  sub CARG2, BASE, #16
   |   str PC, SAVE_PC
   |  add CARG3, BASE, NARGS8:RC
-  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top)
+  |  mov CARG4w, #0
+  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top, bool tail)
   |  ldr LFUNC:CARG3, [BASE, FRAME_FUNC]  // Guaranteed to be a function here.
-  |   add NARGS8:RC, NARGS8:RC, #8	// Got one more argument now.
+  |   add NARGS8:RC, NARGS8:RC, CRET1, lsl #3
   |  and LFUNC:CARG3, CARG3, #LJ_GCVMASK
   |  ins_call
   |
@@ -1043,10 +1055,11 @@ static void build_subroutines(BuildCtx *ctx)
   |  sub CARG2, RA, #16
   |   str PC, SAVE_PC
   |  add CARG3, RA, NARGS8:RC
-  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top)
+  |  mov CARG4w, #1
+  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top, bool tail)
   |  ldr TMP1, [RA, FRAME_FUNC]		// Guaranteed to be a function here.
   |   ldr PC, [BASE, FRAME_PC]
-  |   add NARGS8:RC, NARGS8:RC, #8	// Got one more argument now.
+  |   add NARGS8:RC, NARGS8:RC, CRET1, lsl #3
   |  and LFUNC:CARG3, TMP1, #LJ_GCVMASK
   |  b ->BC_CALLT2_Z
   |

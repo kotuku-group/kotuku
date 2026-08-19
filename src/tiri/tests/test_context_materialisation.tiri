@@ -216,3 +216,164 @@ end
    assert(counters.physicalContextEntries is counters.physicalContextLeaves,
       'Context block materialisation should leave physical context ownership balanced')
 end
+
+@Test function NestedMetamethodContextsRemainVirtual()
+   if not reset_context_counters() then return end
+   local inner = setmetatable({ stored = 4 }, {
+      __index = function(Key):num
+         return Key is 'missing' ? &stored : 0
+      end
+   })
+   local outer = setmetatable({ value = 6 }, {
+      __add = function(Other:num, LhsDispatch:bool):num
+         if LhsDispatch then return -1 end
+         return Other + inner.missing + &value
+      end
+   })
+
+   function workload():num
+      local checksum = 0
+      for i in {0 to 300} do checksum += i + outer end
+      return checksum
+   end
+
+   assert(workload() is 47850,
+      'A right-provider arithmetic handler should restore its receiver after a nested index handler')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0 and counters.maximumVirtualDepth >= 2,
+      'Nested table metamethod calls should compile with two virtual receivers')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Nested table metamethod calls should leave physical context ownership balanced')
+end
+
+@Test function MetamethodSideExitsRestoreIndexedAndCallableReceivers()
+   if not reset_context_counters() then return end
+   local proxy = setmetatable({ data = {} }, {
+      __index = function(Key):any
+         return &data[Key]
+      end,
+      __newindex = function(Key, Value)
+         &data[Key] = Value
+      end,
+      __call = function(Amount:num):num
+         if Amount is 93 then return &data.current + Amount + 1 end
+         return &data.current + Amount
+      end
+   })
+
+   function workload():num
+      local checksum = 0
+      for i in {0 to 300} do
+         proxy.current = i
+         checksum += proxy.current + proxy(i)
+      end
+      return checksum
+   end
+
+   assert(workload() is 134551,
+      'Index, new-index and callable-table handlers should retain their receivers across a recorded side exit')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0 and counters.sideExits > 0,
+      'The table metamethod fixture should compile and exercise a side exit')
+   assert(counters.materialisations.sideExit > 0,
+      'A metamethod side exit should materialise its virtual receiver')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Metamethod side-exit reconstruction should leave context ownership balanced')
+end
+
+@Test function TableValuedMetamethodArgumentsUseAliasSafeContext()
+   if not reset_context_counters() then return end
+
+   function inherited_value():num
+      return &value
+   end
+
+   local receiver = setmetatable({ value = 7 }, {
+      __add = function(Other:table, LhsDispatch:bool):table
+         assert(LhsDispatch, 'The left receiver should remain the selected metamethod provider')
+         return { value = inherited_value() + Other.value }
+      end
+   })
+   local other = { value = 5 }
+
+   local checksum = 0
+   for _ in {0 to 300} do
+      local result = receiver + other
+      checksum += result.value
+   end
+
+   assert(checksum is 3600,
+      'Table-valued metamethod arguments should not alias fresh results during loop substitution')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0,
+      'The table-valued metamethod argument workload should produce a trace')
+   assert(counters.materialisations.unsupportedBoundary > 0,
+      'Table-valued metamethod arguments should use the alias-safe physical context boundary')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Alias-safe metamethod context materialisation should leave ownership balanced')
+end
+
+@Test function ComparisonUnaryLengthAndConcatMetamethodsTrace()
+   if not reset_context_counters() then return end
+   local metatable = {
+      __eq = function(Other:table):bool return &value is Other.value end,
+      __lt = function(Other:table, LhsDispatch:bool):bool
+         if LhsDispatch then return &value < Other.value end
+         return Other.value < &value
+      end,
+      __len = function():num return &value end,
+      __unm = function():num return -&value end,
+      __concat = function(Other:str, LhsDispatch:bool):str
+         if LhsDispatch then return tostring(&value) .. Other end
+         return Other .. tostring(&value)
+      end
+   }
+   local first = setmetatable({ value = 2 }, metatable)
+   local equal = setmetatable({ value = 2 }, metatable)
+   local second = setmetatable({ value = 3 }, metatable)
+
+   function workload():num
+      local checksum = 0
+      for _ in {0 to 300} do
+         if first is equal then checksum++ end
+         if first < second then checksum++ end
+         if first <= second then checksum++ end
+         checksum += #first
+         checksum += -first
+         if first .. 'x' is '2x' then checksum++ end
+      end
+      return checksum
+   end
+
+   assert(workload() is 1200,
+      'Comparison, unary, length and concatenation handlers should preserve their receiver-elided layouts')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0 and counters.traceAborts is 0,
+      'The metamethod matrix should compile without recorder aborts')
+end
+
+@Test function FastMetamethodTailcallsPreserveDispatchContext()
+   if not reset_context_counters() then return end
+   local clear_count = 0
+   local target = setmetatable({ name = 'target' }, {
+      __tostring = function():str return &name end,
+      __clear = function() clear_count++ end
+   })
+
+   function workload():str
+      local result = ''
+      for _ in {0 to 300} do
+         result = tostring(target)
+         target.clear()
+      end
+      return result
+   end
+
+   assert(workload() is 'target' and clear_count is 300,
+      'Fast-library metamethod tailcalls should enter the selected table without a visible receiver argument')
+   local counters = jit.util.contextStats()
+   assert(counters.traceCompilations > 0,
+      'The fast-library metamethod tailcall fixture should produce a trace')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Fast-library metamethod tailcalls should leave context ownership balanced')
+end

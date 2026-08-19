@@ -343,6 +343,20 @@ extern "C" void lj_context_tail_jit(
    L->context_stack.back().tail_transfer = true;
 }
 
+extern "C" void lj_context_prepare_metamethod_tail_jit(lua_State *L, GCtab *Table, TValue *OwnerBase)
+{
+   lj_assertL(L and Table and OwnerBase, "invalid recorded metamethod tail activation");
+   ptrdiff_t owner_base = savestack(L, OwnerBase);
+   if (not L->context_stack.empty() and
+       L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
+       L->context_stack.back().owner_base IS owner_base) {
+      L->context_stack.pop_back();
+      lj_context_debug_physical_leave(L);
+   }
+   lj_context_push(L, Table, OwnerBase);
+   L->context_stack.back().tail_transfer = true;
+}
+
 // Permanently designate the table in a register as contextual.  The parser only emits BC_TCTX against a freshly
 // materialised table constructor, so the slot is a table by construction; the assertion documents that contract for
 // hand-written or malformed bytecode, which the reader rejects separately.
@@ -541,6 +555,35 @@ extern "C" uint32_t lj_context_prepare_tail_call(lua_State *L, uint32_t CallBase
    return ArgumentCount;
 }
 
+uint32_t lj_context_prepare_metamethod_call(lua_State *L, cTValue *Receiver, TValue *OwnerBase,
+   uint32_t VisibleArgumentCount, uint32_t NativeArgumentCount, bool TailTransfer)
+{
+   lj_assertL(L and Receiver and OwnerBase, "invalid metamethod contextual activation");
+   uint32_t argument_count = NativeArgumentCount;
+   if (tvistab(Receiver)) {
+      ptrdiff_t owner_base = savestack(L, OwnerBase);
+      if (TailTransfer and not L->context_stack.empty() and
+          L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
+          L->context_stack.back().owner_base IS owner_base) {
+         L->context_stack.pop_back();
+         lj_context_debug_physical_leave(L);
+      }
+      if (L->context_stack.empty() or
+          L->context_stack.back().owner_kind != lua_State::ContextFrame::OwnerKind::Call or
+          L->context_stack.back().owner_base != owner_base) {
+         lj_context_push(L, tabV(Receiver), OwnerBase);
+      }
+      else {
+         lj_assertL(tabref(L->context_stack.back().table) IS tabV(Receiver),
+            "retried metamethod call selected a different receiver");
+      }
+      L->context_stack.back().tail_transfer = TailTransfer;
+      argument_count = VisibleArgumentCount;
+   }
+   L->metamethod_argument_count = uint8_t(argument_count);
+   return argument_count;
+}
+
 void lj_context_push(lua_State *L, GCtab *Table, const TValue *OwnerBase)
 {
    lj_assertL(L and Table and OwnerBase, "invalid contextual activation");
@@ -581,6 +624,12 @@ extern "C" uint32_t lj_context_leave_frame(
 {
    lj_assertL(L and FrameBase, "invalid contextual activation frame");
    ptrdiff_t frame_base = savestack(L, FrameBase);
+   if (not L->context_stack.empty() and frame_isvarg(FrameBase - 1)) {
+      TValue *prepared_frame = (TValue *)((char *)FrameBase - frame_sized(FrameBase - 1));
+      ptrdiff_t prepared_base = savestack(L, prepared_frame);
+      if (L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
+          L->context_stack.back().owner_base IS prepared_base) frame_base = prepared_base;
+   }
    if (not L->context_stack.empty() and
        L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
        L->context_stack.back().owner_base IS frame_base) {
@@ -597,7 +646,6 @@ extern "C" uint32_t lj_context_leave_native_frame(
    ptrdiff_t frame_base = savestack(L, FrameBase);
    if (not L->context_stack.empty() and
       L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
-      L->context_stack.back().tail_transfer and
       L->context_stack.back().owner_base IS frame_base) {
       return lj_context_leave_frame(L, FrameBase, ReturnState);
    }

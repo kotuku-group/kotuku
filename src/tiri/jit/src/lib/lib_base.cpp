@@ -223,7 +223,11 @@ static int ffh_pairs(lua_State* L, MMS mm)
 
    cTValue *mo = lj_meta_lookup(L, o, mm);
    if (not tvisnil(mo)) {
-      L->top = o + 1;  //  Only keep one argument.
+      if (tvistab(o)) {
+         lj_context_prepare_metamethod_call(L, o, L->base, 0, 1, true);
+         L->top = L->base;
+      }
+      else L->top = o + 1;
       copyTV(L, L->base - 2, mo);  //  Replace callable.
       return FFH_TAILCALL;
    }
@@ -666,13 +670,18 @@ LJLIB_ASM(tostring)      LJLIB_REC(.)
 
    TValue *o = lj_lib_checkany(L, 1);
    cTValue *mo;
-   L->top = o + 1;  //  Only keep one argument.
-
    if (!tvisnil(mo = lj_meta_lookup(L, o, MM_tostring))) {
+      if (tvistab(o)) {
+         lj_context_prepare_metamethod_call(L, o, L->base, 0, 1, true);
+         L->top = L->base;
+      }
+      else L->top = o + 1;
       copyTV(L, L->base - 2, mo);  //  Replace callable.
       frame.disarm();  // Disarm before tail call
       return FFH_TAILCALL;
    }
+
+   L->top = o + 1;
 
    lj_gc_check(L);
    setstrV(L, L->base - 2, lj_strfmt_obj(L, L->base));

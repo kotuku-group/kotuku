@@ -864,8 +864,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov [RA-24], PC       // [cont|PC]
   |  lea PC, [RA+FRAME_CONT]
   |  sub PC, BASE
+  |  movzx NARGS:RDd, byte L:RB->metamethod_argument_count
+  |  add NARGS:RDd, 1
   |  mov LFUNC:RB, [RA-16]    // Guaranteed to be a function here.
-  |  mov NARGS:RDd, 2+1       // 2 args for func(t, k).
   |  cleartp LFUNC:RB
   |  jmp ->vm_call_dispatch_f
   |
@@ -962,13 +963,21 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov RA, L:RB->top
   |  mov [RA-24], PC       // [cont|PC]
   |  movzx RCd, PC_RA
-  |  // Copy value to third argument.
+  |  // Append the value after the table-visible or native receiver/key prefix.
   |  mov RB, [BASE+RC*8]
+  |  mov L:TMPR, SAVE_L
+  |  movzx NARGS:RDd, byte L:TMPR->metamethod_argument_count
+  |  cmp NARGS:RDd, 1
+  |  jne >4
+  |  mov [RA+8], RB
+  |  jmp >5
+  |4:
   |  mov [RA+16], RB
+  |5:
   |  lea PC, [RA+FRAME_CONT]
   |  sub PC, BASE
   |  mov LFUNC:RB, [RA-16]    // Guaranteed to be a function here.
-  |  mov NARGS:RDd, 3+1       // 3 args for func(t, k, v).
+  |  add NARGS:RDd, 2
   |  cleartp LFUNC:RB
   |  jmp ->vm_call_dispatch_f
   |
@@ -1244,7 +1253,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  sub RC, BASE
   |  mov [RA-24], PC       // [cont|PC]
   |  lea PC, [RC+FRAME_CONT]
-  |  mov NARGS:RDd, 2+1       // 2 args for func(o1, o2).
+  |  mov L:RB, SAVE_L
+  |  movzx NARGS:RDd, byte L:RB->metamethod_argument_count
+  |  add NARGS:RDd, 1
   |  jmp ->vm_call_dispatch
   |
   |->vmeta_binop3:
@@ -1253,7 +1264,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  sub RC, BASE
   |  mov [RA-24], PC       // [cont|PC]
   |  lea PC, [RC+FRAME_CONT]
-  |  mov NARGS:RDd, 3+1       // 3 args for func(receiver, other, lhs_dispatch).
+  |  mov L:RB, SAVE_L
+  |  movzx NARGS:RDd, byte L:RB->metamethod_argument_count
+  |  add NARGS:RDd, 1
   |  jmp ->vm_call_dispatch
   |
   |->vmeta_len:
@@ -1308,14 +1321,20 @@ static void build_subroutines(BuildCtx *ctx)
   |  lea CARG2, [RA-16]
   |  lea CARG3, [RA+NARGS:RD*8-8]
   |.endif
+  |  mov CARG4d, 1
+  |  cmp KBASE, BASE
+  |  je >9
+  |  xor CARG4d, CARG4d
+  |9:
   |  mov SAVE_PC, PC
-  |  call extern lj_meta_call // (lua_State *L, TValue *func, TValue *top)
+  |  call extern lj_meta_call // (lua_State *L, TValue *func, TValue *top, bool tail)
+  |  mov TMPRd, RCd
   |  mov RA, RB
   |  mov L:RB, SAVE_L
   |  mov BASE, L:RB->base
   |  mov NARGS:RDd, TMP1d
   |  mov LFUNC:RB, [RA-16]
-  |  add NARGS:RDd, 1
+  |  add NARGS:RDd, TMPRd
   |  // This is fragile. L->base must not move, KBASE must always be defined.
   |  cmp KBASE, BASE       // Continue with CALLT if flag set.
   |  je ->BC_CALLT_Z
