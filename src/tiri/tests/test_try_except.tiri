@@ -724,9 +724,9 @@ end
    closed = false
    received_err = nil
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
-         received_err = err
+         received_err = Error
       end
    }
 
@@ -749,7 +749,7 @@ end
    order = array<int>
    function makeMt(n:num)
       return {
-         __close = function(self, err)
+         __close = function(Error)
             order.push(n)
          end
       }
@@ -803,7 +803,7 @@ end
 @Test(priority=34) function CloseInTryNoException()
    order = array<str>
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          order.push('close')
       end
    }
@@ -827,7 +827,7 @@ end
 @Test(priority=35) function CloseErrorInTryExcept()
    close_called = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          close_called = true
          error("close handler error")
       end
@@ -853,7 +853,7 @@ end
 @Test(priority=36) function CloseOnReturnFromTry()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -878,7 +878,7 @@ end
 @Test(priority=37) function CloseOnReturnFromExcept()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -903,7 +903,7 @@ end
 @Test(priority=38) function CloseOnBreakFromTry()
    function subject()
       closed = 0
-      mt = { __close = function(self, err) closed++ end }
+      mt = { __close = function(Error) closed++ end }
       count = 0
       for i in {0 to 5} do
          try
@@ -929,7 +929,7 @@ end
 @Test(priority=39) function CloseOnContinueFromTry()
    function subject()
       closed = 0
-      mt = { __close = function(self, err) closed++ end }
+      mt = { __close = function(Error) closed++ end }
       count = 0
       for i in {0 to 5} do
          try
@@ -955,7 +955,7 @@ end
 @Test(priority=40) function CloseOnRethrow()
    closed = false
    mt = {
-      __close = function(self, err)
+      __close = function(Error)
          closed = true
       end
    }
@@ -983,12 +983,12 @@ end
 @Test(priority=41) function CloseErrorContinuesHandlers()
    order = {}
    mt_first = {
-      __close = function(self, err)
+      __close = function(Error)
          order.insert("first")
       end
    }
    mt_second = {
-      __close = function(self, err)
+      __close = function(Error)
          order.insert("second")
          error("close second")
       end

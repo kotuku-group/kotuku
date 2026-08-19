@@ -1028,7 +1028,8 @@ static void build_subroutines(BuildCtx *ctx)
   |  stw PC, -16(BASE)			// [cont|PC]
   |   add PC, TMP1, BASE
   |  lwz LFUNC:RB, FRAME_FUNC(BASE)	// Guaranteed to be a function here.
-  |   li NARGS8:RC, 16			// 2 args for func(t, k).
+  |   lbz RC, L->metamethod_argument_count
+  |   slwi NARGS8:RC, RC, 3
   |  b ->vm_call_dispatch_f
   |
   |->vmeta_tgetr:
@@ -1140,12 +1141,27 @@ static void build_subroutines(BuildCtx *ctx)
   |  stw PC, -16(BASE)			// [cont|PC]
   |   add PC, TMP1, BASE
   |  lwz LFUNC:RB, FRAME_FUNC(BASE)	// Guaranteed to be a function here.
-  |   li NARGS8:RC, 24			// 3 args for func(t, k, v)
+  |   lbz RC, L->metamethod_argument_count
+  |   addi RC, RC, 1
+  |   slwi NARGS8:RC, RC, 3
   |.if FPU
+  |  cmpwi NARGS8:RC, 16
+  |  bne >4
+  |  stfd f0, 8(BASE)
+  |  b >5
+  |4:
   |  stfd f0, 16(BASE)			// Copy value to third argument.
+  |5:
   |.else
+  |  cmpwi NARGS8:RC, 16
+  |  bne >4
+  |  stw TMP2, 8(BASE)
+  |  stw TMP3, 12(BASE)
+  |  b >5
+  |4:
   |  stw TMP2, 16(BASE)
   |  stw TMP3, 20(BASE)
+  |5:
   |.endif
   |  b ->vm_call_dispatch_f
   |
@@ -1407,7 +1423,8 @@ static void build_subroutines(BuildCtx *ctx)
   |   mr TMP2, BASE
   |  addi PC, TMP1, FRAME_CONT
   |   mr BASE, CRET1
-  |  li NARGS8:RC, 16			// 2 args for func(o1, o2).
+  |  lbz RC, L->metamethod_argument_count
+  |  slwi NARGS8:RC, RC, 3
   |  b ->vm_call_dispatch
   |
   |->vmeta_binop3:
@@ -1417,7 +1434,8 @@ static void build_subroutines(BuildCtx *ctx)
   |   mr TMP2, BASE
   |  addi PC, TMP1, FRAME_CONT
   |   mr BASE, CRET1
-  |  li NARGS8:RC, 24			// 3 args for func(receiver, other, lhs_dispatch).
+  |  lbz RC, L->metamethod_argument_count
+  |  slwi NARGS8:RC, RC, 3
   |  b ->vm_call_dispatch
   |
   |->vmeta_len:
@@ -1458,9 +1476,11 @@ static void build_subroutines(BuildCtx *ctx)
   |   stw PC, SAVE_PC
   |  add CARG3, BASE, RC
   |   mr SAVE0, NARGS8:RC
-  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top)
+  |  li CARG4, 0
+  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top, bool tail)
   |  lwz LFUNC:RB, FRAME_FUNC(BASE)	// Guaranteed to be a function here.
-  |   addi NARGS8:RC, SAVE0, 8		// Got one more argument now.
+  |   slwi CRET1, CRET1, 3
+  |   add NARGS8:RC, SAVE0, CRET1
   |  ins_call
   |
   |->vmeta_callt:			// Resolve __call for BC_CALLT.
@@ -1471,9 +1491,11 @@ static void build_subroutines(BuildCtx *ctx)
   |   stw PC, SAVE_PC
   |  add CARG3, RA, RC
   |   mr SAVE0, NARGS8:RC
-  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top)
+  |  li CARG4, 1
+  |  bl extern lj_meta_call	// (lua_State *L, TValue *func, TValue *top, bool tail)
   |  lwz TMP1, FRAME_PC(BASE)
-  |   addi NARGS8:RC, SAVE0, 8		// Got one more argument now.
+  |   slwi CRET1, CRET1, 3
+  |   add NARGS8:RC, SAVE0, CRET1
   |   lwz LFUNC:RB, FRAME_FUNC(RA)	// Guaranteed to be a function here.
   |  b ->BC_CALLT_Z
   |

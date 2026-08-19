@@ -80,13 +80,13 @@ end
 
 gui.mtHSV = { -- HSV metatable
    __context = true,
-   __newindex = metamethod(Key, Value)
+   __newindex = function(Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
-   __eq = metamethod(Other:table!):bool
+   __eq = function(Other:table!):bool
       return &h is Other.h and &s is Other.s and &v is Other.v and &a is Other.a
    end,
-   __tostring = metamethod():str -- Returns an SVG compliant colour string
+   __tostring = function():str -- Returns an SVG compliant colour string
       if &a is 1 or &a is nil then
          return string.format('hsv(%d %d %d)', &r ?? -1, &g ?? -1, &b ?? -1)
       else
@@ -146,13 +146,13 @@ end
 
 gui.mtRGB = { -- sRGB metatable
    __context = true,
-   __newindex = metamethod(Key, Value)
+   __newindex = function(Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
-   __eq = metamethod(Other:table!):bool
+   __eq = function(Other:table!):bool
       return &r is Other.r and &g is Other.g and &b is Other.b and &a is Other.a
    end,
-   __tostring = metamethod():str -- Returns an SVG compliant colour string
+   __tostring = function():str -- Returns an SVG compliant colour string
       if &a >= 1 or &a is nil then
          return string.format('rgb(%d %d %d)', &r ? &r * 255 : 0, &g ? &g * 255 : 0, &b ? &b * 255 : 0)
       else

@@ -122,7 +122,7 @@ end
       'An unregistered runtime method should fall back to an ordinary callable field')
 
    local meta = {}
-   meta['__index'] = function(Self, Key)
+   meta['__index'] = function(Key)
       if Key is 'custom' then return function(Value) return Value + 2 end end
    end
    holder.value = setmetatable({}, meta)

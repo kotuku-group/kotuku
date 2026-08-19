@@ -1,0 +1,293 @@
+-- Flute coverage for dispatch-scoped table metamethod context.
+
+@BeforeEach(hotpath=40)
+function enforce_hotpath() end
+
+@Test function MetamethodDispatchCapturesTheSelectedTable()
+   local colour_mt = {
+      __tostring = function():str
+         return f'colour:{&name}'
+      end,
+      __eq = function(Other:table!):bool
+         return &id is Other.id
+      end,
+      __newindex = function(Key, Value)
+         error(f'Colour tables are immutable: {Key}')
+      end
+   }
+   local first = setmetatable({ name = 'red', id = 7 }, colour_mt)
+   local second = setmetatable({ name = 'blue', id = 7 }, colour_mt)
+
+   assert(tostring(first) is 'colour:red', 'A dispatched __tostring should expose its receiver context')
+   assert(first is second, 'A dispatched __eq should receive the other operand as its visible argument')
+
+   local failed = false
+   try
+      first.shade = 'green'
+   except e
+      failed = true
+      assert(e.message.find('immutable: shade') != nil,
+         'A dispatched __newindex should retain its visible key argument')
+   end
+   assert(failed, 'The dispatched __newindex handler should run')
+end
+
+@Test function ExtractedHandlersAreOrdinaryFunctions()
+   local receiver = setmetatable({ name = 'stored' }, {
+      __tostring = function():str
+         return &name
+      end
+   })
+   local render = getmetatable(receiver).__tostring
+   local storage = { render = render }
+   local caller = { name = 'caller' }
+
+   using caller do
+      assert(render() is 'caller', 'A directly-called extracted handler should inherit the caller context')
+      assert(render(receiver) is 'caller', 'A direct argument must not become a receiver context')
+      assert(storage.render(receiver) is 'caller', 'Storing a handler must not attach a calling convention')
+   end
+
+   function renderer_factory():func
+      return function():str
+         return &name
+      end
+   end
+   local restored = exec(string.dump(renderer_factory, true))
+   using caller do
+      assert(restored() is 'caller', 'A bytecode round-trip must retain ordinary inherited-context behaviour')
+   end
+end
+
+@Test function ReceiverStableAndBinaryMetamethodsFollowTheirDocumentedRules()
+   local indexed = setmetatable({ name = 'indexed' }, {
+      __index = function(Key):str
+         return f'{&name}:{Key}'
+      end,
+      __len = function():num
+         return &size
+      end
+   })
+   indexed.size = 13
+   assert(indexed.missing is 'indexed:missing', 'A dispatched __index should enter the lookup subject')
+   assert(#indexed is 13, 'A dispatched __len should enter its operand')
+
+   local arithmetic_mt = {
+      __sub = function(Other, LhsDispatch:bool):num
+         if LhsDispatch then return &value - Other.value end
+         return Other - &value
+      end
+   }
+   local left = setmetatable({ value = 3 }, arithmetic_mt)
+   local right = setmetatable({ value = 4 }, arithmetic_mt)
+   assert(left - right is -1, 'A left-provider arithmetic handler should enter the left operand')
+   assert(1 - left is -2,
+      'A right-provider arithmetic handler should enter the provider and receive a false dispatch flag')
+end
+
+@Test function ReceiverStableHandlersAndVarargsKeepTheirRuntimeLayout()
+   local callable = setmetatable({ value = 8 }, {
+      __call = function(Amount:num):num
+         return &value + Amount
+      end
+   })
+   local negatable = setmetatable({ value = 6 }, {
+      __unm = function():num
+         return -&value
+      end
+   })
+   local collect = function(...):str
+      return f'{&prefix}:{...}'
+   end
+   local caller = { prefix = 'items' }
+
+   assert(callable(4) is 12, 'A dispatched __call should retain its visible argument positions')
+   assert(-negatable is -6, 'A dispatched __unm should enter its operand')
+   using caller do
+      assert(collect('first') is 'items:first', 'Ordinary function varargs should begin at visible argument zero')
+   end
+end
+
+@Test function BinaryConcatAndComparisonUseReceiverFirstDispatch()
+   local concat_mt = {
+      __concat = function(Other, LhsDispatch:bool):str
+         if LhsDispatch then return &value .. Other end
+         return Other .. &value
+      end
+   }
+   local ordered_mt = {
+      __lt = function(Other, LhsDispatch:bool):bool
+         if LhsDispatch then return &value < Other.value end
+         return Other < &value
+      end
+   }
+   local concat_value = setmetatable({ value = 'left' }, concat_mt)
+   local first = setmetatable({ value = 1 }, ordered_mt)
+   local second = setmetatable({ value = 2 }, ordered_mt)
+
+   assert(concat_value .. '!' is 'left!', 'A left-provider concat handler should enter the left table')
+   assert(first < second, 'A left-provider ordering handler should enter the left table')
+
+   assert('!' .. concat_value is '!left', 'A right-provider concat handler should enter its provider')
+   assert(0 < first, 'A right-provider ordering handler should enter its provider')
+end
+
+@Test function MetamethodReturnsAndErrorsRestoreTheCallerContext()
+   local caller = { name = 'caller' }
+   local read_or_fail = function(Fail:bool):str
+      if Fail then error('expected method failure') end
+      return &name
+   end
+   local receiver = setmetatable({ name = 'metamethod' }, { __call = read_or_fail })
+
+   using caller do
+      assert(receiver(false) is 'metamethod', 'A normal return should run under the metamethod context')
+      assert(&name is 'caller', 'A normal return should restore the caller context')
+
+      local failed = false
+      try
+         receiver(true)
+      except e
+         failed = true
+         assert(e.message.find('expected method failure') != nil)
+      end
+      assert(failed, 'The method should propagate its body error')
+      assert(&name is 'caller', 'An error should restore the caller context')
+   end
+end
+
+@Test function MetamethodCleanupRunsBeforeItsContextIsRestored()
+   local events = {}
+   local caller = { name = 'caller' }
+   local receiver = { name = 'receiver' }
+   local read_with_cleanup = function():str
+      defer
+         events.insert(&name)
+      end
+      return &name
+   end
+   setmetatable(receiver, { __call = read_with_cleanup })
+
+   using caller do
+      assert(receiver() is 'receiver', 'The metamethod body should use its dispatch table context')
+      assert(&name is 'caller', 'Metamethod cleanup should restore the caller context before returning')
+   end
+   assert(events[0] is 'receiver', 'Deferred cleanup owned by a metamethod should execute under its table context')
+end
+
+@Test function FastAndProtectedHandlersUseDispatchContext()
+   local clear_calls = 0
+   local clear_target = { retained = true }
+   setmetatable(clear_target, {
+      __clear = function(...)
+         assert(&& is clear_target, '__clear should capture the table being cleared')
+         assert(#{...} is 0, '__clear should receive no visible arguments')
+         clear_calls++
+      end
+   })
+   clear_target.clear()
+   assert(clear_calls is 1 and clear_target.retained, '__clear should replace the raw clear operation')
+
+   local iteration_target = { ignored = true }
+   setmetatable(iteration_target, {
+      __pairs = function(...):<func, table, nil>
+         assert(&& is iteration_target, '__pairs should capture the iterated table')
+         assert(#{...} is 0, '__pairs should receive no visible arguments')
+         return next, { visible = 7 }, nil
+      end
+   })
+   local total = 0
+   for _, value in pairs(iteration_target) do total += value end
+   assert(total is 7, '__pairs should retain its iterator result layout')
+
+   local close_error
+   local close_target
+   close_target = setmetatable({}, {
+      __close = function(Error, ...)
+         assert(&& is close_target, '__close should capture the table being closed')
+         assert(#{...} is 0, '__close should receive only the active error')
+         close_error = tostring(Error)
+      end
+   })
+   function fail_with_close()
+      local resource <close> = close_target
+      error('dispatch close failure')
+   end
+   try
+      fail_with_close()
+   except e
+   end
+   assert(close_error.find('dispatch close failure'), '__close should receive the active protected error')
+end
+
+@Test function TableFinaliserUsesDispatchContext()
+   local finalised = false
+   local target = setmetatable({}, {
+      __gc = function(...)
+         assert(&& != nil, '__gc should expose the finalised table as context')
+         assert(#{...} is 0, '__gc should receive no visible arguments')
+         finalised = true
+      end
+   })
+   target = nil
+   processing.collect('full')
+   assert(finalised, 'The table finaliser should run under dispatch context')
+end
+
+@Test function MetamethodIsAnOrdinaryIdentifier()
+   local declarations = {
+      'function metamethod() end',
+      'local function metamethod() end',
+      'global function metamethod() end',
+      'thunk metamethod():num return 1 end',
+      'local thunk metamethod():num return 1 end',
+      'global thunk metamethod():num return 1 end',
+      'local receiver = {}; function receiver.metamethod() end'
+   }
+
+   for declaration in values(declarations) do
+      exec(declaration)
+   end
+end
+
+@Test function ThunkResolvedTablesUseDispatchContext()
+   local lookup_mt = {
+      __index = function(Key):str return f'{&name}:{Key}' end,
+      __newindex = function(Key, Value) rawset(&&, Key, Value) end
+   }
+   thunk deferred_lookup():table
+      return setmetatable({ name = 'deferred' }, lookup_mt)
+   end
+   local lookup = deferred_lookup()
+   assert(lookup.missing is 'deferred:missing',
+      'A thunk-resolved __index handler should receive only the visible key argument')
+   lookup.answer = 42
+   assert(lookup.answer is 42, 'A thunk-resolved __newindex handler should expose its table as context')
+
+   thunk deferred_callable():table
+      return setmetatable({ offset = 3 }, {
+         __call = function(Value:num):num return &offset + Value end
+      })
+   end
+   local callable = deferred_callable()
+   assert(callable(4) is 7,
+      'A thunk-resolved __call handler should receive only its visible arguments')
+
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   thunk deferred_first():table return setmetatable({ id = 7 }, equality_mt) end
+   thunk deferred_second():table return setmetatable({ id = 7 }, equality_mt) end
+   local first = deferred_first()
+   local second = deferred_second()
+   assert(first is second,
+      'A thunk-resolved __eq handler should capture its receiver and receive the other table')
+end
+
+@Test function MethodIsAnOrdinaryIdentifier()
+   local function method(Value:num):num
+      return Value + 1
+   end
+
+   assert(method(4) is 5, 'method should be available as an ordinary identifier')
+end

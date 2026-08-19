@@ -2223,7 +2223,9 @@ LJFOLDF(fwd_sload)
          slot_ref = irt_type(fins->t) IS IRT_FUNC ? J->context_call_func[fins->op1] :
             J->context_call_result[fins->op1];
       }
-      lj_assertJ(slot_ref != 0, "uninitialized slot accessed");
+      // Receiver-elided temporary call slots may be dead by the time loop copy-substitution reaches their SLOAD.
+      // Treat that as type instability so the protected loop optimiser can unroll or abandon the trace safely.
+      if (not slot_ref) lj_trace_err(J, LJ_TRERR_TYPEINS);
       return slot_ref;
    }
 }

@@ -181,7 +181,7 @@
             },
             {
                "name": "storage.type.function.tiri",
-               "match": "\\b(function|metamethod|thunk)\\b"
+               "match": "\\b(function|thunk)\\b"
             },
             {
                "name": "storage.modifier.tiri",

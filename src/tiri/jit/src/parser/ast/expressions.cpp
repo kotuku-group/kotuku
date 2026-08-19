@@ -654,24 +654,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          break;
       }
 
-      case TokenKind::Metamethod: {
-         Token metamethod_token = this->ctx.tokens().current();
-         if (this->ctx.tokens().peek(1).kind() != TokenKind::LeftParen) {
-            Identifier id = make_identifier(metamethod_token);
-            NameRef name;
-            name.identifier = id;
-            this->ctx.tokens().advance();
-            node = make_identifier_expr(metamethod_token.span(), name);
-            break;
-         }
-         this->ctx.tokens().advance();
-         auto fn = this->parse_function_literal(metamethod_token, false, nullptr,
-            FunctionCallableKind::ContextFirstArgument);
-         if (not fn.ok()) return fn;
-         node = std::move(fn.value_ref());
-         break;
-      }
-
       case TokenKind::ThunkToken: {
          // Anonymous thunk expression: thunk():type ... end
          Token thunk_token = this->ctx.tokens().current();

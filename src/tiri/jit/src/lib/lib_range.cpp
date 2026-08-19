@@ -710,7 +710,6 @@ static int range_index(lua_State *Lua)
 
 static int range_lib_call(lua_State *L)
 {
-   lua_remove(L, 1);
    return fp_range_construct(L);
 }
 

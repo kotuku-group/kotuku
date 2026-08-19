@@ -77,11 +77,11 @@ end
       defer
          events.insert('defer:' .. &name)
       end
-      local resource <close> = setmetatable({}, mt)
+      local resource <close> = setmetatable({ name = 'resource' }, mt)
    end
 
-   assert(events[0] is 'close:cleanup' and events[1] is 'defer:cleanup',
-      'Normal cleanup should run close then defer under the lexical block context')
+   assert(events[0] is 'close:resource' and events[1] is 'defer:cleanup',
+      'Normal cleanup should use dispatch context for close, then lexical context for defer')
 end
 
 @Test function ReturnBreakAndContinueLeaveEveryCrossedBlock()
@@ -117,7 +117,7 @@ end
    local inner = { name = 'inner' }
    local events = {}
    local mt = {
-      __close = function(Self, Error)
+      __close = function(Error)
          events.insert('close:' .. &name)
          assert(Error != nil, 'Error cleanup should pass the active error to __close')
       end
@@ -129,7 +129,7 @@ end
             defer
                events.insert('defer')
             end
-            local resource <close> = setmetatable({}, mt)
+            local resource <close> = setmetatable({ name = 'resource' }, mt)
             error('block failure')
          end
       except e
@@ -137,8 +137,8 @@ end
       end
    end
 
-   assert(events[0] is 'close:inner' and #events is 1,
-      'Error cleanup should run close under the block context and retain unsupported defer semantics')
+   assert(events[0] is 'close:resource' and #events is 1,
+      'Error cleanup should run close under dispatch context and retain unsupported defer semantics')
    assert(&name is nil)
 end
 

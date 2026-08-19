@@ -232,6 +232,7 @@ typedef struct CCallInfo {
   _(ANY,        lj_context_enter_jit,    3,  S, NIL, CCI_L) \
   _(ANY,        lj_context_leave_jit,    2,  S, NIL, CCI_L) \
   _(ANY,        lj_context_tail_jit,     4,  S, NIL, CCI_L) \
+  _(ANY,        lj_context_prepare_metamethod_tail_jit, 3, S, NIL, CCI_L) \
   /* Native object field access */ \
   _(ANY,        bc_object_getfield, 5, S, NIL, CCI_L|CCI_T) \
   _(ANY,        bc_object_setfield, 5, S, NIL, CCI_L|CCI_T) \

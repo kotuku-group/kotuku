@@ -93,7 +93,7 @@ function tempus._fields(Value:any!, TypeName:str!):table
    return value_storage[Value].fields
 end
 
-tempus._valueIndex = metamethod(Key:any!):any
+tempus._valueIndex = function(Key:any!):any
    local state = value_storage[&&]
    if state is nil then return nil end
 
@@ -110,12 +110,12 @@ tempus._valueIndex = metamethod(Key:any!):any
    return state.fields[Key]
 end
 
-tempus._immutableError = metamethod(Key:any!, Value:any!)
+tempus._immutableError = function(Key:any!, Value:any!)
    type_name = tempus._typeOf(&&) ?? 'Value'
    error(f"tempus.{type_name} is immutable: Cannot set {Key}")
 end
 
-tempus._tostring = metamethod():str
+tempus._tostring = function():str
    type_name = tempus._typeOf(&&) ?? 'Value'
    return f"tempus.{type_name}"
 end
@@ -588,7 +588,7 @@ end
 
 function make_constructor(Name:str!):table
    return setmetatable({}, {
-      __call = metamethod(...)
+      __call = function(...)
          raise ERR_NotInitialised, f"tempus.{Name} is not implemented yet."
       end
    })
@@ -1018,7 +1018,7 @@ end
 @input Nanosecond adjustment
 @result Instant value
 ]])
-getmetatable(tempus.instant).__call = metamethod(EpochSecond:any!, Nano:any):table
+getmetatable(tempus.instant).__call = function(EpochSecond:any!, Nano:any):table
    return new_instant(EpochSecond, Nano ?? 0)
 end
 
@@ -1085,7 +1085,7 @@ end
 @input Table with hours, minutes, seconds, millis, or nanos
 @result Duration value
 ]])
-getmetatable(tempus.duration).__call = metamethod(KV:any!):table
+getmetatable(tempus.duration).__call = function(KV:any!):table
    tempus._requireTable('duration', KV)
 
    seconds = tempus._requireInteger('hours', KV.hours ?? 0) * 3600 +
@@ -1140,7 +1140,7 @@ end
 @input Offset seconds
 @result Offset value
 ]])
-getmetatable(tempus.offset).__call = metamethod(Seconds:any!):table
+getmetatable(tempus.offset).__call = function(Seconds:any!):table
    return new_offset(Seconds)
 end
 
@@ -1172,7 +1172,7 @@ end
 @input Day of month
 @result LocalDate value
 ]])
-getmetatable(tempus.localDate).__call = metamethod(Year:any!, Month:any!, Day:any!):table
+getmetatable(tempus.localDate).__call = function(Year:any!, Month:any!, Day:any!):table
    return new_local_date(Year, Month, Day)
 end
 
@@ -1205,7 +1205,7 @@ end
 @input Nanosecond
 @result LocalTime value
 ]])
-getmetatable(tempus.localTime).__call = metamethod(Hour:any!, Minute:any, Second:any, Nano:any):table
+getmetatable(tempus.localTime).__call = function(Hour:any!, Minute:any, Second:any, Nano:any):table
    return new_local_time(Hour, Minute ?? 0, Second ?? 0, Nano ?? 0)
 end
 
@@ -1245,7 +1245,7 @@ end
 @result LocalDateTime value
 ]])
 getmetatable(tempus.localDateTime).__call =
-   metamethod(Year:any!, Month:any!, Day:any!, Hour:any, Minute:any, Second:any, Nano:any):table
+   function(Year:any!, Month:any!, Day:any!, Hour:any, Minute:any, Second:any, Nano:any):table
       return new_local_date_time(Year, Month, Day, Hour ?? 0, Minute ?? 0, Second ?? 0, Nano ?? 0)
    end
 
@@ -1280,7 +1280,7 @@ end
 @input Offset value
 @result OffsetDateTime value
 ]])
-getmetatable(tempus.offsetDateTime).__call = metamethod(LocalDateTime:any!, Offset:any!):table
+getmetatable(tempus.offsetDateTime).__call = function(LocalDateTime:any!, Offset:any!):table
    return new_offset_date_time(LocalDateTime, Offset)
 end
 
@@ -1345,7 +1345,7 @@ end
 @input Table with years, months, weeks, or days
 @result Period value
 ]])
-getmetatable(tempus.period).__call = metamethod(KV:any!):table
+getmetatable(tempus.period).__call = function(KV:any!):table
    tempus._requireTable('period', KV)
    return new_period(KV.years ?? 0, KV.months ?? 0, KV.weeks ?? 0, KV.days ?? 0)
 end
@@ -1380,7 +1380,7 @@ end
 @input Stop instant
 @result Interval value
 ]])
-getmetatable(tempus.interval).__call = metamethod(Start:any!, Stop:any!):table
+getmetatable(tempus.interval).__call = function(Start:any!, Stop:any!):table
    return new_interval(Start, Stop)
 end
 
@@ -1417,7 +1417,7 @@ end
 @desc Convert this instant to text
 @result ISO instant text
 ]])
-tempus.mtInstant.__tostring = metamethod():str
+tempus.mtInstant.__tostring = function():str
    fields = tempus._fields(&&, 'Instant')
    date_fields, time_fields = epoch_second_to_local(fields.epoch_second, fields.nano)
    return f"{format_year(date_fields.year)}-{pad_int(date_fields.month, 2)}-{pad_int(date_fields.day, 2)}T" ..
@@ -1431,7 +1431,7 @@ end
 @input Second instant
 @result True when equal
 ]])
-tempus.mtInstant.__eq = metamethod(Other:table!):bool
+tempus.mtInstant.__eq = function(Other:table!):bool
    a = tempus._fields(&&, 'Instant')
    b = tempus._fields(Other, 'Instant')
    return a.epoch_second is b.epoch_second and a.nano is b.nano
@@ -1443,7 +1443,7 @@ end
 @input Second instant
 @result True when first is earlier
 ]])
-tempus.mtInstant.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtInstant.__lt = function(Other:table!, LHS:bool):bool
    local left, right = &&, Other
    if not LHS then left, right = Other, && end
    a = tempus._fields(left, 'Instant')
@@ -1457,7 +1457,7 @@ end
 @input Second instant
 @result True when first is not later
 ]])
-tempus.mtInstant.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtInstant.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    a = tempus._fields(left, 'Instant')
@@ -1471,7 +1471,7 @@ end
 @input Duration value
 @result Instant value
 ]])
-tempus.mtInstant.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtInstant.__add = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'Instant')
    if tempus.isDuration(Other) then
       b = tempus._fields(Other, 'Duration')
@@ -1486,7 +1486,7 @@ end
 @input Duration or Instant value
 @result Instant or Duration value
 ]])
-tempus.mtInstant.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtInstant.__sub = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'Instant')
    if tempus.isDuration(Other) then
       b = tempus._fields(Other, 'Duration')
@@ -1551,7 +1551,7 @@ end
 @desc Convert this duration to text
 @result ISO duration text
 ]])
-tempus.mtDuration.__tostring = metamethod():str
+tempus.mtDuration.__tostring = function():str
    fields = tempus._fields(&&, 'Duration')
    seconds = fields.seconds
    nano = fields.nano
@@ -1581,7 +1581,7 @@ end
 @input Second duration
 @result True when equal
 ]])
-tempus.mtDuration.__eq = metamethod(Other:table!):bool
+tempus.mtDuration.__eq = function(Other:table!):bool
    a = tempus._fields(&&, 'Duration')
    b = tempus._fields(Other, 'Duration')
    return a.seconds is b.seconds and a.nano is b.nano
@@ -1593,7 +1593,7 @@ end
 @input Second duration
 @result True when first is shorter
 ]])
-tempus.mtDuration.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtDuration.__lt = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    a = tempus._fields(left, 'Duration')
@@ -1607,7 +1607,7 @@ end
 @input Second duration
 @result True when first is not longer
 ]])
-tempus.mtDuration.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtDuration.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    a = tempus._fields(left, 'Duration')
@@ -1621,7 +1621,7 @@ end
 @input Second duration
 @result Duration value
 ]])
-tempus.mtDuration.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtDuration.__add = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'Duration')
    if tempus.isDuration(Other) then
       b = tempus._fields(Other, 'Duration')
@@ -1636,7 +1636,7 @@ end
 @input Second duration
 @result Duration value
 ]])
-tempus.mtDuration.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtDuration.__sub = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'Duration')
    if tempus.isDuration(Other) then
       b = tempus._fields(Other, 'Duration')
@@ -1649,7 +1649,7 @@ end
 @desc Negate this duration
 @result Duration value
 ]])
-tempus.mtDuration.__unm = metamethod():table
+tempus.mtDuration.__unm = function():table
    fields = tempus._fields(&&, 'Duration')
    return new_duration(-fields.seconds, -fields.nano)
 end
@@ -1666,7 +1666,7 @@ end
 @desc Negate this offset
 @result Offset value
 ]])
-tempus.mtOffset.__unm = metamethod():table
+tempus.mtOffset.__unm = function():table
    return new_offset(-tempus._fields(&&, 'Offset').seconds)
 end
 
@@ -1674,7 +1674,7 @@ end
 @desc Convert this offset to text
 @result Offset text
 ]])
-tempus.mtOffset.__tostring = metamethod():str
+tempus.mtOffset.__tostring = function():str
    seconds = tempus._fields(&&, 'Offset').seconds
    if seconds is 0 then return 'Z' end
 
@@ -1691,7 +1691,7 @@ end
 @input Second offset
 @result True when equal
 ]])
-tempus.mtOffset.__eq = metamethod(Other:table!):bool
+tempus.mtOffset.__eq = function(Other:table!):bool
    return tempus._fields(&&, 'Offset').seconds is tempus._fields(Other, 'Offset').seconds
 end
 
@@ -1701,7 +1701,7 @@ end
 @input Second offset
 @result True when first is smaller
 ]])
-tempus.mtOffset.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtOffset.__lt = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return tempus._fields(left, 'Offset').seconds < tempus._fields(right, 'Offset').seconds
@@ -1713,7 +1713,7 @@ end
 @input Second offset
 @result True when first is not larger
 ]])
-tempus.mtOffset.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtOffset.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return tempus._fields(left, 'Offset').seconds <= tempus._fields(right, 'Offset').seconds
@@ -1813,7 +1813,7 @@ end
 @input Period value
 @result LocalDate value
 ]])
-tempus.mtLocalDate.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtLocalDate.__add = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'LocalDate')
    if tempus.isPeriod(Other) then
       fields = date_plus_period_fields(a, tempus._fields(Other, 'Period'), 1)
@@ -1828,7 +1828,7 @@ end
 @input Period or LocalDate value
 @result LocalDate or Period value
 ]])
-tempus.mtLocalDate.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtLocalDate.__sub = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'LocalDate')
    if tempus.isPeriod(Other) then
       fields = date_plus_period_fields(a, tempus._fields(Other, 'Period'), -1)
@@ -1845,7 +1845,7 @@ end
 @desc Convert this date to text
 @result ISO date text
 ]])
-tempus.mtLocalDate.__tostring = metamethod():str
+tempus.mtLocalDate.__tostring = function():str
    fields = tempus._fields(&&, 'LocalDate')
    return f"{format_year(fields.year)}-{pad_int(fields.month, 2)}-{pad_int(fields.day, 2)}"
 end
@@ -1856,7 +1856,7 @@ end
 @input Second date
 @result True when equal
 ]])
-tempus.mtLocalDate.__eq = metamethod(Other:table!):bool
+tempus.mtLocalDate.__eq = function(Other:table!):bool
    return compare_date_fields(tempus._fields(&&, 'LocalDate'), tempus._fields(Other, 'LocalDate')) is 0
 end
 
@@ -1866,7 +1866,7 @@ end
 @input Second date
 @result True when first is earlier
 ]])
-tempus.mtLocalDate.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtLocalDate.__lt = function(Other:table!, LHS:bool):bool
    if LHS then
       return compare_date_fields(tempus._fields(&&, 'LocalDate'), tempus._fields(Other, 'LocalDate')) < 0
    end
@@ -1879,7 +1879,7 @@ end
 @input Second date
 @result True when first is not later
 ]])
-tempus.mtLocalDate.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtLocalDate.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return compare_date_fields(tempus._fields(left, 'LocalDate'), tempus._fields(right, 'LocalDate')) <= 0
@@ -1935,7 +1935,7 @@ end
 @desc Convert this time to text
 @result ISO time text
 ]])
-tempus.mtLocalTime.__tostring = metamethod():str
+tempus.mtLocalTime.__tostring = function():str
    fields = tempus._fields(&&, 'LocalTime')
    return f"{pad_int(fields.hour, 2)}:{pad_int(fields.minute, 2)}:{pad_int(fields.second, 2)}" ..
       format_nano(fields.nano)
@@ -1947,7 +1947,7 @@ end
 @input Second time
 @result True when equal
 ]])
-tempus.mtLocalTime.__eq = metamethod(Other:table!):bool
+tempus.mtLocalTime.__eq = function(Other:table!):bool
    return compare_time_fields(tempus._fields(&&, 'LocalTime'), tempus._fields(Other, 'LocalTime')) is 0
 end
 
@@ -1957,7 +1957,7 @@ end
 @input Second time
 @result True when first is earlier
 ]])
-tempus.mtLocalTime.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtLocalTime.__lt = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return compare_time_fields(tempus._fields(left, 'LocalTime'), tempus._fields(right, 'LocalTime')) < 0
@@ -1969,7 +1969,7 @@ end
 @input Second time
 @result True when first is not later
 ]])
-tempus.mtLocalTime.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtLocalTime.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return compare_time_fields(tempus._fields(left, 'LocalTime'), tempus._fields(right, 'LocalTime')) <= 0
@@ -1981,7 +1981,7 @@ end
 @input Duration value
 @result LocalTime value
 ]])
-tempus.mtLocalTime.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtLocalTime.__add = function(Other:table!, LHS:bool):table
    if tempus.isDuration(Other) then
       fields = time_plus_duration_fields(tempus._fields(&&, 'LocalTime'), tempus._fields(Other, 'Duration'), 1)
       return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
@@ -1995,7 +1995,7 @@ end
 @input Duration value
 @result LocalTime value
 ]])
-tempus.mtLocalTime.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtLocalTime.__sub = function(Other:table!, LHS:bool):table
    if tempus.isDuration(Other) then
       fields = time_plus_duration_fields(tempus._fields(&&, 'LocalTime'), tempus._fields(Other, 'Duration'), -1)
       return new_local_time(fields.hour, fields.minute, fields.second, fields.nano)
@@ -2087,7 +2087,7 @@ end
 @input Duration or Period value
 @result LocalDateTime value
 ]])
-tempus.mtLocalDateTime.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtLocalDateTime.__add = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'LocalDateTime')
    date_fields = tempus._fields(a.date, 'LocalDate')
    time_fields = tempus._fields(a.time, 'LocalTime')
@@ -2114,7 +2114,7 @@ end
 @input Duration or Period value
 @result LocalDateTime value
 ]])
-tempus.mtLocalDateTime.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtLocalDateTime.__sub = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'LocalDateTime')
    date_fields = tempus._fields(a.date, 'LocalDate')
    time_fields = tempus._fields(a.time, 'LocalTime')
@@ -2139,7 +2139,7 @@ end
 @desc Convert this local date-time to text
 @result ISO local date-time text
 ]])
-tempus.mtLocalDateTime.__tostring = metamethod():str
+tempus.mtLocalDateTime.__tostring = function():str
    fields = tempus._fields(&&, 'LocalDateTime')
    return f'{fields.date}T{fields.time}'
 end
@@ -2150,7 +2150,7 @@ end
 @input Second local date-time
 @result True when equal
 ]])
-tempus.mtLocalDateTime.__eq = metamethod(Other:table!):bool
+tempus.mtLocalDateTime.__eq = function(Other:table!):bool
    a = tempus._fields(&&, 'LocalDateTime')
    b = tempus._fields(Other, 'LocalDateTime')
    return a.date is b.date and a.time is b.time
@@ -2162,7 +2162,7 @@ end
 @input Second local date-time
 @result True when first is earlier
 ]])
-tempus.mtLocalDateTime.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtLocalDateTime.__lt = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    a = tempus._fields(left, 'LocalDateTime')
@@ -2179,7 +2179,7 @@ end
 @input Second local date-time
 @result True when first is not later
 ]])
-tempus.mtLocalDateTime.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtLocalDateTime.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return left < right or left is right
@@ -2262,7 +2262,7 @@ end
 @desc Convert this offset date-time to text
 @result ISO offset date-time text
 ]])
-tempus.mtOffsetDateTime.__tostring = metamethod():str
+tempus.mtOffsetDateTime.__tostring = function():str
    fields = tempus._fields(&&, 'OffsetDateTime')
    return tostring(fields.local_date_time) .. tostring(fields.offset)
 end
@@ -2273,7 +2273,7 @@ end
 @input Second offset date-time
 @result True when equal
 ]])
-tempus.mtOffsetDateTime.__eq = metamethod(Other:table!):bool
+tempus.mtOffsetDateTime.__eq = function(Other:table!):bool
    a = tempus._fields(&&, 'OffsetDateTime')
    b = tempus._fields(Other, 'OffsetDateTime')
    return offset_date_time_instant(&&) is offset_date_time_instant(Other) and a.offset is b.offset
@@ -2285,7 +2285,7 @@ end
 @input Second offset date-time
 @result True when first is earlier
 ]])
-tempus.mtOffsetDateTime.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtOffsetDateTime.__lt = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return offset_date_time_instant(left) < offset_date_time_instant(right)
@@ -2297,7 +2297,7 @@ end
 @input Second offset date-time
 @result True when first is not later
 ]])
-tempus.mtOffsetDateTime.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtOffsetDateTime.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return offset_date_time_instant(left) <= offset_date_time_instant(right)
@@ -2309,7 +2309,7 @@ end
 @input Duration or Period value
 @result OffsetDateTime value
 ]])
-tempus.mtOffsetDateTime.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtOffsetDateTime.__add = function(Other:table!, LHS:bool):table
    fields = tempus._fields(&&, 'OffsetDateTime')
    if tempus.isDuration(Other) then
       return offset_date_time_from_instant(offset_date_time_instant(&&) + Other, fields.offset)
@@ -2324,7 +2324,7 @@ end
 @input Duration, Period, or OffsetDateTime value
 @result OffsetDateTime or Duration value
 ]])
-tempus.mtOffsetDateTime.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtOffsetDateTime.__sub = function(Other:table!, LHS:bool):table
    fields = tempus._fields(&&, 'OffsetDateTime')
    if tempus.isDuration(Other) then
       return offset_date_time_from_instant(offset_date_time_instant(&&) - Other, fields.offset)
@@ -2459,7 +2459,7 @@ end
 @desc Convert this zoned date-time to text
 @result ISO zoned date-time text
 ]])
-tempus.mtZonedDateTime.__tostring = metamethod():str
+tempus.mtZonedDateTime.__tostring = function():str
    fields = tempus._fields(&&, 'ZonedDateTime')
    return tostring(&&.localDateTime()) .. tostring(&&.offset()) .. '[' .. fields.zone.id() .. ']'
 end
@@ -2470,7 +2470,7 @@ end
 @input Second zoned date-time
 @result True when equal
 ]])
-tempus.mtZonedDateTime.__eq = metamethod(Other:table!):bool
+tempus.mtZonedDateTime.__eq = function(Other:table!):bool
    a = tempus._fields(&&, 'ZonedDateTime')
    b = tempus._fields(Other, 'ZonedDateTime')
    return a.instant is b.instant and a.zone is b.zone
@@ -2482,7 +2482,7 @@ end
 @input Second zoned date-time
 @result True when first is earlier
 ]])
-tempus.mtZonedDateTime.__lt = metamethod(Other:table!, LHS:bool):bool
+tempus.mtZonedDateTime.__lt = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return tempus._fields(left, 'ZonedDateTime').instant < tempus._fields(right, 'ZonedDateTime').instant
@@ -2494,7 +2494,7 @@ end
 @input Second zoned date-time
 @result True when first is not later
 ]])
-tempus.mtZonedDateTime.__le = metamethod(Other:table!, LHS:bool):bool
+tempus.mtZonedDateTime.__le = function(Other:table!, LHS:bool):bool
    local left:table, right:table = &&, Other
    if not LHS then left, right = Other, && end
    return tempus._fields(left, 'ZonedDateTime').instant <= tempus._fields(right, 'ZonedDateTime').instant
@@ -2506,7 +2506,7 @@ end
 @input Duration or Period value
 @result ZonedDateTime value
 ]])
-tempus.mtZonedDateTime.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtZonedDateTime.__add = function(Other:table!, LHS:bool):table
    fields = tempus._fields(&&, 'ZonedDateTime')
    if tempus.isDuration(Other) then return new_zoned_date_time(fields.instant + Other, fields.zone) end
    if tempus.isPeriod(Other) then
@@ -2522,7 +2522,7 @@ end
 @input Duration, Period, or ZonedDateTime value
 @result ZonedDateTime or Duration value
 ]])
-tempus.mtZonedDateTime.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtZonedDateTime.__sub = function(Other:table!, LHS:bool):table
    fields = tempus._fields(&&, 'ZonedDateTime')
    if tempus.isDuration(Other) then return new_zoned_date_time(fields.instant - Other, fields.zone) end
    if tempus.isPeriod(Other) then
@@ -2549,7 +2549,7 @@ end
 @desc Convert this period to text
 @result ISO period text
 ]])
-tempus.mtPeriod.__tostring = metamethod():str
+tempus.mtPeriod.__tostring = function():str
    fields = tempus._fields(&&, 'Period')
    text = 'P'
    if fields.years != 0 then text ..= tostring(fields.years) .. 'Y' end
@@ -2566,7 +2566,7 @@ end
 @input Second period
 @result True when equal
 ]])
-tempus.mtPeriod.__eq = metamethod(Other:table!):bool
+tempus.mtPeriod.__eq = function(Other:table!):bool
    a = tempus._fields(&&, 'Period')
    b = tempus._fields(Other, 'Period')
    return a.years is b.years and a.months is b.months and a.weeks is b.weeks and a.days is b.days
@@ -2578,7 +2578,7 @@ end
 @input Second period
 @result Period value
 ]])
-tempus.mtPeriod.__add = metamethod(Other:table!, LHS:bool):table
+tempus.mtPeriod.__add = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'Period')
    if tempus.isPeriod(Other) then
       b = tempus._fields(Other, 'Period')
@@ -2593,7 +2593,7 @@ end
 @input Second period
 @result Period value
 ]])
-tempus.mtPeriod.__sub = metamethod(Other:table!, LHS:bool):table
+tempus.mtPeriod.__sub = function(Other:table!, LHS:bool):table
    a = tempus._fields(&&, 'Period')
    if tempus.isPeriod(Other) then
       b = tempus._fields(Other, 'Period')
@@ -2606,7 +2606,7 @@ end
 @desc Negate this period
 @result Period value
 ]])
-tempus.mtPeriod.__unm = metamethod():table
+tempus.mtPeriod.__unm = function():table
    fields = tempus._fields(&&, 'Period')
    return new_period(-fields.years, -fields.months, -fields.weeks, -fields.days)
 end
@@ -2705,7 +2705,7 @@ end
 @desc Convert this interval to text
 @result Interval text
 ]])
-tempus.mtInterval.__tostring = metamethod():str
+tempus.mtInterval.__tostring = function():str
    fields = tempus._fields(&&, 'Interval')
    return f'{fields.start}/{fields.stop}'
 end
@@ -2716,7 +2716,7 @@ end
 @input Second interval
 @result True when equal
 ]])
-tempus.mtInterval.__eq = metamethod(Other:table!):bool
+tempus.mtInterval.__eq = function(Other:table!):bool
    a = tempus._fields(&&, 'Interval')
    b = tempus._fields(Other, 'Interval')
    return a.start is b.start and a.stop is b.stop
@@ -2814,7 +2814,7 @@ end
 @desc Convert this zone to text
 @result Zone ID
 ]])
-tempus.mtZone.__tostring = metamethod():str
+tempus.mtZone.__tostring = function():str
    return tempus._fields(&&, 'Zone').id
 end
 
@@ -2824,7 +2824,7 @@ end
 @input Second zone
 @result True when equal
 ]])
-tempus.mtZone.__eq = metamethod(Other:table!):bool
+tempus.mtZone.__eq = function(Other:table!):bool
    return tempus._fields(&&, 'Zone').id is tempus._fields(Other, 'Zone').id
 end
 
@@ -2888,7 +2888,7 @@ end
 @desc Convert this clock to text
 @result Clock description
 ]])
-tempus.mtClock.__tostring = metamethod():str
+tempus.mtClock.__tostring = function():str
    return f"tempus.Clock({tempus._fields(&&, 'Clock').kind})"
 end
 
@@ -2918,7 +2918,7 @@ end
 @input Zone ID, or nil for local
 @result Zone value
 ]])
-getmetatable(tempus.zone).__call = metamethod(ZoneID:any):table
+getmetatable(tempus.zone).__call = function(ZoneID:any):table
    return new_zone(ZoneID)
 end
 
@@ -2959,7 +2959,7 @@ end
 @input Zone value
 @result ZonedDateTime value
 ]])
-getmetatable(tempus.zonedDateTime).__call = metamethod(Instant:any!, Zone:any!):table
+getmetatable(tempus.zonedDateTime).__call = function(Instant:any!, Zone:any!):table
    return new_zoned_date_time(Instant, Zone)
 end
 

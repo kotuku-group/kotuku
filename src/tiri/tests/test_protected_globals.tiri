@@ -259,7 +259,7 @@ end
 @Test function EnvironmentNewIndexRemainsActive()
    local captured = {}
    setmetatable(_G, {
-      __newindex = function(Self, Key, Value)
+      __newindex = function(Key, Value)
          captured[Key] = Value
       end
    })

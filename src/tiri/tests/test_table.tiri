@@ -412,9 +412,10 @@ end
 end
 
 @Test function SortMetamethodPreservesComparisonOrder()
-   local function less_than(Receiver:table!, Other:table!, LhsDispatch:bool):bool
-      if not LhsDispatch then Receiver, Other = Other, Receiver end
-      return Receiver.value < Other.value
+   local function less_than(Other:table!, LhsDispatch:bool):bool
+      local receiver = &&
+      if not LhsDispatch then receiver, Other = Other, receiver end
+      return receiver.value < Other.value
    end
 
    local comparison_mt = { __lt = less_than }
@@ -463,9 +464,9 @@ end
    local expected = target
    local calls = 0
    setmetatable(target, {
-      ['__clear'] = function(Self)
+      ['__clear'] = function()
          calls += 1
-         assert(Self is expected, "__clear should receive the table being cleared")
+         assert(&& is expected, "__clear should expose the table being cleared as context")
       end
    })
 
@@ -477,7 +478,7 @@ end
 
 @Test function ClearMetamethodErrorPropagation()
    local target = setmetatable({}, {
-      ['__clear'] = function(Self)
+      ['__clear'] = function()
          error('clear hook failed')
       end
    })

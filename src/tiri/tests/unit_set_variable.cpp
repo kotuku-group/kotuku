@@ -213,9 +213,9 @@ static bool test_set_variable_newindex_dispatch(kt::Log &Log)
    SetVariableTestScript holder;
    constexpr std::string_view statement = R"(
       setmetatable(_G, {
-         __newindex = function(Environment, Name, Value)
-            rawset(Environment, 'glHostInterceptedName', Name)
-            rawset(Environment, 'glHostInterceptedValue', Value)
+         __newindex = function(Name, Value)
+            rawset(&&, 'glHostInterceptedName', Name)
+            rawset(&&, 'glHostInterceptedValue', Value)
          end
       })
    )";

@@ -42,9 +42,10 @@ static void record_shutdown_finaliser_call(int Identifier)
 
 static int table_identifier(lua_State *Lua)
 {
-   lua_getfield(Lua, 1, "identifier");
+   settabV(Lua, Lua->top++, lj_context_current(Lua));
+   lua_getfield(Lua, -1, "identifier");
    int identifier = int(lua_tointeger(Lua, -1));
-   lua_pop(Lua, 1);
+   lua_pop(Lua, 2);
    return identifier;
 }
 

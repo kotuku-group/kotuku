@@ -81,12 +81,6 @@
          Expected.is_thunk ? "thunk" : "function", Actual.is_thunk ? "thunk" : "function");
    }
 
-   if (Expected.callable_kind != Actual.callable_kind) {
-      return std::format("callable kind differs (expected {}, got {})",
-         Expected.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function",
-         Actual.callable_kind IS FunctionCallableKind::ContextFirstArgument ? "metamethod" : "function");
-   }
-
    if (Expected.parameters.size() != Actual.parameters.size()) {
       return std::format("parameter count differs (expected {}, got {})",
          Expected.parameters.size(), Actual.parameters.size());
@@ -2435,32 +2429,6 @@ void TypeAnalyser::check_arguments(
    }
 
    size_t param_index = 0;
-   if (Function.callable_kind IS FunctionCallableKind::ContextFirstArgument) {
-      if (Call.arguments.empty()) {
-         TypeDiagnostic diag;
-         diag.location = Location;
-         diag.expected = TiriType::Table;
-         diag.actual = TiriType::Nil;
-         diag.code = ParserErrorCode::TypeMismatchArgument;
-         diag.message = "required context argument is missing";
-         this->record_diagnostic(std::move(diag));
-      }
-      else {
-         InferredType actual = this->infer_expression_type(*Call.arguments.front());
-         if (actual.primary != TiriType::Unknown and actual.primary != TiriType::Any and
-             not actual.matches(TiriType::Table)) {
-            TypeDiagnostic diag;
-            diag.location = Call.arguments.front()->span;
-            diag.expected = TiriType::Table;
-            diag.actual = actual.primary;
-            diag.code = ParserErrorCode::TypeMismatchArgument;
-            diag.message = std::format("type mismatch: context argument expects 'table', got '{}'",
-               type_name(actual.primary));
-            this->record_diagnostic(std::move(diag));
-         }
-      }
-      param_index = 1;
-   }
    for (const auto &param : Function.parameters) {
       if (param_index >= Call.arguments.size()) {
          if (dynamic_tail) {

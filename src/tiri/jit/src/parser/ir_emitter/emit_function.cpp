@@ -11,12 +11,6 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 {
    if (not Payload.body) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
 
-   const bool context_first = Payload.callable_kind IS FunctionCallableKind::ContextFirstArgument;
-   if (context_first and Payload.is_thunk) {
-      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UnexpectedToken,
-         "context-first metamethod literals cannot be thunks"));
-   }
-
    // Handle thunk functions via AST transformation
 
    if (Payload.is_thunk) {
@@ -86,7 +80,6 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       wrapper_payload.parameters = Payload.parameters;  // Copy parameters
       wrapper_payload.is_vararg = Payload.is_vararg;
       wrapper_payload.is_thunk = false;  // Important: wrapper is not a thunk
-      wrapper_payload.callable_kind = Payload.callable_kind;
       wrapper_payload.body = std::move(wrapper_body);
 
       // Recursively emit the wrapper function (which is now a regular function), then restore the source thunk so
@@ -137,26 +130,15 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    ScopeGuard scope_guard(&child_state, &scope, FuncScopeFlag::None);
 
    auto visible_param_count = BCReg(BCREG(Payload.parameters.size()));
-   auto param_count = BCReg(BCREG(visible_param_count.raw() + (context_first ? 1 : 0)));
-   if (context_first) this->lex_state.var_new(0, NAME_BLANK);
+   auto param_count = visible_param_count;
    for (auto i = BCReg(0); i < visible_param_count; ++i) {
       const FunctionParameter& param = Payload.parameters[i.raw()];
       GCstr *symbol = (param.name.symbol and not param.name.is_blank) ? param.name.symbol : NAME_BLANK;
-      this->lex_state.var_new(BCREG(i.raw() + (context_first ? 1 : 0)), symbol, param.name.span.line,
-         param.name.span.column);
+      this->lex_state.var_new(i.raw(), symbol, param.name.span.line, param.name.span.column);
    }
 
    child_state.numparams = uint8_t(param_count.raw());
    child_state.signature_parameters.reserve(param_count.raw());
-   if (context_first) {
-      child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ContextFirstArgument);
-      child_state.signature_parameters.push_back(ProtoTypeEntry{
-         .constraint = 0,
-         .type = TiriType::Table,
-         .flags = proto_type_flags(false, true, ProtoTypeOrigin::Declared, ProtoTypeStrength::Checked),
-         .reserved = 0
-      });
-   }
    if (Payload.is_vararg) {
       child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ParameterVariadic);
    }
@@ -198,7 +180,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    auto base = BCReg(child_state.varmap.size() - param_count.raw());
    for (auto i = BCReg(0); i < visible_param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
-      auto &param_info = child_state.var_get(base.raw() + i.raw() + (context_first ? 1 : 0));
+      auto &param_info = child_state.var_get(base.raw() + i.raw());
       if (param.type != TiriType::Unknown and param.type != TiriType::Any) {
          param_info.fixed_type = param.type;
          param_info.struct_def = param.struct_def;
@@ -228,7 +210,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       const FunctionParameter &param = Payload.parameters[i.raw()];
       if (param.name.is_blank or param.name.symbol IS nullptr) continue;
       child_emitter.update_local_binding(param.name.symbol,
-         BCReg(base.raw() + i.raw() + (context_first ? 1 : 0)));
+         BCReg(base.raw() + i.raw()));
    }
 
    // Parameter contracts execute inside the callee after local bindings exist and before any user statement.
@@ -251,7 +233,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          .required = param.required
       };
       parameter_contracts.push_back(RuntimeContractSlot{
-         .register_index = BCREG(base.raw() + i.raw() + (context_first ? 1 : 0)),
+         .register_index = BCREG(base.raw() + i.raw()),
          .contract = contract
       });
    }
@@ -321,26 +303,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       }
    }
 
-   IrEmitter::ContextSourceScope method_context_scope;
-   if (context_first) {
-      uint16_t block_index = uint16_t(child_state.context_blocks.size());
-      if (block_index IS UINT16_MAX) {
-         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-            "too many temporary context blocks"));
-      }
-      child_state.context_blocks.push_back(ProtoContextBlockDesc{
-         .begin_pc = child_state.pc,
-         .end_pc = 0,
-         .entry_slots = 1
-      });
-      scope.context_block = block_index;
-      bcemit_AD(&child_state, BC_CTXBEGIN, 0, block_index);
-      method_context_scope.activate(&child_emitter,
-         ContextSource{ .slot = base, .kind = ContextSourceKind::MethodArgument });
-   }
-
-   auto inherited_cache = context_first ? std::optional<BCReg>() :
-      child_emitter.allocate_inherited_context_cache(*Payload.body);
+   auto inherited_cache = child_emitter.allocate_inherited_context_cache(*Payload.body);
    IrEmitter::ContextSourceScope child_context_scope;
    if (inherited_cache) {
       child_context_scope.activate(&child_emitter, ContextSource{ .slot = inherited_cache.value(),
