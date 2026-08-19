@@ -3,6 +3,8 @@
 //                       and documented struct.size() accepting a struct reference (commit b900f2341)
 // UPDATED: 2026-08-17 - Documented the element type of a materialised dynamic array field; unsigned fields now
 //                       retain their unsigned identity instead of decaying to signed (commit 47d7d0060)
+// UPDATED: 2026-08-18 - An 'int8' array field materialises as a signed 'int8' array rather than a byte array, and
+//                       requires an array<int8> source on assignment (commit b997e29ad)
 
 [[ch-structs]]
 == Structs

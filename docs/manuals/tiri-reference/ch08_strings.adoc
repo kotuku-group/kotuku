@@ -3,6 +3,8 @@
 // UPDATED: 2026-08-14 - The array string element is now spelled 'str'; 'string' is rejected (commit 148480f9d)
 // UPDATED: 2026-08-14 - Documented self referencing inside f-string interpolation, which now parses in every position
 //                       within the string (commit 148480f9d)
+// UPDATED: 2026-08-18 - string.byte(), string.sub() and string.find() migrated to half-open (exclusive stop) range
+//                       semantics; documented the deprecated string.substr() alias (commit 3e99d69ac)
 
 [[ch-strings]]
 == Strings
@@ -11,6 +13,8 @@ indexterm:[strings] This chapter defines the string library: the built-in functi
 Strings are immutable except for the interoperability exemption provided by `string.alloc()`.  String operations that appear to modify a string produce a new string value.  Identical strings are interned: two strings with the same byte content share the same internal object.
 
 All string indexing is zero-based.  Index 0 refers to the first byte, index `#s - 1` to the last.  Negative indices count backwards from the end: index `-1` is the last byte, `-2` the second-to-last.
+
+Every string function that accepts a `Start` and `Stop` index pair defines a half-open span `[Start, Stop)`: the byte at `Start` is included and the byte at `Stop` is excluded.  The number of bytes selected is therefore `Stop - Start`.  A negative index is resolved against the string length before the span is evaluated, and a resolved `Stop` remains exclusive.  A span in which `Stop` is not greater than `Start` after resolution is empty.  Functions that return a position pair, such as `string.find()`, return the same half-open form, so a returned pair can be passed directly to `string.sub()`.
 
 Most string library functions raise a type error if a required string argument is not a string.  The exceptions are `string.trim()`, `string.rtrim()`, `string.escXML()` and `string.unescapeXML()`, which treat a `nil` argument as an empty string and return `''`.  Each function's specification states its own behaviour.  Functions that accept optional parameters treat missing arguments as described in each function's specification.
 
@@ -128,16 +132,18 @@ TIP: For binary buffers, use the `array` type instead of strings.  Arrays provid
 
 [.api]`pass:[...] = string.byte(String, [Start], [Stop])`
 
-Returns the byte values of characters from index `Start` to `Stop` (inclusive).  `Start` defaults to `0`.  `Stop` defaults to `Start`, returning a single byte value.  Negative indices count from the end.
+Returns the byte values of the characters in the half-open span `[Start, Stop)`.  `Start` defaults to `0`.  `Stop` defaults to `Start + 1`, returning a single byte value.  Negative indices are resolved against the string length; a resolved `Stop` remains exclusive.  A `Stop` beyond the string length is clamped to the length.
 
-If `Start` exceeds `Stop` after index resolution, returns no values.  Raises an error if the requested range would exceed the stack limit.
+Returns `Stop - Start` values.  If `Stop` is not greater than `Start` after index resolution, returns no values.  Raises an error if the requested span would exceed the stack limit.
 
 [source,tiri]
 ----
 string.byte('ABC')         -- 65
 string.byte('ABC', 0)      -- 65
-string.byte('ABC', 0, 2)   -- 65, 66, 67
+string.byte('ABC', 0, 3)   -- 65, 66, 67
+string.byte('ABC', 0, 2)   -- 65, 66
 string.byte('ABC', -1)     -- 67
+string.byte('ABC', 1, 1)   -- no values
 ----
 
 [[sec-string-char]]
@@ -233,9 +239,9 @@ Returns a new string with the bytes in reverse order.
 [[sec-string-sub]]
 ==== string.sub()
 
-[.api]`str = string.sub(String, Start, [End])`
+[.api]`str = string.sub(String, Start, [Stop])`
 
-Extracts a substring from `Start` up to but not including `End` (exclusive).  If `End` is not specified, the substring extends to the end of the string.  Negative indices count from the end.
+Extracts the substring occupying the half-open span `[Start, Stop)`.  If `Stop` is not specified, the substring extends to the end of the string.  Negative indices are resolved against the string length; a resolved `Stop` remains exclusive.  Indices beyond the string bounds are clamped.  Returns an empty string if `Stop` is not greater than `Start` after index resolution.
 
 [source,tiri]
 ----
@@ -243,6 +249,8 @@ Extracts a substring from `Start` up to but not including `End` (exclusive).  If
 'hello world'.sub(6)       -- 'world'
 'hello world'.sub(-5)      -- 'world'
 'hello world'.sub(0, -6)   -- 'hello'
+'hello world'.sub(-5, -1)  -- 'worl': the resolved stop is exclusive
+'hello world'.sub(5, 5)    -- '': an empty span
 ----
 
 [[sec-string-upper]]
@@ -277,15 +285,24 @@ indexterm:[strings, searching] indexterm:[strings, extraction] Counts the number
 
 Searches for the literal string `Keyword` within `String`, beginning at index `Start` (default `0`).  Negative `Start` values count from the end of the string.
 
-If found, returns two values: the zero-based start index and the end index (inclusive).  If not found, returns `nil`.
+If found, returns two values describing the match as a half-open span: the zero-based index of the first byte of the match, and the index immediately after its last byte.  The match length is therefore `stop - start`, and the pair can be passed directly to `string.sub()` to recover the matched text.  If not found, returns `nil`.
 
 [%unbreakable]
 [source,tiri]
 ----
-'hello world'.find('world')      -- 6, 10
+'hello world'.find('world')      -- 6, 11
 'hello world'.find('xyz')        -- nil
-'hello world'.find('o', 5)       -- 7, 7
-'hello world'.find('o')          -- 4, 4
+'hello world'.find('o', 5)       -- 7, 8
+'hello world'.find('o')          -- 4, 5
+'abc'.find('')                   -- 0, 0: an empty keyword is an empty span
+----
+
+[%unbreakable]
+[source,tiri]
+----
+text = 'hello world'
+start, stop = text.find('world')
+text.sub(start, stop)   -- 'world'
 ----
 
 [%unbreakable]

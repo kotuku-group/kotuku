@@ -3,6 +3,8 @@
 //                       (commit ac4f30a67)
 // UPDATED: 2026-08-16 - Removed the `method` literal from extracted methods; the renamed `metamethod` keyword is
 //                       documented for metatable handlers only (commit 5c92d652a)
+// UPDATED: 2026-08-18 - table.move() and table.concat() migrated to half-open (exclusive stop) range semantics; the
+//                       explicit boundary parameter is now named `Stop` (commit 3e99d69ac)
 
 [[ch-tables]]
 == Tables
@@ -180,11 +182,11 @@ store was written against.  A read through `pass:[__]index` classifies nothing, 
 
 The classification is observed by `#` and by the library functions that infer a boundary from the sequence length.
 `table.insert()`, `table.remove()`, `table.sort()`, `table.slice()`, and `table.concat()` called without an explicit
-`End` require a table classified as `sequence`.  Each raises `'name'() requires a sequence table; received kind table`
+`Stop` require a table classified as `sequence`.  Each raises `'name'() requires a sequence table; received kind table`
 for any other classification, where `name` is the function and `kind` is the value reported by `table.kind()`.  A
 `pass:[__]len` metamethod does not satisfy the requirement.
 
-`rawlen()`, `table.size()`, `table.empty()`, `table.clear()`, `table.move()`, `table.concat()` with an explicit `End`,
+`rawlen()`, `table.size()`, `table.empty()`, `table.clear()`, `table.move()`, `table.concat()` with an explicit `Stop`,
 and every iterator accept a table of any classification and use the internal numerical length.  The lengths of strings
 and of `array` values are unaffected.
 
@@ -196,7 +198,7 @@ t.name = 'x'
 rawlen(t)       -- 2
 table.size(t)   -- 3: every live entry, both parts
 table.insert(t, 3)    -- error: 'insert'() requires a sequence table
-table.concat(t, ',', 0, 1)   -- '1,2': an explicit End supplies the range
+table.concat(t, ',', 0, 2)   -- '1,2': an explicit Stop supplies the range
 ----
 
 CAUTION: Using `#` on a table is a nullable expression.  Code that feeds it straight into arithmetic, such as
@@ -479,34 +481,40 @@ table.remove(t, 10)  -- returns nil; t unchanged
 [[sec-table-move]]
 ==== table.move()
 
-[.api]`dest = table.move(Table, Start, End, Target, [DestTable])`
+[.api]`dest = table.move(Table, Start, Stop, Target, [DestTable])`
 
-Copies elements from `Table[Start]` through `Table[End]` (inclusive) to positions starting at `Target` in `DestTable`.  If `DestTable` is omitted, the source table is used as the destination.  Returns the destination table.
+Copies the elements occupying the half-open span `[Start, Stop)` of `Table` to positions starting at `Target` in `DestTable`.  `Stop` is exclusive, so `Stop - Start` elements are copied.  If `DestTable` is omitted, the source table is used as the destination.  Returns the destination table.
 
-Handles overlapping source and destination regions correctly.  If `Start` exceeds `End`, no elements are copied.
+Handles overlapping source and destination regions correctly.  If `Stop` is not greater than `Start`, no elements are copied.
 
 [source,tiri]
 ----
 t = { 'a', 'b', 'c', 'd', 'e' }
-table.move(t, 0, 2, 3)
+table.move(t, 0, 3, 3)
 -- t[3]='a', t[4]='b', t[5]='c'
 
 src = { 10, 20, 30 }
 dst = {}
-table.move(src, 0, 2, 0, dst)
+table.move(src, 0, 3, 0, dst)
 -- dst = {10, 20, 30}
+
+t = { 'x', 'y', 'z' }
+table.move(t, 1, 2, 5)
+-- t[5]='y': a one-element span
 ----
 
 [[sec-table-concat]]
 ==== table.concat()
 
-[.api]`str = table.concat(Table, [Sep, Start, End])`
+[.api]`str = table.concat(Table, [Sep, Start, Stop])`
 
-Concatenates the array elements of `Table` into a single string.  `Sep` is inserted between each element if specified.  `Start` and `End` define the index range (defaulting to `0` to `rawlen(Table) - 1` inclusive).
+Concatenates the array elements of `Table` into a single string.  `Sep` is inserted between each element if specified.  `Start` and `Stop` define a half-open span `[Start, Stop)`, defaulting to `0` and `rawlen(Table)` respectively.  `Stop` is exclusive, so `Stop - Start` elements are concatenated and a `Stop` equal to `rawlen(Table)` includes the final element.
 
-If `End` is omitted, the end of the range is inferred from the sequence length and `Table` must be classified as a sequence; an error is raised if it is not, as defined in <<sec-table-classification>>.  Supplying `End` states the range explicitly, so any classification is accepted and the numerical index domain is used.
+If `Stop` is omitted, the boundary is inferred from the sequence length and `Table` must be classified as a sequence; an error is raised if it is not, as defined in <<sec-table-classification>>.  Supplying `Stop` states the span explicitly, so any classification is accepted and the numerical index domain is used.
 
-Elements must be strings or numbers.  Raises an error if an element of any other type is encountered within the specified range.
+Returns an empty string if `Stop` is not greater than `Start`.
+
+Elements must be strings or numbers.  Raises an error if an element of any other type is encountered within the specified span.
 
 [source,tiri]
 ----
@@ -518,7 +526,9 @@ t = { 1, 2, 3, 4, 5 }
 table.concat(t, '-')       -- '1-2-3-4-5'
 
 t = { 'a', 'b', 'c', 'd', 'e' }
-table.concat(t, ',', 1, 3)   -- 'b,c,d'
+table.concat(t, ',', 1, 3)   -- 'b,c'
+table.concat(t, ',', 0, 5)   -- 'a,b,c,d,e'
+table.concat(t, ',', 2, 2)   -- '': an empty span
 ----
 
 [[sec-table-sort]]

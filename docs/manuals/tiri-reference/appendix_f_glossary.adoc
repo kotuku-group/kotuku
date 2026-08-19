@@ -16,6 +16,7 @@
 //                       established only by an entity receiver (commit d3638efc0)
 // UPDATED: 2026-08-16 - The ternary separator is now ':'; corrected the Extended falsiness and Ternary operator
 //                       entries (commit 982d890de)
+// UPDATED: 2026-08-18 - Added the Half-open span entry; every library Stop index is exclusive (commit 3e99d69ac)
 
 [[appendix-glossary]]
 [appendix]
@@ -134,6 +135,9 @@ The body of a `try`, `except` or `success` clause, or of a `with` statement.
 
 Forward declaration::
 A `global function` declaration with an empty body, published ahead of the full definition.  Later definitions of the same name must match the declared signature.  See <<sec-forward-declarations>>.
+
+Half-open span::
+A range of indices written as a `Start` and `Stop` pair, in which `Start` is included and `Stop` is excluded.  The span selects `Stop - Start` elements, and a `Stop` equal to the length of the container selects through to the final element.  Every library function that accepts or returns a `Start`/`Stop` index pair uses this form.  See <<sec-migration-half-open-ranges>>.
 
 Hash part::
 The non-sequential and string-keyed portion of a table.  Iteration order over the hash part is unspecified.  See <<sec-table-fundamentals>>.

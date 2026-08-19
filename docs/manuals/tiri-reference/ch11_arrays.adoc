@@ -17,6 +17,10 @@
 //                       uint64 precision limit and the concat() unsigned format requirement (commit 6ca29f4c8)
 // UPDATED: 2026-08-17 - The unsigned 32-bit element type is renamed from 'uint32' to 'uint'; the array and struct
 //                       vocabularies now agree on the 32-bit spellings (commit 47d7d0060)
+// UPDATED: 2026-08-18 - 'int8' is now a signed 8-bit element type distinct from 'byte'; it is no longer a byte-array
+//                       synonym.  Supersedes the 2026-08-06 int8 entry above (commit b997e29ad)
+// UPDATED: 2026-08-18 - concat() migrated to a half-open (exclusive stop) span and now accepts empty spans and a stop
+//                       equal to the array length; find() gained an exclusive Stop parameter (commit 3e99d69ac)
 
 [[ch-arrays]]
 == Arrays
@@ -49,7 +53,11 @@ The names below are the complete set accepted in an `array<pass:[...]>` declarat
 
 |`byte`
 |1
-|Unsigned 8-bit integer (0--255).  Aliases: `char`, `int8`.
+|Unsigned 8-bit integer (0--255).  Alias: `char`.
+
+|`int8`
+|1
+|Signed 8-bit integer (−128--127).  A numeric element type, distinct from `byte`.
 
 |`int16`
 |2
@@ -112,7 +120,80 @@ The names below are the complete set accepted in an `array<pass:[...]>` declarat
 |Any Tiri value (mixed types permitted)
 |===
 
-CAUTION: `int8` names an *unsigned* element in an array declaration, because it is a synonym of `byte`.  This diverges from the struct vocabulary, where `int8` is a signed 8-bit field distinct from `byte` (see <<ch-structs>>).  `array<int8>` therefore stores values in the range 0--255 and wraps a negative value into that range, exactly as `array<byte>` does.
+[[sec-uint8-versus-byte]]
+[discrete]
+==== The One-Byte Element Types Are Distinct
+
+indexterm:[arrays, uint8] indexterm:[arrays, int8] indexterm:[arrays, byte arrays] Three element types occupy one byte: `byte` (with its alias `char`), `uint8` and `int8`.  They are distinct types and are never interchangeable.  Only `byte` and `char` declare a *byte array*, which carries the string behaviour defined throughout this chapter.  `array<uint8>` and `array<int8>` are numeric arrays and carry none of it.  `byte` and `uint8` store the range 0--255; `int8` stores the range −128--127.
+
+[cols="2,1,1,1",options="header"]
+|===
+|Behaviour |`array<byte>` |`array<uint8>` |`array<int8>`
+
+|Value range
+|0--255
+|0--255
+|−128--127
+
+|`arr.type()`
+|`'char'`
+|`'uint8'`
+|`'int8'`
+
+|`tostring(arr)`
+|Raw bytes as a string
+|`array<uint8, __length__>`
+|`array<int8, __length__>`
+
+|`push()` with a string argument
+|Appends the bytes
+|Error
+|Error
+
+|`..` concatenation
+|Supported
+|Error
+|Error
+
+|`..=` with a number
+|Appends its decimal text
+|Appends one numeric element
+|Appends one numeric element
+
+|`..=` with a string
+|Appends the bytes
+|Error
+|Error
+
+|`getString()`, `setString()`
+|Supported
+|Error
+|Error
+
+|`copy()` from a string
+|Supported
+|Error
+|Error
+|===
+
+No two of the three types are ever equal, and `copy()` between them is rejected, because an array source must declare the same element type as the destination.  A parameter or return annotation naming one of them accepts only that exact type; `array<byte>` does not satisfy `array<int8>`, and `array<int8>` does not satisfy `array<byte>`.
+
+[source,tiri]
+----
+buf = array<byte> { 72, 105 }
+tostring(buf)              -- 'Hi'
+
+nums = array<uint8> { 72, 105 }
+tostring(nums)             -- 'array<uint8, 2>'
+nums.push('A')             -- error: incompatible element type
+nums.copy(buf)             -- error: incompatible element type
+
+signed = array<int8> { -128, 127 }
+tostring(signed)           -- 'array<int8, 2>'
+signed.push('A')           -- error: incompatible element type
+----
+
+NOTE: Use `byte` (or `char`) for text and binary buffers, `uint8` for unsigned numeric data that happens to be one byte wide, and `int8` for signed one-byte numeric data.
 
 [[sec-element-storage-contract]]
 [discrete]
@@ -134,7 +215,7 @@ Byte arrays (`byte`, `char`) extend the contract for two operations:
 * `push()` also accepts strings and appends their characters
 * `..=` automatically stringifies values, as for regular string types.
 
-Neither extension applies to `uint8` arrays, which are numeric; see <<sec-uint8-versus-byte>>.
+Neither extension applies to `uint8` or `int8` arrays, which are numeric; see <<sec-uint8-versus-byte>>.
 
 [source,tiri]
 ----
@@ -154,7 +235,7 @@ names.push(tostring(42))  -- '42'
 
 indexterm:[arrays, numeric conversion] Storing a number in a numeric element type narrower than a double converts the value by the following rules.  The result is defined for every accepted value and does not vary between platforms.
 
-* Integer element types truncate the value towards zero, then wrap modulo the width of the type.  The signed types (`int16`, `int`, `int64`) wrap into two's complement range.  The unsigned types (`byte`, `uint8`, `uint16`, `uint`, `uint64`) wrap into the range 0 to 2^__N__^−1, where __N__ is the width of the type in bits; a negative value therefore wraps to the top of that range.
+* Integer element types truncate the value towards zero, then wrap modulo the width of the type.  The signed types (`int8`, `int16`, `int`, `int64`) wrap into two's complement range.  The unsigned types (`byte`, `uint8`, `uint16`, `uint`, `uint64`) wrap into the range 0 to 2^__N__^−1, where __N__ is the width of the type in bits; a negative value therefore wraps to the top of that range.
 * Integer element types reject infinity and NaN with an out-of-range error.
 * The `float` element type rejects a finite value whose magnitude exceeds the largest representable single-precision number (approximately 3.4×10^38^) with an out-of-range error.  Infinity and NaN are stored unchanged.  All other values are rounded to the nearest representable single-precision value.
 * The `double` element type accepts every number, including infinity and NaN.
@@ -168,6 +249,9 @@ vals = array<int> { 1.9, -1.9, 3000000000, nil }
 
 bytes = array<byte> { 300, -1 }
 -- bytes = {44, 255}
+
+signed = array<int8> { 300, -1 }
+-- signed = {44, -1}
 
 words = array<uint16> { -1, 65536, 1.9 }
 -- words = {65535, 0, 1}
@@ -213,6 +297,7 @@ array<int>.type()            -- 'int'
 array<float>.type()          -- 'float'
 array<byte>.type()           -- 'char'
 array<uint8>.type()          -- 'uint8'
+array<int8>.type()           -- 'int8'
 array<uint>.type()           -- 'uint'
 array<array<str>>.type()     -- 'array'
 array<struct<Vec>>.type()    -- 'struct'
@@ -250,7 +335,7 @@ Equality rules depend on the element type:
 |===
 |Element Category |Comparison Method
 
-|Primitive (`byte`, `int16`, `int`, `int64`, `uint8`, `uint16`, `uint`, `uint64`, `float`, `double`)
+|Primitive (`byte`, `int8`, `int16`, `int`, `int64`, `uint8`, `uint16`, `uint`, `uint64`, `float`, `double`)
 |Raw memory comparison of the underlying data.
 
 |`str`
@@ -642,10 +727,12 @@ Changes the array length to `NewSize`.  When growing, new elements are zero-init
 [discrete]
 ==== find()
 
-[.api]`index = arr.find(Value, [Start])` +
+[.api]`index = arr.find(Value, [Start], [Stop])` +
 [.api]`index = arr.find(Value, Range)`
 
-indexterm:[arrays, searching] indexterm:[arrays, querying] Searches for `Value` and returns its zero-based index, or `nil` if not found.  With a numeric `Start`, the search begins at that index.  With a range, the search is restricted to the indices selected by the range (supports exclusive, inclusive, negative, stepped, and reverse ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
+indexterm:[arrays, searching] indexterm:[arrays, querying] Searches for `Value` and returns its zero-based index, or `nil` if not found.  With a numeric `Start`, the search begins at that index.  `Stop` bounds the search as a half-open span `[Start, Stop)`, defaulting to the array length: the element at `Stop` is not examined.  A negative `Stop` is resolved against the array length, a `Stop` beyond the length is clamped to the length, and a span in which `Stop` is not greater than `Start` returns `nil`.
+
+With a range, the search is restricted to the indices selected by the range (supports exclusive, inclusive, negative, stepped, and reverse ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 For `obj` arrays, `Value` can be an object or a numeric UID.
 
@@ -654,6 +741,9 @@ For `obj` arrays, `Value` can be an object or a numeric UID.
 arr = array<int> { 10, 20, 30, 40, 50 }
 arr.find(30)           -- 2
 arr.find(30, 3)        -- nil (search starts at index 3)
+arr.find(30, 0, 2)     -- nil (index 2 lies outside the span)
+arr.find(30, 0, 3)     -- 2
+arr.find(50, 0, #arr)  -- 4 (a stop equal to the length includes the last element)
 arr.find(30, {0 to 5}) -- 2
 arr.find(99)           -- nil
 ----
@@ -772,9 +862,9 @@ arr.getString(0, 5)   -- 'Greet'
 [discrete]
 ==== concat()
 
-[.api]`str = arr.concat([Separator], [Format], [Start], [End])`
+[.api]`str = arr.concat([Separator], [Format], [Start], [Stop])`
 
-Concatenates array elements into a string.  `Separator` is inserted between each element (default: empty string).  `Format` is an optional C-style format specifier applied to each element (e.g. `'%d'`, `'%.2f'`, `'%s'`).  `Start` and `End` are optional zero-based, inclusive indexes that restrict the operation to a sub-range of the array.
+Concatenates array elements into a string.  `Separator` is inserted between each element (default: empty string).  `Format` is an optional C-style format specifier applied to each element (e.g. `'%d'`, `'%.2f'`, `'%s'`).  `Start` and `Stop` are optional zero-based indexes that restrict the operation to the half-open span `[Start, Stop)` of the array.  `Stop` is exclusive, so `Stop - Start` elements are concatenated.  `Start` defaults to `0` and `Stop` defaults to the array length.
 
 When `Format` is provided, it must contain exactly one format specifier.  An error is raised if `Format` contains zero or multiple specifiers, or if the format specifier is incomplete.  For non-string arrays without a format specifier, elements are converted to their default string representation, which is a more optimal conversion path.  Unsigned elements are converted to unsigned decimal text on that path.
 
@@ -787,7 +877,7 @@ Every other conversion, including `%d` and `%s`, raises an error.
 
 Concatenation is only available for primitive array types that consist of string and number elements.  Attempting to concatenate table, struct or object elements raises an error.
 
-An error is raised if `Start` or `End` is negative or beyond the array bounds.  If `End` is less than `Start`, an empty string is returned.  Empty arrays are converted to an empty string.
+An error is raised if `Start` or `Stop` is negative, or greater than the array length.  A `Stop` equal to the array length is valid and selects through to the final element.  If `Stop` is not greater than `Start`, an empty string is returned; this includes an explicit `0, 0` span on an empty array.  Empty arrays are converted to an empty string.
 
 [source,tiri]
 ----
@@ -821,15 +911,17 @@ wide.concat('', '%llX')     -- 'FF'
 wide.concat('', '%u')       -- error: unsigned long long format required
 ----
 
-Sub-range concatenation with `Start` and `End`:
+Sub-range concatenation with `Start` and `Stop`:
 
 [source,tiri]
 ----
 arr = array<str> { 'a', 'b', 'c', 'd' }
-arr.concat(',', nil, 1, 2)   -- 'b,c'
+arr.concat(',', nil, 1, 3)      -- 'b,c'
+arr.concat(',', nil, 0, #arr)   -- 'a,b,c,d'
+arr.concat(',', nil, 2, 2)      -- '': an empty span
 
 arr = array<int> { 1, 2, 3, 4 }
-arr.concat('-', '%02d', 1, 3)  -- '02-03-04'
+arr.concat('-', '%02d', 1, 4)   -- '02-03-04'
 ----
 
 [[sec-functional-methods]]

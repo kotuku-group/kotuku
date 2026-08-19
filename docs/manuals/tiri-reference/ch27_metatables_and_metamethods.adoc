@@ -2,6 +2,8 @@
 // UPDATED: 2026-08-16 - Replaced the binary metamethod restriction with receiver-first dispatch, documented the
 //                       Other/LHS parameter convention, and made `metamethod` the required form for metatable
 //                       callables with `function` retained as legacy (commit 58e7bad8a)
+// UPDATED: 2026-08-18 - The explicit table.concat() boundary parameter is now named `Stop` and is exclusive
+//                       (commit 3e99d69ac)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -251,7 +253,7 @@ setmetatable(t, nil)
 print(#t)   -- nil: the classification was only masked, not cleared
 ----
 
-The precedence extends to `#` alone.  `table.insert()`, `table.remove()`, `table.sort()`, `table.slice()` and `table.concat()` without an explicit `End` consult the classification directly and reject a classified table irrespective of `pass:[__]len`.
+The precedence extends to `#` alone.  `table.insert()`, `table.remove()`, `table.sort()`, `table.slice()` and `table.concat()` without an explicit `Stop` consult the classification directly and reject a classified table irrespective of `pass:[__]len`.
 
 A metatable that does not define `pass:[__]len` has no effect on the length of a table.
 

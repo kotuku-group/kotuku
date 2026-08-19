@@ -1,6 +1,4 @@
-// VERIFIED: 2026-02-13
-// UPDATED: 2026-05-24 — Added regex string shorthand section documenting r'...' syntax.
-// CHANGED: 2026-07-31 — Standardised exception terminology on raise.
+// VERIFIED: 2026-08-19
 
 [[ch-regular-expressions]]
 == Regular Expressions
@@ -43,7 +41,7 @@ Regex patterns contain frequent backslash sequences (`\d`, `\w`, `\s`, `\b`, etc
 rx = regex.new('\\d+')       -- quoted: each \\ produces a single \
 ----
 
-Long-string literals (`pass:[[[...]]]`) do not interpret escape sequences.  This makes them the preferred form for regex patterns because the pattern reads exactly as written:
+Long-string literals (`pass:[[[...]]]`) do not interpret escape sequences and the pattern reads exactly as written:
 
 [source,tiri]
 ----
@@ -73,7 +71,7 @@ indexterm:[regex, shorthand] The `r` prefix creates a regex object directly from
 
 [.api]`rx = r'Pattern'`
 
-The expression `r'...'` is equivalent to `regex.new('...')` with the escaping convenience of a long string.  Single-quoted, double-quoted, long-bracket, and levelled long-bracket delimiters are all supported:
+The expression `r'pass:[...]'` is equivalent to `regex.new('pass:[...]')` with the escaping convenience of a long string.  Single-quoted, double-quoted, long-bracket, and levelled long-bracket delimiters are all supported:
 
 [source,tiri]
 ----
@@ -131,7 +129,7 @@ rx.test('no digits')   -- false
 
 [.api]`start, stop, captures = rx.findFirst(Text, [Offset], [Flags])`
 
-Locates the first match in `Text` and returns the byte position of the match start and the byte position immediately after the match end.  If no match is found, no values are returned.  The optional `Offset` specifies the byte position at which to begin searching (default `0`).
+Locates the first match in `Text` and returns its position as a half-open span: the byte position of the match start, and the byte position immediately after the match end.  The match length is therefore `stop - start`, and the pair can be passed directly to `string.sub()` to recover the matched text.  If no match is found, no values are returned.  The optional `Offset` specifies the byte position at which to begin searching (default `0`).
 
 If the pattern contains capturing groups, the third return value is an array of captured strings (excluding the full match, which is already represented by the start/stop positions).  If no capturing groups are defined, the third return value is `nil`.
 
@@ -140,6 +138,7 @@ If the pattern contains capturing groups, the third return value is an array of 
 rx = regex.new([[\d+]])
 start, stop = rx.findFirst('abc123def')
 -- start = 3, stop = 6
+'abc123def'.sub(start, stop)   -- '123'
 
 -- Resume searching from a later position
 start, stop = rx.findFirst('abc123def456', 6)
@@ -155,7 +154,7 @@ start, stop, caps = rx.findFirst('item-42')
 
 [.api]`iter = rx.findAll(Text, [Offset], [Flags])`
 
-Returns an iterator for use in `for` loops.  Each iteration yields three values: the match start position, the match stop position, and a capture array (or `nil` if no groups are defined).
+Returns an iterator for use in `for` loops.  Each iteration yields three values: the match start position, the exclusive match stop position, and a capture array (or `nil` if no groups are defined).  The start and stop positions form a half-open span, as they do for `findFirst()`.
 
 [source,tiri]
 ----
@@ -175,7 +174,7 @@ Zero-width matches advance by at least one character to prevent infinite loops.
 
 ==== regex.extract()
 
-[.api]`capture, ... = rx.extract(Text, [Offset], [Flags])`
+[.api]`capture, pass:[...] = rx.extract(Text, [Offset], [Flags])`
 
 Extracts captures from the first match and returns them as individual string values.  Unlike `findFirst()`, the match positions are omitted, making `extract()` a convenient shorthand when only the captured content is needed.
 
@@ -340,7 +339,7 @@ rx.match("line1\nline2")
 
 Match flags modify the behaviour of individual method calls and are passed as the final argument to `test()`, `findFirst()`, `findAll()`, `extract()`, `match()`, `search()`, `replace()`, and `split()`.  Compilation flags and match flags are distinct sets; do not combine them in the same bitmask.
 
-[cols="1,3a",options="header"]
+[cols="3,6a",options="header"]
 |===
 |Flag |Effect
 

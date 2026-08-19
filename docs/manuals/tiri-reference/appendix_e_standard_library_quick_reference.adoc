@@ -5,6 +5,8 @@
 // UPDATED: 2026-08-11 - table.clear() now dispatches to the __clear metamethod (commit 0e4d3a341)
 // UPDATED: 2026-08-15 - struct.size() now accepts a struct reference; removed the retired inst.structSize() method
 //                       (commit b900f2341)
+// UPDATED: 2026-08-18 - Half-open (exclusive stop) spans for string.byte/sub, table.move/concat and arr.concat/find;
+//                       added the deprecated string.substr() alias (commit 3e99d69ac)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -51,14 +53,15 @@ indexterm:[library, string] See <<ch-strings>>.
 |Signature |Description
 
 |`string.alloc(Size)`                    |Creates a pre-allocated string buffer.
-|`string.byte(String, [Start], [Stop])`  |Returns byte values of characters.
+|`string.byte(String, [Start], [Stop])`  |Returns byte values over the half-open span `[Start, Stop)`.
 |`string.char(pass:[...])`               |Creates a string from byte values.
 |`string.format(Format, pass:[...])`     |C-style printf formatting.
 |`string.len(String)`                    |Returns the byte length.  Equivalent to `#String`.
 |`string.lower(String)`                  |Converts to lowercase.
 |`string.rep(String, Count, [Separator])`|Repeats `String` `Count` times.
 |`string.reverse(String)`                |Reverses the byte order.
-|`string.sub(String, Start, [End])`      |Extracts a substring.
+|`string.sub(String, Start, [Stop])`     |Extracts the substring over the half-open span `[Start, Stop)`.
+|`string.substr(String, Start, [Stop])`  |Deprecated alias for `string.sub()`.
 |`string.upper(String)`                  |Converts to uppercase.
 |===
 
@@ -68,7 +71,7 @@ indexterm:[library, string] See <<ch-strings>>.
 |===
 |Signature |Description
 
-|`string.find(String, Needle, [Start])`                |Returns `start, stop` of a literal match.
+|`string.find(String, Needle, [Start])`                |Returns the half-open `start, stop` of a literal match.
 |`string.count(String, Keyword)`                       |Counts non-overlapping occurrences.
 |`string.replace(String, Search, Replacement, [Limit])`|Literal replacement.  Returns `result, count`.
 |`string.cap(String)`                                  |Capitalises the first character.
@@ -105,8 +108,8 @@ indexterm:[library, table] See <<ch-tables>>.
 |`table.new(ArraySize, HashSize)`                    |Creates a pre-allocated table.
 |`table.insert(Table, [Pos,] Value)`                 |Inserts an element.  Requires a sequence table.
 |`table.remove(Table, [Pos])`                        |Removes and returns an element.  Requires a sequence table.
-|`table.move(Table, Start, End, Target, [DestTable])`|Copies a range of elements.
-|`table.concat(Table, [Sep, Start, End])`            |Concatenates elements into a string.  Requires a sequence table unless `End` is given.
+|`table.move(Table, Start, Stop, Target, [DestTable])`|Copies the half-open span `[Start, Stop)`.
+|`table.concat(Table, [Sep, Start, Stop])`           |Concatenates the half-open span `[Start, Stop)`.  Requires a sequence table unless `Stop` is given.
 |`table.sort(Table, [Comparator])`                   |Sorts the array portion in-place.  Requires a sequence table.
 |`table.sortByKeys(Table, [Comparator])`             |Iterates in sorted key order.
 |`table.slice(Table, Range)`                         |Extracts a subsequence.  Requires a sequence table.
@@ -144,7 +147,7 @@ Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
 |`arr.readOnly()`          |Returns `true` if the array is read-only.
 |`arr.first()`             |Returns the first element.
 |`arr.last()`              |Returns the last element.
-|`arr.find(Value, [Start])`|Returns the index of `Value`, or `nil` if not found.
+|`arr.find(Value, [Start], [Stop])`|Returns the index of `Value` within the half-open span `[Start, Stop)`, or `nil` if not found.
 |`arr.find(Value, Range)`  |Searches within a range.
 |===
 
@@ -179,7 +182,7 @@ Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
 |`arr.table()`                                   |Converts to a table.
 |`arr.getString([Start, Length])`                |Byte/char arrays only.  Extracts a string.
 |`arr.setString(String, [Start])`                |Byte/char arrays only.  Writes a string.
-|`arr.concat([Separator], [Format], [Start], [End])`|Concatenates elements into a string, optionally formatted.
+|`arr.concat([Separator], [Format], [Start], [Stop])`|Concatenates the half-open span `[Start, Stop)`, optionally formatted.
 |===
 
 ==== Functional Methods
@@ -314,7 +317,7 @@ indexterm:[library, regex] See <<ch-regular-expressions>>.
 |Signature |Description
 
 |`rx.test(Text, [Flags])`               |Returns `true` if a match exists.
-|`rx.findFirst(Text, [Offset], [Flags])`|Returns `start, stop, captures` for the first match.
+|`rx.findFirst(Text, [Offset], [Flags])`|Returns the half-open `start, stop, captures` for the first match.
 |`rx.findAll(Text, [Offset], [Flags])`  |Returns an iterator over all matches.
 |`rx.extract(Text, [Offset], [Flags])`  |Returns captured groups from the first match.
 |`rx.match(Text, [Flags])`              |Whole-string match.  Returns match data.

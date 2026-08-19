@@ -10,6 +10,10 @@
 //                       naming split between arrays and struct fields (commit 6ca29f4c8)
 // UPDATED: 2026-08-17 - The array element type formerly spelled 'uint32' is now 'uint', closing the naming split;
 //                       unsigned struct vector fields materialise as unsigned arrays (commit 47d7d0060)
+// UPDATED: 2026-08-18 - 'int8' is a signed array element type distinct from 'byte', closing the last divergence
+//                       between the array and struct numeric vocabularies (commit b997e29ad)
+// UPDATED: 2026-08-18 - Renamed the string.find() result example variables; the second result is an exclusive stop
+//                       (commit 3e99d69ac)
 
 [[ch-type-system]]
 == Type System
@@ -58,7 +62,8 @@ The two interfaces share a core of names but are not identical dialects, and the
 
 |`bool`                          |--   |Yes |Boolean
 |`char`                          |Yes  |Yes |Number, but `char[N]` reads as a string
-|`byte`, `int8`                  |`byte` |Yes |Number
+|`byte`                          |`byte` |Yes |Number
+|`int8`                          |`int8` |Yes |Number
 |`uint8`                         |`uint8` |Yes |Number
 |`int16`                         |`int16` |Yes |Number
 |`uint16`                        |`uint16` |Yes |Number
@@ -78,7 +83,9 @@ The two interfaces share a core of names but are not identical dialects, and the
 |`any`                           |Yes  |--  |Any
 |===
 
-The unsigned types are accepted as struct field types only.  An array element type must be named with one of the accepted spellings shown above; `array<uint8>` is rejected, whereas `array<int8>` is accepted as a synonym of `array<byte>`.
+An array element type must be named with one of the accepted spellings shown above.  Every numeric name carries the same width and signedness in both positions; `char` is the sole divergence, being an alias of `byte` as an array element but a distinct field category in a struct.
+
+`array<byte>`, `array<uint8>` and `array<int8>` are three distinct element types.  `byte` and `uint8` share a width and a range, and `int8` shares only the width, but no two of them are interchangeable: only `byte` declares a byte array with string behaviour.  See <<sec-uint8-versus-byte>>.
 
 [discrete]
 ==== Crossing Between the Systems
@@ -593,9 +600,9 @@ Result types are published in the native vocabulary.  A native signature that de
 
 [source,tiri]
 ----
-local first, last = string.find('abc', 'b')
-first = first + 1  -- valid: both results are numeric
-last = 'text'      -- error: cannot assign 'string' to variable of type 'number'
+local start, stop = string.find('abc', 'b')
+start = start + 1  -- valid: both results are numeric
+stop = 'text'      -- error: cannot assign 'string' to variable of type 'number'
 ----
 
 Each result carries its own type, so a multiple assignment fixes each target independently.  A result that the native signature declares as `any` remains unconstrained and performs dynamic ingress.

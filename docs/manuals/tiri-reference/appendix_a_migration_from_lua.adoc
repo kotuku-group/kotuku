@@ -12,6 +12,8 @@
 //                       operands (commit f54ecaf52)
 // UPDATED: 2026-08-16 - Bitwise operators no longer coerce string operands; broadened sec-migration-arithmetic-coercion
 //                       to cover both operator groups and added a summary table row (commit 39e5f99fb)
+// UPDATED: 2026-08-18 - Documented the half-open range convention: exclusive stop indexes across string, table and
+//                       array range APIs, and the half-open result pair from string.find() (commit 3e99d69ac)
 
 [[appendix-migration-from-lua]]
 [appendix]
@@ -110,6 +112,14 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |One-based indexing
 |Zero-based indexing
 |<<sec-migration-indexing>>
+
+|Inclusive stop indexes
+|Half-open spans; every `Stop` index is exclusive
+|<<sec-migration-half-open-ranges>>
+
+|`string.find()` returns an inclusive end
+|Returns a half-open `start, stop` pair
+|<<sec-migration-half-open-ranges>>
 
 |`receiver:method()`
 |`receiver.method()`
@@ -272,6 +282,33 @@ print(s.sub(0, 3))   -- 'hel'
 ----
 
 This change affects all table constructors, `ipairs()` iteration, string functions and array access.  When migrating numeric `for` loops that iterate over tables, adjust the start index from 1 to 0 and the end condition accordingly.
+
+[[sec-migration-half-open-ranges]]
+=== Half-Open Range Semantics
+indexterm:[Lua, ranges] Lua range APIs take an inclusive end index.  Tiri takes an exclusive `Stop` index, so every `Start`/`Stop` pair describes the half-open span `[Start, Stop)` and selects `Stop - Start` elements.  The convention applies uniformly to `string.byte()`, `string.sub()`, `table.move()`, `table.concat()`, `arr.concat()` and `arr.find()`.
+
+A `Stop` equal to the length of the string, table or array is valid and selects through to the final element.  A span in which `Stop` is not greater than `Start` is empty and produces no result rather than an error.  Negative indices are resolved against the length first; a resolved `Stop` remains exclusive.
+
+[source,tiri]
+----
+-- Lua: last index is inclusive
+-- Tiri: stop is exclusive
+t = { 'a', 'b', 'c' }
+table.concat(t, ',', 0, 3)   -- 'a,b,c': stop equals the length
+table.concat(t, ',', 0, 2)   -- 'a,b'
+----
+
+Functions that report positions use the same form.  `string.find()` returns the index of the first byte of the match and the index immediately after its last byte, so the pair composes directly with `string.sub()` without adjustment.
+
+[source,tiri]
+----
+-- Lua: local s, e = string.find(text, 'world'); text:sub(s, e)
+-- Tiri:
+start, stop = text.find('world')
+text.sub(start, stop)   -- the matched text
+----
+
+`regex.findFirst()` and `regex.findAll()` report their positions in the same half-open form.  See <<ch-regular-expressions>>.
 
 [[sec-migration-method-calls]]
 === Method Calls and the Colon
@@ -537,7 +574,7 @@ Note that the `async` interface is not a substitute for coroutines in the genera
 [discrete]
 ==== Index Migration Note
 
-When migrating code that computes substring bounds dynamically, remember that Lua uses 1-based indices with an inclusive end, while Tiri uses 0-based indices with an exclusive end.  A direct translation is:
+When migrating code that computes substring bounds dynamically, remember that Lua uses 1-based indices with an inclusive end, while Tiri uses 0-based indices with an exclusive `Stop`.  A direct translation is:
 
 [source,tiri]
 ----
@@ -546,6 +583,16 @@ part = string.sub(s, Start, Stop)      -- Start/Stop are 1-based, Stop inclusive
 
 -- Tiri
 part = string.sub(s, Start - 1, Stop) -- Start is 0-based, Stop is exclusive
+----
+
+Negative bounds require the same adjustment.  Lua's `s:sub(-5, -1)` returns the last five characters; the Tiri `Stop` stays exclusive after it is resolved against the length, so `s.sub(-5, -1)` returns only the first four of them.  Omit `Stop` to run to the end of the string:
+
+[source,tiri]
+----
+-- Lua: s:sub(-5, -1)
+-- Tiri:
+s.sub(-5)        -- the last five characters
+s.sub(-5, -1)    -- the last five characters excluding the final one
 ----
 
 [discrete]
@@ -749,7 +796,7 @@ Lua returns an integer in [1, `N`].  Tiri returns an integer in [0, `N`), matchi
 Two further differences produce an explicit diagnostic rather than a wrong value:
 
 Sequence operations reject classified tables::
-`table.insert()`, `table.remove()`, `table.sort()`, `table.slice()` and `table.concat()` without an explicit `End` require a table classified as a sequence, and raise an error otherwise.  Lua applies them to any table.  Where the original code inserts into a record-shaped table, assign through an explicit index instead, or supply `End` to `table.concat()`.  `table.kind()` reports the classification and `table.size()` counts every entry.
+`table.insert()`, `table.remove()`, `table.sort()`, `table.slice()` and `table.concat()` without an explicit `Stop` require a table classified as a sequence, and raise an error otherwise.  Lua applies them to any table.  Where the original code inserts into a record-shaped table, assign through an explicit index instead, or supply `Stop` to `table.concat()`.  `table.kind()` reports the classification and `table.size()` counts every entry.
 
 Duplicate constructor keys are rejected::
 Lua accepts `{ name = 1, name = 2 }` and keeps the last value.  Tiri rejects any duplicate key it can resolve at compile time.  See <<sec-table-fundamentals>>.
