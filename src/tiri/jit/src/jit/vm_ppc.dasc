@@ -6938,6 +6938,17 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_VIEW:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  mr CARG2, RD
+    |  stw PC, SAVE_PC
+    |  bl extern lj_array_view_mode
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
   case BC_TYPETEST:
     |  lwz L, SAVE_L
     |  stp BASE, L->base

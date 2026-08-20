@@ -43,6 +43,7 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include "lj_bc.h"
 #include "lj_array.h"
 #include "lj_gc.h"
+#include "lj_state.h"
 #include "lj_vm.h"
 
 JUMPTABLE_CORE

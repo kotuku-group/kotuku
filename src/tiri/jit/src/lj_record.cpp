@@ -5084,6 +5084,7 @@ void lj_record_ins(jit_State *J)
 
    case BC_CLOSEARM:
    case BC_CLOSE:
+   case BC_VIEW:
       lj_trace_err_info(J, LJ_TRERR_NYIBC);
       break;
 
