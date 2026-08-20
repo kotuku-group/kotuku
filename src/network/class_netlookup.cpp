@@ -561,7 +561,7 @@ static void resolve_callback(extNetLookup *Self, ERR Error, std::string_view Hos
       routine(Self, Error, HostName, Addresses, Self->Callback.Meta);
    }
    else if (Self->Callback.isScript()) {
-      // Tiri scripts can retrieve the host and addresses from the NetLookup object - it's a more optimal solution
+      // Tiri scripts can retrieve the host and addresses from NetLookup.Addresses, it's a more optimal solution
       sc::Call(Self->Callback, std::to_array<ScriptArg>({ { "NetLookup", Self, FDF_OBJECT }, { "Error", int(Error) } }));
    }
 }

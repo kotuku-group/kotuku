@@ -17,7 +17,7 @@ The following examples demonstrate basic usage of compression objects in Tiri:
 <pre>
 // Create a new zip archive and compress two files.
 
-cmp = obj.new('compression', { path='temp:result.zip', flags='!NEW' } )
+cmp = obj.new('compression', { path='temp:result.zip', flags=CMF_NEW } )
 err = cmp.mtCompressFile('config:defs/compression.def', '')
 err = cmp.mtCompressFile('config:defs/core.def', '')
 

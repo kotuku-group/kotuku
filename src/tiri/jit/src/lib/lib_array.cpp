@@ -125,12 +125,12 @@ static std::string_view array_struct_name(lua_State *L, int NArg)
 // garbage-collector ownership or managed-object lifetime tracking.  Embedded structures are safe only when every
 // nested field satisfies the same contract.
 
-static bool array_struct_is_trivial(const struct_record &Def)
+bool lj_array_struct_is_trivial(const struct_record &Def)
 {
    for (auto &field : Def.Fields) {
       if (field.Type & (FD_CPP|FD_VECTOR|FD_STRING|FD_FUNCTION|FD_OBJECT)) return false;
       if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR))) {
-         if ((not field.StructDefinition) or (not array_struct_is_trivial(*field.StructDefinition))) return false;
+         if ((not field.StructDefinition) or (not lj_array_struct_is_trivial(*field.StructDefinition))) return false;
       }
    }
    return true;
@@ -327,7 +327,7 @@ LJLIB_CF(array_new)      LJLIB_REC(.)
          auto struct_name = array_struct_name(L, 2);
          if (struct_name.empty()) lj_err_argv(L, 2, ErrMsg::ARRTYPE);
          auto struct_def = find_struct(L, struct_name);
-         if ((not struct_def) or (not array_struct_is_trivial(*struct_def))) {
+         if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
             lj_err_argv(L, 2, ErrMsg::ARRTYPE);
          }
          arr = lj_array_new(L, uint32_t(size), elem_type, nullptr, 0, struct_name, struct_def);
@@ -368,7 +368,7 @@ LJLIB_CF(array_of)
       auto struct_name = array_struct_name(L, 1);
       if (struct_name.empty()) lj_err_argv(L, 1, ErrMsg::ARRTYPE);
       auto struct_def = find_struct(L, struct_name);
-      if ((not struct_def) or (not array_struct_is_trivial(*struct_def))) {
+      if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
          lj_err_argv(L, 1, ErrMsg::ARRTYPE);
       }
       arr = lj_array_new(L, uint32_t(num_values), elem_type, nullptr, 0, struct_name, struct_def);

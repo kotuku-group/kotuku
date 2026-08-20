@@ -80,21 +80,17 @@ struct ModuleBinding;
 // the call bridge construct only the elements a signature actually uses, and lets preparation reject a signature whose
 // demands would exceed a bounded store instead of discovering the overflow mid-call.
 //
-// Counts are upper bounds.  A conditional temporary, such as the structure conversion performed only when a script
-// passes a table, is counted for every argument that could require it.
-
 struct marshalling_profile {
    uint8_t Strings = 0;         // Mutable std::string temporaries (FD_STR|FD_CPP with FD_MUTABLE or FD_RESULT)
    uint8_t StringViews = 0;     // std::string_view temporaries (FD_STR|FD_CPP, read-only)
    uint8_t MutableStrings = 0;  // Copy-back records for mutable std::string arguments
-   uint8_t Structs = 0;         // Table-to-structure conversions
    uint8_t Arrays = 0;          // kt::vector<> results
    uint8_t Spans = 0;           // std::span wrappers
 
    // True when the signature needs no bridge-owned temporary at all.  Scalar-only and read-only C-string calls take
    // this path and perform no heap allocation of their own.
    [[nodiscard]] bool trivial_storage() const noexcept {
-      return not (Strings or StringViews or MutableStrings or Structs or Arrays or Spans);
+      return not (Strings or StringViews or MutableStrings or Arrays or Spans);
    }
 };
 
@@ -467,10 +463,6 @@ static void profile_arg(const FunctionField &Field, marshalling_profile &Profile
       return;
    }
 
-   // A pointer argument allocates a structure only when the script passes a table, which cannot be known until the
-   // call.  Counting it unconditionally keeps the bound safe for every input the argument accepts.
-
-   if ((argtype & FD_PTR) and (argtype & FD_STRUCT)) Profile.Structs++;
 }
 
 //********************************************************************************************************************
@@ -583,8 +575,8 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
 
       if (callable->valid()) {
          if ((profile.Strings > MAX_MODULE_ARGS) or (profile.StringViews > MAX_MODULE_ARGS) or
-             (profile.MutableStrings > MAX_MODULE_ARGS) or (profile.Structs > MAX_MODULE_ARGS) or
-             (profile.Arrays > MAX_MODULE_ARGS) or (profile.Spans > MAX_MODULE_ARGS)) {
+             (profile.MutableStrings > MAX_MODULE_ARGS) or (profile.Arrays > MAX_MODULE_ARGS) or
+             (profile.Spans > MAX_MODULE_ARGS)) {
             callable->invalidate();
             log.msg("Function '%s' exceeds the bounded temporary storage limit.", callable->Name);
          }
@@ -1207,12 +1199,14 @@ extern "C" void tiri_module_activate(lua_State *Lua, uint32_t Dependency)
 //
 // A breakdown of possible FD configurations follows.  Input values:
 //
-// STR          = CSTRING.  Read-only string pointer.  Tiri string/number/boolean are accepted; NULL permitted
-// STR|CPP      = const std::string_view &.  Read-only string view.  A real string value is required.
+// STR          = CSTRING.  Read-only string pointer.  Tiri string values are accepted; NULL is permitted.
+// STR|CPP      = const std::string_view &.  Read-only string view.  Tiri nil becomes a zero-length view with
+//                null data.
 // PTR          = APTR.  Raw pointer input.  Tiri strings, arrays, structs, objects and userdata can provide
 //                backing storage depending on the call.
-// PTR|STRUCT   = Struct *.  Accepts an existing Tiri struct or converts a Tiri table to a temporary struct.
+// PTR|STRUCT   = Struct *.  Requires an existing Tiri struct.
 // OBJECT|PTR   = OBJECTPTR.  Accepts a Tiri object and resolves it to an object pointer.
+// INT/DOUBLE/INT64 = Numeric values.  Tiri nil or a missing argument becomes zero.
 // ARRAY        = Unsupported.  Raw pointer-array marshalling has been removed.
 // ARRAY|CPP    = Unsupported as input.  kt::vector<> input marshalling is not implemented for module calls.
 // SPAN         = const std::span<T> &.  Accepts matching Tiri array or structure storage, byte strings or an empty value.
@@ -1269,51 +1263,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    uint8_t buffer[BUFFER_SIZE]; // 16 bytes per argument accommodates output metadata such as sizes.
    int i;
 
-   // Track dynamically allocated objects for cleanup
-   struct allocated_struct_ref {
-      std::unique_ptr<uint8_t[]> Data;
-      struct_record *Def = nullptr;
-      lua_State *Lua = nullptr;
-
-      allocated_struct_ref() = default;
-      allocated_struct_ref(std::unique_ptr<uint8_t[]> InitData, struct_record *InitDef, lua_State *InitLua):
-         Data(std::move(InitData)), Def(InitDef), Lua(InitLua) { }
-
-      allocated_struct_ref(const allocated_struct_ref &) = delete;
-      allocated_struct_ref & operator=(const allocated_struct_ref &) = delete;
-
-      allocated_struct_ref(allocated_struct_ref &&Other) noexcept:
-         Data(std::move(Other.Data)), Def(Other.Def), Lua(Other.Lua) {
-         Other.Def = nullptr;
-         Other.Lua = nullptr;
-      }
-
-      allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept {
-         if (this != &Other) {
-            release();
-            Data = std::move(Other.Data);
-            Def = Other.Def;
-            Lua = Other.Lua;
-            Other.Def = nullptr;
-            Other.Lua = nullptr;
-         }
-         return *this;
-      }
-
-      ~allocated_struct_ref() {
-         release();
-      }
-
-      void release() {
-         if (Data) {
-            if (Def) destroy_struct_cpp_strings(Lua, *Def, Data.get());
-            Data.reset();
-            Def = nullptr;
-            Lua = nullptr;
-         }
-      }
-   };
-
    struct mutable_cpp_string_ref {
       std::string *Source;
       GCstr *Target;
@@ -1329,7 +1278,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    bounded_store<std::string, MAX_MODULE_ARGS> strings;
    bounded_store<std::string_view, MAX_MODULE_ARGS> string_views;
-   bounded_store<allocated_struct_ref, MAX_MODULE_ARGS> allocated_structs;
    bounded_store<mutable_cpp_string_ref, MAX_MODULE_ARGS> mutable_cpp_strings;
    bounded_store<cpp_array_result, MAX_MODULE_ARGS> cpp_arrays;
    std::array<module_span_arg, MAX_MODULE_ARGS> span_args;
@@ -1693,7 +1641,12 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
             else ((CSTRING *)(buffer + j))[0] = strdatawr(string);
          }
-         else if (argtype & FD_CPP) { // Read-only std::string_view (enforced, cannot be nullptr)
+         else if (argtype & FD_CPP) { // Read-only std::string_view; nil has null data and zero length.
+            if ((type != LUA_TSTRING) and (type != LUA_TNIL) and (type != LUA_TNONE)) {
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected string, got {} '{}'.", i, args[i].Name,
+                  lua_typename(Lua, type), value_string(Lua, i));
+               return ERR::InvalidType;
+            }
             size_t len;
             auto str = lua_tolstring(Lua, i, &len);
             auto view = str ? string_views.emplace(str, len) : string_views.emplace();
@@ -1703,7 +1656,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
             ((std::string_view **)(buffer + j))[0] = view;
          }
-         else if ((type IS LUA_TSTRING) or (type IS LUA_TNUMBER) or (type IS LUA_TBOOLEAN)) {
+         else if (type IS LUA_TSTRING) {
             ((CSTRING *)(buffer + j))[0] = lua_tostring(Lua, i);
          }
          else if (type <= 0) {
@@ -1785,38 +1738,17 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             in++;
             j += sizeof(APTR);
          }
-         else if (arg_type IS LUA_TTABLE) {
-            if (args[i].Type & FD_STRUCT) {
-               // Convert Lua table to C struct
-               lua_pushvalue(Lua, i); // Duplicate table for table_to_struct (consumes stack)
-               std::unique_ptr<uint8_t[]> struct_data;
-               if (!table_to_struct(Lua, args[i].Name, struct_data)) {
-                  auto struct_address = struct_data.get();
-                  auto def = find_struct(Lua, args[i].Name);
-                  if (not allocated_structs.emplace(std::move(struct_data), def, Lua)) {
-                     ErrorMsg = std::format("Function '{}' exceeded its structure storage.", callable->Name);
-                     return ERR::BufferOverflow;
-                  }
-                  ((APTR *)(buffer + j))[0] = struct_address;
-                  arg_values[in] = buffer + j;
-                  in++;
-                  j += sizeof(APTR);
-               }
-               else {
-                  ErrorMsg = std::format("Failed to convert table to struct for arg #{} ({}).", i, args[i].Name);
-                  return ERR::Failed;
-               }
-            }
-            else {
-               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected pointer, got table.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-         }
-         else {
+         else if ((arg_type IS LUA_TUSERDATA) or (arg_type IS LUA_TLIGHTUSERDATA) or (arg_type IS LUA_TNIL) or
+                  (arg_type IS LUA_TNONE)) {
             ((APTR *)(buffer + j))[0] = lua_touserdata(Lua, i); //lua_topointer?
             arg_values[in] = buffer + j;
             in++;
             j += sizeof(APTR);
+         }
+         else {
+            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected pointer-compatible storage, got {} '{}'.", i,
+               args[i].Name, lua_typename(Lua, arg_type), value_string(Lua, i));
+            return ERR::InvalidType;
          }
       }
       else if (argtype & FD_INT) {
@@ -1824,22 +1756,50 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
          if (argtype & FD_OBJECT) {
             if (tvisobject(tv)) ((int *)(buffer + j))[0] = objectV(tv)->uid;
+            else if (lua_type(Lua, i) <= LUA_TNIL) ((int *)(buffer + j))[0] = 0;
+            else if (lua_type(Lua, i) IS LUA_TNUMBER) ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
+            else {
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected object or number, got {} '{}'.", i,
+                  args[i].Name, lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+               return ERR::InvalidType;
+            }
+         }
+         else {
+            if (lua_type(Lua, i) <= LUA_TNIL) {
+               ((int *)(buffer + j))[0] = 0;
+            }
+            else if (lua_type(Lua, i) != LUA_TNUMBER) {
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
+                  lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+               return ERR::InvalidType;
+            }
+            else if (argtype & FD_UNSIGNED) ((uint32_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
             else ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
          }
-         else if (argtype & FD_UNSIGNED) ((uint32_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
-         else ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
          arg_values[in] = buffer + j;
          in++;
          j += sizeof(int);
       }
       else if (argtype & FD_DOUBLE) {
-         ((double *)(buffer + j))[0] = lua_tonumber(Lua, i);
+         if (lua_type(Lua, i) <= LUA_TNIL) ((double *)(buffer + j))[0] = 0.0;
+         else if (lua_type(Lua, i) != LUA_TNUMBER) {
+            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
+               lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+            return ERR::InvalidType;
+         }
+         else ((double *)(buffer + j))[0] = lua_tonumber(Lua, i);
          arg_values[in] = buffer + j;
          in++;
          j += sizeof(double);
       }
       else if (argtype & FD_INT64) {
-         ((int64_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
+         if (lua_type(Lua, i) <= LUA_TNIL) ((int64_t *)(buffer + j))[0] = 0;
+         else if (lua_type(Lua, i) != LUA_TNUMBER) {
+            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
+               lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+            return ERR::InvalidType;
+         }
+         else ((int64_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
          arg_values[in] = buffer + j;
          in++;
          j += sizeof(int64_t);
