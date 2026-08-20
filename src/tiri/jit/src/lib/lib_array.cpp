@@ -2603,7 +2603,7 @@ static void array_append_push_piece(lua_State *L, cTValue *Value, ArrayAppendPie
    }
 
    if (tvisarray(Value)) {
-      GCarray *source = arrayV(Value);
+      GCarray *source = lj_array_checked(L, Value);
       if (source->elemtype IS AET::BYTE) {
          array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::ByteArray, nullptr, source, 0,
             source->len });
@@ -2673,7 +2673,7 @@ LJLIB_INTRINSIC LJLIB_CF(array_append)      LJLIB_REC(.)
    if (piece_count < 1) lj_err_argv(L, 2, ErrMsg::NOVAL);
 
    if (tvisarray(left)) {
-      GCarray *arr = arrayV(left);
+      GCarray *arr = lj_array_checked(L, left);
       if (arr->elemtype IS AET::BYTE) {
          array_append_byte_pieces(L, arr, piece_count);
          setarrayV(L, L->base, arr);
@@ -2720,7 +2720,7 @@ static GCstr * array_concat_value(lua_State *L, cTValue *Value)
    if (tvisnumber(Value)) return lj_strfmt_number(L, Value);
 
    if (tvisarray(Value)) {
-      GCarray *arr = arrayV(Value);
+      GCarray *arr = lj_array_checked(L, Value);
       if (arr->elemtype IS AET::BYTE) return lj_str_new(L, arr->get<const char>(), arr->len);
    }
 

@@ -643,7 +643,7 @@ extern int lua_toboolean(lua_State *L, int idx)
 extern GCarray * lua_toarray(lua_State *L, int Arg)
 {
    TValue *o = (Arg > LUA_REGISTRYINDEX) ? resolve_index(L, Arg) : index2adr(L, Arg);
-   if (tvisarray(o)) return &gcval(o)->arr;
+   if (tvisarray(o)) return lj_array_checked(L, o);
    lj_err_argt(L, Arg, LUA_TARRAY);
 }
 

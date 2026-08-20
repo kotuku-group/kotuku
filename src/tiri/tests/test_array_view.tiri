@@ -140,6 +140,22 @@ function DestroyedSourceRejectsLengthAndFalseyChecks()
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- The lifecycle guard must cover operator paths that resolve the array directly, not just the array.* library
+-- functions.  Slicing and concatenation previously read freed storage instead of raising.
+
+@Test; @Requires(display=true)
+function DestroyedSourceRejectsOperatorAccess()
+   local bitmap = new_bitmap()
+   local pixels <view> = bitmap.data
+   bitmap.free()
+
+   expect_failure(() => do local slice = pixels[{0 to 1}] end,
+      'Range slicing must reject a stale view rather than copy freed storage')
+   expect_failure(() => do local joined = pixels .. 'x' end,
+      'Concatenation must reject a stale view rather than expose freed storage')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 
 @Test function UnsupportedAndBenignInitialisers()
    local script = obj.new('script')

@@ -5,6 +5,7 @@
 #define LUA_CORE
 
 #include "lj_obj.h"
+#include "lj_array.h"
 #include <kotuku/main.h>
 
 //********************************************************************************************************************
@@ -40,7 +41,12 @@ const void * lj_obj_ptr(global_State *g, cTValue *o)
 {
    if (tvisudata(o)) return uddata(udataV(o));
    else if (tvislightud(o)) return lightudV(g, o);
-   else if (tvisarray(o)) return arrayV(o)->arraydata();
+   else if (tvisarray(o)) {
+      // Empty a stale view so identity/formatting observes a null pointer rather than freed storage.
+      GCarray *arr = arrayV(o);
+      if (arr->flags & ARRAY_LIFECYCLE) lj_array_stale(arr);
+      return arr->arraydata();
+   }
    else if (tvisgcv(o)) return gcV(o);
    else return nullptr;
 }

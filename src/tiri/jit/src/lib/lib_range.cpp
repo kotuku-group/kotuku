@@ -910,7 +910,7 @@ static int range_slice_impl(lua_State *L)
 
    // Array slicing
    if (tvisarray(o)) {
-      GCarray *arr = arrayV(o);
+      GCarray *arr = lj_array_checked(L, o);
       int32_t len = int32_t(arr->len);
       tiri_index_range index_range;
       range_check_index(L, r, &index_range);
