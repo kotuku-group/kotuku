@@ -3938,7 +3938,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cmpwi TMP0, LJ_TUDATA
     |  beq >7
     |  checkarray TMP0
-    |  beq >5
+    |  beq >7
     |  checktab TMP0
     |  bne >1
     |  andi. TMP1, RC, ISFALSEY_EMPTY_COLL
@@ -4001,20 +4001,6 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cmpwi TMP2, 0
     |  beq >9
     |  b >1
-    |5:
-    |  andi. TMP1, RC, ISFALSEY_EMPTY_COLL
-    |  beq >1
-|.if GPR64
-    |  ldx TMP1, BASE, RA		// Load full value for pointer
-    |  clrldi TMP1, TMP1, 17		// Clear type tag bits
-|.else
-    |  add TMP1, BASE, RA
-    |  lwz TMP1, 4(TMP1)		// Load pointer (lo word)
-    |.endif
-    |  lwz TMP2, ARRAY:TMP1->len
-    |  cmpwi TMP2, 0
-    |  bne >1
-    |  b >9
     |7:
     |  mr SAVE0, INS
     |  ld CARG2, -16(PC)
@@ -4139,7 +4125,13 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  b <1
     |4:  // Check for array type.
     |  checkarray TMP0; bne ->vmeta_len
-    |  lwz CRET1, ARRAY:CARG1->len
+    |  mr CARG2, CARG1
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  stw PC, SAVE_PC
+    |  bl extern lj_array_length
+    |  lp BASE, L->base
     |  b <1
     |8:  // String-keyed table: the length operator yields nil.
     |  ins_next1
@@ -6934,6 +6926,17 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mr CARG1, L
     |  srwi CARG2, RA, 3
     |  bl extern lj_close_consume
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_VIEW:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  mr CARG2, RD
+    |  stw PC, SAVE_PC
+    |  bl extern lj_array_view_mode
     |  lp BASE, L->base
     |  ins_next
     break;

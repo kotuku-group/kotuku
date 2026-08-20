@@ -11,7 +11,7 @@
 
 //********************************************************************************************************************
 // Parses local variable declarations, local function statements and local thunk function statements.
-// Supports both explicit 'local' keyword and implicit local declarations with <const>/<close> attributes.
+// Supports both explicit 'local' keyword and implicit local declarations with declaration attributes.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_local()
 {
@@ -109,6 +109,27 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
       values.resize(name_count);
    }
 
+   auto view = std::find_if(name_list.begin(), name_list.end(), [](const Identifier &Identifier) {
+      return Identifier.has_view;
+   });
+   if (view != name_list.end()) {
+      if (name_list.size() != 1) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
+            Token::from_span(view->span, TokenKind::Identifier),
+            "A <view> declaration requires exactly one local name");
+      }
+      if (values.empty() or assign_op != AssignmentOperator::Plain) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
+            Token::from_span(view->span, TokenKind::Identifier),
+            "A <view> local requires an initialiser");
+      }
+      if (view->has_close or view->has_const) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
+            Token::from_span(view->span, TokenKind::Identifier),
+            "The <view> attribute cannot be combined with <close> or <const>");
+      }
+   }
+
    auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalDeclStmt, local_token.span());
    stmt->data.emplace<LocalDeclStmtPayload>(assign_op, std::move(name_list), std::move(values));
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
@@ -169,6 +190,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
 
    auto names = this->parse_name_list();
    if (not names.ok()) return ParserResult<StmtNodePtr>::failure(names.error_ref());
+
+   for (const Identifier &identifier : names.value_ref()) {
+      if (identifier.has_view) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
+            Token::from_span(identifier.span, TokenKind::Identifier),
+            "The <view> attribute is only valid on local declarations");
+      }
+   }
 
    ExprNodeList values;
    AssignmentOperator assign_op = AssignmentOperator::Plain;
@@ -272,7 +301,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_extern()
             Token::from_span(identifier.span, TokenKind::Identifier), "extern declarations require named symbols");
       }
 
-      if (identifier.type != TiriType::Unknown or identifier.has_const or identifier.has_close) {
+      if (identifier.type != TiriType::Unknown or identifier.has_const or identifier.has_close or identifier.has_view) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
             Token::from_span(identifier.span, TokenKind::Identifier),
             "Extern declarations cannot have type annotations or attributes");
@@ -682,7 +711,7 @@ static bool is_prefixed_attribute_token(TokenStreamAdapter &Tokens)
    if (not symbol) return false;
 
    std::string_view name(strdata(symbol), symbol->len);
-   if (name != "const" and name != "close") return false;
+   if (name != "const" and name != "close" and name != "view") return false;
    return Tokens.peek(1).raw() IS '<';
 }
 
@@ -746,7 +775,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
 
    if (is_prefixed_attribute_token(this->ctx.tokens())) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-         "Enum prefixes cannot use <const> or <close> attributes");
+         "Enum prefixes cannot use declaration attributes");
    }
 
    auto open_brace = this->ctx.consume(TokenKind::LeftBrace, ParserErrorCode::ExpectedToken);

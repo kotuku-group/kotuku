@@ -475,6 +475,42 @@ static bool test_array_external(kt::Log &Log)
    return true;
 }
 
+static bool test_array_external_lifecycle(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   OBJECTPTR owner = nullptr;
+   if (NewObject(CLASSID::TIME, &owner) != ERR::Okay) {
+      Log.error("failed to create lifecycle owner");
+      return false;
+   }
+
+   int32_t external_data[2] = { 10, 20 };
+   GCarray *array = lj_array_new(lua, 2, AET::INT32, external_data, ARRAY_EXTERNAL|ARRAY_READONLY, {}, nullptr,
+      owner);
+   if (not array->is_lifecycle_bound() or lj_array_stale(array)) {
+      Log.error("live lifecycle-bound array was reported stale");
+      FreeResource(owner);
+      return false;
+   }
+
+   FreeResource(owner);
+   if (not lj_array_stale(array)) {
+      Log.error("destroyed lifecycle owner did not stale its array view");
+      return false;
+   }
+   if (array->storage or array->len or array->capacity) {
+      Log.error("stale array view retained accessible storage");
+      return false;
+   }
+   return true;
+}
+
 //********************************************************************************************************************
 
 static bool test_array_element_contract(kt::Log &Log)
@@ -1296,7 +1332,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 33> Tests = { {
+   constexpr std::array<TestCase, 34> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1307,6 +1343,7 @@ void array_unit_tests(int &Passed, int &Total)
       { "array_index_access", test_array_index_access },
       { "array_elemsize", test_array_elemsize },
       { "array_external", test_array_external },
+      { "array_external_lifecycle", test_array_external_lifecycle },
       { "array_element_contract", test_array_element_contract },
       { "array_to_table", test_array_to_table },
       { "array_type_tag", test_array_type_tag },

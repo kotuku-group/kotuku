@@ -1,0 +1,169 @@
+-- Flute regression coverage for non-owning object array-field views.
+
+include 'display'
+
+function expect_failure(Action:func, Description:str)
+   local caught = false
+   try
+      Action()
+   except error_value
+      caught = true
+   end
+   assert(caught, Description)
+end
+
+function new_bitmap():obj
+   local bitmap = obj.new('bitmap', {
+      width=2, height=2, bitsPerPixel=32, bkgd='255,255,255,255'
+   })
+   bitmap.acClear()
+   return bitmap
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function PrimitiveFieldViewIsLiveAndReadOnly()
+   local bitmap = new_bitmap()
+   local pixels <view> = bitmap.data
+
+   assert(array.readOnly(pixels), 'A field view must be read-only')
+   assert(pixels[0] is 255, 'The initial view should expose the bitmap storage')
+
+   bitmap.bkgd = '0,0,0,255'
+   bitmap.acClear()
+   assert(pixels[0] is 0, 'A view should observe native mutations without another field read')
+
+   expect_failure(() => do pixels[0] = 1 end, 'Element assignment through a view must fail')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function DestroyedSourceStalesView()
+   local bitmap = new_bitmap()
+   local pixels <view> = bitmap.data
+   bitmap.free()
+
+   expect_failure(() => do local value = pixels[0] end,
+      'Access after explicit source destruction must raise a catchable error')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function GarbageCollectedSourceStalesView()
+   local bitmap = new_bitmap()
+   local pixels <view> = bitmap.data
+   bitmap = nil
+   processing.collect()
+
+   expect_failure(() => do local value = pixels[0] end,
+      'A view must retain a testable weak-pinned source header after collection')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function ViewModeIsOneShot()
+   local bitmap = new_bitmap()
+   local second
+
+   function read_twice(Bitmap:obj):array<any>
+      local first = Bitmap.data
+      second = Bitmap.data
+      return first
+   end
+
+   local first <view> = read_twice(bitmap)
+   assert(array.readOnly(first), 'The first object array read should consume view mode')
+   assert(not array.readOnly(second), 'A second object array read in the initialiser must remain a copy')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function ErrorUnwindClearsViewMode()
+   expect_failure(() => do local failed <view> = error('expected failure') end,
+      'The failing view initialiser should be catchable')
+
+   local bitmap = new_bitmap()
+   local copied = bitmap.data
+   assert(not array.readOnly(copied), 'A failed view initialiser must not arm a later field read')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function CaughtErrorPreservesOuterViewMode()
+   local bitmap = new_bitmap()
+
+   function read_after_error(Bitmap:obj):array<any>
+      try
+         error('expected failure')
+      except error_value
+      end
+      return Bitmap.data
+   end
+
+   local pixels <view> = read_after_error(bitmap)
+   assert(array.readOnly(pixels), 'A caught error inside the initialiser must preserve its active view scope')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function NestedViewScopesAreIndependent()
+   local bitmap = new_bitmap()
+
+   function read_after_nested_view(Bitmap:obj):array<any>
+      local benign <view> = 42
+      return Bitmap.data
+   end
+
+   local pixels <view> = read_after_nested_view(bitmap)
+   assert(array.readOnly(pixels), 'A nested view declaration must not clear its outer view scope')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(display=true)
+function DestroyedSourceRejectsLengthAndFalseyChecks()
+   local bitmap = new_bitmap()
+   local pixels <view> = bitmap.data
+   bitmap.free()
+
+   expect_failure(() => do local length = #pixels end,
+      'The length operator must reject a stale view')
+   expect_failure(() => do local fallback = pixels ?? array<byte> end,
+      'Collection falsey checks must reject a stale view')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnsupportedAndBenignInitialisers()
+   local script = obj.new('script')
+   expect_failure(() => do local strings <view> = script.results end,
+      'String-array fields must reject view materialisation')
+
+   local number <view> = 42
+   assert(number is 42, 'A non-array view initialiser should be a benign no-op')
+
+   local existing = array<int> { 1, 2 }
+   local same <view> = existing
+   assert(same is existing and not array.readOnly(same),
+      'An existing array reference should pass through without changing its ownership or mutability')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function InvalidViewDeclarationsAreRejected()
+   expect_failure(() => exec('local first <view>, second = 1, 2'),
+      'A view declaration must reject multiple local names')
+   expect_failure(() => exec('local missing <view>'),
+      'A view declaration must require an initialiser')
+   expect_failure(() => exec('local combined <view><close> = 1'),
+      'A view declaration must reject another attribute on the same name')
+   expect_failure(() => exec('global invalid <view> = 1'),
+      'The view attribute must be local-only')
+end

@@ -2202,6 +2202,7 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
          return ir.emit_int(IR_ALEN, tr, TREF_NIL); //equiv to: rc = emitir(IRTI(IR_ALEN), rc, TREF_NIL);
       }
       else if (tref_isarray(tr)) {
+         if (arrayV(tv)->flags & ARRAY_LIFECYCLE) lj_trace_err_info(J, LJ_TRERR_NYIBC);
          IRBuilder ir(J);
          return ir.emit_int(IR_FLOAD, tr, IRFL_ARRAY_LEN); //equiv to: rc = emitir(IRTI(IR_FLOAD), rc, IRFL_ARRAY_LEN);
       }
@@ -3549,6 +3550,7 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
 
 static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt)
 {
+   if (Arr->flags & ARRAY_LIFECYCLE) return 0;
    IRBuilder ir(J);
    AET et = Arr->elemtype;
    int shift;
@@ -3580,6 +3582,8 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
    // Guard: elemtype matches recorded value (CSE'd across accesses to the same array)
    TRef et_ref = ir.fload(ArrayRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
    ir.guard_eq_int(et_ref, ir.kint(int32_t(et)));
+   TRef flags_ref = ir.fload(ArrayRef, IRFL_ARRAY_FLAGS, IRT_U8);
+   ir.guard_eq_int(flags_ref, ir.kint(int32_t(Arr->flags)));
 
    // Load storage pointer
    TRef storage_ref = ir.fload_ptr(ArrayRef, IRFL_ARRAY_STORAGE);
@@ -3671,6 +3675,7 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
 
 static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValRef, GCarray *Arr)
 {
+   if (Arr->flags & ARRAY_LIFECYCLE) return false;
    IRBuilder ir(J);
    AET et = Arr->elemtype;
    int shift;
@@ -3723,6 +3728,8 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
    // Guard: elemtype matches recorded value (CSE'd across accesses to the same array)
    TRef et_ref = ir.fload(ArrayRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
    ir.guard_eq_int(et_ref, ir.kint(int32_t(et)));
+   TRef flags_ref = ir.fload(ArrayRef, IRFL_ARRAY_FLAGS, IRT_U8);
+   ir.guard_eq_int(flags_ref, ir.kint(int32_t(Arr->flags)));
 
    // Load storage pointer
    TRef storage_ref = ir.fload_ptr(ArrayRef, IRFL_ARRAY_STORAGE);
@@ -4808,6 +4815,7 @@ void lj_record_ins(jit_State *J)
          rec_comp_fixup(J, J->pc, not is_falsey);
       }
       else if (tref_isarray(ra) and (rc & ISFALSEY_EMPTY_COLL)) {
+         if (arrayV(rav)->flags & ARRAY_LIFECYCLE) lj_trace_err_info(J, LJ_TRERR_NYIBC);
          TRef length = emitir(IRTI(IR_FLOAD), ra, IRFL_ARRAY_LEN);
          is_falsey = arrayV(rav)->len IS 0;
          rec_comp_prep(J);
@@ -5084,6 +5092,7 @@ void lj_record_ins(jit_State *J)
 
    case BC_CLOSEARM:
    case BC_CLOSE:
+   case BC_VIEW:
       lj_trace_err_info(J, LJ_TRERR_NYIBC);
       break;
 

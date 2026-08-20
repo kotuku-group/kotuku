@@ -678,8 +678,21 @@ template <class Callback> static int object_get_field(lua_State *Lua, const obj_
    return error != ERR::Okay ? 0 : 1;
 }
 
-static ERR make_object_field_array(lua_State *Lua, const Field *Field, size_t Elements, CPTR Values)
+static ERR make_object_field_array(lua_State *Lua, OBJECTPTR Object, const Field *Field, size_t Elements, CPTR Values,
+   bool View)
 {
+   if (View) {
+      if (Field->Flags & (FD_STRING|FD_OBJECT|FD_POINTER|FD_STRUCT)) return ERR::FieldTypeMismatch;
+      AET type = ff_to_aet(Field->Flags);
+      if (type IS AET::MAX) return ERR::FieldTypeMismatch;
+
+      GCarray *array = lj_array_new(Lua, Elements, type, (void *)Values, ARRAY_EXTERNAL|ARRAY_READONLY, {}, nullptr,
+         Object);
+      setarrayV(Lua, Lua->top++, array);
+      lj_gc_check(Lua);
+      return ERR::Okay;
+   }
+
    struct_record *struct_def = nullptr;
    std::string_view struct_name;
 
@@ -700,10 +713,12 @@ static ERR make_object_field_array(lua_State *Lua, const Field *Field, size_t El
 static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *Def)
 {
    return object_get_field(Lua, Handle, Def, [Lua](OBJECTPTR Object, const Field *Field) -> ERR {
+      bool view = lj_array_take_view_mode(Lua);
       ERR error;
       std::span<int> span;
       if (Field->Flags & FD_VECTOR) { // kt::vector<>
          if (Field->Flags & FD_STRING) { // kt::vector<std::string>
+            if (view) return ERR::FieldTypeMismatch;
             std::span<std::string> values;
             if (!(error = Object->get(Field->FieldID, values))) {
                kt::vector<std::string> strings(values.data(), values.data() + values.size());
@@ -717,19 +732,21 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
             // For kt::vector primitives we can just convert to a raw data array.
             std::span<int> values; // The type doesn't matter.
             if (!(error = Object->get(Field->FieldID, values, false))) {
-               error = make_object_field_array(Lua, Field, values.size(), values.data());
+               error = make_object_field_array(Lua, Object, Field, values.size(), values.data(), view);
             }
          }
       }
       else if (!(error = Object->get(Field->FieldID, span, false))) {
          if (Field->Flags & FD_STRING) {
+            if (view) return ERR::FieldTypeMismatch;
             make_array(Lua, AET::CSTR, span.size(), span.data());
          }
          else if (Field->Flags & FD_OBJECT) {
+            if (view) return ERR::FieldTypeMismatch;
             make_array(Lua, AET::OBJECT, span.size(), span.data());
          }
          else if (Field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT)) {
-            error = make_object_field_array(Lua, Field, span.size(), span.data());
+            error = make_object_field_array(Lua, Object, Field, span.size(), span.data(), view);
          }
          else {
             kt::Log("object_get_array").warning("Invalid array type for '%s', flags: $%.8x", Field->Name,

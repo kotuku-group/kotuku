@@ -448,6 +448,27 @@ extern "C" void lj_close_arm(lua_State *L, uint32_t Slot)
    state->armed_slots |= uint64_t(1) << Slot;
 }
 
+extern "C" void lj_array_view_mode(lua_State *L, uint32_t Enabled)
+{
+   if (Enabled) {
+      if (L->array_view_depth >= 64) lj_err_msg(L, ErrMsg::XNEST);
+      L->array_view_scopes |= uint64_t(1) << L->array_view_depth++;
+   }
+   else if (L->array_view_depth > 0) {
+      L->array_view_depth--;
+      L->array_view_scopes &= ~(uint64_t(1) << L->array_view_depth);
+   }
+}
+
+bool lj_array_take_view_mode(lua_State *L) noexcept
+{
+   if (L->array_view_depth IS 0) return false;
+   uint64_t scope = uint64_t(1) << (L->array_view_depth - 1);
+   bool armed = (L->array_view_scopes & scope) != 0;
+   L->array_view_scopes &= ~scope;
+   return armed;
+}
+
 uint64_t lj_close_take_armed(
    lua_State *L, const TValue *OwnerBase, uint32_t LowerSlot, uint32_t UpperSlot) noexcept
 {

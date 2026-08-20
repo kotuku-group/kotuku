@@ -406,6 +406,7 @@ void lj_array_store_new_values(lua_State *L, GCarray *Array, cTValue *Values, MS
 
 extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
 
    if (Array->elemtype IS AET::BYTE and tvisstr(Value)) {
@@ -465,7 +466,7 @@ static void array_attach_basemt(lua_State *L, GCarray *Arr)
 // - The storage area stores CSTRING pointers into the vector
 
 extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags,
-   std::string_view StructName, struct_record *StructDef)
+   std::string_view StructName, struct_record *StructDef, Object *Lifecycle)
 {
    MSize elem_size;
    struct_record *sdef = nullptr;
@@ -485,12 +486,16 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
 
    lj_assertL(elem_size > 0, "invalid element size for array creation");
 
-   if (Data) {
+   if (Data or (Flags & ARRAY_EXTERNAL)) {
       if (Flags & ARRAY_EXTERNAL) {
          // External data - caller manages lifetime (no storage allocation needed)
          // External arrays have capacity = length and cannot grow
          auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-         arr->init(Data, Type, elem_size, Length, Length, Flags, sdef);
+         arr->init(Data, Type, elem_size, Length, Length, Flags, sdef, Lifecycle);
+         if (Lifecycle) {
+            Lifecycle->pinWeak();
+            arr->flags |= ARRAY_LIFECYCLE;
+         }
          array_attach_basemt(L, arr);
          return arr;
       }
@@ -662,8 +667,35 @@ void lj_array_free(global_State *g, GCarray *Array)
    if (storage_size > 0) {
       lj_mem_free(g, Array->storage, storage_size);
    }
+   if (Array->is_lifecycle_bound()) {
+      Array->lifecycle->unpinWeak();
+      Array->lifecycle = nullptr;
+   }
    Array->~GCarray(); // Call destructor (handles strcache cleanup)
    lj_mem_free(g, Array, sizeof(GCarray));
+}
+
+bool lj_array_stale(GCarray *Array)
+{
+   if (not Array->is_lifecycle_bound()) return false;
+   if (not Array->lifecycle->terminating()) return false;
+   Array->storage = nullptr;
+   Array->len = 0;
+   Array->capacity = 0;
+   return true;
+}
+
+void lj_array_check_lifecycle(lua_State *L, GCarray *Array)
+{
+   if (lj_array_stale(Array)) {
+      luaL_error(L, ERR::DoesNotExist, "Cannot access an array view; the source object has been destroyed.");
+   }
+}
+
+extern "C" uint32_t lj_array_length(lua_State *L, GCarray *Array)
+{
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
+   return Array->len;
 }
 
 //********************************************************************************************************************

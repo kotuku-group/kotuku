@@ -2725,7 +2725,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cmn ITYPE, #-LJ_TUDATA
     |  beq >7
     |  cmn ITYPE, #-LJ_TARRAY
-    |  beq >5
+    |  beq >7
     |  cmn ITYPE, #-LJ_TTAB
     |  bne >1
     |  tst RCw, #ISFALSEY_EMPTY_COLL
@@ -2758,13 +2758,6 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ldr TMP0w, STR:CARG1->len
     |  cbz TMP0w, >9
     |  b >1
-    |5:
-    |  tst RCw, #ISFALSEY_EMPTY_COLL
-    |  beq >1
-    |  and CARG1, CARG1, #LJ_GCVMASK
-    |  ldr TMP0w, ARRAY:CARG1->len
-    |  cbnz TMP0w, >1
-    |  b >9
     |7:
     |  str BASE, L->base
     |  mov CARG1, L
@@ -2848,7 +2841,13 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |4:  // Check for array type.
     |  cmn ITYPE, #-LJ_TARRAY
     |  bne ->vmeta_len
-    |  ldr CARG1w, ARRAY:CARG1->len
+    |  mov CARG2, CARG1
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  str PC, SAVE_PC
+    |  bl extern lj_array_length
+    |  ldr BASE, L->base
     |  b <1
     |
     |8:  // String-keyed table: the length operator yields nil.
@@ -4868,6 +4867,17 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov CARG1, L
     |  mov CARG2w, RAw
     |  bl extern lj_close_consume
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_VIEW:
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG2w, RDw
+    |  str PC, SAVE_PC
+    |  bl extern lj_array_view_mode
     |  ldr BASE, L->base
     |  ins_next
     break;

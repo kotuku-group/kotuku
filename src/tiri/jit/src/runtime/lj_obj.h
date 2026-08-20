@@ -802,6 +802,8 @@ struct TryFrame {
    BCREG     saved_nactvar;    // Active slot count at try entry (first free register)
    size_t    context_depth;     // Absolute context-stack depth at try entry
    size_t    context_floor;     // Active asynchronous root floor at try entry
+   uint64_t  array_view_scopes; // Armed <view> scopes at try entry
+   uint8_t   array_view_depth;  // Active <view> scope depth at try entry
 };
 
 // Stack of try frames for exception unwinding
@@ -1286,6 +1288,7 @@ enum class AET : uint8_t {
 // Array flags
 inline constexpr uint8_t ARRAY_READONLY  = 0x01;  // Cannot modify elements
 inline constexpr uint8_t ARRAY_EXTERNAL  = 0x02;  // Data not owned by array (storage is raw pointer)
+inline constexpr uint8_t ARRAY_LIFECYCLE = 0x04;  // External data follows a Kotuku object's lifecycle
 inline constexpr uint8_t ARRAY_CACHED    = 0x00;  // Copy external data into owned storage (default, flag is 0)
 
 struct array_meta {
@@ -1314,6 +1317,7 @@ struct GCarray {
    MSize   elemsize;    // Size of each element in bytes
    struct struct_record *structdef;  // Optional: struct definition for struct arrays
    std::vector<char> *strcache; // Optional: cached string content for CSTRING/STRING_CPP arrays
+   Object  *lifecycle; // Weak-pinned owner for lifecycle-bound external views
 
 public:
    // Initialise the array structure. Storage must be pre-allocated by the caller using lj_mem_new()
@@ -1321,7 +1325,7 @@ public:
    // them! We avoid member initialiser lists to prevent GCC from zero-initializing the GCHeader
    // fields (nextgc, marked) that were set by lj_mem_newgco().
    void init(void *Data, AET Type, MSize ElemSize, MSize Length, MSize Capacity, uint8_t Flags,
-             struct struct_record *StructDef = nullptr) noexcept
+             struct struct_record *StructDef = nullptr, Object *Lifecycle = nullptr) noexcept
    {
       gct       = ~LJ_TARRAY;
       luatype   = glArrayConversion[size_t(Type)].type;
@@ -1337,6 +1341,7 @@ public:
       elemsize  = ElemSize;
       structdef = StructDef;
       strcache  = nullptr;
+      lifecycle = Lifecycle;
    }
 
    // Destructor only handles strcache. Storage is freed by lj_array_free() for proper GC tracking.
@@ -1367,6 +1372,7 @@ public:
    [[nodiscard]] inline MSize arraylen() const noexcept { return len; }
    [[nodiscard]] inline bool is_readonly() const noexcept { return (flags & ARRAY_READONLY) != 0; }
    [[nodiscard]] inline bool is_external() const noexcept { return (flags & ARRAY_EXTERNAL) != 0; }
+   [[nodiscard]] inline bool is_lifecycle_bound() const noexcept { return (flags & ARRAY_LIFECYCLE) != 0; }
    [[nodiscard]] int type_flags() const noexcept;
    [[nodiscard]] inline size_t alloc_size() const noexcept { return sizeof(GCarray); }
    [[nodiscard]] inline size_t storage_size() const noexcept { return is_external() ? 0 : size_t(capacity) * elemsize; }
@@ -1646,6 +1652,8 @@ struct lua_State {
    class extTiri *script;  // Back-reference to the script that owns this lua_State
    bool    sent_traceback;   // True if traceback has been sent for the current error
    uint8_t resolving_thunk;  // Flag to prevent recursive thunk resolution
+   uint64_t array_view_scopes = 0; // One armed bit per active <view> declaration initialiser
+   uint8_t array_view_depth = 0;   // Number of active <view> initialiser scopes
    ParserDiagnostics *parser_diagnostics; // Stores ParserDiagnostics* during parsing errors
    TipEmitter *parser_tips;               // Stores TipEmitter* during parsing for code hints
    ParserSymbolCollection *parser_symbols; // Stores parser symbol metadata for LSP/documentation tooling

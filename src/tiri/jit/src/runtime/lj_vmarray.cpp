@@ -137,6 +137,7 @@ extern "C" cTValue * lj_arr_get(lua_State *L, cTValue *O, cTValue *K)
    }
 
    GCarray *arr = arrayV(O);
+   if (arr->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, arr);
 
    // Check if key is a string (method lookup like arr:concat())
 
@@ -200,6 +201,7 @@ extern "C" int lj_arr_set(lua_State *L, cTValue *O, cTValue *K, cTValue *V)
    }
 
    GCarray *arr = arrayV(O);
+   if (arr->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, arr);
 
    if (arr->flags & ARRAY_READONLY) {
       lj_err_msg(L, ErrMsg::ARRRO);
@@ -232,6 +234,7 @@ extern "C" int lj_arr_set(lua_State *L, cTValue *O, cTValue *K, cTValue *V)
 
 extern "C" void lj_arr_getidx(lua_State *L, GCarray *Array, int32_t Idx, TValue *Result)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (Idx < 0 or MSize(Idx) >= Array->len) lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
    arr_load_elem(L, Array, uint32_t(Idx), Result);
 }
@@ -242,6 +245,7 @@ extern "C" void lj_arr_getidx(lua_State *L, GCarray *Array, int32_t Idx, TValue 
 
 extern "C" void lj_arr_safe_getidx(lua_State *L, GCarray *Array, int32_t Idx, TValue *Result)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (Idx < 0 or MSize(Idx) >= Array->len) {
       setnilV(Result);
       return;
@@ -254,6 +258,7 @@ extern "C" void lj_arr_safe_getidx(lua_State *L, GCarray *Array, int32_t Idx, TV
 
 extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue *Val)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (Idx < 0 or MSize(Idx) >= Array->len) lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
    lj_array_store_checked(L, Array, uint32_t(Idx), Val);
@@ -263,6 +268,7 @@ extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue
 
 static void lj_arr_append_bytes(lua_State *L, GCarray *Array, const char *Data, MSize Len)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
    if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
    if (Len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
@@ -306,6 +312,7 @@ extern "C" void lj_arr_putnumtv(lua_State *L, GCarray *Array, cTValue *Value)
 
 extern "C" void lj_arr_clear(lua_State *L, GCarray *Array)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
 
    lj_array_clear_range(Array, 0, Array->len);
@@ -317,6 +324,7 @@ extern "C" void lj_arr_clear(lua_State *L, GCarray *Array)
 
 extern "C" int32_t lj_arr_resize(lua_State *L, GCarray *Array, int32_t NewSize)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
    if (NewSize < 0) lj_err_msgv(L, ErrMsg::NUMRNG, "non-negative", "negative");
 
@@ -349,6 +357,7 @@ extern "C" int32_t lj_arr_resize(lua_State *L, GCarray *Array, int32_t NewSize)
 
 extern "C" GCstr * lj_arr_getstring(lua_State *L, GCarray *Array, int32_t Start, int32_t Len)
 {
+   if (Array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, Array);
    if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
 
    int32_t count = Len;

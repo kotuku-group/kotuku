@@ -23,6 +23,7 @@
 #include "lj_bcdump.h"
 #include "lib.h"
 #include "runtime/lj_thunk.h"
+#include "runtime/lj_array.h"
 
 //********************************************************************************************************************
 // Library initialization
@@ -404,7 +405,11 @@ GCarray * lj_lib_checkarray(lua_State *L, int Arg, bool Required)
          copyTV(L, o, resolved); // Replace thunk with resolved value
       }
 
-      if (tvisarray(o)) [[likely]] return arrayV(o);
+      if (tvisarray(o)) [[likely]] {
+         GCarray *array = arrayV(o);
+         if (array->flags & ARRAY_LIFECYCLE) lj_array_check_lifecycle(L, array);
+         return array;
+      }
    }
 
    if (Required) lj_err_argt(L, Arg, LUA_TARRAY);

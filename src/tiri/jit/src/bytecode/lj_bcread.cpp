@@ -342,6 +342,9 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          BCREG slot = bc_a(bc[i]);
          if (slot >= pt->framesize or slot >= 64) bcread_error(State, ErrMsg::BCBAD);
       }
+      else if (op IS BC_VIEW) {
+         if (bc_a(bc[i]) != 0 or bc_d(bc[i]) > 1) bcread_error(State, ErrMsg::BCBAD);
+      }
       else if (op IS BC_CTXENTER or op IS BC_CTXCALL or op IS BC_CTXCALLM or op IS BC_CTXLEAVE or
                op IS BC_CTXCALLT) {
          BCREG call_base = bc_a(bc[i]);

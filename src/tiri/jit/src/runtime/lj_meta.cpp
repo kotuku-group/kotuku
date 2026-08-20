@@ -23,6 +23,7 @@
 #include "lj_strscan.h"
 #include "lj_strfmt.h"
 #include "lj_thunk.h"
+#include "lj_array.h"
 #include "lj_object.h"
 #include "lj_contract.h"
 #include "stack_helpers.h"
@@ -675,9 +676,7 @@ int lj_meta_isfalsey(lua_State *L, BCIns Ins)
    VMHelperGuard guard(L);
 
    cTValue *value = &L->base[bc_a(Ins)];
-   if (not lj_is_thunk(value)) return 0;
-
-   value = lj_thunk_resolve(L, udataV(value));
+   if (lj_is_thunk(value)) value = lj_thunk_resolve(L, udataV(value));
    uint32_t mask = bc_d(Ins);
 
    if (tvisnil(value)) return 1;
@@ -686,7 +685,7 @@ int lj_meta_isfalsey(lua_State *L, BCIns Ins)
       return (mask & ISFALSEY_ZERO) and (tvisint(value) ? intV(value) IS 0 : tviszero(value));
    }
    if (tvisstr(value)) return (mask & ISFALSEY_EMPTY_STR) and strV(value)->len IS 0;
-   if (tvisarray(value)) return (mask & ISFALSEY_EMPTY_COLL) and arrayV(value)->len IS 0;
+   if (tvisarray(value)) return (mask & ISFALSEY_EMPTY_COLL) and lj_array_length(L, arrayV(value)) IS 0;
    if (tvistab(value)) return (mask & ISFALSEY_EMPTY_COLL) and lj_tab_empty(tabV(value));
    return 0;
 }
