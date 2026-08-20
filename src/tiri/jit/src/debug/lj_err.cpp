@@ -593,6 +593,8 @@ extern "C" void setup_try_handler(lua_State *L)
 
    L->base = restorestack(L, try_frame->frame_base);
    L->top = restorestack(L, try_frame->saved_top);
+   L->array_view_scopes = try_frame->array_view_scopes;
+   L->array_view_depth = try_frame->array_view_depth;
    L->try_stack.depth--; // Pop try frame
 
    // Build exception table and place in handler's register (pass pending_trace, which may be null)
@@ -1121,6 +1123,10 @@ LJ_NOINLINE void lj_err_throw(lua_State *L, int errcode)
    global_State* g = G(L);
 
    auto J = G2J(g);
+   if (not J->abort_in_progress) {
+      L->array_view_scopes = 0;
+      L->array_view_depth = 0;
+   }
    kt::Log(__FUNCTION__).detail("Throwing error: code=%d, Abort: %d, Top: %p, Base: %p, Valid Stack: %d", errcode, J->abort_in_progress, L->top, L->base, L->top >= L->base);
 
    lj_trace_abort(g);

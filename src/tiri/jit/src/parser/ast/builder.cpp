@@ -809,7 +809,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 }
 
 //********************************************************************************************************************
-// Check if an identifier is followed by a <const> or <close> attribute.  Due to lexer lookahead buffer complexities,
+// Check if an identifier is followed by a recognised declaration attribute.  Due to lexer lookahead complexities,
 // we access the lexer's buffered_tokens directly when the special '<identifier' handling has been triggered.
 //
 // Patterns: `name <attr>`, `name:type <attr>`
@@ -830,7 +830,7 @@ static bool is_implicit_local_with_attribute(TokenStreamAdapter& Tokens)
    // - peek(2): <
    // - peek(3): >
    //
-   // We need to detect: identifier (current) followed by 'const'/'close' then '<' then '>'
+   // We need to detect: identifier (current) followed by the attribute name, '<', then '>'.
 
    size_t pos = 1;
    Token next = Tokens.peek(pos);
@@ -847,14 +847,14 @@ static bool is_implicit_local_with_attribute(TokenStreamAdapter& Tokens)
       next = Tokens.peek(pos);
    }
 
-   // Next should be 'const' or 'close' (the buffered identifier from '<identifier' handling)
+   // Next should be a recognised attribute (the buffered identifier from '<identifier' handling)
    if (next.kind() != TokenKind::Identifier) return false;
 
    GCstr* attr_name = next.identifier();
    if (!attr_name) return false;
 
    std::string_view attr_str(strdata(attr_name), attr_name->len);
-   if (attr_str != "const" and attr_str != "close") return false;
+   if (attr_str != "const" and attr_str != "close" and attr_str != "view") return false;
 
    // After the attribute name, we should see '<' (which was returned by the lexer)
    Token angle_open = Tokens.peek(pos + 1);
@@ -937,7 +937,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
             }
          }
 
-         // Check for implicit local declaration with <const> or <close> attribute
+         // Check for an implicit local declaration carrying an attribute.
          if (is_implicit_local_with_attribute(this->ctx.tokens())) {
             return this->parse_local();
          }

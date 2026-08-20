@@ -611,7 +611,7 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
       // an empty structure declaration.
 
       static struct_record empty("");
-      return push_struct_def(Self->Lua, Address, empty, false, Lifecycle);
+      return push_struct_def(Self->Lua, Address, empty, Deallocate, Lifecycle);
    }
    else {
       if (Deallocate) FreeResource(Address);
@@ -637,7 +637,7 @@ GCstruct * push_struct(extTiri *Self, APTR Address, uint32_t StructKey, bool Dea
       // Preserve the name-based overload's fallback for resource structs that Tiri does not know about.
 
       static struct_record empty("");
-      return push_struct_def(Self->Lua, Address, empty, false, Lifecycle);
+      return push_struct_def(Self->Lua, Address, empty, Deallocate, Lifecycle);
    }
    else {
       if (Deallocate) FreeResource(Address);

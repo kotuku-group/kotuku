@@ -1891,9 +1891,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
 
    ExpDesc tail;
    auto nexps = BCReg(0);
+   bool is_view = Payload.names.size() IS 1 and Payload.names[0].has_view;
    std::vector<std::optional<CompileTimeValue>> compile_time_values(Payload.names.size());
    if (Payload.values.empty()) tail = ExpDesc(ExpKind::Void);
    else {
+      if (is_view) bcemit_AD(&this->func_state, BC_VIEW, 0, 1);
       auto list = this->emit_expression_list(Payload.values, nexps);
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
       tail = list.value_ref();
@@ -1909,6 +1911,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
    }
 
    this->lex_state.assign_adjust(nvars.raw(), nexps.raw(), &tail);
+   if (is_view) bcemit_AD(&this->func_state, BC_VIEW, 0, 0);
    this->lex_state.var_add(nvars);
    auto base = BCReg(this->func_state.varmap.size() - nvars.raw());
 
