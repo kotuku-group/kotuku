@@ -346,6 +346,11 @@ targets `FORL`, while a `break` targets `loop_exit`.  This keeps range preparati
 | `CHECK` | A D | Check error code in R(A), raise if >= threshold |
 | `RAISE` | A D | Raise exception with error code R(A) and message R(D) |
 
+#### Type Test Op
+| Opcode | Format | Description |
+|--------|--------|-------------|
+| `TYPETEST` | A D | R(A) = boolean result of testing R(A) against the single-entry contract descriptor at str(D) |
+
 ### 3.3 Resources and Cross-References
 - Opcode definitions and metadata (including the `BCDEF` macro): `src/tiri/jit/src/bytecode/lj_bc.h`.
 - Parser emission sites: `src/tiri/jit/src/parser/ir_emitter/operator_emitter.cpp` (operator lowering and bytecode emission), `src/tiri/jit/src/parser/ir_emitter/ir_emitter.cpp` (control-flow and expression emission).
@@ -821,6 +826,50 @@ callback's duration. Synchronous `lua_call()` and `lua_pcall()` re-entry does no
 active context. Fixed-argument contextual tail calls use `CTXCALLT`; direct and variable-argument calls preserve their
 existing tail or call-and-return paths respectively.
 
+### 10.5 Contextual Type Test (`BC_TYPETEST`)
+
+`TYPETEST` implements the `value is <Type>`, `value is not <Type>` and `value != <Type>` operators.  It is an AD-format
+instruction: `A` is the register holding the already-evaluated left operand and `D` is a string constant holding a
+portable runtime-contract descriptor.  The instruction tests `R(A)` against that descriptor and overwrites `R(A)` with
+a canonical boolean, so the left operand is evaluated exactly once and its slot is reused for the result.  There is no
+following `JMP`; unlike the `IS*` comparison family, `TYPETEST` produces a value rather than steering control flow.
+
+The descriptor is the same encoding consumed by `CONTRACT` (section 10.3), but always contains exactly one entry.  The
+emitter (`IrEmitter::emit_type_test_expr`) writes a `ContractBoundary::Local` descriptor with one fixed slot and one
+entry carrying the tested `TiriType`, its inner constraint, and entry flags:
+
+- `ContractEntryFlag::Nullable` is set for `any` and `nil` tests.
+- `ContractEntryFlag::Negated` (`1 << 5`) is set for the `is not` / `!=` forms, and inverts the final match result.
+- An `Object` test embeds the expected `CLASSID`; a `Struct` test embeds the structure name; an `Array` test embeds the
+  constrained element type (`AET`) and, for a struct element, the element structure name.  An unconstrained aggregate
+  test embeds `CLASSID::NIL`, an empty structure name or `AET::ANY` respectively.
+
+**Interpreter semantics** — the x64, ARM64 and PowerPC handlers all call `lj_meta_type_test_pc(L, PC)`.  It decodes the
+descriptor from `PC[-1]`, requires exactly one entry, and evaluates the match:
+
+- A non-thunk value is matched directly with `contract_matches`.
+- A thunk short-circuits when the test type is `any`; uses its cached value when already resolved; matches against the
+  thunk's declared `expected_type` when the test is a plain tag with no class, structure-name or array-element
+  constraint; and otherwise forces resolution before matching.
+- The `Negated` flag inverts the result, which is then written back to `R(A)` as a boolean.
+
+Object class matching is widened by `lj_meta_object_class_matches`: an object satisfies an `Object` test when the
+expected `CLASSID` is `NIL`, matches the object's own `ClassID`, or matches its `BaseClassID`.  This base-class
+acceptance is shared by the interpreter, the JIT recorder and ordinary contract checking.
+
+**JIT recording** — `rec_type_test` records the test without a runtime helper call whenever the observed value is not a
+thunk.  It emits the same aggregate guards as contract recording (`rec_contract_guard_array`, `_object`, `_struct`,
+`_range`, `_callable`, `_userdata`) so the trace stays specialised to the observed shape, then folds the boolean result
+(`TREF_TRUE`/`TREF_FALSE`) and applies the `Negated` flag.  A failing constrained match still guards the observed
+aggregate metadata (element type, class, struct definition, range-ness) so the trace cannot silently accept a differently
+shaped value.  A thunk operand, or any descriptor the recorder cannot fold, adds a snapshot and stops the trace with an
+interpreter link (`TraceLink::INTERP`) so the deferred test resumes safely in the interpreter without disabling the
+prototype.
+
+**Constant folding** — `ConstantEvaluator` folds a `TYPETEST` whose operand is a compile-time literal, comparing the
+literal's category against the tested type (honouring `any` and `Negated`) and yielding a boolean constant.  Type and
+static-descriptor analysis classify the expression's result as a non-nullable `Bool`.
+
 ## 11. Testing, Debugging, and Tooling
 
 ### 11.1 Using Flute and Tiri Tests
@@ -916,6 +965,9 @@ existing tail or call-and-return paths respectively.
 - `CONTRACT A, D`: validates values starting at register `A` using the portable descriptor string at constant `D`.
   Descriptors encode the boundary, exact Tiri types, nullable/required flags, labels, named-structure identity and
   fixed or dynamic result shape.
+- `TYPETEST A, D`: tests `R(A)` against the single-entry contract descriptor at constant `D` and overwrites `R(A)` with
+  a boolean. Implements `value is <Type>`, `is not <Type>` and `!= <Type>`; the `ContractEntryFlag::Negated` (`1 << 5`)
+  flag inverts the result. See section 10.5.
 - `MRSAVE A` / `MRRESTORE A`: preserve the VM multi-result count and returned values in a state-owned nested save stack
   while return-path `<close>` and `defer` handlers execute. Restored values begin at `R(A+1)`.
 - Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,

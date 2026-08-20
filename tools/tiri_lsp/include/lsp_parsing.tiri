@@ -167,6 +167,113 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       return Pos
    end
 
+   -- A type-test primary word may carry an inner constraint name: `<array int>`, `<obj Vector>` and
+   -- `<struct Point>`.  The remaining primaries (`num`, `str`, `nil`, `range`, ...) are unconstrained.
+   type_test_types = {
+      ['any'] = true, ['nil'] = true, ['bool'] = true, ['num'] = true, ['str'] = true, ['table'] = true,
+      ['array'] = true, ['func'] = true, ['struct'] = true, ['obj'] = true, ['object'] = true, ['range'] = true,
+      ['userdata'] = true
+   }
+   type_test_constrainable = {
+      ['array'] = true, ['obj'] = true, ['object'] = true, ['struct'] = true
+   }
+
+   -- Tokenise a contextual `is <...>` / `is not <...>` type-test descriptor beginning at the current position, which
+   -- must sit on the '<' (leading spaces are skipped first).  On success the '<' and '>' become operator tokens, the
+   -- primary word a 'type' token and any inner constraint name a 'class' token, and the function returns true with
+   -- pos/col advanced past '>'.  A malformed or absent descriptor leaves pos/col untouched and returns false so the
+   -- caller continues tokenising the '<' as an ordinary less-than operator.  Descriptors do not span line breaks.
+   function tokenizeTypeTest(NotLine:num, NotCol:num):bool
+      save_pos = pos
+      save_col = col
+
+      while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+         pos++
+         col++
+      end
+
+      if pos >= len or Source.sub(pos, pos + 1) != '<' then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      open_col = col
+      pos++
+      col++
+
+      while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+         pos++
+         col++
+      end
+
+      if pos >= len or not isIdentStart(Source.sub(pos, pos + 1)) then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      primary_col = col
+      primary_pos = pos
+      while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+         pos++
+         col++
+      end
+      primary = Source.sub(primary_pos, pos)
+      primary_len = col - primary_col
+      if not type_test_types[primary] then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      inner_col = nil
+      inner_len = 0
+      if type_test_constrainable[primary] then
+         mark_pos = pos
+         mark_col = col
+         while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+            pos++
+            col++
+         end
+         if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+            inner_col = col
+            while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+               pos++
+               col++
+            end
+            inner_len = col - inner_col
+         else
+            pos = mark_pos
+            col = mark_col
+         end
+      end
+
+      while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+         pos++
+         col++
+      end
+
+      if pos >= len or Source.sub(pos, pos + 1) != '>' then
+         pos = save_pos
+         col = save_col
+         return false
+      end
+
+      close_col = col
+      pos++
+      col++
+
+      if NotCol then addToken(NotLine, NotCol, 3, 1, 0) end  -- 'not' operator
+      addToken(line, open_col, 1, 1, 0)                    -- '<' operator
+      addToken(line, primary_col, primary_len, 7, 0)       -- descriptor primary: type
+      if inner_col then
+         addToken(line, inner_col, inner_len, 11, 0)       -- inner constraint name: class
+      end
+      addToken(line, close_col, 1, 1, 0)                   -- '>' operator
+      return true
+   end
+
    function isRangeOperator(StartPos, StopPos, Ident)
       if not (isRangeWord(Ident) or Ident is 'by') then return false end
 
@@ -596,6 +703,43 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             pos = save_pos
             col = save_col
             line = save_line
+         elseif ident is 'is' then
+            -- `is` is ordinarily an equality operator, but `is <...>` / `is not <...>` (contextually recognised by a
+            -- following '<') is a boolean type test.  Emit the operator, then consume the optional `not` and the
+            -- angle-bracket descriptor so its primary and inner names highlight as types rather than falling through
+            -- to the generic identifier, range and 'struct'-declaration branches below.
+            addToken(line, ident_start, ident_len, 1, 0)  -- 'is' operator
+
+            probe_pos = pos
+            probe_col = col
+            probe_line = line
+            skipWhitespace()
+            not_present = false
+            not_col = nil
+            if line is probe_line and pos + 2 <= len and Source.sub(pos, pos + 3) is 'not' and
+                  (pos + 3 >= len or not isIdentChar(Source.sub(pos + 3, pos + 4))) then
+               not_present = true
+               not_col = col
+               pos += 3
+               col += 3
+               skipWhitespace()
+            end
+
+            if line is probe_line and pos < len and Source.sub(pos, pos + 1) is '<' then
+               not_line = nil
+               if not_present then not_line = probe_line end
+               if not tokenizeTypeTest(not_line, not_col) then
+                  -- Malformed descriptor: rewind to just after 'is' so the stray 'not'/'<' tokenise normally.
+                  pos = probe_pos
+                  col = probe_col
+                  line = probe_line
+               end
+            else
+               -- Not a type-test descriptor; rewind so a trailing `not`, expression or newline tokenises normally.
+               pos = probe_pos
+               col = probe_col
+               line = probe_line
+            end
          elseif FLUID_KEYWORDS[ident] then
             addToken(line, ident_start, ident_len, 0, 0)  -- keyword
          elseif FLUID_OPERATORS[ident] then
@@ -866,10 +1010,28 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       elseif c is '!' then
          op_start = col
          if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
-            -- != not equal
+            -- != not equal.  Like `is`, `!= <...>` is a negated boolean type test; consume any descriptor that
+            -- follows so its primary and inner names highlight as types rather than falling through to the generic
+            -- identifier, range and 'struct'-declaration branches.
             addToken(line, op_start, 2, 1, 0)
             pos += 2
             col += 2
+
+            probe_pos = pos
+            probe_col = col
+            probe_line = line
+            skipWhitespace()
+            if line is probe_line and pos < len and Source.sub(pos, pos + 1) is '<' then
+               if not tokenizeTypeTest(nil, nil) then
+                  pos = probe_pos
+                  col = probe_col
+                  line = probe_line
+               end
+            else
+               pos = probe_pos
+               col = probe_col
+               line = probe_line
+            end
          else -- ! (used in flags like '!READ')
             pos++
             col++

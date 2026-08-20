@@ -462,3 +462,165 @@ end
    enum_keyword = findToken(tokens, 0, 0, 'enum')
    assert(enum_keyword and enum_keyword.type is 0, 'enum should be highlighted as a keyword.')
 end
+
+@Test function SimpleTypeTestDescriptorReceivesTypeToken()
+   source = 'if value is <num> then end\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 9, 'is')
+   open = findToken(tokens, 0, 12, '<')
+   primary = findToken(tokens, 0, 13, 'num')
+   close = findToken(tokens, 0, 16, '>')
+
+   assert(is_op and is_op.type is 1, 'is should remain an operator token in a type test.')
+   assert(open and open.type is 1, 'The descriptor opening < should be an operator token.')
+   assert(primary and primary.type is 7, 'A simple type-test descriptor should be a type token.')
+   assert(close and close.type is 1, 'The descriptor closing > should be an operator token.')
+end
+
+@Test function NegatedTypeTestEmitsNotAndDescriptor()
+   source = 'flag = value is not <str>\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 13, 'is')
+   not_op = findToken(tokens, 0, 16, 'not')
+   primary = findToken(tokens, 0, 21, 'str')
+
+   assert(is_op and is_op.type is 1, 'is should remain an operator token in a negated type test.')
+   assert(not_op and not_op.type is 1, 'not should be an operator token between is and the descriptor.')
+   assert(primary and primary.type is 7, 'The negated descriptor primary should be a type token.')
+end
+
+@Test function ConstrainedObjectTypeTestReceivesClassToken()
+   source = 'if node is <obj Vector> then end\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 12, 'obj')
+   inner = findToken(tokens, 0, 16, 'Vector')
+
+   assert(primary and primary.type is 7, 'The obj descriptor primary should be a type token.')
+   assert(inner and inner.type is 11, 'A constrained object class name should be a class token.')
+end
+
+@Test function ConstrainedArrayTypeTestReceivesClassToken()
+   source = 'ok = buffer is <array int>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 16, 'array')
+   inner = findToken(tokens, 0, 22, 'int')
+
+   assert(primary and primary.type is 7, 'The array descriptor primary should be a type token.')
+   assert(inner and inner.type is 11, 'A constrained array element name should be a class token.')
+end
+
+@Test function StructTypeTestIsNotAStructDeclaration()
+   -- A mid-line `<struct Name>` type test must not trip the struct-declaration branch, which would emit the name
+   -- with a declaration modifier and mislead go-to-definition and document symbols.
+   source = 'ok = shape is <struct Point>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 15, 'struct')
+   inner = findToken(tokens, 0, 22, 'Point')
+
+   assert(primary and primary.type is 7, 'A struct type-test primary should be a type token, not a keyword.')
+   assert(inner and inner.type is 11, 'The struct name in a type test should be a class token.')
+   assert(inner.modifiers is 0, 'A struct type-test name must not carry the declaration modifier.')
+end
+
+@Test function NotEqualTypeTestReceivesTypeToken()
+   -- `!= <...>` is the symbolic equivalent of `is not <...>` and must highlight its descriptor the same way.
+   source = 'flag = x != <num>\n'
+
+   tokens = tokenizeTiri(source)
+
+   not_equal = findToken(tokens, 0, 9, '!=')
+   primary = findToken(tokens, 0, 13, 'num')
+
+   assert(not_equal and not_equal.type is 1, '!= should remain an operator token in a type test.')
+   assert(primary and primary.type is 7, 'A != descriptor primary should be a type token.')
+end
+
+@Test function NotEqualStructTypeTestIsNotAStructDeclaration()
+   source = 'ok = shape != <struct Point>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 15, 'struct')
+   inner = findToken(tokens, 0, 22, 'Point')
+
+   assert(primary and primary.type is 7, 'A != struct type-test primary should be a type token, not a keyword.')
+   assert(inner and inner.type is 11, 'The struct name in a != type test should be a class token.')
+   assert(inner.modifiers is 0, 'A != struct type-test name must not carry the declaration modifier.')
+end
+
+@Test function OrdinaryNotEqualIsUnchanged()
+   -- Without a following '<', `!=` remains a plain comparison operator with no descriptor tokens.
+   source = 'flag = left != right\n'
+
+   tokens = tokenizeTiri(source)
+
+   not_equal = findToken(tokens, 0, 12, '!=')
+   assert(not_equal and not_equal.type is 1, 'Ordinary != comparison should remain an operator token.')
+   assertNoToken(tokens, 0, 15, 'right', 'Ordinary != right operand should not become a descriptor type token.')
+end
+
+@Test function OrdinaryIsEqualityIsUnchanged()
+   -- Without a following '<', `is` and `is not` remain plain equality operators with no descriptor tokens.
+   source = 'a = (left is right)\n' ..
+      'b = left is not right\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 10, 'is')
+   assert(is_op and is_op.type is 1, 'Ordinary is equality should remain an operator token.')
+   assertNoToken(tokens, 0, 13, 'right', 'Ordinary equality right operand should not become a descriptor type token.')
+
+   is_not_op = findToken(tokens, 1, 9, 'is')
+   not_op = findToken(tokens, 1, 12, 'not')
+   assert(is_not_op and is_not_op.type is 1, 'Ordinary is-not equality should remain an operator token.')
+   assert(not_op and not_op.type is 1, 'not in ordinary equality should remain an operator token.')
+end
+
+@Test function MalformedTypeTestFallsBackToLessThan()
+   -- An opening '<' with no valid descriptor must not be consumed as a type test; the '<' stays a comparison
+   -- operator so the surrounding expression still tokenises.
+   source = 'flag = count is < limit\n'
+
+   tokens = tokenizeTiri(source)
+
+   is_op = findToken(tokens, 0, 13, 'is')
+   less_than = findToken(tokens, 0, 16, '<')
+
+   assert(is_op and is_op.type is 1, 'is preceding a bare < should remain an operator token.')
+   assert(less_than and less_than.type is 1, 'A bare < after is should tokenise as a less-than operator.')
+end
+
+@Test function MalformedNegatedTypeTestDoesNotDuplicateNotToken()
+   source = 'flag = count is not < limit\n'
+
+   tokens = tokenizeTiri(source)
+
+   matching_not_tokens = 0
+   for token in values(tokens) do
+      if token.line is 0 and token.char is 16 and token.length is 3 then matching_not_tokens++ end
+   end
+
+   assert(matching_not_tokens is 1, 'A malformed is-not type test should emit exactly one not token.')
+   less_than = findToken(tokens, 0, 20, '<')
+   assert(less_than and less_than.type is 1, 'A malformed negated descriptor should retain its less-than token.')
+end
+
+@Test function UnknownTypeTestNameFallsBackToOrdinaryTokens()
+   source = 'flag = value is <integer>\n'
+
+   tokens = tokenizeTiri(source)
+
+   less_than = findToken(tokens, 0, 16, '<')
+   assert(less_than and less_than.type is 1, 'An unknown descriptor should retain its less-than token.')
+   assertNoToken(tokens, 0, 17, 'integer', 'An unknown descriptor name should not receive a type token.')
+end
