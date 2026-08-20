@@ -1609,6 +1609,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          j += sizeof(FUNCTION *);
       }
       else if (argtype & FD_STR) {
+         // Resolve thunks before reading the type so a thunk that yields a string is marshalled by its resolved
+         // value rather than rejected as its unresolved userdata container.
+         resolve_index(Lua, i);
          auto type = lua_type(Lua, i);
          int type_size = sizeof(APTR);
 
@@ -1681,6 +1684,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          return ERR::NoSupport;
       }
       else if (argtype & FD_PTR) {
+         resolve_index(Lua, i); // Resolve thunks so the resolved value is marshalled, not the thunk userdata.
          auto arg_type = lua_type(Lua, i);
          if (arg_type IS LUA_TSTRING) {
             // Lua strings need to be converted to C strings
@@ -1781,6 +1785,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          j += sizeof(int);
       }
       else if (argtype & FD_DOUBLE) {
+         resolve_index(Lua, i); // Resolve thunks so a number-yielding thunk is accepted by the strict check.
          if (lua_type(Lua, i) <= LUA_TNIL) ((double *)(buffer + j))[0] = 0.0;
          else if (lua_type(Lua, i) != LUA_TNUMBER) {
             ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
@@ -1793,6 +1798,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          j += sizeof(double);
       }
       else if (argtype & FD_INT64) {
+         resolve_index(Lua, i); // Resolve thunks so a number-yielding thunk is accepted by the strict check.
          if (lua_type(Lua, i) <= LUA_TNIL) ((int64_t *)(buffer + j))[0] = 0;
          else if (lua_type(Lua, i) != LUA_TNUMBER) {
             ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
