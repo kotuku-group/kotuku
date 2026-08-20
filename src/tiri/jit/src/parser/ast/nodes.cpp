@@ -1069,6 +1069,7 @@ size_t ast_expression_child_count(const ExprNode &Node)
 // Constructor for Identifier that creates an identifier from a string.
 
 Identifier::Identifier(lua_State* L, const char* Name, SourceSpan Span)
-   : symbol(lj_str_new(L, Name, std::strlen(Name))), span(Span), is_blank(false), has_close(false), type(TiriType::Unknown)
+   : symbol(lj_str_new(L, Name, std::strlen(Name))), span(Span), is_blank(false), has_close(false), has_const(false),
+     has_view(false), type(TiriType::Unknown)
 {
 }

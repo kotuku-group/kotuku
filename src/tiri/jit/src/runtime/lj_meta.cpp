@@ -675,9 +675,7 @@ int lj_meta_isfalsey(lua_State *L, BCIns Ins)
    VMHelperGuard guard(L);
 
    cTValue *value = &L->base[bc_a(Ins)];
-   if (not lj_is_thunk(value)) return 0;
-
-   value = lj_thunk_resolve(L, udataV(value));
+   if (lj_is_thunk(value)) value = lj_thunk_resolve(L, udataV(value));
    uint32_t mask = bc_d(Ins);
 
    if (tvisnil(value)) return 1;

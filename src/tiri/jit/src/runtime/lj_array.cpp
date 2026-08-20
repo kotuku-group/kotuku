@@ -485,7 +485,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
 
    lj_assertL(elem_size > 0, "invalid element size for array creation");
 
-   if (Data) {
+   if (Data or (Flags & ARRAY_EXTERNAL)) {
       if (Flags & ARRAY_EXTERNAL) {
          // External data - caller manages lifetime (no storage allocation needed)
          // External arrays have capacity = length and cannot grow
@@ -657,12 +657,21 @@ bool lj_array_grow(lua_State *L, GCarray *Array, MSize MinCapacity)
 
 void lj_array_free(global_State *g, GCarray *Array)
 {
+   RESOURCEID resource_id = Array->resource_id;
+   Array->resource_id = 0;
+
    // Free owned storage first (external storage is managed by caller)
    size_t storage_size = Array->storage_size();
    if (storage_size > 0) {
       lj_mem_free(g, Array->storage, storage_size);
    }
    Array->~GCarray(); // Call destructor (handles strcache cleanup)
+   if (resource_id) {
+      if (auto error = UnpinResource(resource_id); error != ERR::Okay) {
+         kt::Log("lj_array_free").warning("Failed to release resource pin #%d: %s", resource_id,
+            GetErrorMsg(error));
+      }
+   }
    lj_mem_free(g, Array, sizeof(GCarray));
 }
 

@@ -21,11 +21,25 @@
 #include <cfloat>
 #include <cstring>
 #include <array>
+#include <atomic>
 #include <limits>
 
 #include "../../defs.h"
 
 static extTiri* glArrayTestScript = nullptr;
+static std::atomic_int glArrayResourceFrees = 0;
+
+static ERR array_test_resource_free(ResourceRecord &, APTR)
+{
+   glArrayResourceFrees.fetch_add(1, std::memory_order_relaxed);
+   return ERR::Terminate;
+}
+
+static ResourceManager glArrayResourceManager = {
+   "TiriArrayTest",
+   &array_test_resource_free,
+   false
+};
 
 // Helper: dostring equivalent - loads and executes a string
 static int dostring(lua_State *L, const char* s)
@@ -469,6 +483,122 @@ static bool test_array_external(kt::Log &Log)
    int32_t* data = (int32_t*)arr->arraydata();
    if (data[2] != 30) {
       Log.error("external array reads incorrectly: got %d, expected 30", data[2]);
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_array_external_unmanaged(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   int32_t external_data[2] = { 10, 20 };
+   GCarray *array = lj_array_new(lua, 2, AET::INT32, external_data, ARRAY_EXTERNAL|ARRAY_READONLY);
+   if (array->resource_id) {
+      Log.error("unmanaged external array retained a resource pin");
+      return false;
+   }
+
+   external_data[1] = 30;
+   if (array->get<int32_t>()[1] != 30) {
+      Log.error("unmanaged external array did not observe native mutation");
+      return false;
+   }
+
+   setarrayV(lua, lua->top++, array);
+   lua_settop(lua, 0);
+   lua_gc(lua, LUA_GCCOLLECT);
+   return true;
+}
+
+static bool test_array_external_resource(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+   luaL_openlibs(lua);
+
+   APTR memory = nullptr;
+   if (AllocResource(sizeof(int32_t) * 2, MEM::NIL, &memory, &glArrayResourceManager) != ERR::Okay) return false;
+   auto resource_id = GetMemoryID(memory);
+   auto values = (int32_t *)memory;
+   values[0] = 10;
+   values[1] = 20;
+   glArrayResourceFrees.store(0, std::memory_order_relaxed);
+
+   GCarray *array = lj_array_new(lua, 2, AET::INT32, memory, ARRAY_EXTERNAL|ARRAY_READONLY);
+   setarrayV(lua, lua->top++, array);
+   if (PinResource(resource_id) != ERR::Okay) return false;
+   array->resource_id = resource_id;
+   lua_setglobal(lua, "array_resource_view");
+
+   if (dostring(lua, "local total = 0; for index in {0 to 200} do "
+         "total += array_resource_view[index % #array_resource_view] end; assert(total is 3000)") != 0) {
+      Log.error("resource-backed external array did not use the normal hot-loop load path");
+      return false;
+   }
+
+   if ((array->resource_id != resource_id) or (FreeResource(resource_id) != ERR::InUse) or
+       (array->get<int32_t>()[1] != 20)) {
+      Log.error("resource-backed external array did not retain readable storage");
+      return false;
+   }
+
+   lua_pushnil(lua);
+   lua_setglobal(lua, "array_resource_view");
+   lua_gc(lua, LUA_GCCOLLECT);
+   if (glArrayResourceFrees.load(std::memory_order_relaxed) != 1) {
+      Log.error("resource-backed external array did not release its pin exactly once");
+      return false;
+   }
+
+   memory = nullptr;
+   if (AllocResource(sizeof(int32_t), MEM::NIL, &memory, &glArrayResourceManager) != ERR::Okay) return false;
+   resource_id = GetMemoryID(memory);
+   values = (int32_t *)memory;
+   values[0] = 42;
+   glArrayResourceFrees.store(0, std::memory_order_relaxed);
+
+   GCarray *first = lj_array_new(lua, 1, AET::INT32, memory, ARRAY_EXTERNAL|ARRAY_READONLY);
+   setarrayV(lua, lua->top++, first);
+   if (PinResource(resource_id) != ERR::Okay) return false;
+   first->resource_id = resource_id;
+
+   GCarray *second = lj_array_new(lua, 1, AET::INT32, memory, ARRAY_EXTERNAL|ARRAY_READONLY);
+   setarrayV(lua, lua->top++, second);
+   if (PinResource(resource_id) != ERR::Okay) return false;
+   second->resource_id = resource_id;
+
+   if (FreeResource(resource_id) != ERR::InUse) return false;
+   lua_settop(lua, 1);
+   lua_gc(lua, LUA_GCCOLLECT);
+   if ((glArrayResourceFrees.load(std::memory_order_relaxed) != 0) or (first->get<int32_t>()[0] != 42)) {
+      Log.error("the first collected view released a multiply pinned resource");
+      return false;
+   }
+
+   lua_settop(lua, 0);
+   lua_gc(lua, LUA_GCCOLLECT);
+   if (glArrayResourceFrees.load(std::memory_order_relaxed) != 1) {
+      Log.error("the final collected view did not release the deferred resource");
+      return false;
+   }
+
+   int32_t local_value = 7;
+   GCarray *failed = lj_array_new(lua, 1, AET::INT32, &local_value, ARRAY_EXTERNAL|ARRAY_READONLY);
+   setarrayV(lua, lua->top++, failed);
+   auto missing_id = AllocateID(IDTYPE::RESOURCE);
+   if ((PinResource(missing_id) IS ERR::Okay) or failed->resource_id) {
+      Log.error("a failed resource pin left an ownership token on the array");
       return false;
    }
 
@@ -1296,7 +1426,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 33> Tests = { {
+   constexpr std::array<TestCase, 35> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1307,6 +1437,8 @@ void array_unit_tests(int &Passed, int &Total)
       { "array_index_access", test_array_index_access },
       { "array_elemsize", test_array_elemsize },
       { "array_external", test_array_external },
+      { "array_external_unmanaged", test_array_external_unmanaged },
+      { "array_external_resource", test_array_external_resource },
       { "array_element_contract", test_array_element_contract },
       { "array_to_table", test_array_to_table },
       { "array_type_tag", test_array_type_tag },

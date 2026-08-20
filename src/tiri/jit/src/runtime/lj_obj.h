@@ -802,6 +802,8 @@ struct TryFrame {
    BCREG     saved_nactvar;    // Active slot count at try entry (first free register)
    size_t    context_depth;     // Absolute context-stack depth at try entry
    size_t    context_floor;     // Active asynchronous root floor at try entry
+   uint64_t  array_view_scopes; // Armed <view> scopes at try entry
+   uint8_t   array_view_depth;  // Active <view> scope depth at try entry
 };
 
 // Stack of try frames for exception unwinding
@@ -1314,6 +1316,7 @@ struct GCarray {
    MSize   elemsize;    // Size of each element in bytes
    struct struct_record *structdef;  // Optional: struct definition for struct arrays
    std::vector<char> *strcache; // Optional: cached string content for CSTRING/STRING_CPP arrays
+   RESOURCEID resource_id; // Optional Core resource pin owned by an external view
 
 public:
    // Initialise the array structure. Storage must be pre-allocated by the caller using lj_mem_new()
@@ -1337,6 +1340,7 @@ public:
       elemsize  = ElemSize;
       structdef = StructDef;
       strcache  = nullptr;
+      resource_id = 0;
    }
 
    // Destructor only handles strcache. Storage is freed by lj_array_free() for proper GC tracking.
@@ -1646,6 +1650,8 @@ struct lua_State {
    class extTiri *script;  // Back-reference to the script that owns this lua_State
    bool    sent_traceback;   // True if traceback has been sent for the current error
    uint8_t resolving_thunk;  // Flag to prevent recursive thunk resolution
+   uint64_t array_view_scopes = 0; // One armed bit per active <view> declaration initialiser
+   uint8_t array_view_depth = 0;   // Number of active <view> initialiser scopes
    ParserDiagnostics *parser_diagnostics; // Stores ParserDiagnostics* during parsing errors
    TipEmitter *parser_tips;               // Stores TipEmitter* during parsing for code hints
    ParserSymbolCollection *parser_symbols; // Stores parser symbol metadata for LSP/documentation tooling
