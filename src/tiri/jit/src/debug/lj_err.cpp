@@ -1120,11 +1120,13 @@ static void err_raise_ext(global_State* g, int errcode)
 
 LJ_NOINLINE void lj_err_throw(lua_State *L, int errcode)
 {
-   L->array_view_scopes = 0;
-   L->array_view_depth = 0;
    global_State* g = G(L);
 
    auto J = G2J(g);
+   if (not J->abort_in_progress) {
+      L->array_view_scopes = 0;
+      L->array_view_depth = 0;
+   }
    kt::Log(__FUNCTION__).detail("Throwing error: code=%d, Abort: %d, Top: %p, Base: %p, Valid Stack: %d", errcode, J->abort_in_progress, L->top, L->base, L->top >= L->base);
 
    lj_trace_abort(g);

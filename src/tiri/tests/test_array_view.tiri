@@ -20,6 +20,11 @@ function new_bitmap():obj
    return bitmap
 end
 
+function read_after_nested_view(Bitmap:obj):array<any>
+   local benign <view> = 42
+   return Bitmap.data
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test; @Requires(display=true)
@@ -91,13 +96,18 @@ end
 function NestedViewScopesAreIndependent()
    local bitmap = new_bitmap()
 
-   function read_after_nested_view(Bitmap:obj):array<any>
-      local benign <view> = 42
-      return Bitmap.data
-   end
-
    local pixels <view> = read_after_nested_view(bitmap)
    assert(array.readOnly(pixels), 'A nested view declaration must not clear its outer view scope')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=80); @Requires(display=true)
+function JITAbortPreservesOuterViewScope()
+   local bitmap = new_bitmap()
+   local pixels <view> = read_after_nested_view(bitmap)
+
+   assert(array.readOnly(pixels), 'An internal JIT abort must preserve the outer view scope')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
