@@ -57,8 +57,8 @@
             },
             {
                "name": "meta.type-test.tiri",
-               "comment": "Constrained `!= <aggregate Name>` boolean type test.",
-               "match": "(!=)\\s*(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
+               "comment": "Constrained `!= <aggregate Name>` or `≠ <aggregate Name>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
                "captures": {
                   "1": { "name": "keyword.operator.comparison.tiri" },
                   "2": { "name": "punctuation.definition.type-test.begin.tiri" },
@@ -69,8 +69,8 @@
             },
             {
                "name": "meta.type-test.tiri",
-               "comment": "Unconstrained `!= <type>` boolean type test.",
-               "match": "(!=)\\s*(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)",
+               "comment": "Unconstrained `!= <type>` or `≠ <type>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)",
                "captures": {
                   "1": { "name": "keyword.operator.comparison.tiri" },
                   "2": { "name": "punctuation.definition.type-test.begin.tiri" },

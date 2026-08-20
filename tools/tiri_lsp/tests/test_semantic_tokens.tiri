@@ -558,6 +558,34 @@ end
    assert(inner.modifiers is 0, 'A != struct type-test name must not carry the declaration modifier.')
 end
 
+@Test function UnicodeNotEqualTypeTestReceivesTypeToken()
+   source = 'flag = x ≠ <num>\n'
+
+   tokens = tokenizeTiri(source)
+
+   not_equal = nil
+   for token in values(tokens) do
+      if token.line is 0 and token.char is 9 and token.length is 1 then not_equal = token end
+   end
+   primary = findToken(tokens, 0, 12, 'num')
+
+   assert(not_equal and not_equal.type is 1, '≠ should remain an operator token in a type test.')
+   assert(primary and primary.type is 7, 'A ≠ descriptor primary should be a type token.')
+end
+
+@Test function UnicodeNotEqualStructTypeTestIsNotAStructDeclaration()
+   source = 'ok = shape ≠ <struct Point>\n'
+
+   tokens = tokenizeTiri(source)
+
+   primary = findToken(tokens, 0, 14, 'struct')
+   inner = findToken(tokens, 0, 21, 'Point')
+
+   assert(primary and primary.type is 7, 'A ≠ struct type-test primary should be a type token, not a keyword.')
+   assert(inner and inner.type is 11, 'The struct name in a ≠ type test should be a class token.')
+   assert(inner.modifiers is 0, 'A ≠ struct type-test name must not carry the declaration modifier.')
+end
+
 @Test function OrdinaryNotEqualIsUnchanged()
    -- Without a following '<', `!=` remains a plain comparison operator with no descriptor tokens.
    source = 'flag = left != right\n'

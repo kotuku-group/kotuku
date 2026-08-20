@@ -433,9 +433,30 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
          MULTIBYTE_OPERATORS[Source.sub(pos, pos + 2)]) or nil
 
       if op_bytes then
+         is_not_equal = Source.sub(pos, pos + op_bytes) is '≠'
          addToken(line, col, op_bytes, 1, 0)  -- operator
          pos += op_bytes
          col += op_bytes
+
+         if is_not_equal then
+            -- The Unicode not-equal operator is equivalent to `!=`, including when it introduces a type-test
+            -- descriptor.  Probe the descriptor before the generic identifier and struct-declaration branches.
+            probe_pos = pos
+            probe_col = col
+            probe_line = line
+            skipWhitespace()
+            if line is probe_line and pos < len and Source.sub(pos, pos + 1) is '<' then
+               if not tokenizeTypeTest(nil, nil) then
+                  pos = probe_pos
+                  col = probe_col
+                  line = probe_line
+               end
+            else
+               pos = probe_pos
+               col = probe_col
+               line = probe_line
+            end
+         end
 
       -- Line comment: --
       elseif c is '-' and pos + 1 < len and Source.sub(pos + 1, pos + 2) is '-' then
