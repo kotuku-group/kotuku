@@ -78,15 +78,56 @@ static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 
 static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_free, false };
 
+static_assert(sizeof(ResourceRecord) IS 32);
+
+//********************************************************************************************************************
+// The caller must have claimed the pointer-stable record by setting Terminating while holding glmResources.  Resource
+// manager callbacks are deliberately invoked without the registry lock because custom managers may block or re-enter
+// Core APIs.
+
+static ERR destroy_claimed_resource(ResourceRecord *Resource)
+{
+   auto error = ERR::Okay;
+
+   if (Resource->Manager IS &glResourceMemoryHandler) {
+      error = free_private_memory_resource(Resource->ResourceID);
+   }
+   else if (not glCrashStatus) {
+      error = Resource->Manager->Free(*Resource, Resource->Address);
+
+      if (error IS ERR::Terminate) {
+         free_private_memory_resource(Resource->ResourceID);
+         error = ERR::Okay;
+      }
+   }
+
+   std::lock_guard lock(glmResources);
+
+   if (error IS ERR::Okay) erase_resource(*Resource);
+   else {
+      Resource->Terminating = false;
+      if (not Resource->PinCount) Resource->CollectOnUnlock = false;
+   }
+
+   return error;
+}
+
 //********************************************************************************************************************
 
 void UntrackResource(RESOURCEID ResourceID)
 {
-   std::lock_guard lock(glmResources);
+   std::unique_lock lock(glmResources);
 
    auto resource = glResources.find(ResourceID);
    if (resource IS glResources.end()) return;
-   if (resource->second.Terminating) return;
+   if (resource->second.PinCount or resource->second.CollectOnUnlock or resource->second.Terminating) {
+      #ifndef NDEBUG
+         lock.unlock();
+         kt::Log(__FUNCTION__).warning("Resource ID #%d cannot be untracked while pinned or being collected.",
+            ResourceID);
+      #endif
+      return;
+   }
 
    erase_resource(resource->second);
 }
@@ -219,6 +260,101 @@ ERR CheckResourceExists(RESOURCEID ResourceID)
 /*********************************************************************************************************************
 
 -FUNCTION-
+PinResource: Protects a resource from termination until a matching unpin.
+
+PinResource() acquires a lifetime pin for a tracked non-object resource.  Multiple callers may pin the same resource,
+but pinning does not serialise access to its contents or make mutation thread-safe.  A successful pin prevents
+~FreeResource() and the resource manager from releasing the resource until every acquired pin has been released with
+~UnpinResource().
+
+-INPUT-
+res ResourceID: The unique identifier of the resource to pin.
+
+-ERRORS-
+Okay: One lifetime pin was acquired.
+NullArgs: `ResourceID` is zero.
+DoesNotExist: No usable non-object resource with this identifier is registered.
+MarkedForDeletion: Destruction is pending or already in progress.
+OutOfRange: The pin counter is saturated.
+
+-TAGS-
+blocking, thread-safe
+-END-
+
+*********************************************************************************************************************/
+
+ERR PinResource(RESOURCEID ResourceID)
+{
+   if (not ResourceID) return ERR::NullArgs;
+
+   std::lock_guard lock(glmResources);
+   auto resource = glResources.find(ResourceID);
+   if ((resource IS glResources.end()) or (not resource->second.Address)) return ERR::DoesNotExist;
+
+   auto &record = resource->second;
+   if (record.Terminating or record.CollectOnUnlock) return ERR::MarkedForDeletion;
+
+   if (record.PinCount IS UINT32_MAX) {
+      #ifndef NDEBUG
+         kt::Log(__FUNCTION__).warning("Resource ID #%d has reached the lifetime pin limit.", ResourceID);
+      #endif
+      return ERR::OutOfRange;
+   }
+
+   record.PinCount++;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+UnpinResource: Releases a lifetime pin from a resource.
+
+UnpinResource() releases one pin previously acquired with ~PinResource().  If ~FreeResource() requested collection
+while the resource was pinned, the caller releasing the final pin performs the deferred manager call and receives its
+result.  A failed deferred collection restores the resource to a live, retryable state.
+
+-INPUT-
+res ResourceID: The unique identifier of the resource to unpin.
+
+-ERRORS-
+Okay: One pin was released and any required deferred destruction succeeded.
+NullArgs: `ResourceID` is zero.
+DoesNotExist: No usable non-object resource with this identifier is registered.
+ResourceNotLocked: The resource has no pin to release.
+
+-TAGS-
+blocking, thread-safe
+-END-
+
+*********************************************************************************************************************/
+
+ERR UnpinResource(RESOURCEID ResourceID)
+{
+   if (not ResourceID) return ERR::NullArgs;
+
+   ResourceRecord *resource;
+   {
+      std::lock_guard lock(glmResources);
+      auto resource_it = glResources.find(ResourceID);
+      if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) return ERR::DoesNotExist;
+
+      auto &record = resource_it->second;
+      if (not record.PinCount) return ERR::ResourceNotLocked;
+
+      record.PinCount--;
+      if (record.PinCount or (not record.CollectOnUnlock)) return ERR::Okay;
+
+      record.Terminating = true;
+      resource = &record;
+   }
+
+   return destroy_claimed_resource(resource);
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 FreeResource: Safely deallocates resources allocated by AllocResource() and similar functions.
 
 FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function
@@ -230,16 +366,16 @@ resolved through the non-object resource registry and its associated `ResourceMa
 The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration
 for managed memory blocks, and automatic cleanup of ownership tracking structures.
 
-If a resource is locked at the time of the call, it is marked for delayed collection only. This prevents
-use-after-free errors while ensuring eventual cleanup when all references are released.
+If a resource is pinned at the time of the call, it is marked for delayed collection.  The final ~UnpinResource()
+performs the deferred destruction and returns the resource manager's result.
 
 -INPUT-
 res ID: The unique identifier of the resource to be freed.
 
 -ERRORS-
-Okay: The resource was successfully freed or marked for delayed collection.
+Okay: The resource was successfully freed.
 DoesNotExist: The specified memory block identifier is not valid or already freed.
-InUse: The resource is busy.  The removal behaviour rules are dependent on the manager (automatic termination may be employed).
+InUse: The resource is pinned or another caller already owns its destruction.
 Terminate
 
 -TAGS-
@@ -278,39 +414,19 @@ ERR FreeResource(RESOURCEID ResourceID)
          return ERR::DoesNotExist;
       }
 
-      if (resource_it->second.Terminating) return ERR::InUse;
+      auto &record = resource_it->second;
+      if (record.Terminating) return ERR::InUse;
 
-      resource_it->second.Terminating = true;
-      resource = &resource_it->second;
-   }
-
-   auto error = ERR::Okay;
-
-   // Fast route for direct memory deallocation
-
-   if (resource->Manager IS &glResourceMemoryHandler) {
-      error = free_private_memory_resource(resource->ResourceID);
-   }
-   else {
-      // Use the resource manager if under normal operating conditions.
-
-      if (not glCrashStatus) {
-         error = resource->Manager->Free(*resource, resource->Address);
-
-         if (error IS ERR::Terminate) { // Manager requested regular memory cleanup, as per AllocResource().
-            free_private_memory_resource(ResourceID);
-            error = ERR::Okay;
-         }
+      if (record.PinCount) {
+         record.CollectOnUnlock = true;
+         return ERR::InUse;
       }
+
+      record.Terminating = true;
+      resource = &record;
    }
 
-   if (!error) {
-      std::lock_guard lock(glmResources);
-      erase_resource(*resource);
-   }
-   else resource->Terminating = false; // No glmResources lock necessary, the resource will ultimately be deallocated
-
-   return error;
+   return destroy_claimed_resource(resource);
 }
 
 /*********************************************************************************************************************
@@ -356,7 +472,7 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
 
    if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
       auto &record = existing->second;
-      if (record.Terminating) return ERR::InUse;
+      if (record.PinCount or record.CollectOnUnlock or record.Terminating) return ERR::InUse;
 
       if (Address) record.Address = Address; // Assigning a new address to an existing ID is permitted
       if (Manager) record.Manager = Manager; // Switching between the memory manager and custom managers is permitted

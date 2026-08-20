@@ -10,6 +10,7 @@ This program tests resource locking and termination behaviour.
 *********************************************************************************************************************/
 
 #include <atomic>
+#include <barrier>
 #include <cstdint>
 #include <thread>
 #include <kotuku/startup.h>
@@ -22,6 +23,35 @@ static std::atomic_bool glManagerEntered = false;
 static std::atomic_bool glManagerCanFinish = false;
 static ERR glConcurrentFreeError = ERR::Okay;
 static std::atomic_int glAllocFreeFailures = 0;
+static std::atomic_int glPinManagerCalls = 0;
+static std::atomic_bool glFailFirstManagerCall = false;
+
+//********************************************************************************************************************
+
+static ERR pin_counting_resource_free(ResourceRecord &, APTR)
+{
+   const auto call = glPinManagerCalls.fetch_add(1, std::memory_order_acq_rel);
+   if (glFailFirstManagerCall.exchange(false, std::memory_order_acq_rel) and (call IS 0)) return ERR::Failed;
+   return ERR::Okay;
+}
+
+static ERR pin_terminating_resource_free(ResourceRecord &, APTR)
+{
+   glPinManagerCalls.fetch_add(1, std::memory_order_relaxed);
+   return ERR::Terminate;
+}
+
+static ResourceManager glPinCountingManager = {
+   "PinCountingTest",
+   &pin_counting_resource_free,
+   false
+};
+
+static ResourceManager glPinTerminatingManager = {
+   "PinTerminatingTest",
+   &pin_terminating_resource_free,
+   false
+};
 
 //********************************************************************************************************************
 
@@ -92,6 +122,343 @@ static int run_concurrent_alloc_free_check(void)
    if (glAllocFreeFailures.load(std::memory_order_acquire) != 0) {
       log.warning("%d concurrent allocation/free checks failed.", glAllocFreeFailures.load(std::memory_order_relaxed));
       return -1;
+   }
+
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_resource_pin_functional_checks(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (PinResource(RESOURCEID(0)) != ERR::NullArgs) {
+      log.warning("PinResource() did not reject a zero resource ID.");
+      return -1;
+   }
+
+   if (UnpinResource(RESOURCEID(0)) != ERR::NullArgs) {
+      log.warning("UnpinResource() did not reject a zero resource ID.");
+      return -1;
+   }
+
+   const auto missing_id = AllocateID(IDTYPE::RESOURCE);
+   if (PinResource(missing_id) != ERR::DoesNotExist) {
+      log.warning("PinResource() did not reject a missing resource.");
+      return -1;
+   }
+
+   if (UnpinResource(missing_id) != ERR::DoesNotExist) {
+      log.warning("UnpinResource() did not reject a missing resource.");
+      return -1;
+   }
+
+   APTR memory = nullptr;
+   if (AllocResource(64, MEM::NIL, &memory, nullptr) != ERR::Okay) return -1;
+
+   const auto memory_id = GetMemoryID(memory);
+   if (UnpinResource(memory_id) != ERR::ResourceNotLocked) {
+      FreeResource(memory_id);
+      log.warning("UnpinResource() did not reject an unbalanced release.");
+      return -1;
+   }
+
+   if ((PinResource(memory) != ERR::Okay) or (PinResource(memory_id) != ERR::Okay)) {
+      FreeResource(memory_id);
+      log.warning("Failed to acquire nested resource pins.");
+      return -1;
+   }
+
+   if ((FreeResource(memory_id) != ERR::InUse) or (FreeResource(memory_id) != ERR::InUse)) {
+      UnpinResource(memory_id);
+      UnpinResource(memory_id);
+      log.warning("FreeResource() did not defer repeated frees for a pinned resource.");
+      return -1;
+   }
+
+   if ((CheckResourceExists(memory_id) != ERR::False) or
+       (PinResource(memory_id) != ERR::MarkedForDeletion)) {
+      UnpinResource(memory_id);
+      UnpinResource(memory_id);
+      log.warning("A deferred resource remained visible or accepted another pin.");
+      return -1;
+   }
+
+   if ((UnpinResource(memory_id) != ERR::Okay) or (CheckResourceExists(memory_id) != ERR::False)) {
+      UnpinResource(memory_id);
+      log.warning("A nested pin did not retain a deferred resource.");
+      return -1;
+   }
+
+   if ((UnpinResource(memory_id) != ERR::Okay) or (CheckResourceExists(memory_id) != ERR::False)) {
+      log.warning("The final pin did not collect a deferred resource.");
+      return -1;
+   }
+
+   memory = nullptr;
+   if (AllocResource(64, MEM::NIL, &memory, nullptr) != ERR::Okay) return -1;
+   const auto ordinary_id = GetMemoryID(memory);
+
+   if ((PinResource(memory) != ERR::Okay) or (UnpinResource(memory) != ERR::Okay) or
+       (CheckResourceExists(ordinary_id) != ERR::True) or (FreeResource(ordinary_id) != ERR::Okay)) {
+      log.warning("Ordinary resource pin release changed the resource lifetime.");
+      return -1;
+   }
+
+   OBJECTPTR object = nullptr;
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) return -1;
+   const auto object_id = object->UID;
+   if (PinResource(object_id) != ERR::DoesNotExist) {
+      FreeResource(object);
+      log.warning("PinResource() accepted an object identifier.");
+      return -1;
+   }
+   FreeResource(object);
+
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_custom_resource_pin_checks(void)
+{
+   kt::Log log(__FUNCTION__);
+   int payload = 1;
+   const auto direct_id = AllocateID(IDTYPE::RESOURCE);
+
+   glPinManagerCalls.store(0, std::memory_order_release);
+   if (TrackResource(direct_id, &payload, 0, &glPinCountingManager) != ERR::Okay) return -1;
+
+   if ((PinResource(direct_id) != ERR::Okay) or (FreeResource(direct_id) != ERR::InUse)) {
+      UnpinResource(direct_id);
+      log.warning("Custom resource destruction was not deferred.");
+      return -1;
+   }
+
+   if ((glPinManagerCalls.load(std::memory_order_acquire) != 0) or
+       (UnpinResource(direct_id) != ERR::Okay) or
+       (glPinManagerCalls.load(std::memory_order_acquire) != 1)) {
+      log.warning("Custom resource manager was not called exactly once on the final unpin.");
+      return -1;
+   }
+
+   APTR memory = nullptr;
+   if (AllocResource(64, MEM::NIL, &memory, nullptr) != ERR::Okay) return -1;
+   const auto terminate_id = GetMemoryID(memory);
+   glPinManagerCalls.store(0, std::memory_order_release);
+
+   if (TrackResource(terminate_id, memory, 0, &glPinTerminatingManager) != ERR::Okay) {
+      FreeResource(terminate_id);
+      return -1;
+   }
+
+   if ((PinResource(terminate_id) != ERR::Okay) or (FreeResource(terminate_id) != ERR::InUse) or
+       (UnpinResource(terminate_id) != ERR::Okay) or
+       (glPinManagerCalls.load(std::memory_order_acquire) != 1) or
+       (CheckResourceExists(terminate_id) != ERR::False)) {
+      log.warning("ERR::Terminate fallback was not deferred or collected correctly.");
+      return -1;
+   }
+
+   int failed_payload = 2;
+   const auto failed_id = AllocateID(IDTYPE::RESOURCE);
+   glPinManagerCalls.store(0, std::memory_order_release);
+   glFailFirstManagerCall.store(true, std::memory_order_release);
+   if (TrackResource(failed_id, &failed_payload, 0, &glPinCountingManager) != ERR::Okay) return -1;
+
+   if ((PinResource(failed_id) != ERR::Okay) or (FreeResource(failed_id) != ERR::InUse) or
+       (UnpinResource(failed_id) != ERR::Failed)) {
+      log.warning("A deferred manager failure was not returned to the final unpin caller.");
+      return -1;
+   }
+
+   if ((CheckResourceExists(failed_id) != ERR::True) or (PinResource(failed_id) != ERR::Okay) or
+       (UnpinResource(failed_id) != ERR::Okay) or (FreeResource(failed_id) != ERR::Okay) or
+       (glPinManagerCalls.load(std::memory_order_acquire) != 2)) {
+      log.warning("A failed deferred collection did not restore a retryable resource.");
+      return -1;
+   }
+
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_pinned_owner_cascade_check(void)
+{
+   kt::Log log(__FUNCTION__);
+   OBJECTPTR owner = nullptr;
+   APTR memory = nullptr;
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &owner) != ERR::Okay) return -1;
+   if (AllocResource(64, MEM::NIL, &memory, nullptr) != ERR::Okay) {
+      FreeResource(owner);
+      return -1;
+   }
+
+   const auto owner_id = owner->UID;
+   const auto memory_id = GetMemoryID(memory);
+   if ((TrackResource(memory_id, memory, owner_id, nullptr) != ERR::Okay) or
+       (PinResource(memory_id) != ERR::Okay)) {
+      FreeResource(memory_id);
+      FreeResource(owner);
+      return -1;
+   }
+
+   if ((FreeResource(owner) != ERR::Okay) or (CheckResourceExists(owner_id) != ERR::False) or
+       (CheckResourceExists(memory_id) != ERR::False)) {
+      UnpinResource(memory_id);
+      log.warning("Owner cleanup did not defer its pinned resource.");
+      return -1;
+   }
+
+   if ((UnpinResource(memory_id) != ERR::Okay) or (CheckResourceExists(memory_id) != ERR::False)) {
+      log.warning("Pinned resource did not safely outlive and follow its owner.");
+      return -1;
+   }
+
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_pinned_record_mutation_check(void)
+{
+   kt::Log log(__FUNCTION__);
+   int first = 1;
+   int second = 2;
+   const auto resource_id = AllocateID(IDTYPE::RESOURCE);
+
+   glPinManagerCalls.store(0, std::memory_order_release);
+   if (TrackResource(resource_id, &first, 0, &glPinCountingManager) != ERR::Okay) return -1;
+   if (PinResource(resource_id) != ERR::Okay) return -1;
+
+   if ((TrackResource(resource_id, &second, 0, &glPinTerminatingManager) != ERR::InUse) or
+       (FreeResource(resource_id) != ERR::InUse) or
+       (TrackResource(resource_id, &second, 0, &glPinTerminatingManager) != ERR::InUse)) {
+      UnpinResource(resource_id);
+      log.warning("TrackResource() mutated a pinned or deferred resource.");
+      return -1;
+   }
+
+   if ((UnpinResource(resource_id) != ERR::Okay) or
+       (glPinManagerCalls.load(std::memory_order_acquire) != 1)) {
+      log.warning("Record mutation check did not retain the original manager.");
+      return -1;
+   }
+
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_threaded_resource_pin_checks(void)
+{
+   kt::Log log(__FUNCTION__);
+   static constexpr int thread_count = 4;
+
+   int payload = 1;
+   auto resource_id = RESOURCEID(AllocateID(IDTYPE::RESOURCE));
+   glPinManagerCalls.store(0, std::memory_order_release);
+   if (TrackResource(resource_id, &payload, 0, &glPinCountingManager) != ERR::Okay) return -1;
+
+   for (int i=0; i < thread_count; i++) {
+      if (PinResource(resource_id) != ERR::Okay) return -1;
+   }
+
+   if (FreeResource(resource_id) != ERR::InUse) return -1;
+
+   std::barrier release_start(thread_count + 1);
+   std::atomic_int release_failures = 0;
+   std::thread release_threads[thread_count];
+
+   for (int i=0; i < thread_count; i++) {
+      release_threads[i] = std::thread([&]() {
+         release_start.arrive_and_wait();
+         if (UnpinResource(resource_id) != ERR::Okay) release_failures.fetch_add(1, std::memory_order_relaxed);
+      });
+   }
+
+   release_start.arrive_and_wait();
+   for (auto &thread : release_threads) thread.join();
+
+   if ((release_failures.load(std::memory_order_acquire) != 0) or
+       (glPinManagerCalls.load(std::memory_order_acquire) != 1) or
+       (CheckResourceExists(resource_id) != ERR::False)) {
+      log.warning("Concurrent final unpins did not perform exactly one deferred collection.");
+      return -1;
+   }
+
+   for (int iteration=0; iteration < 100; iteration++) {
+      resource_id = AllocateID(IDTYPE::RESOURCE);
+      glPinManagerCalls.store(0, std::memory_order_release);
+      if (TrackResource(resource_id, &payload, 0, &glPinCountingManager) != ERR::Okay) return -1;
+
+      std::barrier race_start(3);
+      ERR pin_error = ERR::Failed;
+      ERR free_error = ERR::Failed;
+
+      std::thread pin_thread([&]() {
+         race_start.arrive_and_wait();
+         pin_error = PinResource(resource_id);
+      });
+      std::thread free_thread([&]() {
+         race_start.arrive_and_wait();
+         free_error = FreeResource(resource_id);
+      });
+
+      race_start.arrive_and_wait();
+      pin_thread.join();
+      free_thread.join();
+
+      if (pin_error IS ERR::Okay) {
+         if ((free_error != ERR::InUse) or (UnpinResource(resource_id) != ERR::Okay)) {
+            log.warning("Pin/free race did not defer collection, iteration %d.", iteration);
+            return -1;
+         }
+      }
+      else if ((free_error != ERR::Okay) or
+               ((pin_error != ERR::MarkedForDeletion) and (pin_error != ERR::DoesNotExist))) {
+         log.warning("Pin/free race produced invalid results, iteration %d.", iteration);
+         return -1;
+      }
+
+      if ((glPinManagerCalls.load(std::memory_order_acquire) != 1) or
+          (CheckResourceExists(resource_id) != ERR::False)) {
+         log.warning("Pin/free race did not collect exactly once, iteration %d.", iteration);
+         return -1;
+      }
+   }
+
+   for (int iteration=0; iteration < 100; iteration++) {
+      resource_id = AllocateID(IDTYPE::RESOURCE);
+      glPinManagerCalls.store(0, std::memory_order_release);
+      if ((TrackResource(resource_id, &payload, 0, &glPinCountingManager) != ERR::Okay) or
+          (PinResource(resource_id) != ERR::Okay)) return -1;
+
+      std::barrier final_start(thread_count + 1);
+      std::thread final_threads[thread_count];
+      final_threads[0] = std::thread([&]() {
+         final_start.arrive_and_wait();
+         UnpinResource(resource_id);
+      });
+
+      for (int i=1; i < thread_count; i++) {
+         final_threads[i] = std::thread([&]() {
+            final_start.arrive_and_wait();
+            FreeResource(resource_id);
+         });
+      }
+
+      final_start.arrive_and_wait();
+      for (auto &thread : final_threads) thread.join();
+
+      if ((glPinManagerCalls.load(std::memory_order_acquire) != 1) or
+          (CheckResourceExists(resource_id) != ERR::False)) {
+         log.warning("Final unpin/free race did not collect exactly once, iteration %d.", iteration);
+         return -1;
+      }
    }
 
    return 0;
@@ -194,12 +561,18 @@ static int run_terminating_resource_check(void)
    while (not glManagerEntered.load(std::memory_order_acquire)) WaitTime(0.001);
 
    auto second_error = FreeResource(memory);
+   auto pin_error = PinResource(GetMemoryID(memory));
 
    glManagerCanFinish.store(true, std::memory_order_release);
    thread.join();
 
    if (second_error != ERR::InUse) {
       log.warning("FreeResource() returned %s for a terminating resource.", GetErrorMsg(second_error));
+      return -1;
+   }
+
+   if (pin_error != ERR::MarkedForDeletion) {
+      log.warning("PinResource() returned %s for a terminating resource.", GetErrorMsg(pin_error));
       return -1;
    }
 
@@ -691,6 +1064,31 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_concurrent_alloc_free_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_resource_pin_functional_checks() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_custom_resource_pin_checks() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_pinned_owner_cascade_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_pinned_record_mutation_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_threaded_resource_pin_checks() != 0) {
       close_kotuku();
       return -1;
    }
