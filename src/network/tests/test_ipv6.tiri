@@ -132,8 +132,10 @@ end
       callback = function(Lookup, Error)
          addresses = Lookup.addresses
          if (Error is ERR_Okay) and addresses then
+            assert(addresses is <array IPAddress>, 'NetLookup.addresses should be an IPAddress struct array')
             logOutput('[DNS] Resolved ' .. tostring(Lookup.hostName) .. ' to ' .. #addresses .. ' addresses:')
             for i, addr in ipairs(addresses) do
+               assert(type(addr) is 'struct', 'NetLookup.addresses should contain native structs')
                err, addr_str = mNet.AddressToStr(addr)
                check err
                type_str = (addr.type is IPADDR_V6) and 'IPv6' or 'IPv4'
