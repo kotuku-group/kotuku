@@ -6,12 +6,6 @@ local function new_message_id()
    return msg_id
 end
 
-local function free_handler(Handle)
-   if Handle then
-      mSys.FreeResource(Handle)
-   end
-end
-
 local function drain_messages()
    check mSys.ProcessMessages(0, 0)
 end
@@ -76,7 +70,6 @@ end
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() failed: ' .. mSys.GetErrorMsg(err))
-   defer free_handler(handler) end
 
    check mSys.SendMessage(msg_id, 0, 'first')
    check mSys.SendMessage(msg_id, MSF_NO_DUPLICATE, 'second')
@@ -104,14 +97,12 @@ end
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() for the calibration message failed: ' .. mSys.GetErrorMsg(err))
-   defer free_handler(calibrate_handler) end
 
    err, target_handler = mSys.AddMsgHandler(target_id, function(UID, Type, Data, Size)
       target_count++
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() for the retargeted message failed: ' .. mSys.GetErrorMsg(err))
-   defer free_handler(target_handler) end
 
    check mSys.SendMessage(calibrate_id, 0)
    drain_messages()
@@ -144,7 +135,6 @@ end
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() for the first message failed: ' .. mSys.GetErrorMsg(err))
-   defer free_handler(first_handler) end
 
    err, second_handler = mSys.AddMsgHandler(second_id, function(UID, Type, Data, Size)
       sequence ..= 'B'
@@ -152,7 +142,6 @@ end
       return ERR_Okay
    end)
    assert(err is ERR_Okay, 'AddMsgHandler() for the second message failed: ' .. mSys.GetErrorMsg(err))
-   defer free_handler(second_handler) end
 
    check mSys.SendMessage(first_id, 0, 'first')
    check mSys.SendMessage(second_id, 0, 'middle')

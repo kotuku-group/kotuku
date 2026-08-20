@@ -722,13 +722,30 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
       luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
    }
 
+   int struct_stride = (Stride > 0) ? Stride : sdef->Size;
+   if (lj_array_struct_is_trivial(*sdef)) {
+      GCarray *arr;
+      if (Input and (struct_stride IS sdef->Size)) {
+         arr = lj_array_new(Lua, Elements, AET::STRUCT, (void *)Input, ARRAY_CACHED, sdef->Name, sdef);
+      }
+      else {
+         arr = lj_array_new(Lua, Elements, AET::STRUCT, nullptr, 0, sdef->Name, sdef);
+         for (int i=0; Input and (i < Elements); i++) {
+            std::memcpy(lj_array_index(arr, i), Input, sdef->Size);
+            Input = (int8_t *)Input + struct_stride;
+         }
+      }
+      setarrayV(Lua, Lua->top++, arr);
+      lj_gc_check(Lua);
+      return;
+   }
+
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
    int arr_idx = lua_gettop(Lua);
 
    if (Input) {
       std::vector<lua_ref> ref;
-      int struct_stride = (Stride > 0) ? Stride : sdef->Size;
 
       for (int i=0; i < Elements; i++) {
          if (!struct_to_table(Lua, ref, *sdef, Input)) {
