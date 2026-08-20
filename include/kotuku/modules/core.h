@@ -32,7 +32,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260814
+#define CORE_BUILD_DATE 20260820
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1211,19 +1211,20 @@ struct OpenInfo {
 };
 
 struct ResourceRecord {
-   APTR Address;                        // Direct pointer to the resource (optional, can rely on ResourceID instead)
+   APTR     Address;                    // Direct pointer to the resource (optional, can rely on ResourceID instead)
    struct ResourceManager * Manager;    // Reference to the resource manager for this record
    RESOURCEID ResourceID;               // Unique identifier
-   int  OwnerID;                        // Owner of the resource, could be another resource or object
-   bool CollectOnUnlock;                // Resource is locked; manager will collect immediately once unlocked
-   bool Terminating;                    // A FreeResource() call currently owns the destruction path
+   int      OwnerID;                    // Owner of the resource, could be another resource or object
+   uint32_t PinCount;                   // Number of active lifetime pins
+   bool     CollectOnUnlock;            // Collection is pending until the final resource pin is released
+   bool     Terminating;                // A FreeResource() call currently owns the destruction path
    ResourceRecord() :
-      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
+      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), PinCount(0), CollectOnUnlock(false),
       Terminating(false) { };
 
    ResourceRecord(RESOURCEID pResourceID, APTR pAddress, int pOwnerID, ResourceManager *pManager) :
-      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
-      Terminating(false) { };
+      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), PinCount(0),
+      CollectOnUnlock(false), Terminating(false) { };
 };
 
 struct ObjectSignal {
@@ -1557,6 +1558,8 @@ struct CoreBase {
    void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
    OBJECTPTR (*_PinWeakObject)(OBJECTID Object);
    ERR (*_FreeObject)(OBJECTID ObjectID);
+   ERR (*_PinResource)(RESOURCEID ResourceID);
+   ERR (*_UnpinResource)(RESOURCEID ResourceID);
 #endif // KOTUKU_STATIC
 };
 
@@ -1655,6 +1658,8 @@ inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
 inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
 inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObject(Object); }
 inline ERR FreeObject(OBJECTID ObjectID) { return CoreBase->_FreeObject(ObjectID); }
+inline ERR PinResource(RESOURCEID ResourceID) { return CoreBase->_PinResource(ResourceID); }
+inline ERR UnpinResource(RESOURCEID ResourceID) { return CoreBase->_UnpinResource(ResourceID); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(kt::vector<ActionTable *> *Actions);
@@ -1749,6 +1754,8 @@ extern "C" int GetThreadID(void);
 extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);
 extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);
 extern "C" ERR FreeObject(OBJECTID ObjectID);
+extern "C" ERR PinResource(RESOURCEID ResourceID);
+extern "C" ERR UnpinResource(RESOURCEID ResourceID);
 #endif // KOTUKU_STATIC
 
 
@@ -1807,6 +1814,16 @@ inline ERR FreeResource(T *) {
 inline ERR FreeResource(const void *Address) {
    if (not Address) return ERR::NullArgs;
    return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
+}
+
+inline ERR PinResource(const void *Address) {
+   if (not Address) return ERR::NullArgs;
+   return PinResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
+}
+
+inline ERR UnpinResource(const void *Address) {
+   if (not Address) return ERR::NullArgs;
+   return UnpinResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {

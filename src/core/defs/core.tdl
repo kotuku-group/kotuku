@@ -456,17 +456,18 @@ class objTask;
      struct(*ResourceManager) Manager # Reference to the resource manager for this record
      res ResourceID            # Unique identifier
      int OwnerID               # Owner of the resource, could be another resource or object
-     bool CollectOnUnlock      # Resource is locked; manager will collect immediately once unlocked
+     uint PinCount             # Number of active lifetime pins
+     bool CollectOnUnlock      # Collection is pending until the final resource pin is released
      bool Terminating          # A FreeResource() call currently owns the destruction path
   ]],
   [[
    ResourceRecord() :
-      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
+      Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), PinCount(0), CollectOnUnlock(false),
       Terminating(false) { };
 
    ResourceRecord(RESOURCEID pResourceID, APTR pAddress, int pOwnerID, ResourceManager *pManager) :
-      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
-      Terminating(false) { };
+      Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), PinCount(0),
+      CollectOnUnlock(false), Terminating(false) { };
   ]])
 
   structdef("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
@@ -815,7 +816,9 @@ class objTask;
     "GetThreadID",
     "UnitTests",
     "PinWeakObject",
-    "FreeObject")
+    "FreeObject",
+    "PinResource",
+    "UnpinResource")
 
   c_insert([==[
 
@@ -874,6 +877,16 @@ inline ERR FreeResource(T *) {
 inline ERR FreeResource(const void *Address) {
    if (not Address) return ERR::NullArgs;
    return FreeResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
+}
+
+inline ERR PinResource(const void *Address) {
+   if (not Address) return ERR::NullArgs;
+   return PinResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
+}
+
+inline ERR UnpinResource(const void *Address) {
+   if (not Address) return ERR::NullArgs;
+   return UnpinResource(((const int *)Address)[RESOURCE_ID_OFFSET]);
 }
 
 template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {

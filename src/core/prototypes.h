@@ -93,3 +93,5 @@ extern "C" int GetThreadID();
 extern "C" void UnitTests(CSTRING Options, int * Passed, int * Total);
 extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);
 extern "C" ERR FreeObject(OBJECTID ObjectID);
+extern "C" ERR PinResource(RESOURCEID ResourceID);
+extern "C" ERR UnpinResource(RESOURCEID ResourceID);
