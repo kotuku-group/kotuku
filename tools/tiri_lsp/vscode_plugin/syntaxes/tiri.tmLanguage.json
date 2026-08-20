@@ -6,6 +6,7 @@
       { "include": "#comments" },
       { "include": "#strings" },
       { "include": "#annotations" },
+      { "include": "#typetests" },
       { "include": "#functions" },
       { "include": "#keywords" },
       { "include": "#operators" },
@@ -24,6 +25,58 @@
             {
                "name": "comment.line.double-dash.tiri",
                "match": "--.*$"
+            }
+         ]
+      },
+      "typetests": {
+         "patterns": [
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Contextual constrained `is [not] <aggregate Name>` boolean type test.",
+               "match": "\\b(is)\\b(?:\\s+(not))?\\s*(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.logical.tiri" },
+                  "2": { "name": "keyword.operator.logical.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "entity.name.type.tiri" },
+                  "6": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Contextual unconstrained `is [not] <type>` boolean type test.",
+               "match": "\\b(is)\\b(?:\\s+(not))?\\s*(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.logical.tiri" },
+                  "2": { "name": "keyword.operator.logical.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Constrained `!= <aggregate Name>` or `≠ <aggregate Name>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.comparison.tiri" },
+                  "2": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "entity.name.type.tiri" },
+                  "5": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Unconstrained `!= <type>` or `≠ <type>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.comparison.tiri" },
+                  "2": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
             }
          ]
       },
