@@ -4,6 +4,9 @@
 //                       parser rejects all three (commit 148480f9d)
 // UPDATED: 2026-08-15 - Removed 'function' from the type_name grammar; 'func' is now the sole function annotation
 //                       (commit 42c2f4520)
+// UPDATED: 2026-08-19 - Added the Runtime Type Testing section for the 'value is <type>' operator, covering
+//                       descriptors, aggregate constraints, object class matching and deferred handling
+//                       (commit c70f7542a)
 // UPDATED: 2026-08-15 - The struct owned-string field is now spelled 'str'; retired the 'string' compatibility name
 //                       (commit b900f2341)
 // UPDATED: 2026-08-17 - Arrays now accept the uint8/uint16/uint32/uint64 element types; recorded the uint/uint32

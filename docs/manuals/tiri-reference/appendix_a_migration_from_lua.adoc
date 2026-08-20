@@ -4,6 +4,8 @@
 // UPDATED: 2026-08-16 - Renamed the literal to `metamethod` and removed it from the extraction note; the keyword is
 //                       documented for metatable handlers only (commit 5c92d652a)
 // UPDATED: 2026-08-16 - Migrated the __close migration example to the `metamethod` form (commit 58e7bad8a)
+// UPDATED: 2026-08-19 - Recommended the type-test operator over a type() string comparison; fixed a stray quote in
+//                       the boolean note (commit c70f7542a)
 // UPDATED: 2026-08-19 - Removed the `metamethod` literal from the feature list and reverted the __close example to
 //                       the ordinary `function` form; the keyword is gone (commit 81aa5f3)
 // UPDATED: 2026-08-15 - Framework callbacks now capture the registration context; corrected the self-migration note
@@ -790,7 +792,7 @@ Three constructs in common Lua code return different values in Tiri and produce 
 Lua returns the sequence length and ignores the hash part.  Tiri returns `nil` for any table that has ever been stored through a key that is not a positive integer.  Positive integer keys are unaffected however scattered, so `t[9999]` leaves the length intact.  Translate `#t` to `rawlen(t)` wherever the numerical sequence length is what the original code meant.  See <<sec-table-classification>>.
 
 `type()` on a boolean::
-Lua returns `'boolean'`, Tiri returns `'bool'.  A Lua test written as `type(v) is 'boolean'` therefore evaluates to `false` for every value.  See <<sec-type-inspection>>.
+Lua returns `'boolean'`, Tiri returns `'bool'`.  A Lua test written as `type(v) is 'boolean'` therefore evaluates to `false` for every value.  Prefer the type-test operator `v is <bool>`, which tests the native type without a string comparison.  See <<sec-type-inspection>> and <<sec-type-testing>>.
 
 `math.random(N)`::
 Lua returns an integer in [1, `N`].  Tiri returns an integer in [0, `N`), matching its zero-based indexing so that `math.random(#arr)` is a valid index.  Translate a one-based Lua call to the two-argument form `math.random(1, N)`.  See <<sec-random-numbers>>.

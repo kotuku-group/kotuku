@@ -4,6 +4,8 @@
 //                       (commit 982d890de)
 // CHANGED: 2026-08-16 - Corrected the expression-list note: a ternary terminates at a comma, so parentheses are
 //                       optional rather than required (pre-existing defect, verified against the parser)
+// UPDATED: 2026-08-19 - Added the Type-Test Operator subsection for the '<type>' descriptor reading of is/is not/!=
+//                       (commit c70f7542a)
 
 [[ch-operators]]
 == Operators
@@ -129,6 +131,20 @@ print(rawequal(a, b))  -- false (distinct references)
 print(1 < 2)           -- true
 print('abc' < 'abd')   -- true
 ----
+
+[[sec-type-test-operator]]
+==== Type-Test Operator
+
+indexterm:[operators, type test] When the right operand of `is` or `!=` is a native type descriptor in angle brackets, the operator performs a type test instead of an equality comparison, returning `true` if the left operand matches the descriptor.  A right operand that is a value expression retains the equality reading; the two never overlap.
+
+[source,tiri]
+----
+1 is <num>          -- true
+'text' is <str>     -- true
+1 != <str>          -- true
+----
+
+The full descriptor grammar, aggregate constraints and object class matching are defined in <<sec-type-testing>>.
 
 [[sec-comparison-chaining]]
 ==== Comparison Chaining
