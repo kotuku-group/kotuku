@@ -718,6 +718,23 @@ end
 
 Hoisting a closure out of a hot loop removes the abort.  This applies to any callback constructed inline, not only comparison functions.  `table.sort()` itself records normally, both with a hoisted comparator and with the default comparator.
 
+A membership test against a plain table is a second, unrelated abort trigger.  The recorder compiles `Value in Target` only when `Target` supplies a `pass:[__]contains` metamethod; the raw key-presence fallback used for a table without that handler has no recorded form and aborts with error code 18 (`missing metamethod`).  Give the table a `pass:[__]contains` handler, or replace the test with a direct field read, when the expression sits inside a hot loop.
+
+[source,tiri]
+----
+-- Aborts: raw key presence has no recorded form
+
+for i in {0 to 5000} do
+   if 'ready' in flags then count++ end
+end
+
+-- Compiles: the read is an ordinary indexed access
+
+for i in {0 to 5000} do
+   if flags.ready then count++ end
+end
+----
+
 Use `jit.off()` on functions that unavoidably contain NYI operations to prevent the JIT from repeatedly attempting and failing to compile them.  Confirm the diagnosis with <<sec-detecting-trace-aborts>> before applying `jit.off()`, because an abort with a non-NYI error code indicates a different cause and is not resolved by disabling compilation.
 
 [[sec-detecting-trace-aborts]]

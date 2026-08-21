@@ -4,6 +4,9 @@
 //                       (commit 982d890de)
 // CHANGED: 2026-08-16 - Corrected the expression-list note: a ternary terminates at a comma, so parentheses are
 //                       optional rather than required (pre-existing defect, verified against the parser)
+// UPDATED: 2026-08-21 - The membership operator is now a metamethod-driven primitive: it dispatches through
+//                       '__contains' on the right operand, tables without a handler perform a raw key-presence
+//                       test, and the 'b.contains(a)' equivalence no longer holds (commit 2b788f198)
 // UPDATED: 2026-08-19 - Added the Type-Test Operator subsection for the '<type>' descriptor reading of is/is not/!=
 //                       (commit c70f7542a)
 

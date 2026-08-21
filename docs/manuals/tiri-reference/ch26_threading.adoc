@@ -8,7 +8,7 @@
 
 [[ch-threading]]
 == Threading
-indexterm:[threading] Tiri runs asynchronous work against Kōtuku objects rather than exposing raw threads.  The runtime manages thread creation, queueing and exclusive locking.  This _barrier model_ prevents two workers from accessing the same object concurrently and avoids the performance loss from managing synchronisation.
+indexterm:[threading] Tiri runs asynchronous work against Kōtuku objects rather than exposing raw threads.  The runtime manages thread creation, queueing and exclusive locking.  This barrier model prevents two workers from accessing the same object concurrently and avoids the performance loss from managing synchronisation.
 
 The threading system consists of three interfaces:
 
@@ -20,10 +20,10 @@ The threading system consists of three interfaces:
 === The Barrier Model
 indexterm:[threading, barrier model] Every asynchronous activity targets a Kōtuku object that represents the working state.  When the worker thread starts, it acquires an exclusive lock on that object until the thread completes.  Execution proceeds in two phases:
 
-. **Worker phase** — the worker thread owns the object lock and executes the action.  No other thread may access the object.
-. **Callback phase** — on completion, ownership transfers directly to the main thread for callback execution.  The object remains unavailable to other worker threads throughout.
+. **Worker phase** — the worker thread establishes an object lock and executes the action.  No other thread may access the object.
+. **Callback phase** — on completion, ownership transfers directly to the main thread for callback execution.  The object remains unavailable to other worker threads throughout this phase.
 
-At no point between thread completion and callback return is the object eligible for execution by another worker thread.  The object transitions directly from worker ownership to main-thread ownership.  Only after the callback returns (or immediately after thread completion if no callback was provided) does the object become available for the next queued action.
+Only after the callback returns (or immediately after thread completion if no callback was provided) does the object become available for the next queued action.
 
 Each object has an associated FIFO queue of pending work, created on demand when the first activity is queued and destroyed when the object is freed.  The queue does not outlive the object — if an object is freed while work is still queued, the remaining entries are drained and their callbacks receive an `ERR_DoesNotExist` error (see <<sec-thread-safety>>).
 
@@ -41,7 +41,7 @@ NOTE: Thread callbacks always execute during the event processing loop, which re
 
 [.api]`async.script(Script, [Callback])`
 
-indexterm:[threading, creation] Executes a Script object in a separate thread, or enqueues it for later execution if busy.  `Script` must be a Kōtuku Script object (created with `obj.new('script', { pass:[...] })`).  The script's code runs in its own isolated state — it cannot see local variables from the calling scope.
+indexterm:[threading, creation] Executes a Script object in a separate thread, or enqueues it for later execution if busy.  `Script` must be a Kōtuku Script object.  The script's code runs in its own isolated state — it cannot see local variables from the calling scope.
 
 If `Callback` is provided, it executes on the main thread after the threaded script completes.  The callback receives a reference to the `Script` object as its first parameter.
 

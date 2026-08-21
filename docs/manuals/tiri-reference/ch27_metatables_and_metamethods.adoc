@@ -1,4 +1,6 @@
 // VERIFIED: 2026-08-19
+// UPDATED: 2026-08-21 - Documented the '__contains' metamethod and the raw key-presence fallback used by the
+//                       'in' operator (commit 2b788f198)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -661,6 +663,7 @@ indexterm:[metamethods, reference] The following table lists every metamethod re
 |`pass:[__]gc`         |Table or userdata finalisation |`function()`
 |`pass:[__]eq`         |`is` / `!=` comparison       |`function(Other)` pass:[->]bool
 |`pass:[__]len`        |`#` operator                 |`function()` pass:[->]number
+|`pass:[__]contains`   |`in` operator                |`function(Candidate)` pass:[->]bool
 |`pass:[__]lt`         |`<` and `>` comparison       |`function(Other, LHS)` pass:[->]bool
 |`pass:[__]le`         |`\<=` and `>=` comparison |`function(Other, LHS)` pass:[->]bool
 |`pass:[__]concat`     |`..` operator                |`function(Other, LHS)`

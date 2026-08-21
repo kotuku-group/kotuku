@@ -7,6 +7,8 @@
 //                       explicit boundary parameter is now named `Stop` (commit 3e99d69ac)
 // UPDATED: 2026-08-19 - The `metamethod` keyword is removed; handlers such as __newindex and __pairs are ordinary
 //                       functions (commit 81aa5f3)
+// UPDATED: 2026-08-21 - Documented raw key-presence testing with the 'in' operator and the '__contains'
+//                       override (commit 2b788f198)
 
 [[ch-tables]]
 == Tables

@@ -5,6 +5,8 @@
 //                       within the string (commit 148480f9d)
 // UPDATED: 2026-08-18 - string.byte(), string.sub() and string.find() migrated to half-open (exclusive stop) range
 //                       semantics; documented the deprecated string.substr() alias (commit 3e99d69ac)
+// UPDATED: 2026-08-21 - Documented substring membership via the 'in' operator; string.contains() is no longer
+//                       publicly callable (commit 2b788f198)
 
 [[ch-strings]]
 == Strings

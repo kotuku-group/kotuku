@@ -117,6 +117,8 @@ An exception can be raised if:
 
 Assigning a function to a field that accepts a callback registers that function with the object.  The registration captures the current context, which the callback observes on every invocation, and holds the captured table until the callback is replaced or the object is freed (<<sec-context-and-callbacks>>).
 
+Reading an array field returns a copy of its contents taken at the moment of the read.  Binding the read to a `<view>` local instead aliases the field's native storage as a live, read-only array; see <<sec-view-variables>>.
+
 ==== object.get()
 
 [.api]`value = object.get(FieldName, [Default])`

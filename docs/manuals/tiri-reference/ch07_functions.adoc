@@ -1,4 +1,6 @@
 // VERIFIED: 2028-08-19
+// UPDATED: 2026-08-21 - Replaced the range.contains() example; the method was removed in favour of the 'in'
+//                       operator (commit 2b788f198)
 
 [[ch-functions]]
 == Functions
@@ -116,7 +118,7 @@ A call of the form `receiver.name(pass:[...])` invokes a registered built-in met
 'hello'.upper()          -- equivalent to string.upper('hello')
 items.push(3)            -- equivalent to array.push(items, 3)
 entries.insert('a')      -- equivalent to table.insert(entries, 'a')
-{0 to 5}.contains(3)     -- equivalent to range.contains({0 to 5}, 3)
+{0 to 5}.toArray()       -- equivalent to range.toArray({0 to 5})
 ----
 
 The receiver type is resolved statically where the compiler can prove it, and at runtime otherwise.  Receivers reached through table fields, function parameters or chained expressions therefore dispatch correctly without an annotation.

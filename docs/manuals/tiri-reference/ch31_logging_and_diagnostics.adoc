@@ -1,5 +1,4 @@
-// VERIFIED: 2026-03-11
-// CHANGED: 2026-07-31 — Added the required implementation-specific notice, removed duplicated advice and tightened wording.
+// VERIFIED: 2026-08-21
 
 [[ch-logging-and-diagnostics]]
 == Logging & Diagnostics
@@ -14,7 +13,7 @@ Tiri provides `print()` and `msg()` for diagnostic output.  The `DebugLog` metho
 
 [.api]`print(pass:[...])`
 
-indexterm:[print] indexterm:[msg] Writes each argument to standard error (stderr) after converting it to a string via `tostring()`.  No word-breaks are inserted between parameters.  A newline is appended after the final argument.
+indexterm:[print] indexterm:[msg] Writes each argument to stderr after converting it to a string via `tostring()`.  No word-breaks are inserted between parameters.  A newline is appended after the final argument.
 
 [source,tiri]
 ----
@@ -25,7 +24,7 @@ Raises an error if `tostring()` does not return a string for any argument.
 
 On Android, output is redirected to the platform logging system.
 
-TIP: Use `io.write()` for program output on standard output (stdout).  Tiri directs general messages and logs to standard error (stderr).
+TIP: Use `io.write()` for program output on stdout.
 
 [discrete]
 ==== msg()
@@ -49,13 +48,14 @@ Raises an error if `tostring()` does not return a string for any argument.
 === Log Levels
 indexterm:[log levels] Kōtuku's logging system organises output by severity.  Log messages are written to stderr.  The following log levels are defined, from most to least verbose:
 
-[cols="1,2a,2a",options="header"]
+[cols="2,8a,3a",options="header"]
 |===
 |Level |Description |Command-line flag
 
 |Trace
 |Extremely verbose debug output.  Available in Debug builds only when built with `-DKOTUKU_VLOG=ON`, and requires `--log-trace` or `--log-all` at runtime.
-|`--log-trace` / `--log-all`
+|`--log-trace` +
+`--log-all`
 
 |Detail
 |Extended log level for API modules (C++) and Tiri libraries.  For in-depth module diagnostics.

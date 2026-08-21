@@ -7,6 +7,7 @@
 //                       (commit b900f2341)
 // UPDATED: 2026-08-18 - Half-open (exclusive stop) spans for string.byte/sub, table.move/concat and arr.concat/find;
 //                       added the deprecated string.substr() alias (commit 3e99d69ac)
+// UPDATED: 2026-08-21 - Removed r.contains(); range membership is expressed with the 'in' operator (commit 2b788f198)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -211,7 +212,6 @@ indexterm:[library, range] See <<ch-ranges>>.
 |`range.new(Start, Stop, [Inclusive], [Step])`|Alias for `range()`.
 |`range.slice(Object, Range)`|Extracts a slice from an object using a range.
 |`r.toArray()`               |Converts the range to an array.
-|`r.contains(Value)`         |Returns `true` if `Value` is within the range.
 |`r.each(Callback)`          |Calls `Callback` for each value in the range.
 |`r.map(Transform)`          |Returns an array of transformed values.
 |`r.filter(Predicate)`       |Returns an array of matching values.
@@ -222,7 +222,7 @@ indexterm:[library, range] See <<ch-ranges>>.
 |`r.find(Predicate)`         |Returns the first value matching `Predicate`.
 |===
 
-Range literal syntax: `{0 to 5}` (exclusive), `{0 into 5}` (inclusive).
+Range literal syntax: `{0 to 5}` (exclusive), `{0 into 5}` (inclusive).  Membership is tested with the `in` operator: `5 in {0 to 10}`.
 
 Read-only properties: `r.start`, `r.stop`, `r.step`, `r.inclusive`, `r.length`.
 

@@ -23,6 +23,8 @@
 //                       synonym.  Supersedes the 2026-08-06 int8 entry above (commit b997e29ad)
 // UPDATED: 2026-08-18 - concat() migrated to a half-open (exclusive stop) span and now accepts empty spans and a stop
 //                       equal to the array length; find() gained an exclusive Stop parameter (commit 3e99d69ac)
+// UPDATED: 2026-08-21 - Removed array.contains(); membership is expressed with the 'in' operator, which
+//                       dispatches through the array '__contains' metamethod (commit 2b788f198)
 
 [[ch-arrays]]
 == Arrays
@@ -552,7 +554,7 @@ TIP: Direct iteration is preferred over the use of `ipairs()` and `pairs()`, whi
 [discrete]
 ==== Membership Testing
 
-The `in` operator tests whether a value exists in an array:
+The `in` operator tests whether a value exists in an array.  The array is the right-hand operand and the candidate value is the left-hand operand; the comparison is by value against each element.  Object arrays compare by object identity.
 
 [source,tiri]
 ----
@@ -564,6 +566,8 @@ if 'red' in arr then
    print('found')
 end
 ----
+
+An empty array reports `false` without inspecting the value.  For a non-empty array, a candidate that cannot be converted to the array's element type raises an error.
 
 [[sec-mutation-methods]]
 === Mutation Methods
