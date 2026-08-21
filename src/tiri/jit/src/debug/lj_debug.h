@@ -15,7 +15,7 @@ struct lj_Debug {
    const char* what;
    const char* source;
    int currentline;
-   int nups;
+   int nupvalues;
    int linedefined;
    int lastlinedefined;
    char short_src[LUA_IDSIZE];

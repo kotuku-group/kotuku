@@ -315,7 +315,7 @@ struct lua_Debug {
   const char *what;      // (S) `Lua', `C', `main', `tail'
   const char *source;    // (S)
   int currentline;       // (l)
-  int nups;              // (u) number of upvalues
+  int nupvalues;         // (u) number of upvalues
   int linedefined;       // (S)
   int lastlinedefined;   // (S)
   char short_src[LUA_IDSIZE]; //  (S)

@@ -127,7 +127,7 @@ end
    info = debug.getInfo(namedFunc, "Su")
    assert(type(info) is 'table', "debug.getInfo should return a table")
    assert(info.what is "Tiri", "Function should be Tiri type")
-   assert(info.nups >= 0, "nups should be non-negative")
+   assert(info.nUpvalues >= 0, "nUpvalues should be non-negative")
 end
 
 @Test function GetInfoSourceFields()
@@ -155,7 +155,7 @@ end
       return captured
    end
    info = debug.getInfo(closureFunc, "u")
-   assert(info.nups >= 1, "Closure should have at least 1 upvalue, got " .. info.nups)
+   assert(info.nUpvalues >= 1, "Closure should have at least 1 upvalue, got " .. info.nUpvalues)
 end
 
 @Test function GetInfoParamInfo()
