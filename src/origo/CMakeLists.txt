@@ -20,37 +20,39 @@ endif()
 
 message(STATUS "Kotuku version: ${KOTUKU_VERSION_MAJOR}.${KOTUKU_VERSION_MINOR}.${KOTUKU_VERSION_PATCH}")
 
-# Extract git information if available
-find_package(Git QUIET)
-if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
-   execute_process(
-      COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      OUTPUT_VARIABLE GIT_COMMIT_HASH
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      ERROR_QUIET
-   )
-   execute_process(
-      COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
-      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      OUTPUT_VARIABLE GIT_BRANCH
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      ERROR_QUIET
-   )
-else()
-   set(GIT_COMMIT_HASH "unknown")
-   set(GIT_BRANCH "unknown")
-endif()
+# Generate version.h with git commit/branch information.
+#
+# The git query runs at BUILD time (via generate_version.cmake driven by a custom
+# target below) rather than at configure time, so that `origo --version` always
+# reports the commit the binary was actually built against.  We invoke the same
+# script once here to guarantee version.h exists before the first compile.
 
-message(STATUS "Git branch: ${GIT_BRANCH}, commit: ${GIT_COMMIT_HASH}")
+set(KOTUKU_VERSION_H "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 
-# Generate version header with git information
-# This uses configure_file which only updates the output if content changes,
-# preventing unnecessary rebuilds when git info hasn't changed
-configure_file(
-   "${CMAKE_CURRENT_SOURCE_DIR}/version.h.in"
-   "${CMAKE_CURRENT_BINARY_DIR}/version.h"
-   @ONLY
+set(KOTUKU_VERSION_ARGS
+   "-DSRC_DIR=${PROJECT_SOURCE_DIR}"
+   "-DVERSION_IN=${CMAKE_CURRENT_SOURCE_DIR}/version.h.in"
+   "-DVERSION_OUT=${KOTUKU_VERSION_H}"
+   "-DKOTUKU_VERSION_MAJOR=${KOTUKU_VERSION_MAJOR}"
+   "-DKOTUKU_VERSION_MINOR=${KOTUKU_VERSION_MINOR}"
+   "-DKOTUKU_VERSION_PATCH=${KOTUKU_VERSION_PATCH}"
+   "-DKOTUKU_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+)
+
+execute_process(
+   COMMAND ${CMAKE_COMMAND} ${KOTUKU_VERSION_ARGS}
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_version.cmake"
+)
+
+# Refresh version.h on every build so the git commit is never stale.  The script
+# only rewrites the file when its content changes, so this does not force a
+# needless recompile when the git state is unchanged.
+add_custom_target(origo_version ALL
+   COMMAND ${CMAKE_COMMAND} ${KOTUKU_VERSION_ARGS}
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_version.cmake"
+   BYPRODUCTS "${KOTUKU_VERSION_H}"
+   COMMENT "Refreshing version.h with current git commit"
+   VERBATIM
 )
 
 # Generate versioned manifest and resource files
@@ -119,6 +121,9 @@ set_target_properties (origo_cmd PROPERTIES OUTPUT_NAME "origo")
 # Ensure the icon package is available before the Origo binary is built
 
 add_dependencies (origo_cmd icon_package)
+
+# Ensure version.h is refreshed with the current git commit before origo compiles
+add_dependencies (origo_cmd origo_version)
 
 if (KOTUKU_STATIC)
    add_dependencies (origo_cmd kotuku_static)
