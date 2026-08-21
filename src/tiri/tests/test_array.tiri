@@ -1893,67 +1893,67 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.contains() functionality
+-- Test array membership functionality
 
 @Test function ArrayContainsInt()
    arr = array<int> { 10, 20, 30, 40, 50 }
 
-   assert(arr.contains(10) is true, "contains(10) should return true")
-   assert(arr.contains(30) is true, "contains(30) should return true")
-   assert(arr.contains(50) is true, "contains(50) should return true")
-   assert(arr.contains(25) is false, "contains(25) should return false")
-   assert(arr.contains(0) is false, "contains(0) should return false")
-   assert(arr.contains(100) is false, "contains(100) should return false")
+   assert(10 in arr, "contains(10) should return true")
+   assert(30 in arr, "contains(30) should return true")
+   assert(50 in arr, "contains(50) should return true")
+   assert(not (25 in arr), "contains(25) should return false")
+   assert(not (0 in arr), "contains(0) should return false")
+   assert(not (100 in arr), "contains(100) should return false")
 end
 
 @Test function ArrayContainsFloat()
    arr = array<float> { 1.5, 2.5, 3.5 }
 
-   assert(arr.contains(1.5) is true, "contains(1.5) should return true")
-   assert(arr.contains(2.5) is true, "contains(2.5) should return true")
-   assert(arr.contains(2.0) is false, "contains(2.0) should return false")
+   assert(1.5 in arr, "contains(1.5) should return true")
+   assert(2.5 in arr, "contains(2.5) should return true")
+   assert(not (2.0 in arr), "contains(2.0) should return false")
 end
 
 @Test function ArrayContainsDouble()
    arr = array<double> { 3.141592653589793, 2.718281828459045 }
 
-   assert(arr.contains(3.141592653589793) is true, "contains(pi) should return true")
-   assert(arr.contains(2.718281828459045) is true, "contains(e) should return true")
-   assert(arr.contains(1.0) is false, "contains(1.0) should return false")
+   assert(3.141592653589793 in arr, "contains(pi) should return true")
+   assert(2.718281828459045 in arr, "contains(e) should return true")
+   assert(not (1.0 in arr), "contains(1.0) should return false")
 end
 
 @Test function ArrayContainsString()
    arr = array<str> { 'apple', 'banana', 'cherry' }
 
-   assert(arr.contains('apple') is true, "contains('apple') should return true")
-   assert(arr.contains('banana') is true, "contains('banana') should return true")
-   assert(arr.contains('cherry') is true, "contains('cherry') should return true")
-   assert(arr.contains('grape') is false, "contains('grape') should return false")
-   assert(arr.contains('') is false, "contains('') should return false")
-   assert(arr.contains('APPLE') is false, "contains should be case-sensitive")
+   assert('apple' in arr, "contains('apple') should return true")
+   assert('banana' in arr, "contains('banana') should return true")
+   assert('cherry' in arr, "contains('cherry') should return true")
+   assert(not ('grape' in arr), "contains('grape') should return false")
+   assert(not ('' in arr), "contains('') should return false")
+   assert(not ('APPLE' in arr), "contains should be case-sensitive")
 end
 
 @Test function ArrayContainsStringEmpty()
    arr = array<str> { '', 'nonempty' }
 
-   assert(arr.contains('') is true, "contains('') should find empty string if present")
-   assert(arr.contains('nonempty') is true, "contains('nonempty') should return true")
+   assert('' in arr, "contains('') should find empty string if present")
+   assert('nonempty' in arr, "contains('nonempty') should return true")
 end
 
 @Test function ArrayContainsByte()
    arr = array<byte> { 65, 66, 67 }
 
-   assert(arr.contains(65) is true, "contains(65) should return true")
-   assert(arr.contains(67) is true, "contains(67) should return true")
-   assert(arr.contains(68) is false, "contains(68) should return false")
+   assert(65 in arr, "contains(65) should return true")
+   assert(67 in arr, "contains(67) should return true")
+   assert(not (68 in arr), "contains(68) should return false")
 end
 
 @Test function ArrayContainsInt64()
    arr = array<int64> { 1234567890123, 9876543210987 }
 
-   assert(arr.contains(1234567890123) is true, "contains large int64 should work")
-   assert(arr.contains(9876543210987) is true, "contains negative int64 should work")
-   assert(arr.contains(0) is false, "contains(0) should return false")
+   assert(1234567890123 in arr, "contains large int64 should work")
+   assert(9876543210987 in arr, "contains negative int64 should work")
+   assert(not (0 in arr), "contains(0) should return false")
 end
 
 @Test function ArrayContainsObject()
@@ -1961,9 +1961,9 @@ end
    obj_two = obj.new('file')
    arr = array<obj> { obj_one }
 
-   assert(arr.contains(obj_one) is true, "contains(object) should return true")
-   assert(arr.contains(obj_one.id) is true, "contains(uid) should return true")
-   assert(arr.contains(obj_two) is false, "contains(object) should return false")
+   assert(obj_one in arr, "contains(object) should return true")
+   assert(obj_one.id in arr, "contains(uid) should return true")
+   assert(not (obj_two in arr), "contains(object) should return false")
 
    obj_one.free()
    obj_two.free()
@@ -1972,29 +1972,29 @@ end
 @Test function ArrayContainsEmpty()
    arr = array<int>
 
-   assert(arr.contains(42) is false, "contains on empty array should return false")
+   assert(not (42 in arr), "contains on empty array should return false")
 end
 
 @Test function ArrayContainsSingle()
    arr = array<int> { 42 }
 
-   assert(arr.contains(42) is true, "contains single element should work")
-   assert(arr.contains(0) is false, "contains non-existent should return false")
+   assert(42 in arr, "contains single element should work")
+   assert(not (0 in arr), "contains non-existent should return false")
 end
 
 @Test function ArrayContainsFirst()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   assert(arr.contains(1) is true, "contains should find first element")
+   assert(1 in arr, "contains should find first element")
 end
 
 @Test function ArrayContainsLast()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   assert(arr.contains(5) is true, "contains should find last element")
+   assert(5 in arr, "contains should find last element")
 end
 
 @Test function ArrayContainsDuplicate()
    arr = array<int> { 10, 20, 10, 30, 10 }
-   assert(arr.contains(10) is true, "contains should find duplicated value")
+   assert(10 in arr, "contains should find duplicated value")
 end
 
 @Test function ArrayContainsVsFind()
@@ -2003,12 +2003,12 @@ end
 
    for _, v in arr do
       found = arr.find(v) != nil
-      has_v = arr.contains(v)
+      has_v = v in arr
       assert(found is has_v, "contains() should agree with find() for value " .. v)
    end
 
    -- Test non-existent value
-   assert((arr.find(99) != nil) is arr.contains(99), "contains and find should agree on missing value")
+   assert((arr.find(99) != nil) is (99 in arr), "contains and find should agree on missing value")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

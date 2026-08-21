@@ -33,6 +33,7 @@ ERRDEF(BADKEY,   "String key not recognised")
 ERRDEF(OPARITH,  "perform arithmetic on")
 ERRDEF(OPCAT,    "Concatenate")
 ERRDEF(OPLEN,    "Get length of")
+ERRDEF(OPCONTAINS, "test membership in")
 ERRDEF(LENMM,    "__len metamethod must return a number")
 // Type checks.
 ERRDEF(BADSELF,  "Calling " LUA_QS " on bad self (%s)")

@@ -213,39 +213,39 @@ end
 
 @Test function Contains()
    -- Basic positive case
-   assert(string.contains("hello world", "world"), "Should contain 'world'")
+   assert("world" in "hello world", "Should contain 'world'")
 
    -- Basic negative case
-   assert(not string.contains("hello world", "xyz"), "Should not contain 'xyz'")
+   assert(not ("xyz" in "hello world"), "Should not contain 'xyz'")
 
    -- Substring in middle
-   assert(string.contains("hello world", "lo wo"), "Should contain 'lo wo'")
+   assert("lo wo" in "hello world", "Should contain 'lo wo'")
 
    -- Empty substr (should always match)
-   assert(string.contains("hello", ""), "Should match empty substr")
+   assert("" in "hello", "Should match empty substr")
 
    -- Substr longer than string
-   assert(not string.contains("hi", "hello"), "Should not match longer substr")
+   assert(not ("hello" in "hi"), "Should not match longer substr")
 
    -- Exact match
-   assert(string.contains("hello", "hello"), "Should match exact string")
+   assert("hello" in "hello", "Should match exact string")
 
    -- Empty string with empty substr
-   assert(string.contains("", ""), "Empty string should contain empty substr")
+   assert("" in "", "Empty string should contain empty substr")
 
    -- Empty string with non-empty substr
-   assert(not string.contains("", "hello"), "Empty string should not contain non-empty substr")
+   assert(not ("hello" in ""), "Empty string should not contain non-empty substr")
 
    -- Case sensitive
-   assert(not string.contains("Hello World", "hello"), "Should be case sensitive")
+   assert(not ("hello" in "Hello World"), "Should be case sensitive")
 
    -- Single character
-   assert(string.contains("hello", "e"), "Should find single character")
-   assert(not string.contains("hello", "x"), "Should not find absent character")
+   assert("e" in "hello", "Should find single character")
+   assert(not ("x" in "hello"), "Should not find absent character")
 
    -- Method syntax
-   assert("hello world".contains("world"), "Method syntax should work")
-   assert(not "hello world".contains("xyz"), "Method syntax negative case")
+   assert("world" in "hello world", "Membership syntax should work")
+   assert(not ("xyz" in "hello world"), "Membership syntax negative case")
 
    -- 'in' operator syntax
    assert("world" in "hello world", "'in' operator should find substring")

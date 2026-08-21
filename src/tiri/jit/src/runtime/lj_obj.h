@@ -1491,7 +1491,7 @@ enum {
   _(add) _(sub) _(mul) _(div) _(mod) _(pow) _(unm) \
   /* The following are used in the standard libraries. */ \
   _(metatable) _(tostring) \
-  _(close) MMDEF_FFI(_) MMDEF_PAIRS(_) _(clear)
+  _(close) MMDEF_FFI(_) MMDEF_PAIRS(_) _(clear) _(contains)
 
 // Metamethod IDs - uses typedef enum because MMDEF generates conditional members
 // and the X-macro pattern is required for string generation in lj_meta.cpp

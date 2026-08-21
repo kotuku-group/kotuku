@@ -72,6 +72,8 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `ISNEN` | A D | R(A) != num(D) |
 | `ISEQP` | A D | R(A) == pri(D) (nil/false/true) |
 | `ISNEP` | A D | R(A) != pri(D) |
+| `ISIN` | A D | R(A) is a member of R(D) |
+| `ISNIN` | A D | R(A) is not a member of R(D) |
 
 #### Unary Test and Copy Ops
 | Opcode | Format | Description |
@@ -427,7 +429,14 @@ The comparison opcode and the following `JMP` form a single logical unit. When t
   ```
 - The parser uses the same idiom for numeric `for` bounds and relational operators in expressions.
 
-### 4.4 Interaction with `BC_JMP` and Jump Lists
+### 4.4 Membership Comparison Opcodes (`BC_ISIN`, `BC_ISNIN`)
+
+`ISIN A, D` evaluates `R(A) in R(D)`.  `ISNIN` is its inverted companion, emitted for negated membership expressions.
+Both use the ordinary comparison-and-following-`JMP` layout.  The target is the sole metamethod receiver: its
+`__contains` handler receives the candidate as its visible argument, while plain tables perform a raw key-presence
+test without consulting `__index`.
+
+### 4.5 Interaction with `BC_JMP` and Jump Lists
 - Comparison + `JMP` encodes "if condition holds, branch to the jump target; otherwise fall through". A taken jump applies its signed offset from the instruction after the `JMP`.
 - `jmp_patch` links jumps into singly linked lists so multiple comparisons can target a shared label. Patching a list fixes all pending offsets at once (e.g. chained falsey checks all landing on the RHS evaluation).
 - Disassembly shows unpatched jumps as `----` offsets; when reading dumps from `--jit-options dump-bytecode`, identify compare/JMP pairs and the final patched destination to understand flow.

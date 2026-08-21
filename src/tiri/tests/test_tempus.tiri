@@ -532,9 +532,9 @@ end
 
    assert(slot.start() is start and slot.stop() is stop, 'Interval accessors should expose the bounds')
    assert(slot.duration() is tempus.duration { hours = 1 }, 'Interval duration should measure elapsed time')
-   assert(slot.contains(start), 'Interval should contain its inclusive start')
-   assert(slot.contains(middle), 'Interval should contain interior instants')
-   assert(not slot.contains(stop), 'Interval should exclude its stop')
+   assert(start in slot, 'Interval should contain its inclusive start')
+   assert(middle in slot, 'Interval should contain interior instants')
+   assert(not (stop in slot), 'Interval should exclude its stop')
    assert(slot.overlaps(overlapping), 'Overlapping intervals should be detected')
    assert(not slot.overlaps(extension), 'Contiguous half-open intervals should not overlap')
    assert(slot.intersection(overlapping) is tempus.interval(middle, stop),
