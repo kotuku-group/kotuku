@@ -1,4 +1,4 @@
-extern validateDocCache
+extern buildDocCache, buildDocManifest, validateDocCache
 
 @BeforeAll function SetupCacheTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -40,6 +40,14 @@ end
 @Test function AcceptsCompleteCurrentCache()
    assert(validateDocCache(makeCache(), 'sdk:docs/xml/', makeManifest()),
       'A complete cache matching the current documentation should be accepted.')
+end
+
+@Test function AcceptsCacheBuiltFromCurrentDocumentation()
+   local doc_path = 'sdk:docs/xml/'
+   local cache = buildDocCache(doc_path)
+   local manifest = buildDocManifest(doc_path)
+   assert(validateDocCache(cache, doc_path, manifest),
+      'A cache built from the current documentation should be reusable.')
 end
 
 @Test function RejectsChangedDocumentation()

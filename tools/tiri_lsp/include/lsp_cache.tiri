@@ -26,12 +26,18 @@ function countXmlElements(Content:str, TagName:str):num
    local count = 0
    local position = 0
    local opening_tag = '<' .. TagName .. '>'
+   local closing_tag = '</' .. TagName .. '>'
 
    while true do
       local found = Content.find(opening_tag, position, true)
       found ?! break
-      count++
-      position = found + #opening_tag
+
+      local closing = Content.find(closing_tag, found + #opening_tag, true)
+      closing ?! break
+
+      local name_tag = Content.find('<name>', found + #opening_tag, true)
+      if name_tag and name_tag < closing then count++ end
+      position = closing + #closing_tag
    end
 
    return count
