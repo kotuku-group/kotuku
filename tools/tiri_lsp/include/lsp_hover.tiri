@@ -103,24 +103,30 @@ end
 
 @Doc(text="Hover Support - Type Inference")
 function buildTypeMap(Doc):table
-   -- Build a mapping of variable names to class types based on obj.new() calls
-   typeMap = {}
+   -- Build a mapping of variable names to class types based on object construction assignments.
+   type_map = {}
+   type_matches = {}
 
-   -- Match patterns like: varname = obj.new('classname' or varname = obj.new("classname"
+   -- Merge both constructor forms in source order so the final assignment determines the inferred type.
    for start, stop, cap in rx_obj_new.findAll(Doc.content) do
-      local varname, classname = cap[0], cap[1]
-      -- Capitalize first letter for class name lookup (e.g., 'netsocket' -> 'NetSocket')
-      -- Most class names in the XML are in TitleCase
-      normalizedClass = classname.sub(1,1).upper() .. classname.sub(2)
-      typeMap[varname] = normalizedClass
+      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
    end
 
    for start, stop, cap in rx_obj_ctor.findAll(Doc.content) do
-      normalizedClass = cap[1].sub(1,1).upper() .. cap[1].sub(2)
-      typeMap[cap[0]] = normalizedClass
+      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
    end
 
-   return typeMap
+   type_matches.sort(function(A:table, B:table):bool
+      return A.start < B.start
+   end)
+
+   for match in values(type_matches) do
+      -- Capitalise the first letter for class-name lookup while preserving the rest of the class name.
+      normalised_class = match.class_name.sub(0, 1).upper() .. match.class_name.sub(1)
+      type_map[match.var_name] = normalised_class
+   end
+
+   return type_map
 end
 
 -- Build a mapping of variable names to declared-struct names.  Sources, in increasing precedence: explicit

@@ -144,6 +144,13 @@ end
       'Members after obj<Class> construction should resolve through the constructed class')
 end
 
+@Test function LatestObjectConstructorAssignmentControlsMemberResolution()
+   doc = makeDoc("value = obj<Time> {}\nvalue = obj.new('File', {})\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 2, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'The later obj.new() assignment should replace the earlier obj<Class> type for member definitions')
+end
+
 @Test function ObjectActionResolution()
    doc = makeDoc("xml = obj.new('xml')\nxml.acClear()\n")
    locations = resolveDefinition(doc, { line = 1, character = 6 })

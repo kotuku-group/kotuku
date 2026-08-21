@@ -192,6 +192,22 @@ end
    assertContains(hover, 'class Time', 'Object constructor class hover should resolve generated class documentation.')
 end
 
+@Test function ObjectConstructorFieldHover()
+   hover, token = hoverAt('clock = obj<Time> {}\nclock.Ye|ar\n')
+
+   assert(token and token.text is 'Year' and token.object is 'clock',
+      'Token extraction should identify a field access on an obj<Class> instance.')
+   assertContains(hover, 'Time.Year', 'Field hover should resolve the class name from obj<Class> construction.')
+end
+
+@Test function LatestObjectConstructorAssignmentControlsFieldHover()
+   hover, token = hoverAt("value = obj<Time> {}\nvalue = obj.new('File', {})\nvalue.Pa|th\n")
+
+   assert(token and token.text is 'Path' and token.object is 'value',
+      'Token extraction should identify a field access after reassignment.')
+   assertContains(hover, 'File.Path', 'The later obj.new() assignment should replace the earlier obj<Class> type.')
+end
+
 @Test function StructDeclarationHoverShowsFields()
    hover, token = hoverAt([[
 struct Us|er

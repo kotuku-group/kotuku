@@ -600,16 +600,23 @@ end
 
 function buildDefinitionTypeMap(Doc:table):table
    type_map = {}
+   type_matches = {}
 
    for start, stop, cap in rx_def_obj_new.findAll(Doc.content) do
-      local var_name, class_name = cap[0], cap[1]
-      normalised = normaliseClassName(class_name)
-      if var_name and normalised then type_map[var_name] = normalised end
+      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
    end
 
    for start, stop, cap in rx_def_obj_ctor.findAll(Doc.content) do
-      normalised = normaliseClassName(cap[1])
-      if cap[0] and normalised then type_map[cap[0]] = normalised end
+      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+   end
+
+   type_matches.sort(function(A:table, B:table):bool
+      return A.start < B.start
+   end)
+
+   for match in values(type_matches) do
+      normalised = normaliseClassName(match.class_name)
+      if match.var_name and normalised then type_map[match.var_name] = normalised end
    end
 
    return type_map
