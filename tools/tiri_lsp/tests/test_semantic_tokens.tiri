@@ -478,6 +478,27 @@ end
    assert(namespace_token and namespace_token.type is 10, 'obj.new() should retain namespace highlighting.')
 end
 
+@Test function ObjectConstructorTriviaReceivesSemanticTokens()
+   source = 'clock = obj<\n' ..
+      '   -- class name\n' ..
+      '   Time\n' ..
+      '> {}\n'
+
+   tokens = tokenizeTiri(source)
+
+   constructor_keyword = findToken(tokens, 0, 8, 'obj')
+   comment = findToken(tokens, 1, 3, '-- class name')
+   constructor_class = findToken(tokens, 2, 3, 'Time')
+
+   assert(constructor_keyword and constructor_keyword.type is 0,
+      'A multiline obj<Class> constructor should highlight obj as a compiler-owned keyword.')
+   assert(comment and comment.type is 6, 'Comments inside obj<Class> should retain comment highlighting.')
+   assert(constructor_class and constructor_class.type is 11,
+      'A class name after constructor trivia should retain its source line and column.')
+   assertNoToken(tokens, 0, 11, '<', 'The constructor opening angle should not be emitted as an operator.')
+   assertNoToken(tokens, 3, 0, '>', 'The constructor closing angle should not be emitted as an operator.')
+end
+
 @Test function EnumIsAKeyword()
    source = 'enum Colour { Red, Green }\n'
 

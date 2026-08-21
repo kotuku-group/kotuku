@@ -102,18 +102,23 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text="Hover Support - Type Inference")
-function buildTypeMap(Doc):table
+function buildTypeMap(Doc:table, Position:table):table
    -- Build a mapping of variable names to class types based on object construction assignments.
    type_map = {}
    type_matches = {}
+   cursor_offset = Position and lspPositionToOffset(Doc.content, Position.line, Position.character) or #Doc.content
 
    -- Merge both constructor forms in source order so the final assignment determines the inferred type.
    for start, stop, cap in rx_obj_new.findAll(Doc.content) do
-      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      if stop <= cursor_offset then
+         type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      end
    end
 
    for start, stop, cap in rx_obj_ctor.findAll(Doc.content) do
-      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      if stop <= cursor_offset then
+         type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      end
    end
 
    type_matches.sort(function(A:table, B:table):bool
@@ -497,7 +502,7 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
       end
 
       -- Try to infer class type from obj.new() assignments
-      typeMap = buildTypeMap(Doc)
+      typeMap = buildTypeMap(Doc, Position)
       className = typeMap[objName]
 
       -- Also try the object name directly as a class (for cases like NetSocket.Connect)

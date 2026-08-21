@@ -151,6 +151,13 @@ end
       'The later obj.new() assignment should replace the earlier obj<Class> type for member definitions')
 end
 
+@Test function FutureObjectConstructorAssignmentDoesNotControlMemberResolution()
+   doc = makeDoc('value = obj<Time> {}\nvalue.Year\nvalue = obj<File> {}\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'An assignment after the cursor must not change the inferred type for member definitions')
+end
+
 @Test function ObjectActionResolution()
    doc = makeDoc("xml = obj.new('xml')\nxml.acClear()\n")
    locations = resolveDefinition(doc, { line = 1, character = 6 })

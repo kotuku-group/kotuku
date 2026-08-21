@@ -208,6 +208,14 @@ end
    assertContains(hover, 'File.Path', 'The later obj.new() assignment should replace the earlier obj<Class> type.')
 end
 
+@Test function FutureObjectConstructorAssignmentDoesNotControlFieldHover()
+   hover, token = hoverAt("value = obj<Time> {}\nvalue.Ye|ar\nvalue = obj<File> {}\n")
+
+   assert(token and token.text is 'Year' and token.object is 'value',
+      'Token extraction should identify a field access before reassignment.')
+   assertContains(hover, 'Time.Year', 'An assignment after the cursor must not change the inferred object type.')
+end
+
 @Test function StructDeclarationHoverShowsFields()
    hover, token = hoverAt([[
 struct Us|er

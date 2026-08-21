@@ -165,6 +165,23 @@ global function byteColToUtf16Col(LineText:str, ByteCol:num):num
    return units
 end
 
+-- Convert an LSP position to its byte offset in Content.  This shared helper is declared before the feature imports
+-- so hover and definition inference can consistently limit source scans to the cursor.
+
+global function lspPositionToOffset(Content:str, Line:num, Character:num):num
+   offset = 0
+   current_line = 0
+
+   while current_line < Line and offset < #Content do
+      if Content.sub(offset, offset + 1) is '\n' then current_line++ end
+      offset++
+   end
+
+   line_end = Content.find('\n', offset) or (#Content + 1)
+   line_text = Content.sub(offset, line_end)
+   return offset + utf16ColToByteCol(line_text, Character)
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- LSP Symbol Kinds (subset used for Tiri)
 

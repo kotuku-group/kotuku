@@ -78,6 +78,48 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       end
    end
 
+   -- Skip whitespace and comments whilst probing a token sequence.  Comment tokens are staged so callers can
+   -- discard them when a speculative parse fails without disturbing the main token stream.
+   function skipObjectTrivia(PendingTokens:array<table>)
+      while pos < len do
+         skipWhitespace()
+         if pos + 1 >= len or Source.sub(pos, pos + 2) != '--' then return end
+
+         comment_start = col
+         if pos + 3 < len and Source.sub(pos + 2, pos + 4) is '[[' then
+            pos += 4
+            col += 4
+            while pos < len do
+               if Source.sub(pos, pos + 2) is ']]' then
+                  pos += 2
+                  col += 2
+                  break
+               elseif Source.sub(pos, pos + 1) is '\n' then
+                  if col > comment_start then
+                     PendingTokens.push({ line = line, char = comment_start, length = col - comment_start })
+                  end
+                  line++
+                  col = 0
+                  pos++
+                  comment_start = 0
+               else
+                  pos++
+                  col++
+               end
+            end
+            if col > comment_start then
+               PendingTokens.push({ line = line, char = comment_start, length = col - comment_start })
+            end
+         else
+            while pos < len and Source.sub(pos, pos + 1) != '\n' do
+               pos++
+               col++
+            end
+            PendingTokens.push({ line = line, char = comment_start, length = col - comment_start })
+         end
+      end
+   end
+
    -- Check if character is identifier start
    function isIdentStart(C)
       return (C >= 'a' and C <= 'z') or (C >= 'A' and C <= 'Z') or C is '_'
@@ -619,23 +661,21 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             if pos < len and Source.sub(pos, pos + 1) is '<' then
                obj_pos = pos
                obj_col = col
+               obj_line = line
+               pending_tokens = array<table>
                pos++
                col++
-               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
-                  pos++
-                  col++
-               end
+               skipObjectTrivia(pending_tokens)
                if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
                   name_col = col
+                  name_line = line
                   while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
                      pos++
                      col++
                   end
                   name_len = col - name_col
-                  while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
-                     pos++
-                     col++
-                  end
+                  pending_tokens.push({ line = name_line, char = name_col, length = name_len, type = 11 })
+                  skipObjectTrivia(pending_tokens)
                   if pos < len and Source.sub(pos, pos + 1) is '>' then
                      pos++
                      col++
@@ -647,14 +687,17 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
                      pos = after_pos
                      col = after_col
                      line = after_line
-                     addToken(line, ident_start, ident_len, constructor and 0 or 7, 0)
-                     addToken(line, name_col, name_len, 11, 0)
+                     addToken(obj_line, ident_start, ident_len, constructor and 0 or 7, 0)
+                     for pending in values(pending_tokens) do
+                        addToken(pending.line, pending.char, pending.length, pending.type or 6, 0)
+                     end
                      continue
                   end
                end
                -- A malformed obj<... form is still an ordinary namespace use until the compiler reports it.
                pos = obj_pos
                col = obj_col
+               line = obj_line
             end
             addToken(line, ident_start, ident_len, 10, 0)  -- namespace ('obj' library)
          elseif ident is 'struct' then

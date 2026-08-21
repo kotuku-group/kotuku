@@ -598,16 +598,21 @@ function normaliseClassName(Name:str):str
    return nil
 end
 
-function buildDefinitionTypeMap(Doc:table):table
+function buildDefinitionTypeMap(Doc:table, Position:table):table
    type_map = {}
    type_matches = {}
+   cursor_offset = Position and lspPositionToOffset(Doc.content, Position.line, Position.character) or #Doc.content
 
    for start, stop, cap in rx_def_obj_new.findAll(Doc.content) do
-      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      if stop <= cursor_offset then
+         type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      end
    end
 
    for start, stop, cap in rx_def_obj_ctor.findAll(Doc.content) do
-      type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      if stop <= cursor_offset then
+         type_matches.insert({ start = start, var_name = cap[0], class_name = cap[1] })
+      end
    end
 
    type_matches.sort(function(A:table, B:table):bool
@@ -649,12 +654,12 @@ function resolveClassDefinition(ClassName:str):array<table>
    return #locations > 0 and locations or nil
 end
 
-function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array<table>
+function resolveApiMemberDefinition(Doc:table, TokenInfo:table, Position:table):array<table>
    if not TokenInfo or not TokenInfo.object or not glDocCache then return nil end
 
    token = TokenInfo.text
    object_name = TokenInfo.object
-   type_map = buildDefinitionTypeMap(Doc)
+   type_map = buildDefinitionTypeMap(Doc, Position)
    class_name = type_map[object_name] ?? normaliseClassName(object_name)
 
    if class_name then
@@ -735,7 +740,7 @@ function resolveApiDefinition(Doc:table, Position:table, TokenInfo:table):array<
          if class_locations then return class_locations end
       end
 
-      member_locations = resolveApiMemberDefinition(Doc, TokenInfo)
+      member_locations = resolveApiMemberDefinition(Doc, TokenInfo, Position)
       if member_locations then return member_locations end
    end
 

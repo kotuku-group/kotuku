@@ -9,33 +9,10 @@
 ----------------------------------------------------------------------------------------------------------------------
 -- Text Edit Helper
 
--- Convert line/character position to byte offset in document.  The LSP Character field counts UTF-16 code units,
--- so it must be converted to bytes against the target line to stay aligned with multi-byte operators such as ≈.
-
-function positionToOffset(Content, Line, Character)
-   offset = 0
-   current_line = 0
-
-   while current_line < Line and offset < #Content do
-      c = Content.sub(offset, offset + 1)
-      if c is '\n' then
-         current_line++
-      end
-      offset++
-   end
-
-   -- Add the byte offset within the line, converting the UTF-16 column to bytes.
-   line_end = Content.find('\n', offset) or (#Content + 1)
-   line_text = Content.sub(offset, line_end)
-   return offset + utf16ColToByteCol(line_text, Character)
-end
-
-----------------------------------------------------------------------------------------------------------------------
-
 @Doc(text="Apply a text edit to document content")
 function applyTextEdit(Content, Range, NewText)
-   start_offset = positionToOffset(Content, Range.start.line, Range.start.character)
-   end_offset = positionToOffset(Content, Range['end'].line, Range['end'].character)
+   start_offset = lspPositionToOffset(Content, Range.start.line, Range.start.character)
+   end_offset = lspPositionToOffset(Content, Range['end'].line, Range['end'].character)
 
    -- Build new content: before + new text + after
    before = Content.sub(0, start_offset)
