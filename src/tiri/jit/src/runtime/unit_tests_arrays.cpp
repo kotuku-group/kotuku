@@ -15,6 +15,7 @@
 #include "lj_str.h"
 #include "lj_struct.h"
 #include "lj_tab.h"
+#include "lj_object.h"
 #include "lj_vmarray.h"
 
 #include <cmath>
@@ -664,6 +665,96 @@ static bool test_array_element_contract(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+
+template<typename T>
+static bool test_numeric_search_type(lua_State *L, AET ElementType, kt::Log &Log)
+{
+   GCarray *array = lj_array_new(L, 5, ElementType);
+   T *values = array->get<T>();
+   values[0] = T(3);
+   values[1] = T(7);
+   values[2] = T(11);
+   values[3] = T(7);
+   values[4] = T(19);
+
+   if (lj_arr_find_num(array, 3, 0, 4, 1) != 0 or lj_arr_find_num(array, 11, 0, 4, 1) != 2 or
+       lj_arr_find_num(array, 19, 0, 4, 1) != 4 or lj_arr_find_num(array, 23, 0, 4, 1) != -1 or
+       lj_arr_find_num(array, 7, 0, 4, 2) != -1 or lj_arr_find_num(array, 7, 4, 0, -1) != 3) {
+      Log.error("numeric runtime search failed for element type %d", int(ElementType));
+      return false;
+   }
+   return true;
+}
+
+static bool test_array_runtime_search(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   if (not test_numeric_search_type<int32_t>(lua, AET::INT32, Log) or
+       not test_numeric_search_type<uint32_t>(lua, AET::UINT32, Log) or
+       not test_numeric_search_type<float>(lua, AET::FLOAT, Log) or
+       not test_numeric_search_type<double>(lua, AET::DOUBLE, Log)) return false;
+
+   GCarray *empty = lj_array_new(lua, 0, AET::INT32);
+   if (lj_arr_find_num(empty, 1, 0, -1, 1) != -1) {
+      Log.error("empty numeric runtime search returned a match");
+      return false;
+   }
+
+   GCarray *single = lj_array_new(lua, 1, AET::INT16);
+   single->get<int16_t>()[0] = 31;
+   if (lj_arr_find_num(single, 31, 0, 0, 1) != 0 or lj_arr_find_num(single, 31, 1, 0, 1) != -1 or
+       lj_arr_find_num(single, 31, 0, 1, -1) != -1) {
+      Log.error("single-element or empty-span numeric runtime search failed");
+      return false;
+   }
+
+   GCarray *strings = lj_array_new(lua, 3, AET::STR_GC);
+   TValue value;
+   const char embedded_text[] = { 'a', '\0', 'b' };
+   GCstr *first = lj_str_newz(lua, "first");
+   GCstr *embedded = lj_str_new(lua, embedded_text, sizeof(embedded_text));
+   GCstr *last = lj_str_newz(lua, "last");
+   setstrV(lua, &value, first);
+   lj_array_store_checked(lua, strings, 0, &value);
+   setstrV(lua, &value, embedded);
+   lj_array_store_checked(lua, strings, 1, &value);
+   setstrV(lua, &value, last);
+   lj_array_store_checked(lua, strings, 2, &value);
+
+   GCstr *embedded_match = lj_str_new(lua, embedded_text, sizeof(embedded_text));
+   GCstr *missing = lj_str_newz(lua, "missing");
+   if (lj_arr_find_str(strings, first, 0, 2, 1) != 0 or lj_arr_find_str(strings, embedded_match, 0, 2, 1) != 1 or
+       lj_arr_find_str(strings, last, 2, 0, -1) != 2 or lj_arr_find_str(strings, missing, 0, 2, 1) != -1 or
+       lj_arr_find_str(strings, embedded, 2, 0, -2) != -1) {
+      Log.error("string runtime search failed");
+      return false;
+   }
+
+   GCarray *objects = lj_array_new(lua, 2, AET::OBJECT);
+   GCobject *first_object = lj_object_new(lua, OBJECTID(101), nullptr, nullptr, GCOBJ_DETACHED);
+   GCobject *second_object = lj_object_new(lua, OBJECTID(202), nullptr, nullptr, GCOBJ_DETACHED);
+   setobjectV(lua, &value, first_object);
+   lj_array_store_checked(lua, objects, 0, &value);
+   setobjectV(lua, &value, second_object);
+   lj_array_store_checked(lua, objects, 1, &value);
+
+   if (lj_arr_find_object(objects, first_object->uid, 0, 1, 1) != 0 or
+       lj_arr_find_object(objects, second_object->uid, 1, 0, -1) != 1 or
+       lj_arr_find_object(objects, OBJECTID(303), 0, 1, 1) != -1) {
+      Log.error("object runtime search failed");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_array_to_table(kt::Log &Log)
 {
    LuaStateHolder Holder;
@@ -1009,6 +1100,75 @@ static bool test_arr_getidx_double(kt::Log &Log)
    lj_arr_getidx(L, arr, 2, &result);
    if (!tvisnum(&result) or std::abs(numV(&result) + 2.71828) > 1e-5) {
       Log.error("arr_getidx double at index 2 failed");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_array_load_allocation_classification(kt::Log &Log)
+{
+   for (int type_index = 0; type_index < int(AET::MAX); type_index++) {
+      AET element_type = AET(type_index);
+      bool expected = element_type IS AET::CSTR or element_type IS AET::STR_CPP or element_type IS AET::STRUCT;
+      if (array_element_load_allocates(element_type) != expected) {
+         Log.error("array load allocation classification is incorrect for type %d", type_index);
+         return false;
+      }
+   }
+   return true;
+}
+
+static bool test_arr_getidx_noalloc(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+   luaL_openlibs(lua);
+
+   TValue result;
+   GCarray *integers = lj_array_new(lua, 1, AET::INT32);
+   integers->get<int32_t>()[0] = 73;
+   lj_arr_getidx_noalloc(lua, integers, 0, &result);
+   if (not tv_is_integer(&result, 73)) {
+      Log.error("no-allocation integer array load failed");
+      return false;
+   }
+
+   GCarray *strings = lj_array_new(lua, 1, AET::STR_GC);
+   GCstr *text = lj_str_newz(lua, "native");
+   TValue value;
+   setstrV(lua, &value, text);
+   lj_array_store_checked(lua, strings, 0, &value);
+   lj_arr_getidx_noalloc(lua, strings, 0, &result);
+   if (not tvisstr(&result) or strV(&result) != text) {
+      Log.error("no-allocation GC-reference array load failed");
+      return false;
+   }
+
+   GCarray *values = lj_array_new(lua, 3, AET::ANY);
+   TValue *slots = values->get<TValue>();
+   setnilV(&slots[0]);
+   setnumV(&slots[1], 4.5);
+   setstrV(lua, &slots[2], text);
+   lj_gc_objbarrier(lua, values, text);
+
+   lj_arr_getidx_noalloc(lua, values, 0, &result);
+   if (not tvisnil(&result)) {
+      Log.error("no-allocation ANY nil load failed");
+      return false;
+   }
+   lj_arr_getidx_noalloc(lua, values, 1, &result);
+   if (not tvisnum(&result) or numV(&result) != 4.5) {
+      Log.error("no-allocation ANY number load failed");
+      return false;
+   }
+   lj_arr_getidx_noalloc(lua, values, 2, &result);
+   if (not tvisstr(&result) or strV(&result) != text) {
+      Log.error("no-allocation ANY string load failed");
       return false;
    }
 
@@ -1426,7 +1586,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 35> Tests = { {
+   constexpr std::array<TestCase, 38> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1440,6 +1600,7 @@ void array_unit_tests(int &Passed, int &Total)
       { "array_external_unmanaged", test_array_external_unmanaged },
       { "array_external_resource", test_array_external_resource },
       { "array_element_contract", test_array_element_contract },
+      { "array_runtime_search", test_array_runtime_search },
       { "array_to_table", test_array_to_table },
       { "array_type_tag", test_array_type_tag },
       // VM Type System
@@ -1449,6 +1610,8 @@ void array_unit_tests(int &Passed, int &Total)
       // Bytecode C Helpers
       { "arr_getidx_int32", test_arr_getidx_int32 },
       { "arr_getidx_double", test_arr_getidx_double },
+      { "array_load_allocation_classification", test_array_load_allocation_classification },
+      { "arr_getidx_noalloc", test_arr_getidx_noalloc },
       { "arr_setidx_int32", test_arr_setidx_int32 },
       { "arr_setidx_double", test_arr_setidx_double },
       { "arr_roundtrip", test_arr_roundtrip },

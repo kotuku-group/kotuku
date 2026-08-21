@@ -1275,6 +1275,11 @@ enum class AET : uint8_t {
    VULNERABLE = PTR
 };
 
+[[nodiscard]] constexpr inline bool array_element_load_allocates(AET Type) noexcept
+{
+   return Type IS AET::CSTR or Type IS AET::STR_CPP or Type IS AET::STRUCT;
+}
+
 [[nodiscard]] constexpr inline uint16_t proto_array_member(AET Type) noexcept
 {
    return uint16_t(Type) + 1;

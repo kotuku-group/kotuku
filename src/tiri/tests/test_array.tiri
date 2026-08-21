@@ -1940,6 +1940,32 @@ end
    assert('nonempty' in arr, "contains('nonempty') should return true")
 end
 
+@Test function ArrayContainsStringCoercesNumber()
+   arr = array<str> { '1', '2.5' }
+
+   assert(1 in arr and 2.5 in arr, 'string array membership should retain numeric string coercion')
+end
+
+@Test function ArrayContainsStringEmbeddedNul()
+   nul = string.char(0)
+   needle = 'a' .. nul .. 'b'
+   arr = array<str> { 'prefix', needle, 'suffix' }
+
+   assert(needle in arr, 'contains should compare the complete embedded-NUL string')
+   assert(not (('a' .. nul .. 'c') in arr), 'contains should reject a differing embedded-NUL string')
+end
+
+@Test function ArrayContainsRejectsInvalidCandidate()
+   arr = array<int> { 1, 2, 3 }
+   rejected = false
+   try
+      ignored = {} in arr
+   except error_value
+      rejected = true
+   end
+   assert(rejected, 'numeric array membership should reject a non-numeric candidate')
+end
+
 @Test function ArrayContainsByte()
    arr = array<byte> { 65, 66, 67 }
 
