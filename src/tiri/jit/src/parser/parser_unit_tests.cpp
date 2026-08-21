@@ -6810,17 +6810,20 @@ static bool test_bare_collection_iteration_emission(kt::Log &Log)
       return false;
    }
 
-   if (count_opcode_tree(*snapshot, BC_ITERA) != 1 or count_opcode_tree(*snapshot, BC_ISARR) != 0) {
-      Log.error("proved bare arrays did not lower directly to ITERA without ISARR");
+   if (count_opcode_tree(*snapshot, BC_ITERA) != 0 or count_opcode_tree(*snapshot, BC_ISARR) != 0) {
+      Log.error("bare arrays should use runtime preparation instead of direct ITERA lowering");
       return false;
    }
-   if (count_opcode_tree(*snapshot, BC_ITERN) != 2) {
-      Log.error("proved bare tables and explicit pairs() emitted %" PRId64 " ITERN instructions instead of two",
-         int64_t(count_opcode_tree(*snapshot, BC_ITERN)));
+   if (count_opcode_tree(*snapshot, BC_ITERN) != 2 or count_opcode_tree(*snapshot, BC_ISNEXT) != 2) {
+      Log.error("bare tables and explicit pairs() should emit guarded ITERN, got %" PRId64 " ITERN and %" PRId64
+         " ISNEXT instructions",
+         int64_t(count_opcode_tree(*snapshot, BC_ITERN)),
+         int64_t(count_opcode_tree(*snapshot, BC_ISNEXT)));
       return false;
    }
-   if (count_opcode_tree(*snapshot, BC_ITERC) != 2) {
-      Log.error("stored ranges and dynamic targets did not use one prepared ITERC path each");
+   if (count_opcode_tree(*snapshot, BC_ITERC) != 3) {
+      Log.error("bare arrays, stored ranges and dynamic targets should each use prepared ITERC lowering, got %" PRId64,
+         int64_t(count_opcode_tree(*snapshot, BC_ITERC)));
       return false;
    }
    if (count_opcode_tree(*snapshot, BC_FORI) != 1 or count_opcode_tree(*snapshot, BC_FORL) != 1) {

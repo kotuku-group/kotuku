@@ -25,6 +25,7 @@
 #include "lj_meta.h"
 #include "lj_state.h"
 #include "lj_frame.h"
+#include "lj_vm.h"
 #include "lj_bc.h"
 #include "lj_ff.h"
 #include "lj_dispatch.h"
@@ -293,29 +294,71 @@ static int bare_array_iterator_next(lua_State *L)
 // Normalise a single dynamic generic-for target once at loop entry.  This is a protected compiler intrinsic; source
 // code should continue to use the ordinary collection and iterator forms.
 
-LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare)
+static bool prepare_iter_metamethod(lua_State *L, TValue *Target)
+{
+   cTValue *metamethod = lj_meta_lookup(L, Target, MM_iter);
+   if (tvisnil(metamethod)) return false;
+
+   if (tvistab(Target)) {
+      size_t context_depth = lj_context_depth(L);
+      size_t context_size = L->context_stack.size();
+      copyTV(L, L->top++, metamethod);
+      TValue *top = L->top;
+      setnilV(top++);
+      L->top = top;
+      uint32_t argument_count = lj_context_prepare_metamethod_call(L, Target, top, 0, 1);
+      lj_assertL(argument_count IS 0, "table __iter retained its receiver argument");
+      int call_error = lj_vm_pcall(L, top, 2, -1);
+      lj_context_restore_depth(L, context_size);
+      if (call_error) lua_error(L);
+      lj_assertL(lj_context_depth(L) IS context_depth, "table __iter returned with an unbalanced context");
+   }
+   else {
+      copyTV(L, L->top++, metamethod);
+      lua_pushvalue(L, 1);
+      lua_call(L, 1, 1);
+   }
+
+   if (not lua_isfunction(L, -1)) {
+      luaL_error(L, "__iter must return a function, got %s", luaL_typename(L, -1));
+   }
+
+   lua_pushnil(L);
+   lua_pushnil(L);
+   return true;
+}
+
+LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare) LJLIB_REC(.)
 {
    int32_t value_count = lua_gettop(L);
    if (value_count >= 2) return value_count;
 
-   if (value_count IS 1 and lua_isarray(L, 1)) {
-      lua_pushcfunction(L, bare_array_iterator_next);
-      lua_pushvalue(L, 1);
-      lua_pushnil(L);
-      return 3;
-   }
-
-   if (value_count IS 1 and lua_istable(L, 1)) {
-      lua_getglobal(L, "pairs");
-      lua_pushvalue(L, 1);
-      lua_call(L, 1, LUA_MULTRET);
-      return lua_gettop(L) - 1;
-   }
-
-   if (value_count IS 1 and check_range(L, 1)) return lj_range_prepare_iterator(L, 1);
-
    if (value_count IS 1) {
       TValue *value = L->base;
+      if (lj_is_thunk(value)) {
+         TValue *resolved = lj_thunk_resolve(L, udataV(value));
+         value = L->base;
+         copyTV(L, value, resolved);
+      }
+
+      if (prepare_iter_metamethod(L, value)) return 3;
+
+      if (tvisarray(value)) {
+         lua_pushcfunction(L, bare_array_iterator_next);
+         lua_pushvalue(L, 1);
+         lua_pushnil(L);
+         return 3;
+      }
+
+      if (tvistab(value) or tvisobject(value) or tvisstruct(value)) {
+         lua_getglobal(L, "pairs");
+         lua_pushvalue(L, 1);
+         lua_call(L, 1, LUA_MULTRET);
+         return lua_gettop(L) - 1;
+      }
+
+      if (check_range(L, 1)) return lj_range_prepare_iterator(L, 1);
+
       if (tvisfunc(value) or not tvisnil(lj_meta_lookup(L, value, MM_call))) {
          lua_pushvalue(L, 1);
          lua_pushnil(L);

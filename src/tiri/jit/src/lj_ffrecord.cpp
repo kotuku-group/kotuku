@@ -366,6 +366,38 @@ static void recff_rawlen(jit_State* J, RecordFFData* rd)
 
 
 //********************************************************************************************************************
+// Record the common bare-table preparation path.  Metamethod-bearing and dynamic targets remain interpreted.
+
+static void recff___tiri_iter_prepare(jit_State *J, RecordFFData *Data)
+{
+   TRef target = J->base[0];
+   if (J->maxslot != 1 or not tref_istab(target)) {
+      recff_nyiu(J, Data);
+      return;
+   }
+
+   RecordIndex index;
+   index.tab = target;
+   copyTV(J->L, &index.tabv, &Data->argv[0]);
+   if (lj_record_mm_lookup(J, &index, MM_iter) or lj_record_mm_lookup(J, &index, MM_pairs)) {
+      recff_nyiu(J, Data);
+      return;
+   }
+
+   GCtab *environment = tabref(J->fn->c.env);
+   cTValue *next = lj_tab_getstr(environment, lj_str_newlit(J->L, "next"));
+   if (not tvisfunc(next)) {
+      recff_nyiu(J, Data);
+      return;
+   }
+
+   J->base[0] = lj_ir_kfunc(J, funcV(next));
+   J->base[1] = target;
+   J->base[2] = TREF_NIL;
+   Data->nres = 3;
+}
+
+//********************************************************************************************************************
 // Record __filter(mask, count, trailing_keep, ...)
 // Filters return values based on a bitmask pattern compiled at parse time.
 

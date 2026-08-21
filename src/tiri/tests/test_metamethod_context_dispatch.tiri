@@ -222,6 +222,60 @@ end
    assert(close_error.find('dispatch close failure'), '__close should receive the active protected error')
 end
 
+@Test function IterationMetamethodsRestoreTheCallerContext()
+   local caller = { name = 'caller' }
+   local values = { name = 'iterator' }
+   local iter_calls = 0
+   setmetatable(values, {
+      __iter = function(...):func
+         assert(&& is values, '__iter should expose its selected table as context')
+         assert(&name is 'iterator', '__iter should enter the selected table context')
+         assert(#{...} is 0, '__iter should receive no visible table arguments')
+         iter_calls++
+         local emitted = false
+         return function():str
+            if emitted then return end
+            emitted = true
+            return &name
+         end
+      end
+   })
+
+   using caller do
+      local total = 0
+      for name in values do
+         assert(name is 'caller', 'The returned iterator should run after the handler context is restored')
+         total++
+      end
+      assert(total is 1 and iter_calls is 1, '__iter should prepare one iterator closure per loop entry')
+      assert(&name is 'caller', 'The caller context should remain active after bare iteration')
+   end
+end
+
+@Test function IterationMetamethodErrorsRestoreTheCallerContext()
+   local caller = { name = 'caller' }
+   local values = { name = 'iterator' }
+   setmetatable(values, {
+      __iter = function():func
+         assert(&name is 'iterator', '__iter should enter its selected table context before an error')
+         error('expected iteration preparation failure')
+      end
+   })
+
+   using caller do
+      local failed = false
+      try
+         for _ in values do end
+      except e
+         failed = true
+         assert(e.message.find('expected iteration preparation failure') != nil,
+            'An __iter error should propagate unchanged')
+      end
+      assert(failed, '__iter failures should abort loop preparation')
+      assert(&name is 'caller', 'An __iter failure should restore the caller context')
+   end
+end
+
 @Test function TableFinaliserUsesDispatchContext()
    local finalised = false
    local target = setmetatable({}, {

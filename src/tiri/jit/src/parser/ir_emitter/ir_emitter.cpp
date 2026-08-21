@@ -2676,7 +2676,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
 
    BCPos exprpc = fs->current_pc();
    int isnext = 0;
-   bool isarray = Payload.target IS GenericForTarget::KnownArray and Payload.names.size() <= 2;
 
    if (Payload.target IS GenericForTarget::IteratorProtocol) {
       auto iterator_count = BCReg(0);
@@ -2686,42 +2685,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       ExpDesc tail = iter_values.value_ref();
       this->lex_state.assign_adjust(3, iterator_count.raw(), &tail);
       isnext = (nvars <= 5) ? predict_next(this->lex_state, *fs, exprpc) : 0;
-   }
-   else if (isarray) {
-      auto collection = this->emit_expression(*Payload.iterators.front());
-      if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
-      ExpDesc value = collection.value_ref();
-      this->materialise_to_next_reg(value, "generic for array target");
-      this->lex_state.assign_adjust(3, 1, &value);
-      bcemit_AD(fs, BC_MOV, base - BCREG(2), base - BCREG(3));
-      bcemit_nil(fs, (base - BCREG(3)).raw(), 1);
-      bcemit_nil(fs, (base - BCREG(1)).raw(), 1);
-   }
-   else if (Payload.target IS GenericForTarget::KnownTable) {
-      ExpDesc pairs_function;
-      pairs_function.init(ExpKind::Global, 0);
-      pairs_function.u.sval = fs->ls->keepstr("pairs");
-      this->materialise_to_next_reg(pairs_function, "generic for pairs intrinsic");
-      RegisterAllocator allocator(fs);
-      allocator.reserve(BCReg(1));
-
-      auto collection = this->emit_expression(*Payload.iterators.front());
-      if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
-      ExpDesc value = collection.value_ref();
-      this->materialise_to_next_reg(value, "generic for table target");
-      bcemit_INS(fs, BCINS_ABC(BC_CALL, base - BCREG(3), 4, 2));
-      fs->freereg = (base - BCREG(3) + BCREG(3)).raw();
-      isnext = nvars <= 5 ? 1 : 0;
-   }
-   else if (Payload.target IS GenericForTarget::KnownRange) {
-      auto collection = this->emit_expression(*Payload.iterators.front());
-      if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
-      ExpDesc value = collection.value_ref();
-      this->materialise_to_next_reg(value, "generic for range target");
-      RegisterAllocator allocator(fs);
-      allocator.reserve(BCReg(1));
-      bcemit_INS(fs, BCINS_ABC(BC_CALL, base - BCREG(3), 4, 1));
-      fs->freereg = (base - BCREG(3) + BCREG(3)).raw();
    }
    else {
       bcemit_builtin_call_frame(fs, builtin_callable_id(FastFunc::__tiri_iter_prepare), fs->free_reg());
@@ -2739,6 +2702,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
          bcemit_INS(fs, BCINS_ABC(BC_CALL, base - BCREG(3), 4, 2));
       }
       fs->freereg = (base - BCREG(3) + BCREG(3)).raw();
+      if (Payload.target IS GenericForTarget::BareTable and nvars <= 5) isnext = 1;
    }
 
    bcreg_bump(fs, 3  + 1);
@@ -2785,8 +2749,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
    }
 
    loop.patch_head(fs->current_pc());
-   BCPos iter = BCPos(bcemit_ABC(fs, isnext ? BC_ITERN : isarray ? BC_ITERA : BC_ITERC,
-      base, nvars - BCREG(3) + BCREG(1), 3));
+   BCPos iter = BCPos(bcemit_ABC(fs, isnext ? BC_ITERN : BC_ITERC, base, nvars - BCREG(3) + BCREG(1), 3));
    ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_ITERL, base, NO_JMP)));
    BCLine encoded_body_line = BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
    fs->bcbase[loopend.head().raw() - 1].line = encoded_body_line;
