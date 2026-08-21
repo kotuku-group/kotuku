@@ -503,7 +503,7 @@ extern "C" void setup_try_handler(lua_State *L)
    lj_assertL(saved_top >= saved_base, "setup_try_handler: saved_top below saved_base");
    lj_assertL(try_frame->saved_nactvar <= LJ_MAX_SLOTS,
       "setup_try_handler: saved_nactvar too large (%u)", unsigned(try_frame->saved_nactvar));
-   size_t context_floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
+   [[maybe_unused]] const size_t context_floor = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
    lj_assertL(context_floor IS try_frame->context_floor,
       "try handler crossed an asynchronous context root boundary");
    lj_assertL(try_frame->context_depth >= context_floor and

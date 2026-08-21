@@ -307,6 +307,59 @@ function count_jit_traces(MaxTraceNo)
    return count
 end
 
+function traced_array_ipairs_strings(Values:array<str>, Repetitions:num):<num, num, num>
+   local key_checksum = 0
+   local value_checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in ipairs(Values) do
+         key_checksum += key
+         value_checksum += #value
+         count++
+      end
+   end
+   return key_checksum, value_checksum, count
+end
+
+function traced_array_pairs_integers(Values:array<int>, Repetitions:num):<num, num, num>
+   local key_checksum = 0
+   local value_checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in pairs(Values) do
+         key_checksum += key
+         value_checksum += value
+         count++
+      end
+   end
+   return key_checksum, value_checksum, count
+end
+
+function traced_dynamic_array_ipairs(Values:any, Repetitions:num):<num, num>
+   local checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in ipairs(Values) do
+         checksum += key + value
+         count++
+      end
+   end
+   return checksum, count
+end
+
+function traced_any_array_ipairs(Values:array<any>, Repetitions:num):<num, num>
+   local checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in ipairs(Values) do
+         checksum += key
+         if value != nil then checksum += value end
+         count++
+      end
+   end
+   return checksum, count
+end
+
 function count_trace_link_type(MaxTraceNo, LinkType)
    local count = 0
    for trace_no in {1 into MaxTraceNo} do
@@ -1935,6 +1988,48 @@ end
    assert(total is -1235 and last is -119,
       f"Expected signed int8 trace result -1235/-119, got {total}/{last}")
    assert(count_jit_traces(20) > 0, "Expected signed int8 array access to produce a JIT trace")
+end
+
+@Test(hotpath=80) function NativeArrayIteratorLoadsUseGuardedFastPaths()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local strings = array<str> { "a", "bb", "ccc" }
+   local integers = array<int> { 10, 20, 30 }
+   local doubles = array<double> { 1.5, 2.5, 3.5 }
+   local mixed = array<any> { 4, nil, 6 }
+
+   local string_keys, string_values, string_count = traced_array_ipairs_strings(strings, 40)
+   assert(string_keys is 120 and string_values is 240 and string_count is 120,
+      f"Unexpected string ipairs result {string_keys}/{string_values}/{string_count}")
+
+   local integer_keys, integer_values, integer_count = traced_array_pairs_integers(integers, 40)
+   assert(integer_keys is 120 and integer_values is 2400 and integer_count is 120,
+      f"Unexpected integer pairs result {integer_keys}/{integer_values}/{integer_count}")
+
+   local dynamic_checksum, dynamic_count = traced_dynamic_array_ipairs(integers, 40)
+   assert(dynamic_checksum is 2520 and dynamic_count is 120,
+      f"Unexpected dynamic integer ipairs result {dynamic_checksum}/{dynamic_count}")
+   dynamic_checksum, dynamic_count = traced_dynamic_array_ipairs(doubles, 40)
+   assert(dynamic_checksum is 420 and dynamic_count is 120,
+      f"Unexpected dynamic double ipairs result {dynamic_checksum}/{dynamic_count}")
+
+   local mixed_checksum, mixed_count = traced_any_array_ipairs(mixed, 40)
+   assert(mixed_checksum is 520 and mixed_count is 120,
+      f"Unexpected mixed any ipairs result {mixed_checksum}/{mixed_count}")
+
+   local direct_load_trace_found = false
+   for trace_no in {1 into 30} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and count_trace_opcode(trace_no, info, ir_xload) > 0 and
+            count_trace_calls(trace_no, info) is 0 then
+         direct_load_trace_found = true
+         break
+      end
+   end
+   assert(direct_load_trace_found, "Expected native ipairs/pairs iteration to produce a call-free direct-load trace")
+   assert(count_jit_traces(30) > 0, "Expected native array iterator workloads to produce JIT traces")
 end
 
 @Test(hotpath=80) function ArrayNewObjTypeTraces()

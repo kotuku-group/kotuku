@@ -17,6 +17,7 @@ extern "C" [[nodiscard]] int lj_arr_set(lua_State *, cTValue *, cTValue *, cTVal
 // Direct array access helpers (no metamethod support, used after type check passes)
 
 extern "C" void lj_arr_getidx(lua_State *, GCarray *, int32_t idx, TValue *);
+extern "C" void lj_arr_getidx_noalloc(lua_State *, GCarray *, int32_t idx, TValue *);
 extern "C" void lj_arr_setidx(lua_State *, GCarray *, int32_t idx, cTValue *);
 
 // Append a single value to an array (array.append() semantics), called from JIT traces
