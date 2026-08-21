@@ -3,6 +3,23 @@
 @BeforeEach(hotpath=40)
 function enforce_hotpath() end
 
+function builtin_array_membership_workload(Values:array<int>, Count:num):num
+   local matches = 0
+   for index in {0 to Count} do
+      if 4 in Values then matches++ end
+      if not (9 in Values) then matches++ end
+   end
+   return matches
+end
+
+function generic_array_membership_workload(Values:array<any>, Candidate:any, Count:num):num
+   local matches = 0
+   for index in {0 to Count} do
+      if Candidate in Values then matches++ end
+   end
+   return matches
+end
+
 @Test function PlainTablesUseRawKeyPresence()
    local values = { ready=false, present=true }
    assert('ready' in values, 'A false table value must still count as present')
@@ -86,4 +103,73 @@ end
       if 'needle' in target then matches++ end
    end
    assert(matches is 200, 'Membership should retain its result after JIT compilation')
+end
+
+@Test function BuiltinArrayMembershipUsesNativeTrace()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local values = array<int> { 2, 4, 6, 8 }
+   assert(builtin_array_membership_workload(values, 100) is 200,
+      'Built-in array membership should preserve in and negated-in results on trace')
+
+   jit.off()
+   local native_calls = 0
+   for trace_no in {1 into 40} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+
+      for instruction in {1 into info.nins} do
+         local _, ir_ot, _, call_id = jit.util.traceIR(trace_no, instruction)
+         if ir_ot != nil and (ir_ot >> 8) is 98 and jit.util.irCallAddr(call_id) != nil then native_calls++ end
+      end
+   end
+   jit.on()
+   jit.opt.start()
+
+   assert(native_calls > 0, 'Canonical array membership should lower to a native side-effecting helper call')
+end
+
+@Test function BuiltinArrayMembershipGuardsElementType()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local strings = array<str> { '2', '4', '6' }
+   local integers = array<int> { 2, 4, 6 }
+   assert(generic_array_membership_workload(strings, '4', 100) is 100,
+      'String array membership should warm the generic-array trace')
+   assert(generic_array_membership_workload(integers, '4', 100) is 100,
+      'A reused trace must not treat numeric array storage as strings')
+
+   jit.flush()
+   assert(generic_array_membership_workload(integers, 4, 100) is 100,
+      'Numeric array membership should warm the generic-array trace')
+   assert(generic_array_membership_workload(strings, 4, 100) is 100,
+      'A reused trace must retain numeric coercion for string arrays')
+
+   jit.opt.start()
+end
+
+@Test function ArrayContainsMutationLeavesCanonicalFastPath()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local values = array<int> { 2, 4, 6, 8 }
+   assert(builtin_array_membership_workload(values, 100) is 200,
+      'The canonical array handler should warm successfully before mutation')
+
+   local metatable = getmetatable(values)
+   local canonical_handler = metatable.__contains
+   defer metatable.__contains = canonical_handler end
+
+   metatable.__contains = function(Target:array<int>, Candidate:num):bool
+      return Candidate is 9
+   end
+   assert(not (4 in values) and 9 in values,
+      'Changing __contains should side-exit and select the custom array handler')
+
+   jit.opt.start()
 end

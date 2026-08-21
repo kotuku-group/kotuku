@@ -3498,6 +3498,37 @@ static void rec_contains(jit_State *J, RecordOps *ops)
 
    rec_comp_prep(J);
    if (lj_record_mm_lookup(J, ix, MM_contains)) {
+      if (tref_isarray(ix->val) and lj_arr_is_contains_handler(&ix->mobjv)) {
+         GCarray *array = arrayV(&ix->valv);
+         // Keep the element-type guard on its own snapshot.  A mismatch must re-execute membership instead of taking
+         // the branch recorded for the specialised helper.
+         rec_comp_prep(J);
+         IRBuilder ir(J);
+         TRef element_type_ref = ir.fload(ix->val, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+         ir.guard_eq_int(element_type_ref, ir.kint(int32_t(array->elemtype)));
+
+         // The helper result guard needs the comparison snapshot that rec_comp_fixup adjusts.
+         rec_comp_prep(J);
+         TRef result_ref;
+         if (array->elemtype IS AET::STR_GC and tref_isstr(ix->key)) {
+            result_ref = lj_ir_call(J, IRCALL_lj_arr_contains_str, ix->val, ix->key);
+         }
+         else if (glArrayConversion[size_t(array->elemtype)].itype IS uint8_t(LJ_TNUMX) and
+             tref_isnumber(ix->key)) {
+            TRef candidate_ref = ix->key;
+            if (tref_isinteger(candidate_ref)) {
+               candidate_ref = emitir(IRTN(IR_CONV), candidate_ref, IRCONV_NUM_INT);
+            }
+            result_ref = lj_ir_call(J, IRCALL_lj_arr_contains_num, ix->val, candidate_ref);
+         }
+         else {
+            TRef candidate_ref = rec_tmpref(J, ix->key, IRTMPREF_IN1);
+            result_ref = lj_ir_call(J, IRCALL_lj_arr_contains, ix->val, candidate_ref);
+         }
+         emitir(IRTG(IR_NE, IRT_INT), result_ref, lj_ir_kint(J, 0));
+         rec_comp_fixup(J, J->pc, int(ops->op) & 1);
+         return;
+      }
       rec_mm_callcomp(J, ix, int(ops->op));
       return;
    }

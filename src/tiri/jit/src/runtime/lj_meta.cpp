@@ -25,6 +25,7 @@
 #include "lj_thunk.h"
 #include "lj_object.h"
 #include "lj_contract.h"
+#include "lj_vmarray.h"
 #include "stack_helpers.h"
 #include "lib.h"
 #include "lib_range.h"
@@ -588,6 +589,10 @@ TValue * lj_meta_contains(lua_State *L, cTValue *Candidate, cTValue *Target, int
 
    cTValue *method = lj_meta_lookup(L, target, MM_contains);
    if (not tvisnil(method)) {
+      if (tvisarray(target) and lj_arr_is_contains_handler(method)) {
+         int32_t result = lj_arr_contains(L, arrayV(target), candidate);
+         return (TValue *)(intptr_t)(bool(result) != bool(Inverted));
+      }
       return mmcall(L, Inverted ? lj_cont_condf : lj_cont_condt, method, target, candidate,
          MetamethodCallKind::Index);
    }

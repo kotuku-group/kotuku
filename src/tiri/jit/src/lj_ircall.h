@@ -218,6 +218,9 @@ typedef struct CCallInfo {
   _(ANY,        lj_arr_clear,      2,   S, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_arr_resize,     3,   S, INT, CCI_L|CCI_T) \
   _(ANY,        lj_arr_getstring,  4,   S, STR, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_contains,   3,   S, INT, CCI_L|CCI_T) \
+  _(ANY,        lj_arr_contains_num, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_str, 2, S, INT, 0) \
   /* Direct range-loop helpers */ \
   _(ANY,        lj_range_prepare_step,  5, N, NUM, CCI_L|CCI_T) \
   _(ANY,        lj_range_prepare_count, 5, N, NUM, CCI_L|CCI_T) \
