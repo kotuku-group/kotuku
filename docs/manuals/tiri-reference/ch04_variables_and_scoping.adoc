@@ -1,5 +1,8 @@
 
 
+// UPDATED: 2026-08-20 - Added the View Variables section for the <view> attribute; noted enum prefixes reject it
+//                       (commit ea9fbc23c)
+
 [[ch-variables-and-scoping]]
 == Variables & Scoping
 
@@ -498,7 +501,7 @@ combined = FLAGS_LEFT | FLAGS_RIGHT  -- constant-folded to 12
 The following constraints apply to enum declarations:
 
 * The prefix cannot carry a type annotation (`:type`).
-* The prefix cannot use the `<const>` or `<close>` attributes.
+* The prefix cannot use the `<const>`, `<close>` or `<view>` attributes.
 * The declaration must contain at least one member.
 * Member names within a single enum must be unique.
 * The fully qualified constant name (`PREFIX_MEMBER`) must not duplicate a constant already registered by a previous enum declaration.

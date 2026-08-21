@@ -1,11 +1,4 @@
-// CHANGED: 2026-06-28 - debug.validate() now takes an options table ('symbols', 'path').
-// VERIFIED: 2026-03-06
-// CHANGED: 2026-07-31 — Added the required implementation-specific notice and standardised exception terminology.
-// UPDATED: 2026-08-16 - Migrated the setMetatable example to the `metamethod` form (commit 58e7bad8a)
-// UPDATED: 2026-08-19 - Reverted the setMetatable example to the ordinary `function` form; the `metamethod`
-//                       keyword is removed (commit 81aa5f3)
-// UPDATED: 2026-08-17 - debug.validate() now reports 1-based positions with zero as the unavailable
-//                       sentinel, and an exclusive endColumn (commit 3dbd62b09)
+// VERIFIED: 2026-08-20
 
 [[ch-the-debug-library]]
 == The Debug Library
@@ -43,7 +36,7 @@ Each character in `What` selects a group of fields:
 |`currentLine`
 
 |`u`
-|`nups`, `nParams`, `isVarArg`
+|`nUpvalues`, `nParams`, `isVarArg`
 
 |`n`
 |`name`, `nameWhat`
@@ -97,7 +90,7 @@ The returned table contains the following fields:
 |string
 |How the name was resolved: `'global'`, `'local'`, `'method'`, `'field'`, or `''`.
 
-|`nups`
+|`nUpvalues`
 |integer
 |Number of upvalues.
 

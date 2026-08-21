@@ -9,6 +9,8 @@
 //                       object.subscribe() still begins at the root (commit 1a38f18e0)
 // UPDATED: 2026-08-17 - object.subscribe() captures the subscription context and requires a function value; rewrote
 //                       the Subscription Context section (commit f052ec04d)
+// UPDATED: 2026-08-20 - Noted that array-field reads copy, and that a <view> local aliases native field storage
+//                       (commit ea9fbc23c)
 
 [[ch-the-object-system]]
 == The Object System

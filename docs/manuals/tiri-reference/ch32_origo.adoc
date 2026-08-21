@@ -1,5 +1,4 @@
-// VERIFIED: 2026-03-18
-// CHANGED: 2026-07-31 — Removed future-tense behaviour and duplicate wording.
+// VERIFIED: 2026-08-21
 
 [[ch-origo]]
 == Origo

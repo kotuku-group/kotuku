@@ -10,6 +10,7 @@
 // UPDATED: 2026-08-16 - Replaced the Contextual method entry with Metamethod literal, scoped to metatable handlers
 //                       (commit 5c92d652a)
 // UPDATED: 2026-08-15 - Added the Bound context entry (commit 1a38f18e0)
+// UPDATED: 2026-08-20 - Added the View variable entry (commit ea9fbc23c)
 // UPDATED: 2026-08-17 - Corrected the Bound context entry; Tiri's own subscription interfaces capture a context
 //                       (commit f052ec04d)
 // UPDATED: 2026-08-13 - Added the Context block, Entity and Self referencing entries; context is now opt-in and
@@ -314,6 +315,9 @@ A global declared with an explicit `:any` annotation, opting the name out of sti
 
 Variadic function::
 A function that accepts a variable number of arguments via the `pass:[...]` parameter.  Extra arguments beyond declared parameters are collected into the variadic list.  See <<sec-variadic-functions>>.
+
+View variable::
+A local variable declared with the `<view>` attribute.  The `local` keyword is optional; the attribute implicitly creates a local.  It binds a live, read-only array that aliases an object array field's native storage instead of copying it, arming the first object array field read in its initialiser.  See <<sec-view-variables>>.
 
 Virtual volume::
 A named file-system mount point that maps a logical path prefix to a physical directory.  Configured with `--set-volume` or through the Kōtuku file manager.  See <<sec-virtual-volumes>>.

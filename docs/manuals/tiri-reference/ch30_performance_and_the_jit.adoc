@@ -1,12 +1,4 @@
-// UPDATED: 2026-08-11 - Added the Contextual Call Cost section (commit 798665547)
-// UPDATED: 2026-08-13 - Only an entity receiver pays the contextual call cost; documented virtual contexts and the
-//                       materialisation cost of '&&' (commit d3638efc0)
-// UPDATED: 2026-08-15 - Documented the cost of capturing the context when a framework callback is registered
-//                       (commit 1a38f18e0)
-// UPDATED: 2026-08-16 - The ternary separator is now ':' rather than ':>' (commit 982d890de)
-// UPDATED: 2026-08-17 - Recorded the unsigned array element types; corrected the element type list and the
-//                       array construction example, which named the retired 'int32' (commit 6ca29f4c8)
-// UPDATED: 2026-08-17 - The unsigned 32-bit element type is renamed from 'uint32' to 'uint' (commit 47d7d0060)
+// VERIFIED: 2026-08-21
 
 [[ch-performance-and-the-jit]]
 == Performance & the JIT
@@ -16,11 +8,11 @@ Tiri executes on a tracing JIT compiler derived from LuaJIT 2.1.  This chapter d
 
 [[sec-how-the-jit-works]]
 === How the JIT Works
-indexterm:[JIT, traces] Tiri code begins execution in an interpreter.  The JIT compiler monitors executing code and compiles frequently executed paths — called _hot paths_ — into native machine code.
+indexterm:[JIT, traces] Tiri code begins execution in an interpreter.  The JIT compiler monitors executing code and compiles frequently executed paths, called _hot paths_, into native machine code.
 
 ==== The Trace Compiler
 
-The JIT compiler uses a _tracing_ architecture rather than a method-based one.  Instead of compiling entire functions, it records linear execution paths through the program and compiles those paths into optimised native code.
+The JIT compiler uses a tracing architecture rather than a method-based one.  Instead of compiling entire functions, it records linear execution paths through the program and compiles those paths into optimised native code.
 
 The compilation pipeline has four stages:
 
@@ -93,7 +85,7 @@ Trace recording aborts if any of the following limits are exceeded:
 |Maximum total traces in cache.
 |===
 
-Recording also aborts on encountering operations that the JIT compiler does not support (NYI — Not Yet Implemented).
+Recording also aborts on encountering operations that the JIT compiler does not support (NYI — Not Yet Implemented).  See <<sec-nyi-operations>> for the common triggers and <<sec-detecting-trace-aborts>> for reporting aborts from a script.
 
 [[sec-type-annotations-for-performance]]
 === Type Annotations for Performance
@@ -141,11 +133,9 @@ Only an entity receiver pays this cost.  Calls that carry no context cost are di
 
 The runtime keeps a nested context virtual for as long as it can, and materialises it only when something observes it.  A native call, a tail transfer, a snapshot and a side exit each force materialisation, so a hot path that establishes context without crossing one of those boundaries pays little beyond the receiver test.
 
-Self referencing involves a table lookup on the current context, and costs the same as an equivalent field access on a named table.  In the root context it resolves against the global environment, so `&glCounter` performs the work of `_G.glCounter` plus the context load.  Name the global directly when a global is what is intended, and hoist it into a local for a hot loop as described in <<sec-avoid-global-lookups>>.
+Self referencing involves a table lookup on the current context, and costs the same as an equivalent field access on a named table.
 
 `+&&+` materialises the context table as a value.  Prefer `&name` over `+&&.name+` in a hot path, because the field form does not require the table to be materialised.
-
-Registering a framework callback captures the current context (<<sec-context-and-callbacks>>).  The capture costs one reference per registration and is paid at registration rather than at invocation, so a loop that registers callbacks pays it on each iteration, whether the loop is interpreted or compiled.  Hoist the registration out of the loop where the same callback and context are being registered repeatedly.
 
 [[sec-arrays-vs-tables-performance]]
 === Arrays vs. Tables
@@ -260,16 +250,16 @@ This function is intended for profilers and diagnostic tools.  Attached callback
 |===
 |Event |Description
 
-|`"trace"`
-|Fires during trace lifecycle events.  The callback receives `(Reason, pass:[...])` where `Reason` is one of `"start"`, `"stop"`, `"flush"`, or `"abort"`.  For `"start"`, additional arguments are `(TraceNo, Func, PC)` and, if a side trace, `(Parent, ExitNo)`.  For `"stop"`, additional arguments are `(TraceNo, Func)`.  For `"abort"`, additional arguments are `(TraceNo, Func, PC, ErrorObject, ErrorInfo)`.  `"flush"` has no additional arguments.
+|`'trace'`
+|Fires during trace lifecycle events.  The callback receives `(Reason, pass:[...])` where `Reason` is one of `'start'`, `'stop'`, `'flush'`, or `'abort'`.  For `'start'`, additional arguments are `(TraceNo, Func, PC)` and, if a side trace, `(Parent, ExitNo)`.  For `'stop'`, additional arguments are `(TraceNo, Func)`.  For `'abort'`, additional arguments are `(TraceNo, Func, PC, ErrCode, ErrInfo)`, where `ErrCode` is an integer trace error code and `ErrInfo` is a code-specific detail value or `nil`.  See <<sec-detecting-trace-aborts>>.  `'flush'` has no additional arguments.
 
-|`"record"`
+|`'record'`
 |Fires when a bytecode instruction is recorded into a trace.  The callback receives `(TraceNo, Func, PC, FrameDepth)` — the trace number, function being recorded, bytecode position, and the current frame stack depth.
 
-|`"texit"`
+|`'texit'`
 |Fires when a compiled trace exits back to the interpreter.  The callback receives `(TraceNo, ExitNo, NumGPRs, NumFPRs, pass:[...]GPRValues, pass:[...]FPRValues)` — the trace number, exit point taken, register counts, and register values at the point of exit.
 
-|`"bc"`
+|`'bc'`
 |Fires when a function prototype is compiled during script parsing.  The callback receives `(Proto)` — the compiled function prototype.
 |===
 
@@ -668,13 +658,13 @@ Accessing global variables requires a hash table lookup on every access.  In per
 ----
 -- Slow: global lookup every iteration
 for i in {0 to 1000} do
-   math.sin(i)
+   mytable.call(i)
 end
 
 -- Fast: cached local
-sin = math.sin
+local call = mytable.call
 for i in {0 to 1000} do
-   sin(i)
+   call(i)
 end
 ----
 
@@ -702,14 +692,75 @@ result = tostring(buf) <2>
 <1> For character arrays, `..=` converts `i` to a string for concatenation.  This differs from `push()`, which stores a number as a single raw byte.  See <<ch-arrays>>.
 <2> Materialising the string can be skipped if the buffer is passed to a function that supports arrays, which is the case for many file system operations.
 
+[[sec-nyi-operations]]
 ==== NYI Operations
 
-Certain operations are not yet implemented in the JIT compiler.  When the trace recorder encounters a NYI operation, it aborts recording and the code falls back to the interpreter.  Common NYI triggers include:
+Certain operations are not yet implemented in the JIT compiler.  When the trace recorder encounters a NYI operation, it aborts recording and the enclosing path falls back to the interpreter.  The most common NYI trigger in Tiri code is closure creation inside a traced loop: the `FNEW` bytecode aborts recording with error code 7.
 
-* `pairs()` and `next()` iteration — use `ipairs()`, `values()`, or range loops where possible.
-* `table.sort()` with complex comparison functions.
+[source,tiri]
+----
+-- Aborts: a new closure is constructed on every iteration
 
-Use `jit.off()` on functions that unavoidably contain NYI operations to prevent the JIT from repeatedly attempting and failing to compile them.
+for i in {0 to 5000} do
+   a = { 5, 3, 1, 4, 2 }
+   table.sort(a, function(X, Y) return X < Y end)
+end
+
+-- Compiles: the comparator is constructed once, outside the trace
+
+function cmp(X, Y) return X < Y end
+
+for i in {0 to 5000} do
+   a = { 5, 3, 1, 4, 2 }
+   table.sort(a, cmp)
+end
+----
+
+Hoisting a closure out of a hot loop removes the abort.  This applies to any callback constructed inline, not only comparison functions.  `table.sort()` itself records normally, both with a hoisted comparator and with the default comparator.
+
+Use `jit.off()` on functions that unavoidably contain NYI operations to prevent the JIT from repeatedly attempting and failing to compile them.  Confirm the diagnosis with <<sec-detecting-trace-aborts>> before applying `jit.off()`, because an abort with a non-NYI error code indicates a different cause and is not resolved by disabling compilation.
+
+[[sec-detecting-trace-aborts]]
+==== Detecting Trace Aborts
+
+Attach a callback to the `'trace'` event (see <<sec-the-jit-library>>) to report which loops fail to compile and why.  The callback receives the reason `'abort'` followed by `(TraceNo, Func, PC, ErrCode, ErrInfo)`.
+
+`ErrCode` is an integer trace error code, not a message string.  `ErrInfo` supplies the offending bytecode number for code 7, the fast function identifier for code 15, and `nil` otherwise.  Tiri provides no built-in table mapping codes to descriptions, so a reporter must declare the codes it recognises.
+
+[source,tiri]
+----
+function on_trace(What, TraceNo, Func, PC, ErrCode, ErrInfo)
+   if What is 'abort' then
+      info = jit.util.funcInfo(Func, PC)
+      print(f"abort at line {info?.currentLine ?? 0}, code {ErrCode}")
+   end
+end
+
+jit.attach(on_trace, 'trace')     -- start reporting
+-- ... run the workload ...
+jit.attach(on_trace)              -- detach
+----
+
+The current NYI error codes are 7, 15, 16, 20, 21, 23, 24, 33, 34 and 35.  Codes outside that set report a different abort cause, such as a length or nesting limit.  The complete list of codes is defined by the `TraceError` enumeration in `src/tiri/jit/src/lj_traceerr.h`.
+
+Two properties of the event stream affect interpretation:
+
+. **Abort counts do not scale with iteration counts.** Each abort penalises the failing location by raising its hot counter, and the location is blacklisted once the penalty passes its limit.  A loop that never compiles therefore produces a small, bounded number of events regardless of how many iterations run.  Treat the presence of an event as the signal, not its count.
+. **The absence of aborts does not prove compilation.** Code that never becomes hot is never recorded and never aborts.  Count the `'start'` and `'stop'` reasons alongside `'abort'` to distinguish a compiled loop from one that was never traced.
+
+[source,tiri]
+----
+local aborts, started, compiled = 0, 0, 0
+
+local function on_trace(What, TraceNo, Func, PC, ErrCode)
+   if What is 'start' then started += 1
+   elseif What is 'stop' then compiled += 1
+   elseif What is 'abort' then aborts += 1
+   end
+end
+----
+
+In Debug builds, running with `--log-api` also prints `Aborting JIT trace.  Error: N` for each abort.  This route requires no script changes, but reports only the error code, with no source location.  Release builds omit these messages.
 
 ==== Excessive Trace Flushes
 
