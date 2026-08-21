@@ -862,10 +862,8 @@ struct RangeForStmtPayload {
 
 enum class GenericForTarget : uint8_t {
    IteratorProtocol,
-   KnownArray,
-   KnownTable,
-   KnownRange,
-   RuntimeCollectionOrIterator
+   BareTable,
+   BareTarget
 };
 
 struct GenericForStmtPayload {

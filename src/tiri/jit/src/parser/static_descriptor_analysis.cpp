@@ -2047,42 +2047,10 @@ private:
                    (not iterator.nullable or payload.iterators.front()->kind IS AstNodeKind::CallExpr)) {
                   payload.target = GenericForTarget::IteratorProtocol;
                }
-               else if (iterator.proved() and not iterator.nullable) {
-                  switch (iterator.primary) {
-                     case TiriType::Array: payload.target = GenericForTarget::KnownArray; break;
-                     case TiriType::Table: payload.target = GenericForTarget::KnownTable; break;
-                     case TiriType::Range: payload.target = GenericForTarget::KnownRange; break;
-                     default: payload.target = GenericForTarget::RuntimeCollectionOrIterator; break;
-                  }
+               else if (iterator.proved() and not iterator.nullable and iterator.primary IS TiriType::Table) {
+                  payload.target = GenericForTarget::BareTable;
                }
-               else payload.target = GenericForTarget::RuntimeCollectionOrIterator;
-
-               if (payload.target IS GenericForTarget::KnownArray) {
-                  auto &first = this->catalogue_.binding(payload.names.front().binding_id);
-                  StaticValueDescriptor index;
-                  index.primary = TiriType::Num;
-                  index.proof = StaticProof::Trusted;
-                  first.value = this->add_value(index);
-                  payload.names.front().static_value = first.value;
-                  if (payload.names.size() > 1) {
-                     StaticValueDescriptor element;
-                     element.primary = iterator.array_element.logical_type;
-                     element.object_class_id = iterator.array_element.object_class_id;
-                     element.struct_def = iterator.array_element.struct_def;
-                     element.proof = StaticProof::Trusted;
-                     auto &second = this->catalogue_.binding(payload.names[1].binding_id);
-                     second.value = this->add_value(element);
-                     payload.names[1].static_value = second.value;
-                  }
-               }
-               else if (payload.target IS GenericForTarget::KnownRange) {
-                  auto &first = this->catalogue_.binding(payload.names.front().binding_id);
-                  StaticValueDescriptor value;
-                  value.primary = TiriType::Num;
-                  value.proof = StaticProof::Trusted;
-                  first.value = this->add_value(value);
-                  payload.names.front().static_value = first.value;
-               }
+               else payload.target = GenericForTarget::BareTarget;
             }
             else payload.target = GenericForTarget::IteratorProtocol;
             if (payload.body) this->propagate_block(*payload.body);
