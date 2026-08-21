@@ -54,6 +54,9 @@ extern "C" [[nodiscard]] int32_t lj_arr_is_contains_handler(cTValue *);
 extern "C" [[nodiscard]] int32_t lj_arr_contains(lua_State *, GCarray *, cTValue *);
 extern "C" [[nodiscard]] int32_t lj_arr_contains_num(GCarray *, lua_Number);
 extern "C" [[nodiscard]] int32_t lj_arr_contains_str(GCarray *, GCstr *);
+LJ_NOAPI [[nodiscard]] int32_t lj_arr_find_num(GCarray *, lua_Number, int32_t, int32_t, int32_t);
+LJ_NOAPI [[nodiscard]] int32_t lj_arr_find_str(GCarray *, GCstr *, int32_t, int32_t, int32_t);
+LJ_NOAPI [[nodiscard]] int32_t lj_arr_find_object(GCarray *, OBJECTID, int32_t, int32_t, int32_t);
 
 // Safe array get - returns nil for out-of-bounds instead of throwing error
 // Used by safe navigation operator (?[]) on arrays

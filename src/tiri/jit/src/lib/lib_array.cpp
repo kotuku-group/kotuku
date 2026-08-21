@@ -1501,203 +1501,8 @@ LJLIB_CF(array_fill)
 }
 
 //********************************************************************************************************************
-// Template-based find for contiguous forward search (step=1). Hoists type dispatch outside the loop.
+#include "lj_array_search.h"
 
-template<typename T>
-static int32_t find_forward_contiguous(const void *Data, int32_t Start, int32_t Stop, lua_Number Value)
-{
-   const T *base = (const T *)Data;
-   T val = T(Value);
-   for (int32_t i = Start; i <= Stop; i++) {
-      if (base[i] IS val) return i;
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
-// Template-based find for stepped ranges. Hoists type dispatch outside the loop.
-
-template<typename T>
-static int32_t find_stepped(const void *Data, int32_t Start, int32_t Stop, int32_t Step, lua_Number Value)
-{
-   const T *base = (const T *)Data;
-   T val = T(Value);
-   if (Step > 0) {
-      for (int32_t i = Start; i <= Stop; i += Step) {
-         if (base[i] IS val) return i;
-      }
-   }
-   else {
-      for (int32_t i = Start; i >= Stop; i += Step) {
-         if (base[i] IS val) return i;
-      }
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
-// Dispatches find operation based on array element type.
-// Returns index if found, -1 if not found.
-
-static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int32_t Stop, int32_t Step)
-{
-   const void *data = Arr->arraydata();
-
-   // Optimised path for contiguous forward search (step=1)
-   if (Step IS 1) {
-      switch (Arr->elemtype) {
-         case AET::BYTE:   return find_forward_contiguous<uint8_t>(data, Start, Stop, Value);
-         case AET::INT8:   return find_forward_contiguous<int8_t>(data, Start, Stop, Value);
-         case AET::INT16:  return find_forward_contiguous<int16_t>(data, Start, Stop, Value);
-         case AET::INT32:  return find_forward_contiguous<int32_t>(data, Start, Stop, Value);
-         case AET::INT64:  return find_forward_contiguous<int64_t>(data, Start, Stop, Value);
-         case AET::UINT8:  return find_forward_contiguous<uint8_t>(data, Start, Stop, Value);
-         case AET::UINT16: return find_forward_contiguous<uint16_t>(data, Start, Stop, Value);
-         case AET::UINT32: return find_forward_contiguous<uint32_t>(data, Start, Stop, Value);
-         case AET::UINT64: return find_forward_contiguous<uint64_t>(data, Start, Stop, Value);
-         case AET::FLOAT:  return find_forward_contiguous<float>(data, Start, Stop, Value);
-         case AET::DOUBLE: return find_forward_contiguous<double>(data, Start, Stop, Value);
-         default: return -1;
-      }
-   }
-
-   // Stepped search path (non-contiguous or reverse direction)
-   switch (Arr->elemtype) {
-      case AET::BYTE:   return find_stepped<uint8_t>(data, Start, Stop, Step, Value);
-      case AET::INT8:   return find_stepped<int8_t>(data, Start, Stop, Step, Value);
-      case AET::INT16:  return find_stepped<int16_t>(data, Start, Stop, Step, Value);
-      case AET::INT32:  return find_stepped<int32_t>(data, Start, Stop, Step, Value);
-      case AET::INT64:  return find_stepped<int64_t>(data, Start, Stop, Step, Value);
-      case AET::UINT8:  return find_stepped<uint8_t>(data, Start, Stop, Step, Value);
-      case AET::UINT16: return find_stepped<uint16_t>(data, Start, Stop, Step, Value);
-      case AET::UINT32: return find_stepped<uint32_t>(data, Start, Stop, Step, Value);
-      case AET::UINT64: return find_stepped<uint64_t>(data, Start, Stop, Step, Value);
-      case AET::FLOAT:  return find_stepped<float>(data, Start, Stop, Step, Value);
-      case AET::DOUBLE: return find_stepped<double>(data, Start, Stop, Step, Value);
-      default: return -1;
-   }
-}
-
-//********************************************************************************************************************
-// Object search by UID for stepped ranges.
-
-static int32_t find_object_in_array(GCarray *Arr, OBJECTID SearchUid, int32_t Start, int32_t Stop, int32_t Step)
-{
-   auto refs = Arr->get<GCRef>();
-   if (Step > 0) {
-      for (int32_t i = Start; i <= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCobject *obj = gco_to_object(gcref(ref));
-            if (obj and obj->uid IS SearchUid) return i;
-         }
-      }
-   }
-   else {
-      for (int32_t i = Start; i >= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCobject *obj = gco_to_object(gcref(ref));
-            if (obj and obj->uid IS SearchUid) return i;
-         }
-      }
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
-// Canonical array membership helper shared by the library adapter, interpreter and trace recorder.
-
-extern "C" int32_t lj_arr_contains(lua_State *L, GCarray *Array, cTValue *Candidate)
-{
-   if (Array->len IS 0) return 0;
-
-   if (Array->elemtype IS AET::OBJECT) {
-      OBJECTID search_uid;
-      if (tvisobject(Candidate)) search_uid = objectV(Candidate)->uid;
-      else {
-         TValue converted;
-         auto candidate_uid = try_to_integer(Candidate, &converted);
-         if (not candidate_uid) {
-            lj_err_argv(L, 2, ErrMsg::BADTYPE, "object or uid", lj_typename(Candidate));
-            return 0;
-         }
-         search_uid = OBJECTID(*candidate_uid);
-      }
-      return find_object_in_array(Array, search_uid, 0, int32_t(Array->len - 1), 1) >= 0;
-   }
-
-   if (Array->elemtype IS AET::STR_GC) {
-      GCstr *candidate_string;
-      if (tvisstr(Candidate)) candidate_string = strV(Candidate);
-      else if (tvisnumber(Candidate)) {
-         TValue converted;
-         copyTV(L, &converted, Candidate);
-         candidate_string = lj_strfmt_number(L, &converted);
-      }
-      else {
-         lj_err_argv(L, 2, ErrMsg::BADTYPE, "string", lj_typename(Candidate));
-         return 0;
-      }
-      return find_string_in_array(Array, candidate_string, 0, int32_t(Array->len - 1), 1) >= 0;
-   }
-
-   TValue converted;
-   auto candidate_number = try_to_number(Candidate, &converted);
-   if (not candidate_number) {
-      lj_err_argv(L, 2, ErrMsg::BADTYPE, "number", lj_typename(Candidate));
-      return 0;
-   }
-   return find_in_array(Array, *candidate_number, 0, int32_t(Array->len - 1), 1) >= 0;
-}
-
-extern "C" int32_t lj_arr_contains_num(GCarray *Array, lua_Number Candidate)
-{
-   if (Array->len IS 0) return 0;
-   return find_in_array(Array, Candidate, 0, int32_t(Array->len - 1), 1) >= 0;
-}
-
-extern "C" int32_t lj_arr_contains_str(GCarray *Array, GCstr *Candidate)
-{
-   if (Array->len IS 0) return 0;
-   return find_string_in_array(Array, Candidate, 0, int32_t(Array->len - 1), 1) >= 0;
-}
-
-//********************************************************************************************************************
-// String search by value for stepped ranges.
-// Returns index if found, -1 if not found.
-
-static int32_t find_string_in_array(GCarray *Arr, GCstr *SearchStr, int32_t Start, int32_t Stop, int32_t Step)
-{
-   auto refs = Arr->get<GCRef>();
-   if (Step > 0) {
-      for (int32_t i = Start; i <= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCstr *elem = gco_to_string(gcref(ref));
-            if (elem->len IS SearchStr->len and
-                memcmp(strdata(elem), strdata(SearchStr), elem->len) IS 0) {
-               return i;
-            }
-         }
-      }
-   }
-   else {
-      for (int32_t i = Start; i >= Stop; i += Step) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCstr *elem = gco_to_string(gcref(ref));
-            if (elem->len IS SearchStr->len and
-                memcmp(strdata(elem), strdata(SearchStr), elem->len) IS 0) {
-               return i;
-            }
-         }
-      }
-   }
-   return -1;
-}
-
-//********************************************************************************************************************
 // Usage: array.find(arr, value [, start]) or array.find(arr, value, {range})
 //
 // Searches for a value in the array.
@@ -1767,6 +1572,52 @@ LJLIB_CF(array_find)
    if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
    if (start >= stop) return array_push_find_result(L, -1);
    return array_push_find_result(L, find_in_array(arr, value, start, stop - 1, 1));
+}
+
+//********************************************************************************************************************
+// Canonical array membership helper shared by the library adapter, interpreter and trace recorder.
+
+extern "C" int32_t lj_arr_contains(lua_State *L, GCarray *Array, cTValue *Candidate)
+{
+   if (Array->len IS 0) return 0;
+
+   if (Array->elemtype IS AET::OBJECT) {
+      OBJECTID search_uid;
+      if (tvisobject(Candidate)) search_uid = objectV(Candidate)->uid;
+      else {
+         TValue converted;
+         auto candidate_uid = try_to_integer(Candidate, &converted);
+         if (not candidate_uid) {
+            lj_err_argv(L, 2, ErrMsg::BADTYPE, "object or uid", lj_typename(Candidate));
+            return 0;
+         }
+         search_uid = OBJECTID(*candidate_uid);
+      }
+      return lj_arr_find_object(Array, search_uid, 0, int32_t(Array->len - 1), 1) >= 0;
+   }
+
+   if (Array->elemtype IS AET::STR_GC) {
+      GCstr *candidate_string;
+      if (tvisstr(Candidate)) candidate_string = strV(Candidate);
+      else if (tvisnumber(Candidate)) {
+         TValue converted;
+         copyTV(L, &converted, Candidate);
+         candidate_string = lj_strfmt_number(L, &converted);
+      }
+      else {
+         lj_err_argv(L, 2, ErrMsg::BADTYPE, "string", lj_typename(Candidate));
+         return 0;
+      }
+      return lj_arr_find_str(Array, candidate_string, 0, int32_t(Array->len - 1), 1) >= 0;
+   }
+
+   TValue converted;
+   auto candidate_number = try_to_number(Candidate, &converted);
+   if (not candidate_number) {
+      lj_err_argv(L, 2, ErrMsg::BADTYPE, "number", lj_typename(Candidate));
+      return 0;
+   }
+   return lj_arr_find_num(Array, *candidate_number, 0, int32_t(Array->len - 1), 1) >= 0;
 }
 
 //********************************************************************************************************************

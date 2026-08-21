@@ -778,6 +778,7 @@ set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.c
    "${JIT_SRC}/lib/lib_regex.cpp"
    "${JIT_SRC}/lib/lib_string.cpp"
    "${JIT_SRC}/lib/lib_table.cpp"
+   "${JIT_SRC}/runtime/lj_array_search.cpp"
    "${JIT_SRC}/bytecode/lj_bc.cpp"
    "${JIT_SRC}/bytecode/lj_bcread.cpp"
    "${JIT_SRC}/bytecode/lj_bcwrite.cpp"
