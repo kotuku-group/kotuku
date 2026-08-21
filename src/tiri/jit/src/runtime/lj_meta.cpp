@@ -1351,13 +1351,14 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 // built-ins are enforced regardless of source syntax or table aliasing.  Checks run strictly before mutation, so a
 // failed store leaves both the stored value and the persisted policy unchanged.
 //
-// Value must reference a rooted Lua stack slot and L->top must be valid.  The recorder materialises JIT values in
-// their corresponding Lua stack slot before emitting this call.
+// Value must reference a rooted Lua stack slot.  The recorder materialises JIT values in their corresponding Lua stack
+// slot before emitting this call; branches that allocate or raise synchronise the interpreter stack on demand.
 
 static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
    GCstr *DeclarationOverride)
 {
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+      JITStackSync stack_sync(L);
       CSTRING message = lj_strfmt_pushf(L, "cannot override built-in '%s'", strdata(Name));
       lj_err_callermsg(L, message);
    }
@@ -1366,7 +1367,9 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
    RuntimeContractDescriptor descriptor;
    const RuntimeContractEntry *entry = nullptr;
    if (DeclarationOverride) {
+      JITStackSync stack_sync(L);
       decode_contract_or_error(L, DeclarationOverride, descriptor);
+      stack_sync.restore();
       if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
    }
    else if (const CachedGlobalContractRecord *cached =
@@ -1389,12 +1392,15 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
       entry = &cached_entry;
    }
    else if (GCstr *persisted = lj_tab_get_global_contract(Environment, Name)) {
+      JITStackSync stack_sync(L);
       decode_contract_or_error(L, persisted, descriptor);
+      stack_sync.restore();
       if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
    }
 
    if (entry) {
       if (contract_entry_is_const(*entry) and not contract_entry_is_initialising(*entry)) {
+         JITStackSync stack_sync(L);
          const_global_error(L, Name);
       }
       if (entry->type != TiriType::Any and entry->type != TiriType::Unknown) {
@@ -1402,17 +1408,30 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
          TValue resolved_value;
          if (lj_is_thunk(Value)) {
             // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
-            VMHelperGuard guard(L);
-            cTValue *resolved = lj_thunk_resolve(L, udataV(Value));
-            copyTV(L, &resolved_value, resolved);
+            JITStackSync stack_sync(L);
+            {
+               VMHelperGuard guard(L);
+               cTValue *resolved = lj_thunk_resolve(L, udataV(Value));
+               copyTV(L, &resolved_value, resolved);
+            }
             checked = &resolved_value;
+            stack_sync.restore();
          }
          if (not contract_matches(L, checked, *entry)) {
+            JITStackSync stack_sync(L);
             contract_error(L, checked, ContractBoundary::Global, *entry, entry->position);
          }
       }
    }
 }
+
+//********************************************************************************************************************
+// Validate a global environment store.
+//
+// The recorder lowers environment stores to lj_env_check(), so this runs from compiled traces as well as from the
+// interpreter and the C API.  Successful checks deliberately leave the interpreter stack untouched.  Individual
+// allocating and error branches synchronise immediately before they need a valid trace frame, keeping ordinary global
+// stores out of this stack-management path.
 
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
 {

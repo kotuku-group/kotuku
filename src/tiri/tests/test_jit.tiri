@@ -2116,6 +2116,79 @@ end
    assert(trace_found is true, "Expected array.getString() to produce a JIT trace")
 end
 
+function traced_struct_array_get(Values:array<struct<JITArrayContractAlpha>>, Index:num):struct<JITArrayContractAlpha>
+   return Values[Index]
+end
+
+function traced_struct_array_set(Values:array<struct<JITArrayContractAlpha>>, Value:any)
+   Values[0] = Value
+end
+
+function traced_float_array_push(Values:array<float>, Value:num):num
+   return Values.push(Value)
+end
+
+function traced_array_resize_sync(Values:array<int>, Size:num):num
+   return Values.resize(Size)
+end
+
+function traced_array_get_string_error(Values:array<byte>, Start:num):str
+   return Values.getString(Start, 1)
+end
+
+@Test(hotpath=80) function JITArrayHelpersPreserveErrorStack()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local alpha = struct<JITArrayContractAlpha> { Value=7 }
+   local beta = struct<JITArrayContractBeta> { Value=9 }
+   local structs = array<struct<JITArrayContractAlpha>> { alpha }
+   local floats = array<float>
+   local integers = array<int> { 1 }
+   local bytes = array.new("abc")
+
+   for i in {1 into 200} do
+      assert(traced_struct_array_get(structs, 0).Value is 7,
+         'A helper-backed structure array get should remain valid while hot')
+      traced_struct_array_set(structs, alpha)
+      traced_float_array_push(floats, 1.5)
+      traced_array_resize_sync(integers, (i % 3) + 1)
+      assert(traced_array_get_string_error(bytes, 0) is 'a',
+         'A helper-backed byte string extraction should remain valid while hot')
+   end
+
+   try
+      traced_struct_array_set(structs, beta)
+   except error_value
+      assert(error_value != nil, 'A traced structure-array mismatch should provide an error value')
+   success
+      error('A traced structure-array mismatch should fail')
+   end
+
+   try
+      traced_float_array_push(floats, 1e100)
+   except error_value
+      assert(error_value != nil, 'A traced float-array overflow should provide an error value')
+   success
+      error('A traced float-array overflow should fail')
+   end
+
+   try
+      traced_array_get_string_error(bytes, -1)
+   except error_value
+      assert(error_value != nil, 'A traced getString range error should provide an error value')
+   success
+      error('A traced getString range error should fail')
+   end
+
+   assert(traced_struct_array_get(structs, 0).Value is 7,
+      'Caught helper errors must preserve the original structure-array value and frame')
+   assert(traced_array_resize_sync(integers, 4) is 4 and traced_array_get_string_error(bytes, 1) is 'b',
+      'Array helper calls must remain usable after caught trace errors')
+   assert(count_jit_traces(30) > 0, 'Expected the array helper workload to produce JIT traces')
+end
+
 @Test(hotpath=80) function ArrayPushSingleValueTracesAndReturnsLength()
    jit.on()
    jit.flush()
