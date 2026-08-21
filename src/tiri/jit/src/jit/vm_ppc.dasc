@@ -1286,7 +1286,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  add CARG3, BASE, RD
   |.endif
   |   stp BASE, L->base
-  |  lbz CARG4, -8(PC)
+  |  decode_OP1 CARG4, INS
   |  andi. CARG4, CARG4, 1
   |  bl extern lj_meta_contains  // (lua_State *L, TValue *candidate, TValue *target, int inverted)
   |  // Returns 0/1 or TValue * (metamethod).

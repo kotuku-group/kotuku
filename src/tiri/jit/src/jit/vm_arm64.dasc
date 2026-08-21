@@ -880,8 +880,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  add CARG3, BASE, RC, lsl #3
   |   str BASE, L->base
   |  mov CARG1, L
-  |  ldrb CARG4w, [PC, #-8]
-  |  and CARG4, CARG4, #1
+  |  and CARG4w, INSw, #1
   |   str PC, SAVE_PC
   |  bl extern lj_meta_contains  // (lua_State *L, TValue *candidate, TValue *target, int inverted)
   |  // Returns 0/1 or TValue * (metamethod).
