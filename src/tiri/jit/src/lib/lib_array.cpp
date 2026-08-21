@@ -25,7 +25,9 @@
 #include "lj_bulk.h"
 #include "lj_meta.h"
 #include "lj_struct.h"
+#include "lj_vmarray.h"
 #include "lib.h"
+#include "lib_utils.h"
 #include "lib_range.h"
 #include "../parser/static_type_descriptor.h"
 
@@ -58,6 +60,7 @@ constexpr auto HASH_ANY     = kt::strhash("any");
 // Forward declarations
 static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int32_t Stop, int32_t Step);
 static int32_t find_object_in_array(GCarray *Arr, OBJECTID SearchUid, int32_t Start, int32_t Stop, int32_t Step);
+static int32_t find_string_in_array(GCarray *Arr, GCstr *SearchStr, int32_t Start, int32_t Stop, int32_t Step);
 static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx);
 
 const array_meta glArrayConversion[size_t(AET::MAX)] = {
@@ -744,44 +747,13 @@ LJLIB_CF(array_concat)
 LJLIB_NOREG LJLIB_CF(array_contains)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-
-   if (arr->len IS 0) {
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-
-   if (arr->elemtype IS AET::OBJECT) {
-      OBJECTID search_uid = object_uid_from_value(L, 2);
-      int32_t result = find_object_in_array(arr, search_uid, 0, int32_t(arr->len - 1), 1);
-      lua_pushboolean(L, result >= 0 ? 1 : 0);
-      return 1;
-   }
-
-   // For string arrays, we need special handling
-   if (arr->elemtype IS AET::STR_GC) {
-      GCstr *search_str = lj_lib_checkstr(L, 2);
-      auto refs = arr->get<GCRef>();
-      for (MSize i = 0; i < arr->len; i++) {
-         GCRef ref = refs[i];
-         if (gcref(ref)) {
-            GCstr *elem = gco_to_string(gcref(ref));
-            if (elem->len IS search_str->len and
-                memcmp(strdata(elem), strdata(search_str), elem->len) IS 0) {
-               lua_pushboolean(L, 1);
-               return 1;
-            }
-         }
-      }
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-
-   // For numeric types, use the existing find logic
-   lua_Number value = lj_lib_checknum(L, 2);
-   int32_t result = find_in_array(arr, value, 0, int32_t(arr->len - 1), 1);
-
-   lua_pushboolean(L, result >= 0 ? 1 : 0);
+   lua_pushboolean(L, lj_arr_contains(L, arr, L->base + 1));
    return 1;
+}
+
+extern "C" int32_t lj_arr_is_contains_handler(cTValue *Value)
+{
+   return tvisfunc(Value) and iscfunc(funcV(Value)) and funcV(Value)->c.f IS lj_cf_array_contains;
 }
 
 //********************************************************************************************************************
@@ -1631,6 +1603,64 @@ static int32_t find_object_in_array(GCarray *Arr, OBJECTID SearchUid, int32_t St
       }
    }
    return -1;
+}
+
+//********************************************************************************************************************
+// Canonical array membership helper shared by the library adapter, interpreter and trace recorder.
+
+extern "C" int32_t lj_arr_contains(lua_State *L, GCarray *Array, cTValue *Candidate)
+{
+   if (Array->len IS 0) return 0;
+
+   if (Array->elemtype IS AET::OBJECT) {
+      OBJECTID search_uid;
+      if (tvisobject(Candidate)) search_uid = objectV(Candidate)->uid;
+      else {
+         TValue converted;
+         auto candidate_uid = try_to_integer(Candidate, &converted);
+         if (not candidate_uid) {
+            lj_err_argv(L, 2, ErrMsg::BADTYPE, "object or uid", lj_typename(Candidate));
+            return 0;
+         }
+         search_uid = OBJECTID(*candidate_uid);
+      }
+      return find_object_in_array(Array, search_uid, 0, int32_t(Array->len - 1), 1) >= 0;
+   }
+
+   if (Array->elemtype IS AET::STR_GC) {
+      GCstr *candidate_string;
+      if (tvisstr(Candidate)) candidate_string = strV(Candidate);
+      else if (tvisnumber(Candidate)) {
+         TValue converted;
+         copyTV(L, &converted, Candidate);
+         candidate_string = lj_strfmt_number(L, &converted);
+      }
+      else {
+         lj_err_argv(L, 2, ErrMsg::BADTYPE, "string", lj_typename(Candidate));
+         return 0;
+      }
+      return find_string_in_array(Array, candidate_string, 0, int32_t(Array->len - 1), 1) >= 0;
+   }
+
+   TValue converted;
+   auto candidate_number = try_to_number(Candidate, &converted);
+   if (not candidate_number) {
+      lj_err_argv(L, 2, ErrMsg::BADTYPE, "number", lj_typename(Candidate));
+      return 0;
+   }
+   return find_in_array(Array, *candidate_number, 0, int32_t(Array->len - 1), 1) >= 0;
+}
+
+extern "C" int32_t lj_arr_contains_num(GCarray *Array, lua_Number Candidate)
+{
+   if (Array->len IS 0) return 0;
+   return find_in_array(Array, Candidate, 0, int32_t(Array->len - 1), 1) >= 0;
+}
+
+extern "C" int32_t lj_arr_contains_str(GCarray *Array, GCstr *Candidate)
+{
+   if (Array->len IS 0) return 0;
+   return find_string_in_array(Array, Candidate, 0, int32_t(Array->len - 1), 1) >= 0;
 }
 
 //********************************************************************************************************************
