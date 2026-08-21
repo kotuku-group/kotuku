@@ -1,5 +1,6 @@
 
 rx_obj_new = <{ regex.new("([\\w]+)\\s*=\\s*obj\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]", regex.DOT_ALL) }>
+rx_obj_ctor = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*obj<\s*([A-Za-z_]\w*)\s*>]]) }>
 rx_starts_capital = <{ regex.new("^[A-Z]") }>
 rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
 rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
@@ -112,6 +113,11 @@ function buildTypeMap(Doc):table
       -- Most class names in the XML are in TitleCase
       normalizedClass = classname.sub(1,1).upper() .. classname.sub(2)
       typeMap[varname] = normalizedClass
+   end
+
+   for start, stop, cap in rx_obj_ctor.findAll(Doc.content) do
+      normalizedClass = cap[1].sub(1,1).upper() .. cap[1].sub(2)
+      typeMap[cap[0]] = normalizedClass
    end
 
    return typeMap

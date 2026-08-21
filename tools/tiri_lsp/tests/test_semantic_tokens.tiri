@@ -454,6 +454,30 @@ end
    assert(call_namespace and call_namespace.type is 10, 'struct.size() usage should remain a namespace token.')
 end
 
+@Test function ObjectConstructorAndTypeConstraintReceiveDistinctTokens()
+   source = 'clock = obj<Time> {}\n' ..
+      'function use(Clock: obj<Time>) end\n' ..
+      "replacement = obj.new('Time', {})\n"
+
+   tokens = tokenizeTiri(source)
+
+   constructor_keyword = findToken(tokens, 0, 8, 'obj')
+   constructor_class = findToken(tokens, 0, 12, 'Time')
+   constraint_type = findToken(tokens, 1, 20, 'obj')
+   constraint_class = findToken(tokens, 1, 24, 'Time')
+   namespace_token = findToken(tokens, 2, 14, 'obj')
+
+   assert(constructor_keyword and constructor_keyword.type is 0,
+      'obj<Class> construction should highlight obj as a compiler-owned keyword.')
+   assert(constructor_class and constructor_class.type is 11,
+      'The constructed object class should receive a class token.')
+   assert(constraint_type and constraint_type.type is 7,
+      'obj<Class> constraints should retain type highlighting.')
+   assert(constraint_class and constraint_class.type is 11,
+      'The constrained object class should receive a class token.')
+   assert(namespace_token and namespace_token.type is 10, 'obj.new() should retain namespace highlighting.')
+end
+
 @Test function EnumIsAKeyword()
    source = 'enum Colour { Red, Green }\n'
 

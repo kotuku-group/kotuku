@@ -20,6 +20,7 @@ rx_def_loader_before  <const> = <{ regex.new(
 ) }>
 rx_def_obj_new_before <const> = <{ regex.new([[obj\.new\s*\(\s*$]]) }>
 rx_def_obj_new        <const> = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=], regex.DOT_ALL) }>
+rx_def_obj_ctor       <const> = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*obj<\s*([A-Za-z_]\w*)\s*>]]) }>
 rx_def_action_prefix  <const> = <{ regex.new([=[^ac[A-Z]]=]) }>
 rx_def_method_prefix  <const> = <{ regex.new([=[^mt[A-Z]]=]) }>
 
@@ -604,6 +605,11 @@ function buildDefinitionTypeMap(Doc:table):table
       local var_name, class_name = cap[0], cap[1]
       normalised = normaliseClassName(class_name)
       if var_name and normalised then type_map[var_name] = normalised end
+   end
+
+   for start, stop, cap in rx_def_obj_ctor.findAll(Doc.content) do
+      normalised = normaliseClassName(cap[1])
+      if cap[0] and normalised then type_map[cap[0]] = normalised end
    end
 
    return type_map

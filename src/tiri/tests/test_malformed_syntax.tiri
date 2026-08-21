@@ -201,6 +201,25 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Malformed compiler-owned object constructors
+
+function assertInvalidObjectConstructor(Source, Meaning, Context)
+   local result = debug.validate(Source)
+   assert(result.success is false, Context .. ': malformed source should fail validation')
+   assert(#result.diagnostics > 0, Context .. ': malformed source should report a diagnostic')
+   assert(result.diagnostics[0].message.find(Meaning),
+      Context .. ': diagnostic should identify ' .. Meaning .. ', got ' .. result.diagnostics[0].message)
+end
+
+@Test function ValidateMalformedObjectConstructors()
+   assertInvalidObjectConstructor('local value = obj<> {}', 'class name', 'missing object class name')
+   assertInvalidObjectConstructor('local value = obj<42> {}', 'class name', 'invalid object class token')
+   assertInvalidObjectConstructor('local value = obj<Time {}', 'object class name', 'missing closing object class angle')
+   assertInvalidObjectConstructor('local value = obj<Time>', 'initialiser table', 'missing object initialiser table')
+   assertInvalid('local value = obj<Time> { year=2026', 'unterminated object initialiser table')
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Malformed functions, calls, and annotations
 
 @Test function ValidateMalformedFunctionsAndCalls()

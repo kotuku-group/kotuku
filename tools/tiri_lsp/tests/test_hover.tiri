@@ -185,6 +185,13 @@ end
    assert(not hover, 'Unknown symbols should not return hover content.')
 end
 
+@Test function ObjectConstructorClassHover()
+   hover, token = hoverAt('clock = obj<Ti|me> {}\n')
+
+   assert(token and token.text is 'Time', 'Hover should identify an obj<Class> constructor class name.')
+   assertContains(hover, 'class Time', 'Object constructor class hover should resolve generated class documentation.')
+end
+
 @Test function StructDeclarationHoverShowsFields()
    hover, token = hoverAt([[
 struct Us|er

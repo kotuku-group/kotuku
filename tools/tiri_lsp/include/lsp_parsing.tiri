@@ -612,6 +612,51 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
 
          if isRangeOperator(start_pos, pos, ident) then
             addToken(line, ident_start, ident_len, 1, 0)  -- range separator operator
+         elseif ident is 'obj' then
+            -- `obj` remains the public namespace except for the compiler-owned `obj<Class> { ... }` constructor.
+            -- A brace following the complete angle form distinguishes construction from an obj<Class> type
+            -- constraint, which continues to be highlighted as a type reference.
+            if pos < len and Source.sub(pos, pos + 1) is '<' then
+               obj_pos = pos
+               obj_col = col
+               pos++
+               col++
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+                  name_col = col
+                  while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+                     pos++
+                     col++
+                  end
+                  name_len = col - name_col
+                  while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                     pos++
+                     col++
+                  end
+                  if pos < len and Source.sub(pos, pos + 1) is '>' then
+                     pos++
+                     col++
+                     after_pos = pos
+                     after_col = col
+                     after_line = line
+                     skipWhitespace()
+                     constructor = pos < len and Source.sub(pos, pos + 1) is '{'
+                     pos = after_pos
+                     col = after_col
+                     line = after_line
+                     addToken(line, ident_start, ident_len, constructor and 0 or 7, 0)
+                     addToken(line, name_col, name_len, 11, 0)
+                     continue
+                  end
+               end
+               -- A malformed obj<... form is still an ordinary namespace use until the compiler reports it.
+               pos = obj_pos
+               col = obj_col
+            end
+            addToken(line, ident_start, ident_len, 10, 0)  -- namespace ('obj' library)
          elseif ident is 'struct' then
             -- 'struct' is a soft keyword.  Followed immediately by '<' it forms a struct<Name> type reference or
             -- explicit construction; followed by an identifier it begins an end-terminated declaration.  Anything

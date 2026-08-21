@@ -130,6 +130,20 @@ end
    assertUriContains(locations, '/docs/xml/modules/classes/xml.xml', 'obj.new class literal should resolve to class docs')
 end
 
+@Test function ObjectConstructorClassResolution()
+   doc = makeDoc('clock = obj<Time> {}\n')
+   locations = resolveDefinition(doc, { line = 0, character = 13 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'obj<Class> names should resolve to class documentation')
+end
+
+@Test function ObjectConstructorMemberResolution()
+   doc = makeDoc('clock = obj<Time> {}\nclock.year\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'Members after obj<Class> construction should resolve through the constructed class')
+end
+
 @Test function ObjectActionResolution()
    doc = makeDoc("xml = obj.new('xml')\nxml.acClear()\n")
    locations = resolveDefinition(doc, { line = 1, character = 6 })

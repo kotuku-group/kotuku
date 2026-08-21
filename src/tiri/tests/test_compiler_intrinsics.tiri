@@ -9,6 +9,7 @@ function replacement_array_new(Size:num, Type:str):str return 'replacement array
 function replacement_array_of(Type:str, ...):str return 'replacement array.of' end
 function replacement_array_resize(Value:any, Size:num):str return 'replacement array.resize' end
 function replacement_struct_new(Name:str, Initialiser:table):str return 'replacement struct.new' end
+function replacement_obj_new(ClassName:any, Initialiser:table):str return 'replacement obj.new' end
 function replacement_band(Left:num, Right:num):num return 101 end
 function replacement_bor(Left:num, Right:num):num return 102 end
 function replacement_bxor(Left:num, Right:num):num return 103 end
@@ -50,6 +51,7 @@ end
    local original_array_of = array.of
    local original_array_resize = array.resize
    local original_struct_new = struct.new
+   local original_obj_new = obj.new
    local original_band = bit.band
    local original_bor = bit.bor
    local original_bxor = bit.bxor
@@ -63,6 +65,7 @@ end
       array.of = original_array_of
       array.resize = original_array_resize
       struct.new = original_struct_new
+      obj.new = original_obj_new
       bit.band = original_band
       bit.bor = original_bor
       bit.bxor = original_bxor
@@ -76,6 +79,7 @@ end
    array.of = replacement_array_of
    array.resize = replacement_array_resize
    struct.new = replacement_struct_new
+   obj.new = replacement_obj_new
    bit.band = replacement_band
    bit.bor = replacement_bor
    bit.bxor = replacement_bxor
@@ -91,6 +95,8 @@ end
    local resized = array<int, 4> { 7, 8 }
    local empty = array<int, 2>
    local constructed = struct<CompilerIntrinsicRecord> { Value=9 }
+   local typed_clock = obj<Time> {}
+   local explicit_clock = obj.new('Time', {})
    local value = 5
    local amount = 1
 
@@ -101,6 +107,7 @@ end
    assert(#resized is 4 and resized[0] is 7, 'Sized initialised arrays should use canonical array.resize')
    assert(#empty is 2, 'Empty typed arrays should use canonical array.new')
    assert(constructed.Value is 9, 'Declared struct syntax should use canonical struct.new')
+   assert(typed_clock.class.name is 'Time', 'Typed object syntax should use canonical object creation')
    assert((value & 3) is 1 and (value | 2) is 7 and (value ^ 1) is 4,
       'Binary bitwise syntax should use canonical bit callables')
    assert(~value is -6 and value << amount is 10 and value >> amount is 2,
@@ -114,6 +121,8 @@ end
       'Explicit array constructor calls should retain dynamic field lookup semantics')
    assert(struct.new('CompilerIntrinsicRecord', {}) is 'replacement struct.new',
       'Explicit struct.new calls should retain dynamic field lookup semantics')
+   assert(explicit_clock is 'replacement obj.new',
+      'Explicit obj.new calls should retain dynamic field lookup semantics')
    assert(bit.band(1, 1) is 101 and bit.bnot(1) is 104,
       'Explicit bit calls should retain dynamic field lookup semantics')
 end
@@ -136,6 +145,12 @@ end
       local struct:any = {}
       local constructed = struct<CompilerIntrinsicRecord> { Value=9 }
       assert(constructed.Value is 9, 'Struct syntax must ignore a variant struct namespace shadow')
+   end
+
+   do
+      local obj:any = {}
+      local clock = obj<Time> {}
+      assert(clock.class.name is 'Time', 'Typed object syntax must ignore a variant obj namespace shadow')
    end
 end
 
