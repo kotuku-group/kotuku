@@ -384,12 +384,11 @@ Key facts when working near this machinery:
   store. Marked environments emit the policy-check `IRCALL` and then use the regular recorded store and metamethod
   path; dynamic string keys on a marked environment abort the trace (`LJ_TRERR_NYIENVKEY`).
 
-### Append-only enum lists
+### IR enum lists
 
-`IRCALLDEF` (lj_ircall.h) and `IRFLDEF` (lj_ir.h) are **append-only**. Inserting mid-list shifts the numeric ids
-of every later entry, which silently degrades trace behaviour and breaks tests that assert on indices through
-`jit.util.traceIR()` (`test_type_guided_jit_signatures.tiri` hard-codes `IRFL_*` numbers). Add new entries at the
-end of each list only.
+`IRCALLDEF` (lj_ircall.h) and `IRFLDEF` (lj_ir.h) are sensitive to change.  Inserting mid-list shifts the numeric ids
+of every later entry, which breaks tests that assert on indices through
+`jit.util.traceIR()` (`test_type_guided_jit_signatures.tiri` hard-codes `IRFL_*` numbers).
 
 ## Reference Indexing Gotcha (luaL_ref)
 

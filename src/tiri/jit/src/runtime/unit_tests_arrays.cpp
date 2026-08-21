@@ -1106,6 +1106,75 @@ static bool test_arr_getidx_double(kt::Log &Log)
    return true;
 }
 
+static bool test_array_load_allocation_classification(kt::Log &Log)
+{
+   for (int type_index = 0; type_index < int(AET::MAX); type_index++) {
+      AET element_type = AET(type_index);
+      bool expected = element_type IS AET::CSTR or element_type IS AET::STR_CPP or element_type IS AET::STRUCT;
+      if (array_element_load_allocates(element_type) != expected) {
+         Log.error("array load allocation classification is incorrect for type %d", type_index);
+         return false;
+      }
+   }
+   return true;
+}
+
+static bool test_arr_getidx_noalloc(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+   luaL_openlibs(lua);
+
+   TValue result;
+   GCarray *integers = lj_array_new(lua, 1, AET::INT32);
+   integers->get<int32_t>()[0] = 73;
+   lj_arr_getidx_noalloc(lua, integers, 0, &result);
+   if (not tv_is_integer(&result, 73)) {
+      Log.error("no-allocation integer array load failed");
+      return false;
+   }
+
+   GCarray *strings = lj_array_new(lua, 1, AET::STR_GC);
+   GCstr *text = lj_str_newz(lua, "native");
+   TValue value;
+   setstrV(lua, &value, text);
+   lj_array_store_checked(lua, strings, 0, &value);
+   lj_arr_getidx_noalloc(lua, strings, 0, &result);
+   if (not tvisstr(&result) or strV(&result) != text) {
+      Log.error("no-allocation GC-reference array load failed");
+      return false;
+   }
+
+   GCarray *values = lj_array_new(lua, 3, AET::ANY);
+   TValue *slots = values->get<TValue>();
+   setnilV(&slots[0]);
+   setnumV(&slots[1], 4.5);
+   setstrV(lua, &slots[2], text);
+   lj_gc_objbarrier(lua, values, text);
+
+   lj_arr_getidx_noalloc(lua, values, 0, &result);
+   if (not tvisnil(&result)) {
+      Log.error("no-allocation ANY nil load failed");
+      return false;
+   }
+   lj_arr_getidx_noalloc(lua, values, 1, &result);
+   if (not tvisnum(&result) or numV(&result) != 4.5) {
+      Log.error("no-allocation ANY number load failed");
+      return false;
+   }
+   lj_arr_getidx_noalloc(lua, values, 2, &result);
+   if (not tvisstr(&result) or strV(&result) != text) {
+      Log.error("no-allocation ANY string load failed");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_arr_setidx_int32(kt::Log &Log)
 {
    LuaStateHolder Holder;
@@ -1517,7 +1586,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 36> Tests = { {
+   constexpr std::array<TestCase, 38> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1541,6 +1610,8 @@ void array_unit_tests(int &Passed, int &Total)
       // Bytecode C Helpers
       { "arr_getidx_int32", test_arr_getidx_int32 },
       { "arr_getidx_double", test_arr_getidx_double },
+      { "array_load_allocation_classification", test_array_load_allocation_classification },
+      { "arr_getidx_noalloc", test_arr_getidx_noalloc },
       { "arr_setidx_int32", test_arr_setidx_int32 },
       { "arr_setidx_double", test_arr_setidx_double },
       { "arr_roundtrip", test_arr_roundtrip },

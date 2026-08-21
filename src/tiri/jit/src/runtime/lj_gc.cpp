@@ -963,7 +963,7 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    lj_assertG_(G, tvisfunc(Metamethod), "attempt to call a non-function finaliser");
    lj_trace_abort(G);
 
-   size_t context_depth = lj_context_depth(L);
+   [[maybe_unused]] const size_t context_depth = lj_context_depth(L);
    ptrdiff_t saved_top = savestack(L, L->top);
    const BCIns *saved_try_handler = L->try_handler_pc;
    CapturedStackTrace *saved_pending_trace = L->pending_trace;
@@ -994,7 +994,7 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
       TValue *argument = top;
       TValue receiver;
       setgcV(L, &receiver, Object, ~Object->gch.gct);
-      uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, argument, 0, 1);
+      [[maybe_unused]] const uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, argument, 0, 1);
       if (not tvistab(&receiver)) copyTV(L, top++, &receiver);
       L->top = top;
       lj_assertG_(G, uint32_t(L->top - argument) IS argument_count,

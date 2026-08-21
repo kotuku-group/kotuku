@@ -537,42 +537,6 @@ static void recff_tostring(jit_State* J, RecordFFData* rd)
 
 //********************************************************************************************************************
 
-static bool array_elem_irtype(AET ElemType, IRType &ResultType)
-{
-   switch (ElemType) {
-      case AET::BYTE:
-      case AET::INT8:
-      case AET::INT16:
-      case AET::INT32:
-      case AET::UINT8:
-      case AET::UINT16:
-         ResultType = LJ_DUALNUM ? IRT_INT : IRT_NUM;
-         return true;
-      case AET::INT64:
-      case AET::UINT32:
-      case AET::UINT64:
-      case AET::FLOAT:
-      case AET::DOUBLE:
-         ResultType = IRT_NUM;
-         return true;
-      case AET::PTR:
-         ResultType = IRT_LIGHTUD;
-         return true;
-      case AET::CSTR:
-      case AET::STR_CPP:
-      case AET::STR_GC:
-         ResultType = IRT_STR;
-         return true;
-      case AET::TABLE:
-         ResultType = IRT_TAB;
-         return true;
-      default:
-         return false;
-   }
-}
-
-//********************************************************************************************************************
-
 static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
 {
    CSTRING type_name = strdata(TypeStr);
@@ -899,16 +863,7 @@ static void recff_ipairs_aux(jit_State* J, RecordFFData* rd)
       emitir(IRTGI(IR_ULT), idx_ref, len_ref);
       J->base[0] = idx_ref;
 
-      TValue result_tv;
-      lj_arr_getidx(J->L, arr, idx_int, &result_tv);
-      IRType result_type;
-      if (not array_elem_irtype(arr->elemtype, result_type) or tvisnil(&result_tv)) {
-         result_type = itype2irt(&result_tv);
-      }
-      if (!LJ_DUALNUM and result_type IS IRT_INT) result_type = IRT_NUM;
-      TRef tmp_ref = recff_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
-      recff_ir_call_fixed(J, IRCALL_lj_arr_getidx, ix.tab, idx_ref, tmp_ref, TREF_NIL);
-      J->base[1] = lj_record_vload(J, tmp_ref, 0, result_type);
+      J->base[1] = lj_record_array_iter_load(J, ix.tab, idx_ref, arr, idx_int);
       rd->nres = 2;
    }  // else: Interpreter will throw.
 }
@@ -1082,16 +1037,7 @@ static void recff_next(jit_State* J, RecordFFData* rd)
       emitir(IRTGI(IR_ULT), idx_ref, len_ref);
       J->base[0] = idx_ref;
 
-      TValue result_tv;
-      lj_arr_getidx(J->L, arr, idx_int, &result_tv);
-      IRType result_type;
-      if (not array_elem_irtype(arr->elemtype, result_type) or tvisnil(&result_tv)) {
-         result_type = itype2irt(&result_tv);
-      }
-      if (!LJ_DUALNUM and result_type IS IRT_INT) result_type = IRT_NUM;
-      TRef tmp_ref = recff_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
-      recff_ir_call_fixed(J, IRCALL_lj_arr_getidx, tab, idx_ref, tmp_ref, TREF_NIL);
-      J->base[1] = lj_record_vload(J, tmp_ref, 0, result_type);
+      J->base[1] = lj_record_array_iter_load(J, tab, idx_ref, arr, idx_int);
       rd->nres = 2;
    }  // else: Interpreter will throw.
 #endif

@@ -39,7 +39,7 @@ static int32_t arr_idx_from_tv(cTValue *K)
 //********************************************************************************************************************
 // Helper to retrieve array element into TValue based on element type
 
-static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Result)
+static void arr_load_elem_noalloc(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Result)
 {
    void *elem = lj_array_index(Array, Idx);
 
@@ -55,19 +55,6 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
       case AET::UINT64: setnumV(Result, lua_Number(*(uint64_t*)elem)); break;
       case AET::FLOAT:  setnumV(Result, *(float*)elem); break;
       case AET::DOUBLE: setnumV(Result, *(double*)elem); break;
-
-      case AET::CSTR: {
-         if (auto str = *(CSTRING *)elem) setstrV(L, Result, lj_str_newz(L, str));
-         else setnilV(Result);
-         break;
-      }
-
-      case AET::STR_CPP: {
-         auto str = (std::string*)elem;
-         if (str->empty()) setnilV(Result);
-         else setstrV(L, Result, lj_str_new(L, str->data(), str->size()));
-         break;
-      }
 
       case AET::PTR:
          // Store raw pointer value as light userdata
@@ -108,6 +95,28 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
          break;
       }
 
+      default: setnilV(Result); break;
+   }
+}
+
+static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Result)
+{
+   void *elem = lj_array_index(Array, Idx);
+
+   switch (Array->elemtype) {
+      case AET::CSTR: {
+         if (auto str = *(CSTRING *)elem) setstrV(L, Result, lj_str_newz(L, str));
+         else setnilV(Result);
+         break;
+      }
+
+      case AET::STR_CPP: {
+         auto str = (std::string*)elem;
+         if (str->empty()) setnilV(Result);
+         else setstrV(L, Result, lj_str_new(L, str->data(), str->size()));
+         break;
+      }
+
       case AET::STRUCT: {
          auto value = lj_struct_new(L, *Array->structdef);
          memcpy(value->data, elem, Array->elemsize);
@@ -115,7 +124,9 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
          break;
       }
 
-      default: setnilV(Result); break;
+      default:
+         arr_load_elem_noalloc(L, Array, Idx, Result);
+         break;
    }
 }
 
@@ -241,7 +252,7 @@ extern "C" void lj_arr_getidx(lua_State *L, GCarray *Array, int32_t Idx, TValue 
    // C string and structure loads allocate.  Other element types only copy an immediate value or an existing GC
    // reference, so synchronising the interpreter stack for every indexed read would penalise array iteration.
 
-   if (Array->elemtype IS AET::CSTR or Array->elemtype IS AET::STR_CPP or Array->elemtype IS AET::STRUCT) {
+   if (array_element_load_allocates(Array->elemtype)) {
       JITStackSync stack_sync(L);
       arr_load_elem(L, Array, uint32_t(Idx), Result);
       stack_sync.restore();
@@ -249,6 +260,15 @@ extern "C" void lj_arr_getidx(lua_State *L, GCarray *Array, int32_t Idx, TValue 
    }
 
    arr_load_elem(L, Array, uint32_t(Idx), Result);
+}
+
+// Trace-only unchecked load for element types that cannot allocate. Bounds and exact element type are guarded by the
+// recorder before this helper is emitted.
+
+extern "C" void lj_arr_getidx_noalloc(lua_State *L, GCarray *Array, int32_t Idx, TValue *Result)
+{
+   lj_assertX(not array_element_load_allocates(Array->elemtype), "allocating array type passed to no-allocation load");
+   arr_load_elem_noalloc(L, Array, uint32_t(Idx), Result);
 }
 
 //********************************************************************************************************************
@@ -262,7 +282,7 @@ extern "C" void lj_arr_safe_getidx(lua_State *L, GCarray *Array, int32_t Idx, TV
       return;
    }
 
-   if (Array->elemtype IS AET::CSTR or Array->elemtype IS AET::STR_CPP or Array->elemtype IS AET::STRUCT) {
+   if (array_element_load_allocates(Array->elemtype)) {
       JITStackSync stack_sync(L);
       arr_load_elem(L, Array, uint32_t(Idx), Result);
       stack_sync.restore();

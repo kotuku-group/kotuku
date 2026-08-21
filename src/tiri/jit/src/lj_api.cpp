@@ -1448,7 +1448,7 @@ static TValue * api_call_base(lua_State *L, int nargs)
 
 extern void lua_call(lua_State *L, int nargs, int nresults)
 {
-   size_t context_depth = lj_context_depth(L);
+   [[maybe_unused]] const size_t context_depth = lj_context_depth(L);
    lj_checkapi(L->status IS LUA_OK or L->status IS LUA_ERRERR, "thread called in wrong state %d", L->status);
    lj_checkapi_slot(nargs + 1);
 
@@ -1467,7 +1467,7 @@ extern void lua_call(lua_State *L, int nargs, int nresults)
 
 extern int lua_pcall(lua_State *L, int nargs, int nresults, int errfunc)
 {
-   size_t context_depth = lj_context_depth(L);
+   [[maybe_unused]] const size_t context_depth = lj_context_depth(L);
    global_State* g = G(L);
    uint8_t oldh = hook_save(g);
    ptrdiff_t ef;

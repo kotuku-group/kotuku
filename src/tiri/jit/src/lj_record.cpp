@@ -1218,8 +1218,6 @@ static LoopEvent rec_itern(jit_State *J, BCREG ra, BCREG rb)
 #endif
 }
 
-static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt);
-
 //********************************************************************************************************************
 // Record ITERA.
 
@@ -1271,7 +1269,7 @@ static LoopEvent rec_itera(jit_State *J, BCREG ra, BCREG rb)
    ir.guard_int(IR_ULT, idx_ref, len_ref);
    if (nres IS 2) {
       // Try inline path for numeric types
-      value_ref = rec_array_xload(J, arr_ref, idx_ref, arr, idx_int);
+      value_ref = lj_record_array_xload(J, arr_ref, idx_ref, arr, idx_int);
       if (not value_ref) {
          // Fallback: C call for non-inline types
          TValue result_tv;
@@ -3607,7 +3605,7 @@ static TRef rec_arith_op(jit_State *J, RecordOps *ops)
 // For non-nil elements, we emit an XLOAD with a non-null guard; if the element becomes nil at runtime,
 // the guard exits to the interpreter.
 
-static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt)
+TRef lj_record_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt)
 {
    IRBuilder ir(J);
    AET et = Arr->elemtype;
@@ -3714,6 +3712,36 @@ static TRef rec_array_xload(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *A
          return 0;
    }
    return val;
+}
+
+//********************************************************************************************************************
+// Lower a guarded native-array iterator load through the cheapest safe representation-specific path.
+
+TRef lj_record_array_iter_load(jit_State *J, TRef ArrayRef, TRef IdxRef, GCarray *Arr, int32_t IdxInt)
+{
+   TRef result_ref = lj_record_array_xload(J, ArrayRef, IdxRef, Arr, IdxInt);
+   if (result_ref) return result_ref;
+
+   IRBuilder ir(J);
+   TRef element_type_ref = ir.fload(ArrayRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+   ir.guard_eq_int(element_type_ref, ir.kint(int32_t(Arr->elemtype)));
+
+   TValue result_tv;
+   IRCallID call_id;
+   if (array_element_load_allocates(Arr->elemtype)) {
+      lj_arr_getidx(J->L, Arr, IdxInt, &result_tv);
+      call_id = IRCALL_lj_arr_getidx;
+   }
+   else {
+      lj_arr_getidx_noalloc(J->L, Arr, IdxInt, &result_tv);
+      call_id = IRCALL_lj_arr_getidx_noalloc;
+   }
+
+   IRType result_type = itype2irt(&result_tv);
+   if (!LJ_DUALNUM and result_type IS IRT_INT) result_type = IRT_NUM;
+   TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+   lj_ir_call(J, call_id, ArrayRef, IdxRef, tmp_ref);
+   return lj_record_vload(J, tmp_ref, 0, result_type);
 }
 
 //********************************************************************************************************************
@@ -3932,7 +3960,7 @@ static TRef rec_array_op(jit_State *J, RecordOps *ops)
       if (idx_int < 0 or MSize(idx_int) >= arr->len) lj_trace_err(J, LJ_TRERR_BADTYPE);
 
       // Try inline path for numeric and GC types
-      TRef result = rec_array_xload(J, array_ref, idx_ref, arr, idx_int);
+      TRef result = lj_record_array_xload(J, array_ref, idx_ref, arr, idx_int);
       if (result) return result;
 
       // Fallback: C call for non-inline types
@@ -4023,7 +4051,7 @@ static TRef rec_safe_array_get(jit_State *J, RecordOps *Ops)
    TRef idx_ref = lj_opt_narrow_index(J, Ops->rc);
    TRef len_ref = ir.fload_int(Ops->rb, IRFL_ARRAY_LEN);
    rec_idx_abc(J, len_ref, idx_ref, arr->len);
-   TRef result_ref = rec_array_xload(J, Ops->rb, idx_ref, arr, idx_int);
+   TRef result_ref = lj_record_array_xload(J, Ops->rb, idx_ref, arr, idx_int);
    if (not result_ref) {
       TValue result_tv;
       lj_arr_getidx(J->L, arr, idx_int, &result_tv);
