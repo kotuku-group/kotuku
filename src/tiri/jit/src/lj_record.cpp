@@ -3500,6 +3500,15 @@ static void rec_contains(jit_State *J, RecordOps *ops)
    if (lj_record_mm_lookup(J, ix, MM_contains)) {
       if (tref_isarray(ix->val) and lj_arr_is_contains_handler(&ix->mobjv)) {
          GCarray *array = arrayV(&ix->valv);
+         // Keep the element-type guard on its own snapshot.  A mismatch must re-execute membership instead of taking
+         // the branch recorded for the specialised helper.
+         rec_comp_prep(J);
+         IRBuilder ir(J);
+         TRef element_type_ref = ir.fload(ix->val, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+         ir.guard_eq_int(element_type_ref, ir.kint(int32_t(array->elemtype)));
+
+         // The helper result guard needs the comparison snapshot that rec_comp_fixup adjusts.
+         rec_comp_prep(J);
          TRef result_ref;
          if (array->elemtype IS AET::STR_GC and tref_isstr(ix->key)) {
             result_ref = lj_ir_call(J, IRCALL_lj_arr_contains_str, ix->val, ix->key);
