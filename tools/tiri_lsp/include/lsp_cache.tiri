@@ -16,6 +16,103 @@ rx_source_file_plain = <{ regex.new([[<file>([^<]+)<\/file>]]) }>
 rx_input_param       = <{ regex.new([[<param\s+([^>]*)>(.*?)<\/param>]], regex.DOT_ALL) }>
 rx_xml_attr          = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"]=]) }>
 
+function countTableEntries(Tbl:table):num
+   local count = 0
+   for _ in pairs(Tbl or {}) do count++ end
+   return count
+end
+
+function countXmlElements(Content:str, TagName:str):num
+   local count = 0
+   local position = 0
+   local opening_tag = '<' .. TagName .. '>'
+
+   while true do
+      local found = Content.find(opening_tag, position, true)
+      found ?! break
+      count++
+      position = found + #opening_tag
+   end
+
+   return count
+end
+
+function createSourceManifestEntry(Content:str, Kind:str):table
+   return {
+      kind = Kind,
+      size = #Content,
+      hash = Content.hash(true),
+      functions = countXmlElements(Content, 'function'),
+      methods = countXmlElements(Content, 'method'),
+      actions = countXmlElements(Content, 'action'),
+      fields = countXmlElements(Content, 'field')
+   }
+end
+
+global function buildDocManifest(DocPath:str):table
+   local manifest = {}
+
+   function scanSources(Path:str, Kind:str, MaxDepth:num)
+      io.search(Path, {
+         nameFilter = regex.new([[\.xml$]]),
+         maxDepth = MaxDepth,
+         matchFeedback = function(FolderPath, FileName, _)
+            local full_path = FolderPath .. FileName
+            local content = io.readAll(full_path)
+            if content then
+               manifest[full_path.replace(DocPath, '')] = createSourceManifestEntry(content, Kind)
+            end
+         end
+      })
+   end
+
+   scanSources(DocPath .. 'modules/', 'module', 0)
+   scanSources(DocPath .. 'modules/classes/', 'class', 1)
+   return manifest
+end
+
+global function validateDocCache(Cache:table, DocPath:str, CurrentManifest:table):bool
+   if not Cache or Cache.version != 7 or Cache.sdkPath != DocPath then return false end
+   if not Cache.modules or not Cache.classes or not Cache.sourceManifest or not CurrentManifest then return false end
+   if countTableEntries(Cache.sourceManifest) != countTableEntries(CurrentManifest) then return false end
+
+   local entries_by_file = {}
+   for _, entry in pairs(Cache.modules) do
+      if not entry.file or entries_by_file[entry.file] then return false end
+      entries_by_file[entry.file] = entry
+   end
+   for _, entry in pairs(Cache.classes) do
+      if not entry.file or entries_by_file[entry.file] then return false end
+      entries_by_file[entry.file] = entry
+   end
+
+   if countTableEntries(entries_by_file) != countTableEntries(CurrentManifest) then return false end
+
+   local module_source_count = 0
+   local class_source_count = 0
+   for source_path, current_source in pairs(CurrentManifest) do
+      local cached_source = Cache.sourceManifest[source_path]
+      local cached_entry = entries_by_file[source_path]
+      if not cached_source or not cached_entry then return false end
+      if cached_source.kind != current_source.kind or cached_source.size != current_source.size or
+         cached_source.hash != current_source.hash then return false end
+
+      if current_source.kind is 'module' then
+         module_source_count++
+         if countTableEntries(cached_entry.functions) != current_source.functions then return false end
+      elseif current_source.kind is 'class' then
+         class_source_count++
+         if countTableEntries(cached_entry.methods) != current_source.methods or
+            countTableEntries(cached_entry.actions) != current_source.actions or
+            countTableEntries(cached_entry.fields) != current_source.fields then return false end
+      else
+         return false
+      end
+   end
+
+   return (module_source_count > 0) and (class_source_count > 0)
+end
+
 @Doc(text='Encode a field entry to compact string format')
 function encodeField(Access, Type, ByteStart, ByteEnd, Comment):str
    return f'A:{Access or "R"}\tL:{ByteStart},{ByteEnd}\tT:{Type or ""}\tC:{Comment or ""}'
@@ -308,11 +405,12 @@ global function buildDocCache(DocPath):table
    -- Build the documentation cache from XML files
 
    cache = {
-      version = 6,
+      version = 7,
       built   = mSys.PreciseTime() / 1000000,
       sdkPath = DocPath,
       modules = {},
-      classes = {}
+      classes = {},
+      sourceManifest = {}
    }
 
    modulesPath = DocPath .. 'modules/'
@@ -360,6 +458,7 @@ global function buildDocCache(DocPath):table
    msg('Scan completed')
 
    processing.collect()
+   cache.sourceManifest = buildDocManifest(DocPath)
    return cache
 end
 
@@ -425,15 +524,12 @@ global function loadDocCache(DocPath):table
       return
    end
 
-   if cache.version != 6 then msg('Unsupported version'); return end
+   if cache.version != 7 then msg('Unsupported version'); return end
    if cache.sdkPath != DocPath then msg('Path mismatch: ' .. cache.sdkPath .. ' != ' .. DocPath); return end
 
-   module_count = 0
-   class_count = 0
-   for k, v in pairs(cache.modules or {}) do module_count++ end
-   for k, v in pairs(cache.classes or {}) do class_count++ end
-   if module_count is 0 or class_count is 0 then
-      msg('Documentation cache is empty; rebuilding.')
+   local current_manifest = buildDocManifest(DocPath)
+   if not validateDocCache(cache, DocPath, current_manifest) then
+      msg('Documentation cache is stale or incomplete; rebuilding.')
       return
    end
 
