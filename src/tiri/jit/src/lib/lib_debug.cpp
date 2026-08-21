@@ -618,7 +618,7 @@ LJLIB_CF(debug_setEnv)
 //              'n' - name, nameWhat
 //              'S' - source, shortSource, lineDefined, lastLineDefined, what
 //              'l' - currentLine
-//              'u' - nups, nParams, isVarArg
+//              'u' - nUpvalues, nParams, isVarArg
 //              'f' - func (pushes the function onto the stack)
 //              'L' - activeLines (table of valid line numbers)
 //
@@ -632,7 +632,7 @@ LJLIB_CF(debug_setEnv)
 //     currentLine    - Current line being executed
 //     name           - Name of the function (if available)
 //     nameWhat       - How the name was obtained ("global", "local", "method", "field", "")
-//     nups           - Number of upvalues
+//     nUpvalues      - Number of upvalues
 //     nParams        - Number of parameters
 //     isVarArg       - Whether the function is variadic
 //     func           - The function itself
@@ -696,7 +696,7 @@ LJLIB_CF(debug_getInfo)
             settabsi(L, "currentLine", ar.currentline);
             break;
          case 'u':
-            settabsi(L, "nups", ar.nups);
+            settabsi(L, "nUpvalues", ar.nupvalues);
             settabsi(L, "nParams", ar.nparams);
             settabsb(L, "isVarArg", ar.isvararg);
             break;

@@ -1,0 +1,97 @@
+extern buildDocCache, buildDocManifest, validateDocCache
+
+@BeforeAll function SetupCacheTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP cache tests.')
+   mSys.SetVolume('sdk', sdk_path)
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+end
+
+function makeManifest():table
+   return {
+      ['modules/core.xml'] = {
+         kind = 'module', size = 100, hash = 1234, functions = 1, methods = 0, actions = 0, fields = 0
+      },
+      ['modules/classes/xml.xml'] = {
+         kind = 'class', size = 200, hash = 5678, functions = 0, methods = 1, actions = 1, fields = 1
+      }
+   }
+end
+
+function makeCache():table
+   return {
+      version = 7,
+      sdkPath = 'sdk:docs/xml/',
+      sourceManifest = makeManifest(),
+      modules = {
+         Core = { file = 'modules/core.xml', functions = { ResolvePath = {} } }
+      },
+      classes = {
+         XML = {
+            file = 'modules/classes/xml.xml',
+            methods = { GetAttrib = {} },
+            actions = { Clear = {} },
+            fields = { Path = {} }
+         }
+      }
+   }
+end
+
+@Test function AcceptsCompleteCurrentCache()
+   assert(validateDocCache(makeCache(), 'sdk:docs/xml/', makeManifest()),
+      'A complete cache matching the current documentation should be accepted.')
+end
+
+@Test function AcceptsCacheBuiltFromCurrentDocumentation()
+   local doc_path = 'sdk:docs/xml/'
+   local cache = buildDocCache(doc_path)
+   local manifest = buildDocManifest(doc_path)
+   assert(validateDocCache(cache, doc_path, manifest),
+      'A cache built from the current documentation should be reusable.')
+end
+
+@Test function RejectsChangedDocumentation()
+   local manifest = makeManifest()
+   manifest['modules/core.xml'].hash = 4321
+   assert(not validateDocCache(makeCache(), 'sdk:docs/xml/', manifest),
+      'A cache should be rejected when source documentation changes.')
+end
+
+@Test function RejectsAddedOrRemovedDocumentation()
+   local manifest = makeManifest()
+   manifest['modules/extra.xml'] = {
+      kind = 'module', size = 50, hash = 9012, functions = 0, methods = 0, actions = 0, fields = 0
+   }
+   assert(not validateDocCache(makeCache(), 'sdk:docs/xml/', manifest),
+      'A cache should be rejected when the documentation file set changes.')
+end
+
+@Test function RejectsMissingSourceEntry()
+   local cache = makeCache()
+   cache.classes.XML = nil
+   assert(not validateDocCache(cache, 'sdk:docs/xml/', makeManifest()),
+      'A cache should be rejected when a documented class was not cached.')
+end
+
+@Test function RejectsPartiallyParsedSource()
+   local cache = makeCache()
+   cache.modules.Core.functions.ResolvePath = nil
+   assert(not validateDocCache(cache, 'sdk:docs/xml/', makeManifest()),
+      'A cache should be rejected when an API member was omitted during parsing.')
+end
+
+@Test function RejectsOldSchemaAndDifferentSdk()
+   local cache = makeCache()
+   cache.version = 6
+   assert(not validateDocCache(cache, 'sdk:docs/xml/', makeManifest()), 'An old cache schema should be rejected.')
+
+   cache.version = 7
+   assert(not validateDocCache(cache, 'other:docs/xml/', makeManifest()),
+      'A cache built for another SDK path should be rejected.')
+end
+
+@Test function RejectsUnavailableDocumentationTree()
+   local cache = { version = 7, sdkPath = 'sdk:docs/xml/', sourceManifest = {}, modules = {}, classes = {} }
+   assert(not validateDocCache(cache, 'sdk:docs/xml/', {}),
+      'An empty documentation tree should not make an empty cache appear valid.')
+end

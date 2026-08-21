@@ -12,6 +12,7 @@
 #include "lj_object.h"
 #include "lj_str.h"
 #include "lj_tab.h"
+#include "stack_helpers.h"
 
 #include <cstring>
 #include <cfloat>
@@ -352,8 +353,14 @@ void lj_array_store_checked(lua_State *L, GCarray *Array, MSize Index, cTValue *
    bool exact_integer = tvisint(Value) and glArrayConversion[size_t(Array->elemtype)].primitive;
    if (not exact_integer) {
       auto result = array_validate_element(Array, Value);
-      if (result IS ArrayElementResult::OUT_OF_RANGE) lj_err_msg(L, ErrMsg::NUMRNG);
-      if (result != ArrayElementResult::OK) lj_err_msg(L, ErrMsg::ARRTYPE);
+      if (result IS ArrayElementResult::OUT_OF_RANGE) {
+         JITStackSync stack_sync(L);
+         lj_err_msg(L, ErrMsg::NUMRNG);
+      }
+      if (result != ArrayElementResult::OK) {
+         JITStackSync stack_sync(L);
+         lj_err_msg(L, ErrMsg::ARRTYPE);
+      }
    }
    array_store_validated(L, Array, Index, Value);
 }
@@ -406,27 +413,50 @@ void lj_array_store_new_values(lua_State *L, GCarray *Array, cTValue *Values, MS
 
 extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
 {
-   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+   if (Array->flags & ARRAY_READONLY) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARRRO);
+   }
 
    if (Array->elemtype IS AET::BYTE and tvisstr(Value)) {
       GCstr *string = strV(Value);
-      if (string->len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
+      if (string->len > (~MSize(0) - Array->len)) {
+         JITStackSync stack_sync(L);
+         lj_err_msg(L, ErrMsg::ARREXT);
+      }
       MSize new_len = Array->len + string->len;
-      if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+      if (new_len > Array->capacity) {
+         JITStackSync stack_sync(L);
+         if (not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+         stack_sync.restore();
+      }
       if (string->len > 0) memcpy((uint8_t *)Array->arraydata() + Array->len, strdata(string), string->len);
       Array->len = new_len;
       return;
    }
 
    MSize index = Array->len;
-   if (index IS ~MSize(0)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (index IS ~MSize(0)) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARREXT);
+   }
 
    if (Array->elemtype IS AET::INT32) {
       uint32_t bits;
       auto result = array_prepare_int32(Value, &bits);
-      if (result IS ArrayElementResult::OUT_OF_RANGE) lj_err_msg(L, ErrMsg::NUMRNG);
-      if (result != ArrayElementResult::OK) lj_err_msg(L, ErrMsg::ARRTYPE);
-      if (index + 1 > Array->capacity and not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+      if (result IS ArrayElementResult::OUT_OF_RANGE) {
+         JITStackSync stack_sync(L);
+         lj_err_msg(L, ErrMsg::NUMRNG);
+      }
+      if (result != ArrayElementResult::OK) {
+         JITStackSync stack_sync(L);
+         lj_err_msg(L, ErrMsg::ARRTYPE);
+      }
+      if (index + 1 > Array->capacity) {
+         JITStackSync stack_sync(L);
+         if (not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+         stack_sync.restore();
+      }
       std::memcpy(lj_array_index(Array, index), &bits, sizeof(bits));
       Array->len = index + 1;
       return;
@@ -435,11 +465,21 @@ extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
    bool exact_integer = tvisint(Value) and glArrayConversion[size_t(Array->elemtype)].primitive;
    if (not exact_integer) {
       auto result = array_validate_element(Array, Value);
-      if (result IS ArrayElementResult::OUT_OF_RANGE) lj_err_msg(L, ErrMsg::NUMRNG);
-      if (result != ArrayElementResult::OK) lj_err_msg(L, ErrMsg::ARRTYPE);
+      if (result IS ArrayElementResult::OUT_OF_RANGE) {
+         JITStackSync stack_sync(L);
+         lj_err_msg(L, ErrMsg::NUMRNG);
+      }
+      if (result != ArrayElementResult::OK) {
+         JITStackSync stack_sync(L);
+         lj_err_msg(L, ErrMsg::ARRTYPE);
+      }
    }
 
-   if (index + 1 > Array->capacity and not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (index + 1 > Array->capacity) {
+      JITStackSync stack_sync(L);
+      if (not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+      stack_sync.restore();
+   }
    array_store_validated(L, Array, index, Value);
    Array->len = index + 1;
 }

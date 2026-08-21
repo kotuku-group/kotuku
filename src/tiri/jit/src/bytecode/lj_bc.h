@@ -298,7 +298,10 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   /* Boolean contextual type test. */ \
   _(TYPETEST,  var,  ___, str, ___) \
   /* Arm or clear the one-shot object array view read mode. */ \
-  _(VIEW,      ___,  ___, lit, ___)
+  _(VIEW,      ___,  ___, lit, ___) \
+  /* Membership test: candidate in target. */ \
+  _(ISIN,      var,  ___, var, contains) \
+  _(ISNIN,     var,  ___, var, contains)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -476,8 +479,10 @@ typedef enum {
    BC_CLOSE = 133,
    BC_TYPETEST = 134,
    BC_VIEW = 135,
+   BC_ISIN = 136,
+   BC_ISNIN = 137,
 
-   BC__MAX   = 136
+   BC__MAX   = 138
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

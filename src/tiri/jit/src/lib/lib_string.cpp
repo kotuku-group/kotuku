@@ -491,7 +491,7 @@ LJLIB_CF(string_endsWith)
 // string.contains(s, substr) -> bool
 // Returns true if substr is found within s.  Enables the `in` operator for strings, e.g. `"ell" in "hello"`.
 
-LJLIB_CF(string_contains)
+LJLIB_NOREG LJLIB_CF(string_contains)
 {
    GCstr *s      = lj_lib_checkstr(L, 1);
    GCstr *substr = lj_lib_checkstr(L, 2);
@@ -859,6 +859,11 @@ extern int luaopen_string(lua_State *L)
    lua_pop(L, 1);  // Pop the closure
    // Stack: [..., string_lib_table]
 
+   lua_pushcfunction(L, lj_cf_string_contains);
+   TValue *contains_slot = lj_tab_setstr(L, mt, mmname_str(g, MM_contains));
+   setfuncV(L, contains_slot, funcV(L->top - 1));
+   lua_pop(L, 1);
+
    // Update the metatable's negative‑metamethod cache (nomm). The bitwise expression clears the bit
    // corresponding to MM_index (and sets other bits), marking that this metamethod slot should not be treated as
    // "absent" by the fast metamethod check. Practically, this tells the runtime the MM_index metamethod is present
@@ -876,8 +881,6 @@ extern int luaopen_string(lua_State *L)
    reg_iface_method(L, "string", "cap", TiriType::Str, builtin_callable_id(FastFunc::string_cap),
       { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "char", { TiriType::Str }, {}, FProtoFlags::Variadic);
-   reg_iface_method(L, "string", "contains", TiriType::Str, builtin_callable_id(FastFunc::string_contains),
-      { TiriType::Bool }, { TiriType::Str, TiriType::Str });
    reg_iface_method(L, "string", "count", TiriType::Str, builtin_callable_id(FastFunc::string_count),
       { TiriType::Num }, { TiriType::Str, TiriType::Str });
    reg_iface_method(L, "string", "decap", TiriType::Str, builtin_callable_id(FastFunc::string_decap),

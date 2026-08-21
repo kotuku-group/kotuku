@@ -741,7 +741,7 @@ LJLIB_CF(array_concat)
 //
 // Returns: true if found, false otherwise
 
-LJLIB_CF(array_contains)
+LJLIB_NOREG LJLIB_CF(array_contains)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
@@ -2854,6 +2854,9 @@ extern "C" int luaopen_array(lua_State *L)
    lua_pushcfunction(L, array_eq_meta);
    lua_setfield(L, -2, "__eq");
 
+   lua_pushcfunction(L, lj_cf_array_contains);
+   lua_setfield(L, -2, "__contains");
+
    // NOBARRIER: basemt is a GC root.
    setgcref(basemt_it(g, LJ_TARRAY), obj2gco(lib));
 
@@ -2865,8 +2868,6 @@ extern "C" int luaopen_array(lua_State *L)
       { TiriType::Table }, { TiriType::Array });
    reg_iface_method(L, "array", "concat", TiriType::Array, builtin_callable_id(FastFunc::array_concat),
       { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
-   reg_iface_method(L, "array", "contains", TiriType::Array, builtin_callable_id(FastFunc::array_contains),
-      { TiriType::Bool }, { TiriType::Array, TiriType::Any }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "array", "first", TiriType::Array, builtin_callable_id(FastFunc::array_first),
       { TiriType::Any }, { TiriType::Array, TiriType::Func }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "array", "last", TiriType::Array, builtin_callable_id(FastFunc::array_last),

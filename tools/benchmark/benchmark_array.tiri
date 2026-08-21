@@ -225,17 +225,17 @@ end
    local checksum = 0
    for i in {0 to 15000} do
       -- Check integer array
-      local has1 = int_arr.contains(50)
-      local has2 = int_arr.contains(100)
-      local has3 = int_arr.contains(55)  -- false
+      local has1 = 50 in int_arr
+      local has2 = 100 in int_arr
+      local has3 = 55 in int_arr  -- false
 
       -- Check double array
-      local has4 = dbl_arr.contains(3.5)
-      local has5 = dbl_arr.contains(2.0)  -- false
+      local has4 = 3.5 in dbl_arr
+      local has5 = 2.0 in dbl_arr  -- false
 
       -- Check string array
-      local has6 = str_arr.contains("blue")
-      local has7 = str_arr.contains("orange")  -- false
+      local has6 = "blue" in str_arr
+      local has7 = "orange" in str_arr  -- false
       checksum += (has1 ? 1 : 0) + (has2 ? 1 : 0) + (has3 ? 1 : 0) +
          (has4 ? 1 : 0) + (has5 ? 1 : 0) + (has6 ? 1 : 0) + (has7 ? 1 : 0)
    end
@@ -625,8 +625,8 @@ end
       local idx2 = arr.find(9999)
 
       -- Check contains
-      local has1 = arr.contains(5000)
-      local has2 = arr.contains(99999)
+      local has1 = 5000 in arr
+      local has2 = 99999 in arr
 
       -- Slice
       local slice = arr.slice({1000 to 2000})

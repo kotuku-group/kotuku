@@ -91,7 +91,7 @@ end
    local span = {0 to 10}
    local worker = entity {
       read = function():num
-         return values.first() + values.last() + 'abc'.len() + (span.contains(4) ? 1 : 0)
+         return values.first() + values.last() + 'abc'.len() + (4 in span ? 1 : 0)
       end
    }
 

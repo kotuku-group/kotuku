@@ -203,44 +203,44 @@ end
    -- Test contains method for exclusive ranges
    r = range(0, 10)  -- 0-9
 
-   assert(r.contains(0) is true, "0 should be in range 0 to 10")
-   assert(r.contains(5) is true, "5 should be in range 0 to 10")
-   assert(r.contains(9) is true, "9 should be in range 0 to 10")
-   assert(r.contains(10) is false, "10 should NOT be in exclusive range 0 to 10")
-   assert(r.contains(-1) is false, "-1 should NOT be in range 0 to 10")
-   assert(r.contains(11) is false, "11 should NOT be in range 0 to 10")
+   assert(0 in r, "0 should be in range 0 to 10")
+   assert(5 in r, "5 should be in range 0 to 10")
+   assert(9 in r, "9 should be in range 0 to 10")
+   assert(not (10 in r), "10 should NOT be in exclusive range 0 to 10")
+   assert(not (-1 in r), "-1 should NOT be in range 0 to 10")
+   assert(not (11 in r), "11 should NOT be in range 0 to 10")
 end
 
 @Test function RangeContainsInclusive()
    -- Test contains method for inclusive ranges
    r = range(0, 10, true)  -- 0-10
 
-   assert(r.contains(0) is true, "0 should be in range 0 into 10")
-   assert(r.contains(10) is true, "10 should be in inclusive range 0 into 10")
-   assert(r.contains(11) is false, "11 should NOT be in range 0 into 10")
+   assert(0 in r, "0 should be in range 0 into 10")
+   assert(10 in r, "10 should be in inclusive range 0 into 10")
+   assert(not (11 in r), "11 should NOT be in range 0 into 10")
 end
 
 @Test function RangeContainsWithStep()
    -- Test contains with step values
    r = range(0, 10, false, 2)  -- 0, 2, 4, 6, 8
 
-   assert(r.contains(0) is true, "0 should be in range 0 to 10 step 2")
-   assert(r.contains(2) is true, "2 should be in range 0 to 10 step 2")
-   assert(r.contains(8) is true, "8 should be in range 0 to 10 step 2")
-   assert(r.contains(1) is false, "1 should NOT be in range 0 to 10 step 2")
-   assert(r.contains(3) is false, "3 should NOT be in range 0 to 10 step 2")
-   assert(r.contains(10) is false, "10 should NOT be in exclusive range 0 to 10 step 2")
+   assert(0 in r, "0 should be in range 0 to 10 step 2")
+   assert(2 in r, "2 should be in range 0 to 10 step 2")
+   assert(8 in r, "8 should be in range 0 to 10 step 2")
+   assert(not (1 in r), "1 should NOT be in range 0 to 10 step 2")
+   assert(not (3 in r), "3 should NOT be in range 0 to 10 step 2")
+   assert(not (10 in r), "10 should NOT be in exclusive range 0 to 10 step 2")
 end
 
 @Test function RangeContainsReverse()
    -- Test contains for reverse ranges
    r = range(10, 0)  -- 10, 9, 8, ... 1 (exclusive of 0)
 
-   assert(r.contains(10) is true, "10 should be in range 10 to 0")
-   assert(r.contains(5) is true, "5 should be in range 10 to 0")
-   assert(r.contains(1) is true, "1 should be in range 10 to 0")
-   assert(r.contains(0) is false, "0 should NOT be in exclusive range 10 to 0")
-   assert(r.contains(11) is false, "11 should NOT be in range 10 to 0")
+   assert(10 in r, "10 should be in range 10 to 0")
+   assert(5 in r, "5 should be in range 10 to 0")
+   assert(1 in r, "1 should be in range 10 to 0")
+   assert(not (0 in r), "0 should NOT be in exclusive range 10 to 0")
+   assert(not (11 in r), "11 should NOT be in range 10 to 0")
 end
 
 @Test function RangeMembership()
@@ -458,14 +458,14 @@ end
 @Test function RangeLiteralContains()
    -- Test contains method on range literals
    r = {0 to 10}
-   assert(r.contains(0) is true, "0 should be in {0 to 10}")
-   assert(r.contains(5) is true, "5 should be in {0 to 10}")
-   assert(r.contains(9) is true, "9 should be in {0 to 10}")
-   assert(r.contains(10) is false, "10 should NOT be in {0 to 10} (exclusive)")
+   assert(0 in r, "0 should be in {0 to 10}")
+   assert(5 in r, "5 should be in {0 to 10}")
+   assert(9 in r, "9 should be in {0 to 10}")
+   assert(not (10 in r), "10 should NOT be in {0 to 10} (exclusive)")
 
    stepped = {0 to 10 by 2}
-   assert(stepped.contains(4) is true, "4 should be in {0 to 10 by 2}")
-   assert(stepped.contains(5) is false, "5 should NOT be in {0 to 10 by 2}")
+   assert(4 in stepped, "4 should be in {0 to 10 by 2}")
+   assert(not (5 in stepped), "5 should NOT be in {0 to 10 by 2}")
 end
 
 @Test function RangeLiteralWithVariables()
@@ -1540,10 +1540,10 @@ end
 
    aligned = {0 into 1 by 0.25}
    unaligned = {0 into 1 by 0.3}
-   assert(#aligned is 5 and aligned.contains(1), "aligned inclusive stop should be present")
-   assert(#unaligned is 4 and not unaligned.contains(1), "unreachable inclusive stop should not be forced")
-   assert(exclusive.contains(0.3), "contains should tolerate normal floating-point representation error")
-   assert(not exclusive.contains(1), "exclusive stop should never be admitted by tolerance")
+   assert(#aligned is 5 and 1 in aligned, "aligned inclusive stop should be present")
+   assert(#unaligned is 4 and not (1 in unaligned), "unreachable inclusive stop should not be forced")
+   assert(0.3 in exclusive, "membership should tolerate normal floating-point representation error")
+   assert(not (1 in exclusive), "exclusive stop should never be admitted by tolerance")
 
    reverse = range(1.0, 0.0, false, -0.2)
    assert(#reverse is 5 and approximately(reverse.find(v => v < 0.7), 0.6))
@@ -1632,9 +1632,9 @@ end
    large_start = 1e15
    translated = range(large_start, large_start + 10, false, 1)
 
-   assert(translated.contains(large_start + 2), "aligned values should remain members of translated ranges")
-   assert(not translated.contains(large_start + 0.5), "half-step values should not be admitted near the start")
-   assert(not translated.contains(large_start + 1.5), "half-step values should not be admitted inside the range")
+   assert(large_start + 2 in translated, "aligned values should remain members of translated ranges")
+   assert(not (large_start + 0.5 in translated), "half-step values should not be admitted near the start")
+   assert(not (large_start + 1.5 in translated), "half-step values should not be admitted inside the range")
 end
 
 @Test function DirectRuntimeRangeLoopSemanticMatrix()
@@ -1909,13 +1909,12 @@ end
 end
 
 @Test function RangeMethodsUseExplicitReceiver()
-   -- Colon-era bound-receiver closures were removed: range.contains and range.toArray are dispatched as canonical
-   -- built-in methods with the range supplied as an explicit receiver.
+   -- Colon-era bound-receiver closures were removed; membership is an operator and toArray receives the range
+   -- explicitly.
 
    r = {0 to 10}
-   assert(r.contains(5), "member call should confirm an in-range value")
-   assert(not r.contains(11), "member call should reject an out-of-range value")
-   assert(5 in r, "membership operator should resolve range.contains canonically")
+   assert(5 in r, "membership should confirm an in-range value")
+   assert(not (11 in r), "membership should reject an out-of-range value")
 
    arr = r.toArray()
    assert(arr[0] is 0 and arr[9] is 9, "toArray should materialise the range through the explicit receiver")

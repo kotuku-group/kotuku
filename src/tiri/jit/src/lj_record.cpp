@@ -3479,6 +3479,35 @@ static void rec_comp_equality(jit_State *J, RecordOps *ops)
 }
 
 //********************************************************************************************************************
+// Record membership metamethod dispatch.  The target is the receiver and the candidate is its single visible
+// argument for table handlers; native handlers retain their explicit receiver-first ABI.
+
+static void rec_contains(jit_State *J, RecordOps *ops)
+{
+   RecordIndex *ix = &ops->ix;
+   TRef candidate = ix->val;
+   TValue candidate_value;
+   copyTV(J->L, &candidate_value, &ix->valv);
+
+   ix->val = ix->key;
+   copyTV(J->L, &ix->valv, &ix->keyv);
+   ix->key = candidate;
+   copyTV(J->L, &ix->keyv, &candidate_value);
+   ix->tab = ix->val;
+   copyTV(J->L, &ix->tabv, &ix->valv);
+
+   rec_comp_prep(J);
+   if (lj_record_mm_lookup(J, ix, MM_contains)) {
+      rec_mm_callcomp(J, ix, int(ops->op));
+      return;
+   }
+
+   // Raw table lookup is deliberately separate from ordinary indexed access: __index must not participate in
+   // membership.  Keep the interpreter path until the recorder gains a raw table-presence IR operation.
+   lj_trace_err(J, LJ_TRERR_NOMM);
+}
+
+//********************************************************************************************************************
 // Handle arithmetic ops: BC_UNM, BC_ADD*, BC_SUB*, BC_MUL*, BC_DIV*, BC_MOD*, BC_POW
 
 static TRef rec_arith_op(jit_State *J, RecordOps *ops)
@@ -4755,6 +4784,10 @@ void lj_record_ins(jit_State *J)
 
    case BC_ISLT: case BC_ISGE: case BC_ISLE: case BC_ISGT:
       rec_comp_ordered(J, &ops);
+      break;
+
+   case BC_ISIN: case BC_ISNIN:
+      rec_contains(J, &ops);
       break;
 
    case BC_ISEQV: case BC_ISNEV:

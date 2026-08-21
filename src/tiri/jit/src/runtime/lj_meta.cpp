@@ -204,7 +204,7 @@ static TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *Method, cTValue 
    TValue *base = top;
    uint32_t visible_count = Kind IS MetamethodCallKind::Unary ? 0 : 1;
    uint32_t native_count = 2;
-   uint32_t argument_count = lj_context_prepare_metamethod_call(
+   [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(
       L, Receiver, base, visible_count, native_count);
    if (tvistab(Receiver)) {
       if (visible_count) copyTV(L, base, Argument);
@@ -236,7 +236,7 @@ static TValue * mmcall_binop3(lua_State *L, ASMFunction cont, cTValue *Method, c
    copyTV(L, top++, Method);
    setnilV(top++);
    TValue *base = top;
-   uint32_t argument_count = lj_context_prepare_metamethod_call(L, Receiver, base, 2, 3);
+   [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, Receiver, base, 2, 3);
    if (tvistab(Receiver)) {
       copyTV(L, top++, Other);
    }
@@ -476,7 +476,7 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
          setnilV(top);
          setnilV(top + 2);
          TValue *base = top + 2 * LJ_FR2 + 1;
-         uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver_copy, base, 2, 3);
+         [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver_copy, base, 2, 3);
          if (tvistab(&receiver_copy)) {
             copyTV(L, base, &other_copy);
             setboolV(base + 1, lhs_dispatch);
@@ -555,6 +555,53 @@ TValue * lj_meta_len(lua_State *L, cTValue *o)
 }
 
 //********************************************************************************************************************
+// Helper for membership tests.  `Candidate in Target` dispatches only on Target.  Tables without a handler use a
+// raw key lookup, while every other target must provide __contains.
+
+TValue * lj_meta_contains(lua_State *L, cTValue *Candidate, cTValue *Target, int Inverted)
+{
+   cTValue *candidate = Candidate;
+   cTValue *target = Target;
+   TValue candidate_copy, target_copy;
+
+   // Thunk resolution may execute arbitrary code and relocate the stack.  Preserve both values before resolving
+   // either one, then use the rooted copies for the rest of this helper.
+   if (lj_is_thunk(Candidate) or lj_is_thunk(Target)) {
+      copyTV(L, &candidate_copy, Candidate);
+      copyTV(L, &target_copy, Target);
+
+      // The guard repairs the VM-owned top while a thunk resolves, but must be destroyed before mmcall() publishes
+      // its continuation frame on that stack.
+      VMHelperGuard guard(L);
+      if (lj_is_thunk(&candidate_copy)) {
+         cTValue *resolved = lj_thunk_resolve(L, udataV(&candidate_copy));
+         copyTV(L, &candidate_copy, resolved);
+      }
+      if (lj_is_thunk(&target_copy)) {
+         cTValue *resolved = lj_thunk_resolve(L, udataV(&target_copy));
+         copyTV(L, &target_copy, resolved);
+      }
+
+      candidate = &candidate_copy;
+      target = &target_copy;
+   }
+
+   cTValue *method = lj_meta_lookup(L, target, MM_contains);
+   if (not tvisnil(method)) {
+      return mmcall(L, Inverted ? lj_cont_condf : lj_cont_condt, method, target, candidate,
+         MetamethodCallKind::Index);
+   }
+
+   if (tvistab(target)) {
+      cTValue *value = lj_tab_get(L, tabV(target), candidate);
+      return (TValue *)(intptr_t)(bool(not tvisnil(value)) != bool(Inverted));
+   }
+
+   lj_err_optype(L, target, ErrMsg::OPCONTAINS);
+   return nullptr;
+}
+
+//********************************************************************************************************************
 // Helper for equality comparisons. __eq metamethod.
 
 TValue * lj_meta_equal(lua_State *L, GCobj* o1, GCobj* o2, int ne)
@@ -578,7 +625,7 @@ TValue * lj_meta_equal(lua_State *L, GCobj* o1, GCobj* o2, int ne)
       TValue receiver, other;
       setgcV(L, &receiver, o1, it);
       setgcV(L, &other, o2, it);
-      uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, top, 1, 2);
+      [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, top, 1, 2);
       if (tvistab(&receiver)) copyTV(L, top, &other);
       else {
          copyTV(L, top, &receiver);
@@ -1304,13 +1351,14 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 // built-ins are enforced regardless of source syntax or table aliasing.  Checks run strictly before mutation, so a
 // failed store leaves both the stored value and the persisted policy unchanged.
 //
-// Value must reference a rooted Lua stack slot and L->top must be valid.  The recorder materialises JIT values in
-// their corresponding Lua stack slot before emitting this call.
+// Value must reference a rooted Lua stack slot.  The recorder materialises JIT values in their corresponding Lua stack
+// slot before emitting this call; branches that allocate or raise synchronise the interpreter stack on demand.
 
 static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
    GCstr *DeclarationOverride)
 {
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+      JITStackSync stack_sync(L);
       CSTRING message = lj_strfmt_pushf(L, "cannot override built-in '%s'", strdata(Name));
       lj_err_callermsg(L, message);
    }
@@ -1319,7 +1367,9 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
    RuntimeContractDescriptor descriptor;
    const RuntimeContractEntry *entry = nullptr;
    if (DeclarationOverride) {
+      JITStackSync stack_sync(L);
       decode_contract_or_error(L, DeclarationOverride, descriptor);
+      stack_sync.restore();
       if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
    }
    else if (const CachedGlobalContractRecord *cached =
@@ -1342,12 +1392,15 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
       entry = &cached_entry;
    }
    else if (GCstr *persisted = lj_tab_get_global_contract(Environment, Name)) {
+      JITStackSync stack_sync(L);
       decode_contract_or_error(L, persisted, descriptor);
+      stack_sync.restore();
       if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
    }
 
    if (entry) {
       if (contract_entry_is_const(*entry) and not contract_entry_is_initialising(*entry)) {
+         JITStackSync stack_sync(L);
          const_global_error(L, Name);
       }
       if (entry->type != TiriType::Any and entry->type != TiriType::Unknown) {
@@ -1355,17 +1408,30 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
          TValue resolved_value;
          if (lj_is_thunk(Value)) {
             // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
-            VMHelperGuard guard(L);
-            cTValue *resolved = lj_thunk_resolve(L, udataV(Value));
-            copyTV(L, &resolved_value, resolved);
+            JITStackSync stack_sync(L);
+            {
+               VMHelperGuard guard(L);
+               cTValue *resolved = lj_thunk_resolve(L, udataV(Value));
+               copyTV(L, &resolved_value, resolved);
+            }
             checked = &resolved_value;
+            stack_sync.restore();
          }
          if (not contract_matches(L, checked, *entry)) {
+            JITStackSync stack_sync(L);
             contract_error(L, checked, ContractBoundary::Global, *entry, entry->position);
          }
       }
    }
 }
+
+//********************************************************************************************************************
+// Validate a global environment store.
+//
+// The recorder lowers environment stores to lj_env_check(), so this runs from compiled traces as well as from the
+// interpreter and the C API.  Successful checks deliberately leave the interpreter stack untouched.  Individual
+// allocating and error branches synchronise immediately before they need a valid trace frame, keeping ordinary global
+// stores out of this stack-management path.
 
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
 {
@@ -1450,7 +1516,7 @@ int lj_meta_call(lua_State *L, TValue *func, TValue *top, bool TailTransfer)
 
 int lj_meta_close(lua_State *L, TValue *o, TValue *err)
 {
-   size_t context_depth = lj_context_depth(L);
+   [[maybe_unused]] size_t context_depth = lj_context_depth(L);
    const ptrdiff_t object_offset = savestack(L, o);
    const bool has_error = err != nullptr;
    const ptrdiff_t error_offset = has_error ? savestack(L, err) : 0;
@@ -1482,7 +1548,7 @@ int lj_meta_close(lua_State *L, TValue *o, TValue *err)
       copyTV(L, top++, mo);         // Push __close function
       setnilV(top++);               // Frame slot for LJ_FR2
       TValue *argbase = top;        // First argument position (for lj_vm_pcall base)
-      uint32_t argument_count = lj_context_prepare_metamethod_call(L, o, argbase, 1, 2);
+      [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, o, argbase, 1, 2);
       if (not tvistab(o)) copyTV(L, top++, o);
       if (err) copyTV(L, top++, err); // Push error value (second argument)
       else setnilV(top++);            // Push nil for normal scope exit

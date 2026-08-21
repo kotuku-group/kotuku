@@ -616,7 +616,7 @@ int lj_debug_getinfo(lua_State *L, CSTRING what, lj_Debug *ar, int ext)
          else ar->currentline = -1;
       }
       else if (*what IS 'u') {
-         ar->nups = fn->c.nupvalues;
+         ar->nupvalues = fn->c.nupvalues;
          if (ext) {
             if (isluafunc(fn)) {
                GCproto* pt = funcproto(fn);

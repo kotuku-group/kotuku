@@ -12,6 +12,45 @@
 #include "lua.h"
 
 //********************************************************************************************************************
+// JITStackSync: synchronise interpreter stack pointers while a recorded C helper is running.
+//
+// Compiled traces keep their active base in global_State::jit_base and do not maintain L->base or L->top.  Helpers
+// that allocate or raise must expose the trace frame to the GC and error unwinder.  restore() is deliberately explicit:
+// normal returns restore the prior interpreter view, while a non-local error leaves the synchronised state intact for
+// unwinding.
+
+class JITStackSync {
+   lua_State *lua_;
+   ptrdiff_t saved_base_;
+   ptrdiff_t saved_top_;
+   bool active_;
+
+public:
+   explicit JITStackSync(lua_State *L) noexcept :
+      lua_(L), saved_base_(0), saved_top_(0), active_(false)
+   {
+      if (auto jit_base = tvref(G(L)->jit_base); jit_base) {
+         saved_base_ = savestack(L, L->base);
+         saved_top_ = savestack(L, L->top);
+         active_ = true;
+         L->base = jit_base;
+         if (curr_funcisL(L)) L->top = curr_topL(L);
+      }
+   }
+
+   void restore() noexcept
+   {
+      if (active_) {
+         lua_->base = restorestack(lua_, saved_base_);
+         lua_->top = restorestack(lua_, saved_top_);
+      }
+   }
+
+   JITStackSync(const JITStackSync &) = delete;
+   JITStackSync & operator=(const JITStackSync &) = delete;
+};
+
+//********************************************************************************************************************
 // VMHelperGuard: RAII guard for C functions called from VM assembler code
 //
 // When the VM assembler calls C helper functions (marked LJ_FUNCA), the Lua state may be in a partially synchronised
@@ -356,7 +395,7 @@ namespace MetaCall {
    // Returns: pointer to first result
 
    [[nodiscard]] inline TValue* invoke(lua_State* L, TValue* base, int slotsUsed, int nresults = 1) noexcept {
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       lj_assertL(slotsUsed IS 2 or slotsUsed IS 3, "unexpected C API metamethod argument count: %d", slotsUsed);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count <= slotsUsed, "C API metamethod prepared too many arguments");
@@ -374,7 +413,7 @@ namespace MetaCall {
 
    [[nodiscard]] inline TValue* invokeGet(lua_State* L) noexcept {
       TValue *base = L->top;
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 1 or argument_count IS 2,
          "C API __index prepared an unexpected argument count");
@@ -392,7 +431,7 @@ namespace MetaCall {
    // Value offset: 3 + 2*LJ_FR2 slots before base
 
    inline void invokeSetTable(lua_State* L, TValue* base) noexcept {
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 1 or argument_count IS 2,
          "C API __newindex prepared an unexpected initial argument count");
@@ -408,7 +447,7 @@ namespace MetaCall {
    // Similar to invokeSetTable but different final adjustment
 
    inline void invokeSetField(lua_State* L, TValue* base) noexcept {
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 1 or argument_count IS 2,
          "C API __newindex prepared an unexpected initial argument count");
@@ -426,7 +465,7 @@ namespace MetaCall {
    // After call, copies result to L->top - 1
 
    inline int invokeConcat(lua_State* L, TValue* top) noexcept {
-      size_t context_depth = outerContextDepth(L, top);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, top);
       int consumed = int(L->top - (top - 2 * LJ_FR2));
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 2 or argument_count IS 3,

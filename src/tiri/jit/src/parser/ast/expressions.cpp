@@ -360,35 +360,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          if (member.kind() IS TokenKind::Identifier and member.span().offset IS next.span().offset + 1) break;
       }
 
-      // Membership operator: expr in range
-      // Transform `lhs in rhs` into the canonical `rhs.contains(lhs)` built-in method call.
-
-      if (next.kind() IS TokenKind::InToken) {
-         constexpr uint8_t in_left = 3;
-         constexpr uint8_t in_right = 3;
-
-         if (in_left <= precedence) break;
-
-         this->ctx.tokens().advance();
-         auto right = this->parse_expression(in_right);
-         if (not right.ok()) return right;
-
-         SourceSpan left_span = left.value_ref()->span;
-         SourceSpan right_span = right.value_ref()->span;
-
-         ExprNodePtr rhs_expr = std::move(right.value_ref());
-         ExprNodePtr lhs_expr = std::move(left.value_ref());
-
-         ExprNodeList args;
-         args.push_back(std::move(lhs_expr));
-
-         SourceSpan span = combine_spans(left_span, right_span);
-         ExprNodePtr call = make_direct_method_call(this->ctx, span, "contains", std::move(rhs_expr),
-            std::move(args), TiriType::Bool);
-         left = ParserResult<ExprNodePtr>::success(std::move(call));
-         continue;
-      }
-
       // 'is not' compound operator: treat as inequality (equivalent to !=)
       // Handled here rather than in match_binary_operator() to avoid lookahead
       // side-effects that corrupt the token stream for f-strings with expressions.
@@ -1359,6 +1330,11 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
          return info;
       case TokenKind::Approx:
          info.op = AstBinaryOperator::Approx;
+         info.left = 3;
+         info.right = 3;
+         return info;
+      case TokenKind::InToken:
+         info.op = AstBinaryOperator::Contains;
          info.left = 3;
          info.right = 3;
          return info;

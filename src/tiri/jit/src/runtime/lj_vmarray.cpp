@@ -17,6 +17,7 @@
 #include "lj_vmarray.h"
 #include "lj_vm.h"
 #include "lj_frame.h"
+#include "stack_helpers.h"
 
 #include <cstring>
 #include <string>
@@ -232,7 +233,21 @@ extern "C" int lj_arr_set(lua_State *L, cTValue *O, cTValue *K, cTValue *V)
 
 extern "C" void lj_arr_getidx(lua_State *L, GCarray *Array, int32_t Idx, TValue *Result)
 {
-   if (Idx < 0 or MSize(Idx) >= Array->len) lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
+   if (Idx < 0 or MSize(Idx) >= Array->len) {
+      JITStackSync stack_sync(L);
+      lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
+   }
+
+   // C string and structure loads allocate.  Other element types only copy an immediate value or an existing GC
+   // reference, so synchronising the interpreter stack for every indexed read would penalise array iteration.
+
+   if (Array->elemtype IS AET::CSTR or Array->elemtype IS AET::STR_CPP or Array->elemtype IS AET::STRUCT) {
+      JITStackSync stack_sync(L);
+      arr_load_elem(L, Array, uint32_t(Idx), Result);
+      stack_sync.restore();
+      return;
+   }
+
    arr_load_elem(L, Array, uint32_t(Idx), Result);
 }
 
@@ -246,6 +261,14 @@ extern "C" void lj_arr_safe_getidx(lua_State *L, GCarray *Array, int32_t Idx, TV
       setnilV(Result);
       return;
    }
+
+   if (Array->elemtype IS AET::CSTR or Array->elemtype IS AET::STR_CPP or Array->elemtype IS AET::STRUCT) {
+      JITStackSync stack_sync(L);
+      arr_load_elem(L, Array, uint32_t(Idx), Result);
+      stack_sync.restore();
+      return;
+   }
+
    arr_load_elem(L, Array, uint32_t(Idx), Result);
 }
 
@@ -254,8 +277,14 @@ extern "C" void lj_arr_safe_getidx(lua_State *L, GCarray *Array, int32_t Idx, TV
 
 extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue *Val)
 {
-   if (Idx < 0 or MSize(Idx) >= Array->len) lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
-   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+   if (Idx < 0 or MSize(Idx) >= Array->len) {
+      JITStackSync stack_sync(L);
+      lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
+   }
+   if (Array->flags & ARRAY_READONLY) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARRRO);
+   }
    lj_array_store_checked(L, Array, uint32_t(Idx), Val);
 }
 
@@ -263,12 +292,25 @@ extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue
 
 static void lj_arr_append_bytes(lua_State *L, GCarray *Array, const char *Data, MSize Len)
 {
-   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
-   if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
-   if (Len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (Array->flags & ARRAY_READONLY) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARRRO);
+   }
+   if (not (Array->elemtype IS AET::BYTE)) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARRSTR);
+   }
+   if (Len > (~MSize(0) - Array->len)) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARREXT);
+   }
 
    MSize new_len = Array->len + Len;
-   if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+   if (new_len > Array->capacity) {
+      JITStackSync stack_sync(L);
+      if (not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+      stack_sync.restore();
+   }
    if (Len > 0) memcpy((uint8_t*)Array->arraydata() + Array->len, Data, Len);
    Array->len = new_len;
 }
@@ -294,11 +336,13 @@ extern "C" void lj_arr_putsbuf(lua_State *L, GCarray *Array, SBuf *Buf)
 
 extern "C" void lj_arr_putnumtv(lua_State *L, GCarray *Array, cTValue *Value)
 {
+   JITStackSync stack_sync(L);
    SBuf *sb;
    if (tvisint(Value)) sb = lj_strfmt_putint(lj_buf_tmp_(L), intV(Value));
    else if (tvisnum(Value)) sb = lj_strfmt_putfnum(lj_buf_tmp_(L), STRFMT_G14, numV(Value));
    else lj_err_msg(L, ErrMsg::BADVAL);
    lj_arr_append_bytes(L, Array, sb->b, sbuflen(sb));
+   stack_sync.restore();
 }
 
 //********************************************************************************************************************
@@ -306,7 +350,10 @@ extern "C" void lj_arr_putnumtv(lua_State *L, GCarray *Array, cTValue *Value)
 
 extern "C" void lj_arr_clear(lua_State *L, GCarray *Array)
 {
-   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+   if (Array->flags & ARRAY_READONLY) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARRRO);
+   }
 
    lj_array_clear_range(Array, 0, Array->len);
    Array->len = 0;
@@ -317,14 +364,24 @@ extern "C" void lj_arr_clear(lua_State *L, GCarray *Array)
 
 extern "C" int32_t lj_arr_resize(lua_State *L, GCarray *Array, int32_t NewSize)
 {
-   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
-   if (NewSize < 0) lj_err_msgv(L, ErrMsg::NUMRNG, "non-negative", "negative");
+   if (Array->flags & ARRAY_READONLY) {
+      JITStackSync stack_sync(L);
+      lj_err_msg(L, ErrMsg::ARRRO);
+   }
+   if (NewSize < 0) {
+      JITStackSync stack_sync(L);
+      lj_err_msgv(L, ErrMsg::NUMRNG, "non-negative", "negative");
+   }
 
    MSize target_len = MSize(NewSize);
    MSize old_len = Array->len;
 
    if (target_len > old_len) {
-      if (target_len > Array->capacity and not lj_array_grow(L, Array, target_len)) lj_err_msg(L, ErrMsg::ARREXT);
+      if (target_len > Array->capacity) {
+         JITStackSync stack_sync(L);
+         if (not lj_array_grow(L, Array, target_len)) lj_err_msg(L, ErrMsg::ARREXT);
+         stack_sync.restore();
+      }
 
       if (Array->elemtype IS AET::STR_GC or Array->elemtype IS AET::TABLE or
           Array->elemtype IS AET::ARRAY or Array->elemtype IS AET::OBJECT or Array->elemtype IS AET::ANY) {
@@ -349,6 +406,7 @@ extern "C" int32_t lj_arr_resize(lua_State *L, GCarray *Array, int32_t NewSize)
 
 extern "C" GCstr * lj_arr_getstring(lua_State *L, GCarray *Array, int32_t Start, int32_t Len)
 {
+   JITStackSync stack_sync(L);
    if (not (Array->elemtype IS AET::BYTE)) lj_err_msg(L, ErrMsg::ARRSTR);
 
    int32_t count = Len;
@@ -364,7 +422,9 @@ extern "C" GCstr * lj_arr_getstring(lua_State *L, GCarray *Array, int32_t Start,
    if (byte_count > Array->len - start) lj_err_msg(L, ErrMsg::IDXRNG);
 
    CSTRING data = byte_count > 0 ? Array->get<const char>() + start : "";
-   return lj_str_new(L, data, byte_count);
+   GCstr *result = lj_str_new(L, data, byte_count);
+   stack_sync.restore();
+   return result;
 }
 
 //********************************************************************************************************************
@@ -372,5 +432,8 @@ extern "C" GCstr * lj_arr_getstring(lua_State *L, GCarray *Array, int32_t Start,
 
 extern "C" GCarray * lj_arr_new_jit(lua_State *L, uint32_t Length, uint32_t ElemType)
 {
-   return lj_array_new(L, Length, AET(ElemType));
+   JITStackSync stack_sync(L);
+   GCarray *result = lj_array_new(L, Length, AET(ElemType));
+   stack_sync.restore();
+   return result;
 }

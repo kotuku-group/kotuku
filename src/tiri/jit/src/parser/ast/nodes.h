@@ -169,7 +169,8 @@ enum class AstBinaryOperator : uint8_t {
    LogicalAnd,
    LogicalOr,
    IfEmpty,
-   HasFlag
+   HasFlag,
+   Contains
 };
 
 enum class TernaryConditionMode : uint8_t {
