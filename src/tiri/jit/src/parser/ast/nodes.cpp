@@ -141,6 +141,7 @@ TiriType infer_expression_type(const ExprNode &Expr)
             case AstBinaryOperator::LessEqual:
             case AstBinaryOperator::GreaterThan:
             case AstBinaryOperator::HasFlag:
+            case AstBinaryOperator::Contains:
                return TiriType::Bool;
 
             // Concatenation returns string

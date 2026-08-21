@@ -1,0 +1,89 @@
+-- Language-level membership tests for `Candidate in Target` and __contains dispatch.
+
+@BeforeEach(hotpath=40)
+function enforce_hotpath() end
+
+@Test function PlainTablesUseRawKeyPresence()
+   local values = { ready=false, present=true }
+   assert('ready' in values, 'A false table value must still count as present')
+   assert('present' in values, 'A non-nil table value must count as present')
+   assert(not ('missing' in values), 'A missing table key must be absent')
+
+   local index_calls = 0
+   local proxy = setmetatable({}, {
+      __index = function(Key):str
+         index_calls++
+         return Key
+      end
+   })
+   assert(not ('generated' in proxy), 'Table membership must not use __index')
+   assert(index_calls is 0, 'The raw table fallback must not invoke __index')
+
+   local ignored = { contains = function(Value) return true end }
+   assert(not ('needle' in ignored), 'An ordinary contains field must not affect the operator')
+end
+
+@Test function TableHandlersReceiveContextAndCandidate()
+   local colours:any
+   local set_mt = {
+      __contains = function(Value):any
+         assert(&& is colours, '__contains must enter the selected table context')
+         return &items[Value]
+      end
+   }
+   colours = setmetatable({ items = { red=true, green=true } }, set_mt)
+
+   local red = 'red' in colours
+   local blue = 'blue' in colours
+   assert(red is true and blue is false, '__contains should determine table membership')
+
+   local truthy = setmetatable({}, { __contains = function(Value:any):any return Value end })
+   assert('value' in truthy, 'Truthy handler results must normalise to true')
+   assert(not (false in truthy), 'False handler results must normalise to false')
+end
+
+@Test function BuiltinTargetsUseMembershipHandlers()
+   local numbers = array<int> { 2, 4, 6 }
+   assert(4 in numbers and not (5 in numbers), 'Array membership must remain value based')
+   assert(5 in {0 to 10} and not (10 in {0 to 10}), 'Range boundaries must remain unchanged')
+   assert('tuk' in 'Kōtuku' and not ('xyz' in 'Kōtuku'), 'String membership must remain substring based')
+
+end
+
+@Test function LegacyBuiltinMembershipApisAreUnavailable()
+   assert(array.contains is nil and string.contains is nil and range.contains is nil,
+      'Built-in membership APIs must not remain publicly callable')
+
+   local values = array<int> { 1 }
+   local available = false
+   try
+      values.contains(1)
+      available = true
+   end
+   assert(not available, 'Array instances must not retain a contains method')
+end
+
+@Test function MembershipEvaluatesCandidateBeforeTargetOnce()
+   local events = array<str> {}
+   function candidate():str
+      events.push('candidate')
+      return 'key'
+   end
+   function target():table
+      events.push('target')
+      return { key=true }
+   end
+
+   assert(candidate() in target(), 'The returned key should be present')
+   assert(events[0] is 'candidate' and events[1] is 'target' and #events is 2,
+      'Membership operands must evaluate once in source order')
+end
+
+@Test function MembershipRunsInHotCode()
+   local target = setmetatable({}, { __contains = function(Value:any):bool return Value is 'needle' end })
+   local matches = 0
+   for index in {0 to 200} do
+      if 'needle' in target then matches++ end
+   end
+   assert(matches is 200, 'Membership should retain its result after JIT compilation')
+end

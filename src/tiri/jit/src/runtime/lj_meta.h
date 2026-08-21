@@ -33,6 +33,7 @@ extern "C" [[nodiscard]] TValue* lj_meta_equal_cd(lua_State* L, BCIns ins);
 extern "C" [[nodiscard]] TValue* lj_meta_equal_thunk(lua_State* L, BCIns ins);
 extern "C" [[nodiscard]] int lj_meta_isfalsey(lua_State* L, BCIns Ins);
 extern "C" [[nodiscard]] TValue* lj_meta_comp(lua_State* L, cTValue* o1, cTValue* o2, int op);
+extern "C" [[nodiscard]] TValue* lj_meta_contains(lua_State* L, cTValue* Candidate, cTValue* Target, int Inverted);
 extern "C" void lj_meta_istype(lua_State* L, BCREG ra, BCREG tp);
 extern "C" void lj_meta_contract(lua_State *, TValue *, uint32_t, GCstr *);
 extern "C" void lj_meta_contract_pc(lua_State *, const BCIns *, uint32_t);

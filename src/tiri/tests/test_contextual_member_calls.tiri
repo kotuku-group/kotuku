@@ -734,9 +734,9 @@ end
    local indexes:range = {0 to 3}
    assert(text.startsWith(context_argument('needle')) is true,
       'String member dispatch should retain its existing behaviour')
-   assert(values.contains(context_argument('needle')) is true,
+   assert((context_argument('needle') in values) is true,
       'Array member dispatch should retain its existing behaviour')
-   assert(indexes.contains(2) is true, 'Range member dispatch should retain its existing behaviour')
+   assert((2 in indexes) is true, 'Range membership should retain its existing behaviour')
 
    local script = obj.find('self')
    local err, state = script.mtDebugLog(context_argument('state'))

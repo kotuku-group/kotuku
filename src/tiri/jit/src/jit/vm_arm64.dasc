@@ -872,6 +872,19 @@ static void build_subroutines(BuildCtx *ctx)
   |  uxtb CARG4w, INSw
   |  bl extern lj_meta_comp  // (lua_State *L, TValue *o1, *o2, int op)
   |  // Returns 0/1 or TValue * (metamethod).
+  |  b >3
+  |
+  |->vmeta_contains:
+  |  add CARG2, BASE, RA, lsl #3
+  |   sub PC, PC, #8
+  |  add CARG3, BASE, RC, lsl #3
+  |   str BASE, L->base
+  |  mov CARG1, L
+  |  ldrb CARG4w, [PC, #-8]
+  |  and CARG4, CARG4, #1
+  |   str PC, SAVE_PC
+  |  bl extern lj_meta_contains  // (lua_State *L, TValue *candidate, TValue *target, int inverted)
+  |  // Returns 0/1 or TValue * (metamethod).
   |3:
   |  cmp CRET1, #1
   |  bhi ->vmeta_binop3
@@ -2431,6 +2444,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
       |  csel PC, RB, PC, hi
     }
     |  b <1
+  break;
+
+  case BC_ISIN: case BC_ISNIN:
+    |  b ->vmeta_contains
   break;
 
   case BC_ISEQV: case BC_ISNEV:

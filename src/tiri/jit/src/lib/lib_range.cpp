@@ -5,7 +5,7 @@
 // - Exclusive (default) and inclusive ranges
 // - Forward and reverse iteration
 // - Custom step values
-// - Membership testing via contains()
+// - Membership testing via the `in` operator
 // - Conversion to table via toTable()
 
 #define lib_range_c
@@ -590,7 +590,6 @@ LJLIB_CF(range_take) { return fp_range_take(L); }
 LJLIB_CF(range_any) { return fp_range_any(L); }
 LJLIB_CF(range_all) { return fp_range_all(L); }
 LJLIB_CF(range_find) { return fp_range_find(L); }
-LJLIB_CF(range_contains) { return fp_range_contains(L); }
 LJLIB_CF(range_toArray) { return fp_range_toarray(L); }
 
 LJLIB_ASM(range_iterator_next) LJLIB_REC(.)
@@ -653,15 +652,14 @@ LJLIB_CF(range_new)
 //********************************************************************************************************************
 // __index metamethod
 // Handles property access (.start, .stop, .step, .inclusive, .length) and returns the functional helper fast
-// functions (.each, .filter, ...).  The .contains and .toArray methods are dispatched canonically through BC_BMETH
-// with an explicit receiver and are intentionally not exposed here as bound-receiver closures.
+// functions (.each, .filter, ...).  `toArray` is dispatched canonically through BC_BMETH with an explicit receiver
+// and is intentionally not exposed here as a bound-receiver closure.
 
 constexpr auto HASH_start     = kt::strhash("start");
 constexpr auto HASH_stop      = kt::strhash("stop");
 constexpr auto HASH_step      = kt::strhash("step");
 constexpr auto HASH_inclusive = kt::strhash("inclusive");
 constexpr auto HASH_length    = kt::strhash("length");
-constexpr auto HASH_contains  = kt::strhash("contains");
 constexpr auto HASH_toArray   = kt::strhash("toArray");
 constexpr auto HASH_each      = kt::strhash("each");
 constexpr auto HASH_filter    = kt::strhash("filter");
@@ -693,9 +691,6 @@ static int range_index(lua_State *Lua)
          case HASH_any:       lua_pushcfunction(Lua, fp_range_any); return 1;
          case HASH_all:       lua_pushcfunction(Lua, fp_range_all); return 1;
          case HASH_find:      lua_pushcfunction(Lua, fp_range_find); return 1;
-         // range.contains and range.toArray are dispatched as canonical built-in methods with an explicit
-         // receiver (BC_BMETH); they are no longer exposed as bound-receiver closures through member lookup.
-         case HASH_contains:
          case HASH_toArray:   break;
       }
    }
@@ -1046,6 +1041,8 @@ extern "C" int luaopen_range(lua_State *L)
    luaL_getmetatable(L, RANGE_METATABLE);
    lua_pushcfunction(L, fp_range_call);
    lua_setfield(L, -2, "__call");
+   lua_pushcfunction(L, fp_range_contains);
+   lua_setfield(L, -2, "__contains");
    lua_pop(L, 2);  // Pop the range metatable and private iterator.
 
    // At this point the range table is on the stack, add a metatable with __call
@@ -1077,8 +1074,6 @@ extern "C" int luaopen_range(lua_State *L)
       { TiriType::Bool }, { TiriType::Range, TiriType::Func });
    reg_iface_method(L, "range", "find", TiriType::Range, builtin_callable_id(FastFunc::range_find),
       { TiriType::Num }, { TiriType::Range, TiriType::Func });
-   reg_iface_method(L, "range", "contains", TiriType::Range, builtin_callable_id(FastFunc::range_contains),
-      { TiriType::Bool }, { TiriType::Range, TiriType::Num }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "range", "toArray", TiriType::Range, builtin_callable_id(FastFunc::range_toArray),
       { TiriType::Array }, { TiriType::Range }, FProtoFlags::ContextIndependent);
 

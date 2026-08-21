@@ -5192,7 +5192,6 @@ static bool test_builtin_method_registry(kt::Log &Log)
       return false;
    }
    const fprototype *array_insert = get_method_prototype(TiriType::Array, "insert");
-   const fprototype *range_contains = get_method_prototype(TiriType::Range, "contains");
    const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
    const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
    const fprototype *object_new = get_method_prototype(TiriType::Object, "new");
@@ -5202,10 +5201,9 @@ static bool test_builtin_method_registry(kt::Log &Log)
    lua_getfield(L, -1, "new");
    GCfunc *public_create = tvisfunc(L->top - 1) ? funcV(L->top - 1) : nullptr;
    lua_pop(L, 2);
-   if (not array_insert or not range_contains or not struct_clone or not object_exists or not object_new or
+   if (not array_insert or not struct_clone or not object_exists or not object_new or
        not object_state or not namespace_new or
        array_insert->builtin_callable_id != builtin_callable_id(FastFunc::array_insert) or
-       range_contains->builtin_callable_id != builtin_callable_id(FastFunc::range_contains) or
        struct_clone->builtin_callable_id != builtin_callable_id(FastFunc::struct_clone) or
        object_exists->builtin_callable_id != builtin_callable_id(FastFunc::object_exists) or
        object_new->builtin_callable_id != builtin_callable_id(FastFunc::object_new) or
@@ -5216,19 +5214,21 @@ static bool test_builtin_method_registry(kt::Log &Log)
        object_state->param_types()[0] != TiriType::Object or namespace_new->is_method() or
        namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "_state") or
        public_create != lj_builtin_callable(L, builtin_callable_id(FastFunc::object_create)) or
-       array_insert IS table_insert or get_method_prototype(TiriType::Table, "push") or
+       array_insert IS table_insert or get_method_prototype(TiriType::Array, "contains") or
+       get_method_prototype(TiriType::Range, "contains") or get_method_prototype(TiriType::Str, "contains") or
+       get_method_prototype(TiriType::Table, "push") or
        get_method_prototype(TiriType::Table, "new")) {
       Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
       return false;
    }
 
-   constexpr std::array<std::string_view, 28> array_methods = {
-      "table", "concat", "contains", "first", "last", "clear", "resize", "push", "pop", "copy",
+   constexpr std::array<std::string_view, 27> array_methods = {
+      "table", "concat", "first", "last", "clear", "resize", "push", "pop", "copy",
       "getString", "setString", "type", "readOnly", "fill", "find", "reverse", "slice", "sort", "each",
       "map", "filter", "reduce", "any", "all", "insert", "remove", "clone"
    };
-   constexpr std::array<std::string_view, 23> string_methods = {
-      "byte", "cap", "contains", "count", "decap", "endsWith", "escXML", "find", "format", "hash", "len",
+   constexpr std::array<std::string_view, 22> string_methods = {
+      "byte", "cap", "count", "decap", "endsWith", "escXML", "find", "format", "hash", "len",
       "lower", "pop", "rep", "replace", "reverse", "rtrim", "split", "startsWith", "sub", "trim",
       "unescapeXML", "upper"
    };
@@ -5236,8 +5236,8 @@ static bool test_builtin_method_registry(kt::Log &Log)
       "insert", "remove", "move", "concat", "sort", "empty", "kind", "size", "clear", "slice", "sortByKeys",
       "toXML"
    };
-   constexpr std::array<std::string_view, 10> range_methods = {
-      "each", "filter", "reduce", "map", "take", "any", "all", "find", "contains", "toArray"
+   constexpr std::array<std::string_view, 9> range_methods = {
+      "each", "filter", "reduce", "map", "take", "any", "all", "find", "toArray"
    };
    constexpr std::array<std::string_view, 2> struct_methods = { "copy", "clone" };
    constexpr std::array<std::string_view, 12> object_methods = {
@@ -5886,8 +5886,8 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
       "local constructed = struct<PhaseTwoRecord> { Value=9 }\n"
       "local bits = (first & last) | (first ^ last)\n"
       "return sliced, present, values, constructed, bits\n", true, error);
-   constexpr std::array<FastFunc, 9> required = { {
-      FastFunc::range_new, FastFunc::range_slice, FastFunc::range_contains,
+   constexpr std::array<FastFunc, 8> required = { {
+      FastFunc::range_new, FastFunc::range_slice,
       FastFunc::array_of, FastFunc::array_resize, FastFunc::struct_new,
       FastFunc::bit_band, FastFunc::bit_bor, FastFunc::bit_bxor
    } };
@@ -5900,9 +5900,19 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
       Log.error("canonical core syntax omitted built-in callable %u", unsigned(callable));
       return false;
    }
-   if (count_opcode_tree(*core, BC_GGET) != 0 or count_opcode_tree(*core, BC_TGETS) != 0 or
+   if (count_opcode_tree(*core, BC_ISIN) != 1 or count_opcode_tree(*core, BC_ISNIN) != 0 or
+       count_opcode_tree(*core, BC_GGET) != 0 or count_opcode_tree(*core, BC_TGETS) != 0 or
        count_opcode_tree(*core, BC_TGETV) != 0) {
       Log.error("compiler-owned core syntax retained namespace lookup bytecode");
+      return false;
+   }
+
+   error.clear();
+   auto negated_membership = compile_snapshot(L,
+      "local values = { key=true }\nreturn not ('missing' in values)\n", true, error);
+   if (not negated_membership or count_opcode_tree(*negated_membership, BC_ISIN) != 0 or
+       count_opcode_tree(*negated_membership, BC_ISNIN) != 1) {
+      Log.error("negated membership did not emit BC_ISNIN: %s", error.c_str());
       return false;
    }
 

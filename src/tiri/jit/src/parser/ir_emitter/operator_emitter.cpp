@@ -46,6 +46,7 @@ static CSTRING get_binop_name(BinOpr opr)
       case BinOpr::GreaterThan: return ">";
       case BinOpr::GreaterEqual: return ">=";
       case BinOpr::Approx: return "≈";
+      case BinOpr::Contains: return "in";
       case BinOpr::LogicalAnd: return "and";
       case BinOpr::LogicalOr: return "or";
       default: return "?";
@@ -203,7 +204,18 @@ static void bcemit_comp(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
 
    e1_toval_pre.to_val();
    *e1 = e1_toval_pre.legacy();
-   if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual) {
+   if (opr IS BinOpr::Contains) {
+      ExpressionValue target_value(fs, *e2);
+      BCReg target_reg = target_value.discharge_to_any_reg(allocator);
+      *e2 = target_value.legacy();
+      ExpressionValue candidate_value(fs, *e1);
+      BCReg candidate_reg = candidate_value.discharge_to_any_reg(allocator);
+      *e1 = candidate_value.legacy();
+      cmp_reg_a = candidate_reg;
+      cmp_reg_b = target_reg;
+      ins = BCINS_AD(BC_ISIN, candidate_reg, target_reg);
+   }
+   else if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual) {
       BCOp op = opr IS BinOpr::Equal ? BC_ISEQV : BC_ISNEV;
       BCReg ra;
 
@@ -616,7 +628,7 @@ void OperatorEmitter::emit_binop_left(BinOpr opr, ExprValue left)
    RegisterAllocator local_alloc(this->func_state);
    ExpDesc *e = left.raw();
 
-   if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual) {
+   if (opr IS BinOpr::Equal or opr IS BinOpr::NotEqual or opr IS BinOpr::Contains) {
       // Comparison operators (EQ, NE): discharge to register unless it's a constant/jump
       if (not e->is_constant_nojump()) {
          ExpressionValue e_value(this->func_state, *e);

@@ -555,6 +555,53 @@ TValue * lj_meta_len(lua_State *L, cTValue *o)
 }
 
 //********************************************************************************************************************
+// Helper for membership tests.  `Candidate in Target` dispatches only on Target.  Tables without a handler use a
+// raw key lookup, while every other target must provide __contains.
+
+TValue * lj_meta_contains(lua_State *L, cTValue *Candidate, cTValue *Target, int Inverted)
+{
+   cTValue *candidate = Candidate;
+   cTValue *target = Target;
+   TValue candidate_copy, target_copy;
+
+   // Thunk resolution may execute arbitrary code and relocate the stack.  Preserve both values before resolving
+   // either one, then use the rooted copies for the rest of this helper.
+   if (lj_is_thunk(Candidate) or lj_is_thunk(Target)) {
+      copyTV(L, &candidate_copy, Candidate);
+      copyTV(L, &target_copy, Target);
+
+      // The guard repairs the VM-owned top while a thunk resolves, but must be destroyed before mmcall() publishes
+      // its continuation frame on that stack.
+      VMHelperGuard guard(L);
+      if (lj_is_thunk(&candidate_copy)) {
+         cTValue *resolved = lj_thunk_resolve(L, udataV(&candidate_copy));
+         copyTV(L, &candidate_copy, resolved);
+      }
+      if (lj_is_thunk(&target_copy)) {
+         cTValue *resolved = lj_thunk_resolve(L, udataV(&target_copy));
+         copyTV(L, &target_copy, resolved);
+      }
+
+      candidate = &candidate_copy;
+      target = &target_copy;
+   }
+
+   cTValue *method = lj_meta_lookup(L, target, MM_contains);
+   if (not tvisnil(method)) {
+      return mmcall(L, Inverted ? lj_cont_condf : lj_cont_condt, method, target, candidate,
+         MetamethodCallKind::Index);
+   }
+
+   if (tvistab(target)) {
+      cTValue *value = lj_tab_get(L, tabV(target), candidate);
+      return (TValue *)(intptr_t)(bool(not tvisnil(value)) != bool(Inverted));
+   }
+
+   lj_err_optype(L, target, ErrMsg::OPCONTAINS);
+   return nullptr;
+}
+
+//********************************************************************************************************************
 // Helper for equality comparisons. __eq metamethod.
 
 TValue * lj_meta_equal(lua_State *L, GCobj* o1, GCobj* o2, int ne)

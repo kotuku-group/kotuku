@@ -2772,6 +2772,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                case AstBinaryOperator::GreaterThan:
                case AstBinaryOperator::GreaterEqual:
                case AstBinaryOperator::HasFlag:
+               case AstBinaryOperator::Contains:
                   result.primary = TiriType::Bool;
                   return result;
                // Logical operators in Lua/Tiri return one of their operands.

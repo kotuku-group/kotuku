@@ -2637,13 +2637,13 @@ function tempus.mtInterval.duration(Self):table
 end
 
 @Doc(text=[[
-@desc Check if an instant is inside this interval
+@desc Check whether an instant is inside this interval
 @input Instant value
 @result True when contained
 ]])
-function tempus.mtInterval.contains(Self, Instant:table):bool
+tempus.mtInterval.__contains = function(Instant:table):bool
    if not tempus.isInstant(Instant) then raise ERR_InvalidValue, 'Instant must be an Instant value.' end
-   fields = tempus._fields(Self, 'Interval')
+   fields = tempus._fields(&&, 'Interval')
    return fields.start <= Instant and Instant < fields.stop
 end
 

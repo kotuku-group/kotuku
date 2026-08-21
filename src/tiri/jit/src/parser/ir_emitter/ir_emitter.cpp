@@ -824,6 +824,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstBinaryOperator::LogicalOr:    return BinOpr::LogicalOr;
       case AstBinaryOperator::IfEmpty:      return BinOpr::IfEmpty;
       case AstBinaryOperator::HasFlag:     return BinOpr::HasFlag;
+      case AstBinaryOperator::Contains:    return BinOpr::Contains;
       default: return std::nullopt;
    }
 }

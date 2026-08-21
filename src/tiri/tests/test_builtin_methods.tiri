@@ -10,7 +10,7 @@ function enforce_hotpath() end
 @Test function ArrayMethods()
    local values = array<int> { 1, 2 }
    values.push(3)
-   assert(values.contains(2) and #values is 3, 'Array query and mutation methods should use dot calls')
+   assert(2 in values and #values is 3, 'Array query and mutation methods should use dot calls')
 
    local mapped = values.map(Value => num: Value * 2)
    assert(mapped[0] is 2 and mapped[2] is 6, 'Array map should retain its array result')
@@ -24,7 +24,7 @@ end
 @Test function StringMethods()
    local text = 'Hello World'
    assert(text.upper() is 'HELLO WORLD', 'String transformations should use dot calls')
-   assert(text.contains('World') and text.startsWith('Hello'), 'String query methods should use dot calls')
+   assert('World' in text and text.startsWith('Hello'), 'String query methods should use dot calls')
 
    local first, second = 'AB'.byte(0, 2)
    assert(first is 65 and second is 66, 'Variadic string methods should preserve multiple results')
@@ -79,7 +79,7 @@ end
    local first, second = holder.text.byte(0, 2)
    holder.values.push(2)
    local clone = holder.record.clone()
-   assert(first is 65 and second is 66 and holder.values[1] is 2 and holder.sequence.contains(2) and
+   assert(first is 65 and second is 66 and holder.values[1] is 2 and 2 in holder.sequence and
       clone.Value is 9 and holder.file.exists(),
       'Runtime fallback should classify strings, arrays, ranges, structs and objects reached through table fields')
    holder.file.free()
@@ -154,8 +154,8 @@ end
          exec(Source)
       except Error
          local message = tostring(Error)
-         rejected = message.contains("built-in method 'insert'") and
-            message.contains("['insert']")
+         rejected = "built-in method 'insert'" in message and
+            "['insert']" in message
       success
          error(Description .. ' should be rejected')
       end
@@ -188,7 +188,7 @@ end
 
 @Test function RangeMethods()
    local values = {0 to 5}
-   assert(values.contains(3), 'Range contains should use the canonical range callable')
+   assert(3 in values, 'Range membership should use the operator')
    assert(values.reduce(0, (Total, Value) => num: Total + Value) is 10,
       'Range reduce should preserve its native argument order')
 
@@ -309,9 +309,9 @@ end
    assert(array_values[1] is 2 and table_values[0] is 3,
       'The insert method name should resolve independently for array and table receivers')
 
-   assert(array_values.contains(1), 'Array contains should resolve against the array interface')
-   assert('abc'.contains('b'), 'String contains should resolve against the string interface')
-   assert(({0 to 3}).contains(2), 'Range contains should resolve against the range interface')
+   assert(1 in array_values, 'Array membership should resolve against the array interface')
+   assert('b' in 'abc', 'String membership should resolve against the string interface')
+   assert(2 in {0 to 3}, 'Range membership should resolve against the range interface')
 end
 
 @Test function NamespaceRebindingDoesNotRedirectMethods()

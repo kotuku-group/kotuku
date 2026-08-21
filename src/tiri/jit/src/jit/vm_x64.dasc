@@ -1084,6 +1084,26 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov SAVE_PC, PC
   |  call extern lj_meta_comp // (lua_State *L, TValue *o1, *o2, int op)
   |  // 0/1 or TValue * (metamethod) returned in eax (RC).
+  |  jmp >3
+  |
+  |->vmeta_contains:
+  |  movzx RDd, PC_RD
+  |  movzx RAd, PC_RA
+  |  mov L:RB, SAVE_L
+  |  mov L:RB->base, BASE
+  |.if X64WIN
+  |  lea CARG3, [BASE+RD*8]
+  |  lea CARG2, [BASE+RA*8]
+  |.else
+  |  lea CARG2, [BASE+RA*8]
+  |  lea CARG3, [BASE+RD*8]
+  |.endif
+  |  mov CARG1, L:RB
+  |  movzx CARG4d, PC_OP
+  |  and CARG4d, 1
+  |  mov SAVE_PC, PC
+  |  call extern lj_meta_contains // (lua_State *L, TValue *candidate, TValue *target, int inverted)
+  |  // 0/1 or TValue * (metamethod) returned in eax (RC).
   |3:
   |  mov BASE, L:RB->base
   |  cmp RC, 1
@@ -3040,6 +3060,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |1:
     |  ins_next
     |.endif
+    break;
+
+  case BC_ISIN: case BC_ISNIN:
+    |  jmp ->vmeta_contains
     break;
 
   case BC_ISEQV: case BC_ISNEV:
