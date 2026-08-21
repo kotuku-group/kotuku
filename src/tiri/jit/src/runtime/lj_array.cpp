@@ -12,6 +12,7 @@
 #include "lj_object.h"
 #include "lj_str.h"
 #include "lj_tab.h"
+#include "stack_helpers.h"
 
 #include <cstring>
 #include <cfloat>
@@ -406,6 +407,7 @@ void lj_array_store_new_values(lua_State *L, GCarray *Array, cTValue *Values, MS
 
 extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
 {
+   JITStackSync stack_sync(L);
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
 
    if (Array->elemtype IS AET::BYTE and tvisstr(Value)) {
@@ -415,6 +417,7 @@ extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
       if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
       if (string->len > 0) memcpy((uint8_t *)Array->arraydata() + Array->len, strdata(string), string->len);
       Array->len = new_len;
+      stack_sync.restore();
       return;
    }
 
@@ -429,6 +432,7 @@ extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
       if (index + 1 > Array->capacity and not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
       std::memcpy(lj_array_index(Array, index), &bits, sizeof(bits));
       Array->len = index + 1;
+      stack_sync.restore();
       return;
    }
 
@@ -442,6 +446,7 @@ extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
    if (index + 1 > Array->capacity and not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
    array_store_validated(L, Array, index, Value);
    Array->len = index + 1;
+   stack_sync.restore();
 }
 
 //********************************************************************************************************************

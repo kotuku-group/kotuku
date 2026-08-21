@@ -1414,15 +1414,40 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
    }
 }
 
+//********************************************************************************************************************
+// Synchronise the interpreter's view of the stack before the policy check can raise.
+//
+// The recorder lowers environment stores to lj_env_check(), so this runs from compiled traces as well as from the
+// interpreter and the C API.  A trace does not maintain L->base or L->top, which therefore still describe whichever
+// interpreter frame ran last - normally a frame *below* the trace.  Every error path from env_check_contract() pushes
+// its message at L->top (lj_strfmt_pushf(), then lj_debug_addloc()), so a stale top writes the message straight into
+// the live slots of those lower frames.  The try-except unwinder later walks that frame chain, reads an overwritten
+// slot as a GCfunc and faults on the resulting wild prototype pointer.
+//
+// Re-basing on G(L)->jit_base places the message above the trace's own frame instead.  Off-trace the sync is inert
+// because jit_base is null and L->top already matches the active frame.
+
+static void env_check_synced(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
+   GCstr *DeclarationOverride)
+{
+   JITStackSync stack_sync(L);
+
+   env_check_contract(L, Environment, Name, Value, DeclarationOverride);
+
+   // Only reached when the policy check passed; a rejection leaves the synchronised values in place for unwinding.
+
+   stack_sync.restore();
+}
+
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
 {
-   env_check_contract(L, Environment, Name, Value, nullptr);
+   env_check_synced(L, Environment, Name, Value, nullptr);
 }
 
 extern "C" void lj_env_check_override(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
    GCstr *DeclarationOverride)
 {
-   env_check_contract(L, Environment, Name, Value, DeclarationOverride);
+   env_check_synced(L, Environment, Name, Value, DeclarationOverride);
 }
 
 //********************************************************************************************************************

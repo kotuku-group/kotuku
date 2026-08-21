@@ -176,6 +176,7 @@ static void resizestack(lua_State *L, MSize n)
    TValue* st, * oldst = tvref(L->stack);
    ptrdiff_t delta;
    MSize oldsize = L->stacksize;
+   const size_t old_byte_size = size_t(oldsize) * sizeof(TValue);
    MSize realsize = n + 1 + LJ_STACK_EXTRA;
    GCobj* up;
 
@@ -188,7 +189,13 @@ static void resizestack(lua_State *L, MSize n)
    while (oldsize < realsize) setnilV(st + oldsize++); // Clear new slots.
 
    L->stacksize = realsize;
-   if ((size_t)(mref<char>(G(L)->jit_base) - (char*)oldst) < oldsize) {
+
+   // Relocate the running trace's base when it refers to the buffer that has just moved.  The containment test must
+   // use the *old* byte size: upstream compares a byte offset against a slot count, so any jit_base beyond the first
+   // few slots is left pointing into freed memory, and lj_vm_exit_handler() then restores L->base from it on the
+   // next trace exit.  oldsize is consumed by the slot-clearing loop above, hence the size captured on entry.
+
+   if (size_t(mref<char>(G(L)->jit_base) - (char*)oldst) < old_byte_size) {
       setmref(G(L)->jit_base, mref<char>(G(L)->jit_base) + delta);
    }
 
