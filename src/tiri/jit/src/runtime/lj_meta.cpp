@@ -204,7 +204,7 @@ static TValue * mmcall(lua_State *L, ASMFunction cont, cTValue *Method, cTValue 
    TValue *base = top;
    uint32_t visible_count = Kind IS MetamethodCallKind::Unary ? 0 : 1;
    uint32_t native_count = 2;
-   uint32_t argument_count = lj_context_prepare_metamethod_call(
+   [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(
       L, Receiver, base, visible_count, native_count);
    if (tvistab(Receiver)) {
       if (visible_count) copyTV(L, base, Argument);
@@ -236,7 +236,7 @@ static TValue * mmcall_binop3(lua_State *L, ASMFunction cont, cTValue *Method, c
    copyTV(L, top++, Method);
    setnilV(top++);
    TValue *base = top;
-   uint32_t argument_count = lj_context_prepare_metamethod_call(L, Receiver, base, 2, 3);
+   [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, Receiver, base, 2, 3);
    if (tvistab(Receiver)) {
       copyTV(L, top++, Other);
    }
@@ -476,7 +476,7 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
          setnilV(top);
          setnilV(top + 2);
          TValue *base = top + 2 * LJ_FR2 + 1;
-         uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver_copy, base, 2, 3);
+         [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver_copy, base, 2, 3);
          if (tvistab(&receiver_copy)) {
             copyTV(L, base, &other_copy);
             setboolV(base + 1, lhs_dispatch);
@@ -625,7 +625,7 @@ TValue * lj_meta_equal(lua_State *L, GCobj* o1, GCobj* o2, int ne)
       TValue receiver, other;
       setgcV(L, &receiver, o1, it);
       setgcV(L, &other, o2, it);
-      uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, top, 1, 2);
+      [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, top, 1, 2);
       if (tvistab(&receiver)) copyTV(L, top, &other);
       else {
          copyTV(L, top, &receiver);
@@ -1497,7 +1497,7 @@ int lj_meta_call(lua_State *L, TValue *func, TValue *top, bool TailTransfer)
 
 int lj_meta_close(lua_State *L, TValue *o, TValue *err)
 {
-   size_t context_depth = lj_context_depth(L);
+   [[maybe_unused]] size_t context_depth = lj_context_depth(L);
    const ptrdiff_t object_offset = savestack(L, o);
    const bool has_error = err != nullptr;
    const ptrdiff_t error_offset = has_error ? savestack(L, err) : 0;
@@ -1529,7 +1529,7 @@ int lj_meta_close(lua_State *L, TValue *o, TValue *err)
       copyTV(L, top++, mo);         // Push __close function
       setnilV(top++);               // Frame slot for LJ_FR2
       TValue *argbase = top;        // First argument position (for lj_vm_pcall base)
-      uint32_t argument_count = lj_context_prepare_metamethod_call(L, o, argbase, 1, 2);
+      [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, o, argbase, 1, 2);
       if (not tvistab(o)) copyTV(L, top++, o);
       if (err) copyTV(L, top++, err); // Push error value (second argument)
       else setnilV(top++);            // Push nil for normal scope exit

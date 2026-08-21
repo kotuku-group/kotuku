@@ -356,7 +356,7 @@ namespace MetaCall {
    // Returns: pointer to first result
 
    [[nodiscard]] inline TValue* invoke(lua_State* L, TValue* base, int slotsUsed, int nresults = 1) noexcept {
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       lj_assertL(slotsUsed IS 2 or slotsUsed IS 3, "unexpected C API metamethod argument count: %d", slotsUsed);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count <= slotsUsed, "C API metamethod prepared too many arguments");
@@ -374,7 +374,7 @@ namespace MetaCall {
 
    [[nodiscard]] inline TValue* invokeGet(lua_State* L) noexcept {
       TValue *base = L->top;
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 1 or argument_count IS 2,
          "C API __index prepared an unexpected argument count");
@@ -392,7 +392,7 @@ namespace MetaCall {
    // Value offset: 3 + 2*LJ_FR2 slots before base
 
    inline void invokeSetTable(lua_State* L, TValue* base) noexcept {
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 1 or argument_count IS 2,
          "C API __newindex prepared an unexpected initial argument count");
@@ -408,7 +408,7 @@ namespace MetaCall {
    // Similar to invokeSetTable but different final adjustment
 
    inline void invokeSetField(lua_State* L, TValue* base) noexcept {
-      size_t context_depth = outerContextDepth(L, base);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, base);
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 1 or argument_count IS 2,
          "C API __newindex prepared an unexpected initial argument count");
@@ -426,7 +426,7 @@ namespace MetaCall {
    // After call, copies result to L->top - 1
 
    inline int invokeConcat(lua_State* L, TValue* top) noexcept {
-      size_t context_depth = outerContextDepth(L, top);
+      [[maybe_unused]] size_t context_depth = outerContextDepth(L, top);
       int consumed = int(L->top - (top - 2 * LJ_FR2));
       int argument_count = L->metamethod_argument_count;
       lj_assertL(argument_count IS 2 or argument_count IS 3,
