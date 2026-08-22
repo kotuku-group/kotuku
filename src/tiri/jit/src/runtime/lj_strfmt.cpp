@@ -456,7 +456,7 @@ int lj_strfmt_putarg(lua_State* L, SBuf* sb, int arg, int retry)
                   copyTV(L, &receiver, o);
                   setnilV(L->top++);
                   TValue *base = L->top;
-                  uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, base, 0, 1);
+                  [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, &receiver, base, 0, 1);
                   lj_assertL(argument_count IS 0, "formatted table metamethod retained its receiver argument");
                   lj_vm_call(L, base, 2);
                }

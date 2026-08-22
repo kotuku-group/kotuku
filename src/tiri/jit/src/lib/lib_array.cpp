@@ -140,36 +140,6 @@ bool lj_array_struct_is_trivial(const struct_record &Def)
 }
 
 //********************************************************************************************************************
-// Helper to get the legacy public element name.  array.type() and array tostring intentionally retain char for BYTE.
-
-static CSTRING elemtype_name(AET Type)
-{
-   switch (Type) {
-      case AET::BYTE:       return "char";
-      case AET::INT8:       return "int8";
-      case AET::INT16:      return "int16";
-      case AET::INT32:      return "int";
-      case AET::INT64:      return "int64";
-      case AET::UINT8:      return "uint8";
-      case AET::UINT16:     return "uint16";
-      case AET::UINT32:     return "uint";
-      case AET::UINT64:     return "uint64";
-      case AET::FLOAT:      return "float";
-      case AET::DOUBLE:     return "double";
-      case AET::PTR:        return "pointer";
-      case AET::STRUCT:     return "struct";
-      case AET::TABLE:      return "table";
-      case AET::ARRAY:      return "array";
-      case AET::OBJECT:     return "object";
-      case AET::CSTR:
-      case AET::STR_GC:
-      case AET::STR_CPP:    return "str";
-      case AET::ANY:        return "any";
-      default: return "unknown";
-   }
-}
-
-//********************************************************************************************************************
 
 template <typename... Args>
 static void append_formatted(std::string &Result, CSTRING Format, Args... Values)
@@ -664,7 +634,8 @@ LJLIB_CF(array_concat)
                append_formatted(result, format, unsigned(arr->get<uint8_t>()[i]));
                break;
             default:
-               luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
+               luaL_error(L, ERR::InvalidType, "concat() does not support %s types.",
+                  lj_array_elemtype_name(arr->elemtype));
          }
       }
       else {
@@ -721,7 +692,8 @@ LJLIB_CF(array_concat)
                append_integer(result, arr->get<uint8_t>()[i]);
                break;
             default:
-               luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
+               luaL_error(L, ERR::InvalidType, "concat() does not support %s types.",
+                  lj_array_elemtype_name(arr->elemtype));
          }
       }
    }
@@ -1330,7 +1302,7 @@ LJLIB_CF(array_setString)
 LJLIB_CF(array_type)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   auto name = elemtype_name(arr->elemtype);
+   auto name = lj_array_elemtype_name(arr->elemtype);
    setstrV(L, L->top++, lj_str_newz(L, name));
    return 1;
 }
@@ -2587,7 +2559,7 @@ static int array_tostring(lua_State *L)
       return 1;
    }
 
-   CSTRING type_name = elemtype_name(arr->elemtype);
+   CSTRING type_name = lj_array_elemtype_name(arr->elemtype);
    lua_pushfstring(L, "array<%s, %d>", type_name, int(arr->len));
    return 1;
 }

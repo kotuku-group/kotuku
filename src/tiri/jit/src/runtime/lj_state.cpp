@@ -620,7 +620,7 @@ void lj_context_push(lua_State *L, GCtab *Table, const TValue *OwnerBase)
    TValue *stack = tvref(L->stack);
    // A call frame base may temporarily occupy LuaJIT's reserved stack area before the function header grows the
    // soft stack limit. Context owners are offsets only and remain valid throughout that interval.
-   TValue *stack_end = stack + L->stacksize;
+   [[maybe_unused]] TValue *stack_end = stack + L->stacksize;
    lj_assertL(OwnerBase >= stack and OwnerBase < stack_end, "context owner is outside the state stack allocation");
 
    lua_State::ContextFrame frame;

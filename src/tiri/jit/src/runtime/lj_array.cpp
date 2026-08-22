@@ -81,7 +81,7 @@ CSTRING lj_array_elemtype_name(AET Type) noexcept
       case AET::ARRAY:  return "array";
       case AET::PTR:    return "pointer";
       case AET::ANY:    return "any";
-      case AET::OBJECT: return "object";
+      case AET::OBJECT: return "obj";
       case AET::STRUCT: return "struct";
       case AET::MAX:    return "any";
    }
