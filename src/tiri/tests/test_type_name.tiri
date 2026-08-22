@@ -44,6 +44,22 @@ end
    assert(vector is <table>, '__name must not affect runtime type identity')
 end
 
+@Test function NameProvidesDefaultStringRepresentation()
+   local vector = named_value('Vector')
+   local text = tostring(vector)
+   assert(text is 'Vector', '__name should provide the complete default tostring() result, got ' .. text)
+   assert(f'{vector}' is text, 'string interpolation should use the __name fallback')
+   assert(tostring({}) is 'table', 'unnamed tables should stringify without an address')
+   assert(tostring(function() end) is 'function', 'anonymous functions should stringify without an address')
+
+   local custom = setmetatable({}, {
+      __name = 'NamedValue',
+      __tostring = function():str return 'custom text' end
+   })
+   assert(tostring(custom) is 'custom text', '__tostring should take precedence over __name')
+   assert(f'{custom}' is 'custom text', 'string interpolation should prefer __tostring over __name')
+end
+
 @Test function DirectAndInvalidNamesFallBack()
    local direct = { __name = 'DirectField' }
    assert(type(direct) is 'table', 'a direct __name field must be ignored')
