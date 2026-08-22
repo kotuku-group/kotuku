@@ -298,7 +298,33 @@ static void recff_type(jit_State* J, RecordFFData* rd)
    RecordIndex ix{};
    ix.tab = J->base[0];
    copyTV(J->L, &ix.tabv, &rd->argv[0]);
-   if (lj_record_mm_lookup(J, &ix, MM_name)) {
+   bool has_name = lj_record_mm_lookup(J, &ix, MM_name);
+
+   // lj_meta_lookup() falls back to the array base metatable when an instance has none, whereas the generic recorder
+   // stops after guarding the per-instance metatable as nil. Mirror the interpreter's fallback for type().
+
+   if (not has_name and tvisarray(&rd->argv[0]) and not tabref(arrayV(&rd->argv[0])->metatable)) {
+      GCtab *base_mt = tabref(basemt_it(J2G(J), LJ_TARRAY));
+      if (base_mt) {
+         // Load the base table from gcroot and record its raw __name access so later table mutations leave the trace
+         // through the lookup guards instead of preserving a stale folded result.
+
+         GCstr *name_key = mmname_str(J2G(J), MM_name);
+         cTValue *observed = lj_tab_getstr(base_mt, name_key);
+         int base_mt_offset = GG_OFS(g.gcroot) + int((GCROOT_BASEMT + ~LJ_TARRAY) * sizeof(GCRef));
+         ix.tab = lj_ir_ggfload(J, IRT_TAB, base_mt_offset);
+         settabV(J->L, &ix.tabv, base_mt);
+         ix.key = lj_ir_kstr(J, name_key);
+         setstrV(J->L, &ix.keyv, name_key);
+         ix.val = 0;
+         ix.idxchain = 0;
+         ix.mobj = lj_record_idx(J, &ix);
+         if (observed and not tvisnil(observed)) copyTV(J->L, &ix.mobjv, observed);
+         has_name = not tref_isnil(ix.mobj);
+      }
+   }
+
+   if (has_name) {
       cTValue *observed = &ix.mobjv;
       if (tvisstr(observed)) {
          GCstr *name = strV(observed);

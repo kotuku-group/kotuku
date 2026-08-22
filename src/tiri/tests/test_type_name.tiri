@@ -167,3 +167,30 @@ end
 
    jit.opt.start()
 end
+
+@Test function JitArrayNameUsesBaseMetatableAfterInstanceRemoval()
+   function query_array_name(Value:array<int>):str
+      return type(Value)
+   end
+
+   local original_name:any = array.__name
+   defer
+      array.__name = original_name
+      jit.flush()
+      jit.opt.start()
+   end
+
+   array.__name = 'Vector'
+   local value = array<int> { 1, 2, 3 }
+   debug.setMetatable(value, { __name = 'InstanceArray' })
+   debug.setMetatable(value, nil)
+   assert(type(value) is 'Vector', 'an array without an instance metatable should use the base display name')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local observed = ''
+   for _ in {1 into 100} do observed = query_array_name(value) end
+   assert(observed is 'Vector', 'compiled type() calls should use the array base-metatable display name')
+end
