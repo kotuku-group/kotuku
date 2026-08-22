@@ -436,11 +436,17 @@ LJLIB_CF(forEach)
 
    constexpr int target_index = 1;
    constexpr int callback_index = 2;
-   constexpr int iterator_index = 3;
-   constexpr int state_index = 4;
-   constexpr int control_index = 5;
-   constexpr int iterator_result_index = 6;
-   constexpr int stable_top = 5;
+   constexpr int original_index = 3;
+   constexpr int iterator_index = 4;
+   constexpr int state_index = 5;
+   constexpr int control_index = 6;
+   constexpr int iterator_result_index = 7;
+   constexpr int stable_top = 6;
+
+   // Preparation resolves a thunk target in place, so root an untouched copy of the caller's value first.  forEach()
+   // returns the original target rather than whatever the iterator protocol resolved it to.
+
+   lua_pushvalue(L, target_index);
 
    int prepared = prepare_bare_iterator(L, target_index);
    if (prepared != 3) {
@@ -469,8 +475,7 @@ LJLIB_CF(forEach)
       if (terminate) break;
    }
 
-   lua_settop(L, 2);
-   lua_pushvalue(L, target_index);
+   lua_settop(L, original_index);
    return 1;
 }
 

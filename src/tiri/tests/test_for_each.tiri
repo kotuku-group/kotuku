@@ -53,6 +53,28 @@ end
       'An any array target should preserve identity and traverse normally')
 end
 
+@Test function ForEachReturnsThunkTargetsUnresolved()
+   local backing = array<int> { 2, 3, 5 }
+   local lazy = thunk():any
+      return backing
+   end
+
+   local total = 0
+   local returned = forEach(lazy, function(Index, Value)
+      total += Value
+   end)
+   assert(total is 10, 'forEach should traverse the collection that a thunk target resolves to')
+   assert(rawtype(returned) is 'thunk', 'forEach should return the unresolved thunk target, not its resolved value')
+   assert(returned is backing, 'A returned thunk should still resolve to the traversed collection')
+
+   local piped_total = 0
+   local piped = lazy |> forEach(function(Index, Value)
+      piped_total += Value
+   end)
+   assert(piped_total is 10, 'A piped thunk target should traverse its resolved collection')
+   assert(rawtype(piped) is 'thunk', 'A piped forEach should return the unresolved thunk for the next stage')
+end
+
 @Test function ForEachPreservesCustomIteratorResultsAndContext()
    local values = {}
    local prepare_calls = 0
