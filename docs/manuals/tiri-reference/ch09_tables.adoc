@@ -308,6 +308,24 @@ t[2.0] = 'second'
 t[2]         -- 'second'
 ----
 
+[[sec-table-key-presence]]
+==== Key Presence
+
+indexterm:[tables, key presence] The `in` operator tests whether a table holds an entry under a given key.  The table is the right-hand operand and the key is the left-hand operand.  The result is `true` when the table holds a non-`nil` value under that key, and `false` otherwise.  A stored `false` counts as present.
+
+[source,tiri]
+----
+t = { name = 'Alice', ready = false }
+
+'name' in t       -- true
+'ready' in t      -- true: a false value is still an entry
+'score' in t      -- false
+----
+
+The test is raw: it does not invoke `pass:[__]index`, so a key that a proxy table would manufacture on demand is reported as absent.  A table that defines a `pass:[__]contains` metamethod overrides the raw test entirely; see <<sec-membership-metamethod>>.
+
+The operator tests keys, not values.  Search a table by value with `pairs()` or `values()`.
+
 ==== Numeric Indexing
 
 Sequential elements are accessed by their zero-based integer index:

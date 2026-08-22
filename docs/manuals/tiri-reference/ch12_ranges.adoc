@@ -495,12 +495,9 @@ b + 1.5 in t   -- false
 
 The bounds test is applied before alignment, so an excluded `stop` is never admitted by the tolerance.
 
-[discrete]
-==== contains()
+==== Accepted Values
 
-[.api]`result = r.contains(Value)`
-
-Returns `true` if `Value` is a finite number that lies within the range and aligns to a generated ordinal.  Returns `false` for non-numeric, infinite, and NaN values, and for values that do not align.
+`Value in Range` is `true` when `Value` is a finite number that lies within the range and aligns to a generated ordinal.  It is `false` for non-numeric, infinite, and NaN values, and for values that do not align.  No error is raised for a value of an unsupported type.
 
 [source,tiri]
 ----
@@ -513,8 +510,6 @@ f = {0 to 1 by 0.5}
 0.5 in f     -- true
 'x' in r     -- false (not a number)
 ----
-
-The `in` operator uses `contains()` internally.
 
 [[sec-functional-iteration]]
 === Functional Iteration

@@ -612,9 +612,13 @@ name = user?.name ?? 'Guest'
 result = value in container
 ----
 
-indexterm:[operators, membership] Returns `true` if `container` contains `value`; `false` otherwise.  The expression `a in b` is equivalent to `b.contains(a)`.
+indexterm:[operators, membership] Returns `true` if `container` contains `value`; `false` otherwise.  The result is always a boolean.
 
-The `in` operator requires the right-hand operand to provide a `contains()` method.  The built-in types that define this method are ranges, strings and arrays.  Any user-defined type with a compliant `contains()` method supports `in`.  If the right-hand operand lacks a `contains()` method, the runtime raises an error.
+The operator dispatches on the right-hand operand only.  If that operand has a `pass:[__]contains` metamethod, the runtime invokes it with the operand as the receiver and the left-hand value as its sole argument, then normalises the handler's result to a boolean under standard falsiness (<<sec-truthiness>>).  If the operand is a table with no `pass:[__]contains` metamethod, the runtime performs a raw key-presence test: the expression is `true` when the table holds a non-`nil` value under that key.  The raw test does not consult `pass:[__]index`, and an ordinary `contains` field on the table has no effect on the operator.  For every other operand, the runtime raises an error.
+
+Ranges, strings and arrays define `pass:[__]contains` natively.  Ranges test numeric membership with step alignment (<<sec-membership-testing>>), strings test for a substring, and arrays test for an element equal to the value.  Any table may support the operator by defining `pass:[__]contains`; see <<sec-membership-metamethod>>.
+
+Both operands are evaluated exactly once, left operand first.
 
 [source,tiri]
 ----
@@ -625,6 +629,16 @@ end
 arr = array<str> { 'red', 'green', 'blue' }
 if 'green' in arr then
    print('found')
+end
+
+'ell' in 'hello'              -- true: substring test
+
+settings = { debug = false }
+'debug' in settings           -- true: the key is present
+'verbose' in settings         -- false
+
+if not ('yellow' in arr) then -- Use 'not' for negation
+   print('absent')
 end
 ----
 

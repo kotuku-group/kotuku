@@ -11,12 +11,14 @@
 //                       the Subscription Context section (commit f052ec04d)
 // UPDATED: 2026-08-20 - Noted that array-field reads copy, and that a <view> local aliases native field storage
 //                       (commit ea9fbc23c)
+// UPDATED: 2026-08-22 - Added obj<Class> typed constructor as preferred form; repositioned obj.new() as fallback
+//                       (commit cf5728552)
 
 [[ch-the-object-system]]
 == The Object System
 indexterm:[objects] Tiri provides full interoperability with the Kōtuku application framework through a native object interface.  This chapter defines the interface for creating, configuring, querying, and destroying Kōtuku objects from Tiri scripts.
 
-All object interface functions are accessed through the `obj` namespace.  Object instances expose fields, actions, and methods directly on the interface value returned by `obj.new()` or `obj.find()`.
+Object instances expose fields, actions, and methods directly on the interface value returned by `obj<Class> { ... }`, `obj.new()`, or `obj.find()`.
 
 [[sec-object-oriented-design]]
 === Object-Oriented Design
@@ -221,7 +223,7 @@ To create an object as a child of an existing object, call `new()` on the target
 
 [source,tiri]
 ----
-viewport = obj.new('VectorViewport', { ... })
+viewport = obj<VectorViewport> { ... }
 
 viewport.new('VectorRectangle', {
    x = 0, y = 0, width = '100%',
@@ -262,11 +264,11 @@ indexterm:[objects, lifecycle] Object interfaces hold either a strong or weak re
 [discrete]
 ==== Strong References
 
-Objects created directly with `obj.new()` are strongly referenced.  The garbage collector destroys the object when all strong references are released:
+Objects created directly with `obj<Class> { ... }` or `obj.new()` are strongly referenced.  The garbage collector destroys the object when all strong references are released:
 
 [source,tiri]
 ----
-file = obj.new('file', { path = 'readme.md', flags = '!READ' })
+file = obj<File> { path = 'readme.md', flags = '!READ' }
 -- ...
 file = nil   -- object is eligible for garbage collection
 ----
@@ -330,7 +332,7 @@ end
 
 custom_ref = { label = 'download' }
 
-http = obj.new('http', { src = 'https://example.com/data' })
+http = obj<HTTP> { src = 'https://example.com/data' }
 err = http.acActivate()
 http.subscribe('deactivate', on_deactivate, custom_ref)
 ----
@@ -420,7 +422,7 @@ Performance:: Locking an object keeps it in an accessible state, avoiding repeat
 
 [source,tiri]
 ----
-xml = obj.new('xml', { source = myfile })
+xml = obj<XML> { source = myfile }
 
 with xml do
    for i in {0 to 100000} do

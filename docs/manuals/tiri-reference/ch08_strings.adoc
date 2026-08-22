@@ -264,6 +264,20 @@ Returns a copy of `String` with all ASCII lowercase letters converted to upperca
 
 [[sec-searching-and-extraction]]
 === Searching & Extraction
+[[sec-string-membership]]
+==== Membership
+
+indexterm:[strings, membership] The `in` operator tests whether one string occurs within another.  The searched string is the right-hand operand; the substring is the left-hand operand.  The search is literal and case-sensitive.
+
+[source,tiri]
+----
+'ell' in 'hello'    -- true
+'ELL' in 'hello'    -- false
+'' in 'hello'       -- true: an empty substring is always present
+----
+
+Both operands must be strings; any other combination raises an error.
+
 [[sec-string-count]]
 ==== string.count()
 

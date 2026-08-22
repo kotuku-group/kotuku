@@ -709,7 +709,7 @@ Place `defer` immediately after acquiring a resource to guarantee cleanup on nor
 [source,tiri]
 ----
 function process_file(Path:str)
-   file = obj.new('file', { path = Path })
+   file = obj<File> { path = Path }
    defer
       file.acFree()
    end
@@ -726,11 +726,11 @@ When multiple resources have dependencies, use multiple `defer` blocks.  LIFO or
 [source,tiri]
 ----
 function transfer(SourcePath:str, DestPath:str)
-   source = obj.new('file', { path = SourcePath, flags = 'READ' })
+   source = obj<File> { path = SourcePath, flags = 'READ' }
    defer
       source.acFree()
    end
-   dest = obj.new('file', { path = DestPath, flags = 'WRITE|NEW' })
+   dest = obj<File> { path = DestPath, flags = 'WRITE|NEW' }
    defer
       dest.acFree()
    end

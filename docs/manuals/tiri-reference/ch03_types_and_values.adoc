@@ -137,7 +137,7 @@ indexterm:[objects] Kōtuku framework objects are a distinct reference type.  Th
 
 [source,tiri]
 ----
-file = obj.new('file', { src = 'temp:data.txt' })
+file = obj<File> { src = 'temp:data.txt' }
 print(type(file))  -- 'object'
 ----
 

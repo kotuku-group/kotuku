@@ -1,6 +1,4 @@
-// VERIFIED: 2026-08-19
-// UPDATED: 2026-08-21 - Documented the '__contains' metamethod and the raw key-presence fallback used by the
-//                       'in' operator (commit 2b788f198)
+// VERIFIED: 2026-08-22
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -242,6 +240,35 @@ print(a > { rank = 2 })   -- false: dispatched as { rank = 2 } < a
 ----
 
 For two string operands, the runtime performs a direct lexicographic comparison without consulting metamethods.  See <<sec-comparison-operators>> for full details.
+
+[[sec-membership-metamethod]]
+==== Membership
+
+indexterm:[metamethods, membership] The `in` operator (<<sec-membership-operator>>) dispatches on its right-hand operand alone.  That operand is the receiver; the left-hand value is the candidate.
+
+[.api]`pass:[__]contains(Candidate)`
+
+The handler decides membership and returns any value.  The runtime normalises the result to a boolean under standard falsiness (<<sec-truthiness>>), so the operator yields `false` for `nil` and `false`, `true` for every other result, and never the handler's own value.
+
+[source,tiri]
+----
+mt = { __contains = function(Value):bool return &items[Value] != nil end }
+set = setmetatable({ items = { red = true, green = true } }, mt)
+
+print('red' in set)    -- true
+print('blue' in set)   -- false
+----
+
+A table with no `pass:[__]contains` handler falls back to a raw key-presence test: the operator reports `true` when the table holds a non-`nil` value under the candidate key.  The fallback bypasses `pass:[__]index`, so a proxy table that manufactures values on demand reports its generated keys as absent.  A plain `contains` field on the table is an ordinary entry and never participates in dispatch.
+
+[source,tiri]
+----
+proxy = setmetatable({}, { __index = function(Key):str return Key end })
+print(proxy.generated)         -- 'generated': __index supplies a value
+print('generated' in proxy)    -- false: membership is a raw test
+----
+
+Values that are neither tables nor carry a `pass:[__]contains` handler raise an error when used as the right-hand operand.  Ranges, strings and arrays supply the handler natively.
 
 [[sec-string-and-length]]
 === String & Length
@@ -643,9 +670,38 @@ processing.collect('full')
 
 Store a key-free value, or use `pass:[__]mode = 'kv'`, when a value needs to refer to its own key.
 
-==== Iteration Metamethods
+=== Iteration Metamethods
 
-The `pass:[__]pairs` and `pass:[__]ipairs` metamethods customise the behaviour of `pairs` and `ipairs` respectively.  When present on a table's metatable, the runtime calls the metamethod instead of the default iterator.  See <<sec-iteration>> for full details.
+[[sec-iter-metamethod]]
+==== pass:[__]iter
+
+The `pass:[__]iter` metamethod controls how a value is iterated in a bare `for ... in` loop.  When present in the metatable, it is called once at loop entry and must return a single iterator function.  The returned function drives the loop; its return values become the loop variables on each iteration.
+
+[source,tiri]
+----
+local items = setmetatable({ 'a', 'b', 'c' }, {
+   __iter = function():func
+      local i = 0
+      return function():str
+         i++
+         if i > 3 then return end
+         return &&[i]
+      end
+   end
+})
+
+for value in items do print(value) end   -- a, b, c
+----
+
+`pass:[__]iter` applies only to bare iteration (`for x in target`).  Explicit calls to `pairs()` and `ipairs()` bypass it and dispatch through `pass:[__]pairs` and `pass:[__]ipairs` respectively.
+
+The metamethod receives no arguments; the table is set as the active context and reachable with `&&`.
+
+If `pass:[__]iter` returns a non-function value, an error is raised identifying the received type.  Only a direct metatable entry is recognised; an ordinary field named `__iter` on the table itself, or one synthesised through `pass:[__]index`, does not trigger the protocol.
+
+==== pass:[__]pairs and pass:[__]ipairs
+
+The `pass:[__]pairs` and `pass:[__]ipairs` metamethods customise the behaviour of `pairs` and `ipairs` respectively.  When present on a table's metatable, the runtime calls the metamethod instead of the default iterator.  These metamethods are not consulted during bare iteration when `pass:[__]iter` is present.
 
 [[sec-metamethod-reference]]
 === Metamethod Reference
@@ -677,6 +733,7 @@ indexterm:[metamethods, reference] The following table lists every metamethod re
 |`pass:[__]unm`        |Unary `-` operator           |`function()`
 |`pass:[__]tostring`   |`tostring()` conversion      |`function()` pass:[->]string
 |`pass:[__]close`      |`<close>` scope exit         |`function(Error)`
+|`pass:[__]iter`       |Bare `for ... in` iteration  |Table: `function()` pass:[->]function; other: `function(Target)` pass:[->]function
 |`pass:[__]pairs`      |`pairs()` iteration          |`function()` pass:[->]iterator, state, initial
 |`pass:[__]ipairs`     |`ipairs()` iteration         |`function()` pass:[->]iterator, state, initial
 |`pass:[__]clear`      |`table.clear()` call         |`function()`

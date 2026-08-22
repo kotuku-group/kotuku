@@ -207,7 +207,7 @@ Raises an exception if an entry in the `signals` table is not a valid object ref
 
 [source,tiri]
 ----
-objects = array<obj> { obj.new('time', { }), obj.new('time', { }) }
+objects = array<obj> { obj<Time> {}, obj<Time> {} }
 
 proc = processing.new({
    timeout = 5.0,
@@ -253,12 +253,12 @@ A common pattern uses signals to synchronise a worker thread with the main scrip
 [source,tiri]
 ----
 files = array<obj> { <1>
-   obj.new('file', { ... })
+   obj<File> { ... }
 }
 
-script = obj.new('script', {
+script = obj<Script> {
    statement=[[ msg('Thread is now in session.') ]] <2>
-})
+}
 
 script.setKey('Files', files.concat(',')) <2>
 

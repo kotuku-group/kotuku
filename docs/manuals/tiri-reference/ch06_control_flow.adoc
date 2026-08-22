@@ -1,4 +1,5 @@
 // VERIFIED: 2028-08-05
+// UPDATED: 2026-08-21 - Added __iter metamethod to bare collection iteration resolution order (commit 28cc93e73)
 // UPDATED: 2026-08-06 - Documented bare collection iteration in generic for loops (commit 5f9e2003e)
 
 [[ch-control-flow]]
@@ -181,18 +182,20 @@ for key, value in { x = 1, y = 2 } do end              -- 'x' 1, 'y' 2
 for value in range(1, 5) do end                        -- 1, 2, 3, 4
 ----
 
-The three collection categories yield the following:
+The target expression is evaluated exactly once, before the first iteration, so a function call in the loop header is not repeated per element.
+
+When the target carries a `pass:[__]iter` metamethod in its metatable, that metamethod is called to produce the iterator function and the default collection behaviour described below is bypassed.  See <<sec-iter-metamethod>> for the full protocol.
+
+When no `pass:[__]iter` metamethod is present, the three collection categories yield the following defaults:
 
 `array`::
 Index and value, zero-based, in ascending index order.  A single loop variable therefore receives the *index*, not the element; write `for _, value in arr` or `values(arr)` to iterate elements alone.
 
 `table`::
-Key and value, exactly as `pairs()` produces them, including the `pass:[__]pairs` metamethod when the table declares one.  The order over non-integer keys is unspecified.
+Key and value, exactly as `pairs()` produces them.  The order over non-integer keys is unspecified.
 
 `range`::
 Each value of the sequence in turn.  This covers ranges held in a variable and ranges returned by `range()` and `range.new()`, not only range literals.
-
-The target expression is evaluated exactly once, before the first iteration, so a function call in the loop header is not repeated per element.
 
 A single value that is not a collection is still resolved by the established rules.  A function is used as the iterator function, as is any non-collection value carrying a `pass:[__]call` metamethod.  A table is always iterated as a table, even when it declares `pass:[__]call`; call it explicitly if the callable behaviour is wanted.  Two or more values after `in` are always taken as an iterator triple, unchanged.
 

@@ -312,7 +312,7 @@ file.close()
 === The Kōtuku File Object
 indexterm:[file system, object] The `io` standard library covers common file operations, but the Kōtuku File object provides the full range of file system capabilities: folder enumeration, file watching, permissions, timestamps, symbolic links, copying, moving, and deletion.
 
-File objects are created with `obj.new('file', Options)`.  Refer to <<ch-the-object-system>> for general object creation patterns.
+File objects are created with `obj<File> { Options }`.  Refer to <<ch-the-object-system>> for general object creation patterns.
 
 [discrete]
 ==== Creating File Objects
@@ -320,13 +320,13 @@ File objects are created with `obj.new('file', Options)`.  Refer to <<ch-the-obj
 [source,tiri]
 ----
 -- Open a file for reading
-fl = obj.new('file', { path='temp:data.txt', flags=FL_READ })
+fl = obj<File> { path='temp:data.txt', flags=FL_READ }
 
 -- Create a new file for writing
-fl = obj.new('file', { path='temp:output.txt', flags=FL_NEW|FL_WRITE })
+fl = obj<File> { path='temp:output.txt', flags=FL_NEW|FL_WRITE }
 
 -- Open a folder for enumeration
-folder = obj.new('file', { src='system:scripts/' })
+folder = obj<File> { src='system:scripts/' }
 ----
 
 When the `path` field is set with `FL_READ`, `FL_WRITE`, or `FL_NEW` flags, the file is opened automatically on creation.  Without these flags, the object is initialised in a query-only state where metadata (size, dates, permissions) is accessible but the file is not opened for I/O.
@@ -435,7 +435,7 @@ File objects respond to the standard Kōtuku action interface:
 
 [source,tiri]
 ----
-fl = obj.new('file', { path='temp:data.txt', flags=FL_READ })
+fl = obj<File> { path='temp:data.txt', flags=FL_READ }
 buf = string.alloc(1024)
 err, bytes = fl.acRead(buf)
 fl.acSeek(0, SEEK_START)
@@ -499,7 +499,7 @@ To enumerate the contents of a directory, create a File object pointing to the f
 
 [source,tiri]
 ----
-folder = obj.new('file', { src='system:scripts/' })
+folder = obj<File> { src='system:scripts/' }
 
 err, fl = folder.mtNext()
 while err is ERR_Okay do
@@ -515,10 +515,10 @@ To filter the enumeration, pass `FL_EXCLUDE_FILES` or `FL_EXCLUDE_FOLDERS` in th
 [source,tiri]
 ----
 -- List only subdirectories
-folder = obj.new('file', {
+folder = obj<File> {
    src   = 'system:scripts/',
    flags = FL_EXCLUDE_FILES
-})
+}
 ----
 
 ==== File Watching
@@ -527,7 +527,7 @@ The `mtWatch()` method monitors a file or folder for filesystem events.  Callbac
 
 [source,tiri]
 ----
-fl = obj.new('file', { path='temp:' })
+fl = obj<File> { path='temp:' }
 fl.mtWatch(function(File, Path, Custom, Flags)
    print(f'Event on {Path}: {Flags}')
 end, 0, MFF_CREATE | MFF_DELETE | MFF_MODIFY)

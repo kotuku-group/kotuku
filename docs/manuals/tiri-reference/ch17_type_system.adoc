@@ -973,8 +973,9 @@ A contract is stated in the native vocabulary and compares native types, so it c
 * `table` and array annotations are mutually exclusive.  An array does not satisfy `table` and a table does not satisfy `array<any>`.
 * `array<element>` requires an array whose element type is exactly `element`.  `array<int>` rejects `array<double>`, `array<any>` and every other element type, and `array<struct<Name>>` requires that struct definition.  `array<any>` accepts any array.  There is no `array<struct>` form; see <<sec-array-member-annotations>>.
 * `struct<Name>` requires an instance of the declared layout `Name`.  An instance of a different layout is rejected even when the two layouts declare identical fields.  The plain `struct` annotation accepts any struct instance.
-* `range` requires a range value.  `userdata` accepts other userdata values but rejects ranges and thunks, even though ranges are userdata at runtime (see <<sec-userdata>>).
-* `func` accepts any value that normal call dispatch supports, which includes a table or userdata carrying a `pass:[__]call` metamethod.
+* `range` requires a range value.
+* `userdata` accepts client-owned userdata values.  Internal userdata such as ranges are not included, as they are represented as their own distinct types (see <<sec-userdata>>).
+* `func` accepts values that normal call dispatch supports, this includes tables carrying a `pass:[__]call` metamethod.
 * `num` accepts every number, without distinguishing integer and floating-point representations.
 
 [source,tiri]

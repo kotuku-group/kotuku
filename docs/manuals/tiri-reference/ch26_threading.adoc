@@ -1,10 +1,4 @@
-// UPDATED: 2026-08-06 - Renamed array<object> to array<obj>, the sole accepted source spelling (commit ca06aefda)
-// UPDATED: 2026-08-11 - Renamed async.pool.clear() to async.pool.reset() (commit 7e6746950)
-// UPDATED: 2026-08-11 - async.pool.clear() is restored as an equivalent of reset() via __clear (commit 0e4d3a341)
-// UPDATED: 2026-08-14 - async.pool.reset() is removed; clearing is dispatched solely through the __clear metamethod (commit 148480f9d)
-// UPDATED: 2026-08-15 - Documented that async callbacks begin in the root context (commit 1a38f18e0)
-// UPDATED: 2026-08-17 - async callbacks capture the submission context; rewrote the Callback Execution note
-//                       (commit f052ec04d)
+// VERIFIED: 2026-08-22
 
 [[ch-threading]]
 == Threading
@@ -49,9 +43,9 @@ To check if the script failed during execution, check the `error` property on th
 
 [source,tiri]
 ----
-script = obj.new('script', {
+script = obj<Script> {
    statement=[[ msg('Thread is now in session.') ]]
-})
+}
 
 async.script(script, function(Object)
    check Object.error -- Raises an exception if the script failed
@@ -68,15 +62,15 @@ Because the threaded script runs in a separate state, it cannot access the calle
 
 [source,tiri]
 ----
-signal_obj = obj.new('time', { })
+signal_obj = obj<Time> {}
 
-script = obj.new('script', {
+script = obj<Script> {
    statement=[[
       sig = obj.find(arg('SignalID'))
       -- Perform work...
       sig.acSignal()
    ]]
-})
+}
 script.setKey('SignalID', signal_obj.id)
 async.script(script)
 ----
@@ -88,16 +82,16 @@ A Script object can be reused for multiple sequential thread invocations, but no
 
 [source,tiri]
 ----
-script = obj.new('script', {
+script = obj<Script> {
    statement=[[ msg('Thread is now in session.') ]]
-})
+}
 
 for i in {1 into 10} do
    async.script(script, function(Object)
       print(f'Iteration {i} complete.')
    end)
 end
-processing.sleep(10.0)
+processing.sleep(10)
 ----
 
 [discrete]
@@ -108,9 +102,9 @@ The garbage collector cannot reclaim a Script object while its thread is running
 [source,tiri]
 ----
 do
-   script = obj.new('script', {
+   script = obj<Script> {
       statement=[[ msg('Working...') ]]
-   })
+   }
    async.script(script, callback)
 end
 processing.collect() <1>
@@ -125,7 +119,7 @@ processing.collect() <1>
 [.api]`async.action(Object, Name, [Callback], [Key], [Argspass:[...]])` +
 [.api]`async.method(Object, Name, [Callback], [Key], [Argspass:[...]])`
 
-indexterm:[async methods] indexterm:[async actions] Submits an action or method for asynchronous execution against `Object`.  `Name` is the action or method as represented by its string name or numeric `AC` or `MT` ID.  The runtime allocates a worker thread to execute the action; the caller does not manage threads directly.  The optional `Callback` executes on the main thread when the action completes.  `Callback` accepts a function value or a string that names a global function.
+indexterm:[async methods] indexterm:[async actions] Submits an action or method for asynchronous execution against `Object`.  The `Name` is the name of the action or method to invoke, corresponding to its `AC` or `MT` ID.  The runtime allocates a worker thread to execute the action; the caller does not manage threads directly.  The optional `Callback` executes on the main thread when the action completes.  `Callback` accepts a function value or a string that names a global function.
 
 Multiple calls targeting the same object are queued automatically and executed in FIFO order — only one worker thread runs per object at any time.  Calls targeting different objects execute in parallel.
 
@@ -162,13 +156,13 @@ An exception is raised if:
 * The action/method name is not recognised.
 * The asynchronous action fails to launch.  In this case, the callback is not executed.
 
-In this example, `pictures` is an `array<obj>` of pre-configured `Picture` objects that are processed in parallel by firing `Activate` actions in their own threads:
+In this example, `images` is an `array<obj>` of pre-configured `Image` objects that are processed in parallel by firing `Activate` actions in their own threads:
 
 [source,tiri]
 ----
-function picProcessed(ActionID, Pic, Error, Key)
+function imgProcessed(ActionID:num, Image:obj<Image>, Error:num, Key:num)
    if Error != ERR_Okay then
-      print('Failed to process picture: ' .. mSys.GetErrorMsg(Error))
+      print('Failed to process image: ' .. mSys.GetErrorMsg(Error))
    end
    glProcessed++
    if glProcessed >= glTotal then
@@ -176,11 +170,11 @@ function picProcessed(ActionID, Pic, Error, Key)
    end
 end
 
-for v in values(pictures) do
-   async.action(v.pic, 'Activate', picProcessed, v.id)
+for v in values(images) do
+   async.action(v.image, 'Activate', imgProcessed, v.id)
 end
 
-proc = processing.new({ timeout = 5.0 })
+proc = processing.new({ timeout = 5 })
 proc.sleep()
 ----
 
@@ -213,9 +207,9 @@ Only one `async.wait()` call may be active at any time.  A second concurrent cal
 [%unbreakable]
 [source,tiri]
 ----
-script = obj.new('script', { statement=[[ mSys.WaitTime(1.0) ]] })
+script = obj<Script> { statement=[[ mSys.WaitTime(1) ]] }
 async.script(script)
-check async.wait(script, 5.0) -- Block until complete (5 second timeout)
+check async.wait(script, 5) -- Block until complete (5 second timeout)
 ----
 
 .Waiting on multiple objects
@@ -224,7 +218,7 @@ check async.wait(script, 5.0) -- Block until complete (5 second timeout)
 ----
 scripts = array<obj> { script_a, script_b, script_c }
 scripts |> (s) => async.script(s)
-check async.wait(scripts, 10.0) -- Block until all three complete
+check async.wait(scripts, 10) -- Block until all three complete
 ----
 
 ==== async.pending()
@@ -239,10 +233,10 @@ An exception is raised if `Object` is not a valid Kōtuku object.
 
 [source,tiri]
 ----
-script = obj.new('script', { statement=[[ mSys.WaitTime(0.5) ]] })
+script = obj<Script> { statement=[[ mSys.WaitTime(0.5) ]] }
 async.script(script)
 print(async.pending(script)) -- 1 (in-flight)
-check async.wait(script, 5.0)
+check async.wait(script, 5)
 print(async.pending(script)) -- 0 (complete)
 ----
 
@@ -258,14 +252,14 @@ Cancelling an object with no pending actions succeeds without error.
 
 [source,tiri]
 ----
-script = obj.new('script', { statement=[[ mSys.WaitTime(10.0) ]] })
+script = obj<Script> { statement=[[ mSys.WaitTime(10) ]] }
 
-for i in {0 into 4} do
+for i in {0 to 5} do
    async.script(script)
 end
 
 check async.cancel(script) -- Interrupt in-flight action and drain the queue
-check async.wait(script, 5.0)
+check async.wait(script, 5)
 ----
 
 .Cancelling multiple objects
@@ -290,7 +284,7 @@ When threads share a single callback, use `processing.signal()` to wake the main
 
 [source,tiri]
 ----
-proc = processing.new({ timeout = 5.0 })
+proc = processing.new({ timeout = 5 })
 completed = 0
 total = #tasks
 
@@ -313,21 +307,21 @@ For finer-grained coordination, create worker objects in an array and pass them 
 
 [source,tiri]
 ----
-file_a = obj.new('file', { ... })
-file_b = obj.new('file', { ... })
+file_a = obj<File> { ... }
+file_b = obj<File> { ... }
 work_list = array<obj> { file_a, file_b }
 
-async.script(obj.new('script', { statement=[[ msg('Task A') ]] }),
+async.script(obj<Script> { statement=[[ msg('Task A') ]] },
    function(Object)
       file_a.acSignal()
    end)
 
-async.script(obj.new('script', { statement=[[ msg('Task B') ]] }),
+async.script(obj<Script> { statement=[[ msg('Task B') ]] },
    function(Object)
       file_b.acSignal()
    end)
 
-proc = processing.new({ timeout = 5.0, signals = work_list })
+proc = processing.new({ timeout = 5, signals = work_list })
 err = proc.sleep()
 ----
 
@@ -342,9 +336,9 @@ The pipe iteration operator (see <<sec-pipe-iteration>>) can be combined with `a
 ----
    scripts = array<obj> { } <1>
    for i in {1 into 10} do
-      scripts.push(obj.new('script', { statement = [[
+      scripts.push(obj<Script> { statement = [[
          print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i <2>
-      }))
+      })
    end
 
    scripts |> function(script) <3>
@@ -355,7 +349,7 @@ The pipe iteration operator (see <<sec-pipe-iteration>>) can be combined with `a
       end)
    end
 
-   proc = processing.new({ timeout=5.0, signals = scripts }) <4>
+   proc = processing.new({ timeout=5, signals = scripts }) <4>
    check proc.sleep()
 ----
 <1> Storing all objects that need to be processed in an array is the recommended processing pattern.
@@ -377,18 +371,18 @@ The pool is created lazily on first access and is shared automatically with all 
 async.pool.status = 'ready'
 async.pool.count  = 0
 
-script = obj.new('script', { statement=[[
+script = obj<Script> { statement=[[
    val = async.pool.status
    async.pool.result = 'processed: ' .. val
    async.pool.count  = async.pool.count + 1
-]] })
+]] }
 
 async.script(script, function(Object)
    check Object.error
    processing.signal()
 end)
 
-check processing.sleep(3.0)
+check processing.sleep(3)
 print(async.pool.result) -- 'processed: ready'
 ----
 
@@ -397,7 +391,7 @@ print(async.pool.result) -- 'processed: ready'
 
 The pool accepts values of the following types:
 
-[cols="1,3a",options="header"]
+[cols="1,4a",options="header"]
 |===
 |Type |Behaviour
 
@@ -418,11 +412,6 @@ The pool accepts values of the following types:
 |===
 
 An exception is raised if the value is a table, function, or any other unsupported type.  The pool remains operational after a rejected write.
-
-[discrete]
-===== Reading Keys
-
-Reading a key that does not exist returns `nil`.  Reading a key that was previously deleted also returns `nil`.
 
 [discrete]
 ===== async.pool.clear()
@@ -453,7 +442,7 @@ Keys are strings and are binary-safe (embedded NUL bytes are preserved).
 [discrete]
 ==== Guarantees
 
-* indexterm:[thread safety] All Tiri thread callbacks execute on the main thread.  No Tiri code ever runs concurrently with callback code.
+* indexterm:[thread safety] All Tiri thread callbacks execute on the main thread, within the `processing` loop.
 * The barrier model prevents concurrent access to the same object from multiple threads.
 * Multiple async actions on the same object are queued and dispatched in submission order, guaranteeing deterministic sequential execution per object.
 * Garbage collection cannot reclaim objects that are actively participating in a thread.
