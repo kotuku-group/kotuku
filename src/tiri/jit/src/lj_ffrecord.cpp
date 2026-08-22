@@ -267,32 +267,87 @@ static bool recff_is_range_userdata(jit_State *J, GCudata *Userdata)
 
 static void recff_type(jit_State* J, RecordFFData* rd)
 {
-   // Arguments already specialized. Result is a constant string. Neat, huh?
    uint32_t t;
    if (tvisnumber(&rd->argv[0])) t = ~LJ_TNUMX;
    else t = ~itype(&rd->argv[0]);
 
-   // Check for thunk userdata with declared type
-
-   if (t IS ~LJ_TUDATA) {  // 12 = base value for userdata
+   if (t IS ~LJ_TUDATA) {
       GCudata *ud = udataV(&rd->argv[0]);
       if (recff_is_range_userdata(J, ud)) {
-         t = TYPE_NAME_RANGE;
+         J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[TYPE_NAME_RANGE]));
+         return;
       }
       else if (ud->udtype IS UDTYPE_THUNK) {
          ThunkPayload *payload = thunk_payload(ud);
          if (payload->expected_type != 0xFF) {
-            // Use the declared logical type instead of the thunk container's userdata tag.
             t = recff_type_name_index(TiriType(payload->expected_type));
+            J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[t]));
+            return;
          }
       }
-      else {
-         t = TYPE_NAME_USERDATA;
+
+      // Metatables on special userdata are treated as immutable by the generic recorder. Leave their display-name
+      // lookup to the interpreter, while rawtype() remains recordable for these containers.
+      if (ud->udtype != UDTYPE_USERDATA) lj_trace_err(J, LJ_TRERR_NYIFFU);
+   }
+
+   // GCobject and GCstruct have per-instance metatables that are not represented by the generic metamethod recorder.
+   // Abort this fast-function recording until those IR field loads are available rather than folding an unsafe name.
+   if (tvisobject(&rd->argv[0]) or tvisstruct(&rd->argv[0])) lj_trace_err(J, LJ_TRERR_NYIFFU);
+
+   RecordIndex ix{};
+   ix.tab = J->base[0];
+   copyTV(J->L, &ix.tabv, &rd->argv[0]);
+   bool has_name = lj_record_mm_lookup(J, &ix, MM_name);
+
+   // lj_meta_lookup() falls back to the array base metatable when an instance has none, whereas the generic recorder
+   // stops after guarding the per-instance metatable as nil. Mirror the interpreter's fallback for type().
+
+   if (not has_name and tvisarray(&rd->argv[0]) and not tabref(arrayV(&rd->argv[0])->metatable)) {
+      GCtab *base_mt = tabref(basemt_it(J2G(J), LJ_TARRAY));
+      if (base_mt) {
+         // Load the base table from gcroot and record its raw __name access so later table mutations leave the trace
+         // through the lookup guards instead of preserving a stale folded result.
+
+         GCstr *name_key = mmname_str(J2G(J), MM_name);
+         cTValue *observed = lj_tab_getstr(base_mt, name_key);
+         int base_mt_offset = GG_OFS(g.gcroot) + int((GCROOT_BASEMT + ~LJ_TARRAY) * sizeof(GCRef));
+         ix.tab = lj_ir_ggfload(J, IRT_TAB, base_mt_offset);
+         settabV(J->L, &ix.tabv, base_mt);
+         ix.key = lj_ir_kstr(J, name_key);
+         setstrV(J->L, &ix.keyv, name_key);
+         ix.val = 0;
+         ix.idxchain = 0;
+         ix.mobj = lj_record_idx(J, &ix);
+         if (observed and not tvisnil(observed)) copyTV(J->L, &ix.mobjv, observed);
+         has_name = not tref_isnil(ix.mobj);
+      }
+   }
+
+   if (has_name) {
+      cTValue *observed = &ix.mobjv;
+      if (tvisstr(observed)) {
+         GCstr *name = strV(observed);
+         TRef name_ref = lj_ir_kstr(J, name);
+         emitir(IRTG(IR_EQ, IRT_STR), ix.mobj, name_ref);
+         if (name->len > 0) {
+            J->base[0] = name_ref;
+            return;
+         }
       }
    }
 
    J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[t]));
-   UNUSED(rd);
+}
+
+//********************************************************************************************************************
+
+static void recff_rawtype(jit_State* J, RecordFFData* Data)
+{
+   uint32_t t;
+   if (tvisnumber(&Data->argv[0])) t = ~LJ_TNUMX;
+   else t = ~itype(&Data->argv[0]);
+   J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[t]));
 }
 
 //********************************************************************************************************************

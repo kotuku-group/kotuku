@@ -68,6 +68,7 @@
 #include "lj_state.h"
 #include "lj_frame.h"
 #include "lj_ff.h"
+#include "lj_meta.h"
 #include "lj_trace.h"
 #include "lj_vm.h"
 #include "lj_strfmt.h"
@@ -1319,7 +1320,7 @@ LJ_NOINLINE void lj_err_lex(lua_State *L, GCstr* src, CSTRING tok, BCLine line, 
 
 LJ_NOINLINE void lj_err_optype(lua_State *L, cTValue *o, ErrMsg opm)
 {
-   auto tname = lj_typename(o);
+   auto tname = lj_meta_display_name(L, o);
    auto opname = err2msg(opm);
    if (curr_funcisL(L)) {
       GCproto *pt = curr_proto(L);
@@ -1336,8 +1337,8 @@ LJ_NOINLINE void lj_err_optype(lua_State *L, cTValue *o, ErrMsg opm)
 
 LJ_NOINLINE void lj_err_comp(lua_State *L, cTValue* o1, cTValue* o2)
 {
-   auto t1 = lj_typename(o1);
-   auto t2 = lj_typename(o2);
+   auto t1 = lj_meta_display_name(L, o1);
+   auto t2 = lj_meta_display_name(L, o2);
    err_msgv(L, t1 IS t2 ? ErrMsg::BADCMPV : ErrMsg::BADCMPT, t1, t2);
    // This assumes the two "boolean" entries are commoned by the C compiler.
 }
@@ -1353,11 +1354,17 @@ LJ_NOINLINE void lj_err_optype_call(lua_State *L, TValue* o)
 
    const BCIns* pc = cframe_Lpc(L);
    if (((ptrdiff_t)pc & FRAME_TYPE) != FRAME_LUA) {
-      CSTRING tname = lj_typename(o);
+      GCstr *custom_name = lj_meta_type_name(L, o);
+      CSTRING tname = custom_name ? strdata(custom_name) : lj_typename(o);
       setframe_gc(o, obj2gco(L), LJ_TSTRUCT);
       o++;
       setframe_pc(o, pc);
-      L->top = L->base = o + 1;
+      L->base = o + 1;
+      if (custom_name) {
+         setstrV(L, L->base, custom_name);
+         L->top = L->base + 1;
+      }
+      else L->top = L->base;
       err_msgv(L, ErrMsg::BADCALL, tname);
    }
    lj_err_optype(L, o, ErrMsg::OPCALL);
@@ -1480,13 +1487,13 @@ LJ_NOINLINE void lj_err_argtype(lua_State *L, int narg, CSTRING xname)
       else {
          GCfunc* fn = curr_func(L);
          int idx = LUA_GLOBALSINDEX - narg;
-         if (idx <= fn->c.nupvalues) tname = lj_typename(&fn->c.upvalue[idx - 1]);
+         if (idx <= fn->c.nupvalues) tname = lj_meta_display_name(L, &fn->c.upvalue[idx - 1]);
          else tname = lj_obj_typename[0];
       }
    }
    else {
       TValue *o = narg < 0 ? L->top + narg : L->base + narg - 1;
-      tname = o < L->top ? lj_typename(o) : lj_obj_typename[0];
+      tname = o < L->top ? lj_meta_display_name(L, o) : lj_obj_typename[0];
    }
    auto msg = lj_strfmt_pushf(L, err2msg(ErrMsg::BADTYPE), xname, tname);
    err_argmsg(L, narg, msg);
@@ -1506,7 +1513,7 @@ LJ_NOINLINE void lj_err_argt(lua_State *L, int narg, int tt)
 LJ_NOINLINE void lj_err_assigntype(lua_State *L, int slot, CSTRING expected_type)
 {
    TValue *o = L->base + slot;
-   CSTRING actual_type = o < L->top ? lj_typename(o) : lj_obj_typename[0];
+   CSTRING actual_type = o < L->top ? lj_meta_display_name(L, o) : lj_obj_typename[0];
    CSTRING msg = lj_strfmt_pushf(L, err2msg(ErrMsg::BADASSIGN), actual_type, expected_type);
    lj_err_callermsg(L, msg);
 }

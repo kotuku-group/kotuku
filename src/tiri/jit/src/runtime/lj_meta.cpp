@@ -149,6 +149,25 @@ cTValue * lj_meta_lookup(lua_State *L, cTValue *o, MMS mm)
 }
 
 //********************************************************************************************************************
+// Return a non-empty string from the raw __name metatable slot, without invoking Tiri code.
+
+GCstr *lj_meta_type_name(lua_State *L, cTValue *Value) noexcept
+{
+   cTValue *name = lj_meta_lookup(L, Value, MM_name);
+   if (name and tvisstr(name) and strV(name)->len > 0) return strV(name);
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Return the user-facing name for a concrete value, falling back to its built-in runtime category.
+
+const char *lj_meta_display_name(lua_State *L, cTValue *Value) noexcept
+{
+   GCstr *name = lj_meta_type_name(L, Value);
+   return name ? strdata(name) : lj_typename(Value);
+}
+
+//********************************************************************************************************************
 
 #if LJ_HASFFI
 // Tailcall from C function.
@@ -1000,7 +1019,7 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
       contract_type_name(actual, sizeof(actual), actual_entry);
    }
    else if (contract_is_range(L, Value)) std::snprintf(actual, sizeof(actual), "range");
-   else std::snprintf(actual, sizeof(actual), "%s", lj_typename(Value));
+   else std::snprintf(actual, sizeof(actual), "%s", lj_meta_display_name(L, Value));
 
    const char *boundary = contract_boundary_name(Boundary);
    if (not Entry.label.empty()) {

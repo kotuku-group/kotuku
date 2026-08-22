@@ -1,0 +1,196 @@
+-- Flute coverage for the __name display-name metamethod and rawtype().
+
+function named_value(Name:str):table
+   return setmetatable({}, { __name = Name })
+end
+
+function dynamic_value(Value):any
+   return Value
+end
+
+@Test function NamedTableReportsDisplayAndStorageTypes()
+   local vector = named_value('Vector')
+   assert(type(vector) is 'Vector', 'type() should return the metatable display name')
+   assert(rawtype(vector) is 'table', 'rawtype() should retain the built-in table category')
+   assert(vector is <table>, '__name must not affect runtime type identity')
+end
+
+@Test function DirectAndInvalidNamesFallBack()
+   local direct = { __name = 'DirectField' }
+   assert(type(direct) is 'table', 'a direct __name field must be ignored')
+
+   local value = {}
+   local metatable = {}
+   setmetatable(value, metatable)
+
+   local invalid:any = nil
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'nil __name should fall back')
+   invalid = ''
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'an empty __name should fall back')
+   invalid = 42
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a numeric __name should fall back')
+   invalid = false
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a boolean __name should fall back')
+   invalid = {}
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a table __name should fall back')
+   invalid = function() error('__name must never be called') end
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a function __name should fall back without being called')
+end
+
+@Test function LookupIsRawAndSupportsProtectedMetatables()
+   local indexed = setmetatable({}, { __index = { __name = 'IndexedName' } })
+   assert(type(indexed) is 'table', '__index must not participate in __name lookup')
+
+   local protected = setmetatable({}, { __name = 'ProtectedValue', __metatable = 'locked' })
+   assert(getmetatable(protected) is 'locked', 'the test metatable should be protected')
+   assert(type(protected) is 'ProtectedValue', 'protected metatables should still provide a display name')
+   assert(rawtype(protected) is 'table', 'metatable protection must not affect rawtype()')
+end
+
+@Test function MetatableAndNameMutationAreObserved()
+   local first = { __name = 'FirstName' }
+   local second = { __name = 'SecondName' }
+   local value = setmetatable({}, first)
+   assert(type(value) is 'FirstName', 'the initial name should be visible')
+
+   first.__name = 'Renamed'
+   assert(type(value) is 'Renamed', 'mutating __name should change type() immediately')
+   first.__name = nil
+   assert(type(value) is 'table', 'removing __name should restore the built-in name')
+   setmetatable(value, second)
+   assert(type(value) is 'SecondName', 'replacing the metatable should change type()')
+   setmetatable(value, nil)
+   assert(type(value) is 'table', 'removing the metatable should restore the built-in name')
+end
+
+@Test function PrimitiveAndContainerRawTypesRemainStable()
+   assert(rawtype(nil) is 'nil', 'nil raw type should be unchanged')
+   assert(rawtype(true) is 'bool', 'boolean raw type should be unchanged')
+   assert(rawtype(1) is 'number', 'number raw type should be unchanged')
+   assert(rawtype('text') is 'string', 'string raw type should be unchanged')
+   assert(rawtype(function() end) is 'function', 'function raw type should be unchanged')
+   assert(rawtype({}) is 'table', 'table raw type should be unchanged')
+   assert(rawtype(array<int> { 1 }) is 'array', 'array raw type should be unchanged')
+   assert(rawtype(newproxy(true)) is 'userdata', 'userdata raw type should be unchanged')
+   assert(type({0 to 2}) is 'range', 'a range should preserve its logical display name')
+   assert(rawtype({0 to 2}) is 'userdata', 'a range container should expose its underlying userdata category')
+end
+
+@Test function DeclaredThunkNameTakesPrecedenceWithoutResolution()
+   local executed = false
+   thunk deferred_number():num
+      executed = true
+      return 42
+   end
+
+   local value = deferred_number()
+   assert(type(value) is 'number', 'type() should preserve a thunk declaration')
+   assert(rawtype(value) is 'userdata', 'rawtype() should expose the thunk container')
+   assert(executed is false, 'neither type query should resolve the thunk')
+end
+
+@Test function DiagnosticsUseTheDisplayName()
+   local vector:any = named_value('Vector')
+   local argument_error = false
+   try
+      math.abs(vector)
+   except e
+      argument_error = e.message.find('number expected, got Vector') != nil
+   end
+   assert(argument_error, 'argument diagnostics should use the custom actual type name')
+
+   local call_error = false
+   try
+      vector()
+   except e
+      call_error = e.message.find('Vector') != nil
+   end
+   assert(call_error, 'non-callable diagnostics should use the custom actual type name')
+
+   local comparison_error = false
+   try
+      local _ = vector < 1
+   except e
+      comparison_error = e.message.find('Vector') != nil
+   end
+   assert(comparison_error, 'comparison diagnostics should use the custom actual type name')
+
+   local operand_error = false
+   try
+      local _ = vector + 1
+   except e
+      operand_error = e.message.find('Vector') != nil
+   end
+   assert(operand_error, 'operand diagnostics should use the custom actual type name')
+
+   local assignment_error = false
+   try
+      local number:num = dynamic_value(vector)
+   except e
+      assignment_error = e.message.find('expected num, got Vector') != nil
+   end
+   assert(assignment_error, 'typed-assignment diagnostics should use the custom actual type name')
+end
+
+@Test function JitGuardsNameAndMetatableMutations()
+   function query_name(Value:any):str
+      return type(Value)
+   end
+
+   local metatable = { __name = 'BeforeTrace' }
+   local value = setmetatable({}, metatable)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local observed = ''
+   for _ in {1 into 100} do observed = query_name(value) end
+   assert(observed is 'BeforeTrace', 'compiled type() calls should return the custom name')
+
+   metatable.__name = 'AfterTrace'
+   assert(query_name(value) is 'AfterTrace', 'changing __name should leave a trace and observe the new name')
+   metatable.__name = ''
+   assert(query_name(value) is 'table', 'an empty name after tracing should restore the fallback')
+   metatable.__name = 'Restored'
+   assert(query_name(value) is 'Restored', 'a valid name after an empty value should be observed')
+
+   setmetatable(value, { __name = 'Replacement' })
+   assert(query_name(value) is 'Replacement', 'replacing the metatable should be observed after tracing')
+   setmetatable(value, nil)
+   assert(query_name(value) is 'table', 'removing the metatable should be observed after tracing')
+
+   jit.opt.start()
+end
+
+@Test function JitArrayNameUsesBaseMetatableAfterInstanceRemoval()
+   function query_array_name(Value:array<int>):str
+      return type(Value)
+   end
+
+   local original_name:any = array.__name
+   defer
+      array.__name = original_name
+      jit.flush()
+      jit.opt.start()
+   end
+
+   array.__name = 'Vector'
+   local value = array<int> { 1, 2, 3 }
+   debug.setMetatable(value, { __name = 'InstanceArray' })
+   debug.setMetatable(value, nil)
+   assert(type(value) is 'Vector', 'an array without an instance metatable should use the base display name')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local observed = ''
+   for _ in {1 into 100} do observed = query_array_name(value) end
+   assert(observed is 'Vector', 'compiled type() calls should use the array base-metatable display name')
+end
