@@ -1,0 +1,231 @@
+-- Flute coverage for the generic forEach() traversal helper.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function ForEachTraversesRangesAndReturnsTheirIdentity()
+   local values = range(1, 5)
+   local total = 0
+   local returned = forEach(values, Value => do total += Value end)
+   assert(total is 10, 'forEach should visit each range value in order')
+   assert(returned is values, 'forEach should return the original range')
+end
+
+@Test function ForEachUsesGenericArrayAndTableArgumentOrder()
+   local array_values = array<int> { 4, 5, 6 }
+   local array_total = 0
+   local array_returned = array_values |> forEach(function(Index, Value)
+      array_total += Index + Value
+   end)
+   assert(array_total is 18, 'forEach should pass array index before value')
+   assert(array_returned is array_values, 'A piped forEach should return the input array')
+
+   local table_values = { alpha = 4, beta = 6 }
+   local table_total = 0
+   local table_count = 0
+   forEach(table_values, function(Key, Value)
+      assert(table_values[Key] is Value, 'forEach should pass a table key before its value')
+      table_total += Value
+      table_count++
+   end)
+   assert(table_total is 10 and table_count is 2, 'forEach should visit every table entry')
+end
+
+@Test function ForEachSupportsStoredAndAnyTargets()
+   function visit(Target:any):<any, num>
+      local total = 0
+      local returned = Target |> forEach(function(Index, Value)
+         if Value is nil then total += Index
+         else total += Value
+         end
+      end)
+      return returned, total
+   end
+
+   local range_values = range(1, 5)
+   local range_returned, range_total = visit(range_values)
+   assert(range_returned is range_values and range_total is 10,
+      'An any range target should preserve identity and traverse normally')
+
+   local array_values = array<int> { 2, 3, 5 }
+   local array_returned, array_total = visit(array_values)
+   assert(array_returned is array_values and array_total is 10,
+      'An any array target should preserve identity and traverse normally')
+end
+
+@Test function ForEachPreservesCustomIteratorResultsAndContext()
+   local values = {}
+   local prepare_calls = 0
+   setmetatable(values, {
+      __iter = function():func
+         assert(&& is values, 'A table __iter handler should receive its table as the current context')
+         prepare_calls++
+         local current = 0
+         return function():<num, num, num>
+            current++
+            if current > 2 then return end
+            return current, current * 10, current * 100
+         end
+      end
+   })
+
+   local observed = {}
+   local returned = forEach(values, function(First, Second, Third)
+      observed[#observed] = f'{First}:{Second}:{Third}'
+   end)
+   assert(prepare_calls is 1 and returned is values, 'forEach should prepare a custom iterator once')
+   assert(observed[0] is '1:10:100' and observed[1] is '2:20:200',
+      'forEach should forward every custom iterator result without reordering')
+end
+
+@Test function ForEachHonoursNativeIterOverrides()
+   local values = array<int> { 1, 2, 3 }
+   local prepare_calls = 0
+   debug.setMetatable(values, {
+      __iter = function(Target):func
+         assert(Target is values, 'A native __iter handler should receive its target explicitly')
+         prepare_calls++
+         local emitted = false
+         return function():num
+            if emitted then return end
+            emitted = true
+            return 99
+         end
+      end
+   })
+
+   local total = 0
+   forEach(values, Value => do total += Value end)
+   assert(total is 99 and prepare_calls is 1, 'forEach should prefer a native __iter handler over array fallback')
+end
+
+@Test function ForEachEvaluatesAndSnapshotsOnce()
+   local target_calls = 0
+   local prepare_calls = 0
+   local values = {}
+   local metatable = {}
+   setmetatable(values, metatable)
+   metatable.__iter = function():func
+      prepare_calls++
+      local current = 0
+      return function():num
+         current++
+         if current > 3 then return end
+         return current
+      end
+   end
+
+   function make_values():table
+      target_calls++
+      return values
+   end
+
+   local total = 0
+   forEach(make_values(), function(Value)
+      total += Value
+      metatable.__iter = function():func
+         local emitted = false
+         return function():num
+            if emitted then return end
+            emitted = true
+            return 99
+         end
+      end
+   end)
+   assert(target_calls is 1 and prepare_calls is 1 and total is 6,
+      'forEach should evaluate the target and snapshot __iter only once per traversal')
+
+   total = 0
+   forEach(values, Value => do total += Value end)
+   assert(total is 99, 'A later traversal should observe a replacement __iter handler')
+end
+
+@Test function ForEachStopsOnlyOnExplicitFalse()
+   local terminated = 0
+   forEach(range(1, 20), function(Value):bool
+      terminated++
+      if Value is 4 then return false end
+      return true
+   end)
+   assert(terminated is 4, 'An explicit false callback result should stop traversal')
+
+   local nil_count = 0
+   forEach(range(1, 4), Value => do nil_count++ end)
+   assert(nil_count is 3, 'No callback result should continue traversal')
+
+   local true_count = 0
+   forEach(range(1, 4), function(Value):bool
+      true_count++
+      return true
+   end)
+   assert(true_count is 3, 'A true callback result should continue traversal')
+end
+
+@Test function ForEachPropagatesPreparationIteratorAndCallbackErrors()
+   local cases = {
+      {
+         source = 'forEach(7, function(Value) end)',
+         message = 'cannot iterate over a number value'
+      },
+      {
+         source = 'local v = setmetatable({}, { __iter = function() return 7 end }); forEach(v, function(Value) end)',
+         message = '__iter must return a function, got number'
+      },
+      {
+         source = 'forEach({0 to 1}, function(Value) error(\'callback failure\') end)',
+         message = 'callback failure'
+      }
+   }
+
+   for _, case in pairs(cases) do
+      local script = obj.new('tiri', { statement = case.source })
+      local result = script.acActivate()
+      assert(result != ERR_Okay or script.error != ERR_Okay, 'forEach failures should propagate to the caller')
+      assert(script.errorMessage.find(case.message) != nil,
+         'forEach should retain the original error diagnostic: ' .. script.errorMessage)
+   end
+end
+
+@Test function ForEachRequiresAnExplicitPipeForwardingLimit()
+   local script = obj.new('tiri', {
+      statement = [[
+         function source():<range, num>
+            return range(0, 2), 7
+         end
+         source() |> forEach(function(Value) end)
+      ]]
+   })
+   local result = script.acActivate()
+   assert(result != ERR_Okay or script.error != ERR_Okay,
+      'Unrestricted multi-result pipe forwarding should fail for forEach')
+
+   function source():<range, num>
+      return range(0, 3), 7
+   end
+
+   local total = 0
+   source() |1> forEach(Value => do total += Value end)
+   assert(total is 3, '|1> should pass only the collection target to forEach')
+end
+
+@Test function ForEachRetainsInterpreterAndJITParity()
+   function sum_values(Target:any):num
+      local total = 0
+      Target |> forEach(function(Index, Value)
+         if Value is nil then total += Index
+         else total += Value
+         end
+      end)
+      return total
+   end
+
+   local values = array<int> { 2, 3, 5 }
+   jit.off()
+   local interpreted = sum_values(values)
+
+   jit.on()
+   jit.flush()
+   local compiled = 0
+   for _ in {0 to 250} do compiled = sum_values(values) end
+   assert(interpreted is 10 and compiled is 10, 'forEach should agree before and after the JIT becomes hot')
+end
