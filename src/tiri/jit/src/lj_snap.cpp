@@ -12,6 +12,7 @@
 **   - nent:   Number of slot entries (NOT including frame links)
 **   - ref:    IR reference at which this snapshot was created
 **   - context_refs/context_owner_slots: Virtual contextual activations materialised on exit
+**   - multres: Unscaled count for restoring implicit multi-result VM state
 **   - nslots: Total number of stack slots
 **   - topslot: Top slot for stack sizing
 **
@@ -174,6 +175,7 @@ static void snapshot_stack(jit_State* J, SnapShot* snap, MSize nsnapmap)
    memset(snap->context_refs, 0, sizeof(snap->context_refs));
    memset(snap->context_owner_slots, 0, sizeof(snap->context_owner_slots));
    snap->mcofs = 0;
+   snap->multres = J->multres;
    snap->nslots = (uint8_t)nslots;
    snap->context_count = 0;
    snap->count = 0;

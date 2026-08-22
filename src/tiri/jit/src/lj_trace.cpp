@@ -1077,6 +1077,7 @@ int lj_trace_exit(jit_State *J, void *exptr)
    }
 #endif
    lj_assertJ(T != nullptr and J->exitno < T->nsnap, "bad trace or exit number");
+   uint16_t snapshot_multres = T->snap[J->exitno].multres;
    exd.J = J;
    exd.exptr = exptr;
    errcode = lj_vm_cpcall(L, nullptr, &exd, trace_exit_cp);
@@ -1126,6 +1127,7 @@ int lj_trace_exit(jit_State *J, void *exptr)
    }
    // Return MULTRES or 0.
    ERRNO_RESTORE
+      if (bc_op(*pc) IS BC_JMP) return int(snapshot_multres);
       switch (bc_op(*pc)) {
       case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
          return (int)((BCREG)(L->top - L->base) - bc_a(*pc) - bc_c(*pc) - LJ_FR2);

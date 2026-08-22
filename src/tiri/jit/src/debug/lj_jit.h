@@ -198,6 +198,7 @@ struct SnapShot {
   IRRef1 context_refs[LJ_MAX_VIRTUAL_CONTEXTS]; // Virtual contextual receivers restored outermost first.
   uint16_t context_owner_slots[LJ_MAX_VIRTUAL_CONTEXTS]; // Root-frame slots owning virtual activations.
   uint16_t mcofs;   //  Offset into machine code in MCode units.
+  uint16_t multres; //  Unscaled MULTRES value at the snapshot.
   uint8_t nslots;   //  Number of valid slots.
   uint8_t topslot;   //  Maximum frame extent.
   uint8_t nent;      //  Number of compressed entries.
@@ -481,6 +482,7 @@ struct jit_State {
   int32_t framedepth;   //  Current frame depth.
   int32_t retdepth;     //  Return frame depth (count of RETF).
   uint8_t trydepth;     //  Current try block depth while recording.
+  uint16_t multres;     //  Unscaled implicit multi-result VM state.
 
   uint32_t k32[unsigned(K32::_MAX)];  //  Common 4 byte constants used by backends.
   TValue ksimd[unsigned(KSimd::_MAX)*2+1];  //  16 byte aligned SIMD constants.

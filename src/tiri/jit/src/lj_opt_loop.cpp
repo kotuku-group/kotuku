@@ -238,6 +238,7 @@ static void loop_subst_snap(jit_State* J, SnapShot* osnap, SnapEntry* loopmap, I
       snap->context_owner_slots[context_index] = osnap->context_owner_slots[context_index];
    }
    snap->mcofs = 0;
+   snap->multres = osnap->multres;
    snap->nslots = nslots;
    snap->topslot = osnap->topslot;
    snap->count = snap->context_count ? SNAPCOUNT_DONE : 0;

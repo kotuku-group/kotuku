@@ -3461,3 +3461,27 @@ end
    end
    assert(#t is 8, f"A numerically addressed table should keep its length, got {tostring(#t)}")
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function MultiResultSurvivesBuiltinMethodDispatchJump()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local chunks = {}
+   local buffer = array.new('multi-result payload', 'byte')
+
+   function append_chunk(Source)
+      chunks.insert(Source.getString())
+   end
+
+   -- The table has to keep growing so that its bounds guard side-exits while the trace is hot.
+   for i in {1 into 200} do append_chunk(buffer) end
+
+   jit.opt.start()
+
+   assert(#chunks is 200, f'Expected 200 recorded chunks, got {tostring(#chunks)}')
+   assert(chunks[0] is 'multi-result payload', f'First chunk is wrong: {tostring(chunks[0])}')
+   assert(chunks[199] is 'multi-result payload', f'Last chunk is wrong: {tostring(chunks[199])}')
+end
