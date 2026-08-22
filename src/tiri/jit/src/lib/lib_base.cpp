@@ -338,13 +338,13 @@ static bool prepare_iter_metamethod(lua_State *L, TValue *Target)
    if (tvisnil(metamethod)) return false;
 
    if (tvistab(Target)) {
-      size_t context_depth = lj_context_depth(L);
-      size_t context_size = L->context_stack.size();
+      [[maybe_unused]] size_t context_depth = lj_context_depth(L);
+      [[maybe_unused]] size_t context_size = L->context_stack.size();
       copyTV(L, L->top++, metamethod);
       TValue *top = L->top;
       setnilV(top++);
       L->top = top;
-      uint32_t argument_count = lj_context_prepare_metamethod_call(L, Target, top, 0, 1);
+      [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, Target, top, 0, 1);
       lj_assertL(argument_count IS 0, "table __iter retained its receiver argument");
       int call_error = lj_vm_pcall(L, top, 2, -1);
       lj_context_restore_depth(L, context_size);

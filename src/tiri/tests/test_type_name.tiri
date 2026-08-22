@@ -44,6 +44,22 @@ end
    assert(vector is <table>, '__name must not affect runtime type identity')
 end
 
+@Test function NameProvidesDefaultStringRepresentation()
+   local vector = named_value('Vector')
+   local text = tostring(vector)
+   assert(text is 'Vector', '__name should provide the complete default tostring() result, got ' .. text)
+   assert(f'{vector}' is text, 'string interpolation should use the __name fallback')
+   assert(tostring({}) is 'table', 'unnamed tables should stringify without an address')
+   assert(tostring(function() end) is 'function', 'anonymous functions should stringify without an address')
+
+   local custom = setmetatable({}, {
+      __name = 'NamedValue',
+      __tostring = function():str return 'custom text' end
+   })
+   assert(tostring(custom) is 'custom text', '__tostring should take precedence over __name')
+   assert(f'{custom}' is 'custom text', 'string interpolation should prefer __tostring over __name')
+end
+
 @Test function DirectAndInvalidNamesFallBack()
    local direct = { __name = 'DirectField' }
    assert(type(direct) is 'table', 'a direct __name field must be ignored')
@@ -127,7 +143,7 @@ end
    assert(rawtype(array<struct<RawTypeNamePoint>> { point }) is 'array<struct<RawTypeNamePoint>>',
       'struct arrays should include their resolved element layout')
    assert(rawtype(clock) is 'obj<Time>', 'object values should include their runtime class')
-   assert(rawtype(array<obj> { clock }) is 'array<object>', 'object arrays should use their annotation member spelling')
+   assert(rawtype(array<obj> { clock }) is 'array<obj>', 'object arrays should use their annotation member spelling')
 
    local stop = 2
    assert(rawtype({0 to stop}) is 'range', 'variable-bound ranges should be recognised')
@@ -189,7 +205,7 @@ end
          type(clock))
    assert(type({0 to 2}) is 'range' and type(deferred) is 'number',
       'type() should retain its range and undeclared-thunk behaviour')
-   assert(array<byte> { 1 }.type() is 'char', 'array.type() should retain its char alias')
+   assert(array<byte> { 1 }.type() is 'byte', 'array.type() should retain its byte name')
    assert(tostring(array<byte> { 65 }) is 'A', 'array tostring should retain byte-array string conversion')
    assert(point is <struct> and clock is <obj> and array<int> { 1 } is <array>,
       'runtime type tests should remain independent of rawtype()')
@@ -211,12 +227,14 @@ end
    local floats = array<float> { 1 }
    local point = struct<RawTypeNamePoint> { Value=5 }
    local clock = obj.new('time')
+   local objects = array<obj> { clock }
    local proxy = newproxy(true)
    local sequence = {0 to 2}
    local deferred:any = <{ 1 }>
 
    jit.off()
    assert(raw_type_query(integers) is 'array<int16>', 'the interpreter should describe exact array members')
+   assert(raw_type_query(objects) is 'array<obj>', 'the interpreter should use annotation text for object arrays')
    assert(raw_type_query(point) is 'struct<RawTypeNamePoint>', 'the interpreter should describe struct layouts')
    assert(raw_type_query(clock) is 'obj<Time>', 'the interpreter should describe object classes')
    assert(raw_type_query(proxy) is 'userdata' and raw_type_query(sequence) is 'range' and
