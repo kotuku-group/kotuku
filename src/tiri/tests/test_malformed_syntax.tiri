@@ -519,6 +519,27 @@ end
    })
 end
 
+@Test function ValidatePipeRequiresAnExplicitCall()
+   local message = 'pipe operator requires a function call on the right; use Callback() to pass the value or ' ..
+      'forEach(Callback) to iterate'
+   local cases = {
+      'function Callback(Value) end; local value = 1; value |> Callback',
+      'local target = { callback = function(Value) end }; local value = 1; value |> target.callback',
+      "local target = { callback = function(Value) end }; local value = 1; value |> target['callback']",
+      'local value = 1; value |> function(Value) end',
+      'local value = 1; value |> (Value => Value)',
+      'function Callback(Value) end; local value = 1; value |2> Callback'
+   }
+
+   for source in values(cases) do
+      local result = debug.validate(source)
+      assert(result.success is false and #result.diagnostics > 0,
+         'A bare pipe right-hand expression should fail validation')
+      assert(result.diagnostics[0].message is message,
+         'Every bare pipe right-hand expression should use the focused migration diagnostic')
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Malformed table, string, and compile-time syntax
 

@@ -245,47 +245,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
 {
    if (not Payload.lhs or not Payload.rhs_call) return this->unsupported_expr(AstNodeKind::PipeExpr, SourceSpan{});
 
-   // Deferred iteration: the parser couldn't determine the LHS type at AST time.
-   // Now that we can resolve variable types, select the canonical array/range each() callable.
-
-   if (Payload.deferred_iteration) {
-      BCReg call_base = this->func_state.free_reg();
-      auto lhs_result = this->emit_expression(*Payload.lhs);
-      if (not lhs_result.ok()) return lhs_result;
-      ExpDesc callee = lhs_result.value_ref();
-
-      const fprototype *prototype = get_method_prototype(callee.result_type, "each");
-      if (not prototype or (callee.result_type != TiriType::Array and callee.result_type != TiriType::Range)) {
-         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UnexpectedToken,
-            "pipe operator requires function call on right-hand side (or an array/range on the left)",
-            Payload.lhs->span));
-      }
-
-      this->materialise_to_next_reg(callee, "deferred pipe array receiver");
-      BCReg receiver_reg = BCReg(callee.u.s.info);
-      prepare_builtin_method_frame(
-         &this->func_state, prototype->builtin_callable_id, receiver_reg, call_base);
-
-      // Emit the function argument
-
-      auto rhs_result = this->emit_expression(*Payload.rhs_call);
-      if (not rhs_result.ok()) return rhs_result;
-      ExpDesc rhs = rhs_result.value_ref();
-      this->materialise_to_next_reg(rhs, "deferred pipe iteration callback");
-
-      BCIns ins = BCINS_ABC(BC_CALL, call_base, 2, this->func_state.freereg - call_base - 1);
-      BCLine call_line = this->lex_state.lastline;
-      this->lex_state.lastline = call_line;
-
-      ExpDesc result;
-      result.init(ExpKind::Call, bcemit_INS(&this->func_state, ins));
-      result.u.s.aux = call_base;
-      result.result_type = callee.result_type;
-      this->func_state.freereg = call_base + 1;
-      return ParserResult<ExpDesc>::success(result);
-   }
-
-   // The RHS must be a call expression - this was validated in the parser
+   // The parser accepts only explicit calls on the right of a pipe.
    if (Payload.rhs_call->kind != AstNodeKind::CallExpr and Payload.rhs_call->kind != AstNodeKind::SafeCallExpr) {
       return this->unsupported_expr(AstNodeKind::PipeExpr, Payload.rhs_call->span);
    }

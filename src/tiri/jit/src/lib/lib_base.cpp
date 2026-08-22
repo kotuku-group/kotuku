@@ -332,7 +332,7 @@ static int bare_array_iterator_next(lua_State *L)
 // Normalise a single dynamic generic-for target once at loop entry.  This is a protected compiler intrinsic; source
 // code should continue to use the ordinary collection and iterator forms.
 
-static bool prepare_iter_metamethod(lua_State *L, TValue *Target)
+static bool prepare_iter_metamethod(lua_State *L, TValue *Target, int TargetIndex)
 {
    cTValue *metamethod = lj_meta_lookup(L, Target, MM_iter);
    if (tvisnil(metamethod)) return false;
@@ -353,7 +353,7 @@ static bool prepare_iter_metamethod(lua_State *L, TValue *Target)
    }
    else {
       copyTV(L, L->top++, metamethod);
-      lua_pushvalue(L, 1);
+      lua_pushvalue(L, TargetIndex);
       lua_call(L, 1, 1);
    }
 
@@ -366,48 +366,117 @@ static bool prepare_iter_metamethod(lua_State *L, TValue *Target)
    return true;
 }
 
+// Normalise a bare generic-for target into its (iterator, state, control) triple.  TargetIndex must remain a rooted
+// stack slot for the complete call because preparation may invoke a metamethod or resolve a thunk.
+
+static int prepare_bare_iterator(lua_State *L, int TargetIndex)
+{
+   TValue *value = L->base + TargetIndex - 1;
+   if (lj_is_thunk(value)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(value));
+      value = L->base + TargetIndex - 1;
+      copyTV(L, value, resolved);
+   }
+
+   if (prepare_iter_metamethod(L, value, TargetIndex)) return 3;
+
+   if (tvisarray(value)) {
+      lua_pushcfunction(L, bare_array_iterator_next);
+      lua_pushvalue(L, TargetIndex);
+      lua_pushnil(L);
+      return 3;
+   }
+
+   if (tvistab(value) or tvisobject(value) or tvisstruct(value)) {
+      int initial_top = lua_gettop(L);
+      lua_getglobal(L, "pairs");
+      lua_pushvalue(L, TargetIndex);
+      lua_call(L, 1, LUA_MULTRET);
+      return lua_gettop(L) - initial_top;
+   }
+
+   if (check_range(L, TargetIndex)) return lj_range_prepare_iterator(L, TargetIndex);
+
+   if (tvisfunc(value) or not tvisnil(lj_meta_lookup(L, value, MM_call))) {
+      lua_pushvalue(L, TargetIndex);
+      lua_pushnil(L);
+      lua_pushnil(L);
+      return 3;
+   }
+
+   const char *type_name = luaL_typename(L, TargetIndex);
+   luaL_error(L, "cannot iterate over a %s value", type_name);
+   return 0;
+}
+
 LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare) LJLIB_REC(.)
 {
    int32_t value_count = lua_gettop(L);
    if (value_count >= 2) return value_count;
+   if (value_count IS 1) return prepare_bare_iterator(L, 1);
 
-   if (value_count IS 1) {
-      TValue *value = L->base;
-      if (lj_is_thunk(value)) {
-         TValue *resolved = lj_thunk_resolve(L, udataV(value));
-         value = L->base;
-         copyTV(L, value, resolved);
-      }
+   luaL_error(L, "cannot iterate over a nil value");
+   return 0;
+}
 
-      if (prepare_iter_metamethod(L, value)) return 3;
+//********************************************************************************************************************
+// forEach(Target, Callback) traverses Target with the same iterator preparation used by bare generic-for loops.
+// Callback receives every iterator result in its declared order.  Only an explicit false first callback result stops
+// traversal; all other callback results are discarded.
 
-      if (tvisarray(value)) {
-         lua_pushcfunction(L, bare_array_iterator_next);
-         lua_pushvalue(L, 1);
-         lua_pushnil(L);
-         return 3;
-      }
-
-      if (tvistab(value) or tvisobject(value) or tvisstruct(value)) {
-         lua_getglobal(L, "pairs");
-         lua_pushvalue(L, 1);
-         lua_call(L, 1, LUA_MULTRET);
-         return lua_gettop(L) - 1;
-      }
-
-      if (check_range(L, 1)) return lj_range_prepare_iterator(L, 1);
-
-      if (tvisfunc(value) or not tvisnil(lj_meta_lookup(L, value, MM_call))) {
-         lua_pushvalue(L, 1);
-         lua_pushnil(L);
-         lua_pushnil(L);
-         return 3;
-      }
+LJLIB_CF(forEach)
+{
+   if (lua_gettop(L) != 2) {
+      luaL_error(L, "forEach expects exactly 2 arguments");
+      return 0;
    }
 
-   const char *type_name = value_count IS 0 ? "nil" : luaL_typename(L, 1);
-   luaL_error(L, "cannot iterate over a %s value", type_name);
-   return 0;
+   lj_lib_checkany(L, 1);
+   lj_lib_checkfunc(L, 2);
+
+   constexpr int target_index = 1;
+   constexpr int callback_index = 2;
+   constexpr int original_index = 3;
+   constexpr int iterator_index = 4;
+   constexpr int state_index = 5;
+   constexpr int control_index = 6;
+   constexpr int iterator_result_index = 7;
+   constexpr int stable_top = 6;
+
+   // Preparation resolves a thunk target in place, so root an untouched copy of the caller's value first.  forEach()
+   // returns the original target rather than whatever the iterator protocol resolved it to.
+
+   lua_pushvalue(L, target_index);
+
+   int prepared = prepare_bare_iterator(L, target_index);
+   if (prepared != 3) {
+      luaL_error(L, "iterator preparation must return an iterator, state and control value");
+      return 0;
+   }
+
+   while (true) {
+      lua_pushvalue(L, iterator_index);
+      lua_pushvalue(L, state_index);
+      lua_pushvalue(L, control_index);
+      lua_call(L, 2, LUA_MULTRET);
+
+      int iterator_result_count = lua_gettop(L) - stable_top;
+      if (iterator_result_count IS 0 or lua_isnil(L, iterator_result_index)) break;
+
+      lua_pushvalue(L, iterator_result_index);
+      lua_replace(L, control_index);
+      lua_pushvalue(L, callback_index);
+      lua_insert(L, iterator_result_index);
+      lua_call(L, iterator_result_count, LUA_MULTRET);
+
+      int callback_result_count = lua_gettop(L) - stable_top;
+      bool terminate = callback_result_count > 0 and tvisfalse(L->base + iterator_result_index - 1);
+      lua_settop(L, stable_top);
+      if (terminate) break;
+   }
+
+   lua_settop(L, original_index);
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -1217,6 +1286,7 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("pairs", { TiriType::Func, TiriType::Table, TiriType::Nil }, { TiriType::Any });
    reg_func_prototype("ipairs", { TiriType::Func, TiriType::Table, TiriType::Num }, { TiriType::Any });
    reg_func_prototype("values", { TiriType::Func, TiriType::Table, TiriType::Num }, { TiriType::Any });
+   reg_func_prototype("forEach", { TiriType::Any }, { TiriType::Any, TiriType::Func });
    reg_func_prototype("rawget", { TiriType::Any }, { TiriType::Table, TiriType::Any });
    reg_func_prototype("rawset", { TiriType::Table }, { TiriType::Table, TiriType::Any, TiriType::Any });
    reg_func_prototype("error", { }, { TiriType::Any }, FProtoFlags::NoNil);

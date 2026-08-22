@@ -17,17 +17,6 @@ namespace {
       Operator IS AstBinaryOperator::GreaterThan or Operator IS AstBinaryOperator::GreaterEqual;
 }
 
-ExprNodePtr make_direct_method_call(ParserContext &Context, SourceSpan Span, std::string_view Method,
-   ExprNodePtr Receiver, ExprNodeList WrittenArguments, TiriType ResultType)
-{
-   Identifier method_id = Identifier::from_keepstr(Context.lex().keepstr(Method), Span);
-   ExprNodePtr callable = make_member_expr(Span, std::move(Receiver), method_id);
-   ExprNodePtr call = make_call_expr(Span, std::move(callable), std::move(WrittenArguments), false,
-      CallArgumentSyntax::Synthetic);
-   std::get<CallExprPayload>(call->data).result_type = ResultType;
-   return call;
-}
-
 ExprNodePtr make_builtin_call(ParserContext &Context, SourceSpan Span, FastFunc Callable,
    ExprNodeList Arguments, TiriType ResultType)
 {
@@ -235,80 +224,18 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          rhs = this->parse_suffixed(std::move(rhs.value_ref()));
          if (not rhs.ok()) return rhs;
 
-         // Check for pipe iteration pattern: range/array |> function
-         // When LHS is a range or array literal and RHS is a function (not a call), rewrite to an explicit
-         // interface call.  This keeps compiler-generated iteration on the canonical built-in path.
-
-         bool lhs_is_range = left.value_ref()->kind IS AstNodeKind::RangeExpr;
-
-         // Check if LHS is an array literal or a method call to :each() (for chaining support)
-         bool lhs_is_array = false;
-         if (left.value_ref()->kind IS AstNodeKind::CallExpr) {
-            const CallExprPayload& call_data = std::get<CallExprPayload>(left.value_ref()->data);
-            if (call_data.result_type IS TiriType::Array) {
-               lhs_is_array = true;
-            }
-            else if (call_data.result_type IS TiriType::Range) {
-               lhs_is_range = true;
-            }
-            if (const auto *direct = std::get_if<DirectCallTarget>(&call_data.target)) {
-               if (direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
-                  const auto &member = std::get<MemberExprPayload>(direct->callable->data);
-                  if (member.member.symbol and strcmp(strdata(member.member.symbol), "each") IS 0 and
-                      member.table) {
-                     if (member.table->kind IS AstNodeKind::RangeExpr) lhs_is_range = true;
-                     else if (member.table->kind IS AstNodeKind::IdentifierExpr) {
-                        const auto &interface = std::get<NameRef>(member.table->data);
-                        if (interface.identifier.symbol and
-                            std::string_view(strdata(interface.identifier.symbol), interface.identifier.symbol->len) IS
-                               "range") lhs_is_range = true;
-                        else lhs_is_array = true;
-                     }
-                     else lhs_is_array = true;
-                  }
-               }
-            }
-         }
-
-         bool rhs_is_function = rhs.value_ref()->kind IS AstNodeKind::FunctionExpr or
-                                rhs.value_ref()->kind IS AstNodeKind::IdentifierExpr or
-                                rhs.value_ref()->kind IS AstNodeKind::MemberExpr or
-                                rhs.value_ref()->kind IS AstNodeKind::IndexExpr;
          bool rhs_is_call = rhs.value_ref()->kind IS AstNodeKind::CallExpr or
                             rhs.value_ref()->kind IS AstNodeKind::SafeCallExpr;
 
-         if ((lhs_is_range or lhs_is_array) and rhs_is_function) {
-            SourceSpan span = combine_spans(left.value_ref()->span, rhs.value_ref()->span);
-            ExprNodeList args;
-            args.push_back(std::move(rhs.value_ref()));
-            TiriType result_type = lhs_is_array ? TiriType::Array : TiriType::Range;
-            ExprNodePtr call = make_direct_method_call(this->ctx, span, "each", std::move(left.value_ref()),
-               std::move(args), result_type);
-            left = ParserResult<ExprNodePtr>::success(std::move(call));
-            continue;
-         }
-
-         // When RHS is a function reference (not a call) and LHS type is unknown at parse time,
-         // create a deferred pipe iteration node.  The IR emitter will resolve the LHS type and
-         // either emit :each() for arrays or raise an error.
-
-         if (rhs_is_function) {
-            SourceSpan span = combine_spans(left.value_ref()->span, rhs.value_ref()->span);
-            auto pipe = make_pipe_expr(span, std::move(left.value_ref()), std::move(rhs.value_ref()), limit);
-            std::get<PipeExprPayload>(pipe->data).deferred_iteration = true;
-            left = ParserResult<ExprNodePtr>::success(std::move(pipe));
-            continue;
-         }
-
-         // Validate that RHS is a call expression for normal pipes
-
          if (not rhs_is_call) {
             return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, next,
-               "pipe operator requires function call on right-hand side");
+               "pipe operator requires a function call on the right; use Callback() to pass the value or "
+               "forEach(Callback) to iterate");
          }
 
          SourceSpan span = combine_spans(left.value_ref()->span, rhs.value_ref()->span);
-         left = ParserResult<ExprNodePtr>::success(make_pipe_expr(span, std::move(left.value_ref()), std::move(rhs.value_ref()), limit));
+         ExprNodePtr pipe = make_pipe_expr(span, std::move(left.value_ref()), std::move(rhs.value_ref()), limit);
+         left = ParserResult<ExprNodePtr>::success(std::move(pipe));
          continue;
       }
 
