@@ -2038,23 +2038,26 @@ static void asm_tail_link(ASMState* as)
       // Setup fixed registers for exit to interpreter.
       const BCIns* pc = snap_pc(&as->T->snapmap[snap->mapofs + snap->nent]);
       int32_t mres;
-      if (bc_op(*pc) == BC_JLOOP) {  // NYI: find a better way to do this.
+      if (bc_op(*pc) IS BC_JLOOP) {  // NYI: find a better way to do this.
          BCIns* retpc = &traceref(as->J, bc_d(*pc))->startins;
          if (bc_isret(bc_op(*retpc)))
             pc = retpc;
       }
       emit_loadu64(as, RID_LPC, u64ptr(pc));
-      mres = (int32_t)(snap->nslots - baseslot - LJ_FR2);
-      switch (bc_op(*pc)) {
-      case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
-         mres -= (int32_t)(1 + LJ_FR2 + bc_a(*pc) + bc_c(*pc)); break;
-      case BC_RETM: mres -= (int32_t)(bc_a(*pc) + bc_d(*pc)); break;
-      case BC_TSETM: mres -= (int32_t)bc_a(*pc); break;
-      default:
-         // Fast function pseudo-opcodes (>= BC__MAX) need the same treatment as function headers
-         // to ensure MULTRES is set correctly for the argument count after trace stitch exits.
-         if (not bc_is_func_header(bc_op(*pc)) and bc_op(*pc) < BC__MAX) mres = 0;
-         break;
+      if (bc_op(*pc) IS BC_JMP) mres = int32_t(snap->multres);
+      else {
+         mres = (int32_t)(snap->nslots - baseslot - LJ_FR2);
+         switch (bc_op(*pc)) {
+         case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
+            mres -= (int32_t)(1 + LJ_FR2 + bc_a(*pc) + bc_c(*pc)); break;
+         case BC_RETM: mres -= (int32_t)(bc_a(*pc) + bc_d(*pc)); break;
+         case BC_TSETM: mres -= (int32_t)bc_a(*pc); break;
+         default:
+            // Fast function pseudo-opcodes (>= BC__MAX) need the same treatment as function headers
+            // to ensure MULTRES is set correctly for the argument count after trace stitch exits.
+            if (not bc_is_func_header(bc_op(*pc)) and bc_op(*pc) < BC__MAX) mres = 0;
+            break;
+         }
       }
       ra_allockreg(as, mres, RID_RET);  //  Return MULTRES or 0.
    }

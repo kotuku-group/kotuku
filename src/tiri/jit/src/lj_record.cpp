@@ -1880,6 +1880,8 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       J->needsnap = 1;  //  Stop catching on-trace errors.
    }
 
+   J->multres = uint16_t(gotresults + 1);
+
    bool contextual_caller = false;
    if (frame_islua(frame)) {
       BCOp caller_op = bc_op(*(frame_pc(frame) - 1));
@@ -5491,6 +5493,7 @@ void lj_record_setup(jit_State *J)
    J->framedepth = 0;
    J->retdepth   = 0;
    J->trydepth   = rec_try_active_depth(J);
+   J->multres    = 0;
    J->instunroll = J->param[JIT_P_instunroll];
    J->loopunroll = J->param[JIT_P_loopunroll];
    J->tailcalled = 0;
@@ -5513,6 +5516,7 @@ void lj_record_setup(jit_State *J)
    setmref(J->cur.startpc, J->pc);
    if (J->parent) {  // Side trace.
       GCtrace *T = traceref(J, J->parent);
+      J->multres = T->snap[J->exitno].multres;
       TraceNo root = T->root ? T->root : J->parent;
       J->cur.root = (uint16_t)root;
       J->cur.startins = BCINS_AD(BC_JMP, 0, 0);
