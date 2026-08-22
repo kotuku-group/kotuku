@@ -171,8 +171,7 @@ LJLIB_PUSH("number")
 LJLIB_PUSH("range")
 LJLIB_ASM(type)      LJLIB_REC(.)
 {
-   // C fallback for type() - handles thunks with declared types
-   TValue *o = L->base;
+   TValue *o = lj_lib_checkany(L, 1);
    GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
    if (tvisudata(o)) {
       GCudata *ud = udataV(o);
@@ -191,7 +190,39 @@ LJLIB_ASM(type)      LJLIB_REC(.)
          }
       }
    }
-   // For non-thunk userdata, return "userdata" string (upvalue index 3)
+
+   if (GCstr *name = lj_meta_type_name(L, o)) {
+      setstrV(L, L->base - 1 - LJ_FR2, name);
+      return FFH_RES(1);
+   }
+
+   uint32_t type_index;
+   if (tvisnumber(o)) type_index = ~LJ_TNUMX;
+   else type_index = ~itype(o);
+   setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[type_index]));
+   return FFH_RES(1);
+}
+
+LJLIB_PUSH("nil")
+LJLIB_PUSH("bool")
+LJLIB_PUSH(top-1)
+LJLIB_PUSH("userdata")
+LJLIB_PUSH("string")
+LJLIB_PUSH("upval")
+LJLIB_PUSH("struct")
+LJLIB_PUSH("proto")
+LJLIB_PUSH("function")
+LJLIB_PUSH("trace")
+LJLIB_PUSH("object")
+LJLIB_PUSH("table")
+LJLIB_PUSH(top-9)
+LJLIB_PUSH("array")
+LJLIB_PUSH("number")
+LJLIB_PUSH("range")
+LJLIB_ASM(rawtype)      LJLIB_REC(.)
+{
+   lj_lib_checkany(L, 1);
+   GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
    setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[TYPE_NAME_USERDATA]));
    return FFH_RES(1);
 }
@@ -1173,6 +1204,7 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("print", { }, {}, FProtoFlags::Variadic);
    reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str });
    reg_func_prototype("type", { TiriType::Str }, { TiriType::Any });
+   reg_func_prototype("rawtype", { TiriType::Str }, { TiriType::Any });
    reg_func_prototype("tonumber", { TiriType::Num }, { TiriType::Any, TiriType::Num });
    reg_func_prototype("tostring", { TiriType::Str }, { TiriType::Any });
    reg_func_prototype("pairs", { TiriType::Func, TiriType::Table, TiriType::Nil }, { TiriType::Any });

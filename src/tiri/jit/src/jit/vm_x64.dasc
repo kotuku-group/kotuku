@@ -1433,16 +1433,15 @@ static void build_subroutines(BuildCtx *ctx)
   |  jmp ->fff_res0  // Return 0 values (assert no longer returns its arguments)
   |
   |.ffunc_1 type
+  |  jmp ->fff_fallback
+  |
+  |.ffunc_1 rawtype
   |  mov RC, [BASE]
   |  sar RC, 47
   |  mov RBd, LJ_TISNUM
   |  cmp RCd, RBd
   |  cmovb RCd, RBd
   |  not RCd
-  |  // Check for userdata (base type 12) - defer to C fallback for thunk handling
-  |  cmp RCd, ~LJ_TUDATA
-  |  je ->fff_fallback
-  |2:
   |  mov CFUNC:RB, [BASE-16]
   |  cleartp CFUNC:RB
   |  mov STR:RC, [CFUNC:RB+RC*8+((char *)(&((GCfuncC *)0)->upvalue))]
