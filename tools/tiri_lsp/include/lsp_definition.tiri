@@ -19,7 +19,10 @@ rx_def_loader_before  <const> = <{ regex.new(
    [[(?:(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*)*$]]
 ) }>
 rx_def_obj_new_before <const> = <{ regex.new([[obj\.new\s*\(\s*$]]) }>
-rx_def_obj_new        <const> = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=], regex.DOT_ALL) }>
+rx_def_obj_new        <const> = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=]) }>
+rx_def_obj_ctor       <const> = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*obj<\s*([A-Za-z_]\w*)\s*>]]) }>
+rx_def_obj_new_open   <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*$]]) }>
+rx_def_class_string   <const> = <{ regex.new([=[^\s*['"]([^'"]+)['"]]=]) }>
 rx_def_action_prefix  <const> = <{ regex.new([=[^ac[A-Z]]=]) }>
 rx_def_method_prefix  <const> = <{ regex.new([=[^mt[A-Z]]=]) }>
 
@@ -597,13 +600,48 @@ function normaliseClassName(Name:str):str
    return nil
 end
 
-function buildDefinitionTypeMap(Doc:table):table
+function buildDefinitionTypeMap(Doc:table, Position:table):table
    type_map = {}
+   in_block_comment = false
+   local pending_var:str
+   total_lines = getTotalLines(Doc)
+   if Position and Position.line + 1 < total_lines then total_lines = Position.line + 1 end
 
-   for start, stop, cap in rx_def_obj_new.findAll(Doc.content) do
-      local var_name, class_name = cap[0], cap[1]
-      normalised = normaliseClassName(class_name)
-      if var_name and normalised then type_map[var_name] = normalised end
+   for line_num in {0 to total_lines} do
+      line_text = getLine(Doc, line_num)
+      if Position and line_num is Position.line then
+         line_text = line_text.sub(0, utf16ColToByteCol(line_text, Position.character))
+      end
+      was_in_block_comment = in_block_comment
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
+
+      -- A constructor can open on one line and name its class on the next.  PendingVar carries the assignment
+      -- target forward so that the multi-line form still infers a type.  Block comment continuations are skipped
+      -- because a quoted word inside one is not a class name.
+      if pending_var and not was_in_block_comment then
+         class_name = rx_def_class_string.extract(line_text, 0)
+         if class_name then
+            normalised = normaliseClassName(class_name)
+            if normalised then type_map[pending_var] = normalised end
+         end
+      end
+
+      for start, stop, cap in rx_def_obj_ctor.findAll(line_code) do
+         normalised = normaliseClassName(cap[1])
+         if cap[0] and normalised then type_map[cap[0]] = normalised end
+      end
+
+      -- The class name passed to obj.new() is a string and is therefore absent from LineCode.  Match the raw
+      -- line, then require the assignment itself to remain visible in the masked code to reject comments.
+      for start, stop, cap in rx_def_obj_new.findAll(line_text) do
+         if line_code.sub(start, start + #cap[0]) is cap[0] then
+            normalised = normaliseClassName(cap[1])
+            if cap[0] and normalised then type_map[cap[0]] = normalised end
+         end
+      end
+
+      -- Match against LineCode so that a commented-out or quoted open parenthesis cannot start a continuation.
+      pending_var = rx_def_obj_new_open.extract(line_code, 0)
    end
 
    return type_map
@@ -636,12 +674,12 @@ function resolveClassDefinition(ClassName:str):array<table>
    return #locations > 0 and locations or nil
 end
 
-function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array<table>
+function resolveApiMemberDefinition(Doc:table, TokenInfo:table, Position:table):array<table>
    if not TokenInfo or not TokenInfo.object or not glDocCache then return nil end
 
    token = TokenInfo.text
    object_name = TokenInfo.object
-   type_map = buildDefinitionTypeMap(Doc)
+   type_map = buildDefinitionTypeMap(Doc, Position)
    class_name = type_map[object_name] ?? normaliseClassName(object_name)
 
    if class_name then
@@ -722,7 +760,7 @@ function resolveApiDefinition(Doc:table, Position:table, TokenInfo:table):array<
          if class_locations then return class_locations end
       end
 
-      member_locations = resolveApiMemberDefinition(Doc, TokenInfo)
+      member_locations = resolveApiMemberDefinition(Doc, TokenInfo, Position)
       if member_locations then return member_locations end
    end
 

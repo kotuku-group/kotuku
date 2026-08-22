@@ -130,6 +130,69 @@ end
    assertUriContains(locations, '/docs/xml/modules/classes/xml.xml', 'obj.new class literal should resolve to class docs')
 end
 
+@Test function ObjectConstructorClassResolution()
+   doc = makeDoc('clock = obj<Time> {}\n')
+   locations = resolveDefinition(doc, { line = 0, character = 13 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'obj<Class> names should resolve to class documentation')
+end
+
+@Test function ObjectConstructorMemberResolution()
+   doc = makeDoc('clock = obj<Time> {}\nclock.year\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'Members after obj<Class> construction should resolve through the constructed class')
+end
+
+@Test function LatestObjectConstructorAssignmentControlsMemberResolution()
+   doc = makeDoc("value = obj<Time> {}\nvalue = obj.new('File', {})\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 2, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'The later obj.new() assignment should replace the earlier obj<Class> type for member definitions')
+end
+
+@Test function FutureObjectConstructorAssignmentDoesNotControlMemberResolution()
+   doc = makeDoc('value = obj<Time> {}\nvalue.Year\nvalue = obj<File> {}\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'An assignment after the cursor must not change the inferred type for member definitions')
+end
+
+@Test function TrailingCommentConstructorDoesNotOverrideMemberResolution()
+   doc = makeDoc("value = obj.new('File', {}) -- value = obj.new('Time')\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor inside a trailing comment must not override the real assignment')
+end
+
+@Test function QuotedConstructorDoesNotOverrideMemberResolution()
+   doc = makeDoc("value = obj.new('File', {})\nnote = \"value = obj.new('Time')\"\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 2, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor inside a string literal must not override the real assignment')
+end
+
+@Test function BlockCommentConstructorDoesNotOverrideMemberResolution()
+   doc = makeDoc("value = obj.new('File', {})\n--[[\nvalue = obj.new('Time')\n]]\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 4, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor inside a block comment must not override the real assignment')
+end
+
+@Test function MultiLineObjectConstructorResolvesMember()
+   doc = makeDoc("value = obj.new(\n   'File', {})\nvalue.Path\n")
+   locations = resolveDefinition(doc, { line = 2, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/file.xml',
+      'A constructor whose class name is on the following line should still infer a type')
+end
+
+@Test function CommentedMultiLineObjectConstructorIsIgnored()
+   doc = makeDoc("value = obj<Time> {}\n-- value = obj.new(\n--    'File', {})\nvalue.Year\n")
+   locations = resolveDefinition(doc, { line = 3, character = 7 })
+   assertUriContains(locations, '/docs/xml/modules/classes/time.xml',
+      'A commented-out multi-line constructor must not override the real assignment')
+end
+
 @Test function ObjectActionResolution()
    doc = makeDoc("xml = obj.new('xml')\nxml.acClear()\n")
    locations = resolveDefinition(doc, { line = 1, character = 6 })

@@ -58,6 +58,12 @@ end
    assert(#ranges is 0, 'struct.new() usage should not create a folding range.')
 end
 
+@Test function ObjectConstructorDoesNotCreateFoldingRanges()
+   doc = makeDoc('clock = obj<Time> { year=2026 }\nprint(clock.year)\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'An obj<Class> initialiser should not create block folding ranges.')
+end
+
 @Test function StructNameOnOpeningLineFolds()
    doc = makeDoc('struct User\n   Name: str\n   Age: int\nend\n')
    ranges = extractFoldingRanges(doc)

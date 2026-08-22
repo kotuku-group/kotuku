@@ -38,6 +38,7 @@ ExprNodePtr make_builtin_call(ParserContext &Context, SourceSpan Span, FastFunc 
       case FastFunc::array_of: interface_name = "array"; member_name = "of"; break;
       case FastFunc::array_resize: interface_name = "array"; member_name = "resize"; break;
       case FastFunc::struct_new: interface_name = "struct"; member_name = "new"; break;
+      case FastFunc::object_create: interface_name = "obj"; member_name = "new"; break;
       case FastFunc::regex_new: interface_name = "regex"; member_name = "new"; break;
       default:
          assert_node(false, "unsupported compiler-owned callable");
@@ -533,6 +534,52 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       }
 
       case TokenKind::Identifier: {
+         // Compiler-owned object construction: `obj<Class> { Fields }`.  The opening angle bracket must immediately
+         // follow `obj` so normal spaced relational expressions retain their ordinary parsing.  The lexer keeps
+         // generic object constraints as individual tokens, which lets this remain contextual to expression parsing.
+         const size_t opening_offset = current.span().offset + 3;
+         if (token_identifier_is(current, "obj") and opening_offset < this->ctx.lex().source.size() and
+             this->ctx.lex().source[opening_offset] IS '<') {
+            Token object_token = current;
+            this->ctx.tokens().advance();  // Consume 'obj'.
+
+            Token opening_angle = this->ctx.tokens().current();
+            if (opening_angle.kind() != TokenKind::Less) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, opening_angle,
+                  "expected '<' after 'obj' in obj<Class> constructor");
+            }
+            this->ctx.tokens().advance();
+
+            Token class_token = this->ctx.tokens().current();
+            if (class_token.kind() != TokenKind::Identifier or not class_token.identifier()) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedIdentifier, class_token,
+                  "expected a class name in obj<Class> constructor");
+            }
+            this->ctx.tokens().advance();
+
+            Token closing_angle = this->ctx.tokens().current();
+            if (closing_angle.kind() != TokenKind::Greater) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, closing_angle,
+                  "expected '>' after object class name");
+            }
+            this->ctx.tokens().advance();
+
+            if (not this->ctx.check(TokenKind::LeftBrace)) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+                  "obj<Class> construction requires an initialiser table");
+            }
+
+            auto table = this->parse_table_literal(false);
+            if (not table.ok()) return table;
+
+            SourceSpan span = combine_spans(object_token.span(), table.value_ref()->span);
+            ExprNodeList args;
+            args.push_back(make_literal_expr(class_token.span(), LiteralValue::string(class_token.identifier())));
+            args.push_back(std::move(table.value_ref()));
+            node = make_builtin_call(this->ctx, span, FastFunc::object_create, std::move(args), TiriType::Object);
+            break;
+         }
+
          // Contextual designation: `entity { ... }` permanently marks the constructed table.  Recognition is a
          // parser-level token sequence rather than a lexer compound token or a reserved word, so `entity` stays an
          // ordinary identifier everywhere else.  Trivia between the two tokens has already been removed by the token

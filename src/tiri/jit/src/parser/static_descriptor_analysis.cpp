@@ -1098,6 +1098,15 @@ private:
          result.nullable = false;
          result.contextuality = Call.contextual_designation_result;
       }
+      else if (Call.compiler_callable IS builtin_callable_id(FastFunc::object_create) and
+          Call.result_type IS TiriType::Object) {
+         // `obj<Class> { ... }` is compiler-owned syntax.  Its synthetic `obj.new` callee is retained only for
+         // source metadata, so a local `obj` binding must not weaken the known result descriptor.
+         result.primary = TiriType::Object;
+         result.object_class_id = Call.object_class_id;
+         result.proof = StaticProof::Closed;
+         result.nullable = false;
+      }
       else if (auto array_type = this->array_constructor_type(Call)) {
          auto element = describe_array_element(array_type->first, &this->context_.lua());
          if (element) {

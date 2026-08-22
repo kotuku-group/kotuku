@@ -1,5 +1,8 @@
 
-rx_obj_new = <{ regex.new("([\\w]+)\\s*=\\s*obj\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]", regex.DOT_ALL) }>
+rx_obj_new = <{ regex.new("([\\w]+)\\s*=\\s*obj\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]") }>
+rx_obj_ctor = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*obj<\s*([A-Za-z_]\w*)\s*>]]) }>
+rx_obj_new_open = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*$]]) }>
+rx_class_string = <{ regex.new([=[^\s*['"]([\w]+)['"]]=]) }>
 rx_starts_capital = <{ regex.new("^[A-Z]") }>
 rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
 rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
@@ -101,20 +104,49 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text="Hover Support - Type Inference")
-function buildTypeMap(Doc):table
-   -- Build a mapping of variable names to class types based on obj.new() calls
-   typeMap = {}
+function buildTypeMap(Doc:table, Position:table):table
+   -- Build a mapping of variable names to class types based on object construction assignments.
+   type_map = {}
+   in_block_comment = false
+   local pending_var:str
+   total_lines = getTotalLines(Doc)
+   if Position and Position.line + 1 < total_lines then total_lines = Position.line + 1 end
 
-   -- Match patterns like: varname = obj.new('classname' or varname = obj.new("classname"
-   for start, stop, cap in rx_obj_new.findAll(Doc.content) do
-      local varname, classname = cap[0], cap[1]
-      -- Capitalize first letter for class name lookup (e.g., 'netsocket' -> 'NetSocket')
-      -- Most class names in the XML are in TitleCase
-      normalizedClass = classname.sub(1,1).upper() .. classname.sub(2)
-      typeMap[varname] = normalizedClass
+   for line_num in {0 to total_lines} do
+      line_text = getLine(Doc, line_num)
+      if Position and line_num is Position.line then
+         line_text = line_text.sub(0, utf16ColToByteCol(line_text, Position.character))
+      end
+      was_in_block_comment = in_block_comment
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
+
+      -- A constructor can open on one line and name its class on the next.  PendingVar carries the assignment
+      -- target forward so that the multi-line form still infers a type.  Block comment continuations are skipped
+      -- because a quoted word inside one is not a class name.
+      if pending_var and not was_in_block_comment then
+         class_name = rx_class_string.extract(line_text, 0)
+         if class_name then type_map[pending_var] = class_name.sub(0, 1).upper() .. class_name.sub(1) end
+      end
+
+      for start, stop, cap in rx_obj_ctor.findAll(line_code) do
+         normalised_class = cap[1].sub(0, 1).upper() .. cap[1].sub(1)
+         type_map[cap[0]] = normalised_class
+      end
+
+      -- The class name passed to obj.new() is a string and is therefore absent from LineCode.  Match the raw
+      -- line, then require the assignment itself to remain visible in the masked code to reject comments.
+      for start, stop, cap in rx_obj_new.findAll(line_text) do
+         if line_code.sub(start, start + #cap[0]) is cap[0] then
+            normalised_class = cap[1].sub(0, 1).upper() .. cap[1].sub(1)
+            type_map[cap[0]] = normalised_class
+         end
+      end
+
+      -- Match against LineCode so that a commented-out or quoted open parenthesis cannot start a continuation.
+      pending_var = rx_obj_new_open.extract(line_code, 0)
    end
 
-   return typeMap
+   return type_map
 end
 
 -- Build a mapping of variable names to declared-struct names.  Sources, in increasing precedence: explicit
@@ -485,7 +517,7 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
       end
 
       -- Try to infer class type from obj.new() assignments
-      typeMap = buildTypeMap(Doc)
+      typeMap = buildTypeMap(Doc, Position)
       className = typeMap[objName]
 
       -- Also try the object name directly as a class (for cases like NetSocket.Connect)
