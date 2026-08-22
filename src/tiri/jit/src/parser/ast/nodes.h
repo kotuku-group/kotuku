@@ -435,9 +435,8 @@ struct PipeExprPayload {
    PipeExprPayload(PipeExprPayload&&) noexcept = default;
    PipeExprPayload& operator=(PipeExprPayload&&) noexcept = default;
    ExprNodePtr lhs;              // Left-hand side expression (piped value)
-   ExprNodePtr rhs_call;         // Right-hand side call expression (or function ref for deferred iteration)
+   ExprNodePtr rhs_call;         // Right-hand side CallExpr or SafeCallExpr
    uint32_t limit = 0;           // Result limit (0 = unlimited)
-   bool deferred_iteration = false; // True when RHS is a function ref and LHS type is unknown at parse time
    ~PipeExprPayload();
 };
 

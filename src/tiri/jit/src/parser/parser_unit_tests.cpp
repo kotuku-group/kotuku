@@ -1758,7 +1758,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -5802,10 +5802,10 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
 
    error.clear();
    auto range_pipe = compile_snapshot(L,
-      "local total = 0\n{0 to 4} |> (Value => do total += Value end)\nreturn total\n", true, error);
-   if (not range_pipe or count_opcode_tree(*range_pipe, BC_BFUNC) != 2 or
-       count_opcode_tree(*range_pipe, BC_TGETS) != 0) {
-      Log.error("compiler-generated range iteration did not use canonical emission: %s", error.c_str());
+      "local values = {0 to 4}\nreturn values |> type()\n", true, error);
+   if (not range_pipe or find_builtin_callable_opcode(*range_pipe, builtin_callable_id(FastFunc::range_each)) or
+       count_opcode_tree(*range_pipe, BC_CALL) != 1) {
+      Log.error("a range transform pipe emitted collection iteration instead of its requested call: %s", error.c_str());
       return false;
    }
 

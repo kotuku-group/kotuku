@@ -101,6 +101,42 @@ end
    assert(result is 4, "Failed pipe with table: expected 4, got " .. tostring(result))
 end
 
+@Test function PipePassesCollectionsWithoutIteration()
+   function identity(Value:any):any
+      return Value
+   end
+
+   local stored_range = range(1, 4)
+   local stored_array = array<int> { 4, 5, 6 }
+   local stored_table = { value = 7 }
+   local custom = setmetatable({}, {
+      __iter = function():func
+         return function():num return end
+      end
+   })
+   local any_value:any = stored_range
+
+   assert(stored_range |> identity() is stored_range, 'A stored range should be passed as one pipe argument')
+   assert(stored_array |> identity() is stored_array, 'An array should be passed as one pipe argument')
+   assert(stored_table |> identity() is stored_table, 'A table should be passed as one pipe argument')
+   assert(any_value |> identity() is stored_range, 'An any value should not select an alternative pipe meaning')
+   assert(custom |> identity() is custom, 'A custom iterable should be passed to the requested call unchanged')
+end
+
+@Test function PipeReturnsRightHandResults()
+   function pair(Value:any):<any, num>
+      return Value, 42
+   end
+
+   function no_result(Value:any)
+   end
+
+   local table_value = { marker = true }
+   local first, second = table_value |> pair()
+   assert(first is table_value and second is 42, 'A pipe should return every right-hand call result')
+   assert(7 |> no_result() is nil, 'A pipe should retain a nil right-hand call result')
+end
+
 @Test function PipeWithMathFunctions()
    result = -5 |> math.abs()
    assert(result is 5, "Failed pipe with math.abs: expected 5, got " .. tostring(result))

@@ -1273,6 +1273,26 @@ private:
       }
    }
 
+   [[nodiscard]] bool is_for_each_call(const CallExprPayload &Call) const
+   {
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::IdentifierExpr) return false;
+      const auto &reference = std::get<NameRef>(direct->callable->data);
+      if (reference.binding_id or not reference.identifier.symbol or
+          reference.identifier.symbol->hash != kt::strhash("forEach")) return false;
+      cTValue *builtin = this->protected_global_value(reference.identifier.symbol);
+      return builtin and tvisfunc(builtin) and not isluafunc(funcV(builtin));
+   }
+
+   void preserve_for_each_result(CallExprPayload &Call, const ExprNode &Target)
+   {
+      if (not this->is_for_each_call(Call)) return;
+      StaticResultSet results;
+      results.stored_count = 1;
+      results.values[0] = this->descriptor_of(Target);
+      Call.results = this->catalogue_.add_results(results);
+   }
+
    [[nodiscard]] StaticValueDescriptor table_derivation_call_descriptor(const CallExprPayload &Call) const
    {
       const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
@@ -1556,6 +1576,10 @@ private:
                derived_table.nullable = value.nullable;
                value = derived_table;
             }
+            if (not call.arguments.empty()) {
+               this->preserve_for_each_result(call, *call.arguments.front());
+               if (this->is_for_each_call(call)) value = this->descriptor_of(*call.arguments.front());
+            }
             results = call.results;
             break;
          }
@@ -1572,11 +1596,29 @@ private:
          }
          case AstNodeKind::PipeExpr: {
             auto &pipe = std::get<PipeExprPayload>(Expression.data);
-            if (pipe.deferred_iteration and pipe.lhs) {
-               value = this->descriptor_of(*pipe.lhs);
-               results = pipe.lhs->static_results;
-            }
-            else if (pipe.rhs_call) {
+            if (pipe.rhs_call) {
+               if (pipe.lhs and (pipe.rhs_call->kind IS AstNodeKind::CallExpr or
+                                pipe.rhs_call->kind IS AstNodeKind::SafeCallExpr)) {
+                  auto &call = std::get<CallExprPayload>(pipe.rhs_call->data);
+                  if (this->is_for_each_call(call)) {
+                     if (pipe.limit IS 0 and pipe.lhs->static_results) {
+                        const StaticResultSet &input = this->catalogue_.results(pipe.lhs->static_results);
+                        if (input.stored_count > 1) {
+                           ParserDiagnostic diagnostic;
+                           diagnostic.severity = ParserDiagnosticSeverity::Error;
+                           diagnostic.code = ParserErrorCode::TypeMismatchArgument;
+                           diagnostic.message = std::format("forEach expects exactly 2 arguments, got {}",
+                              input.stored_count + call.arguments.size());
+                           diagnostic.token = Token::from_span(pipe.rhs_call->span, TokenKind::Identifier);
+                           this->context_.diagnostics().report(diagnostic);
+                        }
+                     }
+                     StaticValueDescriptor target = this->descriptor_of(*pipe.lhs);
+                     this->preserve_for_each_result(call, *pipe.lhs);
+                     pipe.rhs_call->static_value = this->add_value(target);
+                     pipe.rhs_call->static_results = call.results;
+                  }
+               }
                value = this->descriptor_of(*pipe.rhs_call);
                results = pipe.rhs_call->static_results;
             }

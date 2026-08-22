@@ -198,12 +198,12 @@ end
    assert(#materialised is 5 and materialised[4] is 4, 'Range toArray should materialise every value')
 end
 
-@Test function IterationPipes()
+@Test function GenericForEach()
    local total = 0
-   {0 to 4} |> (Value => do total += Value end)
+   {0 to 4} |> forEach(Value => do total += Value end)
    local values = array<int> { 1, 2, 3 }
-   values |> (Value => do total += Value end)
-   assert(total is 12, 'Compiler-generated range and array iteration should use canonical each methods')
+   values |> forEach((Index, Value) => do total += Index + Value end)
+   assert(total is 15, 'forEach should preserve generic-for range and array argument order')
 end
 
 @Test function StructMethods()

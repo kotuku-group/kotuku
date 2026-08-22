@@ -104,8 +104,8 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Demonstrate the use of array<obj> |> pipe iteration to fan out async work across multiple objects.
--- Each script object runs in its own thread; the pipe dispatches all of them without an explicit loop.
+-- Demonstrate the use of array<obj> |> forEach() to fan out async work across multiple objects.
+-- Each script object runs in its own thread; forEach() uses the generic iterator protocol.
 
 @Test(priority=4) function ArrayPipeFanOut()
    -- Create a bunch of worker scripts that return a result
@@ -120,14 +120,14 @@ end
    -- Run all the workers in one go
 
    completed = 0
-   scripts |> function(script)
+   scripts |> forEach(function(_, script)
       async.script(script, function(Object)
          Object.acSignal()
          print('Received result: ', Object.results?[0])
          check Object.error
          completed++
       end)
-   end
+   end)
 
    check proc.sleep()
 

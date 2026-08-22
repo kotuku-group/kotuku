@@ -865,7 +865,7 @@ set (TIRI_TESTS
    array_element_validation array_view
    array_functional array_typed_syntax bitshift bitwise has_operator approx if_empty if_empty_guard presence blank ternary table stress unit_tests
    jitoptions fstring const const_optimisation import_scope unicode ellipsis safe_nav close type_annotations type_fixing
-   type_inference jit jit_try_regex pipe pipe_iteration arrow_functions result_filter thunks deferred_expr shadow_assert
+   type_inference jit jit_try_regex pipe for_each arrow_functions result_filter thunks deferred_expr shadow_assert
    ranges contains bare_iteration compiler_intrinsics
    annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options type_name
    try_except import include_list processing metatables with thunk_table_index debug malformed_syntax numeric_limits return_types url tips tempus

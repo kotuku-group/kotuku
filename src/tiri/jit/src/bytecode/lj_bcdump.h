@@ -50,9 +50,10 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // in struct.size, which shifts the generated fast-function ordering.  Version 0x92 expands private array member
 // identities with uint8, uint16, uint32 and uint64.  Version 0x93 gives int8 its own signed array member identity.
 // Version 0x96 adds BC_ISIN and BC_ISNIN. Version 0x97 adds rawtype and shifts the generated fast-function ordering.
-// Older chunks are rejected rather than retaining compatibility shims.
+// Version 0x98 adds forEach and shifts the generated fast-function ordering.  Older chunks are rejected rather than
+// retaining compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x97;
+constexpr uint8_t BCDUMP_VERSION = 0x98;
 
 // Compatibility flags.
 
