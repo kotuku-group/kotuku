@@ -4785,6 +4785,29 @@ static void rec_range_value(jit_State *J, BCREG Base)
 }
 
 //********************************************************************************************************************
+// Determine whether a pending snapshot must be deferred past the current instruction.
+//
+// MULTRES is VM state that is not covered by a snapshot.  lj_trace_exit() reconstructs it from L->top only when
+// the resumed PC is an instruction that consumes it, so an exit that resumes anywhere else leaves MULTRES at
+// zero.  That is safe in stock bytecode because a multi-result call is always immediately followed by its
+// consumer, but Tiri's dual-path builtin method dispatch emits `CALL (multi-result); JMP; <fallback>; CALLM`,
+// placing a jump between the producer and the consumer.  A snapshot taken at that jump therefore yields a
+// zero-argument CALLM after a side exit.
+//
+// BC_JMP emits neither IR nor guards, so deferring the snapshot until the consumer is recorded describes an
+// identical machine state and lets the existing BC_CALLM handling in lj_snap_restore() and lj_trace_exit()
+// recover MULTRES.
+
+static bool rec_defer_snapshot(jit_State *J)
+{
+   const BCIns *pc = J->pc;
+   if (bc_op(*pc) != BC_JMP) return false;
+   BCOp target = bc_op(pc[1 + bc_j(*pc)]);
+   return target IS BC_CALLM or target IS BC_CALLMT or target IS BC_CTXCALLM or target IS BC_CTXLEAVE or
+      target IS BC_RETM or target IS BC_TSETM;
+}
+
+//********************************************************************************************************************
 // Record the next bytecode instruction (_before_ it's executed).
 
 void lj_record_ins(jit_State *J)
@@ -4797,7 +4820,7 @@ void lj_record_ins(jit_State *J)
    if (not rec_handle_postproc(J)) return;
 
    // Need snapshot before recording next bytecode (e.g. after a store).
-   if (J->needsnap) {
+   if (J->needsnap and not rec_defer_snapshot(J)) {
       J->needsnap = 0;
       if (J->pt) lj_snap_purge(J);
       lj_snap_add(J);
