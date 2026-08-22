@@ -113,6 +113,41 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Compiler-owned obj<Class> construction performs the same immediate root initialisation as obj.new(Class, Fields).
+
+@Test function TypedObjectConstruction()
+   local typed = obj<Time> { year=2026 }
+   local explicit = obj.new('Time', { year=2026 })
+
+   assert(typed.class.name is 'Time', 'Typed construction should create the requested class')
+   assert(typed.year is 2026, 'Typed construction should assign initialiser fields before Init()')
+   assert(typed.owner.id is explicit.owner.id, 'Typed and explicit root construction should retain the same owner')
+
+   local empty = obj<Time> {}
+   assert(empty.init() is ERR_Okay, 'An empty typed initialiser should still complete immediate initialisation')
+end
+
+@Test function TypedObjectConstructionFailures()
+   try
+      exec([[ local invalid = obj<Time> { does_not_exist=1 } ]])
+   except ex
+      assert(ex.message.find('Parsing failed') or ex.message.find('does_not_exist'),
+         'Invalid typed constructor fields should retain the regular object-field diagnostic: ' .. ex.message)
+   success
+      error('Expected an invalid typed constructor field to fail')
+   end
+
+   try
+      local unavailable = obj<UnavailableObjectClass> {}
+   except ex
+      assert(ex.message.find('UnavailableObjectClass') or ex.message.find('class'),
+         'Unavailable typed constructor classes should fail through object creation: ' .. ex.message)
+   success
+      error('Expected unavailable typed constructor class creation to fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test obj.get() explicit field access
 
 @Test(hotpath=true) function ObjGetField()

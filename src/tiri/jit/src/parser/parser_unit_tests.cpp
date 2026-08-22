@@ -5941,6 +5941,109 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
    return true;
 }
 
+static bool test_object_constructor_syntax(kt::Log &Log)
+{
+   auto ast = build_ast_from_source("local clock = obj<Time> {}\n");
+   if (not ast.chunk.ok()) {
+      Log.error("obj<Class> constructor fixture did not parse");
+      log_diagnostics(ast.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = ast.chunk.value_ref()->view();
+   if (statements.size() != 1 or statements[0].kind != AstNodeKind::LocalDeclStmt) {
+      Log.error("obj<Class> constructor fixture did not produce one local declaration");
+      return false;
+   }
+
+   const auto *local = std::get_if<LocalDeclStmtPayload>(&statements[0].data);
+   if (not local or local->values.size() != 1 or not local->values[0] or
+       local->values[0]->kind != AstNodeKind::CallExpr) {
+      Log.error("obj<Class> constructor did not lower to a call expression");
+      return false;
+   }
+
+   const auto *constructor = std::get_if<CallExprPayload>(&local->values[0]->data);
+   if (not constructor or constructor->compiler_callable != builtin_callable_id(FastFunc::object_create) or
+       constructor->result_type != TiriType::Object or constructor->object_class_id != CLASSID::TIME or
+       constructor->arguments.size() != 2) {
+      Log.error("obj<Class> constructor lost canonical callable or object class metadata");
+      return false;
+   }
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   std::string error;
+   auto constructor_code = compile_snapshot(L,
+      "local clock = obj<Time> { year=2026 }\n"
+      "return clock.year\n", true, error);
+   if (not constructor_code or not find_builtin_callable_opcode(*constructor_code,
+         builtin_callable_id(FastFunc::object_create)) or count_opcode_tree(*constructor_code, BC_BFUNC) != 1 or
+       count_opcode_tree(*constructor_code, BC_GGET) != 0 or count_opcode_tree(*constructor_code, BC_TGETS) != 0 or
+       count_opcode_tree(*constructor_code, BC_TGETV) != 0 or count_opcode_tree(*constructor_code, BC_OBGETF) != 1) {
+      Log.error("obj<Class> constructor did not retain lookup-free object creation and specialised field access: %s",
+         error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto shadowed = compile_snapshot(L,
+      "local obj:any = {}\n"
+      "local clock = obj<Time> {}\n"
+      "return clock.year\n", true, error);
+   size_t shadowed_gget = shadowed ? count_opcode_tree(*shadowed, BC_GGET) : 0;
+   size_t shadowed_tgets = shadowed ? count_opcode_tree(*shadowed, BC_TGETS) : 0;
+   if (not shadowed or not find_builtin_callable_opcode(*shadowed,
+         builtin_callable_id(FastFunc::object_create)) or shadowed_gget != 0 or shadowed_tgets != 0) {
+      Log.error("a local obj shadow altered obj<Class> constructor lowering (GGET=%zu TGETS=%zu): %s",
+         shadowed_gget, shadowed_tgets, error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto explicit_call = compile_snapshot(L, "return obj.new('time', {})\n", true, error);
+   if (not explicit_call or find_builtin_callable_opcode(*explicit_call,
+         builtin_callable_id(FastFunc::object_create)) or count_opcode_tree(*explicit_call, BC_GGET) != 1 or
+       count_opcode_tree(*explicit_call, BC_TGETS) != 1) {
+      Log.error("explicit obj.new call lost its ordinary namespace lookup semantics: %s", error.c_str());
+      return false;
+   }
+
+   auto rejects = [&](std::string_view Source, std::string_view Fragment) {
+      error.clear();
+      bool rejected = not compile_snapshot(L, Source, true, error);
+      return rejected and error.find(Fragment) != std::string::npos;
+   };
+   if (not rejects("local clock = obj<Time>\n", "initialiser table") or
+       not rejects("local clock = obj<> {}\n", "class name") or
+       not rejects("local clock = obj<Time {}\n", "object class name") or
+       not rejects("local clock = obj<Time> { year=2026\n", "Expected expression")) {
+      Log.error("obj<Class> constructor malformed syntax diagnostics regressed: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   auto relational = compile_snapshot(L,
+      "local obj = 1\n"
+      "local class_id = 2\n"
+      "local value = 3\n"
+      "return obj < class_id > value\n", true, error);
+   if (not relational) {
+      Log.error("spaced obj relational expression was mistaken for construction syntax: %s", error.c_str());
+      return false;
+   }
+
+   error.clear();
+   if (compile_snapshot(L, "local clock = obj<Time> {}\nreturn clock.not_a_field\n", true, error) or
+       error.find("not_a_field") IS std::string::npos) {
+      Log.error("obj<Class> constructor lost statically known object field diagnostics: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_regex_literal_canonical_bytecode_emission(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -6810,17 +6913,20 @@ static bool test_bare_collection_iteration_emission(kt::Log &Log)
       return false;
    }
 
-   if (count_opcode_tree(*snapshot, BC_ITERA) != 1 or count_opcode_tree(*snapshot, BC_ISARR) != 0) {
-      Log.error("proved bare arrays did not lower directly to ITERA without ISARR");
+   if (count_opcode_tree(*snapshot, BC_ITERA) != 0 or count_opcode_tree(*snapshot, BC_ISARR) != 0) {
+      Log.error("bare arrays should use runtime preparation instead of direct ITERA lowering");
       return false;
    }
-   if (count_opcode_tree(*snapshot, BC_ITERN) != 2) {
-      Log.error("proved bare tables and explicit pairs() emitted %" PRId64 " ITERN instructions instead of two",
-         int64_t(count_opcode_tree(*snapshot, BC_ITERN)));
+   if (count_opcode_tree(*snapshot, BC_ITERN) != 2 or count_opcode_tree(*snapshot, BC_ISNEXT) != 2) {
+      Log.error("bare tables and explicit pairs() should emit guarded ITERN, got %" PRId64 " ITERN and %" PRId64
+         " ISNEXT instructions",
+         int64_t(count_opcode_tree(*snapshot, BC_ITERN)),
+         int64_t(count_opcode_tree(*snapshot, BC_ISNEXT)));
       return false;
    }
-   if (count_opcode_tree(*snapshot, BC_ITERC) != 2) {
-      Log.error("stored ranges and dynamic targets did not use one prepared ITERC path each");
+   if (count_opcode_tree(*snapshot, BC_ITERC) != 3) {
+      Log.error("bare arrays, stored ranges and dynamic targets should each use prepared ITERC lowering, got %" PRId64,
+         int64_t(count_opcode_tree(*snapshot, BC_ITERC)));
       return false;
    }
    if (count_opcode_tree(*snapshot, BC_FORI) != 1 or count_opcode_tree(*snapshot, BC_FORL) != 1) {
@@ -8526,7 +8632,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 80> tests = { {
+   constexpr std::array<TestCase, 81> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8589,6 +8695,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },
       { "canonical_core_syntax_bytecode_emission", test_canonical_core_syntax_bytecode_emission },
+      { "object_constructor_syntax", test_object_constructor_syntax },
       { "regex_literal_canonical_bytecode_emission", test_regex_literal_canonical_bytecode_emission },
       { "contextual_call_specialisation", test_contextual_call_specialisation },
       { "contextual_tail_call_bytecode_emission", test_contextual_tail_call_bytecode_emission },
