@@ -236,7 +236,7 @@ static void call_table_metamethod(
    lj_assertL(L and Receiver and tvistab(Receiver), "invalid thunk table metamethod receiver");
    lj_assertL(ArgumentCount >= 0, "invalid thunk table metamethod argument count");
 
-   size_t context_depth = lj_context_depth(L);
+   [[maybe_unused]] size_t context_depth = lj_context_depth(L);
    TValue *top = L->top;
    TValue *base = top - ArgumentCount;
    L->top = top + 1;
@@ -244,7 +244,7 @@ static void call_table_metamethod(
    setnilV(base);
    base++;
 
-   uint32_t argument_count = lj_context_prepare_metamethod_call(
+   [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(
       L, Receiver, base, uint32_t(ArgumentCount), uint32_t(ArgumentCount + 1));
    lj_assertL(argument_count IS uint32_t(ArgumentCount),
       "thunk table metamethod retained its receiver argument");

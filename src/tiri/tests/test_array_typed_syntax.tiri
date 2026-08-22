@@ -33,7 +33,7 @@ end
 @Test function ArrayTypedBasicObject()
    arr = array<obj>
    assert(#arr is 0, "Empty array<obj> should have length 0")
-   assert(arr.type() is 'object', "Type should be 'object'")
+   assert(arr.type() is 'obj', "Type should be 'obj'")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -107,10 +107,10 @@ end
 @Test function ArrayTypedAllTypes()
    -- byte and char are aliases that map to 'char'
    byte_arr = array<byte>
-   assert(byte_arr.type() is 'char', "byte should map to 'char', got '" .. byte_arr.type() .. "'")
+   assert(byte_arr.type() is 'byte', "byte should be 'byte', got '" .. byte_arr.type() .. "'")
 
    char_arr = array<char>
-   assert(char_arr.type() is 'char', "char should be 'char'")
+   assert(char_arr.type() is 'byte', "char should map to 'byte'")
 
    int16_arr = array<int16>
    assert(int16_arr.type() is 'int16', "int16 should be 'int16'")
@@ -184,7 +184,7 @@ end
    assert(signed_values[0] is -128 and signed_values[1] is -1 and signed_values[3] is 127,
       'int8 did not preserve signed values')
    assert(signed_values[4] is -128 and signed_values[5] is -1, 'int8 values did not wrap as signed 8-bit integers')
-   assert(bytes.type() is 'char' and bytes[0] is 255 and bytes[1] is 255,
+   assert(bytes.type() is 'byte' and bytes[0] is 255 and bytes[1] is 255,
       'byte did not remain an unsigned byte buffer')
    assert(legacy.type() is 'int8' and legacy[0] is -128 and legacy[1] is 127,
       'legacy int8 construction did not retain signed storage')
@@ -294,7 +294,7 @@ end
    buffer_size = 400
    arr = array<byte, buffer_size>
    assert(#arr is 400, "Variable size should work, got " .. #arr)
-   assert(arr.type() is 'char', "Type should be 'char' (byte maps to char)")
+   assert(arr.type() is 'byte', "Type should be 'byte'")
 
    -- Size can also be a more complex unary expression
    local obj = { size = 100 }

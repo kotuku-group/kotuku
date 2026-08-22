@@ -1006,10 +1006,10 @@ end
    assert(double_arr.type() is 'double', "double array type should be 'double'")
 
    byte_arr = array<byte, 5>
-   assert(byte_arr.type() is 'char', "byte array type should be 'char'")
+   assert(byte_arr.type() is 'byte', "byte array type should be 'byte'")
 
    char_arr = array<char, 5>
-   assert(char_arr.type() is 'char', "char array type should be 'char'")
+   assert(char_arr.type() is 'byte', "char array type should be 'byte'")
 
    int16_arr = array<int16, 5>
    assert(int16_arr.type() is 'int16', "int16 array type should be 'int16'")
@@ -1093,7 +1093,7 @@ end
    arr = array.new(str)
 
    assert(#arr is 5, "array from string should have correct length")
-   assert(arr.type() is 'char', "array from string should be char type")
+   assert(arr.type() is 'byte', "array from string should be byte type")
    assert(arr[0] is 72, "arr[0] should be 'H' (72)")
    assert(arr[1] is 101, "arr[1] should be 'e' (101)")
    assert(arr[4] is 111, "arr[4] should be 'o' (111)")
@@ -1420,7 +1420,7 @@ end
    arr = array<byte> { 65, 66, 67, 68 }  -- ASCII A, B, C, D
 
    assert(#arr is 4, "array.of byte should have length 4")
-   assert(arr.type() is 'char', "array.of byte type should be 'char'")
+   assert(arr.type() is 'byte', "array.of byte type should be 'byte'")
    assert(arr[0] is 65, "arr[0] should be 65 (A)")
    assert(arr[1] is 66, "arr[1] should be 66 (B)")
    assert(arr[2] is 67, "arr[2] should be 67 (C)")
@@ -1431,7 +1431,7 @@ end
    arr = array<char> { 72, 101, 108, 108, 111 }  -- Hello
 
    assert(#arr is 5, "array.of char should have length 5")
-   assert(arr.type() is 'char', "array.of char type should be 'char'")
+   assert(arr.type() is 'byte', "array.of char type should be 'byte'")
    assert(arr.getString() is 'Hello', "getString should return 'Hello'")
 end
 
@@ -1525,7 +1525,7 @@ end
    arr = array<obj> { obj_one, obj_two }
 
    assert(#arr is 2, "array<obj> should have 2 elements")
-   assert(arr.type() is 'object', "array<obj> type should be 'object'")
+   assert(arr.type() is 'obj', "array<obj> type should be 'obj'")
    assert(arr[0].id is obj_one.id, "first object should match obj_one")
    assert(arr[1].id is obj_two.id, "second object should match obj_two")
 
