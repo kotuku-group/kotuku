@@ -165,8 +165,9 @@ global function byteColToUtf16Col(LineText:str, ByteCol:num):num
    return units
 end
 
--- Convert an LSP position to its byte offset in Content.  This shared helper is declared before the feature imports
--- so hover and definition inference can consistently limit source scans to the cursor.
+-- Convert an LSP position to its byte offset in Content.  Used by applyTextEdit() to turn incremental document
+-- change ranges into byte slices.  Feature scans such as type inference do not use this; they walk the line
+-- index instead so that comments and strings can be masked line by line.
 
 global function lspPositionToOffset(Content:str, Line:num, Character:num):num
    offset = 0

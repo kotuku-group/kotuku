@@ -216,6 +216,39 @@ end
    assertContains(hover, 'Time.Year', 'An assignment after the cursor must not change the inferred object type.')
 end
 
+@Test function TrailingCommentConstructorDoesNotOverrideFieldHover()
+   hover, token = hoverAt("value = obj.new('File', {}) -- value = obj.new('Time')\nvalue.Pa|th\n")
+
+   assert(token and token.text is 'Path' and token.object is 'value',
+      'Token extraction should identify a field access on the real assignment.')
+   assertContains(hover, 'File.Path', 'A constructor inside a trailing comment must not override the real assignment.')
+end
+
+@Test function QuotedConstructorDoesNotOverrideFieldHover()
+   hover, _ = hoverAt("value = obj.new('File', {})\nnote = \"value = obj.new('Time')\"\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path', 'A constructor inside a string literal must not override the real assignment.')
+end
+
+@Test function BlockCommentConstructorDoesNotOverrideFieldHover()
+   hover, _ = hoverAt("value = obj.new('File', {})\n--[[\nvalue = obj.new('Time')\n]]\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path', 'A constructor inside a block comment must not override the real assignment.')
+end
+
+@Test function MultiLineObjectConstructorFieldHover()
+   hover, _ = hoverAt("value = obj.new(\n   'File', {})\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path',
+      'A constructor whose class name is on the following line should still infer a type.')
+end
+
+@Test function CommentedMultiLineObjectConstructorDoesNotAffectFieldHover()
+   hover, _ = hoverAt("value = obj<Time> {}\n-- value = obj.new(\n--    'File', {})\nvalue.Ye|ar\n")
+
+   assertContains(hover, 'Time.Year', 'A commented-out multi-line constructor must not override the real assignment.')
+end
+
 @Test function StructDeclarationHoverShowsFields()
    hover, token = hoverAt([[
 struct Us|er
