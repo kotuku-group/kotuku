@@ -60,6 +60,36 @@ uint8_t lj_array_elemsize(AET Type)
 
 //********************************************************************************************************************
 
+CSTRING lj_array_elemtype_name(AET Type) noexcept
+{
+   switch (Type) {
+      case AET::BYTE:   return "byte";
+      case AET::INT8:   return "int8";
+      case AET::INT16:  return "int16";
+      case AET::INT32:  return "int";
+      case AET::INT64:  return "int64";
+      case AET::UINT8:  return "uint8";
+      case AET::UINT16: return "uint16";
+      case AET::UINT32: return "uint";
+      case AET::UINT64: return "uint64";
+      case AET::FLOAT:  return "float";
+      case AET::DOUBLE: return "double";
+      case AET::CSTR:
+      case AET::STR_CPP:
+      case AET::STR_GC: return "str";
+      case AET::TABLE:  return "table";
+      case AET::ARRAY:  return "array";
+      case AET::PTR:    return "pointer";
+      case AET::ANY:    return "any";
+      case AET::OBJECT: return "object";
+      case AET::STRUCT: return "struct";
+      case AET::MAX:    return "any";
+   }
+   return "any";
+}
+
+//********************************************************************************************************************
+
 static bool array_is_gc_ref_type(AET Type)
 {
    return Type IS AET::STR_GC or Type IS AET::TABLE or Type IS AET::ARRAY or Type IS AET::OBJECT;

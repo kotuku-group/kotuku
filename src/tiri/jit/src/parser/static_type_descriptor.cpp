@@ -11,6 +11,7 @@
 
 #include "ast/nodes.h"
 #include "parse_types.h"
+#include "../runtime/lj_array.h"
 #include "../runtime/lj_struct.h"
 
 bool StaticValueDescriptor::constrained() const noexcept
@@ -84,34 +85,9 @@ bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray
 std::string array_element_name(const ArrayElementDescriptor &Element)
 {
    if (not Element.known) return "array";
-   std::string_view name = "any";
-   switch (public_array_storage(Element.storage)) {
-      case AET::BYTE:   name = "byte"; break;
-      case AET::INT8:   name = "int8"; break;
-      case AET::INT16:  name = "int16"; break;
-      case AET::INT32:  name = "int"; break;
-      case AET::INT64:  name = "int64"; break;
-      case AET::UINT8:  name = "uint8"; break;
-      case AET::UINT16: name = "uint16"; break;
-      case AET::UINT32: name = "uint"; break;
-      case AET::UINT64: name = "uint64"; break;
-      case AET::FLOAT:  name = "float"; break;
-      case AET::DOUBLE: name = "double"; break;
-      case AET::STR_GC: name = "str"; break;
-      case AET::TABLE:  name = "table"; break;
-      case AET::ARRAY:  name = "array"; break;
-      case AET::OBJECT: name = "object"; break;
-      case AET::PTR:    name = "pointer"; break;
-      case AET::ANY:    name = "any"; break;
-      case AET::STRUCT:
-         if (Element.struct_def) return std::format("struct<{}>", Element.struct_def->Name);
-         name = "struct";
-         break;
-      case AET::CSTR:
-      case AET::STR_CPP:
-      case AET::MAX: break;
-   }
-   return std::string(name);
+   AET storage = public_array_storage(Element.storage);
+   if (storage IS AET::STRUCT and Element.struct_def) return std::format("struct<{}>", Element.struct_def->Name);
+   return std::string(lj_array_elemtype_name(storage));
 }
 
 StaticValueDescriptor StaticResultSet::value_at(size_t Position) const

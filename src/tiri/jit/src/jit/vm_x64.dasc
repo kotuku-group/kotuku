@@ -1436,19 +1436,8 @@ static void build_subroutines(BuildCtx *ctx)
   |  jmp ->fff_fallback
   |
   |.ffunc_1 rawtype
-  |  mov RC, [BASE]
-  |  sar RC, 47
-  |  mov RBd, LJ_TISNUM
-  |  cmp RCd, RBd
-  |  cmovb RCd, RBd
-  |  not RCd
-  |  mov CFUNC:RB, [BASE-16]
-  |  cleartp CFUNC:RB
-  |  mov STR:RC, [CFUNC:RB+RC*8+((char *)(&((GCfuncC *)0)->upvalue))]
-  |  mov PC, [BASE-8]
-  |  settp STR:RC, LJ_TSTR
-  |  mov [BASE-16], STR:RC
-  |  jmp ->fff_res1
+  |  // Parameterised names require C fallback; add a tag-only fast path only if profiling warrants it.
+  |  jmp ->fff_fallback
   |
   |//-- Base library: getters and setters ---------------------------------
   |

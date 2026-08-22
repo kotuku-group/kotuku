@@ -207,23 +207,30 @@ LJLIB_PUSH("nil")
 LJLIB_PUSH("bool")
 LJLIB_PUSH(top-1)
 LJLIB_PUSH("userdata")
-LJLIB_PUSH("string")
+LJLIB_PUSH("str")
 LJLIB_PUSH("upval")
 LJLIB_PUSH("struct")
 LJLIB_PUSH("proto")
-LJLIB_PUSH("function")
+LJLIB_PUSH("func")
 LJLIB_PUSH("trace")
-LJLIB_PUSH("object")
+LJLIB_PUSH("obj")
 LJLIB_PUSH("table")
 LJLIB_PUSH(top-9)
 LJLIB_PUSH("array")
-LJLIB_PUSH("number")
+LJLIB_PUSH("num")
 LJLIB_PUSH("range")
+LJLIB_PUSH("thunk")
 LJLIB_ASM(rawtype)      LJLIB_REC(.)
 {
-   lj_lib_checkany(L, 1);
-   GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
-   setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[TYPE_NAME_USERDATA]));
+   TValue *value = lj_lib_checkany(L, 1);
+   GCfunc *function = funcV(L->base - 1 - LJ_FR2);
+   if (not (tvisarray(value) or tvisobject(value) or tvisstruct(value) or tvisudata(value))) {
+      uint32_t type_index = tvisnumber(value) ? ~LJ_TNUMX : ~itype(value);
+      setstrV(L, L->base - 1 - LJ_FR2, strV(&function->c.upvalue[type_index]));
+      return FFH_RES(1);
+   }
+
+   setstrV(L, L->base - 1 - LJ_FR2, lj_meta_raw_type_name(L, value));
    return FFH_RES(1);
 }
 

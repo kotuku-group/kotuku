@@ -26,6 +26,8 @@
 #include "lj_object.h"
 #include "lj_contract.h"
 #include "lj_vmarray.h"
+#include "lj_array.h"
+#include "lj_proto_registry.h"
 #include "stack_helpers.h"
 #include "lib.h"
 #include "lib_range.h"
@@ -165,6 +167,70 @@ const char *lj_meta_display_name(lua_State *L, cTValue *Value) noexcept
 {
    GCstr *name = lj_meta_type_name(L, Value);
    return name ? strdata(name) : lj_typename(Value);
+}
+
+//********************************************************************************************************************
+
+[[nodiscard]] static CSTRING raw_type_fixed_name(lua_State *L, cTValue *Value) noexcept
+{
+   if (tvisnil(Value)) return "nil";
+   if (tvisbool(Value)) return "bool";
+   if (tvisnumber(Value)) return "num";
+   if (tvisstr(Value)) return "str";
+   if (tvistab(Value)) return "table";
+   if (tvisfunc(Value)) return "func";
+   if (tvislightud(Value)) return "userdata";
+   if (tvisudata(Value)) {
+      GCudata *userdata = udataV(Value);
+      if (userdata->udtype IS UDTYPE_THUNK) return "thunk";
+      if (is_range_userdata(L, userdata)) return "range";
+      return "userdata";
+   }
+   return nullptr;
+}
+
+void lj_meta_raw_type_text(lua_State *L, cTValue *Value, char *Buffer, size_t Size) noexcept
+{
+   if (not Size) return;
+
+   if (CSTRING name = raw_type_fixed_name(L, Value)) {
+      std::snprintf(Buffer, Size, "%s", name);
+      return;
+   }
+
+   if (tvisarray(Value)) {
+      GCarray *array = arrayV(Value);
+      if (array->elemtype IS AET::STRUCT and array->structdef) {
+         std::snprintf(Buffer, Size, "array<struct<%s>>", array->structdef->Name.c_str());
+      }
+      else std::snprintf(Buffer, Size, "array<%s>", lj_array_elemtype_name(array->elemtype));
+      return;
+   }
+
+   if (tvisobject(Value)) {
+      GCobject *object = objectV(Value);
+      if (object->classptr) std::snprintf(Buffer, Size, "obj<%s>", object->classptr->ClassName.c_str());
+      else std::snprintf(Buffer, Size, "obj");
+      return;
+   }
+
+   if (tvisstruct(Value)) {
+      GCstruct *structure = structV(Value);
+      if (structure->def) std::snprintf(Buffer, Size, "struct<%s>", structure->def->Name.c_str());
+      else std::snprintf(Buffer, Size, "struct");
+      return;
+   }
+
+   std::snprintf(Buffer, Size, "userdata");
+}
+
+//********************************************************************************************************************
+
+GCstr *lj_meta_raw_type_name(lua_State *L, cTValue *Value) noexcept
+{
+   char name[280];
+   lj_meta_raw_type_text(L, Value, name, sizeof(name));
+   return lj_str_newz(L, name);
 }
 
 //********************************************************************************************************************
@@ -939,38 +1005,12 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    }
 
    if (Entry.type IS TiriType::Array) {
-      const char *member = "any";
-      switch (Entry.array_element_type) {
-         case AET::BYTE:   member = "byte"; break;
-         case AET::INT8:   member = "int8"; break;
-         case AET::INT16:  member = "int16"; break;
-         case AET::INT32:  member = "int"; break;
-         case AET::INT64:  member = "int64"; break;
-         case AET::UINT8:  member = "uint8"; break;
-         case AET::UINT16: member = "uint16"; break;
-         case AET::UINT32: member = "uint"; break;
-         case AET::UINT64: member = "uint64"; break;
-         case AET::FLOAT:  member = "float"; break;
-         case AET::DOUBLE: member = "double"; break;
-         case AET::CSTR:
-         case AET::STR_CPP:
-         case AET::STR_GC: member = "str"; break;
-         case AET::TABLE:  member = "table"; break;
-         case AET::ARRAY:  member = "array"; break;
-         case AET::PTR:    member = "pointer"; break;
-         case AET::ANY:    member = "any"; break;
-         case AET::OBJECT: member = "object"; break;
-         case AET::STRUCT:
-            if (not Entry.constraint_name.empty()) {
-               std::snprintf(Buffer, Size, "array<struct<%.*s>>", int(Entry.constraint_name.size()),
-                  Entry.constraint_name.data());
-               return;
-            }
-            member = "struct";
-            break;
-         case AET::MAX: break;
+      if (Entry.array_element_type IS AET::STRUCT and not Entry.constraint_name.empty()) {
+         std::snprintf(Buffer, Size, "array<struct<%.*s>>", int(Entry.constraint_name.size()),
+            Entry.constraint_name.data());
+         return;
       }
-      std::snprintf(Buffer, Size, "array<%s>", member);
+      std::snprintf(Buffer, Size, "array<%s>", lj_array_elemtype_name(Entry.array_element_type));
       return;
    }
 
@@ -1000,25 +1040,18 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    char actual[280];
    contract_type_name(expected, sizeof(expected), Entry);
 
-   if (tvisobject(Value)) {
-      GCobject *object = objectV(Value);
-      if (object->classptr) std::snprintf(actual, sizeof(actual), "obj<%s>", object->classptr->ClassName.c_str());
-      else std::snprintf(actual, sizeof(actual), "obj<invalid>");
+   if (tvisobject(Value) and not objectV(Value)->classptr) {
+      std::snprintf(actual, sizeof(actual), "obj<invalid>");
    }
-   else if (tvisstruct(Value) and structV(Value)->def) {
-      const auto &name = structV(Value)->def->Name;
-      std::snprintf(actual, sizeof(actual), "struct<%.*s>", int(name.size()), name.data());
+   else if (contract_is_range(L, Value)) {
+      lj_meta_raw_type_text(L, Value, actual, sizeof(actual));
    }
-   else if (tvisarray(Value)) {
-      RuntimeContractEntry actual_entry;
-      actual_entry.type = TiriType::Array;
-      actual_entry.array_element_type = arrayV(Value)->elemtype;
-      if (arrayV(Value)->elemtype IS AET::STRUCT and arrayV(Value)->structdef) {
-         actual_entry.constraint_name = arrayV(Value)->structdef->Name;
-      }
-      contract_type_name(actual, sizeof(actual), actual_entry);
+   else if (GCstr *display_name = lj_meta_type_name(L, Value)) {
+      std::snprintf(actual, sizeof(actual), "%s", strdata(display_name));
    }
-   else if (contract_is_range(L, Value)) std::snprintf(actual, sizeof(actual), "range");
+   else if (tvisobject(Value) or tvisstruct(Value) or tvisarray(Value)) {
+      lj_meta_raw_type_text(L, Value, actual, sizeof(actual));
+   }
    else std::snprintf(actual, sizeof(actual), "%s", lj_meta_display_name(L, Value));
 
    const char *boundary = contract_boundary_name(Boundary);
