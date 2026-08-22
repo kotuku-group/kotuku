@@ -17,6 +17,8 @@
 //                       between the array and struct numeric vocabularies (commit b997e29ad)
 // UPDATED: 2026-08-18 - Renamed the string.find() result example variables; the second result is an exclusive stop
 //                       (commit 3e99d69ac)
+// UPDATED: 2026-08-22 - rawtype() reports the native vocabulary and the parameterised array form; separated it
+//                       from type(), which is now overridable by __name (commits 3acfc4c44, 179bcc4af)
 
 [[ch-type-system]]
 == Type System

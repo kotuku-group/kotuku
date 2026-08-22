@@ -3,6 +3,9 @@
 // UPDATED: 2026-08-13 - Noted that a table can be designated an entity without changing its type (commit d3638efc0)
 // UPDATED: 2026-08-16 - The extended ternary is now spelled '?? :' (commit 982d890de)
 // UPDATED: 2026-08-19 - Noted the type-test operator as the boolean companion to type() (commit c70f7542a)
+// UPDATED: 2026-08-22 - Reworked Type Inspection: type() now honours the __name metamethod and is defined as the
+//                       user-facing display name; added rawtype() for the raw runtime type (commits 3acfc4c44,
+//                       179bcc4af)
 
 [[ch-types-and-values]]
 == Types & Values
@@ -181,6 +184,17 @@ NOTE: The sigil identifies the rule for testing.  A single `?` applies the stand
 
 [[sec-type-inspection]]
 === Type Inspection
+
+indexterm:[type inspection] Two functions report the type of a value, and they serve different purposes.
+
+`type()` produces a __display name__: a name intended for presentation to a user.  It honours the `pass:[__]name` metamethod (<<sec-metamethod-name>>), so the name it returns is chosen by the author of the value and is not required to identify a runtime type.  Use it to compose diagnostic text and log messages.
+
+`rawtype()` produces the __raw type__: the runtime type of the value.  It consults no metamethod, cannot be overridden, and names container types with the type they hold.  Use it whenever a program reports, records or dispatches on what a value actually is.
+
+Neither function is the means of testing a value against a known type.  The type-test operator `value is <type>` is more precise and faster than comparing either result against a string.  See <<sec-type-testing>>.
+
+Both functions raise an error when called with no argument.  Passing `nil` explicitly is valid and reports the nil type.
+
 ==== type()
 
 indexterm:[type inspection] `result = type(Value)`
@@ -195,9 +209,9 @@ type(42)            -- 'number'
 type(3.14)          -- 'number'
 type('hello')       -- 'string'
 type({})            -- 'table'
-type(array<int>)    -- 'array'
+type(array<int> { 1 }) -- 'array'
 type(print)         -- 'function'
-type(range(0, 5))   -- 'range'
+type({0 to 5})      -- 'range'
 type(struct.new('GradientStop')) -- 'struct'
 ----
 

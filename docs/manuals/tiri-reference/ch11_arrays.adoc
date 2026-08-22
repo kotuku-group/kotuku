@@ -25,6 +25,8 @@
 //                       equal to the array length; find() gained an exclusive Stop parameter (commit 3e99d69ac)
 // UPDATED: 2026-08-21 - Removed array.contains(); membership is expressed with the 'in' operator, which
 //                       dispatches through the array '__contains' metamethod (commit 2b788f198)
+// UPDATED: 2026-08-22 - Anchored the element type section and contrasted arr.type() with the parameterised
+//                       rawtype() spelling (commit 179bcc4af)
 
 [[ch-arrays]]
 == Arrays

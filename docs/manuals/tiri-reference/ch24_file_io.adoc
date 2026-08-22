@@ -15,6 +15,7 @@ Filesystem failures in the `io` library raise exceptions.  This differs from sta
 === The io Standard Library
 indexterm:[library, io] The `io` namespace provides built-in functions for file operations and standard I/O management.  No `import` statement is required to use these functions.
 
+[discrete]
 ==== io.open()
 
 [.api]`file = io.open(Path, [Mode])`
@@ -47,12 +48,14 @@ Available options for `Mode` are as follows:
 |Open existing file in read/write mode.
 |===
 
+[discrete]
 ==== io.close()
 
 [.api]`io.close([File])`
 
 Closes the given file handle.  If no `File` is provided, the default output file is closed.  Returns `true` on success.
 
+[discrete]
 ==== io.read()
 
 [.api]`data1, data2, pass:[...] = io.read([Format, pass:[...]])`
@@ -68,18 +71,21 @@ num  = io.read('*n')   -- Read a number
 all  = io.read('*a')   -- Read entire file
 ----
 
+[discrete]
 ==== io.write()
 
 [.api]`io.write(Data, pass:[...])`
 
 Writes each argument to the default output file.  The default output file is initially `stdout` but can be changed with `io.output()`.  Arguments must be strings or numbers.  Raises an exception if a write error occurs.
 
+[discrete]
 ==== io.flush()
 
 [.api]`io.flush()`
 
 Flushes the default output file, ensuring that any buffered data is written to disk.
 
+[discrete]
 ==== io.input()
 
 [.api]`file = io.input([Source])`
@@ -95,6 +101,7 @@ line = io.read()             -- Read a line from that file
 original = io.input()        -- Retrieve current default input
 ----
 
+[discrete]
 ==== io.output()
 
 [.api]`file = io.output([Source])`
@@ -109,6 +116,7 @@ io.output('temp:results.txt')   -- Set default output to a file
 io.write('Result: 42\n')        -- Write to that file
 ----
 
+[discrete]
 ==== io.lines()
 
 [.api]`iterator = io.lines([Source])`
@@ -122,6 +130,7 @@ for line in io.lines('temp:data.txt') do
 end
 ----
 
+[discrete]
 ==== io.type()
 
 [.api]`result = io.type(Value)`
@@ -137,6 +146,7 @@ print(io.type(file))      -- 'closed file'
 print(io.type('hello'))   -- nil
 ----
 
+[discrete]
 ==== io.tempFile()
 
 [.api]`file = io.tempFile()`
@@ -152,18 +162,21 @@ print(tmp.read('*a'))   -- 'temporary data'
 tmp.close()
 ----
 
+[discrete]
 ==== io.readAll()
 
 [.api]`content = io.readAll(Path)`
 
 Reads the entire contents of the file at `Path` and returns it as a string.  Raises an exception if the file cannot be opened or read.  Returns an empty string if the file is empty.
 
+[discrete]
 ==== io.writeAll()
 
 [.api]`io.writeAll(Path, Content)`
 
 Writes `Content` to the file at `Path`, creating the file if it does not exist or overwriting it if it does.  Raises an exception if the file cannot be created or written to.
 
+[discrete]
 ==== io.isFolder()
 
 [.api]`bool = io.isFolder(Path)`
@@ -176,6 +189,7 @@ print(io.isFolder('system:users/'))    -- true
 print(io.isFolder('temp:file.txt'))    -- false
 ----
 
+[discrete]
 ==== io.splitPath()
 
 [.api]`dir, file = io.splitPath(Path)`
@@ -193,6 +207,7 @@ dir, file = io.splitPath('readme.txt')
 -- file = 'readme.txt'
 ----
 
+[discrete]
 ==== io.sanitisePath()
 
 [.api]`cleaned = io.sanitisePath(Path)`
@@ -210,6 +225,7 @@ print(io.sanitisePath('system://users///file.txt'))
 indexterm:[file system, handles] File handles returned by `io.open()` and related functions support the following methods, called with dot notation on the handle (e.g. `file.read()`).  The handle is passed as the receiver automatically; see <<sec-built-in-method-calls>>.  Operating on a closed file handle raises an exception.
 
 [[sec-file-read]]
+[discrete]
 ==== file.read()
 
 [.api]`data1, data2, pass:[...] = file.read([Format, pass:[...]])`
@@ -244,24 +260,28 @@ all  = file.read('*a')      -- Read entire file
 file.close()
 ----
 
+[discrete]
 ==== file.write()
 
 [.api]`file = file.write(Data, pass:[...])`
 
 Writes each argument to the file.  Arguments must be strings or numbers.  Returns the file handle to allow chained calls.  Raises an exception if a write error occurs.
 
+[discrete]
 ==== file.close()
 
 [.api]`file.close()`
 
 Closes the file handle and releases the underlying file object.  Returns `true` on success.
 
+[discrete]
 ==== file.flush()
 
 [.api]`file.flush()`
 
 Flushes any buffered output data to disk, ensuring all writes are committed.  Returns `true` on success.
 
+[discrete]
 ==== file.seek()
 
 [.api]`position = file.seek([Whence, [Offset]])`
@@ -293,6 +313,7 @@ file.seek('end', 0)      -- Move to end of file
 file.close()
 ----
 
+[discrete]
 ==== file.lines()
 
 [.api]`iterator = file.lines()`
@@ -307,6 +328,131 @@ for line in file.lines() do
 end
 file.close()
 ----
+
+[[sec-file-search]]
+=== File Search
+indexterm:[file system, search] The FileSearch extension simplifies recursive file and folder searching with support for name filters, content searching, and size/date constraints.  Load it with:
+
+[source,tiri]
+----
+import 'io/filesearch'
+----
+
+[discrete]
+==== io.search()
+
+[.api]`io.search(Path, Options)`
+
+Searches for files and folders starting from `Path`.  `Path` is a string referencing a folder or file, or an array of path strings to search multiple locations.  `Options` is a table controlling the search behaviour.
+
+[source,tiri]
+----
+import 'io/filesearch'
+
+io.search('documents:', {
+   nameFilter    = regex.new('\\.txt$'),
+   contentFilter = 'tennis',
+   maxDepth      = 2,
+   matchFeedback = function(Path, FileName, File)
+      print(Path, ' ', FileName)
+   end
+})
+----
+
+[cols="1,1,3a",options="header"]
+|===
+|Option |Type |Description
+
+|`nameFilter`
+|string / regex
+|Include file/folder names that match this value.  A string performs an exact match.  A compiled regex object performs pattern matching.
+
+|`contentFilter`
+|string
+|Include files that contain this content.
+
+|`caseSensitive`
+|boolean
+|Controls how `nameFilter` is applied.  When omitted or `false`, the candidate file name is converted to lowercase before matching.  String filters and regex patterns must therefore be written for lowercase input.  When `true`, the original file name is used.
+
+|`matchFeedback`
+|function
+|Called each time a matching file is discovered.  Synopsis: `function(Path, FileName, File)`.  Return `ERR_Terminate` to stop the search.
+
+|`ignoreFeedback`
+|function
+|Called each time a file fails to pass filter matches.  Synopsis: `function(Path, FileName, File)`.  Return `ERR_Terminate` to stop the search.
+
+|`minSize`
+|number
+|Exclude files smaller than this byte size.
+
+|`maxSize`
+|number
+|Exclude files larger than this byte size.
+
+|`minDate`
+|DateTime
+|Exclude files with a modification time earlier than this `DateTime` structure.
+
+|`maxDate`
+|DateTime
+|Exclude files with a modification time later than this `DateTime` structure.
+
+|`scanLinks`
+|boolean
+|Allow symbolically linked files to be opened for content matching.  Symbolically linked directories are not recursed.
+
+|`matchFolders`
+|boolean
+|Include matching folder names in search results.
+
+|`ignoreFiles`
+|boolean
+|Do not scan files.  Use in conjunction with `matchFolders` to search for directories only.
+
+|`maxDepth`
+|number
+|Maximum depth to recurse into subdirectories.  `0` searches the current directory only, `1` searches one level deep, and so on.  If omitted, recursion is unlimited.
+|===
+
+When searching files for content, apply a `nameFilter` or size limit so that only a controlled number of files are opened for reading.
+
+Symbolic links to directories are not followed to avoid infinite recursion.
+
+[[sec-file-manager]]
+=== File Manager
+indexterm:[file system, manager] The File Manager extension provides file management operations with integrated UI feedback.  Progress dialogs appear automatically for long-running operations, and the user is prompted before overwriting existing files.
+
+Load it with:
+
+[source,tiri]
+----
+import 'io/filemgr'
+----
+
+[discrete]
+==== io.ui.copy()
+
+[.api]`error = io.ui.copy(Source, Dest, [Move])`
+
+Copies the file or files specified by `Source` to the folder specified by `Dest`.  `Source` is a file path string or an array of path strings.  If `Move` is `true`, each source file is deleted after a successful copy.
+
+Returns an `ERR` code.  If the user cancels the operation, `ERR_Cancelled` is returned.  Errors are presented to the user with a dialog box and are not raised as exceptions.
+
+[discrete]
+==== io.ui.paste()
+
+[.api]`io.ui.paste(Dest)`
+
+Pastes files from the system clipboard to the destination path `Dest`.  Files marked for deletion by the clipboard are moved instead of copied.  The function delegates the file transfer to `io.ui.copy()` and does not return its status code.
+
+[discrete]
+==== io.ui.delete()
+
+[.api]`io.ui.delete(Paths)`
+
+Deletes the file or folder identified by `Paths`, which is a string or array of strings.  A progress dialog appears if the operation takes longer than expected.
 
 [[sec-the-kotuku-file-object]]
 === The Kōtuku File Object
@@ -537,139 +683,18 @@ processing.sleep()
 
 Calling `raise ERR_Terminate` in the callback cancels the watch.
 
-[[sec-file-search]]
-=== File Search
-indexterm:[file system, search] The FileSearch extension simplifies recursive file and folder searching with support for name filters, content searching, and size/date constraints.  Load it with:
-
-[source,tiri]
-----
-import 'io/filesearch'
-----
-
-==== io.search()
-
-[.api]`io.search(Path, Options)`
-
-Searches for files and folders starting from `Path`.  `Path` is a string referencing a folder or file, or an array of path strings to search multiple locations.  `Options` is a table controlling the search behaviour.
-
-[source,tiri]
-----
-import 'io/filesearch'
-
-io.search('documents:', {
-   nameFilter    = regex.new('\\.txt$'),
-   contentFilter = 'tennis',
-   maxDepth      = 2,
-   matchFeedback = function(Path, FileName, File)
-      print(Path, ' ', FileName)
-   end
-})
-----
-
-[cols="1,1,3a",options="header"]
-|===
-|Option |Type |Description
-
-|`nameFilter`
-|string / regex
-|Include file/folder names that match this value.  A string performs an exact match.  A compiled regex object performs pattern matching.
-
-|`contentFilter`
-|string
-|Include files that contain this content.
-
-|`caseSensitive`
-|boolean
-|Controls how `nameFilter` is applied.  When omitted or `false`, the candidate file name is converted to lowercase before matching.  String filters and regex patterns must therefore be written for lowercase input.  When `true`, the original file name is used.
-
-|`matchFeedback`
-|function
-|Called each time a matching file is discovered.  Synopsis: `function(Path, FileName, File)`.  Return `ERR_Terminate` to stop the search.
-
-|`ignoreFeedback`
-|function
-|Called each time a file fails to pass filter matches.  Synopsis: `function(Path, FileName, File)`.  Return `ERR_Terminate` to stop the search.
-
-|`minSize`
-|number
-|Exclude files smaller than this byte size.
-
-|`maxSize`
-|number
-|Exclude files larger than this byte size.
-
-|`minDate`
-|DateTime
-|Exclude files with a modification time earlier than this `DateTime` structure.
-
-|`maxDate`
-|DateTime
-|Exclude files with a modification time later than this `DateTime` structure.
-
-|`scanLinks`
-|boolean
-|Allow symbolically linked files to be opened for content matching.  Symbolically linked directories are not recursed.
-
-|`matchFolders`
-|boolean
-|Include matching folder names in search results.
-
-|`ignoreFiles`
-|boolean
-|Do not scan files.  Use in conjunction with `matchFolders` to search for directories only.
-
-|`maxDepth`
-|number
-|Maximum depth to recurse into subdirectories.  `0` searches the current directory only, `1` searches one level deep, and so on.  If omitted, recursion is unlimited.
-|===
-
-When searching files for content, apply a `nameFilter` or size limit so that only a controlled number of files are opened for reading.
-
-Symbolic links to directories are not followed to avoid infinite recursion.
-
-[[sec-file-manager]]
-=== File Manager
-indexterm:[file system, manager] The File Manager extension provides file management operations with integrated UI feedback.  Progress dialogs appear automatically for long-running operations, and the user is prompted before overwriting existing files.
-
-Load it with:
-
-[source,tiri]
-----
-import 'io/filemgr'
-----
-
-==== io.ui.copy()
-
-[.api]`error = io.ui.copy(Source, Dest, [Move])`
-
-Copies the file or files specified by `Source` to the folder specified by `Dest`.  `Source` is a file path string or an array of path strings.  If `Move` is `true`, each source file is deleted after a successful copy.
-
-Returns an `ERR` code.  If the user cancels the operation, `ERR_Cancelled` is returned.  Errors are presented to the user with a dialog box and are not raised as exceptions.
-
-==== io.ui.paste()
-
-[.api]`io.ui.paste(Dest)`
-
-Pastes files from the system clipboard to the destination path `Dest`.  Files marked for deletion by the clipboard are moved instead of copied.  The function delegates the file transfer to `io.ui.copy()` and does not return its status code.
-
-==== io.ui.delete()
-
-[.api]`io.ui.delete(Paths)`
-
-Deletes the file or folder identified by `Paths`, which is a string or array of strings.  A progress dialog appears if the operation takes longer than expected.
-
 [[sec-virtual-volumes]]
 === Virtual Volumes
 indexterm:[file system, volumes] Kōtuku uses a virtual volume system that maps logical volume names to physical file system locations.  All file paths in Tiri use the format `volume:path/to/file`.  The volume prefix is resolved at runtime to a platform-native path, providing location independence across operating systems.
 
-Volume names are case-insensitive.  A colon (`:`) terminates the volume name and separates it from the remainder of the path.
+Volume names are case-insensitive.  A colon terminates the volume name and separates it from the remainder of the path.
 
 [discrete]
 ==== Standard Volumes
 
 The following volumes are available on all platforms:
 
-[cols="1,3a",options="header"]
+[cols="1,5a",options="header"]
 |===
 |Volume |Description
 
@@ -710,7 +735,7 @@ The following volumes are available on all platforms:
 |Clipboard storage.  Resolves to `temp:clipboard/`.
 
 |`home:`
-|User's home directory (Linux/macOS).
+|User's home directory.
 
 |`drive1:`
 |Root filesystem (`/` or `C:\`).
@@ -727,7 +752,7 @@ The following volumes are available on all platforms:
 
 **Linux:**
 
-[cols="1,3a",options="header"]
+[cols="1,5a",options="header"]
 |===
 |Volume |Description
 
@@ -747,7 +772,7 @@ Additional device volumes are enumerated at startup: `usbN:` for USB drives, `po
 
 The `std:` volume provides access to the standard process I/O streams:
 
-[cols="1,3a",options="header"]
+[cols="1,5a",options="header"]
 |===
 |Path |Description
 

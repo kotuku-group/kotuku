@@ -18,6 +18,8 @@
 //                       to cover both operator groups and added a summary table row (commit 39e5f99fb)
 // UPDATED: 2026-08-18 - Documented the half-open range convention: exclusive stop indexes across string, table and
 //                       array range APIs, and the half-open result pair from string.find() (commit 3e99d69ac)
+// UPDATED: 2026-08-22 - Added the __name behavioural difference; Lua applies it to tostring(), Tiri applies it to
+//                       type() (commit 3acfc4c44)
 
 [[appendix-migration-from-lua]]
 [appendix]

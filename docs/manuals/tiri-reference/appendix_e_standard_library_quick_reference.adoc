@@ -8,6 +8,8 @@
 // UPDATED: 2026-08-18 - Half-open (exclusive stop) spans for string.byte/sub, table.move/concat and arr.concat/find;
 //                       added the deprecated string.substr() alias (commit 3e99d69ac)
 // UPDATED: 2026-08-21 - Removed r.contains(); range membership is expressed with the 'in' operator (commit 2b788f198)
+// UPDATED: 2026-08-22 - Added rawtype() and restated type() as the display-name function (commits 3acfc4c44,
+//                       179bcc4af)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -23,7 +25,8 @@ indexterm:[global functions] See <<ch-basic-syntax>>, <<ch-types-and-values>>, <
 
 |`assert(Condition, [Message])`  |Raises an exception if `Condition` is false.
 |`error(Message, [Level])`       |Raises an exception with `Message`.
-|`type(Value)`                   |Returns the type name of `Value` as a string.
+|`type(Value)`                   |Returns the display name of `Value` for user-facing text.  Honours `pass:[__]name`.
+|`rawtype(Value)`                |Returns the runtime type of `Value`, parameterised for containers.  Ignores metamethods.
 |`tonumber(Value, [Base])`       |Converts `Value` to a number.  Returns `nil` on failure.
 |`tostring(Value)`               |Converts `Value` to a string.
 |`print(pass:[...])`             |Writes arguments to stderr, values are serialised without a separator.

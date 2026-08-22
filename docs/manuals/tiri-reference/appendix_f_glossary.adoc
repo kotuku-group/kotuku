@@ -20,6 +20,7 @@
 // UPDATED: 2026-08-18 - Added the Half-open span entry; every library Stop index is exclusive (commit 3e99d69ac)
 // UPDATED: 2026-08-19 - Removed the Metamethod literal entry; handlers are ordinary functions whose receiver is
 //                       installed as context on dispatch (commit 81aa5f3)
+// UPDATED: 2026-08-22 - Added the Display name and Raw type entries (commits 3acfc4c44, 179bcc4af)
 
 [[appendix-glossary]]
 [appendix]
@@ -93,6 +94,9 @@ Registers a code block for execution when the enclosing scope exits via normal c
 
 Declared global::
 A global introduced by a `global` declaration, as distinct from a name registered in the global environment by the host.  A declared global carries a sticky type contract enforced at runtime unless it is annotated `:any`.  See <<sec-global-contracts>>.
+
+Display name::
+The name `type()` reports for a value, and the name a runtime diagnostic uses when stating the type of a value.  Supplied by the `pass:[__]name` metamethod when the metatable of the value carries one, and otherwise the built-in type name.  A display name is presentation only: it creates no type and changes no behaviour.  See <<sec-metamethod-name>>.
 
 Dynamic ingress::
 A declaration whose initialiser has no statically provable type.  The variable acquires no fixed type and cannot receive a later non-`nil` assignment; a concrete annotation or `:any` is required.  See <<sec-dynamic-ingress>>.
@@ -210,6 +214,9 @@ An immutable sequence of numeric values defined by start, stop, and optional ste
 
 Raw access::
 Bypassing metamethods on a table using the `rawget`, `rawset`, `rawlen`, and `rawequal` functions.  Does not bypass the environment mutation boundary.  See <<sec-raw-access>>.
+
+Raw type::
+The runtime type of a value, as reported by `rawtype()`.  Named in the native vocabulary and parameterised for containers, e.g. `array<int>`, `struct<Vec>`, `obj<Time>`.  Unaffected by any metamethod, and the counterpart to the display name.  See <<sec-rawtype>>.
 
 Reference type::
 A value whose variable holds a reference to the underlying data rather than a copy.  Tables, arrays, functions, userdata, objects, and structs are reference types.  Assignment copies the reference, not the data.  See <<ch-types-and-values>>.

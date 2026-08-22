@@ -11,6 +11,8 @@
 //                       `function` (commit 58e7bad8a)
 // UPDATED: 2026-08-19 - Reverted the __close examples to the ordinary `function` form and rewrote Handler Context:
 //                       dispatch always installs the closed value as context (commit 81aa5f3)
+// UPDATED: 2026-08-22 - rawtype() reports a thunk container as 'thunk'; isthunk() is no longer the only way to
+//                       identify a deferred expression (commit 179bcc4af)
 
 [[ch-resource-management]]
 == Resource Management
@@ -560,15 +562,18 @@ For literal values and simple expressions, the type is inferred automatically:
 When the expression is a function call or otherwise ambiguous, use an explicit type annotation to ensure correct behaviour with type-checking code.
 
 [discrete]
-==== The type() Function
+==== Type Inspection
 
-Calling `type()` on an unresolved deferred expression returns the declared or inferred type without triggering evaluation:
+Calling `type()` on an unresolved deferred expression returns the declared or inferred type without triggering evaluation.  `rawtype()` reports the thunk container itself, also without triggering evaluation:
 
 [source,tiri]
 ----
 x = <{ 'hello' }>
-print(type(x))    -- 'string' (no evaluation)
+print(type(x))     -- 'string' (no evaluation)
+print(rawtype(x))  -- 'thunk'  (no evaluation)
 ----
+
+`rawtype()` reports `'thunk'` for every deferred expression, including one that declares no type.  See <<sec-type-inspection>>.
 
 ==== resolve()
 
@@ -589,7 +594,7 @@ same = resolve(plain) -- returns 42 unchanged
 
 [.api]`result = isthunk(Value)`
 
-Returns `true` if `Value` is an unresolved deferred expression, `false` otherwise.  Because `type()` reports the declared or inferred type of a thunk rather than identifying it as one (see <<sec-type-inspection>>), `isthunk()` is the only way to distinguish a deferred expression from an ordinary value of the same type.
+Returns `true` if `Value` is an unresolved deferred expression, `false` otherwise.  `type()` reports the declared or inferred type of a thunk rather than identifying it as one, so it cannot make the distinction; `rawtype()` reports `'thunk'` and is equivalent to `isthunk()` for this purpose.  See <<sec-type-inspection>>.
 
 [source,tiri]
 ----

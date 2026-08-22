@@ -1,4 +1,6 @@
 // VERIFIED: 2026-08-22
+// UPDATED: 2026-08-22 - Added the Type Reporting section for the __name metamethod and its diagnostics, plus the
+//                       reference table entry (commits 3acfc4c44, 179bcc4af)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -714,6 +716,7 @@ indexterm:[metamethods, reference] The following table lists every metamethod re
 |`pass:[__]context`    |Restricts metatable use to entity tables only |Not callable; value must be the boolean `true`
 |`pass:[__]metatable`  |Metatable protection (value) |Not callable; value returned by `getmetatable`
 |`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
+|`pass:[__]name`       |Display name for `type()` and diagnostics |Not callable; value is a non-empty string
 |`pass:[__]index`      |Read of absent key           |`function(Key)` or table
 |`pass:[__]newindex`   |Write to absent key          |`function(Key, Value)` or table
 |`pass:[__]gc`         |Table or userdata finalisation |`function()`
