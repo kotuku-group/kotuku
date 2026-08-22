@@ -9,6 +9,10 @@
 LJ_FUNC void lj_meta_init(lua_State* L);
 LJ_FUNC [[nodiscard]] cTValue* lj_meta_cache(GCtab* mt, MMS mm, GCstr* name);
 LJ_FUNC [[nodiscard]] cTValue* lj_meta_lookup(lua_State* L, cTValue* o, MMS mm);
+LJ_FUNC [[nodiscard]] GCstr* lj_meta_type_name(lua_State* L, cTValue* Value) noexcept;
+LJ_FUNC [[nodiscard]] const char* lj_meta_display_name(lua_State* L, cTValue* Value) noexcept;
+LJ_FUNC void lj_meta_raw_type_text(lua_State *L, cTValue *Value, char *Buffer, size_t Size) noexcept;
+LJ_FUNC [[nodiscard]] GCstr* lj_meta_raw_type_name(lua_State *L, cTValue *Value) noexcept;
 
 [[nodiscard]] inline cTValue* lj_meta_fastg(global_State* g, GCtab* mt, MMS mm) noexcept
 {

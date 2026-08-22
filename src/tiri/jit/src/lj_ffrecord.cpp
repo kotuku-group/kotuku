@@ -29,6 +29,7 @@
 #include "lj_buf.h"
 #include "lj_str.h"
 #include "lj_tab.h"
+#include "lj_meta.h"
 #include "lj_frame.h"
 #include "lj_bc.h"
 #include "lj_ff.h"
@@ -44,6 +45,8 @@
 #include "lj_vm.h"
 #include "lj_strscan.h"
 #include "runtime/lj_array.h"
+#include "runtime/lj_proto_registry.h"
+#include "jit/frame_manager.h"
 #include "lj_strfmt.h"
 #include "lj_serialize.h"
 #include "lib_range.h"
@@ -258,41 +261,142 @@ static uint32_t recff_type_name_index(TiriType Type)
 
 static bool recff_is_range_userdata(jit_State *J, GCudata *Userdata)
 {
-   GCtab *mt = tabref(Userdata->metatable);
-   if (not mt) return false;
-
-   cTValue *range_metatable = lj_tab_getstr(tabV(registry(J->L)), lj_str_newz(J->L, RANGE_METATABLE));
-   return range_metatable and tvistab(range_metatable) and tabV(range_metatable) IS mt;
+   return is_range_userdata(J->L, Userdata);
 }
 
 static void recff_type(jit_State* J, RecordFFData* rd)
 {
-   // Arguments already specialized. Result is a constant string. Neat, huh?
    uint32_t t;
    if (tvisnumber(&rd->argv[0])) t = ~LJ_TNUMX;
    else t = ~itype(&rd->argv[0]);
 
-   // Check for thunk userdata with declared type
-
-   if (t IS ~LJ_TUDATA) {  // 12 = base value for userdata
+   if (t IS ~LJ_TUDATA) {
       GCudata *ud = udataV(&rd->argv[0]);
       if (recff_is_range_userdata(J, ud)) {
-         t = TYPE_NAME_RANGE;
+         J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[TYPE_NAME_RANGE]));
+         return;
       }
       else if (ud->udtype IS UDTYPE_THUNK) {
          ThunkPayload *payload = thunk_payload(ud);
          if (payload->expected_type != 0xFF) {
-            // Use the declared logical type instead of the thunk container's userdata tag.
             t = recff_type_name_index(TiriType(payload->expected_type));
+            J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[t]));
+            return;
          }
       }
-      else {
-         t = TYPE_NAME_USERDATA;
+
+      // Metatables on special userdata are treated as immutable by the generic recorder. Leave their display-name
+      // lookup to the interpreter, while rawtype() remains recordable for these containers.
+      if (ud->udtype != UDTYPE_USERDATA) lj_trace_err(J, LJ_TRERR_NYIFFU);
+   }
+
+   // GCobject and GCstruct have per-instance metatables that are not represented by the generic metamethod recorder.
+   // Abort this fast-function recording until those IR field loads are available rather than folding an unsafe name.
+   if (tvisobject(&rd->argv[0]) or tvisstruct(&rd->argv[0])) lj_trace_err(J, LJ_TRERR_NYIFFU);
+
+   RecordIndex ix{};
+   ix.tab = J->base[0];
+   copyTV(J->L, &ix.tabv, &rd->argv[0]);
+   bool has_name = lj_record_mm_lookup(J, &ix, MM_name);
+
+   // lj_meta_lookup() falls back to the array base metatable when an instance has none, whereas the generic recorder
+   // stops after guarding the per-instance metatable as nil. Mirror the interpreter's fallback for type().
+
+   if (not has_name and tvisarray(&rd->argv[0]) and not tabref(arrayV(&rd->argv[0])->metatable)) {
+      GCtab *base_mt = tabref(basemt_it(J2G(J), LJ_TARRAY));
+      if (base_mt) {
+         // Load the base table from gcroot and record its raw __name access so later table mutations leave the trace
+         // through the lookup guards instead of preserving a stale folded result.
+
+         GCstr *name_key = mmname_str(J2G(J), MM_name);
+         cTValue *observed = lj_tab_getstr(base_mt, name_key);
+         int base_mt_offset = GG_OFS(g.gcroot) + int((GCROOT_BASEMT + ~LJ_TARRAY) * sizeof(GCRef));
+         ix.tab = lj_ir_ggfload(J, IRT_TAB, base_mt_offset);
+         settabV(J->L, &ix.tabv, base_mt);
+         ix.key = lj_ir_kstr(J, name_key);
+         setstrV(J->L, &ix.keyv, name_key);
+         ix.val = 0;
+         ix.idxchain = 0;
+         ix.mobj = lj_record_idx(J, &ix);
+         if (observed and not tvisnil(observed)) copyTV(J->L, &ix.mobjv, observed);
+         has_name = not tref_isnil(ix.mobj);
+      }
+   }
+
+   if (has_name) {
+      cTValue *observed = &ix.mobjv;
+      if (tvisstr(observed)) {
+         GCstr *name = strV(observed);
+         TRef name_ref = lj_ir_kstr(J, name);
+         emitir(IRTG(IR_EQ, IRT_STR), ix.mobj, name_ref);
+         if (name->len > 0) {
+            J->base[0] = name_ref;
+            return;
+         }
       }
    }
 
    J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[t]));
-   UNUSED(rd);
+}
+
+//********************************************************************************************************************
+
+static void recff_rawtype(jit_State* J, RecordFFData* Data)
+{
+   cTValue *value = &Data->argv[0];
+   TRef value_ref = J->base[0];
+
+   if (tvisarray(value)) {
+      GCarray *array = arrayV(value);
+      IRBuilder ir(J);
+      TRef element_type_ref = ir.fload(value_ref, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+      ir.guard_eq_int(element_type_ref, ir.kint(int32_t(array->elemtype)));
+      if (array->elemtype IS AET::STRUCT) {
+         TRef definition_ref = ir.fload(value_ref, IRFL_ARRAY_STRUCTDEF, IRT_PTR);
+         TRef definition = array->structdef ? ir.kkptr(array->structdef) : ir.knull(IRT_PTR);
+         ir.guard_eq(definition_ref, definition, IRT_PTR);
+      }
+   }
+   else if (tvisobject(value)) {
+      GCobject *object = objectV(value);
+      IRBuilder ir(J);
+      TRef class_ref = ir.fload(value_ref, IRFL_OBJ_CLASSPTR, IRT_PTR);
+      TRef class_pointer = object->classptr ? ir.kkptr(object->classptr) : ir.knull(IRT_PTR);
+      ir.guard_eq(class_ref, class_pointer, IRT_PTR);
+   }
+   else if (tvisstruct(value)) {
+      GCstruct *structure = structV(value);
+      IRBuilder ir(J);
+      TRef definition_ref = ir.fload(value_ref, IRFL_STRUCT_DEF, IRT_PTR);
+      TRef definition = structure->def ? ir.kkptr(structure->def) : ir.knull(IRT_PTR);
+      ir.guard_eq(definition_ref, definition, IRT_PTR);
+   }
+   else if (tvisudata(value)) {
+      GCudata *userdata = udataV(value);
+      IRBuilder ir(J);
+      TRef userdata_type = ir.fload(value_ref, IRFL_UDATA_UDTYPE, IRT_U8);
+      if (userdata->udtype IS UDTYPE_THUNK) {
+         ir.guard_eq_int(userdata_type, ir.kint(UDTYPE_THUNK));
+      }
+      else {
+         ir.guard_ne_int(userdata_type, ir.kint(UDTYPE_THUNK));
+         TRef range_metatable = lj_record_range_metatable(J);
+         // The debug registry is mutable, so its guarded lookup can return nil or another non-table value.
+         if (tref_istab(range_metatable)) {
+            TRef metatable_ref = ir.fload_tab(value_ref, IRFL_UDATA_META);
+            if (recff_is_range_userdata(J, userdata)) ir.guard_eq(metatable_ref, range_metatable, IRT_TAB);
+            else ir.guard_ne(metatable_ref, range_metatable, IRT_TAB);
+         }
+      }
+   }
+   else {
+      uint32_t type_index = tvisnumber(value) ? ~LJ_TNUMX : ~itype(value);
+      J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[type_index]));
+      return;
+   }
+
+   GCstr *name = lj_meta_raw_type_name(J->L, value);
+   J->base[0] = lj_ir_kstr(J, name);
 }
 
 //********************************************************************************************************************

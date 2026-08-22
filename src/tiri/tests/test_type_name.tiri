@@ -1,0 +1,372 @@
+-- Flute coverage for the __name display-name metamethod and rawtype().
+
+function named_value(Name:str):table
+   return setmetatable({}, { __name = Name })
+end
+
+function dynamic_value(Value):any
+   return Value
+end
+
+struct RawTypeNamePoint
+   Value: int
+end
+
+function raw_type_query(Value:any):str
+   return rawtype(Value)
+end
+
+function raw_type_runtime_call_count():num
+   local ir_calln <const> = 95
+   local ir_calla <const> = 96
+   local ir_calll <const> = 97
+   local ir_calls <const> = 98
+   local call_count = 0
+   jit.off()
+   for trace_no in {1 into 100} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+      for instruction in {1 into info.nins} do
+         local _, ir_ot = jit.util.traceIR(trace_no, instruction)
+         if ir_ot is nil then continue end
+         local opcode = ir_ot >> 8
+         if opcode is ir_calln or opcode is ir_calla or opcode is ir_calll or opcode is ir_calls then call_count++ end
+      end
+   end
+   jit.on()
+   return call_count
+end
+
+@Test function NamedTableReportsDisplayAndStorageTypes()
+   local vector = named_value('Vector')
+   assert(type(vector) is 'Vector', 'type() should return the metatable display name')
+   assert(rawtype(vector) is 'table', 'rawtype() should retain the built-in table category')
+   assert(vector is <table>, '__name must not affect runtime type identity')
+end
+
+@Test function DirectAndInvalidNamesFallBack()
+   local direct = { __name = 'DirectField' }
+   assert(type(direct) is 'table', 'a direct __name field must be ignored')
+
+   local value = {}
+   local metatable = {}
+   setmetatable(value, metatable)
+
+   local invalid:any = nil
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'nil __name should fall back')
+   invalid = ''
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'an empty __name should fall back')
+   invalid = 42
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a numeric __name should fall back')
+   invalid = false
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a boolean __name should fall back')
+   invalid = {}
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a table __name should fall back')
+   invalid = function() error('__name must never be called') end
+   metatable.__name = invalid
+   assert(type(value) is 'table', 'a function __name should fall back without being called')
+end
+
+@Test function LookupIsRawAndSupportsProtectedMetatables()
+   local indexed = setmetatable({}, { __index = { __name = 'IndexedName' } })
+   assert(type(indexed) is 'table', '__index must not participate in __name lookup')
+
+   local protected = setmetatable({}, { __name = 'ProtectedValue', __metatable = 'locked' })
+   assert(getmetatable(protected) is 'locked', 'the test metatable should be protected')
+   assert(type(protected) is 'ProtectedValue', 'protected metatables should still provide a display name')
+   assert(rawtype(protected) is 'table', 'metatable protection must not affect rawtype()')
+end
+
+@Test function MetatableAndNameMutationAreObserved()
+   local first = { __name = 'FirstName' }
+   local second = { __name = 'SecondName' }
+   local value = setmetatable({}, first)
+   assert(type(value) is 'FirstName', 'the initial name should be visible')
+
+   first.__name = 'Renamed'
+   assert(type(value) is 'Renamed', 'mutating __name should change type() immediately')
+   first.__name = nil
+   assert(type(value) is 'table', 'removing __name should restore the built-in name')
+   setmetatable(value, second)
+   assert(type(value) is 'SecondName', 'replacing the metatable should change type()')
+   setmetatable(value, nil)
+   assert(type(value) is 'table', 'removing the metatable should restore the built-in name')
+end
+
+@Test function RawTypeVocabularyAndParameterisation()
+   assert(rawtype(nil) is 'nil', 'nil should use its annotation name')
+   assert(rawtype(true) is 'bool', 'boolean should use its annotation name')
+   assert(rawtype(1) is 'num' and rawtype(1.5) is 'num', 'both numeric representations should report num')
+   assert(rawtype('text') is 'str', 'strings should use their annotation name')
+   assert(rawtype({}) is 'table', 'tables should retain their category name')
+   assert(rawtype(function() end) is 'func', 'Tiri functions should use func')
+   assert(rawtype(print) is 'func' and rawtype(assert) is 'func', 'native and fast functions should use func')
+
+   assert(rawtype(array<byte> { 1 }) is 'array<byte>', 'byte arrays should report their canonical member name')
+   assert(rawtype(array<char> { 1 }) is 'array<byte>', 'char arrays should report the canonical byte alias')
+   assert(rawtype(array<int8> { 1 }) is 'array<int8>', 'int8 arrays should retain their exact member type')
+   assert(rawtype(array<int16> { 1 }) is 'array<int16>', 'int16 arrays should retain their exact member type')
+   assert(rawtype(array<int> { 1 }) is 'array<int>', 'int arrays should retain their exact member type')
+   assert(rawtype(array<int64> { 1 }) is 'array<int64>', 'int64 arrays should retain their exact member type')
+   assert(rawtype(array<uint> { 1 }) is 'array<uint>', 'uint arrays should retain their exact member type')
+   assert(rawtype(array<float> { 1 }) is 'array<float>', 'float arrays should retain their exact member type')
+   assert(rawtype(array<double> { 1 }) is 'array<double>', 'double arrays should retain their exact member type')
+   assert(rawtype(array<str> { 'text' }) is 'array<str>', 'string arrays should use the str member name')
+   assert(rawtype(array<table> { {} }) is 'array<table>', 'table arrays should retain their member category')
+   assert(rawtype(array<array> { array<int> { 1 } }) is 'array<array>', 'nested arrays should retain their member category')
+   assert(rawtype(array<any> { 1, 'text' }) is 'array<any>', 'mixed arrays should retain their wildcard member type')
+
+   local point = struct<RawTypeNamePoint> { Value=7 }
+   local clock = obj.new('time')
+   assert(rawtype(point) is 'struct<RawTypeNamePoint>', 'struct values should include their resolved layout')
+   assert(rawtype(array<struct<RawTypeNamePoint>> { point }) is 'array<struct<RawTypeNamePoint>>',
+      'struct arrays should include their resolved element layout')
+   assert(rawtype(clock) is 'obj<Time>', 'object values should include their runtime class')
+   assert(rawtype(array<obj> { clock }) is 'array<object>', 'object arrays should use their annotation member spelling')
+
+   local stop = 2
+   assert(rawtype({0 to stop}) is 'range', 'variable-bound ranges should be recognised')
+   assert(rawtype({2 to -1 by -1}) is 'range', 'descending ranges should be recognised')
+   assert(rawtype(newproxy(true)) is 'userdata', 'full userdata should retain its category name')
+   local captured = 1
+   function capture() return captured end
+   assert(rawtype(debug.upvalueID(capture, 0)) is 'userdata', 'light userdata should retain its category name')
+end
+
+@Test function RawTypeReportsThunkContainersWithoutResolution()
+   local executed = false
+   thunk deferred_number():num
+      executed = true
+      error('rawtype() must not resolve a declared thunk')
+   end
+
+   local value = deferred_number()
+   assert(type(value) is 'number', 'type() should preserve a thunk declaration')
+   assert(rawtype(value) is 'thunk', 'rawtype() should identify the declared thunk container')
+   assert(executed is false, 'neither type query should resolve the thunk')
+
+   function undeclared_body():any
+      executed = true
+      error('rawtype() must not resolve an undeclared thunk')
+   end
+   local undeclared:any = <{ undeclared_body() }>
+   assert(rawtype(undeclared) is 'thunk', 'rawtype() should identify an undeclared thunk container')
+   assert(executed is false, 'rawtype() should not resolve an undeclared thunk')
+end
+
+@Test function RawTypeIgnoresMetamethods()
+   local invoked = false
+   local table_value = setmetatable({}, {
+      __name = 'NamedTable',
+      __index = { __name = 'IndexedName' },
+      __tostring = function():str
+         invoked = true
+         return 'unexpected'
+      end,
+      __call = function()
+         invoked = true
+      end
+   })
+
+   assert(type(table_value) is 'NamedTable', 'the test table should expose its display name')
+   assert(rawtype(table_value) is 'table', 'a table name or index value must not affect rawtype()')
+   assert(invoked is false, 'rawtype() must not invoke __tostring or __call')
+end
+
+@Test function RawTypePreservesDisplayTypesAndContractDiagnostics()
+   local point = struct<RawTypeNamePoint> { Value=3 }
+   local clock = obj.new('time')
+   local deferred = <{ 1 }>
+   assert(type(1) is 'number' and type('text') is 'string' and type(function() end) is 'function',
+      'type() should retain its Lua-facing scalar vocabulary')
+   assert(type(array<int> { 1 }) is 'array' and type(point) is 'struct' and type(clock) is 'object',
+      'type() should retain its container categories: ' .. type(array<int> { 1 }) .. ', ' .. type(point) .. ', ' ..
+         type(clock))
+   assert(type({0 to 2}) is 'range' and type(deferred) is 'number',
+      'type() should retain its range and undeclared-thunk behaviour')
+   assert(array<byte> { 1 }.type() is 'char', 'array.type() should retain its char alias')
+   assert(tostring(array<byte> { 65 }) is 'A', 'array tostring should retain byte-array string conversion')
+   assert(point is <struct> and clock is <obj> and array<int> { 1 } is <array>,
+      'runtime type tests should remain independent of rawtype()')
+
+   function accept_number(Value:num)
+   end
+   local message = ''
+   try
+      accept_number(dynamic_value('text'))
+   except e
+      message = e.message
+   end
+   assert(message is "type contract failed for parameter 1 ('Value'): expected num, got string",
+      'the contract diagnostic should retain its exact established wording')
+end
+
+@Test function RawTypeJitParityAndGuards()
+   local integers = array<int16> { 1 }
+   local floats = array<float> { 1 }
+   local point = struct<RawTypeNamePoint> { Value=5 }
+   local clock = obj.new('time')
+   local proxy = newproxy(true)
+   local sequence = {0 to 2}
+   local deferred:any = <{ 1 }>
+
+   jit.off()
+   assert(raw_type_query(integers) is 'array<int16>', 'the interpreter should describe exact array members')
+   assert(raw_type_query(point) is 'struct<RawTypeNamePoint>', 'the interpreter should describe struct layouts')
+   assert(raw_type_query(clock) is 'obj<Time>', 'the interpreter should describe object classes')
+   assert(raw_type_query(proxy) is 'userdata' and raw_type_query(sequence) is 'range' and
+      raw_type_query(deferred) is 'thunk', 'the interpreter should distinguish userdata containers')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for _ in {1 into 100} do
+      assert(raw_type_query(integers) is 'array<int16>', 'a traced array query should retain its element type')
+      assert(raw_type_query(point) is 'struct<RawTypeNamePoint>', 'a traced struct query should retain its layout')
+      assert(raw_type_query(clock) is 'obj<Time>', 'a traced object query should retain its class')
+   end
+   assert(raw_type_query(floats) is 'array<float>', 'an array member mismatch should leave the trace')
+   clock.free()
+   assert(raw_type_query(clock) is 'obj', 'a cleared object class should leave the trace and report obj')
+
+   for _ in {1 into 100} do assert(raw_type_query(proxy) is 'userdata', 'a traced userdata query should be stable') end
+   assert(raw_type_query(sequence) is 'range', 'a range should leave a userdata trace')
+   assert(raw_type_query(deferred) is 'thunk', 'a thunk should leave a userdata trace without resolution')
+   assert(raw_type_runtime_call_count() is 0, 'rawtype() traces should fold to constants without runtime calls')
+   jit.opt.start()
+end
+
+@Test function RawTypeJitHandlesInvalidRangeRegistry()
+   local registry = debug.getRegistry()
+   local range_metatable = registry['Tiri.range']
+   local sequence = {0 to 2}
+   assert(range_metatable is <table>, 'the range metatable should be registered before the test')
+
+   defer
+      registry['Tiri.range'] = range_metatable
+      jit.flush()
+      jit.opt.start()
+   end
+
+   registry['Tiri.range'] = nil
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for _ in {1 into 100} do
+      assert(raw_type_query(sequence) is 'userdata', 'a range without its registry entry should trace as userdata')
+   end
+
+   registry['Tiri.range'] = 'invalid'
+   jit.flush()
+   for _ in {1 into 100} do
+      assert(raw_type_query(sequence) is 'userdata', 'a non-table range registry entry should trace as userdata')
+   end
+
+   registry['Tiri.range'] = range_metatable
+   assert(raw_type_query(sequence) is 'range', 'restoring the range metatable should leave the userdata trace')
+end
+
+@Test function DiagnosticsUseTheDisplayName()
+   local vector:any = named_value('Vector')
+   local argument_error = false
+   try
+      math.abs(vector)
+   except e
+      argument_error = e.message.find('number expected, got Vector') != nil
+   end
+   assert(argument_error, 'argument diagnostics should use the custom actual type name')
+
+   local call_error = false
+   try
+      vector()
+   except e
+      call_error = e.message.find('Vector') != nil
+   end
+   assert(call_error, 'non-callable diagnostics should use the custom actual type name')
+
+   local comparison_error = false
+   try
+      local _ = vector < 1
+   except e
+      comparison_error = e.message.find('Vector') != nil
+   end
+   assert(comparison_error, 'comparison diagnostics should use the custom actual type name')
+
+   local operand_error = false
+   try
+      local _ = vector + 1
+   except e
+      operand_error = e.message.find('Vector') != nil
+   end
+   assert(operand_error, 'operand diagnostics should use the custom actual type name')
+
+   local assignment_error = false
+   try
+      local number:num = dynamic_value(vector)
+   except e
+      assignment_error = e.message.find('expected num, got Vector') != nil
+   end
+   assert(assignment_error, 'typed-assignment diagnostics should use the custom actual type name')
+end
+
+@Test function JitGuardsNameAndMetatableMutations()
+   function query_name(Value:any):str
+      return type(Value)
+   end
+
+   local metatable = { __name = 'BeforeTrace' }
+   local value = setmetatable({}, metatable)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local observed = ''
+   for _ in {1 into 100} do observed = query_name(value) end
+   assert(observed is 'BeforeTrace', 'compiled type() calls should return the custom name')
+
+   metatable.__name = 'AfterTrace'
+   assert(query_name(value) is 'AfterTrace', 'changing __name should leave a trace and observe the new name')
+   metatable.__name = ''
+   assert(query_name(value) is 'table', 'an empty name after tracing should restore the fallback')
+   metatable.__name = 'Restored'
+   assert(query_name(value) is 'Restored', 'a valid name after an empty value should be observed')
+
+   setmetatable(value, { __name = 'Replacement' })
+   assert(query_name(value) is 'Replacement', 'replacing the metatable should be observed after tracing')
+   setmetatable(value, nil)
+   assert(query_name(value) is 'table', 'removing the metatable should be observed after tracing')
+
+   jit.opt.start()
+end
+
+@Test function JitArrayNameUsesBaseMetatableAfterInstanceRemoval()
+   function query_array_name(Value:array<int>):str
+      return type(Value)
+   end
+
+   local original_name:any = array.__name
+   defer
+      array.__name = original_name
+      jit.flush()
+      jit.opt.start()
+   end
+
+   array.__name = 'Vector'
+   local value = array<int> { 1, 2, 3 }
+   debug.setMetatable(value, { __name = 'InstanceArray' })
+   debug.setMetatable(value, nil)
+   assert(type(value) is 'Vector', 'an array without an instance metatable should use the base display name')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local observed = ''
+   for _ in {1 into 100} do observed = query_array_name(value) end
+   assert(observed is 'Vector', 'compiled type() calls should use the array base-metatable display name')
+end

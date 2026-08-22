@@ -385,7 +385,7 @@ static TRef sload(jit_State *J, int32_t slot)
 // Record exact runtime contracts.  Stack specialisation handles simple TValue tags.  Predicates that refine a tag
 // emit their own guards so a failed guard resumes at BC_CONTRACT and preserves the interpreter's diagnostic.
 
-static TRef rec_contract_range_metatable(jit_State *J)
+TRef lj_record_range_metatable(jit_State *J)
 {
    IRBuilder ir(J);
    GCtab *registry_table = tabV(registry(J->L));
@@ -414,7 +414,7 @@ static RecordedContract rec_contract_guard_range(jit_State *J, TRef ValueRef, cT
    bool is_range = rec_contract_is_range(J, Value);
    if (is_range != Expected) return RecordedContract::Mismatch;
 
-   TRef registered_ref = rec_contract_range_metatable(J);
+   TRef registered_ref = lj_record_range_metatable(J);
    if (not tref_istab(registered_ref)) return RecordedContract::Mismatch;
 
    IRBuilder ir(J);

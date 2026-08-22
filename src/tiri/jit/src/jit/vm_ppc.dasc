@@ -1637,25 +1637,11 @@ static void build_subroutines(BuildCtx *ctx)
   |  b ->fff_res
   |
   |.ffunc type
-  |  cmplwi NARGS8:RC, 8
-  |   lwz CARG1, 0(BASE)
-  |  blt ->fff_fallback
-  |  .gpr64 extsw CARG1, CARG1
-  |  subfc TMP0, TISNUM, CARG1
-  |  subfe TMP2, CARG1, CARG1
-  |  orc TMP1, TMP2, TMP0
-  |  addi TMP1, TMP1, ~LJ_TISNUM+1
-  |  cmpwi TMP1, ~LJ_TUDATA; beq ->fff_fallback
-  |  slwi TMP1, TMP1, 3
-  |.if FPU
-  |   la TMP2, CFUNC:RB->upvalue
-  |  lfdx FARG1, TMP2, TMP1
-  |.else
-  |  add TMP1, CFUNC:RB, TMP1
-  |  lwz CARG1, CFUNC:TMP1->upvalue[0].u32.hi
-  |  lwz CARG2, CFUNC:TMP1->upvalue[0].u32.lo
-  |.endif
-  |  b ->fff_resn
+  |  b ->fff_fallback
+  |
+  |.ffunc rawtype
+  |  // Parameterised names require C fallback; add a tag-only fast path only if profiling warrants it.
+  |  b ->fff_fallback
   |
   |//-- Base library: getters and setters ---------------------------------
   |
