@@ -112,7 +112,7 @@ end
    end
 
    local clone = alias.clone()
-   local mapped = clone.map(Value => Value * 2)
+   local mapped = clone.mapSame(Value => Value * 2)
    local returned = make_number_array()
    assert(captured_sum() is 12, 'Array element descriptors should survive immutable capture and iteration')
    assert(mapped[2] is 12, 'Array element descriptors should survive preserving methods')

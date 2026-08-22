@@ -26,6 +26,7 @@
 #include "lj_meta.h"
 #include "lj_struct.h"
 #include "lj_vmarray.h"
+#include "stack_helpers.h"
 #include "lib.h"
 #include "lib_utils.h"
 #include "lib_range.h"
@@ -103,6 +104,9 @@ static OBJECTID object_uid_from_value(lua_State *L, int ArgIndex)
 //********************************************************************************************************************
 // Helper to parse element type string
 
+static std::string_view array_struct_name(lua_State *L, int NArg);
+bool lj_array_struct_is_trivial(const struct_record &Def);
+
 static AET parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
@@ -112,6 +116,28 @@ static AET parse_elemtype(lua_State *L, int NArg)
 
    lj_err_argv(L, NArg, ErrMsg::BADTYPE, "valid array type", strdata(type_str));
    return AET(0);  // unreachable
+}
+
+//********************************************************************************************************************
+// Allocate a mapped-result array using the same public element type rules as array.new() and array.of().
+//
+// TypeArg may identify an optional element-type argument.  A missing or nil type requests array<any> storage.
+
+GCarray * lj_array_new_map_result(lua_State *L, MSize Length, int TypeArg)
+{
+   if (TypeArg <= 0 or lua_isnoneornil(L, TypeArg)) return lj_array_new(L, Length, AET::ANY);
+
+   auto elem_type = parse_elemtype(L, TypeArg);
+   if (elem_type IS AET::PTR) lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
+   if (elem_type != AET::STRUCT) return lj_array_new(L, Length, elem_type);
+
+   auto struct_name = array_struct_name(L, TypeArg);
+   if (struct_name.empty()) lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
+   auto struct_def = find_struct(L, struct_name);
+   if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
+      lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
+   }
+   return lj_array_new(L, Length, elem_type, nullptr, 0, struct_name, struct_def);
 }
 
 static std::string_view array_struct_name(lua_State *L, int NArg)
@@ -1475,7 +1501,7 @@ LJLIB_CF(array_fill)
 //********************************************************************************************************************
 #include "lj_array_search.h"
 
-// Usage: array.find(arr, value [, start]) or array.find(arr, value, {range})
+// Usage: array.indexOf(arr, value [, start]) or array.indexOf(arr, value, {range})
 //
 // Searches for a value in the array.
 //
@@ -1491,7 +1517,43 @@ LJLIB_CF(array_fill)
 //
 // Returns: index of first occurrence, or nil if not found
 
-LJLIB_CF(array_find)
+static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index)
+{
+   ptrdiff_t saved_top = savestack(L, L->top);
+   array_push_element(L, Array, Index);
+   TValue *element = L->top - 1;
+   cTValue *candidate = L->base + 1;
+   bool equal = lj_obj_equal(element, candidate) != 0;
+
+   if (not equal and itype(element) IS itype(candidate) and
+       (tvistab(element) or tvisudata(element))) {
+      TValue *base = lj_meta_equal(L, gcV(element), gcV(candidate), 0);
+      equal = uintptr_t(base) > 1 and tvistruecond(MetaCall::invoke(L, base, 2, 1));
+   }
+
+   L->top = restorestack(L, saved_top);
+   return equal;
+}
+
+static int32_t array_find_generic(lua_State *L, GCarray *Array, int32_t Start, int32_t Stop, int32_t Step)
+{
+   MSize length = Array->len;
+   if (Step > 0) {
+      for (int32_t index = Start; index <= Stop and MSize(index) < length; index += Step) {
+         if (MSize(index) >= Array->len) break;
+         if (array_values_equal(L, Array, MSize(index))) return index;
+      }
+   }
+   else {
+      for (int32_t index = Start; index >= Stop and index >= 0 and MSize(index) < length; index += Step) {
+         if (MSize(index) >= Array->len) break;
+         if (array_values_equal(L, Array, MSize(index))) return index;
+      }
+   }
+   return -1;
+}
+
+static int array_index_of(lua_State *L)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    const bool stop_provided = not lua_isnoneornil(L, 4);
@@ -1514,7 +1576,7 @@ LJLIB_CF(array_find)
       if (start >= stop) return array_push_find_result(L, -1);
       return array_push_find_result(L, find_object_in_array(arr, search_uid, start, stop - 1, 1));
    }
-   else if (arr->elemtype IS AET::STR_GC) { // Handle string arrays (STR_GC)
+   if (arr->elemtype IS AET::STR_GC) {
       GCstr *search_str = lj_lib_checkstr(L, 2);
 
       if (tiri_range *r = check_range(L, 3)) {
@@ -1529,21 +1591,46 @@ LJLIB_CF(array_find)
       return array_push_find_result(L, find_string_in_array(arr, search_str, start, stop - 1, 1));
    }
 
-   int ok;
-   lua_Number value = lua_tonumberx(L, 2, &ok);
-   if (not ok) luaL_error(L, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
+   if (glArrayConversion[size_t(arr->elemtype)].primitive) {
+      int ok;
+      lua_Number value = lua_tonumberx(L, 2, &ok);
+      if (not ok) luaL_error(L, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
+
+      if (tiri_range *r = check_range(L, 3)) {
+         auto span = array_range_to_span(L, r, arr->len);
+         if (span.empty) return array_push_find_result(L, -1);
+         return array_push_find_result(L, find_in_array(arr, value, span.start, span.stop, span.step));
+      }
+
+      auto start = lj_lib_optint(L, 3, 0);
+      if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
+      if (start >= stop) return array_push_find_result(L, -1);
+      return array_push_find_result(L, find_in_array(arr, value, start, stop - 1, 1));
+   }
 
    if (tiri_range *r = check_range(L, 3)) {
       auto span = array_range_to_span(L, r, arr->len);
       if (span.empty) return array_push_find_result(L, -1);
-      return array_push_find_result(L, find_in_array(arr, value, span.start, span.stop, span.step));
+      return array_push_find_result(L, array_find_generic(L, arr, span.start, span.stop, span.step));
    }
 
-   // Original integer-based find
    auto start = lj_lib_optint(L, 3, 0);
    if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
    if (start >= stop) return array_push_find_result(L, -1);
-   return array_push_find_result(L, find_in_array(arr, value, start, stop - 1, 1));
+   return array_push_find_result(L, array_find_generic(L, arr, start, stop - 1, 1));
+}
+
+LJLIB_CF(array_find)
+{
+   return array_index_of(L);
+}
+
+//********************************************************************************************************************
+// Stage A compatibility name for equality search.  array.find() remains available until the next breaking release.
+
+LJLIB_CF(array_indexOf)
+{
+   return array_index_of(L);
 }
 
 //********************************************************************************************************************
@@ -2049,12 +2136,17 @@ LJLIB_CF(array_each)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the callback function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
-      if (lua_pcall(L, 2, 0, 0) != 0) lua_error(L);
+      if (lua_pcall(L, 2, 1, 0) != 0) lua_error(L);
+      bool terminate = not lua_isnil(L, -1) and not lua_toboolean(L, -1);
+      lua_pop(L, 1);
+      if (terminate) break;
    }
 
    // Return the array for chaining
@@ -2063,7 +2155,37 @@ LJLIB_CF(array_each)
 }
 
 //********************************************************************************************************************
-// Usage: array.map(arr, transform)
+static GCarray * array_new_like(lua_State *L, GCarray *Source, MSize Length)
+{
+   if (Source->elemtype IS AET::STRUCT) {
+      return lj_array_new(L, Length, Source->elemtype, nullptr, 0, Source->structdef->Name, Source->structdef);
+   }
+   return lj_array_new(L, Length, Source->elemtype);
+}
+
+static int array_map_same(lua_State *L)
+{
+   GCarray *arr = lj_lib_checkarray(L, 1);
+   luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
+
+   GCarray *result = array_new_like(L, arr, count);
+   setarrayV(L, L->top++, result);
+
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
+      lua_pushvalue(L, 2);
+      array_push_element(L, arr, i);
+      lua_pushinteger(L, i);
+      lua_call(L, 2, 1);
+      lj_array_store_checked(L, result, i, L->top - 1);
+      lua_pop(L, 1);
+   }
+   return 1;
+}
+
+//********************************************************************************************************************
+// Usage: array.map(arr, transform [, element_type])
 //
 // Returns a new array with each element transformed by the function.
 // The transform function receives (value, index) and returns the new value.
@@ -2072,32 +2194,66 @@ LJLIB_CF(array_each)
 //   arr: the source array
 //   transform: function(value, index) returning transformed value
 //
-// Returns: new array of the same type with transformed elements
+// Returns: a new array using element_type, or the source element type when the optional argument is omitted in Stage A
 
 LJLIB_CF(array_map)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   if (lua_isnoneornil(L, 3)) return array_map_same(L);
 
-   GCarray *result = arr->elemtype IS AET::STRUCT ?
-      lj_array_new(L, arr->len, arr->elemtype, nullptr, 0, arr->structdef->Name, arr->structdef) :
-      lj_array_new(L, arr->len, arr->elemtype);
+   MSize count = arr->len;
+   GCarray *result = lj_array_new_map_result(L, count, 3);
    setarrayV(L, L->top++, result);
-   int result_idx = lua_gettop(L);
 
-   for (MSize i = 0; i < arr->len; i++) {
-      lua_pushvalue(L, 2);            // Push the transform function
-      array_push_element(L, arr, i);  // Push value
-      lua_pushinteger(L, i);          // Push index
-      lua_call(L, 2, 1);              // Call transform(value, index) -> result
-
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
+      lua_pushvalue(L, 2);
+      array_push_element(L, arr, i);
+      lua_pushinteger(L, i);
+      lua_call(L, 2, 1);
       lj_array_store_checked(L, result, i, L->top - 1);
+      lua_pop(L, 1);
+   }
+   return 1;
+}
 
-      lua_pop(L, 1);  // Pop the result value
+//********************************************************************************************************************
+// Usage: array.mapSame(arr, transform)
+//
+// Maps values into a new array with the source array's exact storage descriptor.
+
+LJLIB_CF(array_mapSame)
+{
+   return array_map_same(L);
+}
+
+//********************************************************************************************************************
+// Usage: array.findIndex(arr, predicate)
+//
+// Returns the zero-based index of the first element for which predicate(value, index) is truthy.
+
+LJLIB_CF(array_findIndex)
+{
+   GCarray *arr = lj_lib_checkarray(L, 1);
+   luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
+
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
+      lua_pushvalue(L, 2);
+      array_push_element(L, arr, i);
+      lua_pushinteger(L, i);
+      lua_call(L, 2, 1);
+      bool matched = lua_toboolean(L, -1);
+      lua_pop(L, 1);
+      if (matched) {
+         lua_pushinteger(L, i);
+         return 1;
+      }
    }
 
-   // Push the result array (already on stack at result_idx)
-   lua_pushvalue(L, result_idx);
+   lua_pushnil(L);
    return 1;
 }
 
@@ -2117,13 +2273,15 @@ LJLIB_CF(array_filter)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
    // Create result array with zero length (will grow dynamically)
-   GCarray *result = lj_array_new(L, 0, arr->elemtype);
+   GCarray *result = array_new_like(L, arr, 0);
    setarrayV(L, L->top++, result);
 
    // Single pass: filter and copy matching elements
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the predicate function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
@@ -2167,8 +2325,10 @@ LJLIB_CF(array_reduce)
 
    // Start with the initial value on the stack
    lua_pushvalue(L, 2);  // Push initial value as current accumulator
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 3);            // Push the reducer function
       lua_pushvalue(L, -2);           // Push current accumulator
       lua_remove(L, -3);              // Remove old accumulator from stack
@@ -2198,8 +2358,10 @@ LJLIB_CF(array_any)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the predicate function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
@@ -2232,8 +2394,10 @@ LJLIB_CF(array_all)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
+   MSize count = arr->len;
 
-   for (MSize i = 0; i < arr->len; i++) {
+   for (MSize i = 0; i < count; i++) {
+      if (i >= arr->len) break;
       lua_pushvalue(L, 2);            // Push the predicate function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
@@ -2748,6 +2912,8 @@ extern "C" int luaopen_array(lua_State *L)
       { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
    reg_iface_method(L, "array", "find", TiriType::Array, builtin_callable_id(FastFunc::array_find),
       { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
+   reg_iface_method(L, "array", "indexOf", TiriType::Array, builtin_callable_id(FastFunc::array_indexOf),
+      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
    reg_iface_method(L, "array", "reverse", TiriType::Array, builtin_callable_id(FastFunc::array_reverse),
       { TiriType::Array }, { TiriType::Array });
    reg_iface_method(L, "array", "slice", TiriType::Array, builtin_callable_id(FastFunc::array_slice),
@@ -2757,7 +2923,11 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_method(L, "array", "each", TiriType::Array, builtin_callable_id(FastFunc::array_each), {},
       { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "map", TiriType::Array, builtin_callable_id(FastFunc::array_map),
+      { TiriType::Array }, { TiriType::Array, TiriType::Func, TiriType::Str });
+   reg_iface_method(L, "array", "mapSame", TiriType::Array, builtin_callable_id(FastFunc::array_mapSame),
       { TiriType::Array }, { TiriType::Array, TiriType::Func });
+   reg_iface_method(L, "array", "findIndex", TiriType::Array, builtin_callable_id(FastFunc::array_findIndex),
+      { TiriType::Num }, { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "filter", TiriType::Array, builtin_callable_id(FastFunc::array_filter),
       { TiriType::Array }, { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "reduce", TiriType::Array, builtin_callable_id(FastFunc::array_reduce),

@@ -76,7 +76,7 @@ static_assert(FF__MAX <= BUILTIN_CALLABLE_CAPACITY);
 static_assert(FF__MAX - 1 <= std::numeric_limits<uint16_t>::max());
 static_assert(builtin_callable_index(BuiltinCallableID::Invalid) >= FF__MAX);
 #ifdef FFDEF_BFUNC_ABI
-static_assert(builtin_callable_abi_fingerprint() IS 0x7bfb8237b6c7f9dbull,
+static_assert(builtin_callable_abi_fingerprint() IS 0x2a847e2d708bf847ull,
    "fast-function ordering changed: bump BCDUMP_VERSION and update the BC_BFUNC ABI fingerprint");
 #endif
 

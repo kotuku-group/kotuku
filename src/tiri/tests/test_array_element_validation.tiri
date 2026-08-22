@@ -42,7 +42,7 @@ end
 
       local source = array.new(1, element_type)
       source[0] = 1
-      expect_failure(() => do source.map(Value => str: '12') end, element_type .. ' map accepted a string')
+      expect_failure(() => do source.mapSame(Value => str: '12') end, element_type .. ' map accepted a string')
    end
 
    local appended = array<int> { 1 }
@@ -57,7 +57,7 @@ end
    expect_failure(() => do indexed.fill(12) end, 'String fill accepted a number')
    expect_failure(() => do array.of('str', 12) end, 'String constructor accepted a number')
    expect_failure(() => do indexed.copy({ [0]=12 }) end, 'String table copy accepted a number')
-   expect_failure(() => do indexed.map(Value => num: 12) end, 'String map accepted a number')
+   expect_failure(() => do indexed.mapSame(Value => num: 12) end, 'String map accepted a number')
    expect_failure(() => do array.new(0, 'string') end, "Legacy 'string' element name was accepted")
 end
 
@@ -115,7 +115,7 @@ end
    values.insert(0, 'first')
    values[1] = table_value
    values.fill(array_value, 2, 1)
-   local mapped = values.map(Value => any: Value)
+   local mapped = values.mapSame(Value => any: Value)
    assert(mapped[0] is 'first' and mapped[1] is table_value and mapped[2] is array_value,
       'Any writers did not preserve mixed categories')
 

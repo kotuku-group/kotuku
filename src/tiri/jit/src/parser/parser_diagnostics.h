@@ -43,6 +43,7 @@ enum class ParserErrorCode : uint16_t {
    OverrideProtectedGlobal, // Cannot override a host pre-registered global
    InvalidAssignment,       // Assignment form is syntactically valid but semantically forbidden
    DeprecatedSyntax,        // Removed source syntax with a targeted replacement diagnostic
+   DeprecatedApi,           // Supported API contract with a pending migration target
    UnresolvedMethodReceiver, // Dot-method receiver type must be classified at runtime
    FunctionSignatureMismatch // Function definition does not match an earlier forward declaration
 };

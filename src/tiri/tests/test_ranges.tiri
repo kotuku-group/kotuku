@@ -1897,9 +1897,9 @@ end
       error("array.fill should reject fractional ranges")
    end
    try
-      data_values.find(2, range(0.5, 4))
+      data_values.indexOf(2, range(0.5, 4))
    success
-      error("array.find should reject fractional ranges")
+      error("array.indexOf should reject fractional ranges")
    end
    try
       tmp = range.slice(data_values, range(0, 4, false, 0.5))
@@ -1942,4 +1942,42 @@ end
       end
    end
    assert(approximately(interpreter_sum, compiled_sum), "JIT and interpreter range sequences should agree")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Stage A collection compatibility APIs
+
+@Test function RangeIndexOfAndFindIndexUseOrdinals()
+   sequence = {10 to 20 by 2}
+   assert(sequence.indexOf(10) is 0 and sequence.indexOf(16) is 3, 'range.indexOf() should return generated ordinals')
+   assert(sequence.indexOf(17) is nil, 'range.indexOf() should reject unaligned values')
+   assert(sequence.findIndex((Value, Ordinal) => Value > 13 and Ordinal is 2) is 2,
+      'range.findIndex() should pass the generated value and ordinal')
+
+   descending = range(1, 0, true, -0.2)
+   assert(descending.indexOf(0.6) is 2, 'range.indexOf() should retain descending fractional tolerance')
+end
+
+@Test function RangeFunctionalCallbacksReceiveOrdinals()
+   sequence = {10 to 16 by 2}
+   each_ordinals = {}
+   result = sequence.each(function(Value, Ordinal)
+      each_ordinals[Ordinal] = Value
+      if Ordinal is 1 then return false end
+   end)
+   assert(result is sequence and each_ordinals[0] is 10 and each_ordinals[1] is 12 and each_ordinals[2] is nil,
+      'range.each() should pass ordinals, stop on false and return its receiver')
+
+   mapped = sequence.map((Value, Ordinal) => Value + Ordinal, 'int')
+   assert(mapped.type() is 'int' and mapped[0] is 10 and mapped[2] is 16,
+      'range.map() should pass ordinals and honour an explicit destination type')
+
+   reduced = sequence.reduce(0, (Total, Value, Ordinal) => Total + Value + Ordinal)
+   assert(reduced is 39, 'range.reduce() should pass the ordinal as its third callback argument')
+   assert(sequence.any((Value, Ordinal) => Ordinal is 2 and Value is 14),
+      'range.any() should pass an ordinal')
+   assert(sequence.all((Value, Ordinal) => Value is 10 + Ordinal * 2),
+      'range.all() should pass an ordinal')
+   assert(sequence.find((Value, Ordinal) => Ordinal is 1) is 12,
+      'range.find() should pass an ordinal')
 end

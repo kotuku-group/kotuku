@@ -102,13 +102,13 @@ end
 
    local values = array<uint> { 2147483648, 3, 4294967295 }
    values.sort()
-   assert(values[0] is 3 and values[1] is 2147483648 and values.find(4294967295) is 2,
+   assert(values[0] is 3 and values[1] is 2147483648 and values.indexOf(4294967295) is 2,
       'uint ordering or find used signed comparison')
    local copy = values.clone().slice({0 into 1})
    assert(copy.type() is 'uint' and copy[1] is 2147483648, 'uint clone or slice lost its identity')
 
    local words = array<uint16> { 1, 2, 3 }
-   local mapped = words.map(Value => num: Value + 65535).filter(Value => bool: Value is 0)
+   local mapped = words.mapSame(Value => num: Value + 65535).filter(Value => bool: Value is 0)
    assert(mapped.type() is 'uint16' and #mapped is 1 and mapped[0] is 0, 'unsigned map/filter lost modulo storage')
    assert(array<uint64> { 9007199254740991 }.concat('', '%llu') is '9007199254740991',
       'uint64 concat did not use an unsigned long long format')

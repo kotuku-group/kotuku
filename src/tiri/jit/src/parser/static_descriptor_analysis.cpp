@@ -1202,9 +1202,10 @@ private:
       return {};
    }
 
-   struct ArrayFilterCall {
+   struct CollectionMethodCall {
       ExprNode *source = nullptr;
-      size_t predicate_index = 0;
+      GCstr *operation = nullptr;
+      bool receiver_first = false;
    };
 
    [[nodiscard]] static bool array_interface_member(
@@ -1219,55 +1220,183 @@ private:
          base.identifier.symbol->hash IS kt::strhash("array");
    }
 
-   [[nodiscard]] static std::optional<ArrayFilterCall> array_filter_call(CallExprPayload &Call)
+   [[nodiscard]] static std::optional<CollectionMethodCall> collection_method_call(const CallExprPayload &Call)
    {
-      if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
-         if (array_interface_member(*direct, kt::strhash("filter")) and Call.arguments.size() > 1) {
-            return ArrayFilterCall{ Call.arguments[0].get(), 1 };
-         }
-         if (direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr and not Call.arguments.empty()) {
-            auto &member = std::get<MemberExprPayload>(direct->callable->data);
-            if (member.table and member.member.symbol and member.member.symbol->hash IS kt::strhash("filter")) {
-               return ArrayFilterCall{ member.table.get(), 0 };
-            }
+      auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr) return std::nullopt;
+
+      auto &member = std::get<MemberExprPayload>(direct->callable->data);
+      if (not member.table or not member.member.symbol) return std::nullopt;
+      if (member.table->kind IS AstNodeKind::IdentifierExpr) {
+         const auto &base = std::get<NameRef>(member.table->data);
+         bool collection_interface = base.identifier.symbol and
+            (base.identifier.symbol->hash IS kt::strhash("array") or
+             base.identifier.symbol->hash IS kt::strhash("range"));
+         if (not base.binding_id and collection_interface) {
+            if (Call.arguments.empty()) return std::nullopt;
+            return CollectionMethodCall{ Call.arguments[0].get(), member.member.symbol, true };
          }
       }
-      return std::nullopt;
+      return CollectionMethodCall{ member.table.get(), member.member.symbol, false };
+   }
+
+   struct CollectionCallbackCall {
+      ExprNode *source = nullptr;
+      GCstr *operation = nullptr;
+      size_t callback_index = 0;
+      bool reduce = false;
+   };
+
+   [[nodiscard]] static std::optional<CollectionCallbackCall> collection_callback_call(const CallExprPayload &Call)
+   {
+      auto collection = collection_method_call(Call);
+      if (not collection or not collection->operation) return std::nullopt;
+
+      bool reduce = collection->operation->hash IS kt::strhash("reduce");
+      bool callback_operation = reduce or collection->operation->hash IS kt::strhash("each") or
+         collection->operation->hash IS kt::strhash("filter") or collection->operation->hash IS kt::strhash("map") or
+         collection->operation->hash IS kt::strhash("mapSame") or collection->operation->hash IS kt::strhash("any") or
+         collection->operation->hash IS kt::strhash("all") or collection->operation->hash IS kt::strhash("find") or
+         collection->operation->hash IS kt::strhash("findIndex");
+      if (not callback_operation) return std::nullopt;
+
+      size_t callback_index = collection->receiver_first ? (reduce ? 2 : 1) : (reduce ? 1 : 0);
+      if (callback_index >= Call.arguments.size()) return std::nullopt;
+      return CollectionCallbackCall{ collection->source, collection->operation, callback_index, reduce };
+   }
+
+   [[nodiscard]] StaticValueDescriptor mapped_array_descriptor(const CallExprPayload &Call) const
+   {
+      auto collection = collection_method_call(Call);
+      if (not collection or not collection->source or not collection->operation) return {};
+
+      StaticValueDescriptor source = this->descriptor_of(*collection->source);
+      if (source.primary != TiriType::Array and source.primary != TiriType::Range) return {};
+
+      uint32_t operation = collection->operation->hash;
+      if (operation IS kt::strhash("mapSame")) {
+         if (source.primary IS TiriType::Array and source.array_element.known) {
+            source.proof = StaticProof::Trusted;
+            source.nullable = false;
+            return source;
+         }
+         return {};
+      }
+      if (operation != kt::strhash("map")) return {};
+
+      size_t type_index = collection->receiver_first ? 2 : 1;
+      if (type_index < Call.arguments.size()) {
+         const ExprNode &type_expression = *Call.arguments[type_index];
+         if (type_expression.kind IS AstNodeKind::LiteralExpr) {
+            const auto &literal = std::get<LiteralValue>(type_expression.data);
+            if (literal.kind IS LiteralKind::Nil and source.primary IS TiriType::Array and source.array_element.known) {
+               source.proof = StaticProof::Trusted;
+               source.nullable = false;
+               return source;
+            }
+            if (literal.kind IS LiteralKind::String and literal.string_value) {
+               std::string_view type_name(strdata(literal.string_value), literal.string_value->len);
+               if (auto element = describe_array_element(type_name, &this->context_.lua())) {
+                  StaticValueDescriptor result;
+                  result.primary = TiriType::Array;
+                  result.array_element = *element;
+                  result.proof = StaticProof::Trusted;
+                  result.nullable = false;
+                  return result;
+               }
+            }
+         }
+
+         StaticValueDescriptor result;
+         result.primary = TiriType::Array;
+         result.proof = StaticProof::Trusted;
+         result.nullable = false;
+         return result;
+      }
+
+      if (source.primary IS TiriType::Array and source.array_element.known) {
+         source.proof = StaticProof::Trusted;
+         source.nullable = false;
+         return source;
+      }
+
+      StaticValueDescriptor result;
+      result.primary = TiriType::Array;
+      if (auto element = describe_array_element("any", &this->context_.lua())) result.array_element = *element;
+      result.proof = StaticProof::Trusted;
+      result.nullable = false;
+      return result;
+   }
+
+   void update_call_result_descriptor(CallExprPayload &Call, const StaticValueDescriptor &Result)
+   {
+      StaticResultSet results;
+      results.stored_count = 1;
+      results.values[0] = Result;
+      if (Call.results) {
+         results = this->catalogue_.results(Call.results);
+         if (results.stored_count IS 0) results.stored_count = 1;
+         results.values[0] = Result;
+      }
+      Call.results = this->catalogue_.add_results(results);
+   }
+
+   void emit_stage_a_collection_deprecation(CallExprPayload &Call)
+   {
+      if (Call.deprecated_api_reported) return;
+      auto collection = collection_method_call(Call);
+      if (not collection or not collection->source or not collection->operation) return;
+      StaticValueDescriptor source = this->descriptor_of(*collection->source);
+      if (source.primary != TiriType::Array or not source.proved()) return;
+
+      bool builtin_find = collection->operation->hash IS kt::strhash("find") and
+         ((Call.builtin_method and Call.builtin_method->callable IS builtin_callable_id(FastFunc::array_find)) or
+          (collection->receiver_first and [&] {
+             const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+             return direct and array_interface_member(*direct, kt::strhash("find"));
+          }()));
+      bool legacy_map = collection->operation->hash IS kt::strhash("map") and
+         ((Call.builtin_method and Call.builtin_method->callable IS builtin_callable_id(FastFunc::array_map)) or
+          (collection->receiver_first and [&] {
+             const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+             return direct and array_interface_member(*direct, kt::strhash("map"));
+          }()));
+      size_t type_index = collection->receiver_first ? 2 : 1;
+      if (legacy_map and type_index < Call.arguments.size()) legacy_map = false;
+      if (not builtin_find and not legacy_map) return;
+
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable) return;
+      this->context_.emit_warning(ParserErrorCode::DeprecatedApi,
+         Token::from_span(direct->callable->span, TokenKind::Identifier), builtin_find ?
+            "array.find(Value, ...) is deprecated; use array.indexOf(Value, ...) instead" :
+            "one-argument array.map(Transform) is deprecated; use array.mapSame(Transform) instead");
+      Call.deprecated_api_reported = true;
    }
 
    [[nodiscard]] StaticValueDescriptor array_preserving_call_descriptor(const CallExprPayload &Call) const
    {
-      const ExprNode *source = nullptr;
-      GCstr *operation = nullptr;
-
-      if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
-               direct and direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
-         const auto &member = std::get<MemberExprPayload>(direct->callable->data);
-         const auto *base = member.table and member.table->kind IS AstNodeKind::IdentifierExpr ?
-            std::get_if<NameRef>(&member.table->data) : nullptr;
-         if (base and not base->binding_id and base->identifier.symbol and
-             base->identifier.symbol->hash IS kt::strhash("array") and not Call.arguments.empty()) {
-            source = Call.arguments.front().get();
-            operation = member.member.symbol;
-         }
-         else {
-            source = member.table.get();
-            operation = member.member.symbol;
-         }
-      }
-
-      if (not source or not operation) return {};
-      StaticValueDescriptor receiver = this->descriptor_of(*source);
+      auto collection = collection_method_call(Call);
+      if (not collection or not collection->source or not collection->operation) return {};
+      StaticValueDescriptor receiver = this->descriptor_of(*collection->source);
       if (receiver.primary != TiriType::Array or not receiver.array_element.known) return {};
 
-      switch (operation->hash) {
+      switch (collection->operation->hash) {
          case kt::strhash("each"):
-         case kt::strhash("map"):
          case kt::strhash("filter"):
          case kt::strhash("slice"):
          case kt::strhash("clone"):
+         case kt::strhash("mapSame"):
             receiver.proof = StaticProof::Trusted;
             return receiver;
+         case kt::strhash("map"): {
+            size_t type_index = collection->receiver_first ? 2 : 1;
+            if (type_index >= Call.arguments.size()) {
+               receiver.proof = StaticProof::Trusted;
+               return receiver;
+            }
+            return {};
+         }
          default:
             return {};
       }
@@ -1481,21 +1610,34 @@ private:
          if (direct->callable) this->propagate_expression(*direct->callable);
       }
 
-      auto filter = array_filter_call(Call);
+      auto collection_callback = collection_callback_call(Call);
       for (size_t i = 0; i < Call.arguments.size(); ++i) {
          auto &argument = Call.arguments[i];
          if (not argument) continue;
 
-         bool contextual_filter = filter and i IS filter->predicate_index and filter->source and
+         bool contextual_callback = collection_callback and i IS collection_callback->callback_index and
+            collection_callback->source and
             argument->kind IS AstNodeKind::FunctionExpr;
-         StaticValueDescriptor source = contextual_filter ? this->descriptor_of(*filter->source) :
+         StaticValueDescriptor source = contextual_callback ? this->descriptor_of(*collection_callback->source) :
             StaticValueDescriptor{};
-         if (contextual_filter and source.primary IS TiriType::Array and source.array_element.known) {
-            std::array<StaticValueDescriptor, 2> parameters;
-            parameters[0] = array_element_value(source.array_element);
+         if (contextual_callback and
+             not (source.primary IS TiriType::Array and
+                  collection_callback->operation->hash IS kt::strhash("find")) and
+             ((source.primary IS TiriType::Array and source.array_element.known) or
+              source.primary IS TiriType::Range)) {
+            std::array<StaticValueDescriptor, 3> parameters;
+            size_t parameter_count = 2;
+            parameters[0] = source.primary IS TiriType::Array ? array_element_value(source.array_element) :
+               StaticValueDescriptor{ .primary=TiriType::Num, .proof=StaticProof::Trusted, .nullable=false };
             parameters[1].primary = TiriType::Num;
             parameters[1].proof = StaticProof::Trusted;
-            this->propagate_function_expression(*argument, parameters);
+            parameters[1].nullable = false;
+            if (collection_callback->reduce) {
+               parameters[2] = parameters[1];
+               parameters[1] = this->descriptor_of(*Call.arguments[collection_callback->callback_index - 1]);
+               parameter_count = 3;
+            }
+            this->propagate_function_expression(*argument, std::span(parameters.data(), parameter_count));
          }
          else this->propagate_expression(*argument);
       }
@@ -1566,6 +1708,12 @@ private:
             auto &call = std::get<CallExprPayload>(Expression.data);
             if (Expression.kind IS AstNodeKind::CallExpr) this->analyse_contextual_designation(call);
             value = this->call_descriptor(call, Expression.kind IS AstNodeKind::SafeCallExpr);
+            this->emit_stage_a_collection_deprecation(call);
+            StaticValueDescriptor mapped = this->mapped_array_descriptor(call);
+            if (mapped.primary != TiriType::Unknown) {
+               this->update_call_result_descriptor(call, mapped);
+               value = mapped;
+            }
             StaticValueDescriptor transferred = this->array_preserving_call_descriptor(call);
             if (transferred.primary != TiriType::Unknown) {
                transferred.nullable = value.nullable;

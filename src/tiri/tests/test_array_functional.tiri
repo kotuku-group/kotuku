@@ -69,63 +69,63 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- array.map() tests
+-- array.mapSame() tests
 
 @Test function MapDoubleValues()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   doubled = arr.map(v => num: v * 2)
-   assert(#doubled is 5, "map() should return array of same length")
+   doubled = arr.mapSame(v => num: v * 2)
+   assert(#doubled is 5, "mapSame() should return array of same length")
    assert(doubled[0] is 2 and doubled[1] is 4 and doubled[2] is 6 and doubled[3] is 8 and doubled[4] is 10,
-      "map() should transform each element")
+      "mapSame() should transform each element")
 end
 
 @Test function MapPreservesOriginal()
    arr = array<int> { 1, 2, 3 }
-   doubled = arr.map(v => num: v * 2)
-   assert(arr[0] is 1 and arr[1] is 2 and arr[2] is 3, "map() should not modify original array")
+   doubled = arr.mapSame(v => num: v * 2)
+   assert(arr[0] is 1 and arr[1] is 2 and arr[2] is 3, "mapSame() should not modify original array")
 end
 
 @Test function MapEmptyArray()
    arr = array<int>
-   result = arr.map(v => num: v * 2)
-   assert(#result is 0, "map() on empty array should return empty array")
+   result = arr.mapSame(v => num: v * 2)
+   assert(#result is 0, "mapSame() on empty array should return empty array")
 end
 
 @Test function MapWithIndex()
    arr = array<int> { 10, 20, 30 }
-   indexed = arr.map(function(v, i):num
+   indexed = arr.mapSame(function(v, i):num
       return v + i
    end)
-   assert(indexed[0] is 10 and indexed[1] is 21 and indexed[2] is 32, "map() should pass index as second argument")
+   assert(indexed[0] is 10 and indexed[1] is 21 and indexed[2] is 32, "mapSame() should pass index as second argument")
 end
 
 @Test function MapFloatArray()
    arr = array<float> { 1.5, 2.5, 3.5 }
-   squared = arr.map(v => num: v * v)
-   assert(math.abs(squared[0] - 2.25) < 0.001, "map() should work with float arrays")
-   assert(math.abs(squared[1] - 6.25) < 0.001, "map() should work with float arrays")
+   squared = arr.mapSame(v => num: v * v)
+   assert(math.abs(squared[0] - 2.25) < 0.001, "mapSame() should work with float arrays")
+   assert(math.abs(squared[1] - 6.25) < 0.001, "mapSame() should work with float arrays")
 end
 
 @Test function MapStringArray()
    arr = array<str> { 'hello', 'world' }
-   upper = arr.map(v => str: v.upper())
-   assert(upper[0] is 'HELLO' and upper[1] is 'WORLD', "map() should work with string arrays")
+   upper = arr.mapSame(v => str: v.upper())
+   assert(upper[0] is 'HELLO' and upper[1] is 'WORLD', "mapSame() should work with string arrays")
 end
 
 @Test function MapObjectArray()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
    arr = array<obj> { obj_one, obj_two }
-   copied = arr.map(Value => obj: Value)
-   assert(copied[0].id is obj_one.id and copied[1].id is obj_two.id, "map() should preserve objects")
+   copied = arr.mapSame(Value => obj: Value)
+   assert(copied[0].id is obj_one.id and copied[1].id is obj_two.id, "mapSame() should preserve objects")
    obj_one.free()
    obj_two.free()
 end
 
 @Test function MapSingleElement()
    arr = array<int> { 42 }
-   result = arr.map(v => v * 2)
-   assert(#result is 1 and result[0] is 84, "map() should work with single element array")
+   result = arr.mapSame(v => v * 2)
+   assert(#result is 1 and result[0] is 84, "mapSame() should work with single element array")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -372,7 +372,7 @@ end
 
 @Test function ChainMapFilter()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   result = arr.map(v => v * 2).filter(v => v > 5)
+   result = arr.mapSame(v => v * 2).filter(v => v > 5)
    assert(#result is 3, "chained map/filter should work")
    assert(result[0] is 6 and result[1] is 8 and result[2] is 10,
       "chained map/filter should produce correct values")
@@ -380,7 +380,7 @@ end
 
 @Test function ChainFilterMap()
    arr = array<int> { 1, 2, 3, 4, 5, 6 }
-   result = arr.filter(v => v % 2 is 0).map(v => v * 10)
+   result = arr.filter(v => v % 2 is 0).mapSame(v => v * 10)
    assert(#result is 3, "chained filter/map should work")
    assert(result[0] is 20 and result[1] is 40 and result[2] is 60,
       "chained filter/map should produce correct values")
@@ -394,16 +394,16 @@ end
 
 @Test function ChainMapReduceAny()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   hasLarge = arr.map(v => v * 10).any(v => v > 40)
+   hasLarge = arr.mapSame(v => v * 10).any(v => v > 40)
    assert(hasLarge, "chained map/any should work")
 end
 
 @Test function ChainEachReturnsOriginal()
    arr = array<int> { 1, 2, 3 }
    count = 0
-   result = arr.each(v => do count += 1 end).map(v => v * 2)
+   result = arr.each(v => do count += 1 end).mapSame(v => v * 2)
    assert(count is 3, "each() in chain should process all elements")
-   assert(#result is 3 and result[0] is 2, "map() after each() should work")
+   assert(#result is 3 and result[0] is 2, "mapSame() after each() should work")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -421,9 +421,9 @@ end
 
    try
       local invalid:any = 42
-      arr.map(invalid)
+      arr.mapSame(invalid)
    success
-      error("map() should reject non-function argument")
+      error("mapSame() should reject non-function argument")
    end
 
    try
@@ -442,9 +442,9 @@ end
 
 @Test function MapWithByteArray()
    arr = array<byte> { 65, 66, 67 }
-   result = arr.map(v => v + 1)
+   result = arr.mapSame(v => v + 1)
    assert(result[0] is 66 and result[1] is 67 and result[2] is 68,
-      "map() should work with byte arrays")
+      "mapSame() should work with byte arrays")
 end
 
 @Test function FilterWithDoubleArray()
@@ -457,4 +457,75 @@ end
    arr = array<int64> { 1000000000, 2000000000, 3000000000 }
    sum = arr.reduce(0, (acc, v) => acc + v)
    assert(sum is 6000000000, "reduce() should work with int64 arrays")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Stage A collection compatibility APIs
+
+@Test function EachStopsOnlyForExplicitFalse()
+   local items = array<int> { 10, 20, 30 }
+   local calls = 0
+   local result = items.each(function(Value, Index)
+      calls++
+      if Index is 1 then return false end
+   end)
+   assert(calls is 2 and result is items, 'each() should stop on false and return its receiver')
+
+   calls = 0
+   items.each(function(Value, Index)
+      calls++
+      if Index is 1 then return nil end
+      return true
+   end)
+   assert(calls is 3, 'each() should continue on nil and true')
+end
+
+@Test function FindIndexUsesPredicateAndPosition()
+   local items = array<int> { 10, 20, 30, 40 }
+   local calls = 0
+   local found = items.findIndex(function(Value, Index)
+      calls++
+      return Value > 20 and Index is 2
+   end)
+   assert(found is 2 and calls is 3, 'findIndex() should return the first matching index and short-circuit')
+   assert(items.findIndex(Value => Value > 100) is nil, 'findIndex() should return nil when no element matches')
+end
+
+@Test function MapSamePreservesSourceStorage()
+   bytes = array<byte> { 65, 66 }
+   mapped = bytes.mapSame(Value => Value + 1)
+   assert(mapped.type() is 'byte' and mapped[0] is 66 and mapped[1] is 67,
+      'mapSame() should retain the source element storage')
+
+   labels = bytes.map(Value => 'n' .. tostring(Value), 'str')
+   assert(labels.type() is 'str' and labels[0] is 'n65' and labels[1] is 'n66',
+      'map() should allocate the requested destination type')
+end
+
+@Test function MapValidatesDestinationBeforeCallback()
+   local items = array<int> { 1, 2 }
+   local calls = 0
+   try
+      items.map(function(Value)
+         calls++
+         return Value
+      end, 'not-an-array-type')
+   success
+      error('map() should reject an invalid destination type')
+   end
+   assert(calls is 0, 'map() should validate the destination type before invoking callbacks')
+
+   try
+      items.map(Value => 'wrong', 'int')
+   success
+      error('map() should reject an incompatible transformed value')
+   end
+   assert(items[0] is 1 and items[1] is 2, 'a failed map() should not modify its source array')
+end
+
+@Test function LegacyMapRetainsSourceStorageDuringStageA()
+   local items = array<byte> { 65, 66 }
+   local mapped = items.map(Value => Value + 1)
+   assert(mapped.type() is 'byte' and mapped[0] is 66 and mapped[1] is 67,
+      'the Stage A compatibility map() should preserve the source storage descriptor')
 end

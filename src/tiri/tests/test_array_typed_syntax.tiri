@@ -404,7 +404,7 @@ end
 @Test function ArrayTypedFindMethod()
    -- Find method should locate values
    arr = array<int> { 10, 20, 30, 40, 50 }
-   idx = arr.find(30)
+   idx = arr.indexOf(30)
    assert(idx is 2, "Find should return index 2 for value 30, got " .. tostring(idx))
 end
 
