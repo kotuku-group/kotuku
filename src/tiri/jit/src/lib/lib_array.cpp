@@ -140,7 +140,7 @@ bool lj_array_struct_is_trivial(const struct_record &Def)
 }
 
 //********************************************************************************************************************
-// Helper to get element type name
+// Helper to get the legacy public element name.  array.type() and array tostring intentionally retain char for BYTE.
 
 static CSTRING elemtype_name(AET Type)
 {

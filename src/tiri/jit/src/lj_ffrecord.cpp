@@ -29,6 +29,7 @@
 #include "lj_buf.h"
 #include "lj_str.h"
 #include "lj_tab.h"
+#include "lj_meta.h"
 #include "lj_frame.h"
 #include "lj_bc.h"
 #include "lj_ff.h"
@@ -44,6 +45,8 @@
 #include "lj_vm.h"
 #include "lj_strscan.h"
 #include "runtime/lj_array.h"
+#include "runtime/lj_proto_registry.h"
+#include "jit/frame_manager.h"
 #include "lj_strfmt.h"
 #include "lj_serialize.h"
 #include "lib_range.h"
@@ -258,11 +261,7 @@ static uint32_t recff_type_name_index(TiriType Type)
 
 static bool recff_is_range_userdata(jit_State *J, GCudata *Userdata)
 {
-   GCtab *mt = tabref(Userdata->metatable);
-   if (not mt) return false;
-
-   cTValue *range_metatable = lj_tab_getstr(tabV(registry(J->L)), lj_str_newz(J->L, RANGE_METATABLE));
-   return range_metatable and tvistab(range_metatable) and tabV(range_metatable) IS mt;
+   return is_range_userdata(J->L, Userdata);
 }
 
 static void recff_type(jit_State* J, RecordFFData* rd)
@@ -344,10 +343,60 @@ static void recff_type(jit_State* J, RecordFFData* rd)
 
 static void recff_rawtype(jit_State* J, RecordFFData* Data)
 {
-   uint32_t t;
-   if (tvisnumber(&Data->argv[0])) t = ~LJ_TNUMX;
-   else t = ~itype(&Data->argv[0]);
-   J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[t]));
+   cTValue *value = &Data->argv[0];
+   TRef value_ref = J->base[0];
+
+   if (tvisarray(value)) {
+      GCarray *array = arrayV(value);
+      IRBuilder ir(J);
+      TRef element_type_ref = ir.fload(value_ref, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+      ir.guard_eq_int(element_type_ref, ir.kint(int32_t(array->elemtype)));
+      if (array->elemtype IS AET::STRUCT) {
+         TRef definition_ref = ir.fload(value_ref, IRFL_ARRAY_STRUCTDEF, IRT_PTR);
+         TRef definition = array->structdef ? ir.kkptr(array->structdef) : ir.knull(IRT_PTR);
+         ir.guard_eq(definition_ref, definition, IRT_PTR);
+      }
+   }
+   else if (tvisobject(value)) {
+      GCobject *object = objectV(value);
+      IRBuilder ir(J);
+      TRef class_ref = ir.fload(value_ref, IRFL_OBJ_CLASSPTR, IRT_PTR);
+      TRef class_pointer = object->classptr ? ir.kkptr(object->classptr) : ir.knull(IRT_PTR);
+      ir.guard_eq(class_ref, class_pointer, IRT_PTR);
+   }
+   else if (tvisstruct(value)) {
+      GCstruct *structure = structV(value);
+      IRBuilder ir(J);
+      TRef definition_ref = ir.fload(value_ref, IRFL_STRUCT_DEF, IRT_PTR);
+      TRef definition = structure->def ? ir.kkptr(structure->def) : ir.knull(IRT_PTR);
+      ir.guard_eq(definition_ref, definition, IRT_PTR);
+   }
+   else if (tvisudata(value)) {
+      GCudata *userdata = udataV(value);
+      IRBuilder ir(J);
+      TRef userdata_type = ir.fload(value_ref, IRFL_UDATA_UDTYPE, IRT_U8);
+      if (userdata->udtype IS UDTYPE_THUNK) {
+         ir.guard_eq_int(userdata_type, ir.kint(UDTYPE_THUNK));
+      }
+      else {
+         ir.guard_ne_int(userdata_type, ir.kint(UDTYPE_THUNK));
+         TRef range_metatable = lj_record_range_metatable(J);
+         // The debug registry is mutable, so its guarded lookup can return nil or another non-table value.
+         if (tref_istab(range_metatable)) {
+            TRef metatable_ref = ir.fload_tab(value_ref, IRFL_UDATA_META);
+            if (recff_is_range_userdata(J, userdata)) ir.guard_eq(metatable_ref, range_metatable, IRT_TAB);
+            else ir.guard_ne(metatable_ref, range_metatable, IRT_TAB);
+         }
+      }
+   }
+   else {
+      uint32_t type_index = tvisnumber(value) ? ~LJ_TNUMX : ~itype(value);
+      J->base[0] = lj_ir_kstr(J, strV(&J->fn->c.upvalue[type_index]));
+      return;
+   }
+
+   GCstr *name = lj_meta_raw_type_name(J->L, value);
+   J->base[0] = lj_ir_kstr(J, name);
 }
 
 //********************************************************************************************************************

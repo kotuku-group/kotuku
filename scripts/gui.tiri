@@ -80,6 +80,7 @@ end
 
 gui.mtHSV = { -- HSV metatable
    __context = true,
+   __name = "HSV",
    __newindex = function(Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
@@ -146,6 +147,7 @@ end
 
 gui.mtRGB = { -- sRGB metatable
    __context = true,
+   __name = "RGB",
    __newindex = function(Key, Value)
       error(f'Table structure is immutable: Cannot set {Key}')
    end,
