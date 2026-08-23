@@ -97,7 +97,7 @@ end
    assert(bytes[0] is 255 and bytes[1] is 0 and bytes[2] is 1, 'uint8 construction did not wrap and truncate')
    bytes.push(2)
    bytes.insert(1, 257)
-   bytes.fill(-1, 2, 1)
+   bytes.fill(-1, 2, 3)
    assert(bytes[1] is 1 and bytes[2] is 255, 'uint8 mutation did not preserve modulo conversion')
 
    local values = array<uint> { 2147483648, 3, 4294967295 }
@@ -1469,25 +1469,63 @@ end
    arr.fill(22, {20 to 30})
    assert(arr[0] is 11 and arr[1] is 11 and arr[2] is 0 and arr[3] is 0 and arr[4] is 0,
       "empty clipped fill ranges should leave the array unchanged")
-
-   arr.fill(33, 4, 10)
-   assert(arr[4] is 33, "integer fill should clamp count to the remaining span")
-
-   arr.fill(44, 5, 10)
-   assert(arr[4] is 33, "integer fill starting at the end should be a no-op")
 end
 
-@Test function ArrayFillOriginalSyntax()
-   -- Verify original syntax still works
+@Test function ArrayFillWithPositionalSpan()
    arr = array<int, 10>
-   arr.fill(0)  -- Zero-initialize first
+   arr.fill(0)
 
-   -- Fill starting at index 3, 4 elements
-   arr.fill(42, 3, 4)
-   assert(arr[2] is 0, "fill original: arr[2] should be 0")
-   assert(arr[3] is 42, "fill original: arr[3] should be 42")
-   assert(arr[4] is 42, "fill original: arr[4] should be 42")
-   assert(arr[5] is 42, "fill original: arr[5] should be 42")
-   assert(arr[6] is 42, "fill original: arr[6] should be 42")
-   assert(arr[7] is 0, "fill original: arr[7] should be 0")
+   arr.fill(42, 3, 7)
+   assert(arr[2] is 0, "positional fill should not change the element before Start")
+   assert(arr[3] is 42 and arr[6] is 42, "positional fill should include Start through Stop - 1")
+   assert(arr[7] is 0, "positional fill should exclude Stop")
+end
+
+@Test function ArrayFillPositionalMatchesRange()
+   positional = array<int, 8>
+   ranged = array<int, 8>
+   positional.fill(0)
+   ranged.fill(0)
+
+   positional.fill(17, 2, 6)
+   ranged.fill(17, {2 to 6})
+
+   for i in {0 to 8} do
+      assert(positional[i] is ranged[i], "positional and range fill should select the same elements")
+   end
+end
+
+@Test function ArrayFillPositionalDefaultsAndClipping()
+   arr = array<int, 5>
+   arr.fill(7, 0, 5)
+   assert(arr[0] is 7 and arr[4] is 7, "Stop equal to the array length should include the final element")
+   arr.fill(0)
+
+   arr.fill(11, 3)
+   assert(arr[2] is 0 and arr[3] is 11 and arr[4] is 11, "omitted Stop should fill to the array length")
+
+   arr.fill(22, 4, 10)
+   assert(arr[3] is 11 and arr[4] is 22, "Stop beyond the array length should be clipped")
+
+   arr.fill('invalid', 2, 2)
+   arr.fill('invalid', 4, 3)
+   arr.fill('invalid', 5, 10)
+   arr.fill('invalid', 8, 10)
+   assert(arr[2] is 0 and arr[3] is 11 and arr[4] is 22, "empty positional spans should be no-ops")
+end
+
+@Test function ArrayFillPositionalRejectsNegativeBounds()
+   arr = array<int, 5>
+
+   try
+      arr.fill(1, -1, 2)
+   success
+      error("Positional fill should reject a negative Start")
+   end
+
+   try
+      arr.fill(1, 0, -1)
+   success
+      error("Positional fill should reject a negative Stop")
+   end
 end

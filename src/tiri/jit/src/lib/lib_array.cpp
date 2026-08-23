@@ -449,6 +449,19 @@ static array_count_span array_clamped_count_span(lua_State *L, int32_t Start, in
    return { start, count };
 }
 
+static array_count_span array_clamped_half_open_span(lua_State *L, int32_t Start, int32_t Stop, MSize Length)
+{
+   if (Start < 0 or Stop < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+
+   auto start = MSize(Start);
+   if (start >= Length) return { Length, 0 };
+
+   auto stop = MSize(Stop);
+   if (stop > Length) stop = Length;
+   if (stop <= start) return { start, 0 };
+   return { start, stop - start };
+}
+
 static array_range_span array_range_to_span(lua_State *L, const tiri_range *Range, MSize Length)
 {
    tiri_index_range index_range;
@@ -1452,19 +1465,19 @@ static void fill_array_elements(lua_State *L, GCarray *Arr, cTValue *Value, int3
 }
 
 //********************************************************************************************************************
-// Usage: array.fill(arr, value [, start [, count]]) or array.fill(arr, value, range)
+// Usage: array.fill(arr, value [, start [, stop]]) or array.fill(arr, value, range)
 //
 // Fills array elements with a value.
 //
 // Parameters (integer form):
 //   arr: the array (must not be read-only)
-//   value: value to fill with (number)
+//   value: value satisfying the array's element contract
 //   start: starting index (0-based, default 0)
-//   count: number of elements to fill (default: all remaining)
+//   stop: exclusive stopping index (default: array length)
 //
 // Parameters (range form):
 //   arr: the array (must not be read-only)
-//   value: value to fill with (number)
+//   value: value satisfying the array's element contract
 //   range: range object specifying which elements to fill
 
 LJLIB_CF(array_fill)
@@ -1488,10 +1501,10 @@ LJLIB_CF(array_fill)
       return 0;
    }
 
-   // Original integer-based fill
+   // Positional half-open span
    auto start = lj_lib_optint(L, 3, 0);
-   auto count = lj_lib_optint(L, 4, array_default_remaining(arr->len, start));
-   auto span = array_clamped_count_span(L, start, count, arr->len);
+   auto stop = lj_lib_optint(L, 4, int32_t(arr->len));
+   auto span = array_clamped_half_open_span(L, start, stop, arr->len);
 
    if (span.count IS 0) return 0;
 

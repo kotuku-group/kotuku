@@ -114,7 +114,7 @@ end
    values.push(false)
    values.insert(0, 'first')
    values[1] = table_value
-   values.fill(array_value, 2, 1)
+   values.fill(array_value, 2, 3)
    local mapped = values.mapSame(Value => any: Value)
    assert(mapped[0] is 'first' and mapped[1] is table_value and mapped[2] is array_value,
       'Any writers did not preserve mixed categories')
