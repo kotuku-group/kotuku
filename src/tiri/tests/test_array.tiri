@@ -2479,8 +2479,22 @@ end
    }
    local first = setmetatable({ id=7 }, equality_mt)
    local second = setmetatable({ id=7 }, equality_mt)
-   local values = array<table> { first }
+   local values = array<any> { first }
    assert(values.indexOf(second) is 0, 'indexOf() should honour the same equality metamethod as is')
+end
+
+@Test function IndexOfPropagatesEqualityMetamethodErrors()
+   local equality_mt = {
+      __eq = function(First:table!, Second:table!):bool return First.id is Second.id end
+   }
+   local values = array<any> { setmetatable({ id=1 }, equality_mt) }
+   local error_caught = false
+   try
+      values.indexOf(setmetatable({ id=1 }, equality_mt))
+   except error_value
+      error_caught = true
+   end
+   assert(error_caught, 'indexOf() should propagate equality metamethod errors to the caller')
 end
 
 @Test function FindUsesPredicateDuringStageB()

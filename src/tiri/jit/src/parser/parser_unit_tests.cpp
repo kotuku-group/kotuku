@@ -2573,6 +2573,21 @@ static bool test_runtime_contract_batching(kt::Log &Log)
    }
    lua_pop(lua, 1);
 
+   GCproto *type_test = compile_child(
+      "return function(Value:any):bool return Value is <array int> end\n", "cached-type-test");
+   const RuntimeContractCache *type_test_cache = type_test ? proto_contract_cache(type_test) : nullptr;
+   const CachedRuntimeContractRecord *type_test_records =
+      type_test_cache ? runtime_contract_cache_records(type_test_cache) : nullptr;
+   const CachedRuntimeContractEntry *type_test_entries =
+      type_test_cache ? runtime_contract_cache_entries(type_test_cache) : nullptr;
+   if (not type_test_cache or type_test_cache->record_count != 1 or type_test_cache->entry_count != 1 or
+       bc_op(proto_bc(type_test)[type_test_records[0].bytecode_position]) != BC_TYPETEST or
+       type_test_entries[0].type != TiriType::Array) {
+      Log.error("a native type test did not build a reusable runtime contract cache entry");
+      return false;
+   }
+   lua_pop(lua, 1);
+
    GCproto *wide = compile_child(
       "return function(A:num, B:num, C:num, D:num, E:num, F:num, G:num, H:num, I:num) return A end\n",
       "wide-parameter-contracts");

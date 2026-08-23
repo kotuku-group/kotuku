@@ -1179,30 +1179,53 @@ extern "C" void lj_meta_type_test_pc(lua_State *L, const BCIns *PC)
    if (bc_op(instruction) != BC_TYPETEST) lj_err_callermsg(L, "invalid type-test resume point");
 
    GCstr *encoded = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(instruction)));
-   RuntimeContractDescriptor descriptor;
-   decode_contract_or_error(L, encoded, descriptor);
-   if (descriptor.contract_count != 1) lj_err_callermsg(L, "invalid type-test descriptor");
+   RuntimeContractEntry decoded_entry;
+   const RuntimeContractEntry *entry;
+   const CachedRuntimeContractEntry *cached_entries = nullptr;
+   uint32_t bytecode_position = uint32_t((PC - 1) - proto_bc(prototype));
+   const CachedRuntimeContractRecord *cached_record =
+      find_cached_contract(prototype, bytecode_position, cached_entries);
+   if (cached_record and cached_record->contract_count IS 1) {
+      const CachedRuntimeContractEntry &cached = cached_entries[0];
+      decoded_entry.type = cached.type;
+      decoded_entry.array_element_type = cached.array_element_type;
+      decoded_entry.flags = cached.flags;
+      decoded_entry.position = cached.position;
+      if (cached.type IS TiriType::Object) decoded_entry.object_class_id = CLASSID(cached.object_class_id);
+      else if (cached.type IS TiriType::Struct or
+               (cached.type IS TiriType::Array and cached.array_element_type IS AET::STRUCT)) {
+         decoded_entry.constraint_name = cached_contract_text(encoded, cached.constraint_offset);
+      }
+      decoded_entry.label = cached_contract_text(encoded, cached.label_offset);
+      entry = &decoded_entry;
+   }
+   else {
+      RuntimeContractDescriptor descriptor;
+      decode_contract_or_error(L, encoded, descriptor);
+      if (descriptor.contract_count != 1) lj_err_callermsg(L, "invalid type-test descriptor");
+      decoded_entry = descriptor.entries[0];
+      entry = &decoded_entry;
+   }
 
-   RuntimeContractEntry &entry = descriptor.entries[0];
    TValue *value = L->base + bc_a(instruction);
    bool matched;
    if (lj_is_thunk(value)) {
       ThunkPayload *payload = thunk_payload(udataV(value));
-      if (entry.type IS TiriType::Any) matched = true;
-      else if (payload->resolved) matched = contract_matches(L, &payload->cached_value, entry);
+      if (entry->type IS TiriType::Any) matched = true;
+      else if (payload->resolved) matched = contract_matches(L, &payload->cached_value, *entry);
       else if (payload->expected_type != 0xff and
-          entry.object_class_id IS CLASSID::NIL and entry.constraint_name.empty() and
-          (entry.type != TiriType::Array or entry.array_element_type IS AET::ANY)) {
-         matched = entry.type IS TiriType(payload->expected_type);
+          entry->object_class_id IS CLASSID::NIL and entry->constraint_name.empty() and
+          (entry->type != TiriType::Array or entry->array_element_type IS AET::ANY)) {
+         matched = entry->type IS TiriType(payload->expected_type);
       }
       else {
          TValue *resolved = lj_thunk_resolve(L, udataV(value));
          value = L->base + bc_a(instruction);
-         matched = contract_matches(L, resolved, entry);
+         matched = contract_matches(L, resolved, *entry);
       }
    }
-   else matched = contract_matches(L, value, entry);
-   if ((entry.flags & contract_flag(ContractEntryFlag::Negated)) != 0) matched = not matched;
+   else matched = contract_matches(L, value, *entry);
+   if ((entry->flags & contract_flag(ContractEntryFlag::Negated)) != 0) matched = not matched;
    setboolV(value, matched);
 }
 
@@ -1214,7 +1237,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
    uint16_t entry_count = 0;
    for (uint32_t i = 1; i < Prototype->sizebc; ++i) {
       BCIns instruction = proto_bc(Prototype)[i];
-      if (bc_op(instruction) != BC_CONTRACT) continue;
+      if (bc_op(instruction) != BC_CONTRACT and bc_op(instruction) != BC_TYPETEST) continue;
 
       GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
@@ -1245,7 +1268,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
    uint16_t entry_index = 0;
    for (uint32_t i = 1; i < Prototype->sizebc; ++i) {
       BCIns instruction = proto_bc(Prototype)[i];
-      if (bc_op(instruction) != BC_CONTRACT) continue;
+      if (bc_op(instruction) != BC_CONTRACT and bc_op(instruction) != BC_TYPETEST) continue;
 
       GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;

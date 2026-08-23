@@ -482,50 +482,53 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- TYPE OPERATIONS
 ----------------------------------------------------------------------------------------------------------------------
--- Goal: Measure overhead of type() function calls
+-- Goal: Compare native type tests with type() string comparisons
 
-@Test function TypeCheckType()
+@Test function TypeCheckNativeCMP()
    -- Create values of different types
    local num_int = 42
-   local num_float = 3.14159
    local str = "hello"
    local tbl = { a = 1, b = 2 }
-   local arr = array<int> { 1, 2, 3 }
    local func = function() return 1 end
    local bool_true = true
-   local bool_false = false
-   local nil_val = nil
 
    local acc = 0
-   for i in {0 to 10000} do
-      -- Check type of numbers
-      local t1 = type(num_int)
-      local t2 = type(num_float)
-      local t3 = type(i)
+   for i in {0 to 200000} do
+      -- Type comparisons
+      local is_num = num_int is <num>
+      local is_str = str is <str>
+      local is_tbl = tbl is <table>
+      local is_func = func is <func>
+      local is_bool = bool_true is <bool>
 
-      -- Check type of strings
-      local t4 = type(str)
-      local t5 = type("literal")
+      -- Conditional based on type
+      local val = (i % 3 is 0) and str or (i % 3 is 1 and num_int or tbl)
+      if val is <str> then
+         acc += #val
+      elseif val is <num> then
+         acc += val * 2
+      elseif val is <table> then
+         acc += val.a
+      end
 
-      -- Check type of tables
-      local t6 = type(tbl)
-      local t7 = type({})
+      -- Consume the type results so that the loop body cannot be eliminated by the JIT
+      acc += (is_num and 1 or 0) + (is_str and 1 or 0) + (is_tbl and 1 or 0) +
+             (is_func and 1 or 0) + (is_bool and 1 or 0)
+   end
 
-      -- Check type of arrays
-      local t8 = type(arr)
+   return acc
+end
 
-      -- Check type of functions
-      local t9 = type(func)
-      local t10 = type(function() end)
+@Test function TypeCheckTypeCMP()
+   -- Create values of different types
+   local num_int = 42
+   local str = "hello"
+   local tbl = { a = 1, b = 2 }
+   local func = function() return 1 end
+   local bool_true = true
 
-      -- Check type of booleans
-      local t11 = type(bool_true)
-      local t12 = type(bool_false)
-
-      -- Check type of nil
-      local t13 = type(nil_val)
-      local t14 = type(nil)
-
+   local acc = 0
+   for i in {0 to 200000} do
       -- Type comparisons
       local is_num = type(num_int) is "number"
       local is_str = type(str) is "string"
@@ -534,7 +537,7 @@ end
       local is_bool = type(bool_true) is "bool"
 
       -- Conditional based on type
-      local val = i % 3 is 0 and str or (i % 3 is 1 and num_int or tbl)
+      local val = (i % 3 is 0) and str or (i % 3 is 1 and num_int or tbl)
       if type(val) is "string" then
          acc += #val
       elseif type(val) is "number" then
@@ -544,7 +547,6 @@ end
       end
 
       -- Consume the type results so that the loop body cannot be eliminated by the JIT
-      acc += #t1 + #t2 + #t3 + #t4 + #t5 + #t6 + #t7 + #t8 + #t9 + #t10 + #t11 + #t12 + #t13 + #t14
       acc += (is_num and 1 or 0) + (is_str and 1 or 0) + (is_tbl and 1 or 0) +
              (is_func and 1 or 0) + (is_bool and 1 or 0)
    end
