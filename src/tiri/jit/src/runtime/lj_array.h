@@ -28,6 +28,7 @@ extern void lj_array_check_element(lua_State *, GCarray *, cTValue *);
 extern void lj_array_store_validated(lua_State *, GCarray *, MSize Index, cTValue *);
 extern void lj_array_store_checked(lua_State *, GCarray *, MSize Index, cTValue *);
 extern void lj_array_store_new_values(lua_State *, GCarray *, cTValue *Values, MSize Count);
+[[nodiscard]] extern GCarray *lj_array_new_map_result(lua_State *, MSize Length, int TypeArg);
 
 //********************************************************************************************************************
 

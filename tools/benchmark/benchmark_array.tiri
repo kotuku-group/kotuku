@@ -191,20 +191,20 @@ end
    local checksum = 0
    for i in {0 to 1000} do
       -- Find in integer array
-      local idx1 = int_arr.find(0)
-      local idx2 = int_arr.find(5000)
-      local idx3 = int_arr.find(9990)
-      local idx4 = int_arr.find(12345)  -- Not found
+      local idx1 = int_arr.indexOf(0)
+      local idx2 = int_arr.indexOf(5000)
+      local idx3 = int_arr.indexOf(9990)
+      local idx4 = int_arr.indexOf(12345)  -- Not found
 
       -- Find in double array
-      local idx5 = dbl_arr.find(0.0)
-      local idx6 = dbl_arr.find(750.0)
-      local idx7 = dbl_arr.find(999.999)  -- Not found
+      local idx5 = dbl_arr.indexOf(0.0)
+      local idx6 = dbl_arr.indexOf(750.0)
+      local idx7 = dbl_arr.indexOf(999.999)  -- Not found
 
       -- Find in string array
-      local idx8 = str_arr.find("apple")
-      local idx9 = str_arr.find("grape")
-      local idx10 = str_arr.find("mango")  -- Not found
+      local idx8 = str_arr.indexOf("apple")
+      local idx9 = str_arr.indexOf("grape")
+      local idx10 = str_arr.indexOf("mango")  -- Not found
       checksum += (idx1 is nil ? -1 : idx1) + (idx2 is nil ? -1 : idx2) +
          (idx3 is nil ? -1 : idx3) + (idx4 is nil ? -1 : idx4) +
          (idx5 is nil ? -1 : idx5) + (idx6 is nil ? -1 : idx6) +
@@ -621,8 +621,8 @@ end
       end
 
       -- Find values
-      local idx1 = arr.find(5000)
-      local idx2 = arr.find(9999)
+      local idx1 = arr.indexOf(5000)
+      local idx2 = arr.indexOf(9999)
 
       -- Check contains
       local has1 = 5000 in arr

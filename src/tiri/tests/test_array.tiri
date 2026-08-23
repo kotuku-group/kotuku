@@ -717,7 +717,7 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.find() functionality
+-- Test array.indexOf() functionality
 
 @Test function ArrayFind()
    arr = array<int, 10>
@@ -725,21 +725,21 @@ end
       arr[i] = i * 10
    end
 
-   -- Find existing values
-   assert(arr.find(0) is 0, "find(0) should return 0")
-   assert(arr.find(50) is 5, "find(50) should return 5")
-   assert(arr.find(90) is 9, "find(90) should return 9")
+   -- indexOf existing values
+   assert(arr.indexOf(0) is 0, "indexOf(0) should return 0")
+   assert(arr.indexOf(50) is 5, "indexOf(50) should return 5")
+   assert(arr.indexOf(90) is 9, "indexOf(90) should return 9")
 
-   -- Find non-existing value
-   assert(arr.find(55) is nil, "find(55) should return nil")
+   -- indexOf non-existing value
+   assert(arr.indexOf(55) is nil, "indexOf(55) should return nil")
 
-   -- Find with start index
-   assert(arr.find(50, 5) is 5, "find(50, 5) should return 5")
-   assert(arr.find(50, 6) is nil, "find(50, 6) should return nil")
-   assert(arr.find(50, 0, 5) is nil, "an exclusive stop should exclude index 5")
-   assert(arr.find(50, 0, 6) is 5, "an exclusive stop should include index 5")
-   assert(arr.find(90, 9, #arr) is 9, "a stop equal to array length should be valid")
-   assert(arr.find(50, 5, 5) is nil, "an empty span should not find a value")
+   -- indexOf with start index
+   assert(arr.indexOf(50, 5) is 5, "indexOf(50, 5) should return 5")
+   assert(arr.indexOf(50, 6) is nil, "indexOf(50, 6) should return nil")
+   assert(arr.indexOf(50, 0, 5) is nil, "an exclusive stop should exclude index 5")
+   assert(arr.indexOf(50, 0, 6) is 5, "an exclusive stop should include index 5")
+   assert(arr.indexOf(90, 9, #arr) is 9, "a stop equal to array length should be valid")
+   assert(arr.indexOf(50, 5, 5) is nil, "an empty span should not return a value")
 end
 
 @Test function ArrayFindFloat()
@@ -750,9 +750,9 @@ end
    arr[3] = 2.5  -- duplicate
    arr[4] = 4.5
 
-   assert(arr.find(2.5) is 1, "find(2.5) should return 1 (first occurrence)")
-   assert(arr.find(3.5) is 2, "find(3.5) should return 2")
-   assert(arr.find(5.5) is nil, "find(5.5) should return nil")
+   assert(arr.indexOf(2.5) is 1, "indexOf(2.5) should return 1 (first occurrence)")
+   assert(arr.indexOf(3.5) is 2, "indexOf(3.5) should return 2")
+   assert(arr.indexOf(5.5) is nil, "indexOf(5.5) should return nil")
 end
 
 @Test function ArrayFindObject()
@@ -760,10 +760,10 @@ end
    obj_two = obj.new('file')
    arr = array<obj> { obj_one, obj_two }
 
-   assert(arr.find(obj_one) is 0, "find(object) should return 0")
-   assert(arr.find(obj_two.id) is 1, "find(uid) should return 1")
-   assert(arr.find(obj_one, 1) is nil, "find(object, 1) should return nil")
-   assert(arr.find(obj_two, {0 into 1}) is 1, "find(object, range) should return 1")
+   assert(arr.indexOf(obj_one) is 0, "indexOf(object) should return 0")
+   assert(arr.indexOf(obj_two.id) is 1, "indexOf(uid) should return 1")
+   assert(arr.indexOf(obj_one, 1) is nil, "indexOf(object, 1) should return nil")
+   assert(arr.indexOf(obj_two, {0 into 1}) is 1, "indexOf(object, range) should return 1")
 
    obj_one.free()
    obj_two.free()
@@ -915,7 +915,7 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test array.find() with range support
+-- Test array.indexOf() with range support
 
 @Test function ArrayFindWithRange()
    arr = array<int, 10>
@@ -924,11 +924,11 @@ end
    end
 
    -- Find within a range (exclusive)
-   assert(arr.find(30, {0 to 5}) is 3, "find in range: should find 30 at index 3")
-   assert(arr.find(50, {0 to 5}) is nil, "find in range: 50 should not be found (outside range)")
-   assert(arr.find(70, {5 to 10}) is 7, "find in range: should find 70 at index 7")
-   assert(arr.find(30, {-20 into 3}) is 3, "find in clipped negative range should still find 30")
-   assert(arr.find(30, {20 to 30}) is nil, "find in empty clipped range should return nil")
+   assert(arr.indexOf(30, {0 to 5}) is 3, "find in range: should find 30 at index 3")
+   assert(arr.indexOf(50, {0 to 5}) is nil, "find in range: 50 should not be found (outside range)")
+   assert(arr.indexOf(70, {5 to 10}) is 7, "find in range: should find 70 at index 7")
+   assert(arr.indexOf(30, {-20 into 3}) is 3, "find in clipped negative range should still find 30")
+   assert(arr.indexOf(30, {20 to 30}) is nil, "find in empty clipped range should return nil")
 end
 
 @Test function ArrayFindWithInclusiveRange()
@@ -938,8 +938,8 @@ end
    end
 
    -- Find within an inclusive range
-   assert(arr.find(50, {0 into 5}) is 5, "find inclusive: should find 50 at index 5")
-   assert(arr.find(50, {0 to 5}) is nil, "find exclusive: 50 should not be found at boundary")
+   assert(arr.indexOf(50, {0 into 5}) is 5, "find inclusive: should find 50 at index 5")
+   assert(arr.indexOf(50, {0 to 5}) is nil, "find exclusive: 50 should not be found at boundary")
 end
 
 @Test function ArrayFindWithNegativeRange()
@@ -951,8 +951,8 @@ end
    arr[4] = 40
 
    -- Find in last 3 elements using negative indices
-   assert(arr.find(20, {-3 to -1}) is 3, "find negative: should find 20 at index 3")
-   assert(arr.find(10, {-3 to -1}) is nil, "find negative: 10 should not be found in last 3")
+   assert(arr.indexOf(20, {-3 to -1}) is 3, "find negative: should find 20 at index 3")
+   assert(arr.indexOf(10, {-3 to -1}) is nil, "find negative: 10 should not be found in last 3")
 end
 
 @Test function ArrayFindWithReverseRange()
@@ -964,8 +964,8 @@ end
    arr[4] = 40
 
    -- Find searching backwards (should find the later occurrence first)
-   assert(arr.find(20, {4 into 0}) is 3, "find reverse: should find 20 at index 3 (searching from end)")
-   assert(arr.find(10, range.new(4, 0, false, -1)) is nil, "exclusive reverse range should exclude the stop boundary")
+   assert(arr.indexOf(20, {4 into 0}) is 3, "find reverse: should find 20 at index 3 (searching from end)")
+   assert(arr.indexOf(10, range.new(4, 0, false, -1)) is nil, "exclusive reverse range should exclude the stop boundary")
 end
 
 @Test function ArrayFindWithSteppedRange()
@@ -976,8 +976,8 @@ end
    -- arr = {100, 10, 100, 30, 100, 50, 100, 70, 100, 90}
 
    -- Find only checking odd indices
-   assert(arr.find(30, range.new(1, 9, false, 2)) is 3, "find stepped: should find 30 at index 3")
-   assert(arr.find(100, range.new(1, 9, false, 2)) is nil, "find stepped: 100 not at odd indices")
+   assert(arr.indexOf(30, range.new(1, 9, false, 2)) is 3, "find stepped: should find 30 at index 3")
+   assert(arr.indexOf(100, range.new(1, 9, false, 2)) is nil, "find stepped: 100 not at odd indices")
 end
 
 @Test function ArrayFindOriginalSyntax()
@@ -987,9 +987,9 @@ end
       arr[i] = i * 10
    end
 
-   assert(arr.find(0) is 0, "find original: should find 0 at index 0")
-   assert(arr.find(50) is 5, "find original: should find 50 at index 5")
-   assert(arr.find(50, 6) is nil, "find original: 50 should not be found starting at 6")
+   assert(arr.indexOf(0) is 0, "find original: should find 0 at index 0")
+   assert(arr.indexOf(50) is 5, "find original: should find 50 at index 5")
+   assert(arr.indexOf(50, 6) is nil, "find original: 50 should not be found starting at 6")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1073,7 +1073,7 @@ end
    assert(result is '', "concat on empty array should return empty string")
 
    -- find on empty array should return nil
-   found = empty_int.find(42)
+   found = empty_int.indexOf(42)
    assert(found is nil, "find on empty array should return nil")
 
    -- reverse on empty array should not error
@@ -1120,7 +1120,7 @@ end
    assert(arr[999] is 999, "large array last element should be 999")
 
    -- Test find on large array
-   found = arr.find(500)
+   found = arr.indexOf(500)
    assert(found is 500, "find on large array should work")
 
    -- Test reverse on large array
@@ -1458,7 +1458,7 @@ end
    assert(arr[4] is 50, "sorted arr[4] should be 50")
 
    -- Test find
-   idx = arr.find(30)
+   idx = arr.indexOf(30)
    assert(idx is 2, "find(30) should return 2")
 
    -- Test reverse
@@ -2024,17 +2024,17 @@ end
 end
 
 @Test function ArrayContainsVsFind()
-   -- Verify contains() is consistent with find()
+   -- Verify contains() is consistent with indexOf()
    arr = array<int> { 5, 10, 15, 20, 25 }
 
    for _, v in arr do
-      found = arr.find(v) != nil
+      found = arr.indexOf(v) != nil
       has_v = v in arr
-      assert(found is has_v, "contains() should agree with find() for value " .. v)
+      assert(found is has_v, "contains() should agree with indexOf() for value " .. v)
    end
 
    -- Test non-existent value
-   assert((arr.find(99) != nil) is (99 in arr), "contains and find should agree on missing value")
+   assert((arr.indexOf(99) != nil) is (99 in arr), "contains and indexOf should agree on missing value")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -2442,4 +2442,49 @@ end
    processing.collect('full')
 
    assert(arr[3].k is 21, "Read stress final: arr[3].k corrupted")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Final collection search APIs
+
+@Test function IndexOfRetainsTypedSearchBounds()
+   arr = array<int> { 10, 20, 30, 20, 40 }
+   assert(arr.indexOf(20) is 1, 'indexOf() should return the first matching index')
+   assert(arr.indexOf(20, 2) is 3, 'indexOf() should honour a zero-based start')
+   assert(arr.indexOf(20, 2, 3) is nil, 'indexOf() should honour an exclusive stop')
+   assert(arr.indexOf(20, {4 into 0}) is 3, 'indexOf() should preserve reverse range traversal')
+end
+
+@Test function IndexOfSearchesVariantCallableValues()
+   local identity = function(Value:any):any
+      return Value
+   end
+   local items = array<any> { identity, 'value' }
+   assert(items.indexOf(identity) is 0, 'indexOf() should compare callable values instead of invoking them')
+   assert(items.indexOf(function(Value:any):any return Value end) is nil,
+      'indexOf() should use callable identity for distinct functions')
+end
+
+@Test function IndexOfSearchesReferenceValues()
+   local first = { id=1 }
+   local second = { id=2 }
+   local items = array<any> { first, second }
+   assert(items.indexOf(second) is 1, 'indexOf() should search variant reference values')
+   assert(items.indexOf({ id=2 }) is nil, 'indexOf() should retain reference identity without an equality metamethod')
+end
+
+@Test function IndexOfHonoursReferenceEqualityMetamethods()
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   local first = setmetatable({ id=7 }, equality_mt)
+   local second = setmetatable({ id=7 }, equality_mt)
+   local values = array<table> { first }
+   assert(values.indexOf(second) is 0, 'indexOf() should honour the same equality metamethod as is')
+end
+
+@Test function FindUsesPredicateDuringStageB()
+   local items = array<int> { 10, 20, 30 }
+   assert(items.find(Value => Value > 10) is 20, 'find() should return the first value selected by its predicate')
+   assert(items.indexOf(20) is 1, 'indexOf() should retain equality-search semantics')
 end

@@ -1035,6 +1035,7 @@ static CSTRING diagnostic_code_name(ParserErrorCode Code)
       case ParserErrorCode::None:                   return "None";
       case ParserErrorCode::UnexpectedToken:        return "UnexpectedToken";
       case ParserErrorCode::DeprecatedSyntax:       return "DeprecatedSyntax";
+      case ParserErrorCode::DeprecatedApi:          return "DeprecatedApi";
       case ParserErrorCode::ExpectedToken:          return "ExpectedToken";
       case ParserErrorCode::ExpectedIdentifier:     return "ExpectedIdentifier";
       case ParserErrorCode::UnexpectedEndOfFile:    return "UnexpectedEndOfFile";

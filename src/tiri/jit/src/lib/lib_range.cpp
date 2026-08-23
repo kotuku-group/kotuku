@@ -358,7 +358,8 @@ static int fp_range_each(lua_State *L)
    for (size_t ordinal = 0; ordinal < count; ordinal++) {
       lua_pushvalue(L, 2);
       fp_range_push(L, fp_range_value(range, ordinal));
-      lua_call(L, 1, 1);
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 2, 1);
       bool terminate = not lua_isnil(L, -1) and not lua_toboolean(L, -1);
       lua_pop(L, 1);
       if (terminate) break;
@@ -374,12 +375,14 @@ static int fp_range_filter(lua_State *L)
    size_t count = fp_range_count(L, range, true);
    bool integer_array = fp_range_integer_array(range);
    GCarray *array = lj_array_new(L, uint32_t(count), integer_array ? AET::INT32 : AET::DOUBLE);
+   setarrayV(L, L->top++, array);
    uint32_t result_index = 0;
    for (size_t ordinal = 0; ordinal < count; ordinal++) {
       lua_Number value = fp_range_value(range, ordinal);
       lua_pushvalue(L, 2);
       fp_range_push(L, value);
-      lua_call(L, 1, 1);
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 2, 1);
       if (lua_toboolean(L, -1)) {
          if (integer_array) array->get<int32_t>()[result_index] = int32_t(value);
          else array->get<double>()[result_index] = value;
@@ -388,7 +391,6 @@ static int fp_range_filter(lua_State *L)
       lua_pop(L, 1);
    }
    array->len = result_index;
-   setarrayV(L, L->top++, array);
    return 1;
 }
 
@@ -403,7 +405,8 @@ static int fp_range_reduce(lua_State *L)
       lua_pushvalue(L, 3);
       lua_pushvalue(L, accumulator);
       fp_range_push(L, fp_range_value(range, ordinal));
-      lua_call(L, 2, 1);
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 3, 1);
       lua_replace(L, accumulator);
    }
    return 1;
@@ -414,18 +417,16 @@ static int fp_range_map(lua_State *L)
    auto range = get_range(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
    size_t count = fp_range_count(L, range, true);
-   GCarray *array = lj_array_new(L, uint32_t(count), AET::ANY);
-   TValue *data = array->get<TValue>();
+   GCarray *array = lj_array_new_map_result(L, MSize(count), 3);
+   setarrayV(L, L->top++, array);
    for (size_t ordinal = 0; ordinal < count; ordinal++) {
       lua_pushvalue(L, 2);
       fp_range_push(L, fp_range_value(range, ordinal));
-      lua_call(L, 1, 1);
-      TValue *source = L->top - 1;
-      copyTV(L, &data[ordinal], source);
-      if (tvisgcv(source)) lj_gc_objbarrier(L, array, gcV(source));
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 2, 1);
+      lj_array_store_checked(L, array, MSize(ordinal), L->top - 1);
       lua_pop(L, 1);
    }
-   setarrayV(L, L->top++, array);
    return 1;
 }
 
@@ -449,7 +450,8 @@ static int fp_range_any(lua_State *L)
    for (size_t ordinal = 0; ordinal < count; ordinal++) {
       lua_pushvalue(L, 2);
       fp_range_push(L, fp_range_value(range, ordinal));
-      lua_call(L, 1, 1);
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 2, 1);
       bool matched = lua_toboolean(L, -1);
       lua_pop(L, 1);
       if (matched) {
@@ -469,7 +471,8 @@ static int fp_range_all(lua_State *L)
    for (size_t ordinal = 0; ordinal < count; ordinal++) {
       lua_pushvalue(L, 2);
       fp_range_push(L, fp_range_value(range, ordinal));
-      lua_call(L, 1, 1);
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 2, 1);
       bool matched = lua_toboolean(L, -1);
       lua_pop(L, 1);
       if (not matched) {
@@ -490,11 +493,33 @@ static int fp_range_find(lua_State *L)
       lua_Number value = fp_range_value(range, ordinal);
       lua_pushvalue(L, 2);
       fp_range_push(L, value);
-      lua_call(L, 1, 1);
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 2, 1);
       bool matched = lua_toboolean(L, -1);
       lua_pop(L, 1);
       if (matched) {
          fp_range_push(L, value);
+         return 1;
+      }
+   }
+   lua_pushnil(L);
+   return 1;
+}
+
+static int fp_range_find_index(lua_State *L)
+{
+   auto range = get_range(L, 1);
+   luaL_checktype(L, 2, LUA_TFUNCTION);
+   size_t count = fp_range_count(L, range, false);
+   for (size_t ordinal = 0; ordinal < count; ordinal++) {
+      lua_pushvalue(L, 2);
+      fp_range_push(L, fp_range_value(range, ordinal));
+      lua_pushinteger(L, lua_Integer(ordinal));
+      lua_call(L, 2, 1);
+      bool matched = lua_toboolean(L, -1);
+      lua_pop(L, 1);
+      if (matched) {
+         lua_pushinteger(L, lua_Integer(ordinal));
          return 1;
       }
    }
@@ -541,6 +566,14 @@ static int fp_range_len(lua_State *L)
    return 1;
 }
 
+static bool fp_range_ordinal(lua_State *L, const tiri_range *Range, lua_Number Value, size_t *Ordinal)
+{
+   long double distance = ((long double)Value - (long double)Range->start) / (long double)Range->step;
+   return std::isfinite(Value) and fp_range_in_bounds(Range, Value) and
+      fp_range_nearest_ordinal(distance, Ordinal) and
+      *Ordinal < fp_range_count(L, Range, false);
+}
+
 static int fp_range_contains(lua_State *L)
 {
    auto range = check_range(L, 1);
@@ -550,25 +583,24 @@ static int fp_range_contains(lua_State *L)
       return 1;
    }
    lua_Number value = lua_tonumber(L, argument);
-   if (not std::isfinite(value) or not fp_range_in_bounds(range, value)) {
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-
    size_t ordinal;
-   long double distance = ((long double)value - (long double)range->start) / (long double)range->step;
-   if (not fp_range_nearest_ordinal(distance, &ordinal)) {
-      lua_pushboolean(L, 0);
+   bool member = fp_range_ordinal(L, range, value, &ordinal);
+   lua_pushboolean(L, member);
+   return 1;
+}
+
+static int fp_range_index_of(lua_State *L)
+{
+   auto range = get_range(L, 1);
+   if (lua_type(L, 2) != LUA_TNUMBER) {
+      lua_pushnil(L);
       return 1;
    }
-
-   size_t count = fp_range_count(L, range, false);
-   if (ordinal >= count) {
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-
-   lua_pushboolean(L, 1);
+   lua_Number value = lua_tonumber(L, 2);
+   size_t ordinal;
+   bool member = fp_range_ordinal(L, range, value, &ordinal);
+   if (member) lua_pushinteger(L, lua_Integer(ordinal));
+   else lua_pushnil(L);
    return 1;
 }
 
@@ -590,6 +622,8 @@ LJLIB_CF(range_take) { return fp_range_take(L); }
 LJLIB_CF(range_any) { return fp_range_any(L); }
 LJLIB_CF(range_all) { return fp_range_all(L); }
 LJLIB_CF(range_find) { return fp_range_find(L); }
+LJLIB_CF(range_findIndex) { return fp_range_find_index(L); }
+LJLIB_CF(range_indexOf) { return fp_range_index_of(L); }
 LJLIB_CF(range_toArray) { return fp_range_toarray(L); }
 
 LJLIB_ASM(range_iterator_next) LJLIB_REC(.)
@@ -669,6 +703,8 @@ constexpr auto HASH_take      = kt::strhash("take");
 constexpr auto HASH_any       = kt::strhash("any");
 constexpr auto HASH_all       = kt::strhash("all");
 constexpr auto HASH_find      = kt::strhash("find");
+constexpr auto HASH_findIndex = kt::strhash("findIndex");
+constexpr auto HASH_indexOf   = kt::strhash("indexOf");
 
 static int range_index(lua_State *Lua)
 {
@@ -691,6 +727,8 @@ static int range_index(lua_State *Lua)
          case HASH_any:       lua_pushcfunction(Lua, fp_range_any); return 1;
          case HASH_all:       lua_pushcfunction(Lua, fp_range_all); return 1;
          case HASH_find:      lua_pushcfunction(Lua, fp_range_find); return 1;
+         case HASH_findIndex: lua_pushcfunction(Lua, fp_range_find_index); return 1;
+         case HASH_indexOf:   lua_pushcfunction(Lua, fp_range_index_of); return 1;
          case HASH_toArray:   break;
       }
    }
@@ -1065,7 +1103,7 @@ extern "C" int luaopen_range(lua_State *L)
    reg_iface_method(L, "range", "reduce", TiriType::Range, builtin_callable_id(FastFunc::range_reduce),
       { TiriType::Any }, { TiriType::Range, TiriType::Any, TiriType::Func });
    reg_iface_method(L, "range", "map", TiriType::Range, builtin_callable_id(FastFunc::range_map),
-      { TiriType::Array }, { TiriType::Range, TiriType::Func });
+      { TiriType::Array }, { TiriType::Range, TiriType::Func, TiriType::Str });
    reg_iface_method(L, "range", "take", TiriType::Range, builtin_callable_id(FastFunc::range_take),
       { TiriType::Array }, { TiriType::Range, TiriType::Num }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "range", "any", TiriType::Range, builtin_callable_id(FastFunc::range_any),
@@ -1074,6 +1112,10 @@ extern "C" int luaopen_range(lua_State *L)
       { TiriType::Bool }, { TiriType::Range, TiriType::Func });
    reg_iface_method(L, "range", "find", TiriType::Range, builtin_callable_id(FastFunc::range_find),
       { TiriType::Num }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "findIndex", TiriType::Range, builtin_callable_id(FastFunc::range_findIndex),
+      { TiriType::Num }, { TiriType::Range, TiriType::Func });
+   reg_iface_method(L, "range", "indexOf", TiriType::Range, builtin_callable_id(FastFunc::range_indexOf),
+      { TiriType::Num }, { TiriType::Range, TiriType::Any });
    reg_iface_method(L, "range", "toArray", TiriType::Range, builtin_callable_id(FastFunc::range_toArray),
       { TiriType::Array }, { TiriType::Range }, FProtoFlags::ContextIndependent);
 

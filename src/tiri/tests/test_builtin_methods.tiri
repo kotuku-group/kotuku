@@ -12,7 +12,7 @@ function enforce_hotpath() end
    values.push(3)
    assert(2 in values and #values is 3, 'Array query and mutation methods should use dot calls')
 
-   local mapped = values.map(Value => num: Value * 2)
+   local mapped = values.mapSame(Value => num: Value * 2)
    assert(mapped[0] is 2 and mapped[2] is 6, 'Array map should retain its array result')
    assert(values.reduce(0, (Total, Value) => num: Total + Value) is 6,
       'Array reduce should return the accumulator result')
@@ -321,4 +321,25 @@ end
    values.insert(7)
    table.insert = original
    assert(values[0] is 7, 'Compiled instance calls should ignore later public namespace rebinding')
+end
+
+@Test function CollectionCompatibilityMethodDispatch()
+   local values = array<int> { 10, 20, 30 }
+   local dynamic_values:any = values
+   assert(values.indexOf(20) is 1 and array.indexOf(values, 30) is 2,
+      'array.indexOf should support method and receiver-first calls')
+   assert(values.find((Value, Index) => Value > 10 and Index is 1) is 20 and
+      array.find(values, Value => Value > 20) is 30,
+      'array.find should support predicate method and receiver-first calls')
+   assert(dynamic_values.findIndex((Value, Index) => Value is 20 and Index is 1) is 1,
+      'a dynamic array receiver should dispatch findIndex at runtime')
+   assert(values.mapSame(Value => Value + 1)[2] is 31,
+      'mapSame should dispatch as a canonical array method')
+
+   local sequence = {10 to 16 by 2}
+   local dynamic_sequence:any = sequence
+   assert(sequence.indexOf(14) is 2 and range.indexOf(sequence, 12) is 1,
+      'range.indexOf should support method and receiver-first calls')
+   assert(dynamic_sequence.findIndex((Value, Ordinal) => Value is 14 and Ordinal is 2) is 2,
+      'a dynamic range receiver should dispatch findIndex at runtime')
 end

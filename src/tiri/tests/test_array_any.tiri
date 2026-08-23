@@ -203,7 +203,7 @@ end
 
 @Test function ArrayAnyMap()
    arr = array<any> { 1, 2, 3 }
-   mapped = array.map(arr, i => i * 10)
+   mapped = array.mapSame(arr, i => i * 10)
 
    assert(mapped[0] is 10, "first should be 10, got " .. tostring(mapped[0]))
    assert(mapped[1] is 20, "second should be 20, got " .. tostring(mapped[1]))

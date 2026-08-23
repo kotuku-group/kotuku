@@ -52,6 +52,7 @@ static CSTRING error_code_name(ParserErrorCode Code)
       case ParserErrorCode::None:                      return "None";
       case ParserErrorCode::UnexpectedToken:           return "Unexpected Token";
       case ParserErrorCode::DeprecatedSyntax:          return "Deprecated syntax";
+      case ParserErrorCode::DeprecatedApi:             return "Deprecated API";
       case ParserErrorCode::ExpectedToken:             return "Expected Token";
       case ParserErrorCode::ExpectedIdentifier:        return "Expected Identifier";
       case ParserErrorCode::UnexpectedEndOfFile:       return "Unexpected EOF";
