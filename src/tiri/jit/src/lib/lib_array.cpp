@@ -24,9 +24,10 @@
 #include "lj_array.h"
 #include "lj_bulk.h"
 #include "lj_meta.h"
+#include "lj_state.h"
 #include "lj_struct.h"
+#include "lj_vm.h"
 #include "lj_vmarray.h"
-#include "stack_helpers.h"
 #include "lib.h"
 #include "lib_utils.h"
 #include "lib_range.h"
@@ -1527,8 +1528,38 @@ static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index)
 
    if (not equal and itype(element) IS itype(candidate) and
        (tvistab(element) or tvisudata(element))) {
-      TValue *base = lj_meta_equal(L, gcV(element), gcV(candidate), 0);
-      equal = uintptr_t(base) > 1 and tvistruecond(MetaCall::invoke(L, base, 2, 1));
+      cTValue *method = lj_meta_fast(L, tabref(gcV(element)->gch.metatable), MM_eq);
+      if (method) {
+         if (tabref(gcV(element)->gch.metatable) != tabref(gcV(candidate)->gch.metatable)) {
+            cTValue *candidate_method = lj_meta_fast(L, tabref(gcV(candidate)->gch.metatable), MM_eq);
+            if (candidate_method IS nullptr or not lj_obj_equal(method, candidate_method)) method = nullptr;
+         }
+
+         if (method) {
+            copyTV(L, L->top++, method);
+            setnilV(L->top++);
+            TValue *base = L->top;
+            [[maybe_unused]] size_t context_depth = lj_context_depth(L);
+            size_t context_size = L->context_stack.size();
+            if (tvistab(element)) {
+               copyTV(L, L->top++, candidate);
+               element = restorestack(L, saved_top);
+               [[maybe_unused]] uint32_t argument_count =
+                  lj_context_prepare_metamethod_call(L, element, base, 1, 2);
+               lj_assertL(argument_count IS 1, "table equality metamethod retained its receiver argument");
+            }
+            else {
+               copyTV(L, L->top++, element);
+               copyTV(L, L->top++, candidate);
+            }
+            int call_error = lj_vm_pcall(L, base, 2, -1);
+            lj_context_restore_depth(L, context_size);
+            if (call_error) lua_error(L);
+            lj_assertL(lj_context_depth(L) IS context_depth,
+               "equality metamethod returned with an unbalanced context");
+            equal = tvistruecond(L->top - 1);
+         }
+      }
    }
 
    L->top = restorestack(L, saved_top);
