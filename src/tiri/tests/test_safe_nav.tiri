@@ -87,6 +87,36 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function testCheckedSafeCallReturnOnNil()
+   holder = nil
+   try
+      holder = obj.new('time')
+   end
+
+   function checkedSafeReturn()
+      return check holder?.acQuery()
+   end
+
+   result, extra = checkedSafeReturn()
+   assert(result is ERR_Okay, 'A checked safe call should return its first successful result')
+   assert(extra is nil, 'A checked safe call should consolidate a successful call to one result')
+
+   holder.free()
+   holder = nil
+
+   function priorResults():<any, str>
+      return nil, 'captured'
+   end
+   _, captured = priorResults()
+   assert(captured is 'captured', 'The stale-result seed should retain its second result')
+
+   result, extra = checkedSafeReturn()
+   assert(result is nil, 'A checked safe call should return nil for a missing receiver')
+   assert(extra is nil, 'A checked safe call should not return stale results for a missing receiver')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function testSafeMethodChain()
    account = { profile = { email = "user@example.com" } }
    function account.getProfile(Self):table

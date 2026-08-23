@@ -1645,6 +1645,15 @@ static bool tail_call_preserves_checkall_boundary(const ParserContext &Context, 
    return Context.descriptors().callable(call.callable).source != StaticCallableSource::NativePrototype;
 }
 
+static bool is_safe_call_expression(const ExprNode &Expression)
+{
+   // Parsed safe calls currently retain CallExpr and identify the nil short-circuit through their dispatch mode.
+   if (Expression.kind IS AstNodeKind::SafeCallExpr) return true;
+   if (Expression.kind != AstNodeKind::CallExpr) return false;
+   const auto &call = std::get<CallExprPayload>(Expression.data);
+   return call.dispatch IS CallDispatch::SafeMemberNamed or call.dispatch IS CallDispatch::SafeMemberComputed;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Payload)
 {
    BCIns ins;
@@ -1744,7 +1753,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             set_call_result_count(&this->func_state, last, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
-         else if (has_post_call_control_flow and Payload.values.back()->is_checked) {
+         else if (has_post_call_control_flow and Payload.values.back()->is_checked and
+                  not is_safe_call_expression(*Payload.values.back())) {
             // A checked call retains its complete result set after promoting a failing first result. The inserted
             // check instructions prevent tail-call conversion, but do not consolidate the successful results.
             set_call_result_count(&this->func_state, last, 0);

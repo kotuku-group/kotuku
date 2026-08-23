@@ -7162,6 +7162,20 @@ static bool test_tail_call_eligibility(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view checked_safe_source =
+      "extern obj\n"
+      "try global checked_safe_object = obj.new('time') end\n"
+      "local function checked_safe()\n"
+      "   return check checked_safe_object?.acQuery()\n"
+      "end\n"
+      "return checked_safe\n";
+   auto checked_safe = compile_snapshot(L, checked_safe_source, true, error);
+   if (not checked_safe or count_opcode_tree(*checked_safe, BC_RET1) IS 0 or
+       count_opcode_tree(*checked_safe, BC_RETM) != 0) {
+      Log.error("a checked safe-call return did not lower to one fixed result: %s", error.c_str());
+      return false;
+   }
+
    constexpr std::string_view cleanup_source =
       "local function source():<num, str> return 7, 'cleanup' end\n"
       "local function cleaned()\n"
