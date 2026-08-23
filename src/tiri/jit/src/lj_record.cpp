@@ -61,13 +61,15 @@ static TRef rec_tmpref(jit_State *J, TRef tr, int mode)
 
 static TRef sload(jit_State *J, int32_t Slot);
 
+#define getslot(J, s)   (J->base[(s)] ? J->base[(s)] : sload(J, (int32_t)(s)))
+
 //********************************************************************************************************************
 // Materialise live trace slots back to the Lua stack before a throwable helper runs inside a recorded try block.
 
 static TRef rec_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t AbsoluteSlot)
 {
    lj_assertJ(AbsoluteSlot >= 0 and AbsoluteSlot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
-      "try materialisation slot out of range");
+      "stack materialisation slot out of range");
    int32_t byte_offset = 8 * (AbsoluteSlot - 1 - LJ_FR2);
    return Ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, Ir.kint(byte_offset));
 }
@@ -113,37 +115,49 @@ static void rec_emit_tvalue_store(jit_State *J, TRef SlotAddr, TRef ValueRef)
    }
 }
 
-static void rec_try_materialise_slots(jit_State *J, bool ForceLoad, BCREG SlotLimit)
+static void rec_materialise_slot_range(
+   jit_State *J, BCREG FirstSlot, BCREG SlotLimit, bool ForceLoad, bool TrackTryStores)
 {
    BCREG slot_limit = SlotLimit;
    if (slot_limit > J->maxslot) slot_limit = J->maxslot;
-   if (slot_limit IS 0) return;
+   if (FirstSlot >= slot_limit) return;
 
    IRBuilder ir(J);
    bool stored = false;
 
-   for (BCREG slot = 0; slot < slot_limit; slot++) {
-      TRef value_ref = J->base[slot];
-      if (not value_ref and ForceLoad) value_ref = sload(J, slot);
+   for (BCREG slot = FirstSlot; slot < slot_limit; slot++) {
+      TRef value_ref = ForceLoad ? getslot(J, slot) : J->base[slot];
       if (not value_ref or (value_ref & (TREF_FRAME | TREF_CONT))) continue;
 
       int32_t absolute_slot = int32_t(J->baseslot) + int32_t(slot);
       lj_assertJ(absolute_slot >= 0 and absolute_slot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
-         "try materialisation slot out of range");
-      if (not ForceLoad and J->trymat[absolute_slot] IS value_ref) {
+         "stack materialisation slot out of range");
+      if (TrackTryStores and not ForceLoad and J->trymat[absolute_slot] IS value_ref) {
          J->try_skipped_stores++;
          continue;
       }
 
       TRef slot_addr = rec_stack_slot_addr(J, ir, absolute_slot);
       rec_emit_tvalue_store(J, slot_addr, value_ref);
-      J->trymat[absolute_slot] = value_ref;
-      J->try_stores++;
-      if (ForceLoad) J->try_enter_stores++;
+      if (TrackTryStores) {
+         J->trymat[absolute_slot] = value_ref;
+         J->try_stores++;
+         if (ForceLoad) J->try_enter_stores++;
+      }
       stored = true;
    }
 
    if (stored) emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+}
+
+static void rec_try_materialise_slots(jit_State *J, bool ForceLoad, BCREG SlotLimit)
+{
+   rec_materialise_slot_range(J, 0, SlotLimit, ForceLoad, true);
+}
+
+static void rec_defer_materialise_slots(jit_State *J, BCREG CallableSlot, BCREG ArgumentCount)
+{
+   rec_materialise_slot_range(J, CallableSlot, BCREG(CallableSlot + ArgumentCount + 1), true, false);
 }
 
 void lj_record_try_materialise(jit_State *J)
@@ -389,7 +403,6 @@ static TRef sload(jit_State *J, int32_t slot)
 //********************************************************************************************************************
 // Get TRef from slot. Load slot and specialise if not done already.
 
-#define getslot(J, s)   (J->base[(s)] ? J->base[(s)] : sload(J, (int32_t)(s)))
 // Note: getslot macro retained for compatibility; SlotView can be used for new code:
 //   SlotView slots(J); TRef tr = slots.is_loaded(s) ? slots[s] : sload(J, s);
 
@@ -5331,6 +5344,42 @@ void lj_record_ins(jit_State *J)
       if (J->checkalldepth > 0) J->checkalldepth--;
       J->needsnap = 1;
       break;
+
+   case BC_DEFERARM: {
+      BCREG callable_slot = bc_a(ins);
+      BCREG argument_count = bc_c(ins);
+      BCREG scope_base = bc_b(ins);
+      uint32_t slot_limit = uint32_t(callable_slot) + uint32_t(argument_count) + 1;
+      uint32_t absolute_limit = uint32_t(J->baseslot) + slot_limit;
+      if (scope_base > callable_slot or slot_limit > J->maxslot or
+          absolute_limit > LJ_MAX_JSLOTS + LJ_STACK_EXTRA) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+
+      rec_defer_materialise_slots(J, callable_slot, argument_count);
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_defer_arm, owner_base, ir.kint(callable_slot), ir.kint(argument_count),
+         ir.kint(scope_base));
+      J->needsnap = 1;
+      break;
+   }
+
+   case BC_DEFERCONSUME: {
+      BCREG callable_slot = bc_a(ins);
+      if (callable_slot >= J->maxslot or uint32_t(J->baseslot) + uint32_t(callable_slot) >=
+          LJ_MAX_JSLOTS + LJ_STACK_EXTRA) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+
+      IRBuilder ir(J);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
+      lj_ir_call(J, IRCALL_lj_defer_consume_jit, owner_base, ir.kint(callable_slot));
+      J->needsnap = 1;
+      break;
+   }
 
    case BC_CHECK:
    case BC_RAISE:

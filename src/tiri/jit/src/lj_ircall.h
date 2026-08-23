@@ -233,6 +233,9 @@ typedef struct CCallInfo {
   _(ANY,        lj_try_leave,      1,  FS, NIL, CCI_L) \
   _(ANY,        lj_checkall_enter,  3,  FS, NIL, CCI_L) \
   _(ANY,        lj_checkall_leave,  1,  FS, NIL, CCI_L) \
+  /* Deferred cleanup registration */ \
+  _(ANY,        lj_defer_arm,         5, S, NIL, CCI_L) \
+  _(ANY,        lj_defer_consume_jit, 3, S, NIL, CCI_L) \
   /* State-local table context */ \
   _(ANY,        lj_context_current_jit,  1, FS, TAB, CCI_L) \
   _(ANY,        lj_context_enter_jit,    3,  S, NIL, CCI_L) \
@@ -291,6 +294,9 @@ extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t 
 extern "C" void lj_try_leave(lua_State *L);
 extern "C" void lj_checkall_enter(lua_State *L, GCfunc *Func, TValue *Base);
 extern "C" void lj_checkall_leave(lua_State *L);
+extern "C" void lj_defer_arm(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot,
+   uint32_t ArgumentCount, uint32_t ScopeBase);
+extern "C" void lj_defer_consume_jit(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot);
 
 // Permanent contextual designation of a recorded table (see lj_state.cpp).
 extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept;

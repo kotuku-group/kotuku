@@ -533,6 +533,12 @@ extern "C" bool lj_defer_consume(lua_State *L, TValue *OwnerBase, uint32_t Calla
    return true;
 }
 
+extern "C" void lj_defer_consume_jit(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot)
+{
+   [[maybe_unused]] bool consumed = lj_defer_consume(L, OwnerBase, CallableSlot);
+   lj_assertL(consumed, "recorded defer callable slot is not armed");
+}
+
 //********************************************************************************************************************
 // Find the innermost active lexical defer scope in a callable-slot range.
 

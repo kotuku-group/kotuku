@@ -72,6 +72,8 @@ extern "C" LJ_FUNC void lj_defer_arm(lua_State *State, TValue *OwnerBase, uint32
    uint32_t ArgumentCount, uint32_t ScopeBase);
 extern "C" LJ_FUNC [[nodiscard]] bool lj_defer_consume(
    lua_State *State, TValue *OwnerBase, uint32_t CallableSlot);
+extern "C" LJ_FUNC void lj_defer_consume_jit(
+   lua_State *State, TValue *OwnerBase, uint32_t CallableSlot);
 LJ_FUNC [[nodiscard]] bool lj_defer_find_scope(lua_State *State, const TValue *OwnerBase,
    uint32_t LowerCallableSlot, uint32_t UpperCallableSlot, uint32_t *ScopeBase) noexcept;
 LJ_FUNC [[nodiscard]] bool lj_defer_peek_scope(lua_State *State, const TValue *OwnerBase,
