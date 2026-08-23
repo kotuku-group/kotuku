@@ -3521,9 +3521,14 @@ static void rec_contains(jit_State *J, RecordOps *ops)
             }
             result_ref = lj_ir_call(J, IRCALL_lj_arr_contains_num, ix->val, candidate_ref);
          }
-         else {
+         else if (array->elemtype IS AET::STR_GC or array->elemtype IS AET::OBJECT or
+             glArrayConversion[size_t(array->elemtype)].primitive) {
             TRef candidate_ref = rec_tmpref(J, ix->key, IRTMPREF_IN1);
             result_ref = lj_ir_call(J, IRCALL_lj_arr_contains, ix->val, candidate_ref);
+         }
+         else {
+            // Variant and reference equality may invoke __eq, which cannot re-enter the VM from a native trace call.
+            lj_trace_err(J, LJ_TRERR_NYICALL);
          }
          emitir(IRTG(IR_NE, IRT_INT), result_ref, lj_ir_kint(J, 0));
          rec_comp_fixup(J, J->pc, int(ops->op) & 1);

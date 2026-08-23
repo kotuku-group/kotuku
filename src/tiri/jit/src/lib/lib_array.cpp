@@ -28,6 +28,7 @@
 #include "lj_struct.h"
 #include "lj_vm.h"
 #include "lj_vmarray.h"
+#include "stack_helpers.h"
 #include "lib.h"
 #include "lib_utils.h"
 #include "lib_range.h"
@@ -1518,20 +1519,21 @@ LJLIB_CF(array_fill)
 //
 // Returns: index of first occurrence, or nil if not found
 
-static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index)
+static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index, cTValue *Candidate)
 {
    ptrdiff_t saved_top = savestack(L, L->top);
+   TValue candidate_copy;
+   copyTV(L, &candidate_copy, Candidate);
    array_push_element(L, Array, Index);
    TValue *element = L->top - 1;
-   cTValue *candidate = L->base + 1;
-   bool equal = lj_obj_equal(element, candidate) != 0;
+   bool equal = lj_obj_equal(element, &candidate_copy) != 0;
 
-   if (not equal and itype(element) IS itype(candidate) and
+   if (not equal and itype(element) IS itype(&candidate_copy) and
        (tvistab(element) or tvisudata(element))) {
       cTValue *method = lj_meta_fast(L, tabref(gcV(element)->gch.metatable), MM_eq);
       if (method) {
-         if (tabref(gcV(element)->gch.metatable) != tabref(gcV(candidate)->gch.metatable)) {
-            cTValue *candidate_method = lj_meta_fast(L, tabref(gcV(candidate)->gch.metatable), MM_eq);
+         if (tabref(gcV(element)->gch.metatable) != tabref(gcV(&candidate_copy)->gch.metatable)) {
+            cTValue *candidate_method = lj_meta_fast(L, tabref(gcV(&candidate_copy)->gch.metatable), MM_eq);
             if (candidate_method IS nullptr or not lj_obj_equal(method, candidate_method)) method = nullptr;
          }
 
@@ -1542,7 +1544,7 @@ static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index)
             [[maybe_unused]] size_t context_depth = lj_context_depth(L);
             size_t context_size = L->context_stack.size();
             if (tvistab(element)) {
-               copyTV(L, L->top++, candidate);
+               copyTV(L, L->top++, &candidate_copy);
                element = restorestack(L, saved_top);
                [[maybe_unused]] uint32_t argument_count =
                   lj_context_prepare_metamethod_call(L, element, base, 1, 2);
@@ -1550,7 +1552,7 @@ static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index)
             }
             else {
                copyTV(L, L->top++, element);
-               copyTV(L, L->top++, candidate);
+               copyTV(L, L->top++, &candidate_copy);
             }
             int call_error = lj_vm_pcall(L, base, 2, -1);
             lj_context_restore_depth(L, context_size);
@@ -1566,22 +1568,35 @@ static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index)
    return equal;
 }
 
-static int32_t array_find_generic(lua_State *L, GCarray *Array, int32_t Start, int32_t Stop, int32_t Step)
+static int32_t array_find_generic(lua_State *L, GCarray *Array, cTValue *Candidate, int32_t Start, int32_t Stop,
+   int32_t Step)
 {
+   ptrdiff_t saved_top = savestack(L, L->top);
+   copyTV(L, L->top, Candidate);
+   incr_top(L);
+   ptrdiff_t candidate_offset = savestack(L, L->top - 1);
    MSize length = Array->len;
+   int32_t result = -1;
    if (Step > 0) {
       for (int32_t index = Start; index <= Stop and MSize(index) < length; index += Step) {
          if (MSize(index) >= Array->len) break;
-         if (array_values_equal(L, Array, MSize(index))) return index;
+         if (array_values_equal(L, Array, MSize(index), restorestack(L, candidate_offset))) {
+            result = index;
+            break;
+         }
       }
    }
    else {
       for (int32_t index = Start; index >= Stop and index >= 0 and MSize(index) < length; index += Step) {
          if (MSize(index) >= Array->len) break;
-         if (array_values_equal(L, Array, MSize(index))) return index;
+         if (array_values_equal(L, Array, MSize(index), restorestack(L, candidate_offset))) {
+            result = index;
+            break;
+         }
       }
    }
-   return -1;
+   L->top = restorestack(L, saved_top);
+   return result;
 }
 
 static int array_index_of(lua_State *L)
@@ -1642,13 +1657,13 @@ static int array_index_of(lua_State *L)
    if (tiri_range *r = check_range(L, 3)) {
       auto span = array_range_to_span(L, r, arr->len);
       if (span.empty) return array_push_find_result(L, -1);
-      return array_push_find_result(L, array_find_generic(L, arr, span.start, span.stop, span.step));
+      return array_push_find_result(L, array_find_generic(L, arr, L->base + 1, span.start, span.stop, span.step));
    }
 
    auto start = lj_lib_optint(L, 3, 0);
    if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
    if (start >= stop) return array_push_find_result(L, -1);
-   return array_push_find_result(L, array_find_generic(L, arr, start, stop - 1, 1));
+   return array_push_find_result(L, array_find_generic(L, arr, L->base + 1, start, stop - 1, 1));
 }
 
 static int array_find_predicate(lua_State *L, bool ReturnIndex);
@@ -1703,13 +1718,18 @@ extern "C" int32_t lj_arr_contains(lua_State *L, GCarray *Array, cTValue *Candid
       return lj_arr_find_str(Array, candidate_string, 0, int32_t(Array->len - 1), 1) >= 0;
    }
 
-   TValue converted;
-   auto candidate_number = try_to_number(Candidate, &converted);
-   if (not candidate_number) {
-      lj_err_argv(L, 2, ErrMsg::BADTYPE, "number", lj_typename(Candidate));
-      return 0;
+   if (glArrayConversion[size_t(Array->elemtype)].primitive) {
+      TValue converted;
+      auto candidate_number = try_to_number(Candidate, &converted);
+      if (not candidate_number) {
+         lj_err_argv(L, 2, ErrMsg::BADTYPE, "number", lj_typename(Candidate));
+         return 0;
+      }
+      return lj_arr_find_num(Array, *candidate_number, 0, int32_t(Array->len - 1), 1) >= 0;
    }
-   return lj_arr_find_num(Array, *candidate_number, 0, int32_t(Array->len - 1), 1) >= 0;
+
+   VMHelperGuard guard(L);
+   return array_find_generic(L, Array, Candidate, 0, int32_t(Array->len - 1), 1) >= 0;
 }
 
 //********************************************************************************************************************

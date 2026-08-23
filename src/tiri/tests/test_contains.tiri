@@ -67,6 +67,81 @@ end
 
 end
 
+@Test function VariantArrayMembershipUsesEqualitySemantics()
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   local first = setmetatable({ id=1 }, equality_mt)
+   local second = setmetatable({ id=2 }, equality_mt)
+   local probe = setmetatable({ id=2 }, equality_mt)
+   local values = array<any> { first, second }
+
+   assert(first in values, 'Variant array membership should find an identical reference')
+   assert(probe in values,
+      'Variant array membership should honour reference equality metamethods')
+   assert(not (setmetatable({ id=3 }, equality_mt) in values),
+      'Variant array membership should reject a non-matching reference')
+
+   local plain = { id=4 }
+   local plain_values = array<any> { plain }
+   assert(plain in plain_values and not ({ id=4 } in plain_values),
+      'Variant array membership should use identity when no equality metamethod exists')
+
+   local matches = 0
+   for _ in {0 to 100} do
+      if probe in values then matches++ end
+   end
+   assert(matches is 100, 'Variant array membership should remain correct after reaching the JIT threshold')
+end
+
+@Test function VariantArrayMembershipRootsCandidateAcrossStackGrowth()
+   function grow_stack(Depth:num):bool
+      if Depth is 0 then return true end
+      return grow_stack(Depth - 1)
+   end
+
+   local equality_mt = {
+      __eq = function(Other:table!):bool
+         if &id is 1 then grow_stack(500) end
+         return &id is Other.id
+      end
+   }
+   local first = setmetatable({ id=1 }, equality_mt)
+   local second = setmetatable({ id=2 }, equality_mt)
+   local probe = setmetatable({ id=2 }, equality_mt)
+   local items = array<any> { first, second }
+
+   assert(probe in items,
+      'Variant array membership should retain its candidate when an earlier comparison relocates the stack')
+end
+
+function interpreted_variant_membership(Items:array<any>, Probe:table):bool
+   local v00, v01, v02, v03, v04, v05, v06, v07 = 0, 1, 2, 3, 4, 5, 6, 7
+   local v08, v09, v10, v11, v12, v13, v14, v15 = 8, 9, 10, 11, 12, 13, 14, 15
+   local v16, v17, v18, v19, v20, v21, v22, v23 = 16, 17, 18, 19, 20, 21, 22, 23
+   local v24, v25, v26, v27, v28, v29, v30, v31 = 24, 25, 26, 27, 28, 29, 30, 31
+   local found = Probe in Items
+   assert(v00 is 0 and v07 is 7 and v15 is 15 and v23 is 23 and v31 is 31,
+      'Interpreted membership should preserve live frame slots')
+   return found
+end
+
+@Test function InterpretedVariantMembershipSynchronisesVMTop()
+   jit.off()
+   defer jit.on() end
+
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   local first = setmetatable({ id=1 }, equality_mt)
+   local second = setmetatable({ id=2 }, equality_mt)
+   local probe = setmetatable({ id=2 }, equality_mt)
+   local items = array<any> { first, second }
+
+   assert(interpreted_variant_membership(items, probe),
+      'Interpreted variant membership should enter re-entrant equality with a valid VM top')
+end
+
 @Test function LegacyBuiltinMembershipApisAreUnavailable()
    assert(array.contains is nil and string.contains is nil and range.contains is nil,
       'Built-in membership APIs must not remain publicly callable')
