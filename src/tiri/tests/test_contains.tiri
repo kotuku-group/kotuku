@@ -67,6 +67,33 @@ end
 
 end
 
+@Test function VariantArrayMembershipUsesEqualitySemantics()
+   local equality_mt = {
+      __eq = function(Other:table!):bool return &id is Other.id end
+   }
+   local first = setmetatable({ id=1 }, equality_mt)
+   local second = setmetatable({ id=2 }, equality_mt)
+   local probe = setmetatable({ id=2 }, equality_mt)
+   local values = array<any> { first, second }
+
+   assert(first in values, 'Variant array membership should find an identical reference')
+   assert(probe in values,
+      'Variant array membership should honour reference equality metamethods')
+   assert(not (setmetatable({ id=3 }, equality_mt) in values),
+      'Variant array membership should reject a non-matching reference')
+
+   local plain = { id=4 }
+   local plain_values = array<any> { plain }
+   assert(plain in plain_values and not ({ id=4 } in plain_values),
+      'Variant array membership should use identity when no equality metamethod exists')
+
+   local matches = 0
+   for _ in {0 to 100} do
+      if probe in values then matches++ end
+   end
+   assert(matches is 100, 'Variant array membership should remain correct after reaching the JIT threshold')
+end
+
 @Test function LegacyBuiltinMembershipApisAreUnavailable()
    assert(array.contains is nil and string.contains is nil and range.contains is nil,
       'Built-in membership APIs must not remain publicly callable')
