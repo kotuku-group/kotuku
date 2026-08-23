@@ -19,6 +19,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_checkall_stmt(const CheckallStmtPayload
          if (not status.ok()) return status;
          this->ensure_register_balance(describe_node_kind(statement.kind));
       }
+      // Leave checkall before ScopeGuard emits deferred calls.  A defer is cleanup outside the block's normal execution
+      // and its returned errors must not be promoted by the enclosing checkall.
       bcemit_AD(fs, BC_CHECKALLLEAVE, base_reg, BCReg(0));
    }
 
