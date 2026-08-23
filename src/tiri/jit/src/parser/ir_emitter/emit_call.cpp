@@ -88,6 +88,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
    ExpDesc receiver = receiver_result.value_ref();
    RegisterAllocator allocator(state);
    BCReg receiver_reg(0);
+   BCPOS field_nil_init = NO_JMP;
    if (Call.runtime_builtin_method->safe) {
       nil_guard = std::make_unique<NilShortCircuitGuard>(this, receiver);
       if (not nil_guard->ok()) return nil_guard->error<ExpDesc>();
@@ -210,6 +211,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
       // the synthetic nil-result block; skip_nil carries both successful paths around it to the common continuation.
       ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
       field_nil_jump.patch_to(state->current_pc());
+      field_nil_init = state->pc;
       bcemit_nil(state, call_base.raw(), 1);
       skip_nil.patch_here();
    }
@@ -219,6 +221,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
    if (not emitted.ok()) return emitted;
    ExpDesc result = emitted.value_ref();
    result.alternate_call = builtin_call.raw();
+   result.alternate_safe_nil_init = field_nil_init;
    result.u.s.aux = call_base.raw();
    result.static_results = Call.results;
    if (Call.results) {
@@ -635,6 +638,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
    ExpDesc receiver = receiver_result.value_ref();
    RegisterAllocator allocator(state);
    BCReg receiver_reg(0);
+   BCPOS field_nil_init = NO_JMP;
    if (Payload.runtime_builtin_method->safe) {
       nil_guard = std::make_unique<NilShortCircuitGuard>(this, receiver);
       if (not nil_guard->ok()) return nil_guard->error<ExpDesc>();
@@ -747,6 +751,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
       // into call_base before all paths rejoin for the existing receiver nil guard and result metadata handling.
       ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(state)));
       field_nil_jump.patch_to(state->current_pc());
+      field_nil_init = state->pc;
       bcemit_nil(state, call_base.raw(), 1);
       skip_nil.patch_here();
    }
@@ -757,6 +762,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
 
    ExpDesc result = emitted.value_ref();
    result.alternate_call = builtin_call.raw();
+   result.alternate_safe_nil_init = field_nil_init;
    result.u.s.aux = call_base.raw();
    result.static_results = Payload.results;
    if (Payload.results) {
@@ -1066,12 +1072,14 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
 
    // For safe callable: emit the nil path and patch jumps
 
+   BCPos safe_nil_init = BCPos(NO_JMP);
    if (is_safe_callable) {
       ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
 
       BCPos nil_path = BCPos(this->func_state.pc);
       nil_jump.patch_to(nil_path);
       if (not receiver_nil_jump.empty()) receiver_nil_jump.patch_to(nil_path);
+      safe_nil_init = nil_path;
       bcemit_nil(&this->func_state, is_contextual_call ? context_result_base.raw() : base.raw(), 1);
 
       skip_nil.patch_to(BCPos(this->func_state.pc));
@@ -1080,6 +1088,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    ExpDesc result;
    result.init(ExpKind::Call, call_pc);
    result.u.s.aux = is_contextual_call ? context_result_base.raw() : base.raw();
+   result.safe_nil_init = safe_nil_init.raw();
    result.result_type = callee_return_type;  // Propagate known return type
    result.object_class_id = callee_object_class_id;  // Propagate object class ID for Object types
    result.struct_def = callee_struct_def;

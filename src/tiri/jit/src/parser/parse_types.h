@@ -251,6 +251,8 @@ struct ExpDesc {
    StaticResultSetHandle static_results = 0;
    uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
    BCPOS alternate_call = NO_JMP; // Alternate call block used by runtime built-in method dispatch
+   BCPOS safe_nil_init = NO_JMP; // Nil initialiser for a skipped safe call; widened with fixed result requests
+   BCPOS alternate_safe_nil_init = NO_JMP; // Additional nil block used by runtime method fallback dispatch
    BCPOS t;        // True condition jump list.
    BCPOS f;        // False condition jump list.
 
@@ -314,6 +316,8 @@ struct ExpDesc {
       this->static_value = 0;
       this->static_results = 0;
       this->alternate_call = NO_JMP;
+      this->safe_nil_init = NO_JMP;
+      this->alternate_safe_nil_init = NO_JMP;
       this->f = this->t = NO_JMP;
    }
 

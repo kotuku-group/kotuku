@@ -558,6 +558,7 @@ public:
       ExpDesc result;
       result.init(ExpKind::Call, CallPc);
       result.u.s.aux = CallBase;
+      result.safe_nil_init = nil_path.raw();
       this->emitter->func_state.freereg = CallBase + 1;
       return ParserResult<ExpDesc>::success(result);
    }
@@ -692,6 +693,8 @@ static void snapshot_return_regs(FuncState* fs, BCIns* ins)
 // Exclusively used by ir_emitter for assignment statements, local declarations, and for loops.
 // TODO: May as well be a regular function instead of a LexState method.
 
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG Count);
+
 void LexState::assign_adjust(BCREG nvars, BCREG nexps, ExpDesc *Expr)
 {
    FuncState* fs = this->fs;
@@ -700,10 +703,7 @@ void LexState::assign_adjust(BCREG nvars, BCREG nexps, ExpDesc *Expr)
    if (Expr->k IS ExpKind::Call) {
       extra++;  // Compensate for the ExpKind::Call itself.
       if (extra < 0) extra = 0;
-      setbc_b(bcptr(fs, Expr), extra + 1);  // Fixup call results.
-      if (Expr->alternate_call != NO_JMP) {
-         setbc_b(&fs->bcbase[Expr->alternate_call].ins, extra + 1);
-      }
+      set_call_result_count(fs, *Expr, BCREG(extra + 1));
       if (extra > 1) allocator.reserve(BCReg(BCREG(extra) - 1));
    }
    else {
@@ -991,6 +991,17 @@ static void set_call_result_count(FuncState *State, const ExpDesc &Expression, B
    if (Expression.alternate_call != NO_JMP) {
       setbc_b(&State->bcbase[Expression.alternate_call].ins, Count);
    }
+   auto widen_nil_init = [&](BCPOS Position) {
+      if (Position IS NO_JMP or Count <= 1) return;
+      BCIns *nil_init = &State->bcbase[Position].ins;
+      BCREG first = bc_a(*nil_init);
+      lj_assertX(bc_op(*nil_init) IS BC_KPRI or bc_op(*nil_init) IS BC_KNIL,
+         "safe-call nil path does not start with a nil initialiser");
+      *nil_init = Count IS 2 ? BCINS_AD(BC_KPRI, first, ExpKind::Nil) :
+         BCINS_AD(BC_KNIL, first, first + Count - 2);
+   };
+   widen_nil_init(Expression.safe_nil_init);
+   widen_nil_init(Expression.alternate_safe_nil_init);
 }
 
 struct FalseyJumpOptions {
@@ -1733,18 +1744,18 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
             }
          }
-         else if (safe_call) {
-            // The nil short-circuit initialises only the consolidated first result, so it cannot use a return form
-            // that consumes MULTRES or exposes additional fixed registers.
-            set_call_result_count(&this->func_state, last, 2);
-            ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
-         }
          else if (truncate_return_results) {
             BCREG result_count = this->func_state.return_declared_count;
             set_call_result_count(&this->func_state, last, result_count + 1);
             ins = result_count > 0 ?
                BCINS_AD(BC_RET, last.u.s.aux, result_count + 1) :
                BCINS_AD(BC_RET0, 0, 1);
+         }
+         else if (safe_call) {
+            // An unconstrained nil short-circuit has no dynamic MULTRES value, so consolidate it to one result.
+            // Fixed return declarations are handled above and widen the nil path to the declared result count.
+            set_call_result_count(&this->func_state, last, 2);
+            ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
          else if (not this->func_state.runtime_scopes.empty()) {
             // DISABLE TAIL-CALL inside try blocks: use CALL + RET instead of CALLT.
@@ -1797,11 +1808,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       else {
          // Multiple return values
          if (last.k IS ExpKind::Call) {
-            if (is_safe_call_expression(*Payload.values.back())) {
-               set_call_result_count(&this->func_state, last, 2);
-               ins = BCINS_AD(BC_RET, return_base, count + 1);
-            }
-            else if (truncate_return_results) {
+            if (truncate_return_results) {
                BCREG result_count = this->func_state.return_declared_count;
                BCREG fixed_count = last.u.s.aux - return_base;
                BCREG call_count = result_count > fixed_count ? result_count - fixed_count : 0;
@@ -1809,6 +1816,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                ins = result_count > 0 ?
                   BCINS_AD(BC_RET, return_base, result_count + 1) :
                   BCINS_AD(BC_RET0, 0, 1);
+            }
+            else if (is_safe_call_expression(*Payload.values.back())) {
+               set_call_result_count(&this->func_state, last, 2);
+               ins = BCINS_AD(BC_RET, return_base, count + 1);
             }
             else {
                set_call_result_count(&this->func_state, last, 0);

@@ -7200,9 +7200,22 @@ static bool test_tail_call_eligibility(kt::Log &Log)
       "end\n"
       "return checked_safe_fixed\n";
    auto checked_safe_fixed = compile_snapshot(L, checked_safe_fixed_source, true, error);
-   if (not checked_safe_fixed or count_opcode_tree(*checked_safe_fixed, BC_RET1) IS 0 or
-       count_opcode_tree(*checked_safe_fixed, BC_RET) != 0 or count_opcode_tree(*checked_safe_fixed, BC_RETM) != 0) {
-      Log.error("a contracted checked safe-call return did not lower to one fixed result: %s", error.c_str());
+   if (not checked_safe_fixed or count_opcode_tree(*checked_safe_fixed, BC_RET) IS 0 or
+       count_opcode_tree(*checked_safe_fixed, BC_RETM) != 0) {
+      Log.error("a contracted checked safe-call return did not lower to its fixed result count: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view safe_fixed_source =
+      "local holder = { pair = function():<num, num> return 1, 2 end }\n"
+      "local function safe_fixed():<num, num>\n"
+      "   return holder?.pair()\n"
+      "end\n"
+      "return safe_fixed\n";
+   auto safe_fixed = compile_snapshot(L, safe_fixed_source, true, error);
+   if (not safe_fixed or count_opcode_tree(*safe_fixed, BC_RET) IS 0 or
+       count_opcode_tree(*safe_fixed, BC_RETM) != 0) {
+      Log.error("a multi-result safe call did not lower to its fixed result count: %s", error.c_str());
       return false;
    }
 
