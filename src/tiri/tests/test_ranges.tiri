@@ -1945,7 +1945,7 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Stage A collection compatibility APIs
+-- Final collection APIs
 
 @Test function RangeIndexOfAndFindIndexUseOrdinals()
    sequence = {10 to 20 by 2}

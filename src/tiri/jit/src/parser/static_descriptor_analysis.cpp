@@ -1208,8 +1208,8 @@ private:
       bool receiver_first = false;
    };
 
-   [[nodiscard]] static bool array_interface_member(
-      const DirectCallTarget &Direct, uint32_t MemberHash)
+   [[nodiscard]] static bool collection_interface_member(
+      const DirectCallTarget &Direct, uint32_t InterfaceHash, uint32_t MemberHash)
    {
       if (not Direct.callable or Direct.callable->kind != AstNodeKind::MemberExpr) return false;
       const auto &member = std::get<MemberExprPayload>(Direct.callable->data);
@@ -1217,7 +1217,7 @@ private:
           not member.member.symbol or member.member.symbol->hash != MemberHash) return false;
       const auto &base = std::get<NameRef>(member.table->data);
       return not base.binding_id and base.identifier.symbol and
-         base.identifier.symbol->hash IS kt::strhash("array");
+         base.identifier.symbol->hash IS InterfaceHash;
    }
 
    [[nodiscard]] static std::optional<CollectionMethodCall> collection_method_call(const CallExprPayload &Call)
@@ -1289,11 +1289,6 @@ private:
          const ExprNode &type_expression = *Call.arguments[type_index];
          if (type_expression.kind IS AstNodeKind::LiteralExpr) {
             const auto &literal = std::get<LiteralValue>(type_expression.data);
-            if (literal.kind IS LiteralKind::Nil and source.primary IS TiriType::Array and source.array_element.known) {
-               source.proof = StaticProof::Trusted;
-               source.nullable = false;
-               return source;
-            }
             if (literal.kind IS LiteralKind::String and literal.string_value) {
                std::string_view type_name(strdata(literal.string_value), literal.string_value->len);
                if (auto element = describe_array_element(type_name, &this->context_.lua())) {
@@ -1305,6 +1300,16 @@ private:
                   return result;
                }
             }
+            if (literal.kind IS LiteralKind::Nil) {
+               StaticValueDescriptor result;
+               result.primary = TiriType::Array;
+               if (auto element = describe_array_element("any", &this->context_.lua())) {
+                  result.array_element = *element;
+               }
+               result.proof = StaticProof::Trusted;
+               result.nullable = false;
+               return result;
+            }
          }
 
          StaticValueDescriptor result;
@@ -1312,12 +1317,6 @@ private:
          result.proof = StaticProof::Trusted;
          result.nullable = false;
          return result;
-      }
-
-      if (source.primary IS TiriType::Array and source.array_element.known) {
-         source.proof = StaticProof::Trusted;
-         source.nullable = false;
-         return source;
       }
 
       StaticValueDescriptor result;
@@ -1341,39 +1340,6 @@ private:
       Call.results = this->catalogue_.add_results(results);
    }
 
-   void emit_stage_a_collection_deprecation(CallExprPayload &Call)
-   {
-      if (Call.deprecated_api_reported) return;
-      auto collection = collection_method_call(Call);
-      if (not collection or not collection->source or not collection->operation) return;
-      StaticValueDescriptor source = this->descriptor_of(*collection->source);
-      if (source.primary != TiriType::Array or not source.proved()) return;
-
-      bool builtin_find = collection->operation->hash IS kt::strhash("find") and
-         ((Call.builtin_method and Call.builtin_method->callable IS builtin_callable_id(FastFunc::array_find)) or
-          (collection->receiver_first and [&] {
-             const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
-             return direct and array_interface_member(*direct, kt::strhash("find"));
-          }()));
-      bool legacy_map = collection->operation->hash IS kt::strhash("map") and
-         ((Call.builtin_method and Call.builtin_method->callable IS builtin_callable_id(FastFunc::array_map)) or
-          (collection->receiver_first and [&] {
-             const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
-             return direct and array_interface_member(*direct, kt::strhash("map"));
-          }()));
-      size_t type_index = collection->receiver_first ? 2 : 1;
-      if (legacy_map and type_index < Call.arguments.size()) legacy_map = false;
-      if (not builtin_find and not legacy_map) return;
-
-      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
-      if (not direct or not direct->callable) return;
-      this->context_.emit_warning(ParserErrorCode::DeprecatedApi,
-         Token::from_span(direct->callable->span, TokenKind::Identifier), builtin_find ?
-            "array.find(Value, ...) is deprecated; use array.indexOf(Value, ...) instead" :
-            "one-argument array.map(Transform) is deprecated; use array.mapSame(Transform) instead");
-      Call.deprecated_api_reported = true;
-   }
-
    [[nodiscard]] StaticValueDescriptor array_preserving_call_descriptor(const CallExprPayload &Call) const
    {
       auto collection = collection_method_call(Call);
@@ -1389,14 +1355,6 @@ private:
          case kt::strhash("mapSame"):
             receiver.proof = StaticProof::Trusted;
             return receiver;
-         case kt::strhash("map"): {
-            size_t type_index = collection->receiver_first ? 2 : 1;
-            if (type_index >= Call.arguments.size()) {
-               receiver.proof = StaticProof::Trusted;
-               return receiver;
-            }
-            return {};
-         }
          default:
             return {};
       }
@@ -1464,6 +1422,48 @@ private:
       result.nullable = Element.storage IS AET::STR_GC or Element.storage IS AET::OBJECT or
          Element.storage IS AET::TABLE or Element.storage IS AET::ARRAY;
       return result;
+   }
+
+   [[nodiscard]] StaticValueDescriptor collection_search_result_descriptor(const CallExprPayload &Call) const
+   {
+      auto collection = collection_method_call(Call);
+      if (not collection or not collection->source or not collection->operation) return {};
+
+      StaticValueDescriptor source = this->descriptor_of(*collection->source);
+      if (source.primary != TiriType::Array and source.primary != TiriType::Range) return {};
+
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      bool builtin = (source.primary IS TiriType::Array and Call.builtin_method and
+         (Call.builtin_method->callable IS builtin_callable_id(FastFunc::array_find) or
+          Call.builtin_method->callable IS builtin_callable_id(FastFunc::array_findIndex) or
+          Call.builtin_method->callable IS builtin_callable_id(FastFunc::array_indexOf))) or
+         (source.primary IS TiriType::Range and Call.builtin_method and
+         (Call.builtin_method->callable IS builtin_callable_id(FastFunc::range_find) or
+          Call.builtin_method->callable IS builtin_callable_id(FastFunc::range_findIndex) or
+          Call.builtin_method->callable IS builtin_callable_id(FastFunc::range_indexOf)));
+      if (not builtin and collection->receiver_first and direct) {
+         builtin = (source.primary IS TiriType::Array and collection_interface_member(
+            *direct, kt::strhash("array"), collection->operation->hash)) or
+            (source.primary IS TiriType::Range and collection_interface_member(
+            *direct, kt::strhash("range"), collection->operation->hash));
+      }
+      if (not builtin) return {};
+
+      uint32_t operation = collection->operation->hash;
+      if (operation IS kt::strhash("find")) {
+         if (source.primary IS TiriType::Array and source.array_element.known) {
+            StaticValueDescriptor result = array_element_value(source.array_element);
+            result.nullable = true;
+            return result;
+         }
+         if (source.primary IS TiriType::Range) {
+            return StaticValueDescriptor{ .primary=TiriType::Num, .proof=StaticProof::Trusted, .nullable=true };
+         }
+      }
+      if (operation IS kt::strhash("findIndex") or operation IS kt::strhash("indexOf")) {
+         return StaticValueDescriptor{ .primary=TiriType::Num, .proof=StaticProof::Trusted, .nullable=true };
+      }
+      return {};
    }
 
    void propagate_function_expression(
@@ -1708,11 +1708,15 @@ private:
             auto &call = std::get<CallExprPayload>(Expression.data);
             if (Expression.kind IS AstNodeKind::CallExpr) this->analyse_contextual_designation(call);
             value = this->call_descriptor(call, Expression.kind IS AstNodeKind::SafeCallExpr);
-            this->emit_stage_a_collection_deprecation(call);
             StaticValueDescriptor mapped = this->mapped_array_descriptor(call);
             if (mapped.primary != TiriType::Unknown) {
                this->update_call_result_descriptor(call, mapped);
                value = mapped;
+            }
+            StaticValueDescriptor search_result = this->collection_search_result_descriptor(call);
+            if (search_result.primary != TiriType::Unknown) {
+               this->update_call_result_descriptor(call, search_result);
+               value = search_result;
             }
             StaticValueDescriptor transferred = this->array_preserving_call_descriptor(call);
             if (transferred.primary != TiriType::Unknown) {

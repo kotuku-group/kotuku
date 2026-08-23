@@ -472,7 +472,6 @@ struct CallExprPayload {
    // leaves this Unknown unless the target was already contextual.
    mutable StaticContextuality contextual_designation_result = StaticContextuality::Unknown;
    mutable bool unresolved_method_reported = false;
-   mutable bool deprecated_api_reported = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
    mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition

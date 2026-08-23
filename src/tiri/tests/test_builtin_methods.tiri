@@ -328,6 +328,9 @@ end
    local dynamic_values:any = values
    assert(values.indexOf(20) is 1 and array.indexOf(values, 30) is 2,
       'array.indexOf should support method and receiver-first calls')
+   assert(values.find((Value, Index) => Value > 10 and Index is 1) is 20 and
+      array.find(values, Value => Value > 20) is 30,
+      'array.find should support predicate method and receiver-first calls')
    assert(dynamic_values.findIndex((Value, Index) => Value is 20 and Index is 1) is 1,
       'a dynamic array receiver should dispatch findIndex at runtime')
    assert(values.mapSame(Value => Value + 1)[2] is 31,

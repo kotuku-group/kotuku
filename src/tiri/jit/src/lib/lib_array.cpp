@@ -1620,13 +1620,15 @@ static int array_index_of(lua_State *L)
    return array_push_find_result(L, array_find_generic(L, arr, start, stop - 1, 1));
 }
 
+static int array_find_predicate(lua_State *L, bool ReturnIndex);
+
 LJLIB_CF(array_find)
 {
-   return array_index_of(L);
+   return array_find_predicate(L, false);
 }
 
 //********************************************************************************************************************
-// Stage A compatibility name for equality search.  array.find() remains available until the next breaking release.
+// Equality search remains permanently available through array.indexOf().
 
 LJLIB_CF(array_indexOf)
 {
@@ -2194,13 +2196,12 @@ static int array_map_same(lua_State *L)
 //   arr: the source array
 //   transform: function(value, index) returning transformed value
 //
-// Returns: a new array using element_type, or the source element type when the optional argument is omitted in Stage A
+// Returns: a new array using element_type, or array<any> when the optional argument is omitted
 
 LJLIB_CF(array_map)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
-   if (lua_isnoneornil(L, 3)) return array_map_same(L);
 
    MSize count = arr->len;
    GCarray *result = lj_array_new_map_result(L, count, 3);
@@ -2233,7 +2234,7 @@ LJLIB_CF(array_mapSame)
 //
 // Returns the zero-based index of the first element for which predicate(value, index) is truthy.
 
-LJLIB_CF(array_findIndex)
+static int array_find_predicate(lua_State *L, bool ReturnIndex)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
@@ -2241,20 +2242,33 @@ LJLIB_CF(array_findIndex)
 
    for (MSize i = 0; i < count; i++) {
       if (i >= arr->len) break;
-      lua_pushvalue(L, 2);
+
+      // Preserve the value supplied to the predicate.  The callback may resize or rewrite the source array, but the
+      // result remains that matching value rather than an element re-read after re-entry.
       array_push_element(L, arr, i);
+      lua_pushvalue(L, 2);
+      lua_pushvalue(L, -2);
       lua_pushinteger(L, i);
       lua_call(L, 2, 1);
       bool matched = lua_toboolean(L, -1);
       lua_pop(L, 1);
       if (matched) {
-         lua_pushinteger(L, i);
+         if (ReturnIndex) {
+            lua_pop(L, 1);
+            lua_pushinteger(L, i);
+         }
          return 1;
       }
+      lua_pop(L, 1);
    }
 
    lua_pushnil(L);
    return 1;
+}
+
+LJLIB_CF(array_findIndex)
+{
+   return array_find_predicate(L, true);
 }
 
 //********************************************************************************************************************
@@ -2911,7 +2925,7 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_method(L, "array", "fill", TiriType::Array, builtin_callable_id(FastFunc::array_fill), {},
       { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
    reg_iface_method(L, "array", "find", TiriType::Array, builtin_callable_id(FastFunc::array_find),
-      { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
+      { TiriType::Any }, { TiriType::Array, TiriType::Func });
    reg_iface_method(L, "array", "indexOf", TiriType::Array, builtin_callable_id(FastFunc::array_indexOf),
       { TiriType::Num }, { TiriType::Array, TiriType::Any, TiriType::Any, TiriType::Num });
    reg_iface_method(L, "array", "reverse", TiriType::Array, builtin_callable_id(FastFunc::array_reverse),

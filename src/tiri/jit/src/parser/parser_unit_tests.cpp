@@ -5535,12 +5535,12 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
    return true;
 }
 
-static bool test_stage_a_collection_api_diagnostics(kt::Log &Log)
+static bool test_stage_b_collection_api_contracts(kt::Log &Log)
 {
    constexpr std::string_view source =
       "local values = array<int> { 10, 20 }\n"
-      "local legacy_find = values.find(20)\n"
-      "local legacy_map = values.map(function(Value) return Value * 2 end)\n"
+      "local found = values.find(function(Value, Index) return Value > 10 and Index is 1 end)\n"
+      "local default_mapped = values.map(function(Value):str return tostring(Value) end)\n"
       "local index = values.indexOf(20)\n"
       "local predicate_index = values.findIndex(function(Value, Index) return Value is 20 and Index is 1 end)\n"
       "local typed = values.map(function(Value):str return tostring(Value) end, 'str')\n"
@@ -5548,11 +5548,13 @@ static bool test_stage_a_collection_api_diagnostics(kt::Log &Log)
       "local dynamic = values.map(function(Value):str return tostring(Value) end, requested_type)\n"
       "local source_preserving = values.mapSame(function(Value) return Value * 2 end)\n"
       "local sequence = { 10 to 14 by 2 }\n"
+      "local range_found = sequence.find(function(Value, Ordinal) return Value is 12 and Ordinal is 1 end)\n"
       "local range_index = sequence.indexOf(12)\n"
       "local range_mapped = sequence.map(function(Value, Ordinal):str return tostring(Value + Ordinal) end, 'str')\n"
-      "local namespace_find = array.find(values, 20)\n"
+      "local namespace_find = array.find(values, function(Value) return Value > 10 end)\n"
       "local namespace_map = array.map(values, function(Value) return Value * 2 end)\n"
-      "local array = { find = function(Values, Value) return 0 end, map = function(Transform):table return {} end }\n"
+      "local array = { find = function(Values, Predicate) return 0 end, "
+      "map = function(Transform):table return {} end }\n"
       "local shadowed_find = array.find(values, 20)\n"
       "local shadowed_map = array.map(function(Value:any):any return Value end)\n";
 
@@ -5571,7 +5573,7 @@ static bool test_stage_a_collection_api_diagnostics(kt::Log &Log)
    AstBuilder builder(context);
    auto chunk = builder.parse_chunk();
    if (not chunk.ok()) {
-      Log.error("Stage A collection API fixture did not parse");
+      Log.error("Stage B collection API fixture did not parse");
       log_diagnostics(context.diagnostics().entries(), Log);
       return false;
    }
@@ -5581,7 +5583,7 @@ static bool test_stage_a_collection_api_diagnostics(kt::Log &Log)
    propagate_static_descriptors(context, *chunk.value_ref());
    for (const ParserDiagnostic &diagnostic : context.diagnostics().entries()) {
       if (diagnostic.severity IS ParserDiagnosticSeverity::Error) {
-         Log.error("Stage A collection API fixture line %u produced an unexpected error: %s",
+         Log.error("Stage B collection API fixture line %u produced an unexpected error: %s",
             diagnostic.token.span().line.lineNumber(), diagnostic.message.c_str());
          log_diagnostics(context.diagnostics().entries(), Log);
          return false;
@@ -5594,65 +5596,79 @@ static bool test_stage_a_collection_api_diagnostics(kt::Log &Log)
       if (not statement or statement->values.empty()) return nullptr;
       return std::get_if<CallExprPayload>(&statement->values.front()->data);
    };
-   const CallExprPayload *legacy_find = local_call(1);
-   const CallExprPayload *legacy_map = local_call(2);
+   const CallExprPayload *found = local_call(1);
+   const CallExprPayload *default_mapped = local_call(2);
    const CallExprPayload *index = local_call(3);
    const CallExprPayload *predicate_index = local_call(4);
    const CallExprPayload *typed = local_call(5);
    const CallExprPayload *dynamic = local_call(7);
    const CallExprPayload *source_preserving = local_call(8);
-   const CallExprPayload *range_index = local_call(10);
-   const CallExprPayload *range_mapped = local_call(11);
-   if (not legacy_find or not legacy_map or not index or not predicate_index or not typed or not dynamic or
-       not source_preserving or not range_index or not range_mapped) {
-      Log.error("Stage A collection API fixture did not retain every tested call");
+   const CallExprPayload *range_found = local_call(10);
+   const CallExprPayload *range_index = local_call(11);
+   const CallExprPayload *range_mapped = local_call(12);
+   const CallExprPayload *namespace_find = local_call(13);
+   const CallExprPayload *namespace_map = local_call(14);
+   const CallExprPayload *shadowed_find = local_call(16);
+   const CallExprPayload *shadowed_map = local_call(17);
+   if (not found or not default_mapped or not index or not predicate_index or not typed or not dynamic or
+       not source_preserving or not range_found or not range_index or not range_mapped or not namespace_find or
+       not namespace_map or not shadowed_find or not shadowed_map) {
+      Log.error("Stage B collection API fixture did not retain every tested call");
       return false;
    }
-   if (not legacy_find->builtin_method or not legacy_map->builtin_method or not index->builtin_method or
+   if (not found->builtin_method or not default_mapped->builtin_method or not index->builtin_method or
        not predicate_index->builtin_method or not typed->builtin_method or not source_preserving->builtin_method or
-       not range_index->builtin_method or not range_mapped->builtin_method or
-       legacy_find->builtin_method->callable != builtin_callable_id(FastFunc::array_find) or
-       legacy_map->builtin_method->callable != builtin_callable_id(FastFunc::array_map) or
+       not range_found->builtin_method or not range_index->builtin_method or not range_mapped->builtin_method or
+       found->builtin_method->callable != builtin_callable_id(FastFunc::array_find) or
+       default_mapped->builtin_method->callable != builtin_callable_id(FastFunc::array_map) or
        index->builtin_method->callable != builtin_callable_id(FastFunc::array_indexOf) or
        predicate_index->builtin_method->callable != builtin_callable_id(FastFunc::array_findIndex) or
        typed->builtin_method->callable != builtin_callable_id(FastFunc::array_map) or
        source_preserving->builtin_method->callable != builtin_callable_id(FastFunc::array_mapSame) or
+       range_found->builtin_method->callable != builtin_callable_id(FastFunc::range_find) or
        range_index->builtin_method->callable != builtin_callable_id(FastFunc::range_indexOf) or
        range_mapped->builtin_method->callable != builtin_callable_id(FastFunc::range_map)) {
-      Log.error("Stage A collection methods did not resolve their canonical callable identities");
+      Log.error("Stage B collection methods did not resolve their canonical callable identities");
       return false;
    }
 
    auto result_descriptor = [&](const CallExprPayload &Call) -> StaticValueDescriptor {
       return Call.results ? context.descriptors().results(Call.results).value_at(0) : StaticValueDescriptor{};
    };
+   StaticValueDescriptor found_result = result_descriptor(*found);
+   StaticValueDescriptor default_result = result_descriptor(*default_mapped);
+   StaticValueDescriptor index_result = result_descriptor(*index);
+   StaticValueDescriptor predicate_index_result = result_descriptor(*predicate_index);
    StaticValueDescriptor typed_result = result_descriptor(*typed);
    StaticValueDescriptor dynamic_result = result_descriptor(*dynamic);
    StaticValueDescriptor same_result = result_descriptor(*source_preserving);
+   StaticValueDescriptor range_found_result = result_descriptor(*range_found);
    StaticValueDescriptor range_result = result_descriptor(*range_mapped);
-   if (typed_result.primary != TiriType::Array or typed_result.array_element.logical_type != TiriType::Str or
+   StaticValueDescriptor namespace_find_result = result_descriptor(*namespace_find);
+   StaticValueDescriptor namespace_map_result = result_descriptor(*namespace_map);
+   if (found_result.primary != TiriType::Num or not found_result.nullable or
+       default_result.primary != TiriType::Array or not default_result.array_element.known or
+       default_result.array_element.logical_type != TiriType::Any or index_result.primary != TiriType::Num or
+       not index_result.nullable or predicate_index_result.primary != TiriType::Num or
+       not predicate_index_result.nullable or
+       typed_result.primary != TiriType::Array or typed_result.array_element.logical_type != TiriType::Str or
        dynamic_result.primary != TiriType::Array or dynamic_result.array_element.known or
        same_result.primary != TiriType::Array or same_result.array_element.logical_type != TiriType::Num or
-       range_result.primary != TiriType::Array or range_result.array_element.logical_type != TiriType::Str) {
-      Log.error("Stage A map calls did not retain their inferred result descriptors");
+       range_found_result.primary != TiriType::Num or not range_found_result.nullable or
+       range_result.primary != TiriType::Array or range_result.array_element.logical_type != TiriType::Str or
+       namespace_find_result.primary != TiriType::Num or not namespace_find_result.nullable or
+       namespace_map_result.primary != TiriType::Array or not namespace_map_result.array_element.known or
+       namespace_map_result.array_element.logical_type != TiriType::Any) {
+      Log.error("Stage B collection methods did not retain their inferred result descriptors");
       return false;
    }
 
-   size_t warning_count = 0;
    for (const ParserDiagnostic &diagnostic : context.diagnostics().entries()) {
-      if (diagnostic.code != ParserErrorCode::DeprecatedApi) continue;
-      ++warning_count;
-      if (diagnostic.severity != ParserDiagnosticSeverity::Warning or
-          diagnostic.message.find("array.") IS std::string::npos) {
-         Log.error("Stage A API deprecation diagnostic had incorrect content");
+      if (diagnostic.code IS ParserErrorCode::DeprecatedApi) {
+         Log.error("Stage B collection calls must not emit deprecation diagnostics");
          log_diagnostics(context.diagnostics().entries(), Log);
          return false;
       }
-   }
-   if (warning_count != 4) {
-      Log.error("expected four Stage A API deprecation warnings, got %zu", warning_count);
-      log_diagnostics(context.diagnostics().entries(), Log);
-      return false;
    }
 
    return true;
@@ -8815,7 +8831,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "builtin_method_registry", test_builtin_method_registry },
       { "builtin_method_table_initialiser_rejection", test_builtin_method_table_initialiser_rejection },
       { "builtin_method_static_classification", test_builtin_method_static_classification },
-      { "stage_a_collection_api_diagnostics", test_stage_a_collection_api_diagnostics },
+      { "stage_b_collection_api_contracts", test_stage_b_collection_api_contracts },
       { "unresolved_method_receiver_diagnostic", test_unresolved_method_receiver_diagnostic },
       { "builtin_method_bytecode_emission", test_builtin_method_bytecode_emission },
       { "compiler_intrinsic_bytecode_emission", test_compiler_intrinsic_bytecode_emission },

@@ -491,6 +491,23 @@ end
    assert(items.findIndex(Value => Value > 100) is nil, 'findIndex() should return nil when no element matches')
 end
 
+@Test function FindReturnsMatchingPredicateValue()
+   local items = array<int> { 10, 20, 30, 40 }
+   local calls = 0
+   local found = items.find(function(Value, Index)
+      calls++
+      return Value > 20 and Index is 2
+   end)
+   assert(found is 30 and calls is 3, 'find() should return the first matching value and short-circuit')
+   assert(items.find(Value => Value > 100) is nil, 'find() should return nil when no element matches')
+
+   found = items.find(function(Value, Index)
+      if Index is 0 then items[0] = 99 end
+      return true
+   end)
+   assert(found is 10, 'find() should return the value supplied to a matching callback before that callback mutates it')
+end
+
 @Test function MapSamePreservesSourceStorage()
    bytes = array<byte> { 65, 66 }
    mapped = bytes.mapSame(Value => Value + 1)
@@ -523,9 +540,16 @@ end
    assert(items[0] is 1 and items[1] is 2, 'a failed map() should not modify its source array')
 end
 
-@Test function LegacyMapRetainsSourceStorageDuringStageA()
+@Test function MapDefaultsToVariantStorageDuringStageB()
    local items = array<byte> { 65, 66 }
-   local mapped = items.map(Value => Value + 1)
-   assert(mapped.type() is 'byte' and mapped[0] is 66 and mapped[1] is 67,
-      'the Stage A compatibility map() should preserve the source storage descriptor')
+   local mapped = items.map(function(Value, Index):any
+      if Index is 0 then return 'first' end
+      return Value + 1
+   end)
+   local empty = array<int>
+   local empty_mapped = empty.map(Value => Value)
+   assert(rawtype(mapped) is 'array<any>' and mapped[0] is 'first' and mapped[1] is 67,
+      'untyped map() should allocate variant storage for type-changing results')
+   assert(rawtype(empty_mapped) is 'array<any>' and #empty_mapped is 0,
+      'untyped map() should allocate array<any> for empty inputs')
 end

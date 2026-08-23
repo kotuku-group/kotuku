@@ -2445,7 +2445,7 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Stage A collection compatibility APIs
+-- Final collection search APIs
 
 @Test function IndexOfRetainsTypedSearchBounds()
    arr = array<int> { 10, 20, 30, 20, 40 }
@@ -2483,7 +2483,8 @@ end
    assert(values.indexOf(second) is 0, 'indexOf() should honour the same equality metamethod as is')
 end
 
-@Test function LegacyFindRemainsEqualitySearchDuringStageA()
+@Test function FindUsesPredicateDuringStageB()
    local items = array<int> { 10, 20, 30 }
-   assert(items.find(20) is 1, 'the Stage A compatibility find() should retain equality-search semantics')
+   assert(items.find(Value => Value > 10) is 20, 'find() should return the first value selected by its predicate')
+   assert(items.indexOf(20) is 1, 'indexOf() should retain equality-search semantics')
 end
