@@ -2790,6 +2790,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_defer_stmt(const DeferStmtPayload &Payl
    if (not Payload.callable) return this->unsupported_stmt(AstNodeKind::DeferStmt, SourceSpan{});
 
    FuncState* fs = &this->func_state;
+   BCREG scope_base = fs->bl->nactvar;
    auto reg = fs->free_reg();
    this->lex_state.var_new(0, NAME_BLANK);
    RegisterAllocator allocator(fs);
@@ -2829,6 +2830,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_defer_stmt(const DeferStmtPayload &Payl
       }
    }
 
+   bcemit_ABC(fs, BC_DEFERARM, reg.raw(), scope_base, nargs);
    fs->reset_freereg();
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }

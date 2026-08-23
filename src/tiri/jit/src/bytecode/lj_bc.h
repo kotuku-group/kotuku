@@ -304,7 +304,10 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(ISNIN,     var,  ___, var, contains) \
   /* Lexical automatic native error promotion. */ \
   _(CHECKALLENTER, base, ___, ___, ___) \
-  _(CHECKALLLEAVE, base, ___, ___, ___)
+  _(CHECKALLLEAVE, base, ___, ___, ___) \
+  /* Runtime defer registration. Appended to preserve existing opcode numbers. */ \
+  _(DEFERARM,      var,  lit, lit, ___) \
+  _(DEFERCONSUME,  var,  ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -486,8 +489,10 @@ typedef enum {
    BC_ISNIN = 137,
    BC_CHECKALLENTER = 138,
    BC_CHECKALLLEAVE = 139,
+   BC_DEFERARM = 140,
+   BC_DEFERCONSUME = 141,
 
-   BC__MAX   = 140
+   BC__MAX   = 142
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

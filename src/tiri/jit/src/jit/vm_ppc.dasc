@@ -6972,6 +6972,32 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_DEFERARM:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  mr CARG2, BASE
+    |  srwi CARG3, RA, 3
+    |  decode_RC8 CARG4, INS
+    |  srwi CARG4, CARG4, 3
+    |  decode_RB8 CARG5, INS
+    |  srwi CARG5, CARG5, 3
+    |  bl extern lj_defer_arm
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_DEFERCONSUME:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  mr CARG2, BASE
+    |  srwi CARG3, RA, 3
+    |  bl extern lj_defer_consume
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
   case BC_VIEW:
     |  lwz L, SAVE_L
     |  stp BASE, L->base

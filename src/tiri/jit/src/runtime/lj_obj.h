@@ -1651,6 +1651,17 @@ inline void hook_restore(global_State *g, uint8_t h) noexcept { g->hookmask = (g
 
 // Per-thread state object.  See lua_newstate() in lj_state.cpp for initialisation.
 
+struct DeferRegistration {
+   uint8_t callable_slot = 0;
+   uint8_t argument_count = 0;
+   uint8_t scope_base = 0;
+};
+
+struct DeferFrameState {
+   ptrdiff_t owner_base = 0;
+   std::vector<DeferRegistration> registrations;
+};
+
 struct lua_State {
    GCHeader;            // NB: C++ placement new can trash any preset values here.
    uint8_t dummy_ffid;  //  Fake FF_C for curr_funcisL() on dummy frames.
@@ -1714,6 +1725,7 @@ struct lua_State {
       uint64_t armed_slots = 0;
    };
    std::vector<CloseFrameState> close_frames;
+   std::vector<DeferFrameState> defer_frames;
 
    struct SavedMultresFrame {
       ptrdiff_t frame_base = 0;

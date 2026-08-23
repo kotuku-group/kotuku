@@ -455,6 +455,186 @@ extern "C" void lj_close_arm(lua_State *L, uint32_t Slot)
    state->armed_slots |= uint64_t(1) << Slot;
 }
 
+//********************************************************************************************************************
+// Register a defer only after its callable and snapshotted arguments have been materialised.  The values remain rooted
+// in the owning Lua frame; this side state records only stable stack offsets and compact slot metadata.
+
+extern "C" void lj_defer_arm(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot,
+   uint32_t ArgumentCount, uint32_t ScopeBase)
+{
+   lj_assertL(L and OwnerBase, "invalid defer registration owner");
+   if (not L or not OwnerBase) return;
+
+   TValue *stack = tvref(L->stack);
+   TValue *stack_end = tvref(L->maxstack);
+   lj_assertL(OwnerBase >= stack and OwnerBase <= stack_end, "defer owner is outside the state stack allocation");
+   lj_assertL(CallableSlot < LJ_MAX_SLOTS, "defer callable slot exceeds the frame limit");
+   lj_assertL(ArgumentCount < LJ_MAX_SLOTS, "defer argument count exceeds the frame limit");
+   lj_assertL(CallableSlot + ArgumentCount < LJ_MAX_SLOTS, "defer arguments exceed the frame limit");
+   lj_assertL(ScopeBase <= CallableSlot, "defer scope begins after its callable slot");
+   if (OwnerBase < stack or OwnerBase > stack_end or CallableSlot >= LJ_MAX_SLOTS or
+       ArgumentCount >= LJ_MAX_SLOTS or CallableSlot + ArgumentCount >= LJ_MAX_SLOTS or ScopeBase > CallableSlot) {
+      return;
+   }
+
+   ptrdiff_t owner_base = savestack(L, OwnerBase);
+   auto frame = std::find_if(L->defer_frames.rbegin(), L->defer_frames.rend(),
+      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
+   if (frame IS L->defer_frames.rend()) {
+      L->defer_frames.push_back(DeferFrameState{ .owner_base = owner_base });
+      frame = L->defer_frames.rbegin();
+   }
+
+   auto duplicate = std::find_if(frame->registrations.rbegin(), frame->registrations.rend(),
+      [CallableSlot](const DeferRegistration &Registration) {
+         return Registration.callable_slot IS CallableSlot;
+      });
+   lj_assertL(duplicate IS frame->registrations.rend(), "defer callable slot armed more than once");
+   if (duplicate != frame->registrations.rend()) return;
+
+   frame->registrations.push_back(DeferRegistration{
+      .callable_slot = uint8_t(CallableSlot),
+      .argument_count = uint8_t(ArgumentCount),
+      .scope_base = uint8_t(ScopeBase)
+   });
+}
+
+//********************************************************************************************************************
+// Consume before entering user code so a throwing normal-exit handler cannot be discovered again during unwinding.
+
+extern "C" bool lj_defer_consume(lua_State *L, TValue *OwnerBase, uint32_t CallableSlot)
+{
+   lj_assertL(L and OwnerBase, "invalid defer consumption owner");
+   if (not L or not OwnerBase) return false;
+
+   TValue *stack = tvref(L->stack);
+   TValue *stack_end = tvref(L->maxstack);
+   lj_assertL(OwnerBase >= stack and OwnerBase <= stack_end,
+      "defer consumption owner is outside the state stack allocation");
+   lj_assertL(CallableSlot < LJ_MAX_SLOTS, "defer consumption slot exceeds the frame limit");
+   if (OwnerBase < stack or OwnerBase > stack_end or CallableSlot >= LJ_MAX_SLOTS) return false;
+
+   ptrdiff_t owner_base = savestack(L, OwnerBase);
+   auto frame = std::find_if(L->defer_frames.rbegin(), L->defer_frames.rend(),
+      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
+   lj_assertL(frame != L->defer_frames.rend(), "defer consumption has no owning frame state");
+   if (frame IS L->defer_frames.rend()) return false;
+
+   auto registration = std::find_if(frame->registrations.rbegin(), frame->registrations.rend(),
+      [CallableSlot](const DeferRegistration &Registration) {
+         return Registration.callable_slot IS CallableSlot;
+      });
+   lj_assertL(registration != frame->registrations.rend(), "defer callable slot is not armed");
+   if (registration IS frame->registrations.rend()) return false;
+
+   lj_assertL(registration IS frame->registrations.rbegin(), "defer registrations consumed out of LIFO order");
+   frame->registrations.erase(std::next(registration).base());
+   if (frame->registrations.empty()) L->defer_frames.erase(std::next(frame).base());
+   return true;
+}
+
+//********************************************************************************************************************
+// Find the innermost active lexical defer scope in a callable-slot range.
+
+bool lj_defer_find_scope(lua_State *State, const TValue *OwnerBase, uint32_t LowerCallableSlot,
+   uint32_t UpperCallableSlot, uint32_t *ScopeBase) noexcept
+{
+   if (not State or not OwnerBase or not ScopeBase or LowerCallableSlot > UpperCallableSlot) return false;
+
+   ptrdiff_t owner_base = savestack(State, OwnerBase);
+   auto frame = std::find_if(State->defer_frames.rbegin(), State->defer_frames.rend(),
+      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
+   if (frame IS State->defer_frames.rend()) return false;
+
+   bool found = false;
+   uint32_t scope_base = 0;
+   for (const DeferRegistration &registration : frame->registrations) {
+      if (registration.callable_slot < LowerCallableSlot or registration.callable_slot >= UpperCallableSlot) continue;
+      if (not found or registration.scope_base > scope_base) {
+         found = true;
+         scope_base = registration.scope_base;
+      }
+   }
+   if (found) *ScopeBase = scope_base;
+   return found;
+}
+
+//********************************************************************************************************************
+// Copy the newest active registration in one lexical scope.  The caller must consume it before invoking user code.
+
+bool lj_defer_peek_scope(lua_State *State, const TValue *OwnerBase, uint32_t LowerCallableSlot,
+   uint32_t UpperCallableSlot, uint32_t ScopeBase, DeferRegistration *Registration) noexcept
+{
+   if (not State or not OwnerBase or not Registration or LowerCallableSlot > UpperCallableSlot) return false;
+
+   ptrdiff_t owner_base = savestack(State, OwnerBase);
+   auto frame = std::find_if(State->defer_frames.rbegin(), State->defer_frames.rend(),
+      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
+   if (frame IS State->defer_frames.rend()) return false;
+
+   auto registration = std::find_if(frame->registrations.rbegin(), frame->registrations.rend(),
+      [LowerCallableSlot, UpperCallableSlot, ScopeBase](const DeferRegistration &Candidate) {
+         return Candidate.callable_slot >= LowerCallableSlot and Candidate.callable_slot < UpperCallableSlot and
+            Candidate.scope_base IS ScopeBase;
+      });
+   if (registration IS frame->registrations.rend()) return false;
+   *Registration = *registration;
+   return true;
+}
+
+//********************************************************************************************************************
+// Report whether a protected boundary is abandoning any frame that owns active defers.
+
+bool lj_defer_has_owner_above(lua_State *State, const TValue *SurvivingBase) noexcept
+{
+   if (not State or not SurvivingBase) return false;
+   ptrdiff_t surviving_base = savestack(State, SurvivingBase);
+   return std::any_of(State->defer_frames.begin(), State->defer_frames.end(),
+      [surviving_base](const DeferFrameState &Frame) { return Frame.owner_base > surviving_base; });
+}
+
+//********************************************************************************************************************
+// Discard registrations belonging to an abandoned lexical range after its cleanup handlers have had an opportunity
+// to run.  The owner frame can survive when a try handler resumes within the same function.
+
+void lj_defer_discard(lua_State *State, const TValue *OwnerBase, uint32_t MinimumCallableSlot) noexcept
+{
+   if (not State or not OwnerBase) return;
+   TValue *stack = tvref(State->stack);
+   TValue *stack_end = tvref(State->maxstack);
+   lj_assertG_(G(State), OwnerBase >= stack and OwnerBase <= stack_end,
+      "defer discard owner is outside the state stack allocation");
+   lj_assertG_(G(State), MinimumCallableSlot <= LJ_MAX_SLOTS,
+      "defer discard slot exceeds the frame limit");
+   if (OwnerBase < stack or OwnerBase > stack_end or MinimumCallableSlot > LJ_MAX_SLOTS) return;
+
+   ptrdiff_t owner_base = savestack(State, OwnerBase);
+   auto frame = std::find_if(State->defer_frames.begin(), State->defer_frames.end(),
+      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
+   if (frame IS State->defer_frames.end()) return;
+
+   frame->registrations.erase(std::remove_if(frame->registrations.begin(), frame->registrations.end(),
+      [MinimumCallableSlot](const DeferRegistration &Registration) {
+         return Registration.callable_slot >= MinimumCallableSlot;
+      }), frame->registrations.end());
+   if (frame->registrations.empty()) State->defer_frames.erase(frame);
+}
+
+void lj_defer_unwind(lua_State *State, const TValue *SurvivingBase) noexcept
+{
+   if (not State or not SurvivingBase) return;
+   TValue *stack = tvref(State->stack);
+   TValue *stack_end = tvref(State->maxstack);
+   lj_assertG_(G(State), SurvivingBase >= stack and SurvivingBase <= stack_end,
+      "defer unwind boundary is outside the state stack allocation");
+   if (SurvivingBase < stack or SurvivingBase > stack_end) return;
+
+   ptrdiff_t surviving_base = savestack(State, SurvivingBase);
+   State->defer_frames.erase(std::remove_if(State->defer_frames.begin(), State->defer_frames.end(),
+      [surviving_base](const DeferFrameState &Frame) { return Frame.owner_base > surviving_base; }),
+      State->defer_frames.end());
+}
+
 extern "C" void lj_array_view_mode(lua_State *L, uint32_t Enabled)
 {
    if (Enabled) {
@@ -762,6 +942,7 @@ static void close_state(lua_State *L)
 {
    global_State *g = G(L);
    // Teardown also covers states terminated while an activation or asynchronous root boundary is still live.
+   L->defer_frames.clear();
    L->context_stack.clear();
    L->context_active = 0;
    L->context_root_floors.clear();
@@ -921,6 +1102,7 @@ void lj_state_free(global_State* g, lua_State *L)
    if (obj2gco(L) IS gcref(g->cur_L)) setgcrefnull(g->cur_L);
    lj_assertG(L->context_stack.empty(), "state freed with active contextual activations");
    lj_assertG(L->context_root_floors.empty(), "state freed with active asynchronous root boundaries");
+   L->defer_frames.clear();
 
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }

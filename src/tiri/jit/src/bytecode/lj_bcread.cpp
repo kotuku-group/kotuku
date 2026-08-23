@@ -342,6 +342,18 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          BCREG slot = bc_a(bc[i]);
          if (slot >= pt->framesize or slot >= 64) bcread_error(State, ErrMsg::BCBAD);
       }
+      else if (op IS BC_DEFERARM) {
+         BCREG callable_slot = bc_a(bc[i]);
+         BCREG scope_base = bc_b(bc[i]);
+         BCREG argument_count = bc_c(bc[i]);
+         if (callable_slot >= pt->framesize or scope_base > callable_slot or
+             callable_slot + argument_count >= pt->framesize) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
+      }
+      else if (op IS BC_DEFERCONSUME) {
+         if (bc_a(bc[i]) >= pt->framesize) bcread_error(State, ErrMsg::BCBAD);
+      }
       else if (op IS BC_VIEW) {
          if (bc_a(bc[i]) != 0 or bc_d(bc[i]) > 1) bcread_error(State, ErrMsg::BCBAD);
       }
