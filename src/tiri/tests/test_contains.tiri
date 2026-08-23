@@ -1,5 +1,9 @@
 -- Language-level membership tests for `Candidate in Target` and __contains dispatch.
 
+struct ContainsStruct
+   Present: int
+end
+
 @BeforeEach(hotpath=40)
 function enforce_hotpath() end
 
@@ -16,6 +20,15 @@ function generic_array_membership_workload(Values:array<any>, Candidate:any, Cou
    local matches = 0
    for index in {0 to Count} do
       if Candidate in Values then matches++ end
+   end
+   return matches
+end
+
+function builtin_struct_membership_workload(Value:struct<ContainsStruct>, Count:num):num
+   local matches = 0
+   for index in {0 to Count} do
+      if 'Present' in Value then matches++ end
+      if not ('Missing' in Value) then matches++ end
    end
    return matches
 end
@@ -61,10 +74,12 @@ end
 
 @Test function BuiltinTargetsUseMembershipHandlers()
    local numbers = array<int> { 2, 4, 6 }
+   local struct_value = struct<ContainsStruct> { }
    assert(4 in numbers and not (5 in numbers), 'Array membership must remain value based')
    assert(5 in {0 to 10} and not (10 in {0 to 10}), 'Range boundaries must remain unchanged')
    assert('tuk' in 'Kōtuku' and not ('xyz' in 'Kōtuku'), 'String membership must remain substring based')
-
+   assert('Present' in struct_value and not ('Missing' in struct_value),
+      'Struct membership must use field presence rather than field values')
 end
 
 @Test function VariantArrayMembershipUsesEqualitySemantics()
@@ -178,6 +193,24 @@ end
       if 'needle' in target then matches++ end
    end
    assert(matches is 200, 'Membership should retain its result after JIT compilation')
+end
+
+@Test function StructMembershipRunsInHotCode()
+   local value = struct<ContainsStruct> { }
+   assert(builtin_struct_membership_workload(value, 200) is 400,
+      'Struct membership should preserve presence and negation after JIT compilation')
+end
+
+@Test function StructContainsMutationUsesGenericDispatch()
+   local value = struct<ContainsStruct> { }
+   local canonical_handler = struct.__contains
+   defer struct.__contains = canonical_handler end
+
+   struct.__contains = function(Target:struct<ContainsStruct>, Candidate:any):bool
+      return Candidate is 'replacement'
+   end
+   assert('replacement' in value and not ('Present' in value),
+      'Replacing struct.__contains should change generic membership dispatch')
 end
 
 @Test function BuiltinArrayMembershipUsesNativeTrace()

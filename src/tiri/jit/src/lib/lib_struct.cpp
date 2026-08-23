@@ -540,6 +540,17 @@ static int struct_len(lua_State *L)
    return 1;
 }
 
+static int struct_contains(lua_State *L)
+{
+   auto *value = lj_lib_checkstruct(L, 1);
+   if (lua_type(L, 2) != LUA_TSTRING) {
+      lua_pushboolean(L, false);
+      return 1;
+   }
+   lua_pushboolean(L, find_field(value, lua_tostring(L, 2)).has_value());
+   return 1;
+}
+
 static int struct_next_pair(lua_State *L)
 {
    auto value = lua_tostruct(L, lua_upvalueindex(1));
@@ -800,6 +811,8 @@ extern "C" int luaopen_struct(lua_State *L)
    lua_setfield(L, -2, "__newindex");
    lua_pushcfunction(L, struct_len);
    lua_setfield(L, -2, "__len");
+   lua_pushcfunction(L, struct_contains);
+   lua_setfield(L, -2, "__contains");
    lua_pushcfunction(L, struct_pairs);
    lua_setfield(L, -2, "__pairs");
    lua_pushcfunction(L, struct_tostring);

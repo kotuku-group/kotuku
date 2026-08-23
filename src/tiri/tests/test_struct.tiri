@@ -99,6 +99,36 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructMembershipUsesDefinition()
+   local declared = struct<DeclaredUser> { }
+   assert(declared.Age is 0 and declared.Name is '' and declared.ChildPointer is nil and declared.Object is nil,
+      'The membership fixture should retain zero, empty and nil field values')
+   assert('Age' in declared and 'Name' in declared and 'Child' in declared and 'ChildPointer' in declared and
+      'Object' in declared,
+      'Declared scalar, embedded and pointer fields should be present regardless of their stored values')
+   assert(declared.name is '' and 'name' in declared,
+      'Membership should use the same case-insensitive field-name matching as ordinary struct access')
+   assert(not ('Missing' in declared) and not (not ('Name' in declared)),
+      'Negated membership should invert presence for declared struct fields')
+
+   MAKESTRUCT('MembershipLegacyLayout', 'lZero,zsEmpty,pPointer')
+   local legacy = struct.new('MembershipLegacyLayout')
+   assert(legacy.zero is 0 and legacy.empty is '' and legacy.pointer is nil,
+      'Legacy membership fixtures should retain zero, empty and nil field values')
+   assert('Zero' in legacy and 'empty' in legacy and 'Pointer' in legacy,
+      'MAKESTRUCT definitions and struct.new() values should report fields from their layout')
+
+   local nil_candidate:any = nil
+   local number_candidate:any = 1
+   local bool_candidate:any = true
+   local table_candidate:any = { }
+   assert(not (nil_candidate in declared) and not (number_candidate in declared) and
+      not (bool_candidate in declared) and not (table_candidate in declared),
+      'Non-string struct membership candidates should return false without raising')
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Primitive fields validate exact Tiri categories and native numeric domains before changing storage.
 
 @Test function NativeStructPrimitiveValidation()
