@@ -68,6 +68,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
 
    uint8_t saved_try_depth = fs->try_depth;
    fs->try_depth++;
+   fs->runtime_scopes.push_back(RuntimeScope{ RuntimeScopeKind::Try, base_reg });
 
    // Emit BC_TRYENTER with try block index
    bcemit_AD(fs, BC_TRYENTER, base_reg, BCReg(try_block_index));
@@ -96,6 +97,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
 
       // ScopeGuard destructor runs here, calling fscope_end() which executes defers
    }
+
+   lj_assertX(not fs->runtime_scopes.empty() and fs->runtime_scopes.back().kind IS RuntimeScopeKind::Try,
+      "try runtime scope stack is unbalanced");
+   fs->runtime_scopes.pop_back();
 
    // Emit success block (if present) - runs after defers, before jump over handlers
    if (Payload.success_block) {
@@ -264,7 +269,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payl
          ParserErrorCode::InternalInvariant, "raise statement requires error code expression", Span));
    }
 
-   // Evaluate error code expression to a register
    auto code_result = this->emit_expression(*Payload.error_code);
    if (not code_result.ok()) return ParserResult<IrEmitUnit>::failure(code_result.error_ref());
 
@@ -317,12 +321,19 @@ ParserResult<IrEmitUnit> IrEmitter::emit_check_stmt(const CheckStmtPayload &Payl
          ParserErrorCode::InternalInvariant, "check statement requires error code expression", Span));
    }
 
-   // Evaluate error code expression to a register
+   // Native calls must retain their call-specific diagnostic. A transient checkall scope lets supported direct native
+   // boundaries promote before BC_CHECK, while ordinary expressions still fall through to the explicit check opcode.
+   BCReg checkall_base = BCReg(fs->freereg);
+   bcemit_AD(fs, BC_CHECKALLENTER, checkall_base, BCReg(0));
+   fs->runtime_scopes.push_back(RuntimeScope{ RuntimeScopeKind::Checkall, checkall_base });
+
    auto code_result = this->emit_expression(*Payload.error_code);
    if (not code_result.ok()) return ParserResult<IrEmitUnit>::failure(code_result.error_ref());
 
    ExpDesc code_expr = code_result.value_ref();
    expr_toanyreg(fs, &code_expr);
+   bcemit_AD(fs, BC_CHECKALLLEAVE, checkall_base, BCReg(0));
+   fs->runtime_scopes.pop_back();
 
    // Preserve the expression column for assert-style error formatting.  BC_CHECK's D operand is otherwise unused.
    int32_t raw_column = Payload.error_code->span.column.lineNumber();

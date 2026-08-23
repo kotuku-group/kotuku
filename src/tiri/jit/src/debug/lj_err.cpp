@@ -596,6 +596,7 @@ extern "C" void setup_try_handler(lua_State *L)
    L->top = restorestack(L, try_frame->saved_top);
    L->array_view_scopes = try_frame->array_view_scopes;
    L->array_view_depth = try_frame->array_view_depth;
+   L->checkall_stack->depth = try_frame->checkall_depth;
    L->try_stack.depth--; // Pop try frame
 
    // Build exception table and place in handler's register (pass pending_trace, which may be null)
@@ -639,6 +640,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
             if (errcode) {
                const ptrdiff_t frame_offset = savestack(L, frame);
                const ptrdiff_t top_offset = savestack(L, top);
+               lj_checkall_cleanup_to_base(L, top);
                unwind_close_all(L, L->base - 1, top);
                frame = restorestack(L, frame_offset);
                top = restorestack(L, top_offset);
@@ -666,6 +668,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
                TValue* target = frame - LJ_FR2;
                const ptrdiff_t frame_offset = savestack(L, frame);
                const ptrdiff_t target_offset = savestack(L, target);
+               lj_checkall_cleanup_to_base(L, target);
                unwind_close_all(L, L->base - 1, target);
                frame = restorestack(L, frame_offset);
                target = restorestack(L, target_offset);
@@ -698,8 +701,10 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
             }
 
             if (errcode) {
-               lj_meta_multres_unwind(L, frame_prevd(frame) + 1);
-               L->base = frame_prevd(frame) + 1;
+               TValue *target = frame_prevd(frame) + 1;
+               lj_checkall_cleanup_to_base(L, target);
+               lj_meta_multres_unwind(L, target);
+               L->base = target;
                L->cframe = cframe_prev(cf);
                unwindstack(L, frame - LJ_FR2);
             }
@@ -725,6 +730,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
 
                TValue *target = frame_prevd(frame) + 1;
                const ptrdiff_t target_offset = savestack(L, target);
+               lj_checkall_cleanup_to_base(L, target);
                unwind_close_all(L, L->base - 1, target);
                target = restorestack(L, target_offset);
                lj_meta_multres_unwind(L, target);
@@ -742,6 +748,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
    if (errcode) {
       TValue* target = tvref(L->stack) + 1 + LJ_FR2;
       const ptrdiff_t target_offset = savestack(L, target);
+      lj_checkall_cleanup_to_base(L, target);
       unwind_close_all(L, L->base - 1, target);
       target = restorestack(L, target_offset);
       lj_meta_multres_unwind(L, target);

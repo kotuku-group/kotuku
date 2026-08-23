@@ -170,6 +170,18 @@ static uint8_t rec_try_active_depth(jit_State *J)
    return depth;
 }
 
+static uint8_t rec_checkall_active_depth(jit_State *J)
+{
+   lua_State *L = J->L;
+   ptrdiff_t frame_base = savestack(L, L->base);
+   uint8_t depth = 0;
+   for (int i = 0; i < L->checkall_stack->depth; ++i) {
+      const CheckallFrame *frame = &L->checkall_stack->frames[i];
+      if (frame->func IS J->fn and frame->frame_base IS frame_base) depth++;
+   }
+   return depth;
+}
+
 //********************************************************************************************************************
 // Record loop ops
 
@@ -3245,10 +3257,10 @@ static void rec_comp_fixup(jit_State *J, const BCIns *pc, int cond)
    const BCIns *npc = pc + 2 + (cond ? bc_j(jmpins) : 0);
    SnapShot *snap = &J->cur.snap[J->cur.nsnap - 1];
 
-   // Skip PC modification inside try blocks to prevent snapshot restoration issues.
+   // Skip PC modification inside runtime scopes with explicit leave bytecodes to prevent snapshot restoration issues.
    // See function header comment for detailed explanation.
 
-   if (J->trydepth > 0) {
+   if (J->trydepth > 0 or J->checkalldepth > 0) {
       J->needsnap = 1;
       return;
    }
@@ -5300,6 +5312,26 @@ void lj_record_ins(jit_State *J)
       break;
    }
 
+   case BC_CHECKALLENTER: {
+      TRef tr_func = getcurrf(J);
+      TRef tr_base = REF_BASE;
+      if (J->baseslot > FRC::MIN_BASESLOT) {
+         IRBuilder ir(J);
+         int32_t slot_delta = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT);
+         tr_base = ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, ir.kint(slot_delta * 8));
+      }
+      lj_ir_call(J, IRCALL_lj_checkall_enter, tr_func, tr_base);
+      J->checkalldepth++;
+      J->needsnap = 1;
+      break;
+   }
+
+   case BC_CHECKALLLEAVE:
+      lj_ir_call(J, IRCALL_lj_checkall_leave);
+      if (J->checkalldepth > 0) J->checkalldepth--;
+      J->needsnap = 1;
+      break;
+
    case BC_CHECK:
    case BC_RAISE:
    case BC_MODACT:
@@ -5498,6 +5530,7 @@ void lj_record_setup(jit_State *J)
    J->framedepth = 0;
    J->retdepth   = 0;
    J->trydepth   = rec_try_active_depth(J);
+   J->checkalldepth = rec_checkall_active_depth(J);
    J->multres    = 0;
    J->instunroll = J->param[JIT_P_instunroll];
    J->loopunroll = J->param[JIT_P_loopunroll];

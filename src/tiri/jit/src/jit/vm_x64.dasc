@@ -5658,6 +5658,37 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_CHECKALLENTER:
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov L:RB->top, BASE
+    |  mov RA, [BASE-16]
+    |  cleartp RA
+    |.if X64WIN
+    |  mov CARG3, BASE
+    |  mov CARG2, RA
+    |  mov CARG1, L:RB
+    |.else
+    |  mov CARG2, RA
+    |  mov CARG3, BASE
+    |  mov CARG1, L:RB
+    |.endif
+    |  call extern lj_checkall_enter
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_CHECKALLLEAVE:
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG1, L:RB
+    |  call extern lj_checkall_leave
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
   case BC_CHECK:
     // BC_CHECK A, D: Check error code in RA, raise with source column D if >= ExceptionThreshold (9)
     // Fast path: If error code < 9, return

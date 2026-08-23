@@ -126,6 +126,7 @@ enum class AstNodeKind : uint16_t {
    ContextStmt,
    ConditionalShorthandStmt,
    TryExceptStmt,  // try...except...end exception handling
+   CheckallStmt,    // checkall...end automatic native error promotion
    RaiseStmt,      // raise error_code [, message] or raise message
    CheckStmt,      // check expression
    ImportStmt,     // import 'module' statement
@@ -648,6 +649,7 @@ inline constexpr uint8_t TRY_FLAG_TRACE = 0x01;  // Capture stack trace on excep
 // Maximum nesting depth for try blocks
 
 inline constexpr int LJ_MAX_TRY_DEPTH = 32;
+inline constexpr int LJ_MAX_CHECKALL_DEPTH = 32;
 
 // Function signature metadata.  Entries contain only state-portable identifiers: struct constraints use struct_key()
 // and object constraints use CLASSID.  Parameter entries are stored first, followed by result entries.
@@ -804,12 +806,23 @@ struct TryFrame {
    size_t    context_floor;     // Active asynchronous root floor at try entry
    uint64_t  array_view_scopes; // Armed <view> scopes at try entry
    uint8_t   array_view_depth;  // Active <view> scope depth at try entry
+   uint8_t   checkall_depth;     // Active checkall depth at try entry
 };
 
 // Stack of try frames for exception unwinding
 
 struct TryFrameStack {
    TryFrame frames[LJ_MAX_TRY_DEPTH];
+   int depth = 0;
+};
+
+struct CheckallFrame {
+   GCfunc *func;
+   ptrdiff_t frame_base;
+};
+
+struct CheckallFrameStack {
+   CheckallFrame frames[LJ_MAX_CHECKALL_DEPTH];
    int depth = 0;
 };
 
@@ -1665,6 +1678,7 @@ struct lua_State {
    TValue pending_close_error;
    // Try-except exception handling runtime state (lazily allocated)
    TryFrameStack try_stack;      // Exception frame stack (nullptr until first BC_TRYENTER)
+   CheckallFrameStack *checkall_stack = nullptr; // Preallocated lexical automatic native error promotion scopes
    const BCIns   *try_handler_pc; // Handler PC for error re-entry (set during unwind)
    CapturedStackTrace *pending_trace; // Trace captured during exception handling (for try<trace>)
    GCstr  *pending_exception_message = nullptr; // Raw exception message for try/except tables

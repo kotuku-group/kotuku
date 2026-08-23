@@ -4671,6 +4671,30 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_CHECKALLENTER:
+    |  ins_AD
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  str BASE, L->top
+    |  ldr CARG2, [BASE, FRAME_FUNC]
+    |  and CARG2, CARG2, #LJ_GCVMASK
+    |  mov CARG1, L
+    |  mov CARG3, BASE
+    |  bl extern lj_checkall_enter
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CHECKALLLEAVE:
+    |  ins_AD
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  bl extern lj_checkall_leave
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
   case BC_CHECK:
     // BC_CHECK A, D: Check error code in RA, raise with source column D if >= ExceptionThreshold (9)
     // Fast path: If error code < 9, return

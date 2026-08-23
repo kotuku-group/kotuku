@@ -216,6 +216,8 @@ private:
             }
             return false;
          }
+         case AstNodeKind::CheckallStmt:
+            return this->block_uses_context(std::get<CheckallStmtPayload>(Statement.data).block);
          case AstNodeKind::RaiseStmt: {
             const auto &payload = std::get<RaiseStmtPayload>(Statement.data);
             return (payload.error_code and this->expression_uses_context_impl(*payload.error_code)) or
@@ -424,6 +426,8 @@ static bool statement_contains_try(const StmtNode &Statement)
    switch (Statement.kind) {
       case AstNodeKind::TryExceptStmt:
          return true;
+      case AstNodeKind::CheckallStmt:
+         return contains(std::get<CheckallStmtPayload>(Statement.data).block);
       case AstNodeKind::IfStmt:
          for (const auto &clause : std::get<IfStmtPayload>(Statement.data).clauses) {
             if (contains(clause.block)) return true;
@@ -897,6 +901,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::ContextStmt:    return "ContextStmt";
       case AstNodeKind::ConditionalShorthandStmt: return "ConditionalShorthandStmt";
       case AstNodeKind::TryExceptStmt: return "TryExceptStmt";
+      case AstNodeKind::CheckallStmt:   return "CheckallStmt";
       case AstNodeKind::RaiseStmt:     return "RaiseStmt";
       case AstNodeKind::CheckStmt:     return "CheckStmt";
       case AstNodeKind::ExternStmt:    return "ExternStmt";
@@ -1231,7 +1236,7 @@ IrEmitter::LoopStackGuard IrEmitter::push_loop_context(BCPos continue_target)
    loop_context.continue_edge = this->control_flow.make_continue_edge();
    loop_context.defer_base = this->func_state.active_var_count();
    loop_context.continue_target = continue_target;
-   loop_context.try_depth_at_entry = this->func_state.try_depth;  // Track try depth at loop entry
+   loop_context.runtime_scope_depth_at_entry = this->func_state.runtime_scopes.size();
    this->loop_stack.push_back(loop_context);
    return LoopStackGuard(this);
 }
@@ -1382,6 +1387,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
    case AstNodeKind::TryExceptStmt: {
       const auto &payload = std::get<TryExceptPayload>(stmt.data);
       return this->emit_try_except_stmt(payload);
+   }
+   case AstNodeKind::CheckallStmt: {
+      return this->emit_checkall_stmt(std::get<CheckallStmtPayload>(stmt.data));
    }
    case AstNodeKind::RaiseStmt: {
       const auto &payload = std::get<RaiseStmtPayload>(stmt.data);
@@ -1619,6 +1627,24 @@ static bool tail_call_forwards_current_contract(
    return Context.descriptors().callable(CurrentCallable).immutable;
 }
 
+// A native tail call erases the Tiri activation that owns its source call. That would make an enclosing checkall frame
+// appear to be the native call's immediate owner, so retain an ordinary call/return boundary for native prototypes.
+
+static bool tail_call_preserves_checkall_boundary(const ParserContext &Context, const ExprNode &Expression)
+{
+   if (Expression.kind != AstNodeKind::CallExpr and Expression.kind != AstNodeKind::SafeCallExpr) return true;
+   const auto &call = std::get<CallExprPayload>(Expression.data);
+   if (const auto *direct = std::get_if<DirectCallTarget>(&call.target); direct and direct->callable) {
+      if (direct->callable->kind IS AstNodeKind::ModuleFunctionExpr) return false;
+      if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+         const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+         if (member.class_id != CLASSID::NIL) return false;
+      }
+   }
+   if (not call.callable) return true;
+   return Context.descriptors().callable(call.callable).source != StaticCallableSource::NativePrototype;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Payload)
 {
    BCIns ins;
@@ -1670,8 +1696,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             this->ctx, this->current_callable, *Payload.values.back());
          bool direct_tail_call = call_op IS BC_CALL or call_op IS BC_CALLM;
          bool contextual_tail_call = not this->is_root_chunk and has_context_leave and call_op IS BC_CTXCALL;
-         bool tail_call_eligible = this->func_state.try_depth IS 0 and not has_post_call_control_flow and
+         bool tail_call_eligible = this->func_state.runtime_scopes.empty() and not has_post_call_control_flow and
             not has_user_cleanup and (direct_tail_call or contextual_tail_call) and
+            tail_call_preserves_checkall_boundary(this->ctx, *Payload.values.back()) and
             (forwards_current_contract or (not truncate_return_results and not has_return_contract));
          if (tail_call_eligible) {
             return_contract_forwarded = forwards_current_contract;
@@ -1703,7 +1730,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                BCINS_AD(BC_RET, last.u.s.aux, result_count + 1) :
                BCINS_AD(BC_RET0, 0, 1);
          }
-         else if (this->func_state.try_depth > 0) {
+         else if (not this->func_state.runtime_scopes.empty()) {
             // DISABLE TAIL-CALL inside try blocks: use CALL + RET instead of CALLT.
             // CALLT doesn't return to the caller, so if the called function throws an exception, it happens after
             // TRYLEAVE has popped the try frame - the exception escapes.  By using CALL + RET, the exception occurs
@@ -1780,24 +1807,18 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    }
 
    snapshot_return_regs(&this->func_state, &ins);
-   bool preserve_multres = bc_op(ins) IS BC_RETM and cleanup_temp_regs > 0;
+   bool preserve_multres = bc_op(ins) IS BC_RETM and
+      (cleanup_temp_regs > 0 or not this->func_state.runtime_scopes.empty());
    if (preserve_multres) bcemit_AD(&this->func_state, BC_MRSAVE, multres_slot, 0);
    if (preserve_multres) this->func_state.freereg = BCREG(this->func_state.varmap.size());
    // Both __close and defer handlers must run before returning from function.
    // Order: closes before defers (LIFO - most recently declared runs first).
    execute_scope_cleanups(&this->func_state, 0);
 
-   // Emit BC_TRYLEAVE for each try scope we're exiting with this return.
-   // A return from inside a try block must pop all pending try frames to prevent
-   // stale frames accumulating on L->try_stack across multiple function calls.
-   // Use varmap.size() (active local variable count) as the base register, not freereg,
-   // because freereg may still point past temporary registers used by the return expression.
-
-   if (this->func_state.try_depth > 0) {
-      BCReg base_reg = BCReg(this->func_state.varmap.size());
-      for (uint8_t i = 0; i < this->func_state.try_depth; ++i) {
-         bcemit_AD(&this->func_state, BC_TRYLEAVE, base_reg, BCReg(0));
-      }
+   for (auto scope = this->func_state.runtime_scopes.rbegin();
+        scope != this->func_state.runtime_scopes.rend(); ++scope) {
+      BCOp leave = scope->kind IS RuntimeScopeKind::Try ? BC_TRYLEAVE : BC_CHECKALLLEAVE;
+      bcemit_AD(&this->func_state, leave, scope->base, BCReg(0));
    }
 
    if (this->func_state.flags & PROTO_CHILD) bcemit_AJ(&this->func_state, BC_UCLO, 0, 0);
@@ -2943,16 +2964,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_break_stmt(const BreakStmtPayload&)
 
    execute_scope_cleanups(&this->func_state, loop.defer_base);
 
-   // Emit BC_TRYLEAVE for each try scope we're exiting with this break.
-   // The try_depth tracks how deep we are in try blocks; when breaking out of
-   // a loop that's inside a try, we need to pop the try frame(s).
-
-   if (this->func_state.try_depth > loop.try_depth_at_entry) {
-      uint8_t leave_count = this->func_state.try_depth - loop.try_depth_at_entry;
-      BCReg base_reg = BCReg(this->func_state.freereg);
-      for (uint8_t i = 0; i < leave_count; ++i) {
-         bcemit_AD(&this->func_state, BC_TRYLEAVE, base_reg, BCReg(0));
-      }
+   for (size_t i = this->func_state.runtime_scopes.size(); i > loop.runtime_scope_depth_at_entry; --i) {
+      const RuntimeScope &scope = this->func_state.runtime_scopes[i - 1];
+      BCOp leave = scope.kind IS RuntimeScopeKind::Try ? BC_TRYLEAVE : BC_CHECKALLLEAVE;
+      bcemit_AD(&this->func_state, leave, scope.base, BCReg(0));
    }
 
    loop.break_edge.append(BCPos(bcemit_jmp(&this->func_state)));
@@ -2975,16 +2990,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_continue_stmt(const ContinueStmtPayload
 
    execute_scope_cleanups(&this->func_state, loop.defer_base);
 
-   // Emit BC_TRYLEAVE for each try scope we're exiting with this continue.
-   // The try_depth tracks how deep we are in try blocks; when continuing
-   // inside a loop that's inside a try, we need to pop the try frame(s).
-
-   if (this->func_state.try_depth > loop.try_depth_at_entry) {
-      uint8_t leave_count = this->func_state.try_depth - loop.try_depth_at_entry;
-      BCReg base_reg = BCReg(this->func_state.freereg);
-      for (uint8_t i = 0; i < leave_count; ++i) {
-         bcemit_AD(&this->func_state, BC_TRYLEAVE, base_reg, BCReg(0));
-      }
+   for (size_t i = this->func_state.runtime_scopes.size(); i > loop.runtime_scope_depth_at_entry; --i) {
+      const RuntimeScope &scope = this->func_state.runtime_scopes[i - 1];
+      BCOp leave = scope.kind IS RuntimeScopeKind::Try ? BC_TRYLEAVE : BC_CHECKALLLEAVE;
+      bcemit_AD(&this->func_state, leave, scope.base, BCReg(0));
    }
 
    loop.continue_edge.append(BCPos(bcemit_jmp(&this->func_state)));
@@ -4531,3 +4540,4 @@ ParserResult<ExpDesc> IrEmitter::unsupported_expr(AstNodeKind kind, const Source
 #include "ir_emitter/emit_table.cpp"
 #include "ir_emitter/emit_call.cpp"
 #include "ir_emitter/emit_try.cpp"
+#include "ir_emitter/emit_checkall.cpp"

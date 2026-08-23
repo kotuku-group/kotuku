@@ -41,6 +41,7 @@ struct TokenDefinition {
    TOKEN_DEF(as,           "as",       TKF_RESERVED) \
    TOKEN_DEF(break,        "break",    TKF_RESERVED | TKF_STATEMENT_START | TKF_SHORTHAND_STATEMENT) \
    TOKEN_DEF(choose,       "choose",   TKF_RESERVED | TKF_STATEMENT_START) \
+   TOKEN_DEF(checkall,      "checkall",  TKF_RESERVED | TKF_STATEMENT_START) \
    TOKEN_DEF(continue,     "continue", TKF_RESERVED | TKF_STATEMENT_START | TKF_SHORTHAND_STATEMENT) \
    TOKEN_DEF(defer,        "defer",    TKF_RESERVED | TKF_STATEMENT_START) \
    TOKEN_DEF(do,           "do",       TKF_RESERVED | TKF_STATEMENT_START) \

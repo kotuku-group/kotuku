@@ -1892,7 +1892,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
          else {
             lua_pushinteger(Lua, (int)rc.Arg);
-            if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and in_try_immediate_scope(Lua)) {
+            if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and
+                in_checkall_immediate_scope(Lua)) {
                // Scope isolation: Only throw exceptions for direct calls within the try block.
                auto error = ERR(rc.Arg);
                ErrorMsg = std::format("{}() failed: {}", callable->Name, GetErrorMsg(error));

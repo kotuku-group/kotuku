@@ -23,6 +23,16 @@ struct LexState;
 struct FuncScope;
 struct BCInsLine;
 
+enum class RuntimeScopeKind : uint8_t {
+   Try,
+   Checkall
+};
+
+struct RuntimeScope {
+   RuntimeScopeKind kind;
+   BCReg base;
+};
+
 struct FuncState {
    GCtab *kt = nullptr;      // Hash table for constants.
    LexState *ls = nullptr;   // Lexer state.
@@ -92,6 +102,7 @@ struct FuncState {
    std::vector<TryHandlerDesc> try_handlers;  // Handler descriptors
    std::vector<ProtoContextBlockDesc> context_blocks;
    uint8_t try_depth = 0;  // Current try nesting depth for break/continue cleanup
+   std::vector<RuntimeScope> runtime_scopes; // Ordered lexical scopes requiring runtime leave bytecodes
    bool is_root = false;   // True if this is the top-level (root) function
 
    // Portable module dependency descriptors, appended by the root and imported AST builders and copied to the

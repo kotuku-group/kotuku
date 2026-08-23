@@ -62,4 +62,7 @@ inline void lj_err_verify() noexcept {}
 // to lj_err.cpp and use Kotuku's ERR type, so they're declared there.
 extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t TryBlockIndex);
 extern "C" void lj_try_leave(lua_State *L);
+extern "C" void lj_checkall_enter(lua_State *L, GCfunc *Func, TValue *Base);
+extern "C" void lj_checkall_leave(lua_State *L);
+extern "C" void lj_checkall_cleanup_to_base(lua_State *L, TValue *TargetBase);
 extern "C" void lj_try_cleanup_to_base(lua_State *L, TValue *TargetBase);

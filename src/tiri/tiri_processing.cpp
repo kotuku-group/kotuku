@@ -235,7 +235,7 @@ static int processing_sleep(lua_State *Lua)
    else error = ProcessMessages(PMF::NIL, 0);
 
    // Promote errors to exceptions
-   if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
+   if ((error != ERR::Okay) and (in_checkall_immediate_scope(Lua))) luaL_error(Lua, error);
 
    lua_pushinteger(Lua, int(error));
    return 1;

@@ -739,6 +739,8 @@ static TValue * cpluaopen(lua_State *Lua, lua_CFunction dummy, void* ud)
 {
    global_State *g = G(Lua);
    stack_init(Lua, Lua);
+   Lua->checkall_stack = lj_mem_newt(Lua, sizeof(CheckallFrameStack), CheckallFrameStack);
+   new (Lua->checkall_stack) CheckallFrameStack;
 
    // NOBARRIER: State initialization, all objects are white.
 
@@ -783,6 +785,10 @@ static void close_state(lua_State *L)
    lj_str_freetab(g);
    lj_buf_free(g, &g->tmpbuf);
    lj_mem_freevec(g, tvref(L->stack), L->stacksize, TValue);
+   if (L->checkall_stack) {
+      lj_mem_freet(g, L->checkall_stack);
+      L->checkall_stack = nullptr;
+   }
 
    if (mref<uint32_t>(g->gc.lightudseg)) {
       MSize segnum = g->gc.lightudnum ? (2 << lj_fls(g->gc.lightudnum)) : 2;
@@ -927,6 +933,10 @@ void lj_state_free(global_State* g, lua_State *L)
    lj_func_closeuv(L, tvref(L->stack));
    lj_assertG(gcref(L->openupval) IS nullptr, "stale open upvalues");
    lj_mem_freevec(g, tvref(L->stack), L->stacksize, TValue);
+   if (L->checkall_stack) {
+      lj_mem_freet(g, L->checkall_stack);
+      L->checkall_stack = nullptr;
+   }
    L->~lua_State();
    lj_mem_freet(g, L);
 }

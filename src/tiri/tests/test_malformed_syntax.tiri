@@ -23,6 +23,12 @@ function assertInvalidCases(GroupName, Cases)
    end
 end
 
+@Test function ValidateMalformedCheckallBlocks()
+   assertInvalid('checkall local value = 1', 'checkall missing end')
+   assertInvalid('checkall except end', 'checkall with except clause')
+   assertInvalid('checkall success end', 'checkall with success clause')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Diagnostic contract
 

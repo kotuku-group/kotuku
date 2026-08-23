@@ -256,6 +256,7 @@ extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t 
    try_frame->context_floor   = L->context_root_floors.empty() ? 0 : L->context_root_floors.back();
    try_frame->array_view_scopes = L->array_view_scopes;
    try_frame->array_view_depth  = L->array_view_depth;
+   try_frame->checkall_depth     = uint8_t(L->checkall_stack->depth);
    lj_assertL(try_frame->context_depth >= try_frame->context_floor,
       "try context depth is below the active asynchronous root floor");
 }
@@ -270,6 +271,35 @@ extern "C" void lj_try_leave(lua_State *L)
 
    // NB: The setup_try_handler() also decrements the depth, so the check prevents a repeat
    if (L->try_stack.depth > 0) L->try_stack.depth--;
+}
+
+//********************************************************************************************************************
+// Maintain lexical checkall frames independently from exception-handler frames.
+
+extern "C" void lj_checkall_enter(lua_State *L, GCfunc *Func, TValue *Base)
+{
+   lj_assertL(Func != nullptr and isluafunc(Func), "lj_checkall_enter: invalid Lua function");
+   lj_assertL(Base >= tvref(L->stack) and Base <= tvref(L->maxstack), "lj_checkall_enter: invalid base");
+   if (L->checkall_stack->depth >= LJ_MAX_CHECKALL_DEPTH) lj_err_msg(L, ErrMsg::XNEST);
+
+   CheckallFrame *frame = &L->checkall_stack->frames[L->checkall_stack->depth++];
+   frame->func = Func;
+   frame->frame_base = savestack(L, Base);
+}
+
+extern "C" void lj_checkall_leave(lua_State *L)
+{
+   lj_assertL(L->checkall_stack->depth > 0, "lj_checkall_leave: no active checkall frame");
+   if (L->checkall_stack->depth > 0) L->checkall_stack->depth--;
+}
+
+extern "C" void lj_checkall_cleanup_to_base(lua_State *L, TValue *TargetBase)
+{
+   ptrdiff_t target = savestack(L, TargetBase);
+   while (L->checkall_stack->depth > 0 and
+          L->checkall_stack->frames[L->checkall_stack->depth - 1].frame_base >= target) {
+      L->checkall_stack->depth--;
+   }
 }
 
 //********************************************************************************************************************

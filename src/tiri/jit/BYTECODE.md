@@ -650,9 +650,14 @@ end:
 
 ## 10. Exception Handling and Type Fixing
 
-### 10.1 Exception Handling Bytecodes (`BC_TRYENTER`, `BC_TRYLEAVE`, `BC_CHECK`, `BC_RAISE`)
+### 10.1 Exception and Checkall Bytecodes
 
 Tiri's `try...except...end` statements are implemented using inline bytecode (not closures), allowing `return`, `break`, and `continue` to work correctly within try blocks.
+
+`checkall...end` uses independent `BC_CHECKALLENTER` and `BC_CHECKALLLEAVE` instructions.  The enter instruction records
+the owning Lua function and frame-base offset in `lua_State::checkall_stack`; the leave instruction removes that lexical
+scope.  Native bindings consult the top checkall frame before promoting supported `ERR` results.  Try frames snapshot
+the active checkall depth so handler unwinding preserves an outer checkall and removes checkalls nested inside the try.
 
 **Bytecode structure:**
 ```
@@ -674,6 +679,9 @@ exit_label:
 - `BC_TRYLEAVE A, D`: Pops the exception frame (normal exit path). `A` is the base register, `D` is always 0.
 - `BC_CHECK A, D`: Checks if the error code in `R(A)` is >= the error threshold. If so, raises an exception. Used for error code checking without explicit `raise` statements.
 - `BC_RAISE A, D`: Raises an exception with error code in `R(A)` and optional message in `R(D)`. If `D` is 0xFF, no message is provided.
+- `BC_CHECKALLENTER A, D`: Pushes a checkall frame for the current Lua activation. `A` is the first free register and `D`
+  is unused.
+- `BC_CHECKALLLEAVE A, D`: Pops the innermost checkall frame. `D` is unused.
 
 **Handler metadata:**
 Handler metadata is stored in `GCproto.try_blocks[]` and `GCproto.try_handlers[]`. Each `TryBlockDesc` contains:
@@ -687,7 +695,8 @@ Each `TryHandlerDesc` contains:
 - `handler_pc`: Bytecode position of handler entry point
 - `exception_reg`: Register holding exception table (0xFF = no variable)
 
-**Implementation:** See [emit_try.cpp:30-240](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L30-L240), [emit_try.cpp:248-291](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L248-L291), [emit_try.cpp:299-320](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L299-L320).
+**Implementation:** See `src/tiri/jit/src/parser/ir_emitter/emit_try.cpp` and
+`src/tiri/jit/src/parser/ir_emitter/emit_checkall.cpp`.
 
 ### 10.2 Dynamic Result Classification
 

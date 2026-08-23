@@ -87,6 +87,8 @@ void collect_assignments(
          }
          return block_writes(payload.success_block, InspectAssignments);
       }
+      case AstNodeKind::CheckallStmt:
+         return block_writes(std::get<CheckallStmtPayload>(Statement.data).block, InspectAssignments);
       case AstNodeKind::WithStmt:
          return block_writes(std::get<WithStmtPayload>(Statement.data).block, InspectAssignments);
       case AstNodeKind::ConditionalShorthandStmt: {
@@ -193,6 +195,9 @@ void collect_statement_assignments(
          visit_block(payload.success_block, true);
          return;
       }
+      case AstNodeKind::CheckallStmt:
+         visit_block(std::get<CheckallStmtPayload>(Statement.data).block, true);
+         return;
       case AstNodeKind::WithStmt:
          visit_block(std::get<WithStmtPayload>(Statement.data).block, false);
          return;

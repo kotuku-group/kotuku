@@ -213,6 +213,7 @@ private:
    ParserResult<IrEmitUnit> emit_continue_stmt(const ContinueStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_conditional_shorthand_stmt(const ConditionalShorthandStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_try_except_stmt(const TryExceptPayload& payload);
+   ParserResult<IrEmitUnit> emit_checkall_stmt(const CheckallStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_raise_stmt(const RaiseStmtPayload& payload, const SourceSpan& span);
    ParserResult<IrEmitUnit> emit_check_stmt(const CheckStmtPayload& payload, const SourceSpan& span);
    ParserResult<IrEmitUnit> emit_import_entry(const ImportEntryPayload& entry);
@@ -302,7 +303,7 @@ private:
       ControlFlowEdge continue_edge;
       BCReg defer_base;
       BCPos continue_target;
-      uint8_t try_depth_at_entry;  // try_depth when loop was entered
+      size_t runtime_scope_depth_at_entry;
    };
 
    struct LoopStackGuard {

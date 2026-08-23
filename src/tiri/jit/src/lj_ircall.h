@@ -231,6 +231,8 @@ typedef struct CCallInfo {
   /* Try-except exception handling */ \
   _(ANY,        lj_try_enter,      4,  FS, NIL, CCI_L|CCI_T) \
   _(ANY,        lj_try_leave,      1,  FS, NIL, CCI_L) \
+  _(ANY,        lj_checkall_enter,  3,  FS, NIL, CCI_L) \
+  _(ANY,        lj_checkall_leave,  1,  FS, NIL, CCI_L) \
   /* State-local table context */ \
   _(ANY,        lj_context_current_jit,  1, FS, TAB, CCI_L) \
   _(ANY,        lj_context_enter_jit,    3,  S, NIL, CCI_L) \
@@ -287,6 +289,8 @@ LJ_DATA const CCallInfo lj_ir_callinfo[IRCALL__MAX+1];
 // Try-except exception handling runtime functions
 extern "C" void lj_try_enter(lua_State *L, GCfunc *Func, TValue *Base, uint16_t TryBlockIndex);
 extern "C" void lj_try_leave(lua_State *L);
+extern "C" void lj_checkall_enter(lua_State *L, GCfunc *Func, TValue *Base);
+extern "C" void lj_checkall_leave(lua_State *L);
 
 // Permanent contextual designation of a recorded table (see lj_state.cpp).
 extern "C" void lj_tab_mark_contextual_jit(GCtab *Table) noexcept;

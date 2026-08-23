@@ -910,6 +910,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
       case TokenKind::DeferToken:    return this->parse_defer();
       case TokenKind::ReturnToken:   return this->parse_return();
       case TokenKind::TryToken:      return this->parse_try();
+      case TokenKind::CheckallToken:  return this->parse_checkall();
       case TokenKind::RaiseToken:    return this->parse_raise();
       case TokenKind::CheckToken:    return this->parse_check();
       case TokenKind::ImportToken:   return this->parse_import();

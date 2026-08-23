@@ -38,7 +38,7 @@ project-specific syntax, runtime behaviour, API bindings, typing, and testing co
 - The Tiri object interface is case sensitive. Object fields are lower snake-case, for example `netlookup.hostName`.
 - Tiri uses `is` instead of `==`. Avoid deprecated `==` and `~=`.
 - Use `!=` for not-equal.
-- Use `try-except-when`, `check`, and `raise` instead of deprecated `pcall()` and `xpcall()`.
+- Use `try-except-when`, `checkall`, `check`, and `raise` instead of deprecated `pcall()` and `xpcall()`.
 - Use `load()` instead of `loadstring()`, `loadFile()` instead of `dofile()`, and result masks instead of `select()`.
 - Lua `package`, `os`, and introspective `debug` library assumptions often do not apply; use Kotuku APIs.
 
@@ -84,6 +84,9 @@ search tools, and mixed editor environments.
 ## Control Flow And Errors
 
 - Prefer `try ... except ... when ... success ... end` for structured exception handling.
+- `try` catches exceptions but does not promote returned `ERR` values. Use `checkall ... end` for automatic checking of
+  supported direct native calls, or `check` for one expression.
+- `checkall` does not catch exceptions and does not propagate checking into called Tiri functions.
 - Put filtered `except e when ERR_Name` handlers before any catch-all `except e` handler.
 - Use `try<trace>` only when stack traces are needed; normal `try` avoids trace overhead.
 - Use `check` with API calls returning `ERR` codes, and `raise ERR_Name` for explicit error-code exceptions.

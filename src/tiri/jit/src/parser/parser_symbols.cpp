@@ -564,6 +564,11 @@ static bool infer_results_from_statement(FunctionReturnTypes &Result, const Stmt
          if (payload.success_block and infer_results_from_block(Result, *payload.success_block, Function)) return true;
          break;
       }
+      case AstNodeKind::CheckallStmt: {
+         const auto &payload = std::get<CheckallStmtPayload>(Statement.data);
+         if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
+         break;
+      }
       case AstNodeKind::WithStmt: {
          const auto &payload = std::get<WithStmtPayload>(Statement.data);
          if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
@@ -815,6 +820,11 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
             if (clause.block) collect_from_block(Collection, *clause.block);
          }
          if (payload.success_block) collect_from_block(Collection, *payload.success_block);
+         break;
+      }
+      case AstNodeKind::CheckallStmt: {
+         const auto &payload = std::get<CheckallStmtPayload>(Statement.data);
+         if (payload.block) collect_from_block(Collection, *payload.block);
          break;
       }
       case AstNodeKind::WithStmt: {

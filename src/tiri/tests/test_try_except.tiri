@@ -686,19 +686,17 @@ end
    end
 end
 
-@Test(priority=30,hotpath=false) function ErrorCodeRaised()
+@Test(priority=30,hotpath=false) function ErrorCodeIsAnOrdinaryTryResult()
+   local err = ERR_Okay
    try
-      -- Trigger an ERR_Args exception
       err = mSys.AllocResource(-1024, 0)
-   except e when ERR_Args
-      -- Expected result
    except e
-      error(f"Expected ERR_Args code, got {e.code}")
+      error(f"Plain try must not promote returned ERR values, got {e.code}")
    success
-      error("Error should have been raised by faulty system call.")
+      assert(err is ERR_Args, f"Expected ERR_Args as an ordinary result, got {err}")
    end
 
-   -- Try can only check ERR codes in its immediate scope, so the AllocResource() result would not be tested in this case
+   -- Plain try only catches exceptions; calls made by another Tiri activation are likewise ordinary results.
    try
       function internal()
          mSys.AllocResource(-1024, 0)
@@ -706,13 +704,6 @@ end
       internal()
    except e
       error(f"AllocResource() should not have its ERR code tested.")
-   end
-
-   t = obj.new('time', { })
-   try
-      t.acDraw()
-   success
-      error("acDraw() on time object should raise an error")
    end
 end
 
