@@ -7162,6 +7162,64 @@ static bool test_tail_call_eligibility(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view checked_safe_source =
+      "extern obj\n"
+      "try global checked_safe_object = obj.new('time') end\n"
+      "local function checked_safe()\n"
+      "   return check checked_safe_object?.acQuery()\n"
+      "end\n"
+      "return checked_safe\n";
+   auto checked_safe = compile_snapshot(L, checked_safe_source, true, error);
+   if (not checked_safe or count_opcode_tree(*checked_safe, BC_RET1) IS 0 or
+       count_opcode_tree(*checked_safe, BC_RETM) != 0) {
+      Log.error("a checked safe-call return did not lower to one fixed result: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view checked_safe_try_source =
+      "extern obj\n"
+      "try global checked_safe_try_object = obj.new('time') end\n"
+      "local function checked_safe_try()\n"
+      "   try\n"
+      "      return check checked_safe_try_object?.acQuery()\n"
+      "   end\n"
+      "end\n"
+      "return checked_safe_try\n";
+   auto checked_safe_try = compile_snapshot(L, checked_safe_try_source, true, error);
+   if (not checked_safe_try or count_opcode_tree(*checked_safe_try, BC_RET1) IS 0 or
+       count_opcode_tree(*checked_safe_try, BC_RETM) != 0) {
+      Log.error("a checked safe-call return inside try did not lower to one fixed result: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view checked_safe_fixed_source =
+      "extern obj\n"
+      "try global checked_safe_fixed_object = obj.new('time') end\n"
+      "local function checked_safe_fixed():<any, any>\n"
+      "   return check checked_safe_fixed_object?.acQuery()\n"
+      "end\n"
+      "return checked_safe_fixed\n";
+   auto checked_safe_fixed = compile_snapshot(L, checked_safe_fixed_source, true, error);
+   if (not checked_safe_fixed or count_opcode_tree(*checked_safe_fixed, BC_RET1) IS 0 or
+       count_opcode_tree(*checked_safe_fixed, BC_RET) != 0 or count_opcode_tree(*checked_safe_fixed, BC_RETM) != 0) {
+      Log.error("a contracted checked safe-call return did not lower to one fixed result: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view checked_safe_list_source =
+      "extern obj\n"
+      "try global checked_safe_list_object = obj.new('time') end\n"
+      "local function checked_safe_list()\n"
+      "   return 'prefix', check checked_safe_list_object?.acQuery()\n"
+      "end\n"
+      "return checked_safe_list\n";
+   auto checked_safe_list = compile_snapshot(L, checked_safe_list_source, true, error);
+   if (not checked_safe_list or count_opcode_tree(*checked_safe_list, BC_RET) IS 0 or
+       count_opcode_tree(*checked_safe_list, BC_RETM) != 0) {
+      Log.error("a trailing checked safe-call return did not lower to fixed results: %s", error.c_str());
+      return false;
+   }
+
    constexpr std::string_view cleanup_source =
       "local function source():<num, str> return 7, 'cleanup' end\n"
       "local function cleaned()\n"

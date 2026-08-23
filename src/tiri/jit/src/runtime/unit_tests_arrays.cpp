@@ -1491,13 +1491,15 @@ static bool test_lib_array_fill(kt::Log &Log)
    }
    luaL_openlibs(L);
 
-   // Test array.fill
+   // Test array.fill, including its half-open positional span.
    const char* code = R"(
       local arr:array<int> = array.new(10, "int")
-      array.fill(arr, 42)
+      array.fill(arr, 0)
+      array.fill(arr, 42, 3, 7)
       local ok = true
-      for i in {0 into 9} do
-         if arr[i] != 42 then ok = false end
+      for i in {0 to 10} do
+         local expected = (i >= 3 and i < 7) ? 42 :> 0
+         if arr[i] != expected then ok = false end
       end
       return ok
    )";

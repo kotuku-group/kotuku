@@ -1645,6 +1645,15 @@ static bool tail_call_preserves_checkall_boundary(const ParserContext &Context, 
    return Context.descriptors().callable(call.callable).source != StaticCallableSource::NativePrototype;
 }
 
+static bool is_safe_call_expression(const ExprNode &Expression)
+{
+   // Parsed safe calls currently retain CallExpr and identify the nil short-circuit through their dispatch mode.
+   if (Expression.kind IS AstNodeKind::SafeCallExpr) return true;
+   if (Expression.kind != AstNodeKind::CallExpr) return false;
+   const auto &call = std::get<CallExprPayload>(Expression.data);
+   return call.dispatch IS CallDispatch::SafeMemberNamed or call.dispatch IS CallDispatch::SafeMemberComputed;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Payload)
 {
    BCIns ins;
@@ -1692,6 +1701,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          auto expected_end = last.u.s.info + (has_context_leave ? 2 : 1);
          bool has_post_call_control_flow = expected_end != this->func_state.pc;
          bool has_user_cleanup = cleanup_temp_regs > 0;
+         bool safe_call = is_safe_call_expression(*Payload.values.back());
          bool forwards_current_contract = tail_call_forwards_current_contract(
             this->ctx, this->current_callable, *Payload.values.back());
          bool direct_tail_call = call_op IS BC_CALL or call_op IS BC_CALLM;
@@ -1723,6 +1733,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
             }
          }
+         else if (safe_call) {
+            // The nil short-circuit initialises only the consolidated first result, so it cannot use a return form
+            // that consumes MULTRES or exposes additional fixed registers.
+            set_call_result_count(&this->func_state, last, 2);
+            ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
+         }
          else if (truncate_return_results) {
             BCREG result_count = this->func_state.return_declared_count;
             set_call_result_count(&this->func_state, last, result_count + 1);
@@ -1744,10 +1760,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             set_call_result_count(&this->func_state, last, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
+         else if (has_post_call_control_flow and Payload.values.back()->is_checked) {
+            // A checked call retains its complete result set after promoting a failing first result. The inserted
+            // check instructions prevent tail-call conversion, but do not consolidate the successful results.
+            set_call_result_count(&this->func_state, last, 0);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+         }
          else if (has_post_call_control_flow) {
-            // Safe calls and other call expressions with post-call control flow cannot be converted to CALLT: the
-            // conversion removes the final emitted instruction rather than the earlier CALL.  Such expressions
-            // represent one consolidated value, so retain that result and return it normally.
+            // Calls with post-call control flow cannot be converted to CALLT: the conversion removes the final emitted
+            // instruction rather than the earlier CALL. Such expressions represent one consolidated value.
             set_call_result_count(&this->func_state, last, 2);
             ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
@@ -1776,7 +1797,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       else {
          // Multiple return values
          if (last.k IS ExpKind::Call) {
-            if (truncate_return_results) {
+            if (is_safe_call_expression(*Payload.values.back())) {
+               set_call_result_count(&this->func_state, last, 2);
+               ins = BCINS_AD(BC_RET, return_base, count + 1);
+            }
+            else if (truncate_return_results) {
                BCREG result_count = this->func_state.return_declared_count;
                BCREG fixed_count = last.u.s.aux - return_base;
                BCREG call_count = result_count > fixed_count ? result_count - fixed_count : 0;
@@ -3075,15 +3100,21 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
 
    this->lex_state.lastline = expr.span.line;
 
+   BCReg checkall_base = BCReg(0);
+   if (expr.is_checked) {
+      checkall_base = BCReg(this->func_state.freereg);
+      bcemit_AD(&this->func_state, BC_CHECKALLENTER, checkall_base, BCReg(0));
+      this->func_state.runtime_scopes.push_back(RuntimeScope{ RuntimeScopeKind::Checkall, checkall_base });
+   }
+
    // Attempting the fold at every node means a non-constant subtree can be re-walked once per ancestor,
    // giving O(depth^2) behaviour on deep chains; evaluation bails at the first non-constant operand, which
    // keeps the cost negligible for hand-written code.  Memoise per-node if generated code makes this hot.
-   if (auto constant = this->constant_evaluator.evaluate(expr)) {
-      return this->emit_literal_expr(constant->to_literal());
-   }
-
    ParserResult<ExpDesc> result;
-   switch (expr.kind) {
+   if (auto constant = this->constant_evaluator.evaluate(expr)) {
+      result = this->emit_literal_expr(constant->to_literal());
+   }
+   else switch (expr.kind) {
       case AstNodeKind::LiteralExpr:
          result = this->emit_literal_expr(std::get<LiteralValue>(expr.data));
          break;
@@ -3163,6 +3194,22 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
 
    if (result.ok()) {
       ExpDesc &emitted = result.value_ref();
+      if (expr.is_checked) {
+         BCReg error_reg;
+         if (emitted.k IS ExpKind::Call) error_reg = BCReg(emitted.u.s.aux);
+         else {
+            expr_toanyreg(&this->func_state, &emitted);
+            error_reg = BCReg(emitted.u.s.info);
+         }
+
+         bcemit_AD(&this->func_state, BC_CHECKALLLEAVE, checkall_base, BCReg(0));
+         this->func_state.runtime_scopes.pop_back();
+
+         int32_t raw_column = expr.span.column.lineNumber();
+         BCReg source_column = BCReg(raw_column > int32_t(BCMAX_D) ? BCMAX_D : raw_column);
+         bcemit_AD(&this->func_state, BC_CHECK, error_reg, source_column);
+      }
+
       if (expr.static_value) {
          emitted.static_value = expr.static_value;
          const auto &descriptor = this->ctx.descriptors().value(expr.static_value);

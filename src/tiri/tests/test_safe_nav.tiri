@@ -87,6 +87,82 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function testCheckedSafeCallReturnOnNil()
+   holder = nil
+   try
+      holder = obj.new('time')
+   end
+
+   function checkedSafeReturn()
+      return check holder?.acQuery()
+   end
+
+   function checkedSafeReturnInTry()
+      try
+         return check holder?.acQuery()
+      end
+   end
+
+   function checkedSafeFixedReturn():<any, any>
+      return check holder?.acQuery()
+   end
+
+   function checkedSafeListReturn()
+      return 'prefix', check holder?.acQuery()
+   end
+
+   result, extra = checkedSafeReturn()
+   assert(result is ERR_Okay, 'A checked safe call should return its first successful result')
+   assert(extra is nil, 'A checked safe call should consolidate a successful call to one result')
+
+   result, extra = checkedSafeReturnInTry()
+   assert(result is ERR_Okay, 'A checked safe call inside try should return its first successful result')
+   assert(extra is nil, 'A checked safe call inside try should consolidate a successful call to one result')
+
+   result, extra = checkedSafeFixedReturn()
+   assert(result is ERR_Okay, 'A contracted checked safe call should return its first successful result')
+   assert(extra is nil, 'A contracted checked safe call should initialise its additional result to nil')
+
+   prefix, result, extra = checkedSafeListReturn()
+   assert(prefix is 'prefix', 'A trailing checked safe call should preserve earlier return values')
+   assert(result is ERR_Okay, 'A trailing checked safe call should return its first successful result')
+   assert(extra is nil, 'A trailing checked safe call should consolidate to one result')
+
+   holder.free()
+   holder = nil
+
+   function priorResults():<any, str>
+      return nil, 'captured'
+   end
+   _, captured = priorResults()
+   assert(captured is 'captured', 'The stale-result seed should retain its second result')
+
+   result, extra = checkedSafeReturn()
+   assert(result is nil, 'A checked safe call should return nil for a missing receiver')
+   assert(extra is nil, 'A checked safe call should not return stale results for a missing receiver')
+
+   _, captured = priorResults()
+   assert(captured is 'captured', 'The active-scope stale-result seed should retain its second result')
+   result, extra = checkedSafeReturnInTry()
+   assert(result is nil, 'A checked safe call inside try should return nil for a missing receiver')
+   assert(extra is nil, 'A checked safe call inside try should not return stale results')
+
+   _, captured = priorResults()
+   assert(captured is 'captured', 'The contracted stale-result seed should retain its second result')
+   result, extra = checkedSafeFixedReturn()
+   assert(result is nil, 'A contracted checked safe call should return nil for a missing receiver')
+   assert(extra is nil, 'A contracted checked safe call should initialise its additional result to nil')
+
+   _, captured = priorResults()
+   assert(captured is 'captured', 'The trailing-call stale-result seed should retain its second result')
+   prefix, result, extra = checkedSafeListReturn()
+   assert(prefix is 'prefix', 'A nil trailing checked safe call should preserve earlier return values')
+   assert(result is nil, 'A trailing checked safe call should return nil for a missing receiver')
+   assert(extra is nil, 'A trailing checked safe call should not return stale results')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function testSafeMethodChain()
    account = { profile = { email = "user@example.com" } }
    function account.getProfile(Self):table

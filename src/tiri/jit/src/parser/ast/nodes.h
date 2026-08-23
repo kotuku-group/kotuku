@@ -692,6 +692,7 @@ struct ExprNode {
    AstNodeKind kind = AstNodeKind::LiteralExpr;
    SourceSpan span{};
    bool is_grouped = false;
+   bool is_checked = false; // Promote an unsafe first result while preserving the expression's complete result set
    mutable StaticValueHandle static_value = 0;
    mutable StaticResultSetHandle static_results = 0;
    std::variant<LiteralValue, NameRef, CurrentContextExprPayload, VarArgExprPayload, UnaryExprPayload,
