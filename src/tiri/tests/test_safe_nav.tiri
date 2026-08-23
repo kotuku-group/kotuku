@@ -87,6 +87,32 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function testSafeMethodFixedMultiResultReturn()
+   target = {}
+   function target.pair():<num, num>
+      return 1, 2
+   end
+
+   function pairFrom(Target):<num, num>
+      return Target?.pair()
+   end
+
+   first, second = pairFrom(target)
+   assert(first is 1 and second is 2, "A present safe-call receiver should preserve every declared result")
+
+   first, second = pairFrom(nil)
+   assert(first is nil and second is nil, "A missing safe-call receiver should initialise every declared result")
+
+   local local_first, local_second = target?.pair()
+   assert(local_first is 1 and local_second is 2, "A local assignment should preserve every safe-call result")
+
+   missing = nil
+   local nil_first, nil_second = missing?.pair()
+   assert(nil_first is nil and nil_second is nil, "A local declaration should clear every skipped safe-call result")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function testCheckedSafeCallReturnOnNil()
    holder = nil
    try
