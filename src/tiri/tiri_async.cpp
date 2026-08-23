@@ -390,7 +390,7 @@ static int async_wait(lua_State *Lua)
 
       error = AsyncWait(ids, timeout_ms);
 
-      if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
+      if ((error != ERR::Okay) and (in_checkall_immediate_scope(Lua))) luaL_error(Lua, error);
    }
 
    lua_pushinteger(Lua, int(error));
@@ -425,7 +425,7 @@ static int async_cancel(lua_State *Lua)
    ERR error = ERR::Okay;
    if (not ids.empty()) {
       error = AsyncCancel(ids);
-      if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
+      if ((error != ERR::Okay) and (in_checkall_immediate_scope(Lua))) luaL_error(Lua, error);
    }
 
    lua_pushinteger(Lua, int(error));

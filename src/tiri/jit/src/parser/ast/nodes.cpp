@@ -499,6 +499,11 @@ struct StatementChildCounter {
       return total;
    }
 
+   [[nodiscard]] inline size_t operator()(const CheckallStmtPayload &Payload) const
+   {
+      return block_child_count(Payload.block);
+   }
+
    [[nodiscard]] inline size_t operator()(const RaiseStmtPayload &Payload) const
    {
       size_t total = Payload.error_code ? 1 : 0;
@@ -575,6 +580,7 @@ ExpressionStmtPayload::~ExpressionStmtPayload() = default;
 ConditionalShorthandStmtPayload::~ConditionalShorthandStmtPayload() = default;
 ExceptClause::~ExceptClause() = default;
 TryExceptPayload::~TryExceptPayload() = default;
+CheckallStmtPayload::~CheckallStmtPayload() = default;
 RaiseStmtPayload::~RaiseStmtPayload() = default;
 CheckStmtPayload::~CheckStmtPayload() = default;
 ImportEntryPayload::~ImportEntryPayload() = default;

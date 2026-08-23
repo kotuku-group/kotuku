@@ -527,16 +527,16 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
 }
 
 //********************************************************************************************************************
-// Check if we're in the immediate scope of the current try block.  This is true if the calling Lua function (one
-// frame back) is the same function that contains the try block AND is at the same stack frame position.  The frame
+// Check if we're in the immediate scope of the current checkall block.  This is true if the calling Lua function (one
+// frame back) is the same function that contains the checkall block AND is at the same stack frame position.  The frame
 // base check is essential for recursive functions where the same GCfunc can appear at multiple stack depths.
 
-[[maybe_unused]] static bool in_try_immediate_scope(lua_State *L)
+[[maybe_unused]] static bool in_checkall_immediate_scope(lua_State *L)
 {
-   if (L->try_stack.depth IS 0) return false;
+   if (L->checkall_stack->depth IS 0) return false;
 
-   const TryFrame *try_frame = &L->try_stack.frames[L->try_stack.depth - 1];
-   if (not try_frame->func) return false;
+   const CheckallFrame *checkall_frame = &L->checkall_stack->frames[L->checkall_stack->depth - 1];
+   if (not checkall_frame->func) return false;
 
    TValue *current_frame = L->base - 1;
    TValue *prev_frame = frame_prev(current_frame); // Go to previous frame (the Lua caller)
@@ -545,23 +545,23 @@ inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = 
    if (not caller_func) return false;
 
    // Check both function identity AND frame position to handle recursive calls correctly
-   if (caller_func != try_frame->func) return false;
+   if (caller_func != checkall_frame->func) return false;
 
    // The caller's base is one slot after its frame link (in LJ_FR2 mode)
    ptrdiff_t caller_base_offset = savestack(L, prev_frame + 1);
-   return caller_base_offset IS try_frame->frame_base;
+   return caller_base_offset IS checkall_frame->frame_base;
 }
 
 [[maybe_unused]] inline void raise_checked_call_error(lua_State *Lua, ERR Error, CSTRING CallName)
 {
-   if ((Error >= ERR::ExceptionThreshold) and in_try_immediate_scope(Lua)) {
+   if ((Error >= ERR::ExceptionThreshold) and in_checkall_immediate_scope(Lua)) {
       luaL_error(Lua, Error, "%s() failed: %s", CallName ? CallName : "Function", GetErrorMsg(Error));
    }
 }
 
 [[maybe_unused]] inline void report_action_error(lua_State *Lua, GCobject *Object, CSTRING Action, ERR Error)
 {
-   if ((Error >= ERR::ExceptionThreshold) and in_try_immediate_scope(Lua)) {
+   if ((Error >= ERR::ExceptionThreshold) and in_checkall_immediate_scope(Lua)) {
       if ((Object) and (Object->classptr)) {
          luaL_error(Lua, Error, std::format("{}.{}() failed: {}", Object->classptr->ClassName,
             Action ? Action : "Action", GetErrorMsg(Error)));

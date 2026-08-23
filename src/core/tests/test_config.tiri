@@ -64,7 +64,9 @@ end
    assert(value is '8', 'Did not read the expected [Clean].Points key-value, got ' .. tostring(value))
 
    try -- Expect failure
-      err, value = cfg.mtReadValue('Courier Sans', 'Scalable')
+      checkall
+         err, value = cfg.mtReadValue('Courier Sans', 'Scalable')
+      end
    success
       error('ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
    end
@@ -83,7 +85,9 @@ end
    assert(value is 'Yes', 'Did not read the expected [Courier Sans].Scalable key-value, got ' .. tostring(value))
 
    try -- Expect failure
-      err, value = cfg.mtReadValue('Clean', 'Points')
+      checkall
+         err, value = cfg.mtReadValue('Clean', 'Points')
+      end
    success
       error('ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
    end

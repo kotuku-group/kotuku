@@ -971,8 +971,11 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    GCstr *saved_exception_source = L->pending_exception_source;
    int saved_exception_line = L->pending_exception_line;
    int saved_try_depth = L->try_stack.depth;
+   int saved_checkall_depth = L->checkall_stack->depth;
    std::array<TryFrame, LJ_MAX_TRY_DEPTH> saved_try_frames;
+   std::array<CheckallFrame, LJ_MAX_CHECKALL_DEPTH> saved_checkall_frames;
    std::copy_n(L->try_stack.frames, saved_try_depth, saved_try_frames.begin());
+   std::copy_n(L->checkall_stack->frames, saved_checkall_depth, saved_checkall_frames.begin());
    ERR saved_caught_error = L->CaughtError;
    bool saved_exception_valid = L->pending_exception_valid;
    bool saved_traceback_state = L->sent_traceback;
@@ -1003,12 +1006,15 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
       // Call the finaliser. Stack: |metamethod|object| -> |
       // Suspend the caller's Tiri try handlers so finaliser errors unwind to this protected-call frame.
       L->try_stack.depth = 0;
+      L->checkall_stack->depth = 0;
       L->try_handler_pc = nullptr;
       errcode = lj_vm_pcall(L, argument, 1, -1);
       lj_assertG_(G, lj_context_depth(L) IS context_depth,
          "__gc returned with unbalanced contextual activations");
       std::copy_n(saved_try_frames.begin(), saved_try_depth, L->try_stack.frames);
+      std::copy_n(saved_checkall_frames.begin(), saved_checkall_depth, L->checkall_stack->frames);
       L->try_stack.depth = saved_try_depth;
+      L->checkall_stack->depth = saved_checkall_depth;
       L->try_handler_pc = saved_try_handler;
       setgcref(G->cur_L, obj2gco(L));
    }

@@ -433,6 +433,11 @@ private:
             if (payload.success_block) this->discover_block(*payload.success_block);
             break;
          }
+         case AstNodeKind::CheckallStmt: {
+            auto &payload = std::get<CheckallStmtPayload>(Statement.data);
+            if (payload.block) this->discover_block(*payload.block);
+            break;
+         }
          case AstNodeKind::RaiseStmt: {
             auto &payload = std::get<RaiseStmtPayload>(Statement.data);
             if (payload.error_code) this->discover_expression(*payload.error_code);
@@ -2390,6 +2395,8 @@ private:
                for (auto &v : c.filter_codes) visit(v);
             }
             break;
+         case AstNodeKind::CheckallStmt:
+            break;
          case AstNodeKind::RaiseStmt: {
             auto &p = std::get<RaiseStmtPayload>(Statement.data); visit(p.error_code); visit(p.message); break;
          }
@@ -2427,6 +2434,9 @@ private:
             visit(p.success_block);
             break;
          }
+         case AstNodeKind::CheckallStmt:
+            visit(std::get<CheckallStmtPayload>(Statement.data).block);
+            break;
          case AstNodeKind::ImportStmt:
             for (auto &e : std::get<ImportStmtPayload>(Statement.data).entries) visit(e.inlined_body);
             break;

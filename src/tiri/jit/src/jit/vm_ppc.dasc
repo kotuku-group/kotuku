@@ -6692,6 +6692,29 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_CHECKALLENTER:
+    |  ins_AD
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  stp BASE, L->top
+    |  lwz CARG2, FRAME_FUNC(BASE)
+    |  mr CARG1, L
+    |  mr CARG3, BASE
+    |  bl extern lj_checkall_enter
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_CHECKALLLEAVE:
+    |  ins_AD
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  bl extern lj_checkall_leave
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
   case BC_CHECK:
     // BC_CHECK A, D: Check error code in RA, raise with source column D if >= ExceptionThreshold (9)
     // Fast path: if error code < 9, just continue (no exception)

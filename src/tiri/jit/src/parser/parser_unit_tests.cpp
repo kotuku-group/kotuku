@@ -1758,7 +1758,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -8783,11 +8783,99 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
    return true;
 }
 
+static bool test_checkall_syntax_and_bytecode(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   std::string error;
+
+   constexpr std::string_view source =
+      "checkall\n"
+      "   checkall\n"
+      "      local value = 1\n"
+      "   end\n"
+      "end\n";
+   auto compiled = compile_snapshot(L, source, true, error);
+   if (not compiled or count_opcode_tree(*compiled, BC_CHECKALLENTER) != 2 or
+       count_opcode_tree(*compiled, BC_CHECKALLLEAVE) != 2) {
+      Log.error("nested checkall blocks did not emit balanced bytecode: %s", error.c_str());
+      return false;
+   }
+
+   if (lua_load(L, source, "checkall-roundtrip")) {
+      Log.error("failed to compile the checkall round-trip fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump checkall bytecode");
+      return false;
+   }
+   lua_pop(L, 1);
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "checkall-roundtrip")) {
+      Log.error("failed to reload checkall bytecode: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot restored = snapshot_proto(funcproto(funcV(L->top - 1)));
+   lua_pop(L, 1);
+   if (count_opcode_tree(restored, BC_CHECKALLENTER) != 2 or
+       count_opcode_tree(restored, BC_CHECKALLLEAVE) != 2) {
+      Log.error("checkall enter/leave bytecodes did not survive a dump round-trip");
+      return false;
+   }
+
+   auto nested_source = [](size_t Depth) {
+      std::string result;
+      for (size_t i = 0; i < Depth; ++i) result += "checkall\n";
+      result += "local value = 1\n";
+      for (size_t i = 0; i < Depth; ++i) result += "end\n";
+      return result;
+   };
+   std::string maximum_nesting = nested_source(LJ_MAX_CHECKALL_DEPTH);
+   if (lua_load(L, maximum_nesting, "checkall-maximum-nesting") or lua_pcall(L, 0, 0, 0)) {
+      Log.error("the maximum supported checkall nesting failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::string excessive_nesting = nested_source(LJ_MAX_CHECKALL_DEPTH + 1);
+   if (lua_load(L, excessive_nesting, "checkall-excessive-nesting") or lua_pcall(L, 0, 0, 0) IS 0) {
+      Log.error("excessive checkall nesting did not raise the standard nesting error");
+      return false;
+   }
+   std::string_view nesting_error = lua_tostring(L, -1);
+   bool invalid_nesting_result = nesting_error.find("nested too deeply") IS std::string_view::npos or
+      L->checkall_stack->depth != 0;
+   lua_pop(L, 1);
+   if (invalid_nesting_result) {
+      Log.error("excessive checkall nesting produced the wrong diagnostic or leaked runtime state");
+      return false;
+   }
+
+   auto malformed = compile_snapshot(L, "checkall\nlocal value = 1\n", true, error);
+   if (malformed) {
+      Log.error("unterminated checkall block compiled successfully");
+      return false;
+   }
+
+   malformed = compile_snapshot(L, "checkall\nexcept\nend\n", true, error);
+   if (malformed) {
+      Log.error("checkall accepted an except clause");
+      return false;
+   }
+
+   malformed = compile_snapshot(L, "checkall\nsuccess\nend\n", true, error);
+   if (malformed) {
+      Log.error("checkall accepted a success clause");
+      return false;
+   }
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 82> tests = { {
+   constexpr std::array<TestCase, 83> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8800,6 +8888,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "local_function_table_ast", test_local_function_table_ast },
       { "ast_statement_matrix", test_ast_statement_matrix },
+      { "checkall_syntax_and_bytecode", test_checkall_syntax_and_bytecode },
       { "range_for_ast", test_range_for_ast },
       { "current_context_range_operands", test_current_context_range_operands },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },

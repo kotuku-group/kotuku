@@ -51,9 +51,10 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // identities with uint8, uint16, uint32 and uint64.  Version 0x93 gives int8 its own signed array member identity.
 // Version 0x96 adds BC_ISIN and BC_ISNIN. Version 0x97 adds rawtype and shifts the generated fast-function ordering.
 // Version 0x98 adds forEach and shifts the generated fast-function ordering.  Version 0x99 adds the Stage A array
-// and range collection compatibility callables.  Older chunks are rejected rather than retaining compatibility shims.
+// and range collection compatibility callables. Version 0x9a adds BC_CHECKALLENTER and BC_CHECKALLLEAVE. Older chunks
+// are rejected rather than retaining compatibility shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x99;
+constexpr uint8_t BCDUMP_VERSION = 0x9a;
 
 // Compatibility flags.
 

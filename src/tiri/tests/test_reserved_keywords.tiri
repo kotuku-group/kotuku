@@ -4,6 +4,7 @@
 function enforce_hotpath() end
 
 reserved_keywords = array<str> {
+   'checkall',
    'class',
    'interface',
    'record',

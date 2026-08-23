@@ -1154,6 +1154,11 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::CheckallStmt: {
+         auto *payload = std::get_if<CheckallStmtPayload>(&Statement.data);
+         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
+         break;
+      }
       case AstNodeKind::RaiseStmt: {
          auto *payload = std::get_if<RaiseStmtPayload>(&Statement.data);
          if (payload) {
@@ -1385,6 +1390,15 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
                this->lower_unanalysed_except_clause(clause);
             }
             if (payload->success_block) this->lower_unanalysed_block(*payload->success_block);
+         }
+         break;
+      }
+      case AstNodeKind::CheckallStmt: {
+         auto *payload = std::get_if<CheckallStmtPayload>(&Statement.data);
+         if (payload and payload->block) {
+            this->push_scope();
+            this->analyse_block(*payload->block);
+            this->pop_scope();
          }
          break;
       }

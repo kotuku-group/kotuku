@@ -301,7 +301,10 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(VIEW,      ___,  ___, lit, ___) \
   /* Membership test: candidate in target. */ \
   _(ISIN,      var,  ___, var, contains) \
-  _(ISNIN,     var,  ___, var, contains)
+  _(ISNIN,     var,  ___, var, contains) \
+  /* Lexical automatic native error promotion. */ \
+  _(CHECKALLENTER, base, ___, ___, ___) \
+  _(CHECKALLLEAVE, base, ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -481,8 +484,10 @@ typedef enum {
    BC_VIEW = 135,
    BC_ISIN = 136,
    BC_ISNIN = 137,
+   BC_CHECKALLENTER = 138,
+   BC_CHECKALLLEAVE = 139,
 
-   BC__MAX   = 138
+   BC__MAX   = 140
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

@@ -222,7 +222,7 @@
             },
             {
                "name": "keyword.control.exception.tiri",
-               "match": "\\b(try|except|when|success|raise|check|assert|error)\\b"
+               "match": "\\b(try|checkall|except|when|success|raise|check|assert|error)\\b"
             },
             {
                "name": "keyword.control.defer.tiri",

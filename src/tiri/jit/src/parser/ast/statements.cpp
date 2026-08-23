@@ -1361,6 +1361,36 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
 }
 
 //********************************************************************************************************************
+// Parses checkall...end automatic native error promotion blocks.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_checkall()
+{
+   Token checkall_token = this->ctx.tokens().current();
+   this->ctx.tokens().advance();
+
+   const TokenKind terms[] = { TokenKind::EndToken, TokenKind::ExceptToken, TokenKind::SuccessToken };
+   std::unique_ptr<BlockStmt> block;
+   {
+      BlockDepthScope block_scope(*this);
+      auto body = this->parse_block(terms);
+      if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
+      block = std::move(body.value_ref());
+   }
+
+   if (this->ctx.check(TokenKind::ExceptToken) or this->ctx.check(TokenKind::SuccessToken)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "A checkall block does not support 'except' or 'success' clauses");
+   }
+
+   auto end_result = this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
+   if (not end_result.ok()) return ParserResult<StmtNodePtr>::failure(end_result.error_ref());
+
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::CheckallStmt, checkall_token.span());
+   stmt->data.emplace<CheckallStmtPayload>(std::move(block));
+   return ParserResult<StmtNodePtr>::success(std::move(stmt));
+}
+
+//********************************************************************************************************************
 // Parses raise statements: raise expression [, message]
 //
 // The first expression is normally the error code.  If it evaluates to a string and no comma message is supplied, the

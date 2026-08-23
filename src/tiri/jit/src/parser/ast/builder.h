@@ -153,6 +153,7 @@ private:
    ParserResult<StmtNodePtr> parse_defer();
    ParserResult<StmtNodePtr> parse_return();
    ParserResult<StmtNodePtr> parse_try();
+   ParserResult<StmtNodePtr> parse_checkall();
    ParserResult<StmtNodePtr> parse_raise();
    ParserResult<StmtNodePtr> parse_check();
    ParserResult<StmtNodePtr> parse_include_stmt();

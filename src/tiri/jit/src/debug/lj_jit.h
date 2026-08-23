@@ -482,6 +482,7 @@ struct jit_State {
   int32_t framedepth;   //  Current frame depth.
   int32_t retdepth;     //  Return frame depth (count of RETF).
   uint8_t trydepth;     //  Current try block depth while recording.
+  uint8_t checkalldepth; //  Current checkall block depth while recording.
   uint16_t multres;     //  Unscaled implicit multi-result VM state.
 
   uint32_t k32[unsigned(K32::_MAX)];  //  Common 4 byte constants used by backends.

@@ -92,6 +92,7 @@ enum class TokenKind : uint16_t {
    CompileIf = TK_compif,
    CompileEnd = TK_compend,
    TryToken = TK_try,
+   CheckallToken = TK_checkall,
    ExceptToken = TK_except,
    SuccessToken = TK_success,
    RaiseToken = TK_raise,
@@ -232,6 +233,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::CompileIf: return "@if";
       case TokenKind::CompileEnd: return "@end";
       case TokenKind::TryToken: return "try";
+      case TokenKind::CheckallToken: return "checkall";
       case TokenKind::ExceptToken: return "except";
       case TokenKind::SuccessToken: return "success";
       case TokenKind::RaiseToken: return "raise";

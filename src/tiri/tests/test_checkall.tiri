@@ -1,0 +1,201 @@
+-- Focused tests for checkall...end automatic native error promotion.
+
+@BeforeEach(hotpath=false)
+function enforce_hotpath() end
+
+function uncheckedAllocation()
+   return mSys.AllocResource(-1024, 0)
+end
+
+function checkedAllocation():any
+   checkall
+      return mSys.AllocResource(-1024, 0)
+   end
+end
+
+function recursiveAllocation(Depth):any
+   if Depth > 0 then return recursiveAllocation(Depth - 1) end
+   return mSys.AllocResource(-1024, 0)
+end
+
+function checkedPair():<num, str>
+   checkall
+      return 42, 'answer'
+   end
+end
+
+function hotCheckedCall(Fail):any
+   checkall
+      if Fail then return mSys.AllocResource(-1024, 0) end
+      return mSys.AnalysePath('.', 0)
+   end
+end
+
+function hotCheckallBreak(Limit:num):num
+   local count = 0
+   while true do
+      checkall
+         count++
+         if count >= Limit then break end
+      end
+   end
+   return count
+end
+
+function hotCheckallContinue(Limit:num):num
+   local count = 0
+   for i in {0 to Limit} do
+      checkall
+         if i % 2 is 0 then continue end
+         count++
+      end
+   end
+   return count
+end
+
+@Test function PlainTryDoesNotPromoteReturnedErrors()
+   local err = ERR_Okay
+   try
+      err = mSys.AllocResource(-1024, 0)
+   except e
+      error(f"Plain try promoted {e.code}")
+   end
+   assert(err is ERR_Args, f"Expected ERR_Args, got {err}")
+end
+
+@Test function CheckallPromotesModuleAndObjectErrors()
+   try
+      checkall
+         mSys.AllocResource(-1024, 0)
+      end
+   except e when ERR_Args
+      assert(e.message.find('AllocResource()'), 'Module diagnostic should retain the call name')
+   success
+      error('checkall should promote ERR_Args')
+   end
+
+   local time = obj.new('time', { })
+   try
+      checkall
+         time.acDraw()
+      end
+   except e
+      assert(e.code >= ERR_ExceptionThreshold, 'Object action should promote its error result')
+   success
+      error('Object action should have been promoted')
+   end
+end
+
+@Test function CheckallIsImmediateAndActivationSpecific()
+   checkall
+      local err = uncheckedAllocation()
+      assert(err is ERR_Args, 'A called Tiri function must not inherit checkall')
+
+      local recursive_err = recursiveAllocation(2)
+      assert(recursive_err is ERR_Args, 'A recursive activation must not match the outer frame base')
+   end
+
+   try
+      checkedAllocation()
+   except e when ERR_Args
+      return
+   end
+   error('Standalone checkall should propagate to a caller handler')
+end
+
+@Test function NestedTryAndCheckallOrdersWork()
+   try
+      checkall
+         mSys.AllocResource(-1024, 0)
+      end
+   except e when ERR_Args
+   success
+      error('Outer try should catch an inner checkall promotion')
+   end
+
+   checkall
+      try
+         mSys.AllocResource(-1024, 0)
+      except e when ERR_Args
+      success
+         error('Inner try should catch a promotion from its enclosing checkall')
+      end
+   end
+
+   checkall
+      checkall
+         local err = mSys.AnalysePath('.', 0)
+         assert(err is ERR_Okay, 'Successful calls should return normally')
+      end
+   end
+end
+
+@Test function StructuredExitsLeaveCheckallScopes()
+   local first, second = checkedPair()
+   assert(first is 42 and second is 'answer', 'Return must preserve multiple results across CHECKALLLEAVE')
+
+   local break_count = 0
+   while true do
+      checkall
+         break_count++
+         break
+      end
+   end
+   assert(break_count is 1, 'break should cross checkall exactly once')
+
+   local continue_count = 0
+   for i in {0 to 4} do
+      checkall
+         continue_count++
+         continue
+      end
+   end
+   assert(continue_count is 4, 'continue should cross checkall exactly once per iteration')
+
+   local err = mSys.AllocResource(-1024, 0)
+   assert(err is ERR_Args, 'Structured exits must not leak checkall state')
+end
+
+@Test function ExceptionsPassThroughAndDoNotLeakScopes()
+   local deferred = false
+   checkall
+      defer deferred = true end
+   end
+   assert(deferred, 'defer should run on normal checkall exit')
+
+   try
+      checkall
+         error('ordinary failure')
+      end
+   except e
+      assert(e.code is ERR_Exception, 'checkall must not alter ordinary exceptions')
+   end
+   local err = mSys.AllocResource(-1024, 0)
+   assert(err is ERR_Args, 'Caught exceptions must restore checkall depth')
+
+   try
+      check ERR_Args
+   except e when ERR_Args
+      return
+   end
+   error('Explicit check should continue to work in plain try')
+end
+
+@Test function JitPathsPreserveCheckallState()
+   for i in {0 to 400} do
+      assert(hotCheckedCall(false) is ERR_Okay, 'Hot successful calls should return normally')
+   end
+
+   assert(hotCheckallBreak(400) is 400, 'A hot comparison-driven break should leave checkall exactly once')
+   assert(hotCheckallContinue(400) is 200, 'A hot comparison-driven continue should leave checkall exactly once')
+
+   try
+      hotCheckedCall(true)
+   except e when ERR_Args
+   success
+      error('A hot checkall path should promote a native error')
+   end
+
+   local err = mSys.AllocResource(-1024, 0)
+   assert(err is ERR_Args, 'JIT execution must not leak checkall state')
+end

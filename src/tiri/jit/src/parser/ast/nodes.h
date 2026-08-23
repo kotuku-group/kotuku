@@ -975,6 +975,19 @@ struct TryExceptPayload {
    ~TryExceptPayload();
 };
 
+struct CheckallStmtPayload {
+   CheckallStmtPayload() = default;
+   explicit CheckallStmtPayload(std::unique_ptr<BlockStmt> Block) : block(std::move(Block)) {}
+   CheckallStmtPayload(const CheckallStmtPayload&) = delete;
+   CheckallStmtPayload& operator=(const CheckallStmtPayload&) = delete;
+   CheckallStmtPayload(CheckallStmtPayload&&) noexcept = default;
+   CheckallStmtPayload& operator=(CheckallStmtPayload&&) noexcept = default;
+
+   std::unique_ptr<BlockStmt> block;
+
+   ~CheckallStmtPayload();
+};
+
 // Raise statement payload: raise error_code [, message] or raise message
 struct RaiseStmtPayload {
    RaiseStmtPayload() = default;
@@ -1065,7 +1078,7 @@ struct StmtNode {
       LoopStmtPayload, NumericForStmtPayload, RangeForStmtPayload, GenericForStmtPayload,
       ReturnStmtPayload, BreakStmtPayload, ContinueStmtPayload, DeferStmtPayload,
       DoStmtPayload, ContextStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
-      RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, WithStmtPayload,
+      CheckallStmtPayload, RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, WithStmtPayload,
       ExpressionStmtPayload>
       data;
 
