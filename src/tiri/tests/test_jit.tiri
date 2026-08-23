@@ -16,6 +16,8 @@ local ir_conv <const> = 91  -- IRDEF order; numeric and integer conversions.
 local ir_bufput <const> = 86
 local ir_bufstr <const> = 87
 local ir_calln <const> = 95  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+global glBcDeferArm = 140
+global glBcDeferConsume = 141
 local ir_calla <const> = 96
 local ir_calll <const> = 97
 local ir_calls <const> = 98
@@ -3460,6 +3462,173 @@ end
       t[i % 8] = i
    end
    assert(#t is 8, f"A numerically addressed table should keep its length, got {tostring(#t)}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Deferred cleanup registrations are physical VM state.  These workloads exercise normal consumption, side exits and
+-- error unwinding while the surrounding loop is recorded.
+
+function defer_ordering_workload(Count:num):str
+   local events = {}
+   for iteration in {0 to Count} do
+      defer(Value)
+         events.insert('outer-' .. tostring(Value))
+      end(iteration)
+      defer(Value)
+         events.insert('inner-' .. tostring(Value))
+      end(iteration)
+      events.insert('body-' .. tostring(iteration))
+   end
+   return events.concat(',')
+end
+
+function defer_side_exit_workload(Count:num, ChangedAt:num):str
+   local events = {}
+   for iteration in {0 to Count} do
+      defer(Value)
+         events.insert('defer-' .. tostring(Value))
+      end(iteration)
+      if iteration >= ChangedAt then events.insert('changed-' .. tostring(iteration)) end
+   end
+   return events.concat(',')
+end
+
+function defer_cleanup_error_workload(FailAt:num):<str, str>
+   local events = {}
+   local caught = ''
+
+   try
+      for iteration in {0 to 40} do
+         defer(Value)
+            events.insert('remaining-' .. tostring(Value))
+         end(iteration)
+         defer(Value, ShouldFail)
+            events.insert('first-' .. tostring(Value))
+            if ShouldFail then error('traced cleanup failure') end
+         end(iteration, iteration is FailAt)
+      end
+   except e
+      caught = e.message
+   end
+
+   return events.concat(','), caught
+end
+
+function defer_throwing_once(Value:num, State:table)
+   defer(Captured)
+      State.calls++
+      error('defer body failure ' .. tostring(Captured))
+   end(Value)
+end
+
+function defer_throwing_body_workload(Count:num):<num, str>
+   local state = { calls = 0 }
+   local caught = ''
+   for iteration in {0 to Count} do
+      try
+         defer_throwing_once(iteration, state)
+      except e
+         caught = e.message
+      end
+   end
+   return state.calls, caught
+end
+
+function run_defer_trace(Workload, Count):<str, str, num, num, num>
+   jit.off()
+   local expected = Workload(Count)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   local compiled = 0
+   local aborted = 0
+   local defer_aborts = 0
+   local function trace_event(Event, TraceNo, Function, BytecodePosition, Error, Detail)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then
+         aborted++
+         if Detail is glBcDeferArm or Detail is glBcDeferConsume then defer_aborts++ end
+      end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = Workload(Count)
+   jit.attach(trace_event)
+   jit.opt.start()
+   return expected, result, compiled, aborted, defer_aborts
+end
+
+@Test function JITDeferNormalCleanupAndOrdering()
+   local expected, result, compiled, aborted, defer_aborts = run_defer_trace(defer_ordering_workload, 80)
+   assert(result is expected, 'Recorded defer cleanup should match complete interpreter event ordering')
+   assert(compiled > 0, 'A hot loop containing defer registration and consumption should compile')
+   assert(defer_aborts is 0,
+      f'DEFERARM and DEFERCONSUME should not abort trace recording (total aborts={aborted}, defer aborts={defer_aborts})')
+end
+
+@Test function JITDeferRegistrationSurvivesSideExit()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   local compiled = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++ end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = defer_side_exit_workload(80, 35)
+   jit.attach(trace_event)
+   local expected = ''
+   jit.off()
+   expected = defer_side_exit_workload(80, 35)
+   jit.on()
+
+   assert(result is expected, 'A branch side exit after DEFERARM should retain each captured value and registration')
+   assert(result.find('changed-35,defer-35') != nil,
+      'The first changed branch should still run the defer armed before its side exit')
+   assert(compiled > 0, 'The post-arm branch workload should execute through compiled code')
+   jit.opt.start()
+end
+
+@Test function JITDeferCleanupErrorLeavesEarlierRegistrationArmed()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   local compiled = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++ end
+   end
+   jit.attach(trace_event, 'trace')
+   local events, caught = defer_cleanup_error_workload(25)
+   jit.attach(trace_event)
+
+   assert(caught.find('traced cleanup failure') != nil, 'The cleanup error should propagate through try-except')
+   assert(events.endsWith('first-25,remaining-25'),
+      'The throwing defer should be consumed once and the earlier registration should unwind afterwards')
+   assert(events.count('first-25') is 1, 'The consumed throwing defer must run exactly once')
+   assert(compiled > 0, 'The cleanup-error workload should compile before its changed error edge')
+   jit.opt.start()
+end
+
+@Test function JITThrowingDeferBodyMatchesInterpreter()
+   jit.off()
+   local expected_calls, expected_error = defer_throwing_body_workload(80)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   local compiled = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++ end
+   end
+   jit.attach(trace_event, 'trace')
+   local calls, caught = defer_throwing_body_workload(80)
+   jit.attach(trace_event)
+
+   assert(calls is expected_calls, f'Expected {expected_calls} throwing defer calls, got {calls}')
+   assert(caught is expected_error, f"Expected final defer error '{expected_error}', got '{caught}'")
+   assert(compiled > 0, 'Repeated throwing defer bodies should produce recorded code')
+   jit.opt.start()
 end
 
 -----------------------------------------------------------------------------------------------------------------------

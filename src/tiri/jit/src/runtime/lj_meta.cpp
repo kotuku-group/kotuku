@@ -1664,6 +1664,62 @@ int lj_meta_close(lua_State *L, TValue *o, TValue *err)
 }
 
 //********************************************************************************************************************
+// Invoke one snapshotted defer registration through a protected call.  Consumption immediately before the call makes
+// the registration exactly-once even when its handler throws and starts a nested unwind.
+
+int lj_meta_defer(lua_State *L, TValue *OwnerBase, const DeferRegistration &Registration)
+{
+   [[maybe_unused]] size_t context_depth = lj_context_depth(L);
+   ptrdiff_t owner_offset = savestack(L, OwnerBase);
+   if (not lj_defer_consume(L, OwnerBase, Registration.callable_slot)) return 0;
+   lj_state_checkstack(L, MSize(Registration.argument_count + 1 + LJ_FR2));
+
+   OwnerBase = restorestack(L, owner_offset);
+   const BCIns *saved_try_handler = L->try_handler_pc;
+   int saved_try_depth = L->try_stack.depth;
+   int saved_checkall_depth = L->checkall_stack->depth;
+   std::array<TryFrame, LJ_MAX_TRY_DEPTH> saved_try_frames;
+   std::array<CheckallFrame, LJ_MAX_CHECKALL_DEPTH> saved_checkall_frames;
+   std::copy_n(L->try_stack.frames, saved_try_depth, saved_try_frames.begin());
+   std::copy_n(L->checkall_stack->frames, saved_checkall_depth, saved_checkall_frames.begin());
+
+   global_State *g = G(L);
+   uint8_t oldh = hook_save(g);
+   int errcode;
+   lj_trace_abort(g);
+   hook_entergc(g);
+   if (LJ_HASPROFILE and (oldh & HOOK_PROFILE)) lj_dispatch_update(g);
+
+   {
+      GCPauseGuard pause_gc(g);
+      TValue *top = L->top;
+      copyTV(L, top++, OwnerBase + Registration.callable_slot);
+      if (LJ_FR2) setnilV(top++);
+      TValue *argbase = top;
+      for (uint32_t i = 0; i < Registration.argument_count; ++i) {
+         copyTV(L, top++, OwnerBase + Registration.callable_slot + i + 1);
+      }
+      L->top = top;
+
+      L->try_stack.depth = 0;
+      L->checkall_stack->depth = 0;
+      L->try_handler_pc = nullptr;
+      errcode = lj_vm_pcall(L, argbase, 1, -1);
+      lj_assertL(lj_context_depth(L) IS context_depth,
+         "defer returned with unbalanced contextual activations");
+      std::copy_n(saved_try_frames.begin(), saved_try_depth, L->try_stack.frames);
+      std::copy_n(saved_checkall_frames.begin(), saved_checkall_depth, L->checkall_stack->frames);
+      L->try_stack.depth = saved_try_depth;
+      L->checkall_stack->depth = saved_checkall_depth;
+      L->try_handler_pc = saved_try_handler;
+   }
+
+   hook_restore(g, oldh);
+   if (LJ_HASPROFILE and (oldh & HOOK_PROFILE)) lj_dispatch_update(g);
+   return errcode;
+}
+
+//********************************************************************************************************************
 // Helper for FORI. Coercion.
 
 void lj_meta_for(lua_State *L, TValue *o)

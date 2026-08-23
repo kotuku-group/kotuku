@@ -5926,6 +5926,38 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_DEFERARM:
+    |  ins_ABC
+    |.if X64WIN
+    |  mov CARG3d, RAd
+    |  mov CARG4d, RCd
+    |  mov ARG5d, RBd
+    |.else
+    |  mov CARG5d, RBd
+    |  mov CARG2, BASE
+    |  mov CARG3d, RAd
+    |  mov CARG4d, RCd
+    |.endif
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, CARG2
+    |  mov L:CARG1, L:RB
+    |  call extern lj_defer_arm
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_DEFERCONSUME:
+    |  ins_AD
+    |  mov CARG2, BASE
+    |  mov CARG3d, RAd
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, CARG2
+    |  mov L:CARG1, L:RB
+    |  call extern lj_defer_consume
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
   case BC_VIEW:
     |  ins_AD
     |  mov L:RB, SAVE_L

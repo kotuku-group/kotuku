@@ -398,6 +398,7 @@ static void execute_defers(FuncState *State, BCREG Limit, BCREG Upper)
          BCREG j;
          RegisterAllocator allocator(State);
          allocator.reserve(BCReg(argc + 1 + LJ_FR2));
+         bcemit_AD(State, BC_DEFERCONSUME, v->slot, 0);
          bcemit_AD(State, BC_MOV, callbase, v->slot);
          for (j = 0; j < argc; j++) {
             BCREG src = argslots[argc - 1 - j];

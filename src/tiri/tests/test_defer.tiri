@@ -273,7 +273,263 @@ end
 end
 
 @Test function HandlerError()
-   -- Phase 3 placeholder: deferred handler error propagation to be implemented.
+   local events = {}
+   local caught_message = nil
+
+   function subject()
+      defer
+         events.insert('defer')
+      end
+      events.insert('body')
+      error('body failure')
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   success
+      error('Expected the body error to propagate')
+   end
+
+   assert(join(events) is 'body,defer',
+      "A body error should run its armed defer: '" .. join(events) .. "'")
+   assert(caught_message.find('body failure') != nil,
+      'The original body error should propagate when cleanup succeeds: ' .. caught_message)
+end
+
+@Test function UnwindPreservesLifoOrder()
+   local events = {}
+
+   function subject()
+      defer events.insert('first') end
+      defer events.insert('second') end
+      defer events.insert('third') end
+      events.insert('body')
+      error('body failure')
+   end
+
+   try
+      subject()
+   except e
+      assert(e.message.find('body failure') != nil, 'The body error should survive successful cleanup')
+   success
+      error('Expected the body error to propagate')
+   end
+
+   assert(join(events) is 'body,third,second,first',
+      "Error unwinding should run defers in LIFO order: '" .. join(events) .. "'")
+end
+
+@Test function NestedBlockAndFunctionUnwindOrder()
+   local events = {}
+
+   function inner()
+      defer events.insert('inner-function') end
+      do
+         defer events.insert('inner-block') end
+         events.insert('body')
+         error('nested failure')
+      end
+   end
+
+   function outer()
+      defer events.insert('outer-function') end
+      inner()
+   end
+
+   try
+      outer()
+   except e
+      assert(e.message.find('nested failure') != nil, 'The nested body error should propagate')
+   success
+      error('Expected the nested body error to propagate')
+   end
+
+   assert(join(events) is 'body,inner-block,inner-function,outer-function',
+      "Nested scopes and frames should unwind from inner to outer: '" .. join(events) .. "'")
+end
+
+@Test function ArgumentSnapshotDuringUnwind()
+   local events = {}
+   local caught_message = nil
+
+   function subject()
+      local value = 5
+      defer(Snapshot)
+         events.insert('defer-' .. tostring(Snapshot))
+      end(value)
+
+      value = 15
+      events.insert('body-' .. tostring(value))
+      error('snapshot failure')
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   success
+      error('Expected the snapshot body error to propagate')
+   end
+
+   assert(join(events) is 'body-15,defer-5',
+      "Error cleanup should retain snapshotted arguments: '" .. join(events) .. "'")
+   assert(caught_message.find('snapshot failure') != nil, 'Successful cleanup should preserve the snapshot body error')
+end
+
+@Test function CloseBeforeDeferDuringUnwind()
+   local events = {}
+   local caught_message = nil
+
+   function close_handler(Name:str):table
+      return setmetatable({}, {
+         __close = function(Error)
+            assert(Error != nil, 'Error unwinding should pass the active error to close handlers')
+            events.insert(Name)
+         end
+      })
+   end
+
+   function subject()
+      defer events.insert('outer-defer') end
+      local outer_close <close> = close_handler('outer-close')
+
+      do
+         defer events.insert('inner-defer') end
+         local inner_close <close> = close_handler('inner-close')
+         events.insert('body')
+         error('ordered cleanup failure')
+      end
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   success
+      error('Expected the ordered cleanup body error to propagate')
+   end
+
+   assert(join(events) is 'body,inner-close,inner-defer,outer-close,outer-defer',
+      "Each scope should close resources before running defers: '" .. join(events) .. "'")
+   assert(caught_message.find('ordered cleanup failure') != nil,
+      'Successful close and defer handlers should preserve the body error')
+end
+
+@Test function RemainingDefersRunAfterHandlerError()
+   local events = {}
+   local caught_message = nil
+
+   function subject()
+      defer events.insert('outer') end
+      defer
+         events.insert('throwing')
+         error('cleanup failure')
+      end
+      defer events.insert('inner') end
+      error('body failure')
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   end
+
+   assert(join(events) is 'inner,throwing,outer',
+      "A throwing defer must not skip remaining cleanup: '" .. join(events) .. "'")
+   assert(caught_message.find('cleanup failure') != nil,
+      'A cleanup error should replace the body error: ' .. caught_message)
+end
+
+@Test function LastCleanupErrorWins()
+   local events = {}
+   local caught_message = nil
+
+   function subject()
+      defer
+         events.insert('first')
+         error('first cleanup failure')
+      end
+      defer
+         events.insert('second')
+         error('second cleanup failure')
+      end
+      defer
+         events.insert('third')
+         error('third cleanup failure')
+      end
+      error('body failure')
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   end
+
+   assert(join(events) is 'third,second,first',
+      "Every throwing defer should still run in LIFO order: '" .. join(events) .. "'")
+   assert(caught_message.find('first cleanup failure') != nil,
+      'The last cleanup error should reach the handler: ' .. caught_message)
+end
+
+@Test function NormalCleanupHandlerErrorRunsOnce()
+   local calls = 0
+   local caught_message = nil
+
+   function subject()
+      defer
+         calls++
+         error('normal cleanup failure')
+      end
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   success
+      error('Expected the defer handler to fail')
+   end
+
+   assert(calls is 1, 'A defer that throws during normal cleanup must not run again during unwind')
+   assert(caught_message.find('normal cleanup failure') != nil, 'The defer error should propagate to the handler')
+end
+
+@Test function FailedArgumentEvaluationLeavesDeferUnarmed()
+   local events = {}
+   local caught_message = nil
+
+   function snapshot(Value:str):str
+      events.insert('evaluate-' .. Value)
+      return Value
+   end
+
+   function fail_argument():str
+      events.insert('evaluate-failing')
+      error('argument failure')
+      return 'unreachable'
+   end
+
+   function subject()
+      defer(First, Second)
+         events.insert('defer-' .. First .. '-' .. Second)
+      end(snapshot('first'), fail_argument())
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   success
+      error('Expected deferred argument evaluation to fail')
+   end
+
+   assert(join(events) is 'evaluate-first,evaluate-failing',
+      "A defer must remain unarmed until every argument succeeds: '" .. join(events) .. "'")
+   assert(caught_message.find('argument failure') != nil, 'The argument error should propagate unchanged')
 end
 
 function recurse(n, order)
@@ -292,6 +548,169 @@ end
    recurse(3, order)
 
    assert(join(order) is 'enter-3,enter-2,enter-1,leave-1,defer-1,leave-2,defer-2,leave-3,defer-3', "Unexpected recursive defer order: '" .. join(order) .. "'")
+end
+
+@Test function RepeatedLoopAndRecursiveUnwind()
+   local events = {}
+   local caught_message = nil
+
+   function loop_subject()
+      for i in {0 to 4} do
+         defer events.insert('loop-defer-' .. tostring(i)) end
+         events.insert('loop-body-' .. tostring(i))
+         if i is 2 then error('loop failure') end
+      end
+   end
+
+   try
+      loop_subject()
+   except e
+      caught_message = e.message
+   success
+      error('Expected the loop body error to propagate')
+   end
+
+   assert(join(events) is
+      'loop-body-0,loop-defer-0,loop-body-1,loop-defer-1,loop-body-2,loop-defer-2',
+      "Repeated loop registrations should unwind the active iteration: '" .. join(events) .. "'")
+   assert(caught_message.find('loop failure') != nil, 'Loop cleanup should preserve the body error')
+
+   events.clear()
+   caught_message = nil
+
+   function recursive_subject(Depth:num)
+      defer events.insert('recursive-defer-' .. tostring(Depth)) end
+      events.insert('recursive-body-' .. tostring(Depth))
+      if Depth > 0 then
+         recursive_subject(Depth - 1)
+      else
+         error('recursive failure')
+      end
+   end
+
+   try
+      recursive_subject(2)
+   except e
+      caught_message = e.message
+   success
+      error('Expected the recursive body error to propagate')
+   end
+
+   assert(join(events) is
+      'recursive-body-2,recursive-body-1,recursive-body-0,recursive-defer-0,recursive-defer-1,recursive-defer-2',
+      "Recursive activations should own independent registrations: '" .. join(events) .. "'")
+   assert(caught_message.find('recursive failure') != nil, 'Recursive cleanup should preserve the body error')
+end
+
+@Test function CheckallPromotionRunsDefer()
+   local events = {}
+   local caught_code = ERR_Okay
+
+   function subject()
+      defer events.insert('defer') end
+      events.insert('body')
+      checkall
+         mSys.AllocResource(-1024, 0)
+      end
+   end
+
+   try
+      subject()
+   except e when ERR_Args
+      caught_code = e.code
+   success
+      error('Expected checkall to promote ERR_Args')
+   end
+
+   assert(caught_code is ERR_Args, 'The promoted native error should reach the filtered handler')
+   assert(join(events) is 'body,defer',
+      "A checkall promotion should unwind armed defers: '" .. join(events) .. "'")
+end
+
+@Test(hotpath=false) function ProtectedCallUnwindRunsDefer()
+   local events = {}
+   local caught_message = nil
+   rawset(_G, 'glDeferProtectedEvents', events)
+
+   try
+      exec([[
+         function protected_subject()
+            defer
+               _G['glDeferProtectedEvents'].insert('defer')
+            end
+            _G['glDeferProtectedEvents'].insert('body')
+            error('protected failure')
+         end
+         protected_subject()
+      ]])
+   except e
+      caught_message = e.message
+   end
+
+   rawset(_G, 'glDeferProtectedEvents', nil)
+   assert(caught_message != nil, 'Expected exec() to propagate its protected-call error')
+   assert(join(events) is 'body,defer',
+      "A protected-call boundary should observe cleanup first: '" .. join(events) .. "'")
+   assert(caught_message.find('protected failure') != nil, 'The protected call should preserve the body error')
+end
+
+@Test function RegistrationSurvivesStackRelocation()
+   local events = {}
+   local caught_message = nil
+
+   function grow_stack(Depth:num):any
+      if Depth > 0 then return grow_stack(Depth - 1) end
+      processing.collect('full')
+      error('relocated failure')
+   end
+
+   function subject()
+      local token = { name = 'snapshot' }
+      defer(Snapshot)
+         events.insert('defer-' .. Snapshot.name)
+      end(token)
+      grow_stack(180)
+   end
+
+   try
+      subject()
+   except e
+      caught_message = e.message
+   success
+      error('Expected the relocated body error to propagate')
+   end
+
+   assert(join(events) is 'defer-snapshot',
+      "Stack relocation should preserve the defer registration and its arguments: '" .. join(events) .. "'")
+   assert(caught_message.find('relocated failure') != nil, 'Relocated cleanup should preserve the body error')
+end
+
+@Test function AbandonedFramesLeaveNoStaleRegistrations()
+   local events = {}
+   local caught_message = nil
+
+   function abandoned()
+      defer events.insert('abandoned') end
+      error('abandon frame')
+   end
+
+   function survivor()
+      defer events.insert('survivor') end
+      events.insert('survivor-body')
+   end
+
+   try
+      abandoned()
+   except e
+      caught_message = e.message
+   success
+      error('Expected the abandoned frame error to propagate')
+   end
+   survivor()
+
+   assert(join(events) is 'abandoned,survivor-body,survivor',
+      "An abandoned frame should not leak registrations into a later call: '" .. join(events) .. "'")
+   assert(caught_message.find('abandon frame') != nil, 'Abandoning a frame should preserve the body error')
 end
 
 @Test function ClosureReturn()

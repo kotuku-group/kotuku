@@ -139,34 +139,34 @@ extern "C" void lj_err_prepare_foreign_exception(lua_State *L, const char *Messa
 }
 
 //********************************************************************************************************************
-// Call __close handlers for to-be-closed locals during error unwinding.
+// Call cleanup handlers for locals during error unwinding.
 // The active error is held in protected per-thread state while each handler runs. Normal bytecode scope exits use the
-// dedicated BC_CLOSE path, while error unwinding calls lj_meta_close() directly with this value.
-// Returns the error object to propagate (may be updated if a __close handler throws).
-// Per Lua 5.4: if a __close handler throws, that error replaces the original,
-// but all other pending __close handlers are still called.
+// dedicated cleanup bytecodes, while error unwinding invokes protected close and defer helpers directly.
+// Per Lua 5.4-style cleanup semantics, a handler error replaces the original, but remaining handlers still run.
 
-static TValue* unwind_close_try_block(
+static TValue* unwind_close_range(
+   lua_State *L, TValue *Frame, TValue *ErrorObject, int MinimumSlotIndex, int MaximumSlotIndex);
+static TValue* unwind_cleanup_range(
    lua_State *L, TValue *Frame, TValue *ErrorObject, int MinimumSlotIndex, int MaximumSlotIndex);
 
-static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errobj)
+static TValue * unwind_cleanup_handlers(lua_State *L, TValue *Frame, TValue *ErrorObject)
 {
-   GCfunc *fn = frame_func(frame);
-   if (not isluafunc(fn)) return errobj;
+   GCfunc *fn = frame_func(Frame);
+   if (not isluafunc(fn)) return ErrorObject;
 
-   ptrdiff_t owner_base = savestack(L, frame + 1);
+   ptrdiff_t owner_base = savestack(L, Frame + 1);
    int upper = LJ_MAX_SLOTS;
    while (not L->context_stack.empty()) {
       const lua_State::ContextFrame &context = L->context_stack.back();
       if (context.owner_kind != lua_State::ContextFrame::OwnerKind::Block or
           context.owner_base != owner_base) break;
-      frame = restorestack(L, owner_base) - 1;
-      errobj = unwind_close_try_block(L, frame, errobj, context.entry_slots, upper);
+      Frame = restorestack(L, owner_base) - 1;
+      ErrorObject = unwind_cleanup_range(L, Frame, ErrorObject, context.entry_slots, upper);
       upper = context.entry_slots;
       lj_context_restore_depth(L, L->context_stack.size() - 1);
    }
-   frame = restorestack(L, owner_base) - 1;
-   return unwind_close_try_block(L, frame, errobj, 0, upper);
+   Frame = restorestack(L, owner_base) - 1;
+   return unwind_cleanup_range(L, Frame, ErrorObject, 0, upper);
 }
 
 //********************************************************************************************************************
@@ -174,7 +174,7 @@ static TValue * unwind_close_handlers(lua_State *L, TValue *frame, TValue *errob
 // (slots created after the try started).  min_slot_index is the slot index (relative to function base) above which
 // to close.  Returns the error object to propagate (may be updated if a __close handler throws).
 
-static TValue* unwind_close_try_block(
+static TValue* unwind_close_range(
    lua_State *L, TValue* Frame, TValue* ErrorObject, int MinimumSlotIndex, int MaximumSlotIndex)
 {
    const ptrdiff_t frame_offset = savestack(L, Frame);
@@ -189,9 +189,9 @@ static TValue* unwind_close_try_block(
    if (closeslots IS 0) return ErrorObject;
 
    lj_assertL(MinimumSlotIndex >= 0,
-      "unwind_close_try_block: min_slot_index negative (%d)", MinimumSlotIndex);
+      "unwind_close_range: min_slot_index negative (%d)", MinimumSlotIndex);
    lj_assertL(MinimumSlotIndex <= LJ_MAX_SLOTS,
-      "unwind_close_try_block: min_slot_index too large (%d)", MinimumSlotIndex);
+      "unwind_close_range: min_slot_index too large (%d)", MinimumSlotIndex);
 
    // A close handler can trigger and catch nested unwinding. Preserve the outer pending value so the enclosing close
    // sequence remains isolated when the nested handler returns.
@@ -207,8 +207,9 @@ static TValue* unwind_close_try_block(
    TValue *base = restorestack(L, frame_offset) + 1;
    Frame = restorestack(L, frame_offset);
    lj_assertL(Frame >= tvref(L->stack) and Frame < tvref(L->maxstack),
-      "unwind_close_try_block: frame out of range (%p)", Frame);
-   lj_assertL(base >= tvref(L->stack) and base <= tvref(L->maxstack), "unwind_close_try_block: base out of range (%p)", base);
+      "unwind_close_range: frame out of range (%p)", Frame);
+   lj_assertL(base >= tvref(L->stack) and base <= tvref(L->maxstack),
+      "unwind_close_range: base out of range (%p)", base);
 
    uint64_t pending_slots = lj_close_take_armed(
       L, restorestack(L, frame_offset) + 1, uint32_t(MinimumSlotIndex), uint32_t(MaximumSlotIndex));
@@ -239,10 +240,70 @@ static TValue* unwind_close_try_block(
 }
 
 //********************************************************************************************************************
-// Call __close handlers for all frames from 'from' down to 'to'.  This must be called BEFORE L->base is modified
-// during unwinding.  If a __close handler throws, the new error replaces the original at L->top - 1.
+// Invoke the registered defers owned by one lexical scope in reverse registration order.
 
-static void unwind_close_all(lua_State *L, TValue *From, TValue *To)
+static TValue * unwind_defer_scope(lua_State *L, TValue *Frame, TValue *ErrorObject, uint32_t MinimumSlotIndex,
+   uint32_t MaximumSlotIndex, uint32_t ScopeBase)
+{
+   ptrdiff_t frame_offset = savestack(L, Frame);
+   bool has_current_err = ErrorObject != nullptr;
+   ptrdiff_t current_err_offset = has_current_err ? savestack(L, ErrorObject) : 0;
+
+   TValue saved_cleanup_error;
+   copyTV(L, &saved_cleanup_error, &L->pending_close_error);
+   if (ErrorObject) copyTV(L, &L->pending_close_error, ErrorObject);
+   else setnilV(&L->pending_close_error);
+
+   DeferRegistration registration;
+   TValue *owner_base = restorestack(L, frame_offset) + 1;
+   while (lj_defer_peek_scope(L, owner_base, MinimumSlotIndex, MaximumSlotIndex, ScopeBase, &registration)) {
+      owner_base = restorestack(L, frame_offset) + 1;
+      int errcode = lj_meta_defer(L, owner_base, registration);
+      if (errcode != 0) {
+         has_current_err = true;
+         current_err_offset = savestack(L, L->top - 1);
+         copyTV(L, &L->pending_close_error, restorestack(L, current_err_offset));
+      }
+      owner_base = restorestack(L, frame_offset) + 1;
+   }
+
+   copyTV(L, &L->pending_close_error, &saved_cleanup_error);
+   return has_current_err ? restorestack(L, current_err_offset) : nullptr;
+}
+
+//********************************************************************************************************************
+// Process lexical cleanup groups from inner to outer.  Each group closes its resources before invoking its defers.
+
+static TValue* unwind_cleanup_range(
+   lua_State *L, TValue *Frame, TValue *ErrorObject, int MinimumSlotIndex, int MaximumSlotIndex)
+{
+   ptrdiff_t frame_offset = savestack(L, Frame);
+   uint32_t minimum_slot = uint32_t(MinimumSlotIndex);
+   uint32_t upper_slot = uint32_t(MaximumSlotIndex);
+   uint32_t scope_base;
+   TValue *error_object = ErrorObject;
+
+   TValue *owner_base = restorestack(L, frame_offset) + 1;
+   while (lj_defer_find_scope(L, owner_base, minimum_slot, uint32_t(MaximumSlotIndex), &scope_base)) {
+      uint32_t lower_slot = scope_base < minimum_slot ? minimum_slot : scope_base;
+      Frame = restorestack(L, frame_offset);
+      error_object = unwind_close_range(L, Frame, error_object, int(lower_slot), int(upper_slot));
+      Frame = restorestack(L, frame_offset);
+      error_object = unwind_defer_scope(
+         L, Frame, error_object, minimum_slot, uint32_t(MaximumSlotIndex), scope_base);
+      upper_slot = lower_slot;
+      owner_base = restorestack(L, frame_offset) + 1;
+   }
+
+   Frame = restorestack(L, frame_offset);
+   return unwind_close_range(L, Frame, error_object, MinimumSlotIndex, int(upper_slot));
+}
+
+//********************************************************************************************************************
+// Call cleanup handlers for all frames from 'from' down to 'to'.  This must be called before L->base is modified.
+// If a handler throws, the new error replaces the original at L->top - 1.
+
+static void unwind_cleanup_all(lua_State *L, TValue *From, TValue *To)
 {
    const ptrdiff_t to_offset = savestack(L, To);
    ptrdiff_t frame_offset = savestack(L, From);
@@ -265,13 +326,13 @@ static void unwind_close_all(lua_State *L, TValue *From, TValue *To)
 
       lj_context_unwind(L, frame + 1);
 
-      // unwind_close_handlers may return a different error if a __close threw
+      // A cleanup handler may return a different error.
 
-      TValue *new_err = unwind_close_handlers(L, frame, errobj);
+      TValue *new_err = unwind_cleanup_handlers(L, frame, errobj);
       const bool has_new_error = new_err != nullptr;
       const ptrdiff_t new_error_offset = has_new_error ? savestack(L, new_err) : 0;
       if (has_new_error and has_error and new_error_offset != error_offset) {
-         // A __close handler threw - update the error at the original location
+         // A cleanup handler threw - update the error at the original location.
          errobj = restorestack(L, error_offset);
          copyTV(L, errobj, new_err);
       }
@@ -295,7 +356,7 @@ static void unwind_close_all(lua_State *L, TValue *From, TValue *To)
    // If we hit the limit, the frame chain is likely corrupt. Log an assertion
    // in debug builds to help diagnose the issue.
 
-   lj_assertL(count < LUAI_MAXCSTACK, "frame chain exceeded LUAI_MAXCSTACK during __close unwinding");
+   lj_assertL(count < LUAI_MAXCSTACK, "frame chain exceeded LUAI_MAXCSTACK during cleanup unwinding");
 
 }
 
@@ -305,6 +366,7 @@ static void unwind_close_all(lua_State *L, TValue *From, TValue *To)
 LJ_NOINLINE static void unwindstack(lua_State *L, TValue *Top)
 {
    lj_context_unwind(L, Top);
+   lj_defer_unwind(L, Top);
    lj_func_closeuv(L, Top);
    if (Top < L->top - 1) {
       copyTV(L, Top, L->top - 1);
@@ -511,17 +573,15 @@ extern "C" void setup_try_handler(lua_State *L)
       try_frame->context_depth <= L->context_stack.size(),
       "saved try context depth is outside the active context stack");
 
-   // Call __close handlers for <close> locals in ALL frames between current position and try block.
-   // This handles <close> variables in nested function calls (e.g., inner() called from try block).
-   // Without this, only the try block's frame would be processed, missing nested frames.
+   // Run cleanup in all nested frames between the current position and the try block.
 
    TValue *errobj = (L->top > saved_top) ? L->top - 1 : nullptr;
-   unwind_close_all(L, L->base - 1, saved_base);  // Close nested frames first
+   unwind_cleanup_all(L, L->base - 1, saved_base);  // Clean nested frames first.
    saved_base = restorestack(L, try_frame->frame_base);
    saved_top = restorestack(L, try_frame->saved_top);
+   lj_defer_unwind(L, saved_base);
 
-   // After unwind_close_all(), re-read the error from L->top - 1 as it may have been updated
-   // by a __close handler that threw. unwind_close_all() updates the error in-place via copyTV().
+   // Re-read the error after nested cleanup because a handler may have replaced it in place.
 
    errobj = (L->top > saved_top) ? L->top - 1 : nullptr;
 
@@ -538,14 +598,16 @@ extern "C" void setup_try_handler(lua_State *L)
          context.owner_base IS try_frame->frame_base,
          "try unwind crossed an unrelated contextual activation");
       try_frame_ptr = restorestack(L, try_frame->frame_base) - 1;
-      errobj = unwind_close_try_block(
+      errobj = unwind_cleanup_range(
          L, try_frame_ptr, errobj, context.entry_slots, upper_slot_index);
       upper_slot_index = context.entry_slots;
       lj_context_restore_depth(L, L->context_stack.size() - 1);
    }
    try_frame_ptr = restorestack(L, try_frame->frame_base) - 1;
-   TValue *final_err = unwind_close_try_block(
+   TValue *final_err = unwind_cleanup_range(
       L, try_frame_ptr, errobj, min_slot_index, upper_slot_index);
+   saved_base = restorestack(L, try_frame->frame_base);
+   lj_defer_discard(L, saved_base, uint32_t(min_slot_index));
    lj_assertL(L->context_stack.size() IS try_frame->context_depth,
       "try handler did not restore the saved contextual depth");
    const bool has_final_err = final_err != nullptr;
@@ -555,11 +617,11 @@ extern "C" void setup_try_handler(lua_State *L)
    saved_top = restorestack(L, try_frame->saved_top);
    lj_meta_multres_unwind(L, saved_base);
 
-   // After all __close handlers have run, extract the final error message.
-   // The error may have been updated by handlers in nested frames (unwind_close_all)
-   // or in the try block's frame (unwind_close_try_block).
+   // After all cleanup handlers have run, extract the final error message.
+   // The error may have been updated by handlers in nested frames or in the try block's frame.
 
    TValue *current_err = has_final_err ? restorestack(L, final_err_offset) : errobj;
+   if (L->CaughtError >= ERR::ExceptionThreshold) err_code = L->CaughtError;
    GCstr *error_msg = nullptr;
    GCstr *error_source = nullptr;
    int line = 0;
@@ -641,7 +703,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
                const ptrdiff_t frame_offset = savestack(L, frame);
                const ptrdiff_t top_offset = savestack(L, top);
                lj_checkall_cleanup_to_base(L, top);
-               unwind_close_all(L, L->base - 1, top);
+               unwind_cleanup_all(L, L->base - 1, top);
                frame = restorestack(L, frame_offset);
                top = restorestack(L, top_offset);
                lj_meta_multres_unwind(L, top);
@@ -669,7 +731,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
                const ptrdiff_t frame_offset = savestack(L, frame);
                const ptrdiff_t target_offset = savestack(L, target);
                lj_checkall_cleanup_to_base(L, target);
-               unwind_close_all(L, L->base - 1, target);
+               unwind_cleanup_all(L, L->base - 1, target);
                frame = restorestack(L, frame_offset);
                target = restorestack(L, target_offset);
                lj_meta_multres_unwind(L, target);
@@ -702,7 +764,12 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
 
             if (errcode) {
                TValue *target = frame_prevd(frame) + 1;
+               const ptrdiff_t frame_offset = savestack(L, frame);
+               const ptrdiff_t target_offset = savestack(L, target);
                lj_checkall_cleanup_to_base(L, target);
+               if (lj_defer_has_owner_above(L, target)) unwind_cleanup_all(L, L->base - 1, target);
+               frame = restorestack(L, frame_offset);
+               target = restorestack(L, target_offset);
                lj_meta_multres_unwind(L, target);
                L->base = target;
                L->cframe = cframe_prev(cf);
@@ -726,12 +793,12 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
 
                if (frame_typep(frame) IS FRAME_PCALL) hook_leave(G(L));
 
-               // Call __close handlers BEFORE modifying L->base
+               // Run cleanup handlers before modifying L->base.
 
                TValue *target = frame_prevd(frame) + 1;
                const ptrdiff_t target_offset = savestack(L, target);
                lj_checkall_cleanup_to_base(L, target);
-               unwind_close_all(L, L->base - 1, target);
+               unwind_cleanup_all(L, L->base - 1, target);
                target = restorestack(L, target_offset);
                lj_meta_multres_unwind(L, target);
                L->base = target;
@@ -749,7 +816,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
       TValue* target = tvref(L->stack) + 1 + LJ_FR2;
       const ptrdiff_t target_offset = savestack(L, target);
       lj_checkall_cleanup_to_base(L, target);
-      unwind_close_all(L, L->base - 1, target);
+      unwind_cleanup_all(L, L->base - 1, target);
       target = restorestack(L, target_offset);
       lj_meta_multres_unwind(L, target);
       L->base = target;

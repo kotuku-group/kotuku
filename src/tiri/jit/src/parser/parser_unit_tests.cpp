@@ -8871,11 +8871,221 @@ static bool test_checkall_syntax_and_bytecode(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+// Defer error-unwind registration is intentionally test-first.  Resolve the planned opcodes by name so this test
+// remains compileable until the bytecode definitions land, while still failing clearly when either opcode is absent.
+
+static bool test_defer_unwind_registration_bytecode(kt::Log &Log)
+{
+   auto find_opcode = [](std::string_view Name) -> std::optional<BCOp> {
+      for (uint32_t i = 0; i < uint32_t(BC__MAX); ++i) {
+         if (Name IS glBcNames[i]) return BCOp(i);
+      }
+      return std::nullopt;
+   };
+
+   const auto arm_opcode = find_opcode("DEFERARM");
+   const auto consume_opcode = find_opcode("DEFERCONSUME");
+   if (not arm_opcode or not consume_opcode) {
+      Log.error("defer unwind registration bytecodes have not been implemented");
+      return false;
+   }
+
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   constexpr std::string_view source =
+      "function subject(ReturnEarly)\n"
+      "   defer(Value) local snapshot = Value end(42)\n"
+      "   if ReturnEarly then return end\n"
+      "end\n";
+
+   if (lua_load(lua, source, "defer-registration-bytecode")) {
+      Log.error("failed to compile defer registration fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   GCproto *subject = first_child_proto(root);
+   if (not subject) {
+      Log.error("defer registration fixture did not emit its subject prototype");
+      return false;
+   }
+
+   BCIns *bytecode = proto_bc(subject);
+   MSize arm_position = subject->sizebc;
+   std::vector<MSize> consume_positions;
+   for (MSize i = 1; i < subject->sizebc; ++i) {
+      if (bc_op(bytecode[i]) IS *arm_opcode) {
+         if (arm_position != subject->sizebc) {
+            Log.error("a single defer emitted more than one DEFERARM");
+            return false;
+         }
+         arm_position = i;
+      }
+      else if (bc_op(bytecode[i]) IS *consume_opcode) {
+         consume_positions.push_back(i);
+      }
+   }
+
+   if (arm_position IS subject->sizebc or consume_positions.empty()) {
+      Log.error("defer lowering omitted DEFERARM or DEFERCONSUME");
+      return false;
+   }
+
+   BCIns arm = bytecode[arm_position];
+   BCREG callable_slot = bc_a(arm);
+   BCREG argument_count = bc_c(arm);
+   if (argument_count != 1 or bc_b(arm) > callable_slot or callable_slot + argument_count >= subject->framesize) {
+      Log.error("DEFERARM encoded invalid callable, scope or argument operands");
+      return false;
+   }
+
+   bool callable_ready = false;
+   bool argument_ready = false;
+   for (MSize i = 1; i < arm_position; ++i) {
+      callable_ready |= bc_op(bytecode[i]) IS BC_FNEW and bc_a(bytecode[i]) IS callable_slot;
+      argument_ready |= bc_op(bytecode[i]) IS BC_KSHORT and
+         bc_a(bytecode[i]) IS callable_slot + argument_count;
+   }
+   if (not callable_ready or not argument_ready) {
+      Log.error("DEFERARM did not follow callable and argument materialisation");
+      return false;
+   }
+
+   size_t call_count = 0;
+   for (MSize i = 1; i < subject->sizebc; ++i) {
+      if (bc_op(bytecode[i]) IS BC_CALL) call_count++;
+   }
+   if (call_count != consume_positions.size()) {
+      Log.error("defer cleanup calls and DEFERCONSUME operations were not paired on every edge");
+      return false;
+   }
+
+   for (MSize consume_position : consume_positions) {
+      if (consume_position + 2 >= subject->sizebc or consume_position < arm_position or
+          bc_a(bytecode[consume_position]) != callable_slot or bc_op(bytecode[consume_position + 1]) != BC_MOV) {
+         Log.error("normal defer cleanup did not consume its registration immediately before call setup");
+         return false;
+      }
+
+      bool call_found = false;
+      for (MSize i = consume_position + 2; i < subject->sizebc; ++i) {
+         if (bc_op(bytecode[i]) IS *consume_opcode) break;
+         if (bc_op(bytecode[i]) IS BC_CALL) {
+            call_found = true;
+            break;
+         }
+      }
+      if (not call_found) {
+         Log.error("DEFERCONSUME was not followed by the existing defer call sequence");
+         return false;
+      }
+   }
+
+   auto malformed_rejected = [&](MSize Position, BCIns Invalid, std::string_view Label) {
+      BCIns saved = bytecode[Position];
+      bytecode[Position] = Invalid;
+      std::string dump;
+      bool wrote = lj_bcwrite(lua, subject, bytecode_writer, &dump, 1) IS 0;
+      bytecode[Position] = saved;
+      if (not wrote) {
+         Log.error("failed to write malformed %.*s fixture", int(Label.size()), Label.data());
+         return false;
+      }
+
+      if (lua_load(lua, std::string_view(dump.data(), dump.size()), "malformed-defer-bytecode")) {
+         lua_pop(lua, 1);
+         return true;
+      }
+
+      lua_pop(lua, 1);
+      Log.error("bytecode reader accepted malformed %.*s operands", int(Label.size()), Label.data());
+      return false;
+   };
+
+   if (not malformed_rejected(arm_position,
+         BCINS_ABC(*arm_opcode, subject->framesize, bc_b(arm), argument_count), "DEFERARM callable") or
+       not malformed_rejected(arm_position,
+         BCINS_ABC(*arm_opcode, callable_slot, callable_slot + 1, argument_count), "DEFERARM scope") or
+       not malformed_rejected(arm_position,
+         BCINS_ABC(*arm_opcode, callable_slot, bc_b(arm), subject->framesize - callable_slot),
+         "DEFERARM arguments") or
+       not malformed_rejected(consume_positions.front(),
+         BCINS_AD(*consume_opcode, subject->framesize, 0), "DEFERCONSUME callable")) {
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_defer_runtime_registration_state(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create a state for defer registration testing");
+      return false;
+   }
+
+   ptrdiff_t owner_offset = savestack(lua, lua->base);
+   lj_defer_arm(lua, lua->base, 3, 2, 1);
+   lj_defer_arm(lua, lua->base, 7, 1, 1);
+   if (lua->defer_frames.size() != 1 or lua->defer_frames[0].owner_base != owner_offset or
+       lua->defer_frames[0].registrations.size() != 2) {
+      Log.error("defer registrations were not appended to their owning frame");
+      return false;
+   }
+
+   const DeferRegistration &first = lua->defer_frames[0].registrations[0];
+   if (first.callable_slot != 3 or first.argument_count != 2 or first.scope_base != 1) {
+      Log.error("defer registration metadata was not retained");
+      return false;
+   }
+
+   lj_state_growstack(lua, 64);
+   TValue *owner = restorestack(lua, owner_offset);
+   if (lua->defer_frames[0].owner_base != savestack(lua, owner) or
+       not lj_defer_consume(lua, owner, 7) or lua->defer_frames[0].registrations.size() != 1) {
+      Log.error("defer ownership did not survive stack relocation or consume in LIFO order");
+      return false;
+   }
+   if (not lj_defer_consume(lua, owner, 3) or not lua->defer_frames.empty()) {
+      Log.error("consuming the last defer did not remove its empty frame state");
+      return false;
+   }
+
+   TValue *inner_owner = owner + 8;
+   lj_defer_arm(lua, owner, 2, 0, 1);
+   lj_defer_arm(lua, owner, 5, 1, 4);
+   lj_defer_arm(lua, inner_owner, 1, 0, 0);
+   lj_defer_unwind(lua, owner);
+   if (lua->defer_frames.size() != 1 or lua->defer_frames[0].owner_base != owner_offset or
+       lua->defer_frames[0].registrations.size() != 2) {
+      Log.error("unwinding did not discard only frame states above the surviving owner");
+      return false;
+   }
+
+   lj_defer_discard(lua, owner, 4);
+   if (lua->defer_frames.size() != 1 or lua->defer_frames[0].registrations.size() != 1 or
+       lua->defer_frames[0].registrations[0].callable_slot != 2) {
+      Log.error("lexical defer discard removed registrations outside the abandoned slot range");
+      return false;
+   }
+   if (not lj_defer_consume(lua, owner, 2) or not lua->defer_frames.empty()) {
+      Log.error("surviving defer registration could not be consumed after a partial unwind");
+      return false;
+   }
+
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 83> tests = { {
+   constexpr std::array<TestCase, 85> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -8889,6 +9099,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "local_function_table_ast", test_local_function_table_ast },
       { "ast_statement_matrix", test_ast_statement_matrix },
       { "checkall_syntax_and_bytecode", test_checkall_syntax_and_bytecode },
+      { "defer_unwind_registration_bytecode", test_defer_unwind_registration_bytecode },
+      { "defer_runtime_registration_state", test_defer_runtime_registration_state },
       { "range_for_ast", test_range_for_ast },
       { "current_context_range_operands", test_current_context_range_operands },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },

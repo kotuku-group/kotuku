@@ -68,6 +68,22 @@ extern "C" LJ_FUNC void lj_context_end_block_jit(
    lua_State *L, TValue *OwnerBase, uint32_t BlockIndex) noexcept;
 extern "C" LJ_FUNC void lj_close_arm(lua_State *L, uint32_t Slot);
 extern "C" LJ_FUNC void lj_close_consume(lua_State *L, uint32_t Slot);
+extern "C" LJ_FUNC void lj_defer_arm(lua_State *State, TValue *OwnerBase, uint32_t CallableSlot,
+   uint32_t ArgumentCount, uint32_t ScopeBase);
+extern "C" LJ_FUNC [[nodiscard]] bool lj_defer_consume(
+   lua_State *State, TValue *OwnerBase, uint32_t CallableSlot);
+extern "C" LJ_FUNC void lj_defer_consume_jit(
+   lua_State *State, TValue *OwnerBase, uint32_t CallableSlot);
+LJ_FUNC [[nodiscard]] bool lj_defer_find_scope(lua_State *State, const TValue *OwnerBase,
+   uint32_t LowerCallableSlot, uint32_t UpperCallableSlot, uint32_t *ScopeBase) noexcept;
+LJ_FUNC [[nodiscard]] bool lj_defer_peek_scope(lua_State *State, const TValue *OwnerBase,
+   uint32_t LowerCallableSlot, uint32_t UpperCallableSlot, uint32_t ScopeBase,
+   DeferRegistration *Registration) noexcept;
+LJ_FUNC [[nodiscard]] bool lj_defer_has_owner_above(
+   lua_State *State, const TValue *SurvivingBase) noexcept;
+LJ_FUNC void lj_defer_discard(
+   lua_State *State, const TValue *OwnerBase, uint32_t MinimumCallableSlot) noexcept;
+LJ_FUNC void lj_defer_unwind(lua_State *State, const TValue *SurvivingBase) noexcept;
 extern "C" LJ_FUNC void lj_array_view_mode(lua_State *L, uint32_t Enabled);
 LJ_FUNC [[nodiscard]] bool lj_array_take_view_mode(lua_State *L) noexcept;
 LJ_FUNC uint64_t lj_close_take_armed(
