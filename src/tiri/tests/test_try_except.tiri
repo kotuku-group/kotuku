@@ -1444,6 +1444,40 @@ end
    error("check with expression should have thrown")
 end
 
+@Test(priority=66) function CheckExpressionFallsThroughResults()
+   function checked_results(Fail)
+      return Fail ? ERR_Args : ERR_Okay, 37, 'captured'
+   end
+
+   err, count, text = check checked_results(false)
+   assert(err is ERR_Okay, "check expression should preserve the successful error result")
+   assert(count is 37, "check expression should preserve the second result")
+   assert(text is 'captured', "check expression should preserve the third result")
+
+   file = obj.new('file', { path='string:native result' })
+   buffer = string.alloc(32)
+   err, bytes = check file.acRead(buffer)
+   assert(err is ERR_Okay, "check expression should preserve a successful native error result")
+   assert(bytes is 13, "check expression should preserve a native action's result")
+   assert(buffer.sub(0, bytes) is 'native result', "checked native action should populate its output buffer")
+
+   missing_path = 'no_such_volume_for_checked_expression:'
+   try
+      err, path_type = check mSys.AnalysePath(missing_path)
+   except e when ERR_FileNotFound
+      assert(e.message.find('AnalysePath()'), "checked native expression should retain the call diagnostic")
+   success
+      error("checked native expression should promote a failing first result")
+   end
+
+   try
+      err, count, text = check checked_results(true)
+   except e when ERR_Args
+      return
+   end
+   error("check expression assignment should promote a failing first result")
+end
+
 @Test(priority=0.5,hotpath=false) function CheckIncludesLocationAndTraceback()
    expected_line = @SourceLine + 3
 

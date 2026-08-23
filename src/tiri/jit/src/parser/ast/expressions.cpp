@@ -385,13 +385,22 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
 }
 
 //********************************************************************************************************************
-// Parses unary expressions (not, negation, length, bit not, prefix increment).
+// Parses unary expressions (check, not, negation, length, bit not, prefix increment).
 
 ParserResult<ExprNodePtr> AstBuilder::parse_unary()
 {
    constexpr uint8_t unary_precedence = 10;
 
    Token current = this->ctx.tokens().current();
+   if (current.kind() IS TokenKind::CheckToken) {
+      this->ctx.tokens().advance();
+      auto operand = this->parse_expression();
+      if (not operand.ok()) return operand;
+
+      operand.value_ref()->is_checked = true;
+      return operand;
+   }
+
    if (current.kind() IS TokenKind::NotToken) {
       this->ctx.tokens().advance();
       auto operand = this->parse_expression(unary_precedence);

@@ -3075,15 +3075,21 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
 
    this->lex_state.lastline = expr.span.line;
 
+   BCReg checkall_base = BCReg(0);
+   if (expr.is_checked) {
+      checkall_base = BCReg(this->func_state.freereg);
+      bcemit_AD(&this->func_state, BC_CHECKALLENTER, checkall_base, BCReg(0));
+      this->func_state.runtime_scopes.push_back(RuntimeScope{ RuntimeScopeKind::Checkall, checkall_base });
+   }
+
    // Attempting the fold at every node means a non-constant subtree can be re-walked once per ancestor,
    // giving O(depth^2) behaviour on deep chains; evaluation bails at the first non-constant operand, which
    // keeps the cost negligible for hand-written code.  Memoise per-node if generated code makes this hot.
-   if (auto constant = this->constant_evaluator.evaluate(expr)) {
-      return this->emit_literal_expr(constant->to_literal());
-   }
-
    ParserResult<ExpDesc> result;
-   switch (expr.kind) {
+   if (auto constant = this->constant_evaluator.evaluate(expr)) {
+      result = this->emit_literal_expr(constant->to_literal());
+   }
+   else switch (expr.kind) {
       case AstNodeKind::LiteralExpr:
          result = this->emit_literal_expr(std::get<LiteralValue>(expr.data));
          break;
@@ -3163,6 +3169,22 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
 
    if (result.ok()) {
       ExpDesc &emitted = result.value_ref();
+      if (expr.is_checked) {
+         BCReg error_reg;
+         if (emitted.k IS ExpKind::Call) error_reg = BCReg(emitted.u.s.aux);
+         else {
+            expr_toanyreg(&this->func_state, &emitted);
+            error_reg = BCReg(emitted.u.s.info);
+         }
+
+         bcemit_AD(&this->func_state, BC_CHECKALLLEAVE, checkall_base, BCReg(0));
+         this->func_state.runtime_scopes.pop_back();
+
+         int32_t raw_column = expr.span.column.lineNumber();
+         BCReg source_column = BCReg(raw_column > int32_t(BCMAX_D) ? BCMAX_D : raw_column);
+         bcemit_AD(&this->func_state, BC_CHECK, error_reg, source_column);
+      }
+
       if (expr.static_value) {
          emitted.static_value = expr.static_value;
          const auto &descriptor = this->ctx.descriptors().value(expr.static_value);
