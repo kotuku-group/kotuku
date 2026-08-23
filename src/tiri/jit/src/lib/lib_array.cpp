@@ -28,6 +28,7 @@
 #include "lj_struct.h"
 #include "lj_vm.h"
 #include "lj_vmarray.h"
+#include "stack_helpers.h"
 #include "lib.h"
 #include "lib_utils.h"
 #include "lib_range.h"
@@ -1570,20 +1571,32 @@ static bool array_values_equal(lua_State *L, GCarray *Array, MSize Index, cTValu
 static int32_t array_find_generic(lua_State *L, GCarray *Array, cTValue *Candidate, int32_t Start, int32_t Stop,
    int32_t Step)
 {
+   ptrdiff_t saved_top = savestack(L, L->top);
+   copyTV(L, L->top, Candidate);
+   incr_top(L);
+   ptrdiff_t candidate_offset = savestack(L, L->top - 1);
    MSize length = Array->len;
+   int32_t result = -1;
    if (Step > 0) {
       for (int32_t index = Start; index <= Stop and MSize(index) < length; index += Step) {
          if (MSize(index) >= Array->len) break;
-         if (array_values_equal(L, Array, MSize(index), Candidate)) return index;
+         if (array_values_equal(L, Array, MSize(index), restorestack(L, candidate_offset))) {
+            result = index;
+            break;
+         }
       }
    }
    else {
       for (int32_t index = Start; index >= Stop and index >= 0 and MSize(index) < length; index += Step) {
          if (MSize(index) >= Array->len) break;
-         if (array_values_equal(L, Array, MSize(index), Candidate)) return index;
+         if (array_values_equal(L, Array, MSize(index), restorestack(L, candidate_offset))) {
+            result = index;
+            break;
+         }
       }
    }
-   return -1;
+   L->top = restorestack(L, saved_top);
+   return result;
 }
 
 static int array_index_of(lua_State *L)
@@ -1715,6 +1728,7 @@ extern "C" int32_t lj_arr_contains(lua_State *L, GCarray *Array, cTValue *Candid
       return lj_arr_find_num(Array, *candidate_number, 0, int32_t(Array->len - 1), 1) >= 0;
    }
 
+   VMHelperGuard guard(L);
    return array_find_generic(L, Array, Candidate, 0, int32_t(Array->len - 1), 1) >= 0;
 }
 
