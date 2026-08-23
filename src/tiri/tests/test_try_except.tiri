@@ -1445,14 +1445,23 @@ end
 end
 
 @Test(priority=66) function CheckExpressionFallsThroughResults()
-   function checked_results(Fail)
+   function checked_results(Fail):<num, num, str>
       return Fail ? ERR_Args : ERR_Okay, 37, 'captured'
+   end
+
+   function inferred_checked_results()
+      return check checked_results(false)
    end
 
    err, count, text = check checked_results(false)
    assert(err is ERR_Okay, "check expression should preserve the successful error result")
    assert(count is 37, "check expression should preserve the second result")
    assert(text is 'captured', "check expression should preserve the third result")
+
+   err, count, text = inferred_checked_results()
+   assert(err is ERR_Okay, "inferred checked return should preserve the successful error result")
+   assert(count is 37, "inferred checked return should preserve the second result")
+   assert(text is 'captured', "inferred checked return should preserve the third result")
 
    file = obj.new('file', { path='string:native result' })
    buffer = string.alloc(32)

@@ -1744,6 +1744,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             set_call_result_count(&this->func_state, last, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
+         else if (has_post_call_control_flow and Payload.values.back()->is_checked) {
+            // A checked call retains its complete result set after promoting a failing first result. The inserted
+            // check instructions prevent tail-call conversion, but do not consolidate the successful results.
+            set_call_result_count(&this->func_state, last, 0);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+         }
          else if (has_post_call_control_flow) {
             // Safe calls and other call expressions with post-call control flow cannot be converted to CALLT: the
             // conversion removes the final emitted instruction rather than the earlier CALL.  Such expressions
