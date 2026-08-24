@@ -62,9 +62,12 @@ bool array_element_matches(
    if (not Actual.known or public_array_storage(Expected.storage) != public_array_storage(Actual.storage)) return false;
    if (Expected.storage IS AET::STRUCT and Expected.struct_def) return Expected.struct_def IS Actual.struct_def;
    if (Expected.storage IS AET::ARRAY and Expected.nested_array_identity) {
-      if (not Actual.nested_array_identity) return false;
       std::string_view expected_name(strdata(Expected.nested_array_identity), Expected.nested_array_identity->len);
-      std::string_view actual_name(strdata(Actual.nested_array_identity), Actual.nested_array_identity->len);
+      std::string_view actual_name = "array";
+      if (Actual.nested_array_identity) {
+         actual_name = std::string_view(
+            strdata(Actual.nested_array_identity), Actual.nested_array_identity->len);
+      }
       return recursive_array_identity_matches(expected_name, actual_name);
    }
    return true;
@@ -224,9 +227,7 @@ private:
          return result;
       }
 
-      if (name IS "object") name = "obj";
-      if (name IS "string") name = "str";
-      auto result = describe_array_element(name IS "obj" ? "object" : name, this->state_);
+      auto result = describe_array_element(name, this->state_);
       if (result and result->storage IS AET::PTR) return std::nullopt;
       if (result and Canonical) *Canonical = array_element_name(*result);
       return result;
@@ -777,7 +778,7 @@ std::optional<ArrayElementDescriptor> describe_array_element(std::string_view Na
    else if (Name IS "str") result = { AET::STR_GC, TiriType::Str, CLASSID::NIL, nullptr, true };
    else if (Name IS "table") result = { AET::TABLE, TiriType::Table, CLASSID::NIL, nullptr, true };
    else if (Name IS "array") result = { AET::ARRAY, TiriType::Array, CLASSID::NIL, nullptr, true };
-   else if (Name IS "object") result = { AET::OBJECT, TiriType::Object, CLASSID::NIL, nullptr, true };
+   else if (Name IS "obj") result = { AET::OBJECT, TiriType::Object, CLASSID::NIL, nullptr, true };
    else if (Name IS "any") result = { AET::ANY, TiriType::Any, CLASSID::NIL, nullptr, true };
    else if (Name IS "pointer") result = { AET::PTR, TiriType::Any, CLASSID::NIL, nullptr, true };
    else if (Name IS "struct") result = { AET::STRUCT, TiriType::Struct, CLASSID::NIL, nullptr, true };

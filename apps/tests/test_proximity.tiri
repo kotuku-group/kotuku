@@ -54,7 +54,7 @@ function rawProxyRequestOnPort(ProxyPort:num, Request:str, Timeout:num):str
    })
    defer socket.free() end
 
-   local proc = processing.new({ timeout = Timeout, signals = array<object> { socket } })
+   local proc = processing.new({ timeout = Timeout, signals = array<obj> { socket } })
    check socket.mtConnect('127.0.0.1', ProxyPort, 3.0)
    local err = proc.sleep()
    assert(err is ERR_Okay, 'Proxy request timed out or failed: ' .. mSys.GetErrorMsg(err))
@@ -313,7 +313,7 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
    })
    defer socket.free() end
 
-   local proc = processing.new({ timeout = 8.0, signals = array<object> { socket } })
+   local proc = processing.new({ timeout = 8.0, signals = array<obj> { socket } })
    check socket.mtConnect('127.0.0.1', ProxyPort, 3.0)
    local err = proc.sleep()
    assert(err is ERR_Okay, 'CONNECT tunnel request timed out or failed: ' .. mSys.GetErrorMsg(err))
@@ -772,7 +772,7 @@ function ConnectTunnelPassesSSLHandshake()
    })
    defer socket.free() end
 
-   local proc = processing.new({ timeout = 8.0, signals = array<object> { socket } })
+   local proc = processing.new({ timeout = 8.0, signals = array<obj> { socket } })
    check socket.mtConnect('127.0.0.1', PROXY_PORT, 3.0)
    local err = proc.sleep()
 

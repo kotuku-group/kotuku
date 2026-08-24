@@ -58,8 +58,8 @@ end
    expect_failure(() => do array.of('str', 12) end, 'String constructor accepted a number')
    expect_failure(() => do indexed.copy({ [0]=12 }) end, 'String table copy accepted a number')
    expect_failure(() => do indexed.mapSame(Value => num: 12) end, 'String map accepted a number')
-   local legacy_string = array.new(0, 'string')
-   assert(legacy_string.type() is 'str', "The canonical 'string' alias did not produce string storage")
+   expect_failure(() => array.new(0, 'string'), "array.new() accepted the removed 'string' alias")
+   expect_failure(() => array.of('string', 'value'), "array.of() accepted the removed 'string' alias")
 end
 
 @Test function ReferenceCategoriesAreExact()
@@ -69,7 +69,7 @@ end
 
    local tables = array<table, 1>
    local arrays = array<array, 1>
-   local objects = array<object, 1>
+   local objects = array<obj, 1>
    tables[0] = table_value
    arrays[0] = array_value
    objects[0] = object_value
@@ -81,6 +81,11 @@ end
    expect_failure(() => do objects[0] = table_value end, 'Object array accepted a table')
 
    object_value.free()
+end
+
+@Test function RemovedObjectAliasIsRejectedByFactories()
+   expect_failure(() => array.new(0, 'object'), "array.new() accepted the removed 'object' alias")
+   expect_failure(() => array.of('object'), "array.of() accepted the removed 'object' alias")
 end
 
 @Test function NilUsesTheTypedEmptyValue()

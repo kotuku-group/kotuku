@@ -336,7 +336,7 @@ end
 
       glSurface.mtAddCallback(drawDirectVector)
 
-      global glVectorColours = array<object> {
+      global glVectorColours = array<obj> {
         obj.new('VectorColour', { red=0.8,   green=0,   blue=0 }),
         obj.new('VectorColour', { red=1.0,   green=0.8, blue=0 }),
         obj.new('VectorColour', { red=0.666, green=1.0, blue=0 }),

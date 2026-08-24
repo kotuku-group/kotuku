@@ -188,8 +188,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
          return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
             "Unknown array element type 'object'; use 'obj'");
       }
-      auto element = parse_array_element_type(
-         element_name IS "obj" ? "object" : element_name, &this->ctx.lua(), &this->ctx.lex());
+      auto element = parse_array_element_type(element_name, &this->ctx.lua(), &this->ctx.lex());
       if (not element or element->storage IS AET::PTR or
           (element->storage IS AET::STRUCT and not element->struct_def)) {
          return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
@@ -272,8 +271,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
             return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,
                "Unknown array element type 'object'; use 'obj'");
          }
-         auto element = parse_array_element_type(
-            element_storage IS "obj" ? "object" : element_storage, &this->ctx.lua(), &this->ctx.lex());
+         auto element = parse_array_element_type(element_storage, &this->ctx.lua(), &this->ctx.lex());
          if (not element or element->storage IS AET::PTR or
              (element->storage IS AET::STRUCT and not element->struct_def)) {
             return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,
@@ -330,7 +328,7 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
    }
 
    TypeTestDescriptor descriptor;
-   descriptor.type = type_name_view IS "object" ? TiriType::Object : parse_type_name(type_name_view);
+   descriptor.type = parse_type_name(type_name_view);
    if (descriptor.type IS TiriType::Unknown) {
       return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, type_token,
          std::format("Unknown type-test name '{}'; expected a Tiri type", type_name_view));
@@ -367,8 +365,7 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
       descriptor.constrained = true;
 
       if (descriptor.type IS TiriType::Array) {
-         auto element = parse_array_element_type(constraint_name IS "obj" ? "object" : constraint_name,
-            &this->ctx.lua(), &this->ctx.lex());
+         auto element = parse_array_element_type(constraint_name, &this->ctx.lua(), &this->ctx.lex());
          if (element and element->storage != AET::PTR and
              (element->storage != AET::STRUCT or element->struct_def)) descriptor.array_element = *element;
          else if (struct_record *definition = find_struct(&this->ctx.lua(), constraint_name)) {

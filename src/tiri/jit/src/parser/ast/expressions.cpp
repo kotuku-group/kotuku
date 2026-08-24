@@ -815,8 +815,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
             return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, start,
                "Nested array element types cannot declare a size");
          }
-         auto element = parse_array_element_type(
-            element_name IS "obj" ? "object" : element_name, &this->ctx.lua(), &this->ctx.lex());
+         auto element = parse_array_element_type(element_name, &this->ctx.lua(), &this->ctx.lex());
          if (not element or element->storage IS AET::PTR or
              (element->storage IS AET::STRUCT and not element->struct_def)) {
             return this->fail<ExprNodePtr>(ParserErrorCode::UnknownTypeName, start,

@@ -113,7 +113,6 @@ static ArrayAllocationDescriptor parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
    std::string_view type_name(strdata(type_str), type_str->len);
-   if (type_name IS "obj") type_name = "object";
    if (auto element = parse_array_element_type(type_name, L)) {
       ArrayAllocationDescriptor descriptor;
       descriptor.storage = element->storage;
