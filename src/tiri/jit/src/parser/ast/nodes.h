@@ -650,7 +650,8 @@ struct ChooseCase {
    ChooseCase(ChooseCase&&) noexcept = default;
    ChooseCase& operator=(ChooseCase&&) noexcept = default;
 
-   ExprNodePtr pattern;     // Pattern to match (nullptr for else or wildcard or tuple)
+   ExprNodePtr pattern;     // Pattern to match (nullptr for else, wildcard, tuple or type pattern)
+   std::optional<TypeTestDescriptor> type_pattern; // Type-test descriptor for a single-value type pattern
    ExprNodeList tuple_patterns;    // Patterns for tuple match positions (empty if single-value)
    std::vector<bool> tuple_wildcards; // True for wildcard positions in tuple patterns
    ExprNodePtr guard;       // Optional when clause (nullptr if none)

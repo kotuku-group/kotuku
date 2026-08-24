@@ -288,6 +288,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
          if (member.kind() IS TokenKind::Identifier and member.span().offset IS next.span().offset + 1) break;
       }
 
+      // A descriptor-shaped `<Type>` followed by a choose arrow begins the next case rather than extending the
+      // current result expression with a relational operator.
+      if (next.kind() IS TokenKind::Less and this->choose_case_has_type_test_descriptor()) break;
+
       // 'is not' compound operator: treat as inequality (equivalent to !=)
       // Handled here rather than in match_binary_operator() to avoid lookahead
       // side-effects that corrupt the token stream for f-strings with expressions.

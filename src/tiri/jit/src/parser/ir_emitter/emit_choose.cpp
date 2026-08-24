@@ -316,56 +316,64 @@ ParserResult<ExpDesc> IrEmitter::emit_choose_expr(const ChooseExprPayload &Paylo
       else {
          // Single-value pattern match: compare scrutinee_reg with pattern value
 
-         if (not case_arm.pattern or (not case_arm.result and not case_arm.has_statement_result)) {
+         if ((not case_arm.pattern and not case_arm.type_pattern) or
+            (not case_arm.result and not case_arm.has_statement_result)) {
             return this->unsupported_expr(AstNodeKind::ChooseExpr, case_arm.span);
          }
 
          ControlFlowEdge false_jump;
 
+         if (case_arm.type_pattern) {
+            // TYPETEST replaces its input register with a boolean, so preserve the retained scrutinee in a temporary.
+            BCReg type_reg(fs->freereg);
+            allocator.reserve(BCReg(1));
+            bcemit_AD(fs, BC_MOV, type_reg, scrutinee_reg);
+
+            auto type_test = this->emit_type_test_descriptor(*case_arm.type_pattern, false, type_reg);
+            if (not type_test.ok()) return ParserResult<ExpDesc>::failure(type_test.error_ref());
+
+            bcemit_INS(fs, BCINS_AD(BC_ISF, 0, type_reg));
+            false_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
+            allocator.release_register(type_reg);
+         }
          // Check for table pattern { key = value, ... }
          // Table patterns are handled specially - we extract the payload directly from the AST
-         // and emit type checking + field comparison bytecode. We must NOT call emit_expression
-         // for table patterns, as that would emit TDUP bytecode that gets overwritten by the
-         // type() call, creating dead code that confuses the JIT's slot tracking.
+         // and emit type checking + field comparison bytecode. We must NOT call emit_expression for table patterns,
+         // as that would emit TDUP bytecode that the pattern does not need.
 
-         if (case_arm.is_table_pattern) {
+         else if (case_arm.is_table_pattern) {
             // Table pattern: { key1 = value1, key2 = value2, ... }
 
             const auto *table_payload = std::get_if<TableExprPayload>(&case_arm.pattern->data);
             if (not table_payload) return this->unsupported_expr(AstNodeKind::ChooseExpr, case_arm.span);
-
-            lua_State *L = this->lex_state.L;
 
             // Helper to get constant string index
             auto str_const = [fs](GCstr* s) -> BCReg {
                return BCReg(const_gc(fs, obj2gco(s), LJ_TSTR));
             };
 
-            // Type check - scrutinee must be a table
-            // Call type(scrutinee) and compare result with "table"
+            // TYPETEST replaces its input register with a boolean, so preserve the retained scrutinee in a temporary.
+            TypeTestDescriptor table_descriptor;
+            table_descriptor.type = TiriType::Table;
+            BCReg type_reg(fs->freereg);
+            allocator.reserve(BCReg(1));
+            bcemit_AD(fs, BC_MOV, type_reg, scrutinee_reg);
 
-            BCREG temp_base = fs->freereg;
-            allocator.reserve(BCReg(2 + LJ_FR2));  // function slot, frame link, arg
+            auto type_test = this->emit_type_test_descriptor(table_descriptor, false, type_reg);
+            if (not type_test.ok()) return ParserResult<ExpDesc>::failure(type_test.error_ref());
 
-            // Load 'type' global function -> temp_base
-
-            bcemit_AD(fs, BC_GGET, temp_base, str_const(lj_str_newlit(L, "type")));
-
-            // Copy scrutinee as argument -> temp_base + 1 + LJ_FR2
-
-            bcemit_AD(fs, BC_MOV, temp_base + 1 + LJ_FR2, scrutinee_reg);
-
-            // Call type(scrutinee) -> result in temp_base
-            // BC_CALL A=base, B=2 (expect 1 result), C=2 (1 arg + 1)
-
-            bcemit_ABC(fs, BC_CALL, temp_base, 2, 2);
-
-            // Compare result with "table" string - jump if NOT equal
-
-            bcemit_INS(fs, BCINS_AD(BC_ISNES, temp_base, str_const(lj_str_newlit(L, "table"))));
+            bcemit_INS(fs, BCINS_AD(BC_ISF, 0, type_reg));
             false_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
+            allocator.release_register(type_reg);
 
-            allocator.collapse_freereg(BCReg(temp_base));
+            if (table_payload->fields.empty()) {
+               // An empty table pattern is an emptiness test, not a table-category wildcard.  The preceding
+               // TYPETEST has excluded nil and native arrays, so this checks the original table with lj_tab_empty().
+               bcemit_INS(fs, BCINS_AD(BC_ISFALSEY, scrutinee_reg, ISFALSEY_EMPTY_COLL));
+               ControlFlowEdge empty_table_jump = this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs)));
+               false_jump.append(BCPos(bcemit_jmp(fs)));
+               empty_table_jump.patch_here();
+            }
 
             // For each field in the pattern, check existence and value
 

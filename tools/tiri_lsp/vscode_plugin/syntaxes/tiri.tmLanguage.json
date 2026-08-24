@@ -7,6 +7,7 @@
       { "include": "#strings" },
       { "include": "#annotations" },
       { "include": "#typetests" },
+      { "include": "#choose-type-patterns" },
       { "include": "#functions" },
       { "include": "#keywords" },
       { "include": "#operators" },
@@ -76,6 +77,31 @@
                   "2": { "name": "punctuation.definition.type-test.begin.tiri" },
                   "3": { "name": "support.type.primitive.tiri" },
                   "4": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            }
+         ]
+      },
+      "choose-type-patterns": {
+         "patterns": [
+            {
+               "name": "meta.choose.type-pattern.tiri",
+               "comment": "Constrained `<aggregate Name>` choose type pattern before when or ->.",
+               "match": "(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)(?=\\s*(?:when\\b|->))",
+               "captures": {
+                  "1": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "2": { "name": "support.type.primitive.tiri" },
+                  "3": { "name": "entity.name.type.tiri" },
+                  "4": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.choose.type-pattern.tiri",
+               "comment": "Unconstrained `<type>` choose type pattern before when or ->.",
+               "match": "(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)(?=\\s*(?:when\\b|->))",
+               "captures": {
+                  "1": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "2": { "name": "support.type.primitive.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.end.tiri" }
                }
             }
          ]

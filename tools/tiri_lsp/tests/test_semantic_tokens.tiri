@@ -697,3 +697,34 @@ end
    assert(less_than and less_than.type is 1, 'An unknown descriptor should retain its less-than token.')
    assertNoToken(tokens, 0, 17, 'integer', 'An unknown descriptor name should not receive a type token.')
 end
+
+@Test function ChooseTypePatternsReceiveSemanticTokens()
+   source = 'result = choose value from\n' ..
+      '   <table> -> \'table\'\n' ..
+      '   <array int> when ready(value) -> \'integer array\'\n' ..
+      '   <integer> -> \'invalid descriptor\'\n' ..
+      '   < limit -> \'less than\'\n' ..
+      '   < lower > upper -> \'between\'\n' ..
+      '   else -> \'other\'\n' ..
+      'end\n'
+
+   tokens = tokenizeTiri(source)
+
+   table_type = findToken(tokens, 1, 4, 'table')
+   array_type = findToken(tokens, 2, 4, 'array')
+   array_constraint = findToken(tokens, 2, 10, 'int')
+   unknown_type = findToken(tokens, 3, 4, 'integer')
+
+   assert(table_type and table_type.type is 7, 'An unconstrained choose type pattern should emit a type token.')
+   assert(array_type and array_type.type is 7, 'A constrained choose type pattern should emit a type token.')
+   assert(array_constraint and array_constraint.type is 11,
+      'A constrained choose type pattern should emit a class token for its constraint.')
+   assert(unknown_type and unknown_type.type is 7,
+      'An unknown descriptor-shaped choose arm should retain type highlighting for its compiler diagnostic.')
+
+   assertOperatorToken(tokens, 4, 3, '<', 'A relational choose arm should retain its less-than token.')
+   assertNoToken(tokens, 4, 5, 'limit', 'A relational choose operand must not become a type token.')
+   assertOperatorToken(tokens, 5, 3, '<', 'A relational choose range should retain its less-than token.')
+   assertOperatorToken(tokens, 5, 11, '>', 'A relational choose range should retain its greater-than token.')
+   assertNoToken(tokens, 5, 5, 'lower', 'A relational arm ending in an arrow must not become a type pattern.')
+end

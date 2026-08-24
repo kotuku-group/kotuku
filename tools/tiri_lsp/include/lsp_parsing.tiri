@@ -220,12 +220,29 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       ['array'] = true, ['obj'] = true, ['object'] = true, ['struct'] = true
    }
 
-   -- Tokenise a contextual `is <...>` / `is not <...>` type-test descriptor beginning at the current position, which
-   -- must sit on the '<' (leading spaces are skipped first).  On success the '<' and '>' become operator tokens, the
-   -- primary word a 'type' token and any inner constraint name a 'class' token, and the function returns true with
-   -- pos/col advanced past '>'.  A malformed or absent descriptor leaves pos/col untouched and returns false so the
-   -- caller continues tokenising the '<' as an ordinary less-than operator.  Descriptors do not span line breaks.
-   function tokenizeTypeTest(NotLine:num, NotCol:num):bool
+   function hasChooseTypePatternTail():bool
+      tail_pos = pos
+      while tail_pos < len and (Source.sub(tail_pos, tail_pos + 1) is ' ' or
+         Source.sub(tail_pos, tail_pos + 1) is '\t' or Source.sub(tail_pos, tail_pos + 1) is '\r' or
+         Source.sub(tail_pos, tail_pos + 1) is '\n') do
+         tail_pos++
+      end
+
+      if Source.sub(tail_pos, tail_pos + 2) is '->' then return true end
+      if Source.sub(tail_pos, tail_pos + 4) is 'when' then
+         return tail_pos + 4 >= len or not isIdentChar(Source.sub(tail_pos + 4, tail_pos + 5))
+      end
+      return false
+   end
+
+   -- Tokenise a contextual `is <...>` / `is not <...>` type-test descriptor or a choose type pattern beginning at
+   -- the current position, which must sit on the '<' (leading spaces are skipped first).  On success the '<' and '>'
+   -- become operator tokens, the primary word a 'type' token and any inner constraint name a 'class' token, and the
+   -- function returns true with pos/col advanced past '>'.  A malformed or absent descriptor leaves pos/col untouched
+   -- and returns false so the caller continues tokenising the '<' as an ordinary less-than operator.  Type-test names
+   -- must be known, while choose patterns also highlight unknown descriptor-shaped arms for compiler diagnostics.
+   -- Descriptors do not span line breaks.
+   function tokenizeTypeTest(NotLine:num, NotCol:num, AllowUnknown:bool, RequireChooseTail:bool):bool
       save_pos = pos
       save_col = col
 
@@ -263,7 +280,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       end
       primary = Source.sub(primary_pos, pos)
       primary_len = col - primary_col
-      if not type_test_types[primary] then
+      if not type_test_types[primary] and not AllowUnknown then
          pos = save_pos
          col = save_col
          return false
@@ -305,6 +322,12 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       close_col = col
       pos++
       col++
+
+      if RequireChooseTail and not hasChooseTypePatternTail() then
+         pos = save_pos
+         col = save_col
+         return false
+      end
 
       if NotCol then addToken(NotLine, NotCol, 3, 1, 0) end  -- 'not' operator
       addToken(line, open_col, 1, 1, 0)                    -- '<' operator
@@ -1081,22 +1104,26 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             col++
          end
       elseif c is '<' then
-         op_start = col
-         if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '<' then
-            -- << left shift
-            addToken(line, op_start, 2, 1, 0)
-            pos += 2
-            col += 2
-         elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
-            -- <= less than or equal
-            addToken(line, op_start, 2, 1, 0)
-            pos += 2
-            col += 2
+         if tokenizeTypeTest(nil, nil, true, true) then
+            -- A descriptor-shaped choose arm was emitted by tokenizeTypeTest().
          else
-            -- < less than
-            addToken(line, op_start, 1, 1, 0)
-            pos++
-            col++
+            op_start = col
+            if pos + 1 < len and Source.sub(pos + 1, pos + 2) is '<' then
+               -- << left shift
+               addToken(line, op_start, 2, 1, 0)
+               pos += 2
+               col += 2
+            elseif pos + 1 < len and Source.sub(pos + 1, pos + 2) is '=' then
+               -- <= less than or equal
+               addToken(line, op_start, 2, 1, 0)
+               pos += 2
+               col += 2
+            else
+               -- < less than
+               addToken(line, op_start, 1, 1, 0)
+               pos++
+               col++
+            end
          end
       elseif c is '>' then
          op_start = col

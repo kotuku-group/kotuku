@@ -255,6 +255,37 @@ namespace {
 
 inline void assert_node(bool condition, CSTRING message) { lj_assertX(condition, message); }
 
+static bool ensure_choose_case(const ChooseCase &Case)
+{
+   bool has_type_pattern = Case.type_pattern.has_value();
+   bool has_expression_pattern = Case.pattern != nullptr;
+
+   if (Case.is_else) {
+      return not has_type_pattern and not has_expression_pattern and not Case.is_wildcard and
+         not Case.is_table_pattern and not Case.is_tuple_pattern and Case.tuple_patterns.empty();
+   }
+
+   if (Case.is_tuple_pattern) {
+      return not has_type_pattern and not has_expression_pattern and not Case.is_table_pattern and
+         Case.relational_op IS ChooseRelationalOp::None and
+         Case.tuple_patterns.size() IS Case.tuple_wildcards.size();
+   }
+
+   if (Case.is_wildcard) {
+      return not has_type_pattern and not has_expression_pattern and not Case.is_table_pattern and
+         Case.relational_op IS ChooseRelationalOp::None and Case.tuple_patterns.empty();
+   }
+
+   if (has_type_pattern) {
+      return not has_expression_pattern and not Case.is_table_pattern and
+         Case.relational_op IS ChooseRelationalOp::None and Case.tuple_patterns.empty();
+   }
+
+   if (not has_expression_pattern) return false;
+   if (Case.is_table_pattern) return Case.relational_op IS ChooseRelationalOp::None;
+   return true;
+}
+
 [[nodiscard]] inline size_t block_child_count(const std::unique_ptr<BlockStmt> &block) {
    return block ? block->view().size() : 0;
 }
@@ -977,6 +1008,9 @@ ExprNodePtr make_range_expr(SourceSpan Span, ExprNodePtr Start, ExprNodePtr Stop
 ExprNodePtr make_choose_expr(SourceSpan Span, ExprNodePtr Scrutinee, std::vector<ChooseCase> Cases, size_t InferredArity)
 {
    assert_node(ensure_operand(Scrutinee), "choose expression requires scrutinee expression");
+   for (const ChooseCase &case_arm : Cases) {
+      assert_node(ensure_choose_case(case_arm), "choose expression contains an invalid case pattern");
+   }
    ChooseExprPayload payload;
    payload.scrutinee = std::move(Scrutinee);
    payload.cases = std::move(Cases);
@@ -991,6 +1025,9 @@ ExprNodePtr make_choose_expr(SourceSpan Span, ExprNodePtr Scrutinee, std::vector
 ExprNodePtr make_choose_expr_tuple(SourceSpan Span, ExprNodeList ScrutineeTuple, std::vector<ChooseCase> Cases)
 {
    assert_node(ScrutineeTuple.size() >= 2, "tuple scrutinee requires at least 2 elements");
+   for (const ChooseCase &case_arm : Cases) {
+      assert_node(ensure_choose_case(case_arm), "choose expression contains an invalid case pattern");
+   }
    ChooseExprPayload payload;
    payload.scrutinee_tuple = std::move(ScrutineeTuple);
    payload.cases = std::move(Cases);
