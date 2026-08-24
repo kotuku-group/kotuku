@@ -404,8 +404,8 @@ static bool check_try_handler(lua_State *L, int errcode)
    }
 
    // Don't intercept errors from C frames without Lua frames (like lj_vm_cpcall used for trace recording). These
-   // protected calls should handle errors first.  Walk the cframe chain to check for nres < 0 which indicates
-   // "C frame without Lua frame".
+   // protected calls should handle errors first. Walk the cframe chain for a saved stack offset, which identifies
+   // a C frame without a Lua frame.
 
    {
       void *cf = L->cframe;
@@ -413,12 +413,15 @@ static bool check_try_handler(lua_State *L, int errcode)
       TValue *try_base = restorestack(L, try_frame->frame_base);
 
       while (cf) {
-         if (auto nres = cframe_nres(cframe_raw(cf)); nres < 0) {
+         void *raw_cframe = cframe_raw(cf);
+         if (cframe_has_stack_offset(raw_cframe)) {
             // This is a C frame without Lua frame (e.g., trace recording cpcall).
             // Check if it's above the try block by comparing saved top position.
-            TValue *cf_top = restorestack(L, -nres);
+            ptrdiff_t stack_offset = cframe_stack_offset(raw_cframe);
+            TValue *cf_top = restorestack(L, stack_offset);
             if (cf_top >= try_base) {
-               log.trace("Returning false: cpcall frame (nres=%d) at cf_top=%p >= try_base=%p", nres, cf_top, try_base);
+               log.trace("Returning false: cpcall frame (stack_offset=%td) at cf_top=%p >= try_base=%p",
+                  stack_offset, cf_top, try_base);
                return false; // The cpcall is above/at the try block - let it handle the error
             }
          }
@@ -695,9 +698,9 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
    TValue *frame = L->base - 1;
    void *cf = L->cframe;
    while (cf) {
-      int32_t nres = cframe_nres(cframe_raw(cf));
-      if (nres < 0) {  // C frame without Lua frame?
-         TValue *top = restorestack(L, -nres);
+      void *raw_cframe = cframe_raw(cf);
+      if (cframe_has_stack_offset(raw_cframe)) {  // C frame without Lua frame?
+         TValue *top = restorestack(L, cframe_stack_offset(raw_cframe));
          if (frame < top) {  // Frame reached?
             if (errcode) {
                const ptrdiff_t frame_offset = savestack(L, frame);
@@ -1268,8 +1271,8 @@ static ptrdiff_t finderrfunc(lua_State *L)
    cTValue* frame = L->base - 1, * bot = tvref(L->stack) + LJ_FR2;
    void* cf = L->cframe;
    while (frame > bot and cf) {
-      while (cframe_nres(cframe_raw(cf)) < 0) {  // cframe without frame?
-         if (frame >= restorestack(L, -cframe_nres(cf))) break;
+      while (cframe_has_stack_offset(cframe_raw(cf))) {  // cframe without frame?
+         if (frame >= restorestack(L, cframe_stack_offset(cframe_raw(cf)))) break;
          if (cframe_errfunc(cf) >= 0)  //  Error handler not inherited (-1)?
             return cframe_errfunc(cf);
          cf = cframe_prev(cf);  //  Else unwind cframe and continue searching.

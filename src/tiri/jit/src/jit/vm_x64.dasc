@@ -717,7 +717,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov SAVE_ERRF, 0         // No error function.
   |  mov SAVE_NRES, KBASEd    // Neg. delta means cframe w/o frame.
   |   add DISPATCH, GG_G2DISP
-  |  // Handler may change cframe_nres(L->cframe) or cframe_errfunc(L->cframe).
+  |  // Handler may change CFRAME_OFS_NRES metadata or cframe_errfunc(L->cframe).
   |
   |  mov KBASE, L:RB->cframe     // Add our C frame to cframe chain.
   |  mov SAVE_CFRAME, KBASE

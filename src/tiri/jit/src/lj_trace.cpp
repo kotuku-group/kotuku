@@ -38,7 +38,7 @@ struct TraceAbortStackState {
    ptrdiff_t base_before;
    ptrdiff_t top_before;
    ptrdiff_t top_after;
-   int32_t cframe_nres_before;
+   int32_t cframe_result_metadata_before;
    int32_t error;
    bool cframe_saved;
    bool top_changed;
@@ -59,7 +59,8 @@ static void trace_abort_stack_snapshot(jit_State *J, TraceError Error, TValue *S
    glTraceAbortStack.base_before = savestack(L, L->base);
    glTraceAbortStack.top_before = savestack(L, L->top);
    glTraceAbortStack.top_after = savestack(L, SafeTop);
-   glTraceAbortStack.cframe_nres_before = L->cframe ? cframe_nres(cframe_raw(L->cframe)) : 0;
+   glTraceAbortStack.cframe_result_metadata_before =
+      L->cframe ? cframe_result_metadata(cframe_raw(L->cframe)) : 0;
    glTraceAbortStack.error = int32_t(Error);
    glTraceAbortStack.cframe_saved = L->cframe != nullptr;
    glTraceAbortStack.top_changed = not (L->top IS SafeTop);
@@ -108,9 +109,10 @@ static void trace_abort_restore_retry_stack(jit_State *J, CSTRING Path)
 #endif
 
       L->top = top_before;
-      // lj_trace_err() writes cframe_nres to match the normalised top.  Put it back before retrying the recorder.
+      // lj_trace_err() writes the saved-stack offset to match the normalised top. Restore the prior frame state
+      // before retrying the recorder.
       if (L->cframe and glTraceAbortStack.cframe_saved) {
-         cframe_nres(cframe_raw(L->cframe)) = glTraceAbortStack.cframe_nres_before;
+         set_cframe_result_metadata(cframe_raw(L->cframe), glTraceAbortStack.cframe_result_metadata_before);
       }
       glTraceAbortStack.jit = nullptr;
    }
@@ -139,7 +141,7 @@ void lj_trace_err(jit_State *J, TraceError e)
    if (safe_top < J->L->base) safe_top = J->L->base;
    trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;
-   if (J->L->cframe) cframe_nres(cframe_raw(J->L->cframe)) = -int32_t(savestack(J->L, safe_top));
+   if (J->L->cframe) set_cframe_stack_offset(cframe_raw(J->L->cframe), savestack(J->L, safe_top));
 
    setnilV(&J->errinfo);  //  No error info.
    setintV(J->L->top++, (int32_t)e);
@@ -163,7 +165,7 @@ void lj_trace_err_info(jit_State *J, TraceError e)
    if (safe_top < J->L->base) safe_top = J->L->base;
    trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;
-   if (J->L->cframe) cframe_nres(cframe_raw(J->L->cframe)) = -int32_t(savestack(J->L, safe_top));
+   if (J->L->cframe) set_cframe_stack_offset(cframe_raw(J->L->cframe), savestack(J->L, safe_top));
 
    setintV(J->L->top++, (int32_t)e);
    lj_err_throw(J->L, LUA_ERRRUN);
@@ -998,7 +1000,7 @@ static TValue* trace_exit_cp(lua_State* L, lua_CFunction dummy, void* ud)
    ExitDataCP* exd = (ExitDataCP*)ud;
    // Always catch error here and don't call error function.
    cframe_errfunc(L->cframe) = 0;
-   cframe_nres(L->cframe) = -2 * LUAI_MAXSTACK * (int)sizeof(TValue);
+   set_cframe_stack_offset(L->cframe, 2 * LUAI_MAXSTACK * (int)sizeof(TValue));
    exd->pc = lj_snap_restore(exd->J, exd->exptr);
    return nullptr;
 }

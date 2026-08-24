@@ -80,8 +80,8 @@ static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
          while (true) {
             if (cf IS nullptr) return NO_BCPOS;
 
-            while (cframe_nres(cf) < 0) {
-               if (f >= restorestack(L, -cframe_nres(cf))) break;
+            while (cframe_has_stack_offset(cf)) {
+               if (f >= restorestack(L, cframe_stack_offset(cf))) break;
                cf = cframe_raw(cframe_prev(cf));
                if (cf IS nullptr) return NO_BCPOS;
             }

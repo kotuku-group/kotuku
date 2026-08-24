@@ -703,7 +703,7 @@ struct ProtoTypeEntry {
    uint32_t constraint = 0;
    TiriType type = TiriType::Unknown;
    uint8_t flags = 0;
-   uint16_t reserved = 0;
+   uint16_t array_member_type = 0;  // Optional AET encoded as value + 1; zero means no array member type.
 };
 
 struct ProtoSignature {
@@ -1327,14 +1327,29 @@ enum class AET : uint8_t {
    return Type IS AET::CSTR or Type IS AET::STR_CPP or Type IS AET::STRUCT;
 }
 
-[[nodiscard]] constexpr inline uint16_t proto_array_member(AET Type) noexcept
+[[nodiscard]] constexpr inline uint16_t proto_array_member_encoded(AET Type) noexcept
 {
    return uint16_t(Type) + 1;
 }
 
 [[nodiscard]] constexpr inline AET proto_array_member(const ProtoTypeEntry &Entry) noexcept
 {
-   return Entry.reserved ? AET(Entry.reserved - 1) : AET::MAX;
+   return Entry.array_member_type ? AET(Entry.array_member_type - 1) : AET::MAX;
+}
+
+[[nodiscard]] constexpr inline uint16_t proto_array_member_encoded(const ProtoTypeEntry &Entry) noexcept
+{
+   return Entry.array_member_type;
+}
+
+constexpr inline void set_proto_array_member(ProtoTypeEntry &Entry, AET Type) noexcept
+{
+   Entry.array_member_type = Type IS AET::MAX ? 0 : proto_array_member_encoded(Type);
+}
+
+constexpr inline void set_proto_array_member_encoded(ProtoTypeEntry &Entry, uint16_t EncodedType) noexcept
+{
+   Entry.array_member_type = EncodedType;
 }
 
 // Array flags

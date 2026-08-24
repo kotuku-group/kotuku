@@ -168,12 +168,13 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          struct_key(parameter_struct->Name) : 0;
       if (parameter_type IS TiriType::Array and parameter_array.storage IS AET::STRUCT and
           parameter_array.struct_def) constraint = struct_key(parameter_array.struct_def->Name);
-      child_state.signature_parameters.push_back(ProtoTypeEntry{
+      ProtoTypeEntry signature_entry{
          .constraint = constraint,
          .type = parameter_type,
-         .flags = proto_type_flags(not param.required, param.required, origin, strength),
-         .reserved = parameter_type IS TiriType::Array ? proto_array_member(parameter_array.storage) : uint16_t(0)
-      });
+         .flags = proto_type_flags(not param.required, param.required, origin, strength)
+      };
+      if (parameter_type IS TiriType::Array) set_proto_array_member(signature_entry, parameter_array.storage);
+      child_state.signature_parameters.push_back(signature_entry);
    }
 
    this->lex_state.var_add(param_count);
@@ -268,15 +269,16 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
             constraint = struct_key(array_element.struct_def->Name);
          }
-         child_state.signature_results[i] = ProtoTypeEntry{
+         ProtoTypeEntry signature_entry{
             .constraint = constraint,
             .type = type,
             .flags = proto_type_flags(not Payload.return_types.required[i], Payload.return_types.required[i],
                ProtoTypeOrigin::Declared,
                (type IS TiriType::Any or type IS TiriType::Unknown) ?
-                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked),
-            .reserved = type IS TiriType::Array ? proto_array_member(array_element.storage) : uint16_t(0)
+                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked)
          };
+         if (type IS TiriType::Array) set_proto_array_member(signature_entry, array_element.storage);
+         child_state.signature_results[i] = signature_entry;
       }
    }
    else if (Payload.return_types.is_inferred) {
@@ -294,12 +296,13 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          else if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
             constraint = struct_key(array_element.struct_def->Name);
          }
-         child_state.signature_results[i] = ProtoTypeEntry{
+         ProtoTypeEntry signature_entry{
             .constraint = constraint,
             .type = type,
-            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted),
-            .reserved = type IS TiriType::Array ? proto_array_member(array_element.storage) : uint16_t(0)
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted)
          };
+         if (type IS TiriType::Array) set_proto_array_member(signature_entry, array_element.storage);
+         child_state.signature_results[i] = signature_entry;
       }
    }
 

@@ -620,9 +620,9 @@ static void bcread_signature_entry(LexState *State, const uint8_t *&Cursor, cons
    Entry = ProtoTypeEntry{
       .constraint = constraint,
       .type = entry_type,
-      .flags = flags,
-      .reserved = uint16_t(reserved)
+      .flags = flags
    };
+   set_proto_array_member_encoded(Entry, uint16_t(reserved));
 }
 
 static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCReadSignature &Result)

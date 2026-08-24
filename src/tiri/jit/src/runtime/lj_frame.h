@@ -278,7 +278,7 @@ inline constexpr int CFRAME_RESUME = 1;
 inline constexpr int CFRAME_UNWIND_FF = 2;  //  Only used in unwinder.
 
 #define cframe_errfunc(cf)   (*(int32_t *)(((char *)(cf))+CFRAME_OFS_ERRF))
-#define cframe_nres(cf)      (*(int32_t *)(((char *)(cf))+CFRAME_OFS_NRES))
+#define cframe_result_metadata_raw(cf) (*(int32_t *)(((char *)(cf))+CFRAME_OFS_NRES))
 #define cframe_prev(cf)      (*(void **)(((char *)(cf))+CFRAME_OFS_PREV))
 #define cframe_multres(cf)   (*(uint32_t *)(((char *)(cf))+CFRAME_OFS_MULTRES))
 #define cframe_multres_n(cf) (cframe_multres((cf)) >> CFRAME_SHIFT_MULTRES)
@@ -290,3 +290,30 @@ inline constexpr int CFRAME_UNWIND_FF = 2;  //  Only used in unwinder.
 #define cframe_unwind_ff(cf) ((intptr_t)(cf) & CFRAME_UNWIND_FF)
 #define cframe_raw(cf)       ((void *)((intptr_t)(cf) & CFRAME_RAWMASK))
 #define cframe_Lpc(L)        cframe_pc(cframe_raw(L->cframe))
+
+// CFRAME_OFS_NRES is fixed by the VM ABI. Non-negative values describe call results; negative values encode a saved
+// TValue stack offset for C frames without a corresponding Lua frame.
+[[nodiscard]] inline int32_t cframe_result_metadata(void *CFrame) noexcept
+{
+   return cframe_result_metadata_raw(CFrame);
+}
+
+inline void set_cframe_result_metadata(void *CFrame, int32_t Metadata) noexcept
+{
+   cframe_result_metadata_raw(CFrame) = Metadata;
+}
+
+[[nodiscard]] inline bool cframe_has_stack_offset(void *CFrame) noexcept
+{
+   return cframe_result_metadata(CFrame) < 0;
+}
+
+[[nodiscard]] inline ptrdiff_t cframe_stack_offset(void *CFrame) noexcept
+{
+   return -ptrdiff_t(cframe_result_metadata(CFrame));
+}
+
+inline void set_cframe_stack_offset(void *CFrame, ptrdiff_t StackOffset) noexcept
+{
+   set_cframe_result_metadata(CFrame, -int32_t(StackOffset));
+}
