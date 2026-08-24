@@ -2743,6 +2743,10 @@ end
    assert(store_trace_found, 'Expected 15 direct stores in the declared all-scalar write trace')
    assert(load_trace_found, 'Expected 15 direct loads in the declared all-scalar read trace')
 
+   value.CharValue = 255
+   assert(traced_phase_five_scalar_read(value, 1) is 413.5,
+      'A hot char read should preserve values above the signed 8-bit range')
+
    value.Unsigned32 = 4294967295
    value.Unsigned64 = 18446744073709549568
    assert(traced_phase_five_unsigned32_read(value, 20) is 4294967295,

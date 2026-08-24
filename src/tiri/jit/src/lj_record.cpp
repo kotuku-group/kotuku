@@ -4332,7 +4332,6 @@ static TRef rec_struct_number_ref(jit_State *J, TRef ValueRef)
 static bool rec_struct_integer_signed(NativeStructType Type)
 {
    switch (Type) {
-      case NativeStructType::Char:
       case NativeStructType::Int8:
       case NativeStructType::Int16:
       case NativeStructType::Int32:
@@ -4446,7 +4445,7 @@ static TRef rec_struct_get(jit_State *J, RecordOps *ops)
       }
       else if (scalar_type IS NativeStructType::Char or scalar_type IS NativeStructType::Int8 or
             scalar_type IS NativeStructType::UInt8) {
-         IRType load_type = (scalar_type IS NativeStructType::UInt8) ? IRT_U8 : IRT_I8;
+         IRType load_type = scalar_type IS NativeStructType::Int8 ? IRT_I8 : IRT_U8;
          TRef result_ref = emitir(IRT(IR_XLOAD, load_type), addr_ref, 0);
          if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
          return result_ref;
