@@ -3,6 +3,7 @@
 #include "static_type_descriptor.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 #include <string>
 
@@ -119,7 +120,7 @@ StaticDescriptorCatalogue::StaticDescriptorCatalogue()
 
 StaticValueHandle StaticDescriptorCatalogue::add_value(const StaticValueDescriptor &Value)
 {
-   for (StaticValueHandle i = 1; i < this->values_.size(); ++i) {
+   for (StaticValueHandle i(1); i < this->values_.size(); ++i) {
       if (this->values_[i] IS Value) return i;
    }
    this->values_.push_back(Value);
@@ -146,32 +147,38 @@ StaticBindingID StaticDescriptorCatalogue::add_binding(const StaticBindingDescri
 
 const StaticValueDescriptor & StaticDescriptorCatalogue::value(StaticValueHandle Handle) const
 {
-   return this->values_[Handle < this->values_.size() ? Handle : 0];
+   if (Handle.raw() >= this->values_.size()) std::abort();
+   return this->values_[Handle.raw()];
 }
 
 const StaticResultSet & StaticDescriptorCatalogue::results(StaticResultSetHandle Handle) const
 {
-   return this->result_sets_[Handle < this->result_sets_.size() ? Handle : 0];
+   if (Handle.raw() >= this->result_sets_.size()) std::abort();
+   return this->result_sets_[Handle.raw()];
 }
 
 const StaticCallableDescriptor & StaticDescriptorCatalogue::callable(StaticCallableHandle Handle) const
 {
-   return this->callables_[Handle < this->callables_.size() ? Handle : 0];
+   if (Handle.raw() >= this->callables_.size()) std::abort();
+   return this->callables_[Handle.raw()];
 }
 
 StaticCallableDescriptor & StaticDescriptorCatalogue::callable(StaticCallableHandle Handle)
 {
-   return this->callables_[Handle < this->callables_.size() ? Handle : 0];
+   if (Handle.raw() >= this->callables_.size()) std::abort();
+   return this->callables_[Handle.raw()];
 }
 
 const StaticBindingDescriptor & StaticDescriptorCatalogue::binding(StaticBindingID ID) const
 {
-   return this->bindings_[ID < this->bindings_.size() ? ID : 0];
+   if (ID.raw() >= this->bindings_.size()) std::abort();
+   return this->bindings_[ID.raw()];
 }
 
 StaticBindingDescriptor & StaticDescriptorCatalogue::binding(StaticBindingID ID)
 {
-   return this->bindings_[ID < this->bindings_.size() ? ID : 0];
+   if (ID.raw() >= this->bindings_.size()) std::abort();
+   return this->bindings_[ID.raw()];
 }
 
 void StaticDescriptorCatalogue::clear_analysis()

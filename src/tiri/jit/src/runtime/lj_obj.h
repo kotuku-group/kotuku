@@ -288,7 +288,7 @@ public:
 
    // Sentinel values for special cases
    static constexpr int32_t NO_LINE = -1;       // No line information available
-   static constexpr int32_t BUILTIN = ~0;       // Builtin function (no source)
+   static constexpr int32_t BUILTIN = -2;       // Builtin function (no source)
 
    // Constructors
    constexpr BCLine() noexcept : m_value(0) {}
@@ -305,6 +305,7 @@ public:
 
    // Semantic queries
    [[nodiscard]] constexpr bool isValid() const noexcept { return m_value != NO_LINE and m_value != BUILTIN; }
+   [[nodiscard]] constexpr bool isNoLine() const noexcept { return m_value IS NO_LINE; }
    [[nodiscard]] constexpr bool isBuiltin() const noexcept { return m_value IS BUILTIN; }
 
    // Implicit conversion for backward compatibility with existing code that uses BCLine as int32_t.
@@ -321,6 +322,8 @@ public:
 private:
    int32_t m_value;
 };
+
+static_assert(BCLine::NO_LINE != BCLine::BUILTIN);
 
 // std::format support for BCLine (formats as its integer value)
 template<>
@@ -431,6 +434,19 @@ inline constexpr uint32_t LJ_TISTRUECOND = LJ_TFALSE;
 inline constexpr uint32_t LJ_TISPRI      = LJ_TTRUE;
 inline constexpr uint32_t LJ_TISGCV      = LJ_TSTR + 1;
 inline constexpr uint32_t LJ_TISTABUD    = LJ_TTAB;
+
+// C operands for ISTYPE/ISNUM.  The bytecode stores one more than the type-map index; the values beyond the ordinary
+// type range are coercion requests rather than names in lj_obj_itypename.
+enum class ISTypeOperand : uint8_t {
+   String = uint8_t(~LJ_TSTR + 1),
+   Integer = uint8_t(~LJ_TNUMX + 1),
+   Number = uint8_t(~LJ_TNUMX + 2)
+};
+
+[[nodiscard]] constexpr inline uint32_t istype_operand_for_tag(uint32_t Tag) noexcept { return ~Tag + 1; }
+[[nodiscard]] constexpr inline uint32_t istype_operand_value(ISTypeOperand Operand) noexcept {
+   return uint32_t(Operand);
+}
 
 // Type marker for slot holding a traversal index. Must be lightuserdata.
 inline constexpr uint32_t LJ_KEYINDEX = 0xfffe7fffu;
@@ -687,7 +703,7 @@ struct ProtoTypeEntry {
    uint32_t constraint = 0;
    TiriType type = TiriType::Unknown;
    uint8_t flags = 0;
-   uint16_t reserved = 0;
+   uint16_t array_member_type = 0;  // Optional AET encoded as value + 1; zero means no array member type.
 };
 
 struct ProtoSignature {
@@ -1156,6 +1172,24 @@ typedef struct GCtab {
    MRef     global_contract_cache; // Environment-owned decoded derivative of global_type_contracts.
 } GCtab;
 
+// `colo` is an ABI-stable byte: zero means never colocated, a positive value is the current colocated capacity, and a
+// negative value retains that capacity after the array has moved to a separate allocation.
+[[nodiscard]] constexpr inline bool table_array_is_colocated(const GCtab *Table) noexcept { return Table->colo > 0; }
+[[nodiscard]] constexpr inline bool table_had_colocated_array(const GCtab *Table) noexcept { return Table->colo < 0; }
+[[nodiscard]] constexpr inline bool table_array_is_separately_allocated(const GCtab *Table) noexcept {
+   return Table->colo <= 0;
+}
+[[nodiscard]] constexpr inline uint32_t table_colocated_capacity(const GCtab *Table) noexcept {
+   return uint32_t(uint8_t(Table->colo) & 0x7f);
+}
+inline constexpr void table_set_colocated_capacity(GCtab *Table, uint32_t Capacity) noexcept {
+   Table->colo = int8_t(Capacity);
+}
+inline constexpr void table_mark_array_separated(GCtab *Table) noexcept {
+   Table->colo = int8_t(uint8_t(Table->colo) | 0x80);
+}
+inline constexpr void table_set_never_colocated(GCtab *Table) noexcept { Table->colo = 0; }
+
 // The generated VM and the JIT backends encode these offsets directly, so any layout drift must fail the build
 // rather than silently corrupt table access.
 
@@ -1293,14 +1327,29 @@ enum class AET : uint8_t {
    return Type IS AET::CSTR or Type IS AET::STR_CPP or Type IS AET::STRUCT;
 }
 
-[[nodiscard]] constexpr inline uint16_t proto_array_member(AET Type) noexcept
+[[nodiscard]] constexpr inline uint16_t proto_array_member_encoded(AET Type) noexcept
 {
    return uint16_t(Type) + 1;
 }
 
 [[nodiscard]] constexpr inline AET proto_array_member(const ProtoTypeEntry &Entry) noexcept
 {
-   return Entry.reserved ? AET(Entry.reserved - 1) : AET::MAX;
+   return Entry.array_member_type ? AET(Entry.array_member_type - 1) : AET::MAX;
+}
+
+[[nodiscard]] constexpr inline uint16_t proto_array_member_encoded(const ProtoTypeEntry &Entry) noexcept
+{
+   return Entry.array_member_type;
+}
+
+constexpr inline void set_proto_array_member(ProtoTypeEntry &Entry, AET Type) noexcept
+{
+   Entry.array_member_type = Type IS AET::MAX ? 0 : proto_array_member_encoded(Type);
+}
+
+constexpr inline void set_proto_array_member_encoded(ProtoTypeEntry &Entry, uint16_t EncodedType) noexcept
+{
+   Entry.array_member_type = EncodedType;
 }
 
 // Array flags

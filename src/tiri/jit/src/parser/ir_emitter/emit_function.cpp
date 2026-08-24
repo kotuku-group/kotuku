@@ -168,12 +168,13 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          struct_key(parameter_struct->Name) : 0;
       if (parameter_type IS TiriType::Array and parameter_array.storage IS AET::STRUCT and
           parameter_array.struct_def) constraint = struct_key(parameter_array.struct_def->Name);
-      child_state.signature_parameters.push_back(ProtoTypeEntry{
+      ProtoTypeEntry signature_entry{
          .constraint = constraint,
          .type = parameter_type,
-         .flags = proto_type_flags(not param.required, param.required, origin, strength),
-         .reserved = parameter_type IS TiriType::Array ? proto_array_member(parameter_array.storage) : uint16_t(0)
-      });
+         .flags = proto_type_flags(not param.required, param.required, origin, strength)
+      };
+      if (parameter_type IS TiriType::Array) set_proto_array_member(signature_entry, parameter_array.storage);
+      child_state.signature_parameters.push_back(signature_entry);
    }
 
    this->lex_state.var_add(param_count);
@@ -268,15 +269,16 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
             constraint = struct_key(array_element.struct_def->Name);
          }
-         child_state.signature_results[i] = ProtoTypeEntry{
+         ProtoTypeEntry signature_entry{
             .constraint = constraint,
             .type = type,
             .flags = proto_type_flags(not Payload.return_types.required[i], Payload.return_types.required[i],
                ProtoTypeOrigin::Declared,
                (type IS TiriType::Any or type IS TiriType::Unknown) ?
-                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked),
-            .reserved = type IS TiriType::Array ? proto_array_member(array_element.storage) : uint16_t(0)
+                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked)
          };
+         if (type IS TiriType::Array) set_proto_array_member(signature_entry, array_element.storage);
+         child_state.signature_results[i] = signature_entry;
       }
    }
    else if (Payload.return_types.is_inferred) {
@@ -294,12 +296,13 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          else if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
             constraint = struct_key(array_element.struct_def->Name);
          }
-         child_state.signature_results[i] = ProtoTypeEntry{
+         ProtoTypeEntry signature_entry{
             .constraint = constraint,
             .type = type,
-            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted),
-            .reserved = type IS TiriType::Array ? proto_array_member(array_element.storage) : uint16_t(0)
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted)
          };
+         if (type IS TiriType::Array) set_proto_array_member(signature_entry, array_element.storage);
+         child_state.signature_results[i] = signature_entry;
       }
    }
 
@@ -448,7 +451,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             }
          }
          // Allow Unscoped for deferred local creation in prepare_assignment_targets
-         if (not vkisvar(value.k) and value.k != ExpKind::Unscoped) return this->unsupported_expr(Expr.kind, Expr.span);
+         if (not expkind_is_variable_like(value.k)) return this->unsupported_expr(Expr.kind, Expr.span);
          return ParserResult<ExpDesc>::success(value);
       }
 
@@ -486,13 +489,13 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          if (proved_object) {
             table.result_type = TiriType::Object;
             // Only use IndexedObject for string keys (member access always uses string keys)
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
             apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
@@ -543,19 +546,19 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
          if (proved_array) {
             // Arrays don't support string keys, so only change kind for numeric indexing
-            if (int32_t(table.u.s.aux) >= 0) {
+            if (IndexOperand(table.u.s.aux).is_numeric()) {
                table.k = ExpKind::IndexedArray;
             }
          }
          else if (proved_object) {
             // Objects use string field access - only change kind for string const keys
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
          }
@@ -601,13 +604,13 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
          if (proved_object) {
             table.result_type = TiriType::Object;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
             apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
@@ -658,18 +661,18 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          bool proved_struct = can_use_static_receiver(
             this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
          if (proved_array) {
-            if (int32_t(table.u.s.aux) >= 0) {
+            if (IndexOperand(table.u.s.aux).is_numeric()) {
                table.k = ExpKind::IndexedArray;
             }
          }
          else if (proved_object) {
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
          }

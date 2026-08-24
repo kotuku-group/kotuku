@@ -812,13 +812,12 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          GCstr *type_str = start.payload().as_string();
          std::string_view element_name(strdata(type_str), type_str->len);
          if (element_name.starts_with("array<")) type_str = this->ctx.lex().keepstr("array");
-         int64_t specified_size = this->ctx.lex().array_typed_size;
+         ArrayTypedSize specified_size = this->ctx.lex().array_typed_size;
          this->ctx.tokens().advance();
 
-         // If size is -2, the lexer found a comma followed by a non-literal expression
-         // Parse a unary expression (stops before binary operators like '>') and expect '>'
+         // An expression size remains in the token stream for the parser to consume.
          ExprNodePtr size_expr = nullptr;
-         if (specified_size IS -2) {
+         if (specified_size.is_expression()) {
             auto expr_result = this->parse_unary();
             if (not expr_result.ok()) return expr_result;
             size_expr = std::move(expr_result.value_ref());
@@ -865,7 +864,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
             // For literal sizes, we only wrap if size > values count
             // For dynamic expressions, we always wrap since we can't know at parse time
 
-            bool needs_resize = size_expr != nullptr or (specified_size > 0 and size_t(specified_size) > init_values.size());
+            bool needs_resize = size_expr != nullptr or (specified_size.is_literal() and specified_size.literal > 0 and
+               size_t(specified_size.literal) > init_values.size());
 
             if (needs_resize) {
                // Generate: (function() local _arr = array.of(...); array.resize(_arr, size); return _arr end)()
@@ -893,7 +893,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                // Use size_expr if available, otherwise use literal
 
                if (size_expr) resize_args.push_back(std::move(size_expr));
-               else resize_args.push_back(make_literal_expr(span, LiteralValue::number(double(specified_size))));
+               else resize_args.push_back(
+                  make_literal_expr(span, LiteralValue::number(double(specified_size.literal))));
 
                ExprNodePtr resize_call = make_builtin_call(
                   this->ctx, span, FastFunc::array_resize, std::move(resize_args), TiriType::Array);
@@ -932,7 +933,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
             ExprNodeList args;
             if (size_expr) args.push_back(std::move(size_expr));
-            else args.push_back(make_literal_expr(span, LiteralValue::number((specified_size >= 0) ? double(specified_size) : 0.0)));
+            else args.push_back(make_literal_expr(span, LiteralValue::number(
+               specified_size.is_literal() ? double(specified_size.literal) : 0.0)));
 
             args.push_back(make_literal_expr(span, LiteralValue::string(type_str)));
 

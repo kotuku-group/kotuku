@@ -174,7 +174,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
 
    if (kind IS TokenKind::ArrayTyped) {
       this->ctx.tokens().advance();
-      if (this->ctx.lex().array_typed_size != -1) {
+      if (not this->ctx.lex().array_typed_size.is_absent()) {
          return this->fail<Token>(ParserErrorCode::UnexpectedToken, type_token,
             "Array type annotations cannot declare a size");
       }

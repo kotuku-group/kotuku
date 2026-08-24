@@ -693,7 +693,16 @@ static void snapshot_return_regs(FuncState* fs, BCIns* ins)
 // Exclusively used by ir_emitter for assignment statements, local declarations, and for loops.
 // TODO: May as well be a regular function instead of a LexState method.
 
-static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG Count);
+// The CALL B operand uses zero for MULTRES and otherwise stores the fixed result count plus one.
+
+enum class CallResultMode : BCREG {
+   AllResults = 0,
+   NoResults = 1,
+   OneResult = 2
+};
+
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG EncodedCount);
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, CallResultMode Mode);
 
 void LexState::assign_adjust(BCREG nvars, BCREG nexps, ExpDesc *Expr)
 {
@@ -850,13 +859,6 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
 }
 
 //********************************************************************************************************************
-// Check if an auxiliary value represents a valid register key (used for indexed expressions).
-
-[[nodiscard]] static bool is_register_key(uint32_t aux)
-{
-   return (int32_t(aux) >= 0) and (aux <= BCMAX_C);
-}
-
 //********************************************************************************************************************
 // Convert an AST node kind enumeration to its human-readable string representation for debugging and logging.
 
@@ -972,8 +974,8 @@ static void release_indexed_original(FuncState &func_state, const ExpDesc &origi
 {
    if (original.k IS ExpKind::Indexed) {
       RegisterAllocator allocator(&func_state);
-      uint32_t orig_aux = original.u.s.aux;
-      if (is_register_key(orig_aux)) allocator.release_register(BCReg(orig_aux));
+      IndexOperand original_key(original.u.s.aux);
+      if (original_key.is_register()) allocator.release_register(BCReg(original_key.register_index()));
       allocator.release_register(BCReg(original.u.s.info));
    }
 }
@@ -985,28 +987,34 @@ static void release_indexed_original(FuncState &func_state, const ExpDesc &origi
    return &func_state->bcbase[expression->u.s.info].ins;
 }
 
-static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG Count)
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG EncodedCount)
 {
-   setbc_b(ir_bcptr(State, &Expression), Count);
+   setbc_b(ir_bcptr(State, &Expression), EncodedCount);
    if (Expression.alternate_call != NO_JMP) {
-      setbc_b(&State->bcbase[Expression.alternate_call].ins, Count);
+      setbc_b(&State->bcbase[Expression.alternate_call].ins, EncodedCount);
    }
    auto widen_nil_init = [&](BCPOS Position) {
-      if (Position IS NO_JMP or Count <= 1) return;
+      if (Position IS NO_JMP or EncodedCount <= BCREG(CallResultMode::NoResults)) return;
       BCIns *nil_init = &State->bcbase[Position].ins;
       BCREG first = bc_a(*nil_init);
       lj_assertX(bc_op(*nil_init) IS BC_KPRI or bc_op(*nil_init) IS BC_KNIL,
          "safe-call nil path does not start with a nil initialiser");
-      BCREG required_top = first + Count - 1;
+      BCREG result_count = EncodedCount - BCREG(CallResultMode::NoResults);
+      BCREG required_top = first + result_count;
       if (State->freereg < required_top) {
          RegisterAllocator allocator(State);
          allocator.bump(BCReg(required_top - State->freereg));
       }
-      *nil_init = Count IS 2 ? BCINS_AD(BC_KPRI, first, ExpKind::Nil) :
-         BCINS_AD(BC_KNIL, first, first + Count - 2);
+      *nil_init = EncodedCount IS BCREG(CallResultMode::OneResult) ? BCINS_AD(BC_KPRI, first, ExpKind::Nil) :
+         BCINS_AD(BC_KNIL, first, first + result_count - 1);
    };
    widen_nil_init(Expression.safe_nil_init);
    widen_nil_init(Expression.alternate_safe_nil_init);
+}
+
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, CallResultMode Mode)
+{
+   set_call_result_count(State, Expression, BCREG(Mode));
 }
 
 struct FalseyJumpOptions {
@@ -1759,7 +1767,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          else if (safe_call) {
             // An unconstrained nil short-circuit has no dynamic MULTRES value, so consolidate it to one result.
             // Fixed return declarations are handled above and widen the nil path to the declared result count.
-            set_call_result_count(&this->func_state, last, 2);
+            set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
             ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
          else if (not this->func_state.runtime_scopes.empty()) {
@@ -1768,38 +1776,38 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             // TRYLEAVE has popped the try frame - the exception escapes.  By using CALL + RET, the exception occurs
             // while still inside the try block. This must be checked before any tail-call optimisation paths.
 
-            set_call_result_count(&this->func_state, last, 0);  // Request all results (MULTRES)
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_return_contract) {
             // A return contract must observe dynamic results inside this function, so tail-call conversion is unsafe.
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_post_call_control_flow and Payload.values.back()->is_checked) {
             // A checked call retains its complete result set after promoting a failing first result. The inserted
             // check instructions prevent tail-call conversion, but do not consolidate the successful results.
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_post_call_control_flow) {
             // Calls with post-call control flow cannot be converted to CALLT: the conversion removes the final emitted
             // instruction rather than the earlier CALL. Such expressions represent one consolidated value.
-            set_call_result_count(&this->func_state, last, 2);
+            set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
             ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
          else if (call_op IS BC_VARG) {
             // Variadic return: return ...
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_user_cleanup) {
             // The callee must execute before user-visible cleanup.  Preserve all results and MULTRES across handlers.
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else {
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
       }
@@ -1823,11 +1831,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                   BCINS_AD(BC_RET0, 0, 1);
             }
             else if (is_safe_call_expression(*Payload.values.back())) {
-               set_call_result_count(&this->func_state, last, 2);
+               set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
                ins = BCINS_AD(BC_RET, return_base, count + 1);
             }
             else {
-               set_call_result_count(&this->func_state, last, 0);
+               set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
                ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
             }
          }
@@ -2755,7 +2763,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
       ExpDesc value = collection.value_ref();
       if (value.k IS ExpKind::Call) {
-         set_call_result_count(fs, value, 0);
+         set_call_result_count(fs, value, CallResultMode::AllResults);
          bcemit_INS(fs, BCINS_ABC(BC_CALLM, base - BCREG(3), 4,
             value.u.s.aux - (base - BCREG(3)) - BCREG(2)));
       }
@@ -3235,9 +3243,9 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
       }
       // Identifier lookup can recover a descriptor from VarInfo or an upvalue even when binding analysis has no
       // handle.  For compound expressions, an unclaimed handle describes an operand and must not leak to the result.
-      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_value = 0;
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_value = {};
       if (expr.static_results) emitted.static_results = expr.static_results;
-      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_results = 0;
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_results = {};
    }
    return result;
 }
@@ -4163,7 +4171,8 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
       // Only use IndexedObject for string keys (member access always uses string keys)
 
       bool is_intrinsic_method = is_intrinsic_object_method(Payload.member.symbol);
-      if (not is_intrinsic_method and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (not is_intrinsic_method and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedObject;
       }
 
@@ -4191,7 +4200,9 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    }
    else if (proved_struct) {
       table.result_type = TiriType::Struct;
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
+      if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+         table.k = ExpKind::IndexedStruct;
+      }
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
    }
    else {
@@ -4278,23 +4289,22 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
       this->ctx.descriptors(), table.static_value, TiriType::Struct, true);
 
    if (proved_array) {
-      // Arrays don't support string keys, so only change kind for numeric indexing
-      // (aux >= 0 means numeric index, aux < 0 means string const key)
-      if (int32_t(table.u.s.aux) >= 0) {
+      // Arrays support register and byte-constant keys, but not string constants.
+      if (IndexOperand(table.u.s.aux).is_numeric()) {
          table.k = ExpKind::IndexedArray;
       }
    }
    // A proved object receiver with a string key uses object-specific bytecodes.
    else if (proved_object) {
-      // Objects use string field access - only change kind for string const keys
-      // (aux < 0 means string const key)
+      // Objects use string field access only for string constant keys.
       GCstr *index_name = string_literal_symbol(*Payload.index);
-      if (not is_intrinsic_object_method(index_name) and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (not is_intrinsic_object_method(index_name) and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedObject;
       }
    }
    else if (proved_struct) {
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedStruct;
       }
    }
@@ -4383,7 +4393,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
       // can downgrade specialised expression kinds.
 
       if (not Payload.is_call_target and not is_intrinsic_method and table.k IS ExpKind::Indexed and
-          int32_t(table.u.s.aux) < 0) {
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedObject;
       }
 
@@ -4409,7 +4419,8 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    }
    else if (proved_struct) {
       table.result_type = TiriType::Struct;
-      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedStruct;
       }
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
@@ -4463,7 +4474,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    // ordinary table bytecodes. Native arrays and unresolved receivers retain ASGETV/ASGETB so out-of-bounds access
    // returns nil while non-array runtime values fall back to generic indexing.
 
-   bool key_may_be_numeric = int32_t(table.u.s.aux) >= 0 and not proved_string_key;
+   bool key_may_be_numeric = IndexOperand(table.u.s.aux).is_numeric() and not proved_string_key;
    if (key_may_be_numeric and not proved_table) table.k = ExpKind::SafeIndexedArray;
 
    // Materialise to a separate register so the receiver remains available for the lookup.

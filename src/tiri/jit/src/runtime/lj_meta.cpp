@@ -872,13 +872,12 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
    L->top = curr_topL(L);
    ra++;
    tp--;
-   // tp range is 0 to ~LJ_TNUMX (14) for lj_obj_itypename array access; and ~LJ_TNUMX + 1 (15) for number coercion
-   // (handled specially, doesn't access array)
+   // `tp` is the zero-based type-map index.  ISTypeOperand::Number is deliberately one past the ordinary range.
    lj_assertL(tp <= uint32_t(~LJ_TNUMX) + 1, "tp out of range for ISTYPE: %u (max %u)", tp, uint32_t(~LJ_TNUMX) + 1);
    lj_assertL(LJ_DUALNUM or tp != ~LJ_TNUMX, "bad type for ISTYPE");
-   if (LJ_DUALNUM and tp IS ~LJ_TNUMX) lj_lib_checkint(L, ra);
-   else if (tp IS ~LJ_TNUMX + 1) lj_lib_checknum(L, ra);
-   else if (tp IS ~LJ_TSTR) lj_lib_checkstr(L, ra);
+   if (LJ_DUALNUM and tp + 1 IS istype_operand_value(ISTypeOperand::Integer)) lj_lib_checkint(L, ra);
+   else if (tp + 1 IS istype_operand_value(ISTypeOperand::Number)) lj_lib_checknum(L, ra);
+   else if (tp + 1 IS istype_operand_value(ISTypeOperand::String)) lj_lib_checkstr(L, ra);
    else if (tp IS ~LJ_TTRUE) {
       // Boolean check: accept both true and false
       // LJ_TFALSE = ~1, LJ_TTRUE = ~2

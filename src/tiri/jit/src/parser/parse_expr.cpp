@@ -22,7 +22,7 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
       if (tvisint(e->num_tv())) {
          int32_t k = intV(e->num_tv());
          if (checku8(k)) {
-            t->u.s.aux = BCMAX_C + 1 + uint32_t(k);  // 256..511: const byte key
+            t->u.s.aux = IndexOperand::byte_constant(BCREG(k)).raw();
             return;
          }
       }
@@ -30,7 +30,7 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
       lua_Number n = e->number_value();
       int32_t k = lj_num2int(n);
       if (checku8(k) and n IS lua_Number(k)) {
-         t->u.s.aux = BCMAX_C + 1 + uint32_t(k);  // 256..511: const byte key
+         t->u.s.aux = IndexOperand::byte_constant(BCREG(k)).raw();
          return;
       }
 #endif
@@ -38,14 +38,14 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
    else if (e->is_str_constant()) {
       BCREG idx = const_str(State, e);
       if (idx <= BCMAX_C) {
-         t->u.s.aux = ~idx;  // -256..-1: const string key
+         t->u.s.aux = IndexOperand::string_constant(idx).raw();
          return;
       }
    }
 
    RegisterAllocator allocator(State);
    ExpressionValue value(State, *e);
-   t->u.s.aux = value.discharge_to_any_reg(allocator);  // 0..255: register
+   t->u.s.aux = IndexOperand::register_index(value.discharge_to_any_reg(allocator)).raw();
 }
 
 //********************************************************************************************************************
@@ -54,7 +54,7 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
 
 static void expr_kvalue(FuncState *fs, TValue *v, ExpDesc *e)
 {
-   if (e->k <= ExpKind::True) setpriV(v, ~uint64_t(e->k));
+   if (expkind_is_primitive(e->k)) setpriV(v, ~uint64_t(e->k));
    else if (e->k IS ExpKind::Str) setgcVraw(v, obj2gco(e->u.sval), LJ_TSTR);
    else {
       fs_check_assert(fs,tvisnumber(e->num_tv()), "bad number constant");

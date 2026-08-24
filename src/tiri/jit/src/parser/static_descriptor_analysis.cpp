@@ -72,7 +72,7 @@ private:
             if (entry->first IS Name) return entry->second;
          }
       }
-      return 0;
+      return {};
    }
 
    [[nodiscard]] bool is_declared_global(GCstr *Name) const
@@ -499,7 +499,7 @@ private:
       return results;
    }
 
-   StaticCallableHandle function_callable(const FunctionExprPayload &Function, StaticBindingID Binding = 0)
+   StaticCallableHandle function_callable(const FunctionExprPayload &Function, StaticBindingID Binding = {})
    {
       if (Function.callable) return Function.callable;
       auto &mutable_function = const_cast<FunctionExprPayload &>(Function);
@@ -515,13 +515,13 @@ private:
 
    StaticCallableHandle resolve_binding_callable(StaticBindingID ID)
    {
-      if (not ID) return 0;
+      if (not ID) return {};
       auto &binding = this->catalogue_.binding(ID);
       if (binding.callable) return binding.callable;
-      if (not binding.immutable or binding.resolving) return 0;
+      if (not binding.immutable or binding.resolving) return {};
 
       binding.resolving = true;
-      StaticCallableHandle callable = 0;
+      StaticCallableHandle callable{};
       if (binding.function) callable = this->function_callable(*binding.function, ID);
       else if (binding.initialiser) {
          const ExprNode &initialiser = *binding.initialiser;
@@ -632,14 +632,14 @@ private:
    [[nodiscard]] StaticResultSetHandle native_prototype_results(CallExprPayload &Call)
    {
       const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
-      if (not direct or not direct->callable) return 0;
+      if (not direct or not direct->callable) return {};
 
       const fprototype *prototype = nullptr;
       if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
          const auto &reference = std::get<NameRef>(direct->callable->data);
-         if (reference.binding_id or not reference.identifier.symbol) return 0;
+         if (reference.binding_id or not reference.identifier.symbol) return {};
          cTValue *value = this->protected_global_value(reference.identifier.symbol);
-         if (not value or not tvisfunc(value) or isluafunc(funcV(value))) return 0;
+         if (not value or not tvisfunc(value) or isluafunc(funcV(value))) return {};
          prototype = get_func_prototype_by_hash(reference.identifier.symbol->hash);
       }
       else if (direct->callable->kind IS AstNodeKind::MemberExpr or
@@ -656,15 +656,15 @@ private:
             receiver = payload.table.get();
             member = payload.member.symbol;
          }
-         if (not receiver or not member) return 0;
+         if (not receiver or not member) return {};
          auto interface = this->native_interface(*receiver);
-         if (not interface) return 0;
+         if (not interface) return {};
          cTValue *value = lj_tab_getstr(interface->table, member);
-         if (not value or not tvisfunc(value) or isluafunc(funcV(value))) return 0;
+         if (not value or not tvisfunc(value) or isluafunc(funcV(value))) return {};
          prototype = get_prototype(interface->name, std::string_view(strdata(member), member->len));
       }
 
-      if (not prototype) return 0;
+      if (not prototype) return {};
       StaticResultSet results = describe_native_prototype_results(prototype);
       if (results.stored_count > 0) {
          if (results.values[0].primary IS TiriType::Object and Call.object_class_id != CLASSID::NIL) {
@@ -691,10 +691,10 @@ private:
 
          if (direct->callable->kind IS AstNodeKind::ModuleFunctionExpr) {
             const auto &payload = std::get<ModuleFunctionExprPayload>(direct->callable->data);
-            if (not payload.module or not payload.function.symbol) return 0;
+            if (not payload.module or not payload.function.symbol) return {};
             const FunctionField *fields = static_module_function(payload.module,
                std::string_view(strdata(payload.function.symbol), payload.function.symbol->len));
-            if (not fields) return 0;
+            if (not fields) return {};
             return this->catalogue_.add_results(
                describe_module_call_results(fields, &this->context_.lua()));
          }
@@ -710,13 +710,13 @@ private:
             member = payload.member.symbol;
          }
       }
-      if (not receiver or not member) return 0;
+      if (not receiver or not member) return {};
       StaticValueDescriptor base = this->descriptor_of(*receiver);
       if (base.primary IS TiriType::Object and base.proved()) {
          std::string_view exposed_name(strdata(member), member->len);
          if (member->hash IS kt::strhash("new")) {
             const fprototype *prototype = get_prototype("obj", exposed_name);
-            if (not prototype) return 0;
+            if (not prototype) return {};
 
             StaticResultSet results = describe_native_prototype_results(prototype);
             if (results.stored_count > 0) {
@@ -727,34 +727,34 @@ private:
          }
 
          ObjectCallMemberKind kind = classify_object_call_member(exposed_name);
-         if (kind IS ObjectCallMemberKind::None) return 0;
+         if (kind IS ObjectCallMemberKind::None) return {};
          std::string_view native_name = exposed_name.substr(2);
          const FunctionField *fields = nullptr;
 
          if (kind IS ObjectCallMemberKind::Action) {
-            if (not glActions) return 0;
+            if (not glActions) return {};
             for (size_t i = 1; glActions[i].Name; ++i) {
                if (std::string_view(glActions[i].Name) IS native_name) {
                   fields = glActions[i].Args;
                   return this->catalogue_.add_results(describe_object_call_results(fields));
                }
             }
-            return 0;
+            return {};
          }
 
-         if (base.object_class_id IS CLASSID::NIL) return 0;
+         if (base.object_class_id IS CLASSID::NIL) return {};
          auto *meta_class = FindClass(base.object_class_id);
-         if (not meta_class) return 0;
+         if (not meta_class) return {};
 
          std::span<MethodEntry> methods;
-         if (meta_class->getMethods(methods) != ERR::Okay) return 0;
+         if (meta_class->getMethods(methods) != ERR::Okay) return {};
          for (size_t i = 1; i < methods.size(); ++i) {
             if (methods[i].Name and std::string_view(methods[i].Name) IS native_name) {
                fields = methods[i].Args;
                return this->catalogue_.add_results(describe_object_call_results(fields));
             }
          }
-         return 0;
+         return {};
       }
 
       if (base.primary IS TiriType::Str and base.proved()) {
@@ -763,22 +763,22 @@ private:
          if (prototype) {
             return this->catalogue_.add_results(describe_native_prototype_results(prototype));
          }
-         return 0;
+         return {};
       }
 
       if (base.primary IS TiriType::Array and base.proved()) {
          const fprototype *prototype = get_prototype(
             "array", std::string_view(strdata(member), member->len));
-         if (not prototype) return 0;
+         if (not prototype) return {};
 
          StaticResultSet results = describe_native_prototype_results(prototype);
          if (results.stored_count > 0 and results.values[0].primary != TiriType::Array) {
             return this->catalogue_.add_results(results);
          }
-         return 0;
+         return {};
       }
 
-      return 0;
+      return {};
    }
 
    void report_method_argument(SourceSpan Span, std::string Message)
@@ -1481,7 +1481,7 @@ private:
       this->function_callable(function);
       this->propagate_function(function, ContextParameters);
       Expression.static_value = this->add_value(value);
-      Expression.static_results = 0;
+      Expression.static_results = {};
    }
 
    // Resolve an expression to the table constructor that produced it, following only aliases whose allocation is
@@ -1660,7 +1660,7 @@ private:
       }
 
       StaticValueDescriptor value;
-      StaticResultSetHandle results = 0;
+      StaticResultSetHandle results{};
       switch (Expression.kind) {
          case AstNodeKind::CurrentContextExpr:
             value.primary = TiriType::Table;
@@ -1946,7 +1946,7 @@ private:
       if (Name.type IS TiriType::Any) value.contextuality = StaticContextuality::Unknown;
 
       if (value.module and not binding.immutable) value.module = nullptr;
-      if (not binding.immutable) binding.callable = 0;
+      if (not binding.immutable) binding.callable = {};
       binding.value = this->add_value(value);
       Name.static_value = binding.value;
    }
@@ -1962,7 +1962,7 @@ private:
       StaticValueDescriptor joined = previous.primary IS TiriType::Unknown and not previous.array_element.known ?
          Assigned : join_static_descriptors(previous, Assigned);
       binding.value = this->add_value(joined);
-      binding.callable = 0;
+      binding.callable = {};
       reference.identifier.static_value = binding.value;
       Target.static_value = binding.value;
 
@@ -2175,7 +2175,7 @@ private:
                      auto &binding = this->catalogue_.binding(reference.binding_id);
                      if (assigned.module and not binding.immutable) assigned.module = nullptr;
                      binding.value = this->add_value(assigned);
-                     binding.callable = 0;
+                     binding.callable = {};
                      reference.identifier.static_value = binding.value;
                      payload.targets[i]->static_value = binding.value;
                   }

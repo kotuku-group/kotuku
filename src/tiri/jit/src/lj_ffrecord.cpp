@@ -10,8 +10,8 @@
 // types. Some simplifications are allowed if the interpreter throws instead. But even if recording is aborted,
 // the generated IR must be consistent (no zero-refs).
 //
-// The number of results in rd->nres is set to 1. Handlers that return a different number of results need to
-// override it. A negative value prevents return processing (e.g. for pending calls).
+// The result count defaults to 1. Handlers that return a different number of results need to override it. Handlers
+// that stop recording or leave a call pending set the recording disposition instead.
 //
 // Results need to be stored starting at J->base[0]. Return processing moves them to the right slots later.
 //
@@ -159,14 +159,14 @@ static void recff_nyi(jit_State* J, RecordFFData* rd)
                   break;  //  Don't stitch across special builtins.
                default:
                   recff_stitch(J);  //  Use trace stitching.
-                  rd->nres = -1;
+                  rd->disposition = RecordFFDisposition::Stopped;
                   return;
             }
          }
       }
       // Otherwise stop trace and return to interpreter.
       lj_record_stop(J, TraceLink::RETURN, 0);
-      rd->nres = -1;
+      rd->disposition = RecordFFDisposition::Stopped;
    }
 }
 
@@ -231,7 +231,7 @@ static TRef recff_ir_call_fixed(jit_State* J, IRCallID CallId, TRef Arg1, TRef A
 static void recff_assert(jit_State* J, RecordFFData* rd)
 {
    // Arguments already specialized. The interpreter throws for nil/false.
-   rd->nres = 0;  // Returns no values (void).
+   rd->result_count = 0;  // Returns no values (void).
 }
 
 //********************************************************************************************************************
@@ -498,7 +498,7 @@ static void recff___tiri_iter_prepare(jit_State *J, RecordFFData *Data)
    J->base[0] = lj_ir_kfunc(J, funcV(next));
    J->base[1] = target;
    J->base[2] = TREF_NIL;
-   Data->nres = 3;
+   Data->result_count = 3;
 }
 
 //********************************************************************************************************************
@@ -571,7 +571,7 @@ static void recff___filter(jit_State* J, RecordFFData* rd)
       }
    }
 
-   rd->nres = out_idx;
+   rd->result_count = out_idx;
 }
 
 //********************************************************************************************************************
@@ -642,7 +642,7 @@ static int recff_metacall(jit_State* J, RecordFFData* rd, MMS mm)
       copyTV(J->L, &rd->argv[0], &argv0);
       if (errcode)
          lj_err_throw(J->L, errcode);  //  Propagate errors.
-      rd->nres = -1;  //  Pending call.
+      rd->disposition = RecordFFDisposition::PendingCall;
       return 1;  //  Tailcalled to metamethod.
    }
    return 0;
@@ -750,7 +750,7 @@ static void recff_array_clear(jit_State* J, RecordFFData* rd)
    if (tref_isarray(array_ref)) {
       recff_ir_call_fixed(J, IRCALL_lj_arr_clear, array_ref, TREF_NIL, TREF_NIL, TREF_NIL);
       J->base[0] = 0;
-      rd->nres = 0;
+      rd->result_count = 0;
    }  // else: Interpreter will throw.
 }
 
@@ -976,7 +976,7 @@ static void recff_ipairs_aux(jit_State* J, RecordFFData* rd)
       ix.key = lj_opt_narrow_toint(J, J->base[1]);
       J->base[0] = ix.key = emitir(IRTI(IR_ADD), ix.key, lj_ir_kint(J, 1));
       J->base[1] = lj_record_idx(J, &ix);
-      rd->nres = tref_isnil(J->base[1]) ? 0 : 2;
+      rd->result_count = tref_isnil(J->base[1]) ? 0 : 2;
    }
    else if (tref_isarray(ix.tab)) {
       if (not tvisnumber(&rd->argv[1])) lj_trace_err(J, LJ_TRERR_BADTYPE);  //  No support for string coercion.
@@ -992,7 +992,7 @@ static void recff_ipairs_aux(jit_State* J, RecordFFData* rd)
 
       if (idx_int < 0 or MSize(idx_int) >= arr->len) {
          emitir(IRTGI(IR_UGE), idx_ref, len_ref);
-         rd->nres = 0;
+         rd->result_count = 0;
          return;
       }
 
@@ -1000,7 +1000,7 @@ static void recff_ipairs_aux(jit_State* J, RecordFFData* rd)
       J->base[0] = idx_ref;
 
       J->base[1] = lj_record_array_iter_load(J, ix.tab, idx_ref, arr, idx_int);
-      rd->nres = 2;
+      rd->result_count = 2;
    }  // else: Interpreter will throw.
 }
 
@@ -1054,7 +1054,7 @@ static void recff_range_iterator_next(jit_State *J, RecordFFData *rd)
    bool in_bounds = runtime_ordinal < numberVnum(runtime_count_value);
    emitir(IRTG(in_bounds ? IR_LT : IR_GE, IRT_NUM), ordinal, count);
    if (not in_bounds) {
-      rd->nres = 0;
+      rd->result_count = 0;
       return;
    }
 
@@ -1070,7 +1070,7 @@ static void recff_range_iterator_next(jit_State *J, RecordFFData *rd)
       result = lj_ir_call(J, IRCALL_lj_range_value, ordinal, start, step);
    }
    J->base[0] = result;
-   rd->nres = 1;
+   rd->result_count = 1;
 }
 
 //********************************************************************************************************************
@@ -1083,13 +1083,13 @@ static void recff_xpairs(jit_State* J, RecordFFData* rd)
          J->base[0] = lj_ir_kfunc(J, funcV(&J->fn->c.upvalue[0]));
          J->base[1] = tr;
          J->base[2] = rd->data ? lj_ir_kint(J, -1) : TREF_NIL;  // 0-based: ipairs starts at -1
-         rd->nres = 3;
+         rd->result_count = 3;
       }
       else if (tref_isarray(tr)) {
          J->base[0] = lj_ir_kfunc(J, funcV(&J->fn->c.upvalue[0]));
          J->base[1] = tr;
          J->base[2] = rd->data ? lj_ir_kint(J, -1) : TREF_NIL;  // 0-based: ipairs starts at -1
-         rd->nres = 3;
+         rd->result_count = 3;
       }  // else: Interpreter will throw.
    }
 }
@@ -1122,7 +1122,7 @@ static void recff_next(jit_State* J, RecordFFData* rd)
       ix.idxchain = (J->framedepth and frame_islua(J->L->base - 1) and
          bc_b(frame_pc(J->L->base - 1)[-1]) - 1 < 2);
       ix.mobj = 0;  //  We don't need the next index.
-      rd->nres = lj_record_next(J, &ix);
+      rd->result_count = lj_record_next(J, &ix);
       J->base[0] = ix.key;
       J->base[1] = ix.val;
    }
@@ -1166,7 +1166,7 @@ static void recff_next(jit_State* J, RecordFFData* rd)
       if (idx_int < 0 or MSize(idx_int) >= arr->len) {
          emitir(IRTGI(IR_UGE), idx_ref, len_ref);
          J->base[0] = TREF_NIL;
-         rd->nres = 1;
+         rd->result_count = 1;
          return;
       }
 
@@ -1174,7 +1174,7 @@ static void recff_next(jit_State* J, RecordFFData* rd)
       J->base[0] = idx_ref;
 
       J->base[1] = lj_record_array_iter_load(J, tab, idx_ref, arr, idx_int);
-      rd->nres = 2;
+      rd->result_count = 2;
    }  // else: Interpreter will throw.
 #endif
 }
@@ -1519,12 +1519,12 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
          trend = lj_opt_narrow_toint(J, J->base[2]);
          end = argv2int(J, &rd->argv[2]);
          if (end IS 0) {
-            rd->nres = 0;
+            rd->result_count = 0;
             return;
          }
          if (end IS INT32_MIN) {
             emitir(IRTGI(IR_EQ), trend, lj_ir_kint(J, INT32_MIN));
-            rd->nres = 0;
+            rd->result_count = 0;
             return;
          }
          end--;
@@ -1577,7 +1577,7 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
          emitir(IRTGI(IR_EQ), trslen, lj_ir_kint(J, (int32_t)count));
          if (J->baseslot + count > LJ_MAX_JSLOTS)
             lj_trace_err_info(J, LJ_TRERR_STACKOV);
-         rd->nres = count;
+         rd->result_count = count;
          for (i = 0; i < count; i++) {
             TRef tmp = emitir(IRTI(IR_ADD), trstart, lj_ir_kint(J, (int32_t)i));
             tmp = emitir(IRT(IR_STRREF, IRT_PGC), trstr, tmp);
@@ -1586,7 +1586,7 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
       }
       else {  // Empty range or range underflow: return no results.
          emitir(IRTGI(IR_LE), trend, trstart);
-         rd->nres = 0;
+         rd->result_count = 0;
       }
    }
 }
@@ -1698,7 +1698,7 @@ static void recff_string_find(jit_State* J, RecordFFData* rd)
          // 0-based: return a half-open span.
          J->base[0] = pos;
          J->base[1] = emitir(IRTI(IR_ADD), pos, trplen);
-         rd->nres = 2;
+         rd->result_count = 2;
       }
       else {
          emitir(IRTG(IR_EQ, IRT_PGC), tr, trp0);
@@ -1821,7 +1821,7 @@ static void recff_table_insert(jit_State* J, RecordFFData* rd)
    RecordIndex ix;
    ix.tab = J->base[0];
    ix.val = J->base[1];
-   rd->nres = 0;
+   rd->result_count = 0;
    if (tref_istab(ix.tab) and ix.val) {
       if (!J->base[2]) {  // Simple push: t[#t] = v (0-based: next index = len)
          GCtab* t = tabV(&rd->argv[0]);
@@ -1878,7 +1878,7 @@ static void recff_table_clear(jit_State* J, RecordFFData* rd)
       TRef marker = emitir(IRT(IR_FLOAD, IRT_TAB), tr, IRFL_TAB_GCONTRACTS);
       emitir(IRTG(IR_EQ, IRT_TAB), marker, lj_ir_knull(J, IRT_TAB));
       if (recff_metacall(J, rd, MM_clear)) return;
-      rd->nres = 0;
+      rd->result_count = 0;
       lj_ir_call(J, IRCALL_lj_tab_clear, tr);
       J->needsnap = 1;
    }  // else: Interpreter will throw.
@@ -1926,13 +1926,14 @@ void lj_ffrecord_func(jit_State* J)
    RecordFFData rd;
    uint32_t m = recdef_lookup(J->fn);
    rd.data = m & 0xff;
-   rd.nres = 1;  //  Default is one result.
+   rd.result_count = 1;
+   rd.disposition = RecordFFDisposition::Completed;
    rd.argv = J->L->base;
    J->base[J->maxslot] = 0;  //  Mark end of arguments.
    (recff_func[m >> 8])(J, &rd);  //  Call recff_* handler.
-   if (rd.nres >= 0) {
+   if (rd.disposition IS RecordFFDisposition::Completed) {
       if (J->postproc IS LJ_POST_NONE) J->postproc = LJ_POST_FFRETRY;
-      lj_record_ret(J, 0, rd.nres);
+      lj_record_ret(J, 0, rd.result_count);
    }
 }
 

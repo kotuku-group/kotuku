@@ -199,10 +199,10 @@ enum class TiriType : uint8_t;  // Forward declaration (defined in ast_nodes.h)
 typedef struct VarInfo {
    GCRef name;        //  Local variable name.
    std::array<TiriType, MAX_RETURN_TYPES> result_types{};  // Return types if this variable holds a function
-   StaticValueHandle static_value = 0;
-   StaticResultSetHandle static_results = 0;
-   StaticCallableHandle static_callable = 0;
-   StaticBindingID binding_id = 0;
+   StaticValueHandle static_value{};
+   StaticResultSetHandle static_results{};
+   StaticCallableHandle static_callable{};
+   StaticBindingID binding_id{};
    BCPOS startpc;     //  First point where the local variable is active.
    BCPOS endpc;       //  First point where the local variable is dead.
    uint8_t slot;      //  Variable slot.

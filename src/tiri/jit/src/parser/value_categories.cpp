@@ -51,8 +51,8 @@ LValue LValue::from_expdesc(const ExpDesc* Desc)
       case ExpKind::Global: return LValue::make_global(Desc->u.sval);
 
       case ExpKind::Indexed: {
-         bool key_is_register = (int32_t(Desc->u.s.aux) >= 0) and (Desc->u.s.aux <= BCMAX_C);
-         if (key_is_register) return LValue::make_indexed(BCREG(Desc->u.s.info), BCREG(Desc->u.s.aux));
+         IndexOperand key(Desc->u.s.aux);
+         if (key.is_register()) return LValue::make_indexed(BCREG(Desc->u.s.info), key.register_index());
          return LValue::make_member(BCREG(Desc->u.s.info), Desc->u.s.aux);
       }
 

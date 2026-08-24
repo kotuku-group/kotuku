@@ -448,7 +448,7 @@ int lj_opt_loop(jit_State* J)
    ptrdiff_t base_before = savestack(L, L->base);
 #endif
    ptrdiff_t top_before = savestack(L, L->top);
-   int32_t cframe_nres_before = L->cframe ? cframe_nres(cframe_raw(L->cframe)) : 0;
+   int32_t cframe_result_metadata_before = L->cframe ? cframe_result_metadata(cframe_raw(L->cframe)) : 0;
    int errcode;
    lps.J = J;
    lps.subst = nullptr;
@@ -486,7 +486,9 @@ int lj_opt_loop(jit_State* J)
 #endif
                   L->top = expected_top;
                }
-               if (L->cframe) cframe_nres(cframe_raw(L->cframe)) = cframe_nres_before;
+               if (L->cframe) {
+                  set_cframe_result_metadata(cframe_raw(L->cframe), cframe_result_metadata_before);
+               }
             }
 
             loop_undo(J, nins, nsnap, nsnapmap);

@@ -241,8 +241,8 @@ struct Identifier {
    TiriType type = TiriType::Unknown;  // Explicit type annotation (Unknown = no annotation)
    struct_record *struct_def = nullptr; // Resolved layout for struct<Name> annotations
    ArrayElementDescriptor array_element{}; // Member identity for array<Element> annotations
-   mutable StaticBindingID binding_id = 0;
-   mutable StaticValueHandle static_value = 0;
+   mutable StaticBindingID binding_id{};
+   mutable StaticValueHandle static_value{};
    mutable TiriType global_contract_type = TiriType::Unknown;
    mutable CLASSID global_contract_object_class_id = CLASSID::NIL;
    mutable struct_record *global_contract_struct_def = nullptr;
@@ -275,7 +275,7 @@ struct NameRef {
    Identifier identifier;
    NameResolution resolution = NameResolution::Unresolved;
    uint16_t slot = 0;
-   mutable StaticBindingID binding_id = 0;
+   mutable StaticBindingID binding_id{};
 };
 
 struct LiteralValue {
@@ -475,8 +475,8 @@ struct CallExprPayload {
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
    mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
-   mutable StaticCallableHandle callable = 0;
-   mutable StaticResultSetHandle results = 0;
+   mutable StaticCallableHandle callable{};
+   mutable StaticResultSetHandle results{};
    ~CallExprPayload();
 };
 
@@ -597,7 +597,7 @@ struct FunctionExprPayload {
    bool is_vararg = false;
    bool is_thunk = false;              // Marks function as thunk
    mutable FunctionReturnTypes return_types{}; // Declared, validated inferred or advisory result metadata
-   mutable StaticCallableHandle callable = 0;
+   mutable StaticCallableHandle callable{};
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function
    ~FunctionExprPayload();
@@ -693,8 +693,8 @@ struct ExprNode {
    SourceSpan span{};
    bool is_grouped = false;
    bool is_checked = false; // Promote an unsafe first result while preserving the expression's complete result set
-   mutable StaticValueHandle static_value = 0;
-   mutable StaticResultSetHandle static_results = 0;
+   mutable StaticValueHandle static_value{};
+   mutable StaticResultSetHandle static_results{};
    std::variant<LiteralValue, NameRef, CurrentContextExprPayload, VarArgExprPayload, UnaryExprPayload,
       UpdateExprPayload, TypeTestExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,

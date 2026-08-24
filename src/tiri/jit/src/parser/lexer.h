@@ -53,6 +53,26 @@ enum class GlobalContractPolicy : uint8_t {
    Variant
 };
 
+enum class ArraySizeKind : uint8_t {
+   Absent,
+   Literal,
+   Expression
+};
+
+struct ArrayTypedSize {
+   ArraySizeKind kind = ArraySizeKind::Absent;
+   int64_t literal = 0;
+
+   [[nodiscard]] static constexpr ArrayTypedSize absent() { return {}; }
+   [[nodiscard]] static constexpr ArrayTypedSize literal_size(int64_t Value) {
+      return { ArraySizeKind::Literal, Value };
+   }
+   [[nodiscard]] static constexpr ArrayTypedSize expression() { return { ArraySizeKind::Expression, 0 }; }
+   [[nodiscard]] constexpr bool is_absent() const { return kind IS ArraySizeKind::Absent; }
+   [[nodiscard]] constexpr bool is_literal() const { return kind IS ArraySizeKind::Literal; }
+   [[nodiscard]] constexpr bool is_expression() const { return kind IS ArraySizeKind::Expression; }
+};
+
 // Lua lexer state.
 
 class LexState {
@@ -136,7 +156,7 @@ public:
    uint32_t   ternary_depth;  // Number of pending ternary operators.
    uint8_t    pending_if_empty_colon; // Tracks ?: misuse after ??.
    int        is_bytecode;    // Set to 1 if input is bytecode, 0 if source text.
-   int64_t    array_typed_size = -1;  // Size parameter for array<type, size> (-1 = no size specified)
+   ArrayTypedSize array_typed_size{};  // Optional size parameter for array<type, size>.
 
    size_t   current_offset = 0;
    size_t   line_start_offset = 0;
