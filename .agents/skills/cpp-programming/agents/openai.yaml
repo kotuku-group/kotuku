@@ -1,0 +1,4 @@
+interface:
+  display_name: "C++ Programming"
+  short_description: "Write and review Kōtuku C++ code"
+  default_prompt: "Use $cpp-programming when writing or reviewing Kōtuku C++ code."

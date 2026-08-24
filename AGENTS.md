@@ -45,7 +45,7 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 
 ### Scripting Integration
 
-**Tiri** is the integrated Lua-based scripting language:
+**Tiri** is the integrated scripting language:
 
 - Tiri is a LuaJIT-based language that provides high-level access to Kōtuku APIs, but it is not standard Lua.
 - GUI toolkit available through `scripts/gui/` modules (modular widget system)
@@ -93,54 +93,10 @@ The build system heavily uses code generation:
 
 ## Development Guidelines
 
-### ⚠️ CRITICAL PROJECT REQUIREMENTS (Override Standard C++ Practices)
-
-**These rules MUST be followed and override common C++ conventions:**
-
-- **NEVER use `static_cast`** - Use C-style casting instead, e.g. `int(variable)` NOT `static_cast<int>(variable)`
-- **NEVER use the `&&` boolean operator** - Use `and`
-- **NEVER use the `||` boolean operator** - Use `or`
-- **NEVER use `==` for equality** - Use the `IS` macro (exceptions made for operator overloading).  Use of `!=` is still permitted.
-- **NEVER use C++ exceptions** - Error management relies on checking function results
-
-### 📋 MANDATORY CODING CHECKLIST
-
-Before considering ANY C++ code changes complete, verify:
-
-- [ ] Code compiles successfully
-- [ ] Follows formatting standards below
-
-### Additional Code Style Standards
-
-- Always use upper camel-case for the names of function arguments in C++ and Tiri code.
-- Always use lower snake_case for the names of variables inside C++ and Tiri functions.
-- Use three spaces for tabulation in C++ and Tiri code.
-- C++ functions that use global variables must be written with thread safety in mind.
-- New and refactored code must target modern C++20 conventions and functionality.
-- C++ global variable names are prefixed with `gl` and written in upper camel-case, e.g. `glSomeVariable`
-- The default column width is 120 characters for all programming languages.  Markdown and Asciidoc files are exempt.
-- Always default to British English spelling in code and comments.
-- For C++ `if`, `while`, `else`, `for`, `switch` and `struct` keywords, the opening curly brace must be on the same line if no word-wrapping has occurred.
-- Whilst the spelling of Kōtuku applies to all documentation for branding purposes, when writing code the simplified `Kotuku` spelling is used throughout.
-- The only acceptable line-feed character on all platforms is LF and the use of CRLF is not permitted.
-
-### Testing
-
-**MANDATORY: Always compile after making C++ changes**
-- After making changes to C++ source files, you MUST verify compilation by building the affected module(s)
-- This is required before considering any code changes complete
-- There is a dependency on `origo_cmd` being built by cmake in order to make the `origo` executable available to run tests.
-
-### Documentation
-
-- API documentation is embedded within comment sections of the C++ source files.
-- Embedded documentation is identified with markers in the format `-MARKER-` whereby `MARKER` describes a section for the document generator to parse.
-- Marked document sections are terminated at the end of their comment or when `-END-` is encountered.
-- Embedded documentation for each function is identified by the `-FUNCTION-` marker.
-- Embedded documentation for each class is identified by the `-CLASS-` marker.
-- Classes can export actions and methods, which are documented with `-ACTION-` and `-METHOD-` markers.
-- Embedded documentation for class fields are identified by the `-FIELD-` marker.
-- Always use British English spelling in documentation, comments and variable names.
+- Use the `cpp-programming` skill before writing, editing, reviewing, or testing C++ code, or giving Kōtuku C++
+  programming guidance.
+- The default column width is 120 characters for all programming languages. Markdown and Asciidoc files are exempt.
+- Use LF line endings on all platforms; CRLF is not permitted.
 
 ## File Organization
 
