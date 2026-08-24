@@ -4717,8 +4717,11 @@ static bool test_static_descriptor_model(kt::Log &Log)
    auto exact = parse_array_element_type("array<array<int>>", recursive_lua);
    auto mismatch = parse_array_element_type("array<array<str>>", recursive_lua);
    auto wildcard = parse_array_element_type("array<array<any>>", recursive_lua);
+   auto deep_exact = parse_array_element_type("array<array<array<int>>>", recursive_lua);
+   auto deep_wildcard = parse_array_element_type("array<array<array>>", recursive_lua);
    if (not exact or not mismatch or not wildcard or array_element_matches(*exact, *mismatch) or
-       not array_element_matches(*wildcard, *exact)) {
+       not array_element_matches(*wildcard, *exact) or not deep_exact or not deep_wildcard or
+       not array_element_matches(*deep_wildcard, *deep_exact)) {
       Log.error("recursive array descriptor comparison lost exact or wildcard semantics");
       return false;
    }

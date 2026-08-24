@@ -12,6 +12,10 @@ function identity_matrix(Matrix:array<array<double>>):array<array<double>>
    return Matrix
 end
 
+function deep_wildcard_parameter(Value:array<array<array>>!):num
+   return #Value
+end
+
 @Test function RecursiveConstructorsAndAnnotations()
    local integers:array<array<int>> = array<array<int>> {
       array<int> { 3, 5 },
@@ -64,6 +68,21 @@ end
    }
    assert(broad[0][0] is 1 and broad[1][0] is 'two',
       'array<array> should remain an unconstrained inner-array annotation')
+end
+
+@Test function DeepUnconstrainedInnerArrayRemainsValid()
+   local row = array<int> { 1 }
+   local matrix = array<array<int>> { row }
+   local constructed = array<array<array>> { matrix }
+   local specialised = array<array<array<int>>> { matrix }
+   local assigned:array<array<array>> = specialised
+
+   assert(constructed[0][0][0] is 1,
+      'a deeply nested bare array wildcard was rejected during construction')
+   assert(deep_wildcard_parameter(specialised) is 1,
+      'a deeply nested bare array wildcard was rejected by a parameter contract')
+   assert(assigned[0][0][0] is 1,
+      'a deeply nested bare array wildcard was rejected by typed assignment')
 end
 
 @Test function RecursiveIdentityIsPubliclyVisible()

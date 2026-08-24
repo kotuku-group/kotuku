@@ -214,6 +214,22 @@ static bool test_array_recursive_identity(kt::Log &Log)
       Log.error("a recursive wildcard rejected a valid inner array");
       return false;
    }
+
+   ArrayAllocationDescriptor deep_wildcard_descriptor {
+      .storage = AET::ARRAY,
+      .canonical_identity = "array<array<array>>"
+   };
+   ArrayAllocationDescriptor specialised_matrix_descriptor {
+      .storage = AET::ARRAY,
+      .canonical_identity = "array<array<int>>"
+   };
+   GCarray *deep_wildcard = lj_array_new(lua, 0, deep_wildcard_descriptor);
+   GCarray *specialised_matrix = lj_array_new(lua, 0, specialised_matrix_descriptor);
+   setarrayV(lua, &value, specialised_matrix);
+   if (lj_array_validate_element(deep_wildcard, &value) != ArrayElementResult::OK) {
+      Log.error("a deeply recursive bare array wildcard rejected a valid specialisation");
+      return false;
+   }
    return true;
 }
 

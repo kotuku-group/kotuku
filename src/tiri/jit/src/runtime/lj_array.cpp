@@ -555,7 +555,8 @@ static bool array_identity_text_matches(std::string_view Expected, std::string_v
    std::string_view expected_member = Expected.substr(6, Expected.size() - 7);
    std::string_view actual_member = Actual.substr(6, Actual.size() - 7);
    if (expected_member IS "any") return true;
-   if (expected_member.starts_with("array<") and actual_member.starts_with("array<")) {
+   if ((expected_member IS "array" or expected_member.starts_with("array<")) and
+       actual_member.starts_with("array<")) {
       return array_identity_text_matches(expected_member, actual_member);
    }
    return false;
