@@ -1,5 +1,7 @@
 -- Flute tests for the safe navigation operators - ?., ?: and ?[
 
+global glSafeCallTripleTarget = nil
+
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
@@ -109,6 +111,17 @@ end
    missing = nil
    local nil_first, nil_second = missing?.pair()
    assert(nil_first is nil and nil_second is nil, "A local declaration should clear every skipped safe-call result")
+
+   function triple_from_missing():<num, num, num>
+      return glSafeCallTripleTarget?.values()
+   end
+
+   local triple_info = jit.util.funcInfo(triple_from_missing, 0)
+   assert(triple_info.stackSlots >= 3,
+      "A three-result safe-call return must reserve every result register in its frame")
+   local nil_one, nil_two, nil_three = triple_from_missing()
+   assert(nil_one is nil and nil_two is nil and nil_three is nil,
+      "A missing safe-call receiver should initialise all three declared results")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
