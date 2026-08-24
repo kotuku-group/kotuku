@@ -60,7 +60,7 @@ function loadAndRead(Path:str, PageWidth:num, Username:str, ObjectName:str, Unre
       end
    end
 
-   check doc.init()
+   doc.init()
    err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
    assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
    assert(xml_str, 'ReadContent(DATA_XML) returned nil')

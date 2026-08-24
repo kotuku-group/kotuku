@@ -108,7 +108,7 @@ if (query.ok()) {
       <name>Init</name>
       <comment>Compiles the XQuery statement.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
-      <tiriPrototype>err = Object.init()</tiriPrototype>
+      <tiriPrototype>Object.init()</tiriPrototype>
       <description>
 <p>Initialisation will compile the XQuery <fl>Statement</fl> string into a compiled form that can be executed.</p>
 <p>If parsing fails, the object will not be initialised and an error message will be defined in the <fl>ErrorMsg</fl> field.</p>

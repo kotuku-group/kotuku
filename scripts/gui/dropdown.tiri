@@ -248,7 +248,7 @@ gui.dropdown = function(Options)
    self.surface.y          = -10000
    self.surface.windowType = 'NONE'
    self.surface.height     = 400
-   check self.surface.init()
+   self.surface.init()
 
    self.scene = obj.new('VectorScene', { flags=VPF_RESIZE, surface=self.surface })
    self.viewport = self.scene.new('VectorViewport', { })

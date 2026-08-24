@@ -89,7 +89,7 @@
       <name>Init</name>
       <comment>Initialises a bitmap.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
-      <tiriPrototype>err = Object.init()</tiriPrototype>
+      <tiriPrototype>Object.init()</tiriPrototype>
       <description>
 <p>Init prepares a queried bitmap for use.  It validates the calculated bitmap state, allocates <fl>Data</fl> when required, configures platform-specific backing resources and selects the pixel access routines used by drawing operations.</p>
 <p>If <fl>Data</fl> has already been supplied, Init uses the caller-provided memory.  Otherwise allocation is controlled by <fl>MemType</fl> and <fl>Flags</fl>.  <fl>Width</fl> and <fl>Height</fl> must be set before this action is called.</p>

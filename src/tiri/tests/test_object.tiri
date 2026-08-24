@@ -107,9 +107,21 @@ end
 @Test function ObjInit()
    -- Create object without auto-init (no fields table)
    f = obj.new('time')
-   -- Object is auto-initialised, so init() returns Okay
-   err = f.init()
-   assert(err is ERR_Okay, "Expected init() to return Okay, got " .. tostring(err))
+   -- Object is auto-initialised, so init() completes without a result.
+   result = f.init()
+   assert(result is nil, 'Expected init() to return no result')
+end
+
+@Test function ObjInitFailure()
+   f = obj.new('file')
+
+   try
+      f.init()
+   except error_value when ERR_MissingPath
+      -- Expected failure due to missing path
+   success
+      error('Expected a file without a path to fail initialisation')
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -124,7 +136,7 @@ end
    assert(typed.owner.id is explicit.owner.id, 'Typed and explicit root construction should retain the same owner')
 
    local empty = obj<Time> {}
-   assert(empty.init() is ERR_Okay, 'An empty typed initialiser should still complete immediate initialisation')
+   empty.init()
 end
 
 @Test function TypedObjectConstructionFailures()

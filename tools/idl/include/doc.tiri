@@ -193,7 +193,7 @@ setAction('Hide', {
 setAction('Init', {
    comment   = 'Initialises an object so that it is ready for active use.',
    prototype = 'ERR InitObject(*Object)',
-   tiriPrototype = 'err = Object.init()'
+   tiriPrototype = 'Object.init()'
 })
 
 setAction('Lock', {

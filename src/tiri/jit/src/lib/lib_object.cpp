@@ -983,12 +983,15 @@ static int object_init(lua_State *Lua)
    OBJECTPTR obj;
    if (auto error = access_object(def, obj); error IS ERR::Okay) {
       error = InitObject(obj);
-      report_action_error(Lua, def, "Init", error);
-      lua_pushinteger(Lua, int(error));
+      auto class_name = def->classptr ? def->classptr->ClassName : "Object";
       release_object(def);
+
+      if (error != ERR::Okay) {
+         luaL_error(Lua, error, "%s.init() failed: %s", class_name.c_str(), GetErrorMsg(error));
+      }
    }
    else luaL_error(Lua, error);
-   return 1;
+   return 0;
 }
 
 LJLIB_CF(object_init) { return object_init(L); }
@@ -1073,8 +1076,8 @@ extern "C" int luaopen_object(lua_State *L)
       { TiriType::Table }, { TiriType::Object });
    reg_iface_method(L, "obj", "class", TiriType::Object, builtin_callable_id(FastFunc::object_class),
       { TiriType::Object }, { TiriType::Object });
-   reg_iface_method(L, "obj", "init", TiriType::Object, builtin_callable_id(FastFunc::object_init),
-      { TiriType::Num }, { TiriType::Object });
+   reg_iface_method(L, "obj", "init", TiriType::Object, builtin_callable_id(FastFunc::object_init), {},
+      { TiriType::Object });
    reg_iface_method(L, "obj", "free", TiriType::Object, builtin_callable_id(FastFunc::object_free), {},
       { TiriType::Object });
    reg_iface_method(L, "obj", "children", TiriType::Object, builtin_callable_id(FastFunc::object_children),

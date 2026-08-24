@@ -234,7 +234,7 @@ gui.menubar = function(Options)
       self.viewport.height = 1
       self.viewport.xOffset = Options.xOffset ?? 0
 
-      check self.viewport.init()
+      self.viewport.init()
 
       self.viewport.subscribe('free', function(Viewport, Args)
          self = { }
