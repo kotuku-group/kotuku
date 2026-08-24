@@ -45,15 +45,23 @@ end
 @Test function LetSyntaxErrors()
    local xq = obj.new('xquery')
    xq.statement = 'let $a return $a'
-   local err = xq.init()
-   assert(err is ERR_Syntax, 'Missing assignment should be a syntax error, got ' .. mSys.getErrorMsg(err))
+   try
+      xq.init()
+   except error_value when ERR_Syntax
+   success
+      error('Missing assignment should be a syntax error')
+   end
    local message = xq.errorMsg ?? ''
    assert(message.find("Expected ':=' in let binding", 0, true),
       'Error message should reference missing :=, got ' .. message)
 
    xq.statement = 'let $a := return 5'
-   local err = xq.init()
-   assert(err is ERR_Syntax, 'Missing expression should be a syntax error, got ' .. mSys.GetErrorMsg(err))
+   try
+      xq.init()
+   except error_value when ERR_Syntax
+   success
+      error('Missing expression should be a syntax error')
+   end
    local message = xq.errorMsg ?? ''
    assert(message.find("Expected expression after ':=' in let binding", 0, true),
       'Error message should reference missing binding expression, got ' .. message)

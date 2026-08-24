@@ -14,8 +14,12 @@ end
 
 @Test function MatrixRequired()
    filter, fx = newConvolve()
-   err = fx.init()
-   assert(err is ERR_FieldNotSet, 'ConvolveFX should require Matrix before init, got ' .. mSys.GetErrorMsg(err))
+   try
+      fx.init()
+   except error_value when ERR_FieldNotSet
+   success
+      error('ConvolveFX should require Matrix before init')
+   end
 end
 
 @Test function MatrixLengthMustMatchOrder()
@@ -24,8 +28,12 @@ end
    fx.matrixRows = 2
    fx.matrix = array<double> { 1, 2, 3 }
 
-   err = fx.init()
-   assert(err is ERR_Mismatch, 'Matrix length mismatch should fail init, got ' .. mSys.GetErrorMsg(err))
+   try
+      fx.init()
+   except error_value when ERR_Mismatch
+   success
+      error('Matrix length mismatch should fail init')
+   end
 end
 
 @Test function NegativeDivisorAccepted()
@@ -48,16 +56,19 @@ end
    setValidMatrix(fx)
    fx.targetX = 2
 
-   err = fx.init()
-   assert(err is ERR_OutOfRange, 'Explicit out-of-range TargetX should fail init, got ' .. mSys.GetErrorMsg(err))
+   try
+      fx.init()
+   except error_value when ERR_OutOfRange
+   success
+      error('Explicit out-of-range TargetX should fail init')
+   end
 end
 
 @Test function OmittedTargetDefaultsToCentre()
    filter, fx = newConvolve()
    setValidMatrix(fx)
 
-   err = fx.init()
-   assert(err is ERR_Okay, 'ConvolveFX init failed: ' .. mSys.GetErrorMsg(err))
+   fx.init()
    assert(fx.targetX is 1 and fx.targetY is 1, 'Omitted targets should default to the matrix centre.')
 end
 
@@ -67,8 +78,7 @@ end
    fx.unitX = 0.5
    fx.unitY = 0.25
 
-   err = fx.init()
-   assert(err is ERR_Okay, 'Positive subpixel UnitX/UnitY values should be accepted: ' .. mSys.GetErrorMsg(err))
+   fx.init()
 end
 
 @Test function ZeroAndNegativeKernelUnitLengthRejected()
@@ -91,8 +101,7 @@ end
    filter, fx = newConvolve()
    fx.matrix = array<double> { 0, 0, 0, 0, 1, 0, 0, 0, 0 }
 
-   err = fx.init()
-   assert(err is ERR_Okay, 'ConvolveFX init failed: ' .. mSys.GetErrorMsg(err))
+   fx.init()
 
    expected = 'feConvolveMatrix kernelMatrix="0 0 0 0 1 0 0 0 0"'
    assert(fx.xmlDef is expected, 'Unexpected default XMLDef: ' .. fx.xmlDef)
@@ -112,8 +121,7 @@ end
    fx.unitY = 0.5
    fx.preserveAlpha = true
 
-   err = fx.init()
-   assert(err is ERR_Okay, 'ConvolveFX init failed: ' .. mSys.GetErrorMsg(err))
+   fx.init()
 
    expected = 'feConvolveMatrix order="3 2" kernelMatrix="1 2 3 4 5 6" divisor="-2" ' ..
       'bias="0.5" targetX="2" targetY="0" edgeMode="wrap" kernelUnitLength="2 0.5" preserveAlpha="true"'

@@ -652,7 +652,7 @@ gui.toolbar = function(Options)
       self._groupMargin = 0
    end
 
-   check self.viewport.init()
+   self.viewport.init()
 
    self.viewport.subscribe('free', function(Viewport, Args)
       if self._tipTimer then mSys.UpdateTimer(self._tipTimer, 0) end

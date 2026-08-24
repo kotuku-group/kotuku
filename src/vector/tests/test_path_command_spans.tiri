@@ -4,9 +4,9 @@ function newPath(Sequence)
    scene = obj.new('VectorScene')
    viewport = scene.new('VectorViewport')
    path = viewport.new('VectorPath')
-   check scene.init()
-   check viewport.init()
-   check path.init()
+   scene.init()
+   viewport.init()
+   path.init()
    if Sequence?? then path.sequence = Sequence end
    return scene, viewport, path
 end

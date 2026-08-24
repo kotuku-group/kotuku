@@ -10,9 +10,9 @@ function newRectScene(RectName)
    scene = obj.new('VectorScene')
    viewport = scene.new('VectorViewport')
    rect = viewport.new('VectorRectangle', { name=RectName, x=10, y=10, width=100, height=80 })
-   check scene.init()
-   check viewport.init()
-   check rect.init()
+   scene.init()
+   viewport.init()
+   rect.init()
    return scene, viewport, rect
 end
 
@@ -95,11 +95,11 @@ end
    bitmap = obj.new('bitmap', { width=180, height=140, bitsPerPixel=32 })
 
    clip = scene.new('VectorClip')
-   check clip.init()
+   clip.init()
    rect.mask = clip
 
    guide = viewport.new('VectorPath', { sequence='M 0 0 L 100 100' })
-   check guide.init()
+   guide.init()
    rect.guidePath = guide
 
    drawResizeScene(scene, bitmap)

@@ -3,8 +3,8 @@
 function newViewport()
    scene = obj.new('VectorScene')
    viewport = scene.new('VectorViewport')
-   check scene.init()
-   check viewport.init()
+   scene.init()
+   viewport.init()
    return scene, viewport
 end
 

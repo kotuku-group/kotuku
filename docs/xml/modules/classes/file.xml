@@ -54,7 +54,7 @@
       <name>Init</name>
       <comment>Initialises a file.</comment>
       <prototype>ERR InitObject(*Object)</prototype>
-      <tiriPrototype>err = Object.init()</tiriPrototype>
+      <tiriPrototype>Object.init()</tiriPrototype>
       <description>
 <p>This action will prepare a file or folder at the given <fl>Path</fl> for use.</p>
 <p>To create a new file from scratch, specify the <code>NEW</code> flag.  This will overwrite any file that exists at the target path.</p>
