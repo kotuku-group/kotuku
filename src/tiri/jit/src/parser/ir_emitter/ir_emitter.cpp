@@ -693,7 +693,16 @@ static void snapshot_return_regs(FuncState* fs, BCIns* ins)
 // Exclusively used by ir_emitter for assignment statements, local declarations, and for loops.
 // TODO: May as well be a regular function instead of a LexState method.
 
-static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG Count);
+// The CALL B operand uses zero for MULTRES and otherwise stores the fixed result count plus one.
+
+enum class CallResultMode : BCREG {
+   AllResults = 0,
+   NoResults = 1,
+   OneResult = 2
+};
+
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG EncodedCount);
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, CallResultMode Mode);
 
 void LexState::assign_adjust(BCREG nvars, BCREG nexps, ExpDesc *Expr)
 {
@@ -985,28 +994,34 @@ static void release_indexed_original(FuncState &func_state, const ExpDesc &origi
    return &func_state->bcbase[expression->u.s.info].ins;
 }
 
-static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG Count)
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, BCREG EncodedCount)
 {
-   setbc_b(ir_bcptr(State, &Expression), Count);
+   setbc_b(ir_bcptr(State, &Expression), EncodedCount);
    if (Expression.alternate_call != NO_JMP) {
-      setbc_b(&State->bcbase[Expression.alternate_call].ins, Count);
+      setbc_b(&State->bcbase[Expression.alternate_call].ins, EncodedCount);
    }
    auto widen_nil_init = [&](BCPOS Position) {
-      if (Position IS NO_JMP or Count <= 1) return;
+      if (Position IS NO_JMP or EncodedCount <= BCREG(CallResultMode::NoResults)) return;
       BCIns *nil_init = &State->bcbase[Position].ins;
       BCREG first = bc_a(*nil_init);
       lj_assertX(bc_op(*nil_init) IS BC_KPRI or bc_op(*nil_init) IS BC_KNIL,
          "safe-call nil path does not start with a nil initialiser");
-      BCREG required_top = first + Count - 1;
+      BCREG result_count = EncodedCount - BCREG(CallResultMode::NoResults);
+      BCREG required_top = first + result_count;
       if (State->freereg < required_top) {
          RegisterAllocator allocator(State);
          allocator.bump(BCReg(required_top - State->freereg));
       }
-      *nil_init = Count IS 2 ? BCINS_AD(BC_KPRI, first, ExpKind::Nil) :
-         BCINS_AD(BC_KNIL, first, first + Count - 2);
+      *nil_init = EncodedCount IS BCREG(CallResultMode::OneResult) ? BCINS_AD(BC_KPRI, first, ExpKind::Nil) :
+         BCINS_AD(BC_KNIL, first, first + result_count - 1);
    };
    widen_nil_init(Expression.safe_nil_init);
    widen_nil_init(Expression.alternate_safe_nil_init);
+}
+
+static void set_call_result_count(FuncState *State, const ExpDesc &Expression, CallResultMode Mode)
+{
+   set_call_result_count(State, Expression, BCREG(Mode));
 }
 
 struct FalseyJumpOptions {
@@ -1759,7 +1774,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          else if (safe_call) {
             // An unconstrained nil short-circuit has no dynamic MULTRES value, so consolidate it to one result.
             // Fixed return declarations are handled above and widen the nil path to the declared result count.
-            set_call_result_count(&this->func_state, last, 2);
+            set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
             ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
          else if (not this->func_state.runtime_scopes.empty()) {
@@ -1768,38 +1783,38 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             // TRYLEAVE has popped the try frame - the exception escapes.  By using CALL + RET, the exception occurs
             // while still inside the try block. This must be checked before any tail-call optimisation paths.
 
-            set_call_result_count(&this->func_state, last, 0);  // Request all results (MULTRES)
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_return_contract) {
             // A return contract must observe dynamic results inside this function, so tail-call conversion is unsafe.
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_post_call_control_flow and Payload.values.back()->is_checked) {
             // A checked call retains its complete result set after promoting a failing first result. The inserted
             // check instructions prevent tail-call conversion, but do not consolidate the successful results.
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_post_call_control_flow) {
             // Calls with post-call control flow cannot be converted to CALLT: the conversion removes the final emitted
             // instruction rather than the earlier CALL. Such expressions represent one consolidated value.
-            set_call_result_count(&this->func_state, last, 2);
+            set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
             ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
          else if (call_op IS BC_VARG) {
             // Variadic return: return ...
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_user_cleanup) {
             // The callee must execute before user-visible cleanup.  Preserve all results and MULTRES across handlers.
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else {
-            set_call_result_count(&this->func_state, last, 0);
+            set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
       }
@@ -1823,11 +1838,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                   BCINS_AD(BC_RET0, 0, 1);
             }
             else if (is_safe_call_expression(*Payload.values.back())) {
-               set_call_result_count(&this->func_state, last, 2);
+               set_call_result_count(&this->func_state, last, CallResultMode::OneResult);
                ins = BCINS_AD(BC_RET, return_base, count + 1);
             }
             else {
-               set_call_result_count(&this->func_state, last, 0);
+               set_call_result_count(&this->func_state, last, CallResultMode::AllResults);
                ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
             }
          }
@@ -2755,7 +2770,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       if (not collection.ok()) return ParserResult<IrEmitUnit>::failure(collection.error_ref());
       ExpDesc value = collection.value_ref();
       if (value.k IS ExpKind::Call) {
-         set_call_result_count(fs, value, 0);
+         set_call_result_count(fs, value, CallResultMode::AllResults);
          bcemit_INS(fs, BCINS_ABC(BC_CALLM, base - BCREG(3), 4,
             value.u.s.aux - (base - BCREG(3)) - BCREG(2)));
       }

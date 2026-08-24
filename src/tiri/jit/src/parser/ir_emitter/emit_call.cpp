@@ -123,7 +123,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_pipe(
             state->freereg = lhs.u.s.aux + Payload.limit;
          }
          else {
-            set_call_result_count(state, lhs, 0);
+            set_call_result_count(state, lhs, CallResultMode::AllResults);
             forward_multret = true;
          }
       }
@@ -357,7 +357,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
             fs->freereg = lhs.u.s.aux + Payload.limit;
          }
          else {
-            set_call_result_count(fs, lhs, 0);
+            set_call_result_count(fs, lhs, CallResultMode::AllResults);
             forward_multret = true;
          }
       }
@@ -476,7 +476,7 @@ ParserResult<ExpDesc> IrEmitter::emit_pipe_expr(const PipeExprPayload &Payload)
          fs->freereg = lhs.u.s.aux + Payload.limit;
       }
       else { // Forward all return values - keep B=0 for CALLM pattern
-         set_call_result_count(fs, lhs, 0);
+         set_call_result_count(fs, lhs, CallResultMode::AllResults);
          forward_multret = true;
       }
    }
@@ -581,7 +581,7 @@ ParserResult<ExpDesc> IrEmitter::emit_builtin_method_call(const CallExprPayload 
    BCIns ins;
    bool forward_tail = Payload.forwards_multret and (args.k IS ExpKind::Call);
    if (forward_tail) {
-      set_call_result_count(&this->func_state, args, 0);
+      set_call_result_count(&this->func_state, args, CallResultMode::AllResults);
       ins = BCINS_ABC(BC_CALLM, call_base, 2, args.u.s.aux - call_base - 1 - 1);
    }
    else {
@@ -674,7 +674,7 @@ ParserResult<ExpDesc> IrEmitter::emit_runtime_builtin_method_call(const CallExpr
       BCIns instruction;
       bool forward_tail = Payload.forwards_multret and arguments.k IS ExpKind::Call;
       if (forward_tail) {
-         set_call_result_count(state, arguments, 0);
+         set_call_result_count(state, arguments, CallResultMode::AllResults);
          instruction = BCINS_ABC(BuiltinBranch or not contextual_field ? BC_CALLM : BC_CTXCALLM,
             branch_base.raw(), 2, arguments.u.s.aux - branch_base.raw() - 1 - LJ_FR2);
       }
@@ -1050,7 +1050,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    BCIns ins;
    bool forward_tail = Payload.forwards_multret and (args.k IS ExpKind::Call);
    if (forward_tail) {
-      set_call_result_count(&this->func_state, args, 0);
+      set_call_result_count(&this->func_state, args, CallResultMode::AllResults);
       ins = BCINS_ABC(is_contextual_call ? BC_CTXCALLM : BC_CALLM,
          base, 2, args.u.s.aux - base - 1  - 1);
    }
@@ -1201,7 +1201,7 @@ ParserResult<ExpDesc> IrEmitter::emit_result_filter_expr(const ResultFilterPaylo
 
    // Set B=0 on the inner call to request all return values
 
-   if (call.k IS ExpKind::Call) set_call_result_count(fs, call, 0);
+   if (call.k IS ExpKind::Call) set_call_result_count(fs, call, CallResultMode::AllResults);
    this->materialise_to_next_reg(call, "filter input");
 
    // Emit CALLM to call __filter with variable arguments from the inner call
