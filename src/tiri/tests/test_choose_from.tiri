@@ -1,6 +1,10 @@
 -- Comprehensive test suite for the choose...from expression in Tiri
 -- Syntax: choose <value> from <pattern> [when <guard>] -> <result> ... else -> <result> end
 
+struct ChooseTypePatternRecord
+   Value: int
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Basic Value Matching
 
@@ -312,6 +316,175 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Type Patterns
+
+@Test(hotpath=true) function TypePatternRuntimeCategories()
+   function classify(Value:any):str
+      return choose Value from
+         <nil> -> 'nil'
+         <bool> -> 'bool'
+         <num> -> 'num'
+         <str> -> 'str'
+         <table> -> 'table'
+         <range> -> 'range'
+         <userdata> -> 'userdata'
+         <array> -> 'array'
+         <struct> -> 'struct'
+         <obj> -> 'obj'
+         <func> -> 'func'
+         else -> 'other'
+      end
+   end
+
+   local record_value = struct<ChooseTypePatternRecord> { Value=7 }
+   local clock = obj.new('Time')
+
+   assert(classify(nil) is 'nil', 'nil should match <nil>')
+   assert(classify(true) is 'bool', 'true should match <bool>')
+   assert(classify(7) is 'num', 'numbers should match <num>')
+   assert(classify('text') is 'str', 'strings should match <str>')
+   assert(classify({ key='value' }) is 'table', 'tables should match <table>')
+   assert(classify(function() end) is 'func', 'functions should match <func>')
+   assert(classify({0 to 1}) is 'range', 'ranges should match <range>')
+   assert(classify(newproxy(true)) is 'userdata', 'full userdata should match <userdata>')
+   assert(classify(array<int> { 1 }) is 'array', 'native arrays should match <array>')
+   assert(classify(record_value) is 'struct', 'structures should match <struct>')
+   assert(classify(clock) is 'obj', 'objects should match <obj>')
+end
+
+@Test(hotpath=true) function ConstrainedTypePatterns()
+   local integers = array<int> { 1, 2 }
+   local words = array<str> { 'one', 'two' }
+   local record_value = struct<ChooseTypePatternRecord> { Value=4 }
+   local clock = obj.new('Time')
+
+   local integer_result = choose integers from
+      <array str> -> 'wrong'
+      <array int> -> 'integers'
+      else -> 'other'
+   end
+   local word_result = choose words from
+      <array int> -> 'wrong'
+      <array str> -> 'words'
+      else -> 'other'
+   end
+   local record_result = choose record_value from
+      <struct ChooseTypePatternRecord> -> 'record'
+      else -> 'other'
+   end
+   local object_result = choose clock from
+      <obj Time> -> 'clock'
+      else -> 'other'
+   end
+
+   assert(integer_result is 'integers', '<array int> should reject <array str> first')
+   assert(word_result is 'words', '<array str> should reject <array int> first')
+   assert(record_result is 'record', 'named structures should match their definition')
+   assert(object_result is 'clock', 'named objects should match their class')
+end
+
+@Test(hotpath=true) function TypePatternGuardsAndOrdering()
+   local value = 20
+   local guarded_result = choose value from
+      <num> when value > 30 -> 'too large'
+      <num> when value is 20 -> 'accepted'
+      else -> 'other'
+   end
+   local nil_first = choose nil from
+      <nil> -> 'nil'
+      <any> -> 'any'
+   end
+   local any_first = choose nil from
+      <any> -> 'any'
+      <nil> -> 'nil'
+   end
+   local type_before_literal = choose 7 from
+      <num> -> 'type'
+      7 -> 'literal'
+   end
+   local literal_before_type = choose 7 from
+      7 -> 'literal'
+      <num> -> 'type'
+   end
+   local record_before_type = choose { kind='record' } from
+      { kind='record' } -> 'record'
+      <table> -> 'type'
+   end
+   local type_before_record = choose { kind='record' } from
+      <table> -> 'type'
+      { kind='record' } -> 'record'
+   end
+
+   assert(guarded_result is 'accepted', 'failed guards should continue with the original scrutinee')
+   assert(nil_first is 'nil', '<nil> should win when it appears first')
+   assert(any_first is 'any', '<any> should win when it appears first')
+   assert(type_before_literal is 'type', 'type cases should participate in first-match ordering')
+   assert(literal_before_type is 'literal', 'literal cases should participate in first-match ordering')
+   assert(record_before_type is 'record', 'table patterns should participate in first-match ordering')
+   assert(type_before_record is 'type', 'type patterns should precede later table patterns')
+end
+
+@Test(hotpath=true) function TypePatternEvaluationAndResults()
+   local calls = 0
+   function next_value():any
+      calls++
+      return 42
+   end
+
+   local expression_result = choose next_value() from
+      <str> -> 'string'
+      <num> -> 'number'
+      else -> 'other'
+   end
+   local statement_result = ''
+   choose 42 from
+      <num> -> statement_result = 'number'
+      else -> statement_result = 'other'
+   end
+   local no_match = choose 'text' from
+      <num> -> 'number'
+   end
+
+   assert(expression_result is 'number', 'type pattern should select expression results')
+   assert(statement_result is 'number', 'type pattern should select statement results')
+   assert(no_match is nil, 'type patterns without else should produce nil after all cases fail')
+   assert(calls is 1, 'the type-pattern scrutinee should be evaluated exactly once')
+end
+
+@Test(hotpath=true) function TypePatternInterpreterAndJitParity()
+   local matches = 0
+   local value:any
+   for index in {0 to 1000} do
+      if index % 2 is 0 then value = index
+      else value = tostring(index) end
+      matches += choose value from
+         <num> -> 1
+         else -> 0
+      end
+   end
+   assert(matches is 500, 'hot type patterns should preserve matching and non-matching paths')
+end
+
+@Test function TypePatternBytecode()
+   local script = obj.new('tiri', { statement=[[
+function choose_table(Value:any):str
+   return choose Value from
+      {} -> 'empty'
+      <table> -> 'table'
+      else -> 'other'
+   end
+end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+
+   assert(disassembly.count('TYPETEST') is 2, 'choose table cases should each emit TYPETEST')
+   assert(disassembly.find('ISFALSEY') != nil, 'empty table patterns should emit ISFALSEY')
+   assert(disassembly.find('GGET') is nil, 'choose table patterns should not look up the global type function')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Table Patterns (Open Record Semantics)
 
 @Test(hotpath=true) function TablePatternExactMatch()
@@ -379,23 +552,46 @@ end
    assert(result is 'not a table', "Expected 'not a table', got " .. tostring(result))
 end
 
-@Test(hotpath=true) function EmptyTablePattern()
-   -- Empty pattern {} should match any table
+@Test(hotpath=true) function EmptyTablePatternRejectsPopulatedTables()
    data = { anything = 'here' }
-   result = choose data from
-      {} -> 'is a table'
-      else -> 'not a table'
-   end
-   assert(result is 'is a table', "Expected 'is a table', got " .. tostring(result))
-end
-
-@Test(hotpath=true) function EmptyTablePatternAgainstEmptyTable()
-   data = {}
    result = choose data from
       {} -> 'empty table'
       else -> 'not empty'
    end
-   assert(result is 'empty table', "Expected 'empty table', got " .. tostring(result))
+   assert(result is 'not empty', "Expected 'not empty', got " .. tostring(result))
+end
+
+@Test(hotpath=true) function EmptyTablePatternExactEmptiness()
+   function matches_empty_table(Value:any):bool
+      return choose Value from
+         {} -> true
+         else -> false
+      end
+   end
+
+   local empty = {}
+   local named_entry = { key='value' }
+   local sequence_entry = { [0] = 'value' }
+   local sparse_entry = { [4] = 'value' }
+   local removed_entry = { key='value' }
+   removed_entry.key = nil
+
+   assert(matches_empty_table(empty), '{} should match a newly constructed empty table')
+   assert(not matches_empty_table(named_entry), '{} should reject tables with named fields')
+   assert(not matches_empty_table(sequence_entry), '{} should reject tables with sequence entries')
+   assert(not matches_empty_table(sparse_entry), '{} should reject tables with sparse entries')
+   assert(matches_empty_table(removed_entry), '{} should match after the final live entry is removed')
+   assert(not matches_empty_table(array<int> {}), '{} should reject native arrays')
+   assert(not matches_empty_table(nil), '{} should reject nil')
+end
+
+@Test(hotpath=true) function EmptyTablePatternWithGuard()
+   local result = choose {} from
+      {} when false -> 'wrong'
+      {} when true -> 'empty table'
+      else -> 'other'
+   end
+   assert(result is 'empty table', 'empty table patterns should compose with guards')
 end
 
 @Test(hotpath=true) function TablePatternWithNumericValues()
@@ -490,8 +686,8 @@ end
 @Test(hotpath=true) function GuardWithComplexExpression()
    data = { x = 10, y = 20 }
    result = choose data from
-      {} when data.x + data.y > 25 -> 'sum large'
-      {} when data.x * data.y > 100 -> 'product large'
+      <table> when data.x + data.y > 25 -> 'sum large'
+      <table> when data.x * data.y > 100 -> 'product large'
       else -> 'small'
    end
    assert(result is 'sum large', "Expected 'sum large', got " .. tostring(result))

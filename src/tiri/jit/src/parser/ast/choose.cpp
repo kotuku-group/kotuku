@@ -5,9 +5,37 @@
 // - Single value scrutinee: choose expr from pattern -> result ... end
 // - Tuple scrutinee: choose (expr1, expr2) from (pattern1, pattern2) -> result ... end
 // - Relational patterns: < <= > >=
+// - Type patterns: <Type>
 // - Wildcard patterns: _
 // - Table patterns: { key = value }
 // - Guard clauses: when condition
+
+//********************************************************************************************************************
+// Determines whether the current `<` begins a complete contextual type-test descriptor.  The lookahead is deliberately
+// limited to the descriptor grammar so relational patterns continue to be parsed as expressions.
+
+bool AstBuilder::choose_case_has_type_test_descriptor() const
+{
+   if (not this->ctx.check(TokenKind::Less)) return false;
+
+   Token primary = this->ctx.tokens().peek(1);
+   if (primary.kind() != TokenKind::Identifier and primary.kind() != TokenKind::Nil) return false;
+
+   Token close_or_constraint = this->ctx.tokens().peek(2);
+   size_t close_offset = 0;
+   if (close_or_constraint.kind() IS TokenKind::Greater) {
+      close_offset = 2;
+   }
+   else if (close_or_constraint.kind() IS TokenKind::Identifier or
+      close_or_constraint.kind() IS TokenKind::ArrayTyped) {
+      if (this->ctx.tokens().peek(3).kind() != TokenKind::Greater) return false;
+      close_offset = 3;
+   }
+   else return false;
+
+   Token after_descriptor = this->ctx.tokens().peek(close_offset + 1);
+   return after_descriptor.kind() IS TokenKind::When or after_descriptor.kind() IS TokenKind::CaseArrow;
+}
 
 //********************************************************************************************************************
 // Parses a choose expression: choose scrutinee from pattern -> result ... end
@@ -185,6 +213,15 @@ ParserResult<ExprNodePtr> AstBuilder::parse_choose_expr()
             }
 
             if (all_wildcards) case_arm.is_wildcard = true;
+         }
+         // Check for a complete contextual type-test descriptor before treating '<' as a relational operator.
+         else if (tuple_arity IS 0 and this->choose_case_has_type_test_descriptor()) {
+            auto descriptor = this->parse_type_test_descriptor();
+            if (not descriptor.ok()) {
+               this->in_choose_expression = false;
+               return ParserResult<ExprNodePtr>::failure(descriptor.error_ref());
+            }
+            case_arm.type_pattern = descriptor.value_ref();
          }
          // Check for relational pattern operators (< <= > >=)
          else if (current.raw() IS '<') {

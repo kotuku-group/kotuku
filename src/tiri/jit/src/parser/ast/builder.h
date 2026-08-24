@@ -196,6 +196,7 @@ private:
    ParserResult<Token> parse_type_annotation(
       TiriType &Type, struct_record *&StructDef, ArrayElementDescriptor &ArrayElement, bool &Required);
    ParserResult<TypeTestDescriptor> parse_type_test_descriptor();
+   [[nodiscard]] bool choose_case_has_type_test_descriptor() const;
    ParserResult<std::vector<TableField>> parse_table_fields(bool *);
    ParserResult<ExprNodeList> parse_call_arguments(bool *);
 

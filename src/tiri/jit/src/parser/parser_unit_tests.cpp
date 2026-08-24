@@ -377,6 +377,77 @@ static bool test_type_test_ast(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+
+static bool test_choose_type_pattern_ast(kt::Log &Log)
+{
+   auto harness = make_expression_harness(
+      "choose value from\n"
+      "   <table> -> 'table'\n"
+      "   <num> when value < limit -> 'number'\n"
+      "   <array int> -> 'array'\n"
+      "   < limit -> 'below'\n"
+      "   else -> 'other'\n"
+      "end");
+   if (not harness.has_value()) {
+      Log.error("failed to initialise the choose type-pattern expression harness");
+      return false;
+   }
+
+   AstBuilder builder(*harness->context);
+   auto expression = builder.parse_expression();
+   if (not expression.ok()) {
+      Log.error("failed to parse choose type-pattern expression");
+      log_diagnostics(harness->context->diagnostics().entries(), Log);
+      return false;
+   }
+   const auto *choose = std::get_if<ChooseExprPayload>(&expression.value_ref()->data);
+   if (not choose or choose->cases.size() != 5) {
+      Log.error("choose type-pattern fixture produced the wrong number of cases");
+      return false;
+   }
+
+   const ChooseCase &table_case = choose->cases[0];
+   const ChooseCase &number_case = choose->cases[1];
+   const ChooseCase &array_case = choose->cases[2];
+   const ChooseCase &relational_case = choose->cases[3];
+   if (not table_case.type_pattern or table_case.type_pattern->type != TiriType::Table or table_case.pattern or
+      not number_case.type_pattern or number_case.type_pattern->type != TiriType::Num or number_case.pattern or
+      not number_case.guard or not array_case.type_pattern or array_case.type_pattern->type != TiriType::Array or
+      not array_case.type_pattern->constrained or array_case.type_pattern->array_element.storage != AET::INT32 or
+      array_case.pattern or relational_case.type_pattern or not relational_case.pattern or
+      relational_case.relational_op != ChooseRelationalOp::LessThan) {
+      Log.error("choose type-pattern AST did not preserve descriptors, guards and relational patterns");
+      return false;
+   }
+
+   auto unknown_harness = make_expression_harness("choose 1 from <integer> -> 1 end");
+   if (not unknown_harness.has_value()) {
+      Log.error("failed to initialise the unknown choose type-pattern expression harness");
+      return false;
+   }
+   AstBuilder unknown_builder(*unknown_harness->context);
+   auto unknown = unknown_builder.parse_expression();
+   if (unknown.ok() or unknown.error_ref().code != ParserErrorCode::UnknownTypeName) {
+      Log.error("unknown choose type pattern did not produce the type-test diagnostic");
+      return false;
+   }
+
+   auto tuple_harness = make_expression_harness("choose (1, 2) from (<str>, _) -> 1 end");
+   if (not tuple_harness.has_value()) {
+      Log.error("failed to initialise the tuple choose type-pattern expression harness");
+      return false;
+   }
+   AstBuilder tuple_builder(*tuple_harness->context);
+   auto tuple = tuple_builder.parse_expression();
+   if (tuple.ok()) {
+      Log.error("tuple-contained type pattern was accepted");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
 // Expression parsing entry point tests.
 
 static bool test_expression_entry_point(kt::Log &log)
@@ -9241,11 +9312,12 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 85> tests = { {
+   constexpr std::array<TestCase, 86> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
       { "type_test_ast", test_type_test_ast },
+      { "choose_type_pattern_ast", test_choose_type_pattern_ast },
       { "expression_entry_point", test_expression_entry_point },
       { "expression_list_entry_point", test_expression_list_entry_point },
       { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },

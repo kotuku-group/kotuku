@@ -3490,6 +3490,78 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
 }
 
 //********************************************************************************************************************
+// Emits TYPETEST using the portable runtime-contract descriptor representation.  The VM replaces the tested register
+// with a canonical boolean.
+
+ParserResult<BCReg> IrEmitter::emit_type_test_descriptor(
+   const TypeTestDescriptor &Descriptor, bool Negated, BCReg Destination)
+{
+   auto append_uleb32 = [](std::string &Output, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         if (Value) byte |= 0x80;
+         Output.push_back(char(byte));
+      } while (Value);
+   };
+   auto append_text = [](std::string &Output, std::string_view Text) {
+      Output.push_back(char(uint8_t(Text.size())));
+      Output.append(Text);
+   };
+
+   std::string descriptor;
+   descriptor.reserve(24);
+   descriptor.push_back(char(uint8_t(ContractBoundary::Local)));
+   descriptor.push_back(char(0));
+   descriptor.push_back(char(1));
+   descriptor.push_back(char(1));
+   descriptor.push_back(char(uint8_t(Descriptor.type)));
+
+   uint8_t entry_flags = 0;
+   if (Descriptor.type IS TiriType::Any or Descriptor.type IS TiriType::Nil) {
+      entry_flags |= contract_flag(ContractEntryFlag::Nullable);
+   }
+   if (Negated) entry_flags |= contract_flag(ContractEntryFlag::Negated);
+   descriptor.push_back(char(entry_flags));
+   descriptor.push_back(char(1));
+
+   CLASSID class_id = Descriptor.type IS TiriType::Object ? Descriptor.object_class_id : CLASSID::NIL;
+   append_uleb32(descriptor, uint32_t(class_id));
+
+   std::string_view struct_name;
+   if (Descriptor.type IS TiriType::Struct and Descriptor.struct_def) struct_name = Descriptor.struct_def->Name;
+   if (struct_name.size() > UINT8_MAX) {
+      return ParserResult<BCReg>::failure(this->make_error(
+         ParserErrorCode::UnexpectedToken, "Type-test structure name is too long"));
+   }
+   append_text(descriptor, struct_name);
+
+   if (Descriptor.type IS TiriType::Array) {
+      AET element_type = Descriptor.constrained ? Descriptor.array_element.storage : AET::ANY;
+      descriptor.push_back(char(uint8_t(element_type)));
+      std::string_view element_constraint_name;
+      if (element_type IS AET::STRUCT and Descriptor.array_element.struct_def) {
+         element_constraint_name = Descriptor.array_element.struct_def->Name;
+      }
+      else if (element_type IS AET::ARRAY and Descriptor.array_element.nested_array_identity) {
+         GCstr *identity = Descriptor.array_element.nested_array_identity;
+         element_constraint_name = std::string_view(strdata(identity), identity->len);
+      }
+      if (element_constraint_name.size() > UINT8_MAX) {
+         return ParserResult<BCReg>::failure(this->make_error(
+            ParserErrorCode::UnexpectedToken, "Type-test array constraint is too long"));
+      }
+      append_text(descriptor, element_constraint_name);
+   }
+   append_text(descriptor, {});
+
+   GCstr *encoded = this->lex_state.keepstr(std::string_view(descriptor.data(), descriptor.size()));
+   ExpDesc constant(encoded);
+   bcemit_AD(&this->func_state, BC_TYPETEST, Destination.raw(), const_str(&this->func_state, &constant));
+   return ParserResult<BCReg>::success(Destination);
+}
+
+//********************************************************************************************************************
 // Emits a boolean type test using the portable runtime-contract descriptor representation.  The VM replaces the
 // tested register with a canonical boolean, so the left operand is evaluated exactly once.
 
@@ -3504,69 +3576,8 @@ ParserResult<ExpDesc> IrEmitter::emit_type_test_expr(const TypeTestExprPayload &
    allocator.discharge_to_next_register(value);
    BCReg value_reg(value.u.s.info);
 
-   auto append_uleb32 = [](std::string &Output, uint32_t Value) {
-      do {
-         uint8_t byte = uint8_t(Value & 0x7f);
-         Value >>= 7;
-         if (Value) byte |= 0x80;
-         Output.push_back(char(byte));
-      } while (Value);
-   };
-   auto append_text = [](std::string &Output, std::string_view Text) {
-      Output.push_back(char(uint8_t(Text.size())));
-      Output.append(Text);
-   };
-
-   const TypeTestDescriptor &type_test = Payload.descriptor;
-   std::string descriptor;
-   descriptor.reserve(24);
-   descriptor.push_back(char(uint8_t(ContractBoundary::Local)));
-   descriptor.push_back(char(0));
-   descriptor.push_back(char(1));
-   descriptor.push_back(char(1));
-   descriptor.push_back(char(uint8_t(type_test.type)));
-
-   uint8_t entry_flags = 0;
-   if (type_test.type IS TiriType::Any or type_test.type IS TiriType::Nil) {
-      entry_flags |= contract_flag(ContractEntryFlag::Nullable);
-   }
-   if (Payload.negated) entry_flags |= contract_flag(ContractEntryFlag::Negated);
-   descriptor.push_back(char(entry_flags));
-   descriptor.push_back(char(1));
-
-   CLASSID class_id = type_test.type IS TiriType::Object ? type_test.object_class_id : CLASSID::NIL;
-   append_uleb32(descriptor, uint32_t(class_id));
-
-   std::string_view struct_name;
-   if (type_test.type IS TiriType::Struct and type_test.struct_def) struct_name = type_test.struct_def->Name;
-   if (struct_name.size() > UINT8_MAX) {
-      return ParserResult<ExpDesc>::failure(this->make_error(
-         ParserErrorCode::UnexpectedToken, "Type-test structure name is too long"));
-   }
-   append_text(descriptor, struct_name);
-
-   if (type_test.type IS TiriType::Array) {
-      AET element_type = type_test.constrained ? type_test.array_element.storage : AET::ANY;
-      descriptor.push_back(char(uint8_t(element_type)));
-      std::string_view element_constraint_name;
-      if (element_type IS AET::STRUCT and type_test.array_element.struct_def) {
-         element_constraint_name = type_test.array_element.struct_def->Name;
-      }
-      else if (element_type IS AET::ARRAY and type_test.array_element.nested_array_identity) {
-         GCstr *identity = type_test.array_element.nested_array_identity;
-         element_constraint_name = std::string_view(strdata(identity), identity->len);
-      }
-      if (element_constraint_name.size() > UINT8_MAX) {
-         return ParserResult<ExpDesc>::failure(this->make_error(
-            ParserErrorCode::UnexpectedToken, "Type-test array constraint is too long"));
-      }
-      append_text(descriptor, element_constraint_name);
-   }
-   append_text(descriptor, {});
-
-   GCstr *encoded = this->lex_state.keepstr(std::string_view(descriptor.data(), descriptor.size()));
-   ExpDesc constant(encoded);
-   bcemit_AD(&this->func_state, BC_TYPETEST, value_reg.raw(), const_str(&this->func_state, &constant));
+   auto type_test = this->emit_type_test_descriptor(Payload.descriptor, Payload.negated, value_reg);
+   if (not type_test.ok()) return ParserResult<ExpDesc>::failure(type_test.error_ref());
 
    value.init(ExpKind::NonReloc, value_reg.raw());
    value.result_type = TiriType::Bool;
