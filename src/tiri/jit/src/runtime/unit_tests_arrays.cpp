@@ -230,6 +230,13 @@ static bool test_array_recursive_identity(kt::Log &Log)
       Log.error("a deeply recursive bare array wildcard rejected a valid specialisation");
       return false;
    }
+
+   GCarray *bare_matrix = lj_array_new(lua, 0, AET::ARRAY);
+   if (not lj_array_member_identity_matches(bare_matrix, "array<any>") or
+       not lj_array_identity_matches(bare_matrix, "array<array<any>>")) {
+      Log.error("an array<any> wildcard rejected a bare array identity");
+      return false;
+   }
    return true;
 }
 

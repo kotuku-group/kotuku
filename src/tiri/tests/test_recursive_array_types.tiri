@@ -131,6 +131,23 @@ function recursive_wildcard_parameter(Matrix:array<array<any>>!):num
    return #Matrix
 end
 
+@Test function BareArrayIdentityMatchesAnyWildcard()
+   local integer_row = array<int> { 1 }
+   local string_row = array<str> { 'two' }
+   local broad:any = array<array> { integer_row, string_row }
+
+   assert(recursive_wildcard_parameter(broad) is 2,
+      'an array<array<any>> parameter rejected a bare array member identity')
+   local assigned:array<array<any>> = broad
+   assert(assigned[0] is integer_row and assigned[1] is string_row,
+      'an array<array<any>> local contract rejected a bare array member identity')
+
+   local copied = array<array<any>, 2>
+   array.copy(copied, broad)
+   assert(copied[0] is integer_row and copied[1] is string_row,
+      'array.copy() rejected a bare array identity accepted by individual element stores')
+end
+
 function recursive_result(Value:any):array<array<int>>!
    return Value
 end

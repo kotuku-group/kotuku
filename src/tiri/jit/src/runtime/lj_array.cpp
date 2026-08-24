@@ -547,7 +547,7 @@ static bool array_identity_text_matches(std::string_view Expected, std::string_v
 {
    if (Expected IS Actual) return true;
    if (Expected IS "array" or Expected IS "array<any>") {
-      return Actual.starts_with("array<") and Actual.ends_with('>');
+      return Actual IS "array" or (Actual.starts_with("array<") and Actual.ends_with('>'));
    }
    if (not Expected.starts_with("array<") or not Expected.ends_with('>') or
        not Actual.starts_with("array<") or not Actual.ends_with('>')) return false;
@@ -556,7 +556,7 @@ static bool array_identity_text_matches(std::string_view Expected, std::string_v
    std::string_view actual_member = Actual.substr(6, Actual.size() - 7);
    if (expected_member IS "any") return true;
    if ((expected_member IS "array" or expected_member.starts_with("array<")) and
-       actual_member.starts_with("array<")) {
+       (actual_member IS "array" or actual_member.starts_with("array<"))) {
       return array_identity_text_matches(expected_member, actual_member);
    }
    return false;
