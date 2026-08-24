@@ -25,14 +25,14 @@ class LexState;
 // Expression kinds.
 
 enum class ExpKind : uint8_t {
-   // Constant expressions must be first and in this order:
+   // Primitive constants retain their bytecode encoding.  Category membership is defined by the predicates below,
+   // rather than by enum position.
    Nil,
    False,
    True,
    Str,        // sval = string value
    Num,        // nval = number value
-   Last = Num,
-   // Non-constant expressions follow:
+   // Non-constant expressions:
    Local,      // info = local register, aux = vstack index
    Upval,      // info = upvalue index, aux = vstack index
    Global,     // sval = string value (explicit global or known global reference)
@@ -49,12 +49,41 @@ enum class ExpKind : uint8_t {
    Void
 };
 
-// Expression kind helper function - returns true for variable-like expressions.
-// Note: Unscoped is between Global and Indexed, so this range check covers it.
-// IndexedArray, SafeIndexedArray, IndexedObject, and IndexedStruct are also variable-like expressions for assignment.
-[[nodiscard]] static constexpr bool vkisvar(ExpKind k) {
-   return ExpKind::Local <= k and k <= ExpKind::IndexedStruct;
+[[nodiscard]] static constexpr bool expkind_is_primitive(ExpKind Kind) noexcept
+{
+   return Kind IS ExpKind::Nil or Kind IS ExpKind::False or Kind IS ExpKind::True;
 }
+
+[[nodiscard]] static constexpr bool expkind_is_constant(ExpKind Kind) noexcept
+{
+   return expkind_is_primitive(Kind) or Kind IS ExpKind::Str or Kind IS ExpKind::Num;
+}
+
+// Variable-like expressions may appear on the left of an assignment.  Keep this list explicit: adding an ExpKind
+// must not silently change assignment semantics because of its ordinal position.
+[[nodiscard]] static constexpr bool expkind_is_variable_like(ExpKind Kind) noexcept
+{
+   switch (Kind) {
+      case ExpKind::Local:
+      case ExpKind::Upval:
+      case ExpKind::Global:
+      case ExpKind::Unscoped:
+      case ExpKind::Indexed:
+      case ExpKind::IndexedArray:
+      case ExpKind::SafeIndexedArray:
+      case ExpKind::IndexedObject:
+      case ExpKind::IndexedStruct:
+         return true;
+      default:
+         return false;
+   }
+}
+
+// BC_KPRI encodes these values directly.  Their values are deliberately asserted rather than inferred from the
+// declaration order used by the category predicates above.
+static_assert(uint8_t(ExpKind::Nil) IS 0u);
+static_assert(uint8_t(ExpKind::False) IS 1u);
+static_assert(uint8_t(ExpKind::True) IS 2u);
 
 enum class ExprFlag : uint8_t {
    None = 0x00u,
@@ -237,7 +266,7 @@ struct ExpDesc {
 
    // Member methods for expression queries and manipulation
    [[nodiscard]] inline bool has_jump() const { return this->t != this->f; }
-   [[nodiscard]] inline bool is_constant() const { return this->k <= ExpKind::Last; }
+   [[nodiscard]] inline bool is_constant() const { return expkind_is_constant(this->k); }
    [[nodiscard]] inline bool is_constant_nojump() const { return this->is_constant() and not this->has_jump(); }
    [[nodiscard]] inline bool is_num_constant() const { return this->k == ExpKind::Num; }
    [[nodiscard]] inline bool is_num_constant_nojump() const { return this->is_num_constant() and not this->has_jump(); }
@@ -399,7 +428,7 @@ static_assert((int)BC_MODVV - (int)BC_ADDVV == int(BinOpr::Mod) - int(BinOpr::Ad
 // Return bytecode encoding for primitive constant.
 
 [[nodiscard]] static constexpr ExpKind const_pri(const ExpDesc* e) {
-   lj_assertX(e->k <= ExpKind::True, "Bad constant primitive");
+   lj_assertX(expkind_is_primitive(e->k), "Bad constant primitive");
    return e->k;
 }
 

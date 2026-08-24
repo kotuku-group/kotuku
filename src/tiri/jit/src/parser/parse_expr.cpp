@@ -54,7 +54,7 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
 
 static void expr_kvalue(FuncState *fs, TValue *v, ExpDesc *e)
 {
-   if (e->k <= ExpKind::True) setpriV(v, ~uint64_t(e->k));
+   if (expkind_is_primitive(e->k)) setpriV(v, ~uint64_t(e->k));
    else if (e->k IS ExpKind::Str) setgcVraw(v, obj2gco(e->u.sval), LJ_TSTR);
    else {
       fs_check_assert(fs,tvisnumber(e->num_tv()), "bad number constant");

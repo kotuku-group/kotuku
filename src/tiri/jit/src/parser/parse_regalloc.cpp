@@ -441,7 +441,7 @@ static void expr_toreg_nobranch(FuncState *fs, ExpDesc *e, BCREG reg)
       bcemit_nil(fs, reg, 1);
       goto noins;
    }
-   else if (e->k <= ExpKind::True) {
+   else if (expkind_is_primitive(e->k)) {
       ins = BCINS_AD(BC_KPRI, reg, const_pri(e));
    }
    else {
@@ -762,7 +762,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
       };
       bcemit_value_contract(fs, RHS, contract);
       expr_toval(fs, RHS);
-      if (RHS->k <= ExpKind::True) ins = BCINS_AD(BC_USETP, LHS->u.s.info, const_pri(RHS));
+      if (expkind_is_primitive(RHS->k)) ins = BCINS_AD(BC_USETP, LHS->u.s.info, const_pri(RHS));
       else if (RHS->k IS ExpKind::Str) ins = BCINS_AD(BC_USETS, LHS->u.s.info, const_str(fs, RHS));
       else if (RHS->k IS ExpKind::Num) ins = BCINS_AD(BC_USETN, LHS->u.s.info, const_num(fs, RHS));
       else ins = BCINS_AD(BC_USETV, LHS->u.s.info, expr_toanyreg(fs, RHS));

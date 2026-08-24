@@ -623,7 +623,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
 
 ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment target, const ExprNodeList& values)
 {
-   if (values.empty() or not vkisvar(target.storage.k)) {
+   if (values.empty() or not expkind_is_variable_like(target.storage.k)) {
       return this->unsupported_stmt(AstNodeKind::AssignmentStmt, SourceSpan{});
    }
 
@@ -704,7 +704,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
 
 ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment target, const ExprNodeList& values)
 {
-   if (values.empty() or not vkisvar(target.storage.k)) {
+   if (values.empty() or not expkind_is_variable_like(target.storage.k)) {
       return this->unsupported_stmt(AstNodeKind::AssignmentStmt, SourceSpan{});
    }
 

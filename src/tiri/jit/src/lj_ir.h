@@ -353,10 +353,30 @@ typedef enum : uint32_t {
    IRT_T = 0xff
 } IRType;
 
-inline constexpr bool irtype_ispri(IRType irt) { return (uint32_t)(irt) <= IRT_TRUE; }
+// IRType uses five low bits for its compact type ID.  The remaining bits are independent instruction flags.
+// These invariants are deliberately asserted because the JIT stores this value in IRType1 and TRef tags.
+static_assert(uint32_t(IRT__MAX) <= uint32_t(IRT_TYPE) + 1u);
+static_assert((uint32_t(IRT_MARK) & uint32_t(IRT_TYPE)) IS 0u);
+static_assert((uint32_t(IRT_ISPHI) & uint32_t(IRT_TYPE)) IS 0u);
+static_assert((uint32_t(IRT_GUARD) & uint32_t(IRT_TYPE)) IS 0u);
+static_assert(uint32_t(IRT_T) IS 0xffu);
+
+[[nodiscard]] inline constexpr IRType irtype_base(IRType Type) noexcept
+{
+   return IRType(uint32_t(Type) & uint32_t(IRT_TYPE));
+}
+
+[[nodiscard]] inline constexpr bool irtype_is_in_range(IRType Type, IRType First, IRType Last) noexcept
+{
+   return uint32_t(irtype_base(Type)) - uint32_t(First) <= uint32_t(Last) - uint32_t(First);
+}
+
+inline constexpr bool irtype_ispri(IRType Irt) { return Irt <= IRT_TRUE; }
 
 // Stored IRType.
 struct IRType1 { uint8_t irt; };
+
+static_assert(sizeof(IRType1) IS sizeof(uint8_t));
 
 #define IRT(o, t)       ((uint32_t)(((o)<<8) | (t)))
 #define IRTI(o)         (IRT((o), IRT_INT))
@@ -364,10 +384,10 @@ struct IRType1 { uint8_t irt; };
 #define IRTG(o, t)      (IRT((o), IRT_GUARD|(t)))
 #define IRTGI(o)        (IRT((o), IRT_GUARD|IRT_INT))
 
-#define irt_t(t)         ((IRType)(t).irt)
-#define irt_type(t)      ((IRType)((t).irt & IRT_TYPE))
-#define irt_sametype(t1, t2)   ((((t1).irt ^ (t2).irt) & IRT_TYPE) == 0)
-#define irt_typerange(t, first, last) ((uint32_t)((t).irt & IRT_TYPE) - (uint32_t)(first) <= (uint32_t)(last-first))
+#define irt_t(t)         (IRType((t).irt))
+#define irt_type(t)      (irtype_base(irt_t(t)))
+#define irt_sametype(t1, t2)   (irt_type((t1)) IS irt_type((t2)))
+#define irt_typerange(t, first, last) (irtype_is_in_range(irt_t((t)), (first), (last)))
 
 #define irt_isnil(t)      (irt_type(t) == IRT_NIL)
 #define irt_ispri(t)      ((uint32_t)irt_type(t) <= IRT_TRUE)
@@ -463,6 +483,25 @@ enum {
    REF_DROP = 0xffff
 };
 
+// References below REF_BIAS are literal operands or constants; real instructions start at REF_FIRST.  REF_BASE is
+// the boundary sentinel, used for implicit BASE-register references rather than an emitted instruction.
+static_assert(REF_BIAS IS 0x8000);
+static_assert(REF_TRUE + 1 IS REF_FALSE);
+static_assert(REF_FALSE + 1 IS REF_NIL);
+static_assert(REF_NIL + 1 IS REF_BASE);
+static_assert(REF_FIRST IS REF_BASE + 1);
+static_assert(REF_DROP IS 0xffff);
+
+[[nodiscard]] inline constexpr bool irref_is_constant_or_literal(IRRef Ref) noexcept
+{
+   return Ref < IRRef(REF_BIAS);
+}
+
+[[nodiscard]] inline constexpr bool irref_is_instruction(IRRef Ref) noexcept
+{
+   return Ref >= IRRef(REF_FIRST);
+}
+
 // Note: IRMlit operands must be < REF_BIAS, too!
 // This allows for fast and uniform manipulation of all operands
 // without looking up the operand mode in lj_ir_mode:
@@ -474,7 +513,7 @@ enum {
 
 #define IRREF2(lo, hi)      ((IRRef2)(lo) | ((IRRef2)(hi) << 16))
 
-#define irref_isk(ref)      ((ref) < REF_BIAS)
+#define irref_isk(ref)      (irref_is_constant_or_literal((ref)))
 
 // Tagged IR references (32 bit).
 //
@@ -490,6 +529,11 @@ constexpr uint32_t TREF_REFMASK = 0x0000ffff;
 constexpr uint32_t TREF_FRAME = 0x00010000;
 constexpr uint32_t TREF_CONT = 0x00020000;
 constexpr uint32_t TREF_KEYINDEX = 0x00100000;
+
+static_assert(TREF_REFMASK IS uint32_t(REF_DROP));
+static_assert((TREF_FRAME & TREF_REFMASK) IS 0u);
+static_assert((TREF_CONT & TREF_REFMASK) IS 0u);
+static_assert((TREF_KEYINDEX & TREF_REFMASK) IS 0u);
 
 static constexpr TRef TREF(uint32_t ref, IRType t) {
    return TRef((ref) + (uint32_t(t) << 24));
