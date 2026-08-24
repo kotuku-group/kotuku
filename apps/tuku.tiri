@@ -789,7 +789,7 @@ function fetchOnce(Args:table!):table
    local http = obj.new('http', makeRequestConfig(Args))
    applyTransferHeaders(http, Args)
    applyRequestHeaders(http, Args)
-   proc = processing.new({ timeout = Args.timeout, signals = array<object> { http } })
+   proc = processing.new({ timeout = Args.timeout, signals = array<obj> { http } })
 
    err = http.acActivate() -- Send asynchronous request
    if err is ERR_Okay then

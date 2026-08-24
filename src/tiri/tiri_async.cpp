@@ -360,13 +360,13 @@ static void collect_object_ids(lua_State *Lua, int ArgIndex, kt::vector<OBJECTID
             }
          }
       }
-      else luaL_argerror(Lua, ArgIndex, "Expected an array<object>.");
+      else luaL_argerror(Lua, ArgIndex, "Expected an array<obj>.");
    }
-   else luaL_argerror(Lua, ArgIndex, "Expected an object or array<object>.");
+   else luaL_argerror(Lua, ArgIndex, "Expected an object or array<obj>.");
 }
 
 //********************************************************************************************************************
-// Usage: error = async.wait(Object|array<object>, [Timeout])
+// Usage: error = async.wait(Object|array<obj>, [Timeout])
 //
 // Thin wrapper around the Core AsyncWait() API.  Collects object IDs from the Lua arguments and delegates to
 // AsyncWait().
@@ -412,7 +412,7 @@ static int async_pending(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Usage: error = async.cancel(Object|array<object>)
+// Usage: error = async.cancel(Object|array<obj>)
 //
 // Cancel all pending asynchronous actions for the listed objects.  The in-flight thread (if any) is interrupted
 // and the remaining action queue is drained without execution.

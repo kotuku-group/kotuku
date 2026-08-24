@@ -145,7 +145,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
       end
    })
 
-   local proc = processing.new({ timeout = 5.0, signals = array<object> { client } })
+   local proc = processing.new({ timeout = 5.0, signals = array<obj> { client } })
    err = client.mtConnect(Host, Port, 3.0)
    if err != ERR_Okay then
       client.free()

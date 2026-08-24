@@ -68,7 +68,7 @@ end
    local rectangle = obj.new('VectorRectangle')
 
    assert(time_value is <obj>, 'unconstrained obj should match every object wrapper')
-   assert(time_value is <object Time>, 'object alias should be accepted')
+   assert(time_value is <obj Time>, 'named obj descriptors should match their object class')
    assert(time_value is not <obj File>, 'unrelated object classes should not match')
    assert(rectangle is <obj Vector>, 'derived objects should match their base class')
    assert(nil is not <obj>, 'nil should not match obj')

@@ -80,12 +80,21 @@ end
 end
 
 @Test function RemovedStringTypeRejected()
-   try
-      exec("local value:string = 'text'")
-   success
-      error("Expected string type name to be rejected")
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         error(f"Expected string type name to be rejected in {Context}")
+      end
    end
 
+   assert_rejected("local value:string = 'text'", "a local annotation")
+   assert_rejected("local values:array<string> = array<str> {}", "an array element annotation")
+   assert_rejected("local values:array<array<string>> = array<array<str>> {}", "a nested array annotation")
+   assert_rejected("local values = array<string> {}", "an array constructor")
+   assert_rejected("local values = array<array<string>> {}", "a nested array constructor")
+   assert_rejected("return array<str> {} is <array string>", "an array type-test descriptor")
+   assert_rejected("return array<array<str>> {} is <array array<string>>", "a nested array type-test descriptor")
    assert(type('text') is 'string', "type() must continue to return the string runtime name")
 end
 
@@ -101,7 +110,13 @@ end
    assert_rejected("local value:object = nil", "a local annotation")
    assert_rejected("local function rejected(Value:object) return Value end", "a parameter annotation")
    assert_rejected("local function rejected():object return nil end", "a return annotation")
+   assert_rejected("return nil is <object>", "a type-test descriptor")
    assert_rejected("local values:array<object> = array<obj> {}", "an array element annotation")
+   assert_rejected("local values:array<array<object>> = array<array<obj>> {}", "a nested array annotation")
+   assert_rejected("local values = array<object> {}", "an array constructor")
+   assert_rejected("local values = array<array<object>> {}", "a nested array constructor")
+   assert_rejected("return array<obj> {} is <array object>", "an array type-test descriptor")
+   assert_rejected("return array<array<obj>> {} is <array array<object>>", "a nested array type-test descriptor")
 end
 
 @Test function RemovedBooleanTypeRejected()
@@ -136,13 +151,11 @@ end
    end
 
    local values:array<int> = array<int> { 3, 5 }
-   local string_alias:array<string> = array<string> { 'canonical' }
    global glAnnotatedWords:array<str> = array<str> { 'one' }
    assert(accept_ints(values)[1] is 5, 'Concrete array annotations should work in parameters, locals and results')
    assert(accept_nested(array<array<str>> { array<str> { 'nested' } })[0][0] is 'nested',
       'Recursive array annotations should work in parameters and results')
    assert(glAnnotatedWords[0] is 'one', 'Concrete array annotations should work for globals')
-   assert(string_alias[0] is 'canonical', 'String array aliases should canonicalise to str storage')
 
    function assert_rejected(Source:str, Message:str)
       try

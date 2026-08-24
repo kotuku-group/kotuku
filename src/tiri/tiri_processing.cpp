@@ -95,7 +95,7 @@ static int processing_new(lua_State *Lua)
                      }
                      else {
                         return fail(ERR::InvalidType,
-                           std::format("The signals option requires an array<object> reference."));
+                           std::format("The signals option requires an array<obj> reference."));
                      }
                      break;
                   }

@@ -1233,7 +1233,7 @@ end
 @Test function ObjectArrayToTable()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object, 2>
+   arr = array<obj, 2>
    arr[0] = obj_one
    arr[1] = obj_two
 
