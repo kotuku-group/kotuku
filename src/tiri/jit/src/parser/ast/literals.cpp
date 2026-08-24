@@ -343,19 +343,32 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
          return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, constraint_token,
             std::format("Type-test descriptor '<{}>' does not accept an inner name", type_name_view));
       }
-      if (constraint_token.kind() != TokenKind::Identifier) {
+
+      std::string constraint_name;
+      if (constraint_token.kind() IS TokenKind::Identifier) {
+         GCstr *constraint_symbol = constraint_token.identifier();
+         constraint_name.assign(strdata(constraint_symbol), constraint_symbol->len);
+      }
+      else if (descriptor.type IS TiriType::Array and constraint_token.kind() IS TokenKind::ArrayTyped) {
+         if (not this->ctx.lex().array_typed_size.is_absent()) {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, constraint_token,
+               "Array type-test descriptors cannot declare a size");
+         }
+         GCstr *constraint_symbol = constraint_token.payload().as_string();
+         constraint_name = std::format("array<{}>",
+            std::string_view(strdata(constraint_symbol), constraint_symbol->len));
+      }
+      else {
          return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedIdentifier, constraint_token,
             "Expected one inner name in type-test descriptor");
       }
 
-      GCstr *constraint_symbol = constraint_token.identifier();
-      std::string_view constraint_name(strdata(constraint_symbol), constraint_symbol->len);
       this->ctx.tokens().advance();
       descriptor.constrained = true;
 
       if (descriptor.type IS TiriType::Array) {
-         auto element = describe_array_element(constraint_name IS "obj" ? "object" : constraint_name,
-            &this->ctx.lua());
+         auto element = parse_array_element_type(constraint_name IS "obj" ? "object" : constraint_name,
+            &this->ctx.lua(), &this->ctx.lex());
          if (element and element->storage != AET::PTR and
              (element->storage != AET::STRUCT or element->struct_def)) descriptor.array_element = *element;
          else if (struct_record *definition = find_struct(&this->ctx.lua(), constraint_name)) {

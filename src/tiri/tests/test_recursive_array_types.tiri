@@ -99,6 +99,17 @@ end
    end
 end
 
+@Test function RecursiveRuntimeTypeTests()
+   local matrix:any = array<array<int>> { array<int> { 1 } }
+   local cube:any = array<array<array<int>>> { array<array<int>> { array<int> { 2 } } }
+
+   assert(matrix is <array array<int>>, 'a matching recursive array type test was rejected')
+   assert(matrix is not <array array<str>>, 'a recursive array type test accepted a mismatching member type')
+   assert(matrix is <array array<any>>, 'a recursive array type test rejected an any wildcard')
+   assert(cube is <array array<array<int>>>, 'a matching deeply recursive array type test was rejected')
+   assert(cube is <array array<array>>, 'a deep bare-array wildcard type test was rejected')
+end
+
 function expect_recursive_store_failure(Operation:func, Message:str)
    try
       Operation()
@@ -292,4 +303,5 @@ end
    assert_rejected('local values = array<array<int, 4>> {}', 'declare a size')
    assert_rejected('local values = array<array<missing>> {}', 'Unknown or malformed array element type')
    assert_rejected('local values = array<array<int> {}', "'>' expected")
+   assert_rejected('return array<array<int>> {} is <array array<int, 4>>', 'cannot declare a size')
 end
