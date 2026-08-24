@@ -997,6 +997,11 @@ static void set_call_result_count(FuncState *State, const ExpDesc &Expression, B
       BCREG first = bc_a(*nil_init);
       lj_assertX(bc_op(*nil_init) IS BC_KPRI or bc_op(*nil_init) IS BC_KNIL,
          "safe-call nil path does not start with a nil initialiser");
+      BCREG required_top = first + Count - 1;
+      if (State->freereg < required_top) {
+         RegisterAllocator allocator(State);
+         allocator.bump(BCReg(required_top - State->freereg));
+      }
       *nil_init = Count IS 2 ? BCINS_AD(BC_KPRI, first, ExpKind::Nil) :
          BCINS_AD(BC_KNIL, first, first + Count - 2);
    };
