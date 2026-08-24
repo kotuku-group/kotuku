@@ -58,7 +58,8 @@ end
    expect_failure(() => do array.of('str', 12) end, 'String constructor accepted a number')
    expect_failure(() => do indexed.copy({ [0]=12 }) end, 'String table copy accepted a number')
    expect_failure(() => do indexed.mapSame(Value => num: 12) end, 'String map accepted a number')
-   expect_failure(() => do array.new(0, 'string') end, "Legacy 'string' element name was accepted")
+   local legacy_string = array.new(0, 'string')
+   assert(legacy_string.type() is 'str', "The canonical 'string' alias did not produce string storage")
 end
 
 @Test function ReferenceCategoriesAreExact()

@@ -3,6 +3,7 @@
 #include "static_type_descriptor.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <format>
 #include <string>
@@ -11,6 +12,7 @@
 #include <kotuku/objects.h>
 
 #include "ast/nodes.h"
+#include "lexer.h"
 #include "parse_types.h"
 #include "../runtime/lj_array.h"
 #include "../runtime/lj_struct.h"
@@ -35,16 +37,40 @@ bool StaticValueDescriptor::proved() const noexcept
    return Storage;
 }
 
+[[nodiscard]] static bool recursive_array_identity_matches(std::string_view Expected, std::string_view Actual)
+{
+   if (Expected IS Actual) return true;
+   if (Expected IS "array" or Expected IS "array<any>") {
+      return Actual IS "array" or (Actual.starts_with("array<") and Actual.ends_with('>'));
+   }
+   if (not Expected.starts_with("array<") or not Expected.ends_with('>') or
+       not Actual.starts_with("array<") or not Actual.ends_with('>')) return false;
+   std::string_view expected_member = Expected.substr(6, Expected.size() - 7);
+   std::string_view actual_member = Actual.substr(6, Actual.size() - 7);
+   if (expected_member IS "any") return true;
+   if ((expected_member IS "array" or expected_member.starts_with("array<")) and
+       (actual_member IS "array" or actual_member.starts_with("array<"))) {
+      return recursive_array_identity_matches(expected_member, actual_member);
+   }
+   return false;
+}
+
 bool array_element_matches(
-   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual) noexcept
+   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual)
 {
    if (not Expected.known or Expected.storage IS AET::ANY) return Actual.known;
    if (not Actual.known or public_array_storage(Expected.storage) != public_array_storage(Actual.storage)) return false;
    if (Expected.storage IS AET::STRUCT and Expected.struct_def) return Expected.struct_def IS Actual.struct_def;
+   if (Expected.storage IS AET::ARRAY and Expected.nested_array_identity) {
+      if (not Actual.nested_array_identity) return false;
+      std::string_view expected_name(strdata(Expected.nested_array_identity), Expected.nested_array_identity->len);
+      std::string_view actual_name(strdata(Actual.nested_array_identity), Actual.nested_array_identity->len);
+      return recursive_array_identity_matches(expected_name, actual_name);
+   }
    return true;
 }
 
-ArrayElementDescriptor describe_array_element(const GCarray *Array) noexcept
+ArrayElementDescriptor describe_array_element(const GCarray *Array)
 {
    if (not Array) return {};
    ArrayElementDescriptor result;
@@ -78,8 +104,15 @@ ArrayElementDescriptor describe_array_element(const GCarray *Array) noexcept
    return result;
 }
 
-bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual) noexcept
+bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual)
 {
+   if (Expected.storage IS AET::ARRAY and Expected.nested_array_identity) {
+      if (not Actual or Actual->elemtype != AET::ARRAY or not gcref(Actual->type_identity)) return false;
+      GCstr *actual_identity = strref(Actual->type_identity);
+      std::string_view expected_name(strdata(Expected.nested_array_identity), Expected.nested_array_identity->len);
+      std::string_view actual_name(strdata(actual_identity), actual_identity->len);
+      return recursive_array_identity_matches(expected_name, actual_name);
+   }
    return array_element_matches(Expected, describe_array_element(Actual));
 }
 
@@ -88,7 +121,134 @@ std::string array_element_name(const ArrayElementDescriptor &Element)
    if (not Element.known) return "array";
    AET storage = public_array_storage(Element.storage);
    if (storage IS AET::STRUCT and Element.struct_def) return std::format("struct<{}>", Element.struct_def->Name);
+   if (storage IS AET::ARRAY and Element.nested_array_identity) {
+      return std::string(strdata(Element.nested_array_identity), Element.nested_array_identity->len);
+   }
    return std::string(lj_array_elemtype_name(storage));
+}
+
+namespace {
+
+class RecursiveArrayTypeParser {
+public:
+   RecursiveArrayTypeParser(std::string_view Text, lua_State *State, LexState *Lexer)
+      : text_(Text), state_(State), lexer_(Lexer) { }
+
+   std::optional<ArrayElementDescriptor> parse_element()
+   {
+      auto result = this->parse_member(0, nullptr);
+      this->skip_space();
+      if (not result or this->position_ != this->text_.size()) return std::nullopt;
+      return result;
+   }
+
+   std::optional<std::string> canonical_name()
+   {
+      std::string canonical;
+      auto result = this->parse_member(0, &canonical);
+      this->skip_space();
+      if (not result or this->position_ != this->text_.size()) return std::nullopt;
+      if (result->storage IS AET::ARRAY) return canonical;
+      return std::format("array<{}>", canonical);
+   }
+
+private:
+   static constexpr size_t MAX_DEPTH = 32;
+
+   void skip_space()
+   {
+      while (this->position_ < this->text_.size() and
+             std::isspace(uint8_t(this->text_[this->position_]))) this->position_++;
+   }
+
+   bool consume(char Character)
+   {
+      this->skip_space();
+      if (this->position_ >= this->text_.size() or this->text_[this->position_] != Character) return false;
+      this->position_++;
+      return true;
+   }
+
+   std::string_view identifier()
+   {
+      this->skip_space();
+      size_t start = this->position_;
+      while (this->position_ < this->text_.size()) {
+         char character = this->text_[this->position_];
+         if (not std::isalnum(uint8_t(character)) and character != '_') break;
+         this->position_++;
+      }
+      return this->text_.substr(start, this->position_ - start);
+   }
+
+   std::optional<ArrayElementDescriptor> parse_member(size_t Depth, std::string *Canonical)
+   {
+      if (Depth >= MAX_DEPTH) return std::nullopt;
+      std::string_view name = this->identifier();
+      if (name.empty()) return std::nullopt;
+
+      if (name IS "array") {
+         ArrayElementDescriptor result { AET::ARRAY, TiriType::Array, CLASSID::NIL, nullptr, true };
+         this->skip_space();
+         if (this->position_ >= this->text_.size() or this->text_[this->position_] != '<') {
+            if (Canonical) *Canonical = "array";
+            return result;
+         }
+         this->position_++;
+         std::string member_name;
+         auto member = this->parse_member(Depth + 1, &member_name);
+         if (not member or member->storage IS AET::PTR or
+             (this->state_ and member->storage IS AET::STRUCT and not member->struct_def) or
+             not this->consume('>')) {
+            return std::nullopt;
+         }
+         std::string identity = std::format("array<{}>", member_name);
+         if (this->lexer_) result.nested_array_identity = this->lexer_->keepstr(identity);
+         else if (this->state_) {
+            result.nested_array_identity = lj_str_new(this->state_, identity.data(), identity.size());
+         }
+         if (Canonical) *Canonical = identity;
+         return result;
+      }
+
+      if (name IS "struct") {
+         if (not this->consume('<')) {
+            if (Canonical) *Canonical = "struct";
+            return describe_array_element("struct", this->state_);
+         }
+         std::string_view structure_name = this->identifier();
+         if (structure_name.empty() or not this->consume('>')) return std::nullopt;
+         if (Canonical) *Canonical = std::format("struct<{}>", structure_name);
+         auto result = describe_array_element(std::format("struct<{}>", structure_name), this->state_);
+         if (this->state_ and result and not result->struct_def) return std::nullopt;
+         return result;
+      }
+
+      if (name IS "object") name = "obj";
+      if (name IS "string") name = "str";
+      auto result = describe_array_element(name IS "obj" ? "object" : name, this->state_);
+      if (result and result->storage IS AET::PTR) return std::nullopt;
+      if (result and Canonical) *Canonical = array_element_name(*result);
+      return result;
+   }
+
+   std::string_view text_;
+   lua_State *state_ = nullptr;
+   LexState *lexer_ = nullptr;
+   size_t position_ = 0;
+};
+
+} // namespace
+
+std::optional<ArrayElementDescriptor> parse_array_element_type(
+   std::string_view Name, lua_State *State, LexState *Lexer)
+{
+   return RecursiveArrayTypeParser(Name, State, Lexer).parse_element();
+}
+
+std::optional<std::string> canonical_array_type_name(std::string_view Name, lua_State *State)
+{
+   return RecursiveArrayTypeParser(Name, State, nullptr).canonical_name();
 }
 
 StaticValueDescriptor StaticResultSet::value_at(size_t Position) const

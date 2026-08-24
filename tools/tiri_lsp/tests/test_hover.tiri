@@ -140,6 +140,20 @@ result = greet|('Ada')
    assertContains(hover, '`Name: str` - Person to greet', 'Call hover should include parameter documentation.')
 end
 
+@Test function RecursiveArrayFunctionHover()
+   hover, token = hoverAt([=[
+function matrixFirst(Matrix:array<array<int>>!):array<array<double>>
+   return array<array<double>> {}
+end
+
+value = matrixF|irst(array<array<int>> {})
+]=])
+
+   assert(token and token.text is 'matrixFirst', 'Hover should identify the recursively typed function call.')
+   assertContains(hover, 'matrixFirst(Matrix: array<array<int>>!):array<array<double>>',
+      'Hover should preserve complete recursive array annotations.')
+end
+
 @Test function DocAnnotatedFunctionCallHoverAfterRelativeImport()
    hover, token = hoverAt([=[
 import './relative_symbol_helper'

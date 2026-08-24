@@ -109,15 +109,21 @@ static OBJECTID object_uid_from_value(lua_State *L, int ArgIndex)
 static std::string_view array_struct_name(lua_State *L, int NArg);
 bool lj_array_struct_is_trivial(const struct_record &Def);
 
-static AET parse_elemtype(lua_State *L, int NArg)
+static ArrayAllocationDescriptor parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
    std::string_view type_name(strdata(type_str), type_str->len);
    if (type_name IS "obj") type_name = "object";
-   if (auto descriptor = describe_array_element(type_name, L)) return descriptor->storage;
+   if (auto element = parse_array_element_type(type_name, L)) {
+      ArrayAllocationDescriptor descriptor;
+      descriptor.storage = element->storage;
+      descriptor.struct_def = element->struct_def;
+      descriptor.canonical_identity = std::format("array<{}>", array_element_name(*element));
+      return descriptor;
+   }
 
    lj_err_argv(L, NArg, ErrMsg::BADTYPE, "valid array type", strdata(type_str));
-   return AET(0);  // unreachable
+   return {};  // unreachable
 }
 
 //********************************************************************************************************************
@@ -129,9 +135,9 @@ GCarray * lj_array_new_map_result(lua_State *L, MSize Length, int TypeArg)
 {
    if (TypeArg <= 0 or lua_isnoneornil(L, TypeArg)) return lj_array_new(L, Length, AET::ANY);
 
-   auto elem_type = parse_elemtype(L, TypeArg);
-   if (elem_type IS AET::PTR) lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
-   if (elem_type != AET::STRUCT) return lj_array_new(L, Length, elem_type);
+   auto descriptor = parse_elemtype(L, TypeArg);
+   if (descriptor.storage IS AET::PTR) lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
+   if (descriptor.storage != AET::STRUCT) return lj_array_new(L, Length, descriptor);
 
    auto struct_name = array_struct_name(L, TypeArg);
    if (struct_name.empty()) lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
@@ -139,7 +145,8 @@ GCarray * lj_array_new_map_result(lua_State *L, MSize Length, int TypeArg)
    if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
       lj_err_argv(L, TypeArg, ErrMsg::ARRTYPE);
    }
-   return lj_array_new(L, Length, elem_type, nullptr, 0, struct_name, struct_def);
+   descriptor.struct_def = struct_def;
+   return lj_array_new(L, Length, descriptor);
 }
 
 static std::string_view array_struct_name(lua_State *L, int NArg)
@@ -321,19 +328,20 @@ LJLIB_CF(array_new)      LJLIB_REC(.)
    else {
       auto size = lj_lib_checkint(L, 1);
       if (size < 0) lj_err_argv(L, 1, ErrMsg::NUMRNG, "non-negative", "negative");
-      auto elem_type = parse_elemtype(L, 2);
+      auto descriptor = parse_elemtype(L, 2);
 
-      if (elem_type IS AET::PTR) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only
-      else if (elem_type IS AET::STRUCT) {
+      if (descriptor.storage IS AET::PTR) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only
+      else if (descriptor.storage IS AET::STRUCT) {
          auto struct_name = array_struct_name(L, 2);
          if (struct_name.empty()) lj_err_argv(L, 2, ErrMsg::ARRTYPE);
          auto struct_def = find_struct(L, struct_name);
          if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
             lj_err_argv(L, 2, ErrMsg::ARRTYPE);
          }
-         arr = lj_array_new(L, uint32_t(size), elem_type, nullptr, 0, struct_name, struct_def);
+         descriptor.struct_def = struct_def;
+         arr = lj_array_new(L, uint32_t(size), descriptor);
       }
-      else arr = lj_array_new(L, uint32_t(size), elem_type);
+      else arr = lj_array_new(L, uint32_t(size), descriptor);
    }
 
    // Per-instance metatable is null - base metatable will be used automatically
@@ -355,9 +363,9 @@ LJLIB_CF(array_new)      LJLIB_REC(.)
 
 LJLIB_CF(array_of)
 {
-   auto elem_type = parse_elemtype(L, 1);
+   auto descriptor = parse_elemtype(L, 1);
 
-   if (elem_type IS AET::PTR) lj_err_argv(L, 1, ErrMsg::BADTYPE, "non-pointer type", "pointer");
+   if (descriptor.storage IS AET::PTR) lj_err_argv(L, 1, ErrMsg::BADTYPE, "non-pointer type", "pointer");
 
    // Count number of values provided (all arguments after the type string)
 
@@ -365,16 +373,17 @@ LJLIB_CF(array_of)
    if (num_values < 1) luaL_error(L, ERR::Args, "array.of() requires at least one value");
 
    GCarray *arr;
-   if (elem_type IS AET::STRUCT) {
+   if (descriptor.storage IS AET::STRUCT) {
       auto struct_name = array_struct_name(L, 1);
       if (struct_name.empty()) lj_err_argv(L, 1, ErrMsg::ARRTYPE);
       auto struct_def = find_struct(L, struct_name);
       if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
          lj_err_argv(L, 1, ErrMsg::ARRTYPE);
       }
-      arr = lj_array_new(L, uint32_t(num_values), elem_type, nullptr, 0, struct_name, struct_def);
+      descriptor.struct_def = struct_def;
+      arr = lj_array_new(L, uint32_t(num_values), descriptor);
    }
-   else arr = lj_array_new(L, uint32_t(num_values), elem_type);
+   else arr = lj_array_new(L, uint32_t(num_values), descriptor);
    setarrayV(L, L->top++, arr);
 
    lj_array_store_new_values(L, arr, L->base + 1, MSize(num_values));
@@ -1222,10 +1231,7 @@ LJLIB_CF(array_copy)
       auto src_idx  = lj_lib_optint(L, 4, 0);
       auto count = lj_lib_optint(L, 5, array_default_remaining(src->len, src_idx));
 
-      if (not (dest->elemtype IS src->elemtype)) lj_err_caller(L, ErrMsg::ARRTYPE);
       auto span = array_copy_span(L, dest_idx, dest->len, src_idx, src->len, count, false);
-      if (span.count IS 0) return 0;
-
       lj_array_copy(L, dest, span.start, src, MSize(src_idx), span.count);
       return 0;
    }
@@ -1259,9 +1265,7 @@ LJLIB_CF(array_copy)
       auto span = array_copy_span(L, dest_idx, dest->len, src_idx, table_len, copy_total, true);
       if (span.count IS 0) return 0;
 
-      GCarray *staged = dest->elemtype IS AET::STRUCT ?
-         lj_array_new(L, span.count, dest->elemtype, nullptr, 0, dest->structdef->Name, dest->structdef) :
-         lj_array_new(L, span.count, dest->elemtype);
+      GCarray *staged = lj_array_new_like(L, dest, span.count);
       setarrayV(L, L->top++, staged);
 
       for (MSize i = 0; i < span.count; i++) {
@@ -2221,21 +2225,13 @@ LJLIB_CF(array_each)
 }
 
 //********************************************************************************************************************
-static GCarray * array_new_like(lua_State *L, GCarray *Source, MSize Length)
-{
-   if (Source->elemtype IS AET::STRUCT) {
-      return lj_array_new(L, Length, Source->elemtype, nullptr, 0, Source->structdef->Name, Source->structdef);
-   }
-   return lj_array_new(L, Length, Source->elemtype);
-}
-
 static int array_map_same(lua_State *L)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
    MSize count = arr->len;
 
-   GCarray *result = array_new_like(L, arr, count);
+   GCarray *result = lj_array_new_like(L, arr, count);
    setarrayV(L, L->top++, result);
 
    for (MSize i = 0; i < count; i++) {
@@ -2354,7 +2350,7 @@ LJLIB_CF(array_filter)
    MSize count = arr->len;
 
    // Create result array with zero length (will grow dynamically)
-   GCarray *result = array_new_like(L, arr, 0);
+   GCarray *result = lj_array_new_like(L, arr, 0);
    setarrayV(L, L->top++, result);
 
    // Single pass: filter and copy matching elements
@@ -2628,7 +2624,7 @@ LJLIB_CF(array_clone)
    if (arr->elemtype IS AET::STRUCT) luaL_error(L, ERR::NoSupport, "array.clone() does not support struct types.");
 
    // Create new array with same type and length
-   GCarray *result = lj_array_new(L, arr->len, arr->elemtype);
+   GCarray *result = lj_array_new_like(L, arr, arr->len);
    setarrayV(L, L->top++, result);
 
    if (arr->len IS 0) return 1;

@@ -529,6 +529,14 @@ static RecordedContract rec_contract_guard_array(
       TRef definition_ref = ir.fload(ValueRef, IRFL_ARRAY_STRUCTDEF, IRT_PTR);
       ir.guard_eq(definition_ref, ir.kkptr(definition), IRT_PTR);
    }
+   else if (Entry.array_element_type IS AET::ARRAY and not Entry.constraint_name.empty()) {
+      if (not lj_array_member_identity_matches(array, Entry.constraint_name)) return RecordedContract::Mismatch;
+      std::string expected_identity = std::format("array<{}>", Entry.constraint_name);
+      if (not lj_array_identity_matches(array, expected_identity)) return RecordedContract::Complex;
+      GCstr *identity = strref(array->type_identity);
+      TRef identity_ref = ir.fload(ValueRef, IRFL_ARRAY_IDENTITY, IRT_STR);
+      ir.guard_eq(identity_ref, ir.kstr(identity), IRT_STR);
+   }
 
    return RecordedContract::Basic;
 }
@@ -664,6 +672,13 @@ static TRef rec_type_test(jit_State *J, BCREG Slot, GCstr *Encoded)
          observed.array_element_type = arrayV(value)->elemtype;
          if (arrayV(value)->elemtype IS AET::STRUCT and arrayV(value)->structdef) {
             observed.constraint_name = arrayV(value)->structdef->Name;
+         }
+         else if (arrayV(value)->elemtype IS AET::ARRAY and gcref(arrayV(value)->type_identity)) {
+            GCstr *identity = strref(arrayV(value)->type_identity);
+            std::string_view outer(strdata(identity), identity->len);
+            if (outer.starts_with("array<") and outer.ends_with('>')) {
+               observed.constraint_name = outer.substr(6, outer.size() - 7);
+            }
          }
          if (rec_contract_guard_array(J, value_ref, value, observed) != RecordedContract::Basic) return 0;
       }

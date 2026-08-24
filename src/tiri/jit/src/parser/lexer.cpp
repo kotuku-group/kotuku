@@ -1086,10 +1086,9 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
 
    lex_skip_inline_ws(State);
 
-   // Preserve a nested array spelling so annotation parsing can reject unsupported recursive specialisation.
-   // Constructor parsing deliberately reduces it to the existing immediate array member identity.
+   // Preserve the complete nested array spelling for central validation and canonicalisation.
 
-   if (type_str == "array" and State->c IS '<') {
+   if (type_str IS "array" and State->c IS '<') {
       int depth = 1;
       lex_next(State);  // Consume inner '<'
       std::string inner;

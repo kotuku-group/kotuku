@@ -5,8 +5,21 @@
 
 #include "lj_obj.h"
 
+struct ArrayAllocationDescriptor {
+   AET storage = AET::ANY;
+   struct_record *struct_def = nullptr;
+   std::string canonical_identity;
+};
+
 extern GCarray * lj_array_new(lua_State *, uint32_t, AET, void *Data = nullptr, uint8_t Flags = 0,
    std::string_view StructName = {}, struct_record *StructDef = nullptr);
+extern GCarray * lj_array_new(lua_State *, uint32_t, const ArrayAllocationDescriptor &, void *Data = nullptr,
+   uint8_t Flags = 0);
+[[nodiscard]] extern std::string lj_array_default_identity(AET, const struct_record * = nullptr);
+[[nodiscard]] extern bool lj_array_identity_accepts(const GCarray *, const GCarray *);
+[[nodiscard]] extern bool lj_array_identity_matches(const GCarray *, std::string_view);
+[[nodiscard]] extern bool lj_array_member_identity_matches(const GCarray *, std::string_view);
+[[nodiscard]] extern GCarray * lj_array_new_like(lua_State *, const GCarray *, uint32_t);
 extern void lj_array_free(global_State *, GCarray *);
 [[nodiscard]] extern uint8_t lj_array_elemsize(AET);
 [[nodiscard]] extern CSTRING lj_array_elemtype_name(AET) noexcept;

@@ -3548,15 +3548,19 @@ ParserResult<ExpDesc> IrEmitter::emit_type_test_expr(const TypeTestExprPayload &
    if (type_test.type IS TiriType::Array) {
       AET element_type = type_test.constrained ? type_test.array_element.storage : AET::ANY;
       descriptor.push_back(char(uint8_t(element_type)));
-      std::string_view element_struct_name;
+      std::string_view element_constraint_name;
       if (element_type IS AET::STRUCT and type_test.array_element.struct_def) {
-         element_struct_name = type_test.array_element.struct_def->Name;
+         element_constraint_name = type_test.array_element.struct_def->Name;
       }
-      if (element_struct_name.size() > UINT8_MAX) {
+      else if (element_type IS AET::ARRAY and type_test.array_element.nested_array_identity) {
+         GCstr *identity = type_test.array_element.nested_array_identity;
+         element_constraint_name = std::string_view(strdata(identity), identity->len);
+      }
+      if (element_constraint_name.size() > UINT8_MAX) {
          return ParserResult<ExpDesc>::failure(this->make_error(
-            ParserErrorCode::UnexpectedToken, "Type-test array structure name is too long"));
+            ParserErrorCode::UnexpectedToken, "Type-test array constraint is too long"));
       }
-      append_text(descriptor, element_struct_name);
+      append_text(descriptor, element_constraint_name);
    }
    append_text(descriptor, {});
 

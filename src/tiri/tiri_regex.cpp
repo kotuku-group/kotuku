@@ -406,7 +406,11 @@ static int regex_search(lua_State *Lua)
    auto text = luaL_checklstring(Lua, 1, &text_len);
    auto flags = RMATCH(luaL_optint(Lua, 2, int(RMATCH::NIL)));
 
-   GCarray *results = lj_array_new(Lua, 0, AET::ARRAY);
+   ArrayAllocationDescriptor descriptor {
+      .storage = AET::ARRAY,
+      .canonical_identity = "array<array<str>>"
+   };
+   GCarray *results = lj_array_new(Lua, 0, descriptor);
    setarrayV(Lua, Lua->top++, results); // Root results to prevent GC during callbacks
 
    // Use match_many() to populate the array with the matches.
