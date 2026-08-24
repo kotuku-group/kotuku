@@ -96,10 +96,10 @@ static bool write_primitive_field(lua_State *L, APTR Address, const struct_field
          }
          ((bool *)Address)[ElementIndex] = lua_toboolean(L, StackIndex);
          return true;
-      case NativeStructType::Char:
       case NativeStructType::Int8:
          write_integer_field<int8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, true, CurrentFrame);
          return true;
+      case NativeStructType::Char:
       case NativeStructType::UInt8:
          write_integer_field<uint8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, false, CurrentFrame);
          return true;
@@ -412,10 +412,12 @@ static bool read_primitive_field(lua_State *L, APTR Address, const struct_field 
       else lua_createarray(L, ArraySize, ff_to_aet(Type, Field.NativeType), (APTR *)Address, ARRAY_CACHED);
    }
    else if (Field.NativeType IS NativeStructType::Bool) lua_pushboolean(L, ((bool *)Address)[0]);
-   else if (Field.NativeType IS NativeStructType::Char or Field.NativeType IS NativeStructType::Int8) {
+   else if (Field.NativeType IS NativeStructType::Int8) {
       lua_pushinteger(L, ((int8_t *)Address)[0]);
    }
-   else if (Field.NativeType IS NativeStructType::UInt8) lua_pushinteger(L, ((uint8_t *)Address)[0]);
+   else if (Field.NativeType IS NativeStructType::Char or Field.NativeType IS NativeStructType::UInt8) {
+      lua_pushinteger(L, ((uint8_t *)Address)[0]);
+   }
    else if (Field.NativeType IS NativeStructType::Int16) lua_pushinteger(L, ((int16_t *)Address)[0]);
    else if (Field.NativeType IS NativeStructType::UInt16) lua_pushinteger(L, ((uint16_t *)Address)[0]);
    else if (Field.NativeType IS NativeStructType::Int32) lua_pushinteger(L, ((int32_t *)Address)[0]);

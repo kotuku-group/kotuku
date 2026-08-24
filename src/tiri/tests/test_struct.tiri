@@ -133,13 +133,13 @@ end
 
 @Test function NativeStructPrimitiveValidation()
    local value = struct<DeclaredLayout> {
-      Bool=true, Char=-128, Byte=255, Int8=127, UInt8=0, Int16=-32768, UInt16=65535,
+      Bool=true, Char=255, Byte=255, Int8=127, UInt8=0, Int16=-32768, UInt16=65535,
       Int=-2147483648, UInt=4294967295, Int32=2147483647, UInt32=0,
       Int64=-9223372036854775808, UInt64=9007199254740992, Float=1.25, Double=math.huge,
       String='valid', Buffer='buffer'
    }
 
-   assert(value.Bool is true and value.Char is -128 and value.Byte is 255,
+   assert(value.Bool is true and value.Char is 255 and value.Byte is 255,
       'Constructor assignment should preserve valid bool and byte-sized values')
    assert(value.Int16 is -32768 and value.UInt16 is 65535 and value.Int is -2147483648,
       'Constructor assignment should preserve valid signed and unsigned integer boundaries')
@@ -149,7 +149,7 @@ end
       'Constructor assignment should preserve floating, string and character-buffer values')
 
    value.Bool = false
-   value.Char = 127
+   value.Char = 255
    value.Byte = 0
    value.Int8 = -128
    value.UInt8 = 255
@@ -166,7 +166,7 @@ end
    value.Float = 0 / 0
    value.Double = -math.huge
    value.String = 'updated'
-   assert(value.Bool is false and value.Char is 127 and value.UInt8 is 255 and value.Int16 is 32767,
+   assert(value.Bool is false and value.Char is 255 and value.UInt8 is 255 and value.Int16 is 32767,
       'Later assignment should accept valid scalar boundaries')
    assert(value.UInt32 is 4294967295 and value.UInt64 is 18446744073709549568,
       'Later assignment should accept representable unsigned wide values below their exclusive upper bounds')
@@ -196,6 +196,11 @@ end
    expect_struct_error(() => do value.UInt8 = 256 end, ERR_OutOfRange, 'uint8 should reject overflow')
    value.UInt8 = 300 & 0xff
    assert(value.UInt8 is 44, 'Clients should be able to apply explicit wrapping before assignment')
+
+   expect_struct_error(() => do value.Char = -1 end, ERR_OutOfRange, 'char should reject underflow')
+   expect_struct_error(() => do value.Char = 256 end, ERR_OutOfRange, 'char should reject overflow')
+   value.Char = 300 & 0xff
+   assert(value.Char is 44, 'char should match byte after explicit wrapping')
 
    expect_struct_error(() => do value.Int16 = -32769 end, ERR_OutOfRange, 'int16 should reject underflow')
    expect_struct_error(() => do value.Int16 = 32768 end, ERR_OutOfRange, 'int16 should reject overflow')
