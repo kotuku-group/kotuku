@@ -88,7 +88,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t = (GCtab*)lj_mem_newgco(L, sizetabcolo(asize));
       t->gct = ~LJ_TTAB;
       t->nomm = (uint8_t)~0;
-      t->colo = (int8_t)asize;
+      table_set_colocated_capacity(t, asize);
       t->flags = 0;
       setmref(t->array, (TValue*)((char*)t + sizeof(GCtab)));
       setgcrefnull(t->metatable);
@@ -105,7 +105,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t = lj_mem_newobj(L, GCtab);
       t->gct = ~LJ_TTAB;
       t->nomm = (uint8_t)~0;
-      t->colo = 0;
+      table_set_never_colocated(t);
       t->flags = 0;
       setmref(t->array, nullptr);
       setgcrefnull(t->metatable);
@@ -227,10 +227,12 @@ void lj_tab_free(global_State *g, GCtab *t)
 {
    if (auto cache = table_global_contract_cache(t)) lj_mem_free(g, cache, cache->byte_size);
    if (t->hmask > 0) lj_mem_freevec(g, noderef(t->node), t->hmask + 1, Node);
-   if (t->asize > 0 and LJ_MAX_COLOSIZE != 0 and t->colo <= 0) {
+   if (t->asize > 0 and LJ_MAX_COLOSIZE != 0 and table_array_is_separately_allocated(t)) {
       lj_mem_freevec(g, tvref(t->array), t->asize, TValue);
    }
-   if (LJ_MAX_COLOSIZE != 0 and t->colo) lj_mem_free(g, t, sizetabcolo((uint32_t)t->colo & 0x7f));
+   if (LJ_MAX_COLOSIZE != 0 and (table_array_is_colocated(t) or table_had_colocated_array(t))) {
+      lj_mem_free(g, t, sizetabcolo(table_colocated_capacity(t)));
+   }
    else lj_mem_freet(g, t);
 }
 
@@ -245,11 +247,11 @@ void lj_tab_resize(lua_State *L, GCtab *t, uint32_t asize, uint32_t hbits)
    if (asize > oldasize) {  // Array part grows?
       TValue *array;
       if (asize > LJ_MAX_ASIZE) lj_err_msg(L, ErrMsg::TABOV);
-      if (LJ_MAX_COLOSIZE != 0 and t->colo > 0) {
+      if (LJ_MAX_COLOSIZE != 0 and table_array_is_colocated(t)) {
          // A colocated array must be separated and copied.
          TValue *oarray = tvref(t->array);
          array = lj_mem_newvec(L, asize, TValue);
-         t->colo = (int8_t)(t->colo | 0x80);  //  Mark as separated (colo < 0).
+         table_mark_array_separated(t);
          lj_bulk_copy_tvalue(array, oarray, oldasize);
       }
       else array = (TValue*)lj_mem_realloc(L, tvref(t->array), oldasize * sizeof(TValue), asize * sizeof(TValue));
@@ -282,7 +284,7 @@ void lj_tab_resize(lua_State *L, GCtab *t, uint32_t asize, uint32_t hbits)
 
       // Physically shrink only separated arrays.
 
-      if (LJ_MAX_COLOSIZE != 0 and t->colo <= 0) {
+      if (LJ_MAX_COLOSIZE != 0 and table_array_is_separately_allocated(t)) {
          setmref(t->array, lj_mem_realloc(L, array, oldasize * sizeof(TValue), asize * sizeof(TValue)));
       }
    }

@@ -31,8 +31,6 @@ static void err_object_class_mismatch(FuncState *Fs, CLASSID ActualClassId, CLAS
    lj_lex_error(Fs->ls, 0, ErrMsg::BADCLASS, ResolveClassID(ExpectedClassId), ResolveClassID(ActualClassId));
 }
 
-[[nodiscard]] inline bool is_register_key(int32_t Aux) { return (Aux >= 0) and (Aux <= BCMAX_C); }
-
 //********************************************************************************************************************
 // Register allocation methods
 
@@ -171,7 +169,7 @@ TableOperandCopies RegisterAllocator::duplicate_table_operands(const ExpDesc &Ex
    if (Expression.k IS ExpKind::Indexed) {
       uint32_t original_aux = Expression.u.s.aux;
       BCREG duplicate_count = 1;
-      bool has_register_index = is_register_key(int32_t(original_aux));
+      bool has_register_index = IndexOperand(original_aux).is_register();
 
       if (has_register_index) duplicate_count++;
 
@@ -189,8 +187,8 @@ TableOperandCopies RegisterAllocator::duplicate_table_operands(const ExpDesc &Ex
 
       if (has_register_index) {
          BCREG index_reg = BCREG(base_reg + 1);
-         bcemit_AD(this->func_state, BC_MOV, index_reg, BCREG(original_aux));
-         copies.duplicated.u.s.aux = index_reg;
+         bcemit_AD(this->func_state, BC_MOV, index_reg, IndexOperand(original_aux).register_index());
+         copies.duplicated.u.s.aux = IndexOperand::register_index(index_reg).raw();
       }
    }
 
@@ -281,9 +279,9 @@ static void expr_discharge(FuncState *fs, ExpDesc *e)
       ins = BCINS_AD(BC_GGET, 0, const_str(fs, e));
    }
    else if (e->k IS ExpKind::Indexed) {
-      BCREG rc = e->u.s.aux;
-      if (int32_t(rc) < 0) {
-         int32_t idx = ~rc;
+      IndexOperand key(e->u.s.aux);
+      if (key.is_string_constant()) {
+         BCREG idx = key.string_constant();
          if (idx <= BCMAX_C) {
             ins = BCINS_ABC(BC_TGETS, 0, e->u.s.info, idx);
          }
@@ -295,40 +293,45 @@ static void expr_discharge(FuncState *fs, ExpDesc *e)
             return;
          }
       }
-      else if (rc > BCMAX_C) ins = BCINS_ABC(BC_TGETB, 0, e->u.s.info, rc - (BCMAX_C + 1));
+      else if (key.kind() IS IndexOperandKind::ByteConstant) {
+         ins = BCINS_ABC(BC_TGETB, 0, e->u.s.info, key.byte_constant());
+      }
       else {
-         bcreg_free(fs, rc);
-         ins = BCINS_ABC(BC_TGETV, 0, e->u.s.info, rc);
+         BCREG index_register = key.register_index();
+         bcreg_free(fs, index_register);
+         ins = BCINS_ABC(BC_TGETV, 0, e->u.s.info, index_register);
       }
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::IndexedArray) {
       // Array indexing - emit BC_AGETV or BC_AGETB
       // Note: Arrays don't support string keys, so no BC_AGETS equivalent
-      BCREG rc = e->u.s.aux;
-      if (rc > BCMAX_C) ins = BCINS_ABC(BC_AGETB, 0, e->u.s.info, rc - (BCMAX_C + 1));
+      IndexOperand key(e->u.s.aux);
+      if (key.kind() IS IndexOperandKind::ByteConstant) ins = BCINS_ABC(BC_AGETB, 0, e->u.s.info, key.byte_constant());
       else {
-         bcreg_free(fs, rc);
-         ins = BCINS_ABC(BC_AGETV, 0, e->u.s.info, rc);
+         BCREG index_register = key.register_index();
+         bcreg_free(fs, index_register);
+         ins = BCINS_ABC(BC_AGETV, 0, e->u.s.info, index_register);
       }
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::SafeIndexedArray) {
       // Safe array indexing - emit BC_ASGETV or BC_ASGETB (returns nil for out-of-bounds)
-      BCREG rc = e->u.s.aux;
-      if (rc > BCMAX_C) ins = BCINS_ABC(BC_ASGETB, 0, e->u.s.info, rc - (BCMAX_C + 1));
+      IndexOperand key(e->u.s.aux);
+      if (key.kind() IS IndexOperandKind::ByteConstant) ins = BCINS_ABC(BC_ASGETB, 0, e->u.s.info, key.byte_constant());
       else {
-         bcreg_free(fs, rc);
-         ins = BCINS_ABC(BC_ASGETV, 0, e->u.s.info, rc);
+         BCREG index_register = key.register_index();
+         bcreg_free(fs, index_register);
+         ins = BCINS_ABC(BC_ASGETV, 0, e->u.s.info, index_register);
       }
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::IndexedObject) {
       // Object field access - emit BC_OBGETF for string key (object fields are always strings)
       // aux holds negated string constant index (same encoding as BC_TGETS)
-      BCREG rc = e->u.s.aux;
-      fs_check_assert(fs, int32_t(rc) < 0, "object field index must be string constant");
-      BCREG idx = (BCREG)~rc;
+      IndexOperand key(e->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "object field index must be string constant");
+      BCREG idx = key.string_constant();
       if (idx > BCMAX_C) {
          err_limit(fs, BCMAX_C + 1, "object field string constants");
          return;
@@ -338,9 +341,9 @@ static void expr_discharge(FuncState *fs, ExpDesc *e)
    }
    else if (e->k IS ExpKind::IndexedStruct) {
       // Struct field access - emit BC_STGETF for a string key.
-      BCREG rc = e->u.s.aux;
-      fs_check_assert(fs, int32_t(rc) < 0, "struct field index must be string constant");
-      BCREG idx = (BCREG)~rc;
+      IndexOperand key(e->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "struct field index must be string constant");
+      BCREG idx = key.string_constant();
       if (idx > BCMAX_C) {
          err_limit(fs, BCMAX_C + 1, "struct field string constants");
          return;
@@ -799,27 +802,30 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
    else if (LHS->k IS ExpKind::IndexedArray or LHS->k IS ExpKind::SafeIndexedArray) {
       // Array index assignment - emit BC_ASETV or BC_ASETB
       // Note: SafeIndexedArray uses same SET bytecodes as IndexedArray (safe is only for reads)
-      BCREG ra, rc;
+      BCREG ra;
       ra = expr_toanyreg(fs, RHS);
-      rc = LHS->u.s.aux;
-      if (rc > BCMAX_C) {
-         ins = BCINS_ABC(BC_ASETB, ra, LHS->u.s.info, rc - (BCMAX_C + 1));
+      IndexOperand key(LHS->u.s.aux);
+      if (key.kind() IS IndexOperandKind::ByteConstant) {
+         ins = BCINS_ABC(BC_ASETB, ra, LHS->u.s.info, key.byte_constant());
       }
       else {
+         BCREG index_register = key.register_index();
 #ifdef LUA_USE_ASSERT
          // Free late alloced key reg to avoid assert on free of value reg.
-         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and rc >= ra) bcreg_free(fs, rc);
+         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and index_register >= ra) {
+            bcreg_free(fs, index_register);
+         }
 #endif
-         ins = BCINS_ABC(BC_ASETV, ra, LHS->u.s.info, rc);
+         ins = BCINS_ABC(BC_ASETV, ra, LHS->u.s.info, index_register);
       }
    }
    else if (LHS->k IS ExpKind::IndexedObject) {
       // Object field assignment - emit BC_OBSETF for string key (object fields are always strings)
-      BCREG ra, rc;
+      BCREG ra;
       ra = expr_toanyreg(fs, RHS);
-      rc = LHS->u.s.aux;
-      fs_check_assert(fs, int32_t(rc) < 0, "object field index must be string constant");
-      BCREG idx = (BCREG)~rc;
+      IndexOperand key(LHS->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "object field index must be string constant");
+      BCREG idx = key.string_constant();
       if (idx > BCMAX_C) {
          err_limit(fs, BCMAX_C + 1, "object field string constants");
          return;
@@ -829,9 +835,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
    else if (LHS->k IS ExpKind::IndexedStruct) {
       // Struct field assignment - emit BC_STSETF for a string key.
       BCREG ra = expr_toanyreg(fs, RHS);
-      BCREG rc = LHS->u.s.aux;
-      fs_check_assert(fs, int32_t(rc) < 0, "struct field index must be string constant");
-      BCREG idx = (BCREG)~rc;
+      IndexOperand key(LHS->u.s.aux);
+      fs_check_assert(fs, key.is_string_constant(), "struct field index must be string constant");
+      BCREG idx = key.string_constant();
       if (idx > BCMAX_C) {
          err_limit(fs, BCMAX_C + 1, "struct field string constants");
          return;
@@ -840,25 +846,26 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
    }
    else {
       // Table index assignment - emit BC_TSETV, BC_TSETB, or BC_TSETS
-      BCREG ra, rc;
+      BCREG ra;
       fs_check_assert(fs, LHS->k IS ExpKind::Indexed, "bad expr type %d", int(LHS->k));
       ra = expr_toanyreg(fs, RHS);
-      rc = LHS->u.s.aux;
-      if (int32_t(rc) < 0) {
-         /* String constant key: rc encodes the index as ~index. */
-         int32_t stridx = ~int32_t(rc);
-         bcemit_tsets(fs, ra, LHS->u.s.info, BCREG(stridx));
+      IndexOperand key(LHS->u.s.aux);
+      if (key.is_string_constant()) {
+         bcemit_tsets(fs, ra, LHS->u.s.info, key.string_constant());
          expr_free(fs, RHS);
          return;
-      } else if (rc > BCMAX_C) {
-         ins = BCINS_ABC(BC_TSETB, ra, LHS->u.s.info, rc - (BCMAX_C + 1));
+      } else if (key.kind() IS IndexOperandKind::ByteConstant) {
+         ins = BCINS_ABC(BC_TSETB, ra, LHS->u.s.info, key.byte_constant());
       } else {
+         BCREG index_register = key.register_index();
 #ifdef LUA_USE_ASSERT
          // Free late alloced key reg to avoid assert on free of value reg.
          // This can only happen when called from expr_table().
-         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and rc >= ra) bcreg_free(fs, rc);
+         if (RHS->k IS ExpKind::NonReloc and ra >= fs->varmap.size() and index_register >= ra) {
+            bcreg_free(fs, index_register);
+         }
 #endif
-         ins = BCINS_ABC(BC_TSETV, ra, LHS->u.s.info, rc);
+         ins = BCINS_ABC(BC_TSETV, ra, LHS->u.s.info, index_register);
       }
    }
    bcemit_INS(fs, ins);

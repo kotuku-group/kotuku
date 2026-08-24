@@ -4899,9 +4899,9 @@ void lj_record_ins(jit_State *J)
 
    case BC_ISTYPE: case BC_ISNUM:
       // These coercions need to correspond with lj_meta_istype().
-      if (LJ_DUALNUM and rc IS ~LJ_TNUMX + 1) ra = lj_opt_narrow_toint(J, ra);
-      else if (rc IS ~LJ_TNUMX + 2) ra = lj_ir_tonum(J, ra);
-      else if (rc IS ~LJ_TSTR + 1) ra = lj_ir_tostr(J, ra);
+      if (LJ_DUALNUM and rc IS istype_operand_value(ISTypeOperand::Integer)) ra = lj_opt_narrow_toint(J, ra);
+      else if (rc IS istype_operand_value(ISTypeOperand::Number)) ra = lj_ir_tonum(J, ra);
+      else if (rc IS istype_operand_value(ISTypeOperand::String)) ra = lj_ir_tostr(J, ra);
       // else: type specialisation suffices.
       J->base[bc_a(ins)] = ra;
       break;

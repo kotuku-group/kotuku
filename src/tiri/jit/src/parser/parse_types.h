@@ -17,6 +17,7 @@
 #include "../bytecode/lj_bc.h"
 #include "../runtime/lj_contract.h"
 #include "static_type_descriptor.h"
+#include "strong_index.h"
 
 // Forward declarations
 class LexState;
@@ -146,90 +147,47 @@ template<FlagType Flag> static constexpr void clear_flag(Flag &Flags, Flag Mask)
    Flags = Flags & ~Mask;
 }
 
-// Strong index types for type-safe register, position, and variable indices.
-// Uses C++20 three-way comparison for automatic generation of all six comparison operators.
-
-template<typename Tag, typename T>
-struct StrongIndex {
-   T value;
-
-   constexpr StrongIndex() = default;
-   constexpr explicit StrongIndex(T v) : value(v) {}
-   constexpr T raw() const { return value; }
-
-   // Implicit conversion to underlying type for ergonomic usage
-   // This allows: int(bcpos), printf("%d", bcreg), bcpos >= 1, etc.
-   // while still preventing implicit construction from raw types
-   constexpr operator T() const { return value; }
-
-   auto operator<=>(const StrongIndex&) const = default;
-   bool operator==(const StrongIndex&) const = default;
-};
-
-// Arithmetic operators for StrongIndex types
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T> operator+(StrongIndex<Tag, T> a, T offset) {
-   return StrongIndex<Tag, T>(a.value + offset);
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T> operator+(StrongIndex<Tag, T> a, StrongIndex<Tag, T> offset) {
-   return StrongIndex<Tag, T>(a.value + offset.value);
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T> operator-(StrongIndex<Tag, T> a, T offset) {
-   return StrongIndex<Tag, T>(a.value - offset);
-}
-
-template<typename Tag, typename T>
-constexpr T operator-(StrongIndex<Tag, T> a, StrongIndex<Tag, T> b) {
-   return a.value - b.value;
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T>& operator++(StrongIndex<Tag, T>& a) {
-   ++a.value;
-   return a;
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T> operator++(StrongIndex<Tag, T>& a, int) {
-   auto old = a;
-   ++a.value;
-   return old;
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T>& operator--(StrongIndex<Tag, T>& a) {
-   --a.value;
-   return a;
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T> operator--(StrongIndex<Tag, T>& a, int) {
-   auto old = a;
-   --a.value;
-   return old;
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T>& operator+=(StrongIndex<Tag, T>& a, T offset) {
-   a.value += offset;
-   return a;
-}
-
-template<typename Tag, typename T>
-constexpr StrongIndex<Tag, T>& operator-=(StrongIndex<Tag, T>& a, T offset) {
-   a.value -= offset;
-   return a;
-}
-
 // Strong type aliases using distinct tag types
 
 using BCPos = StrongIndex<struct BCPosTag, BCPOS>;
 using BCReg = StrongIndex<struct BCRegTag, BCREG>;
+
+// Indexed expressions retain the compact bytecode-friendly representation in ExpDesc::u.s.aux.  This wrapper owns
+// its interpretation so parser and emitter code cannot mistake a constant for a register.
+enum class IndexOperandKind : uint8_t {
+   Register,
+   ByteConstant,
+   StringConstant
+};
+
+class IndexOperand {
+public:
+   constexpr explicit IndexOperand(uint32_t Storage) : storage_(Storage) {}
+
+   [[nodiscard]] static constexpr IndexOperand register_index(BCREG Register) { return IndexOperand(Register); }
+   [[nodiscard]] static constexpr IndexOperand byte_constant(BCREG Value) {
+      return IndexOperand(BCMAX_C + 1 + Value);
+   }
+   [[nodiscard]] static constexpr IndexOperand string_constant(BCREG Constant) {
+      return IndexOperand(~uint32_t(Constant));
+   }
+
+   [[nodiscard]] constexpr IndexOperandKind kind() const {
+      if (int32_t(storage_) < 0) return IndexOperandKind::StringConstant;
+      if (storage_ > BCMAX_C) return IndexOperandKind::ByteConstant;
+      return IndexOperandKind::Register;
+   }
+   [[nodiscard]] constexpr bool is_register() const { return this->kind() IS IndexOperandKind::Register; }
+   [[nodiscard]] constexpr bool is_numeric() const { return this->kind() != IndexOperandKind::StringConstant; }
+   [[nodiscard]] constexpr bool is_string_constant() const { return this->kind() IS IndexOperandKind::StringConstant; }
+   [[nodiscard]] constexpr BCREG register_index() const { return BCREG(storage_); }
+   [[nodiscard]] constexpr BCREG byte_constant() const { return BCREG(storage_ - (BCMAX_C + 1)); }
+   [[nodiscard]] constexpr BCREG string_constant() const { return BCREG(~storage_); }
+   [[nodiscard]] constexpr uint32_t raw() const { return storage_; }
+
+private:
+   uint32_t storage_;
+};
 
 // Expression descriptor.
 
@@ -247,8 +205,8 @@ struct ExpDesc {
    TiriType result_type = TiriType::Unknown;  // Known result type (for Call: callee's first return type)
    CLASSID object_class_id = CLASSID::NIL; // CLASSID for Object result types
    struct_record *struct_def = nullptr; // Resolved layout for Struct result types
-   StaticValueHandle static_value = 0;
-   StaticResultSetHandle static_results = 0;
+   StaticValueHandle static_value{};
+   StaticResultSetHandle static_results{};
    uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
    BCPOS alternate_call = NO_JMP; // Alternate call block used by runtime built-in method dispatch
    BCPOS safe_nil_init = NO_JMP; // Nil initialiser for a skipped safe call; widened with fixed result requests
@@ -313,8 +271,8 @@ struct ExpDesc {
       this->u.s.info = info;
       this->flags = ExprFlag::None;
       this->result_type = TiriType::Unknown;
-      this->static_value = 0;
-      this->static_results = 0;
+      this->static_value = {};
+      this->static_results = {};
       this->alternate_call = NO_JMP;
       this->safe_nil_init = NO_JMP;
       this->alternate_safe_nil_init = NO_JMP;

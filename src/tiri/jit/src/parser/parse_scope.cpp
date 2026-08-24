@@ -107,10 +107,10 @@ void LexState::var_add(BCREG nvars)
       v->object_class_id = CLASSID::NIL;
       v->struct_def = nullptr;
       v->result_types.fill(TiriType::Unknown);  // No return type info for non-functions
-      v->static_value = 0;
-      v->static_results = 0;
-      v->static_callable = 0;
-      v->binding_id = 0;
+      v->static_value = {};
+      v->static_results = {};
+      v->static_callable = {};
+      v->binding_id = {};
    }
 }
 

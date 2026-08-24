@@ -423,7 +423,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       Token type_token = this->ctx.tokens().current();
       bool array_type = type_token.kind() IS TokenKind::ArrayTyped;
       bool struct_typed = type_token.kind() IS TokenKind::StructTyped;
-      int64_t array_dimension = array_type ? this->ctx.lex().array_typed_size : -1;
+      ArrayTypedSize array_dimension = array_type ? this->ctx.lex().array_typed_size : ArrayTypedSize::absent();
       if (array_type or struct_typed) this->ctx.tokens().advance();
       else {
          auto type_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
@@ -442,7 +442,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       std::string type_display;  // Display spelling of the type for tooling metadata, e.g. 'obj<NetSocket>'
       if (type_name IS "array") {
          dynamic_array = true;
-         if (array_dimension != -1) {
+         if (not array_dimension.is_absent()) {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, type_token,
                "Dynamically sized struct array fields cannot declare a dimension");
          }

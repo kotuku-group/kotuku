@@ -133,7 +133,7 @@ struct PreparedAssignment {
    bool newly_created = false;   // True if a new local was created for an undeclared variable
    bool needs_var_add = false;   // True if var_add() must be called after expression evaluation
    GCstr* pending_symbol = nullptr;  // Symbol name for deferred var_add
-   StaticBindingID binding_id = 0;
+   StaticBindingID binding_id{};
    BCLine pending_line = 0;      // Line number for deferred variable declaration
    BCLine pending_column = 0;    // Column number for deferred variable declaration
    ControlFlowEdge safe_nav_skip;
@@ -188,7 +188,7 @@ private:
    OperatorEmitter   operator_emitter;
    LocalBindingTable binding_table;
    ConstantEvaluator constant_evaluator;
-   StaticCallableHandle current_callable = 0;
+   StaticCallableHandle current_callable{};
    bool is_root_chunk = true;
    std::vector<ContextSource> context_sources;
 

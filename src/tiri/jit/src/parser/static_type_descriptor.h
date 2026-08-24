@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "../runtime/lj_obj.h"
+#include "strong_index.h"
 
 struct ExprNode;
 struct FunctionField;
@@ -19,10 +20,10 @@ struct struct_field;
 struct struct_record;
 struct RuntimeContract;
 
-using StaticValueHandle = uint32_t;
-using StaticResultSetHandle = uint32_t;
-using StaticCallableHandle = uint32_t;
-using StaticBindingID = uint32_t;
+using StaticValueHandle = StrongIndex<struct StaticValueHandleTag, uint32_t>;
+using StaticResultSetHandle = StrongIndex<struct StaticResultSetHandleTag, uint32_t>;
+using StaticCallableHandle = StrongIndex<struct StaticCallableHandleTag, uint32_t>;
+using StaticBindingID = StrongIndex<struct StaticBindingIDTag, uint32_t>;
 struct static_module_signature;
 using StaticModuleHandle = const static_module_signature *;
 
@@ -92,8 +93,8 @@ enum class StaticCallableSource : uint8_t {
 
 struct StaticCallableDescriptor {
    const FunctionExprPayload *function = nullptr;
-   StaticResultSetHandle results = 0;
-   StaticBindingID binding_id = 0;
+   StaticResultSetHandle results{};
+   StaticBindingID binding_id{};
    StaticCallableSource source = StaticCallableSource::TiriFunction;
    bool immutable = false;
 };
@@ -102,10 +103,10 @@ struct StaticBindingDescriptor {
    GCstr *name = nullptr;
    const ExprNode *initialiser = nullptr;
    const FunctionExprPayload *function = nullptr;
-   StaticValueHandle value = 0;
-   StaticValueHandle analysed_value = 0;
-   StaticCallableHandle callable = 0;
-   StaticBindingID alias_of = 0;
+   StaticValueHandle value{};
+   StaticValueHandle analysed_value{};
+   StaticCallableHandle callable{};
+   StaticBindingID alias_of{};
    uint8_t result_position = 0;
    uint16_t function_depth = 0;
    bool immutable = true;

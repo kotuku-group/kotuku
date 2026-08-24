@@ -859,13 +859,6 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
 }
 
 //********************************************************************************************************************
-// Check if an auxiliary value represents a valid register key (used for indexed expressions).
-
-[[nodiscard]] static bool is_register_key(uint32_t aux)
-{
-   return (int32_t(aux) >= 0) and (aux <= BCMAX_C);
-}
-
 //********************************************************************************************************************
 // Convert an AST node kind enumeration to its human-readable string representation for debugging and logging.
 
@@ -981,8 +974,8 @@ static void release_indexed_original(FuncState &func_state, const ExpDesc &origi
 {
    if (original.k IS ExpKind::Indexed) {
       RegisterAllocator allocator(&func_state);
-      uint32_t orig_aux = original.u.s.aux;
-      if (is_register_key(orig_aux)) allocator.release_register(BCReg(orig_aux));
+      IndexOperand original_key(original.u.s.aux);
+      if (original_key.is_register()) allocator.release_register(BCReg(original_key.register_index()));
       allocator.release_register(BCReg(original.u.s.info));
    }
 }
@@ -3250,9 +3243,9 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
       }
       // Identifier lookup can recover a descriptor from VarInfo or an upvalue even when binding analysis has no
       // handle.  For compound expressions, an unclaimed handle describes an operand and must not leak to the result.
-      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_value = 0;
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_value = {};
       if (expr.static_results) emitted.static_results = expr.static_results;
-      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_results = 0;
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_results = {};
    }
    return result;
 }
@@ -4178,7 +4171,8 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
       // Only use IndexedObject for string keys (member access always uses string keys)
 
       bool is_intrinsic_method = is_intrinsic_object_method(Payload.member.symbol);
-      if (not is_intrinsic_method and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (not is_intrinsic_method and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedObject;
       }
 
@@ -4206,7 +4200,9 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    }
    else if (proved_struct) {
       table.result_type = TiriType::Struct;
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
+      if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
+         table.k = ExpKind::IndexedStruct;
+      }
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
    }
    else {
@@ -4293,23 +4289,22 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
       this->ctx.descriptors(), table.static_value, TiriType::Struct, true);
 
    if (proved_array) {
-      // Arrays don't support string keys, so only change kind for numeric indexing
-      // (aux >= 0 means numeric index, aux < 0 means string const key)
-      if (int32_t(table.u.s.aux) >= 0) {
+      // Arrays support register and byte-constant keys, but not string constants.
+      if (IndexOperand(table.u.s.aux).is_numeric()) {
          table.k = ExpKind::IndexedArray;
       }
    }
    // A proved object receiver with a string key uses object-specific bytecodes.
    else if (proved_object) {
-      // Objects use string field access - only change kind for string const keys
-      // (aux < 0 means string const key)
+      // Objects use string field access only for string constant keys.
       GCstr *index_name = string_literal_symbol(*Payload.index);
-      if (not is_intrinsic_object_method(index_name) and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (not is_intrinsic_object_method(index_name) and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedObject;
       }
    }
    else if (proved_struct) {
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedStruct;
       }
    }
@@ -4398,7 +4393,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
       // can downgrade specialised expression kinds.
 
       if (not Payload.is_call_target and not is_intrinsic_method and table.k IS ExpKind::Indexed and
-          int32_t(table.u.s.aux) < 0) {
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedObject;
       }
 
@@ -4424,7 +4419,8 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    }
    else if (proved_struct) {
       table.result_type = TiriType::Struct;
-      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and
+          IndexOperand(table.u.s.aux).is_string_constant()) {
          table.k = ExpKind::IndexedStruct;
       }
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
@@ -4478,7 +4474,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    // ordinary table bytecodes. Native arrays and unresolved receivers retain ASGETV/ASGETB so out-of-bounds access
    // returns nil while non-array runtime values fall back to generic indexing.
 
-   bool key_may_be_numeric = int32_t(table.u.s.aux) >= 0 and not proved_string_key;
+   bool key_may_be_numeric = IndexOperand(table.u.s.aux).is_numeric() and not proved_string_key;
    if (key_may_be_numeric and not proved_table) table.k = ExpKind::SafeIndexedArray;
 
    // Materialise to a separate register so the receiver remains available for the lookup.

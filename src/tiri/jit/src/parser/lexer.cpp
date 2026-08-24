@@ -1129,7 +1129,7 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
    }
 
    // Check for optional size: array<type, size> or array<type, expr>
-   State->array_typed_size = -1;  // Reset to "no size specified"
+   State->array_typed_size = ArrayTypedSize::absent();
    if (State->c IS ',') {
       lex_next(State);  // Consume ','
       lex_skip_inline_ws(State);
@@ -1142,7 +1142,7 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
             if (size > INT32_MAX) lj_lex_error(State, TK_number, ErrMsg::XNUMBER);
             lex_next(State);
          }
-         State->array_typed_size = size;
+         State->array_typed_size = ArrayTypedSize::literal_size(size);
          lex_skip_inline_ws(State);
 
          if (State->c != '>') {
@@ -1151,9 +1151,8 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
          lex_next(State);  // Consume '>'
       }
       else {
-         // Non-literal size - set marker for parser to handle expression
-         // Parser will parse the expression and expect '>'
-         State->array_typed_size = -2;
+         // The parser will consume the expression and its closing '>'.
+         State->array_typed_size = ArrayTypedSize::expression();
          // Don't consume anything else - parser will handle
       }
    }

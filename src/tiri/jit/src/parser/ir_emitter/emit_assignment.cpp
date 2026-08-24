@@ -607,7 +607,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       this->operator_emitter.emit_binary_arith(mapped.value(), ExprValue(&infix), rhs);
 
       infix.static_value = this->ctx.descriptors().add_value(operation_descriptor);
-      infix.static_results = 0;
+      infix.static_results = {};
       infix.object_class_id = CLASSID::NIL;
       infix.struct_def = nullptr;
 
@@ -876,7 +876,7 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
             bool refresh_table = existing.target.is_indexed()
                and existing.target.get_table_reg() IS prepared.target.get_local_reg();
 
-            bool refresh_key = existing.target.is_indexed() and is_register_key(existing.storage.u.s.aux)
+            bool refresh_key = existing.target.is_indexed() and IndexOperand(existing.storage.u.s.aux).is_register()
                and existing.target.get_key_reg() IS prepared.target.get_local_reg();
 
             bool refresh_member = existing.target.is_member()

@@ -486,13 +486,13 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          if (proved_object) {
             table.result_type = TiriType::Object;
             // Only use IndexedObject for string keys (member access always uses string keys)
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
             apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
@@ -543,19 +543,19 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
          if (proved_array) {
             // Arrays don't support string keys, so only change kind for numeric indexing
-            if (int32_t(table.u.s.aux) >= 0) {
+            if (IndexOperand(table.u.s.aux).is_numeric()) {
                table.k = ExpKind::IndexedArray;
             }
          }
          else if (proved_object) {
             // Objects use string field access - only change kind for string const keys
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
          }
@@ -601,13 +601,13 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
          if (proved_object) {
             table.result_type = TiriType::Object;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
             apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
@@ -658,18 +658,18 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          bool proved_struct = can_use_static_receiver(
             this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
          if (proved_array) {
-            if (int32_t(table.u.s.aux) >= 0) {
+            if (IndexOperand(table.u.s.aux).is_numeric()) {
                table.k = ExpKind::IndexedArray;
             }
          }
          else if (proved_object) {
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedObject;
             }
          }
          else if (proved_struct) {
             table.result_type = TiriType::Struct;
-            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+            if (table.k IS ExpKind::Indexed and IndexOperand(table.u.s.aux).is_string_constant()) {
                table.k = ExpKind::IndexedStruct;
             }
          }
