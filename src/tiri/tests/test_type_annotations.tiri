@@ -131,10 +131,18 @@ end
       return Values
    end
 
+   function accept_nested(Values:array<array<str>>):array<array<str>>
+      return Values
+   end
+
    local values:array<int> = array<int> { 3, 5 }
+   local string_alias:array<string> = array<string> { 'canonical' }
    global glAnnotatedWords:array<str> = array<str> { 'one' }
    assert(accept_ints(values)[1] is 5, 'Concrete array annotations should work in parameters, locals and results')
+   assert(accept_nested(array<array<str>> { array<str> { 'nested' } })[0][0] is 'nested',
+      'Recursive array annotations should work in parameters and results')
    assert(glAnnotatedWords[0] is 'one', 'Concrete array annotations should work for globals')
+   assert(string_alias[0] is 'canonical', 'String array aliases should canonicalise to str storage')
 
    function assert_rejected(Source:str, Message:str)
       try
@@ -146,11 +154,10 @@ end
    end
 
    assert_rejected('function invalid(Value:array) end', 'element type')
-   assert_rejected('function invalid(Value:array<string>) end', 'Unknown array element type')
    assert_rejected('function invalid(Value:array<missing>) end', 'Unknown array element type')
    assert_rejected('function invalid(Value:array<pointer>) end', 'Unknown array element type')
-   assert_rejected('function invalid(Value:array<array<str>>) end', 'Nested array specialisation')
    assert_rejected('function invalid(Value:array<int, 4>) end', 'cannot declare a size')
+   assert_rejected('function invalid(Value:array<array<int, 4>>) end', 'nested size')
 end
 
 @Test function MistypedArrayArgumentRaisesCleanly()

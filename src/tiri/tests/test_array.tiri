@@ -1490,7 +1490,7 @@ end
 
 @Test function ArrayOfInvalidType()
    try
-      t = array<invalid> { 1, 2, 3 }
+      exec('t = array<invalid> { 1, 2, 3 }')
    success
       error("array.of() with invalid type should fail")
    end
@@ -1498,7 +1498,7 @@ end
 
 @Test function ArrayOfPointerRejected()
    try
-      t = array<pointer> { 1, 2, 3 }
+      exec('t = array<pointer> { 1, 2, 3 }')
    success
       error("array.of() with pointer type should be rejected")
    end
@@ -1506,7 +1506,7 @@ end
 
 @Test function ArrayOfStructRejected()
    try
-      t = array<struct> { 1, 2, 3 }
+      exec('t = array<struct> { 1, 2, 3 }')
    success
       error("array.of() with struct type should be rejected")
    end

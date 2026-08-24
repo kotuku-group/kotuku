@@ -750,7 +750,8 @@ void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *N
       replacement.descriptor = Descriptor;
       if (source.type IS TiriType::Object) replacement.entry.object_class_id = uint32_t(source.object_class_id);
       else if (source.type IS TiriType::Struct or
-               (source.type IS TiriType::Array and source.array_element_type IS AET::STRUCT)) {
+               (source.type IS TiriType::Array and
+                (source.array_element_type IS AET::STRUCT or source.array_element_type IS AET::ARRAY))) {
          ptrdiff_t offset = source.constraint_name.data() - strdata(Descriptor);
          lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX,
             "global contract constraint offset is out of range");

@@ -164,6 +164,59 @@ static bool test_array_creation_int32(kt::Log &Log)
    return true;
 }
 
+static bool test_array_recursive_identity(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+
+   GCarray *ordinary = lj_array_new(lua, 0, AET::ARRAY);
+   if (not gcref(ordinary->type_identity) or
+       std::string_view(strdata(strref(ordinary->type_identity)), strref(ordinary->type_identity)->len) !=
+          "array<array>") {
+      Log.error("the C++ convenience allocator did not derive an unconstrained canonical identity");
+      return false;
+   }
+
+   ArrayAllocationDescriptor descriptor {
+      .storage = AET::ARRAY,
+      .canonical_identity = "array<array<double>>"
+   };
+   GCarray *matrix = lj_array_new(lua, 0, descriptor);
+   setarrayV(lua, lua->top++, matrix);
+   lua_gc(lua, LUA_GCCOLLECT);
+   GCstr *identity = strref(matrix->type_identity);
+   if (not identity or std::string_view(strdata(identity), identity->len) != "array<array<double>>") {
+      Log.error("a descriptor-aware array allocation lost its identity during GC traversal");
+      return false;
+   }
+
+   GCarray *matching = lj_array_new(lua, 0, AET::DOUBLE);
+   GCarray *mismatch = lj_array_new(lua, 0, AET::STR_GC);
+   TValue value;
+   setarrayV(lua, &value, matching);
+   if (lj_array_validate_element(matrix, &value) != ArrayElementResult::OK) {
+      Log.error("recursive array storage rejected a matching inner identity");
+      return false;
+   }
+   setarrayV(lua, &value, mismatch);
+   if (lj_array_validate_element(matrix, &value) != ArrayElementResult::INVALID_TYPE) {
+      Log.error("recursive array storage accepted a mismatched inner identity");
+      return false;
+   }
+
+   ArrayAllocationDescriptor wildcard_descriptor {
+      .storage = AET::ARRAY,
+      .canonical_identity = "array<array<any>>"
+   };
+   GCarray *wildcard = lj_array_new(lua, 0, wildcard_descriptor);
+   if (lj_array_validate_element(wildcard, &value) != ArrayElementResult::OK) {
+      Log.error("a recursive wildcard rejected a valid inner array");
+      return false;
+   }
+   return true;
+}
+
 //********************************************************************************************************************
 
 static bool test_unsigned_array_types(kt::Log &Log)
@@ -1588,10 +1641,11 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 38> Tests = { {
+   constexpr std::array<TestCase, 39> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
+      { "array_recursive_identity", test_array_recursive_identity },
       { "unsigned_array_types", test_unsigned_array_types },
       { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
       { "struct_to_table_string_vector", test_struct_to_table_string_vector },

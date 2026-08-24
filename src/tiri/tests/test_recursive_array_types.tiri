@@ -1,0 +1,276 @@
+-- Parser, constructor and static-analysis coverage for recursive array element types.
+
+struct RecursiveArrayPoint
+   Value: int
+end
+
+function first_value(Matrix:array<array<int>>!):num
+   return Matrix[0][0]
+end
+
+function identity_matrix(Matrix:array<array<double>>):array<array<double>>
+   return Matrix
+end
+
+@Test function RecursiveConstructorsAndAnnotations()
+   local integers:array<array<int>> = array<array<int>> {
+      array<int> { 3, 5 },
+      array<int> { 7, 11 }
+   }
+   local fixed = array<array<int>, 3> { array<int> { 13 }, array<int> { 17 } }
+   local captured:array<array<int>> = integers
+   local function captured_value():num
+      return captured[1][0]
+   end
+   global glRecursiveDoubles:array<array<double>> = array<array<double>> {
+      array<double> { 1.0, 0.0 },
+      array<double> { 0.0, 1.0 }
+   }
+
+   assert(first_value(integers) is 3, 'chained indexing lost the innermost numeric type')
+   assert(captured_value() is 7, 'captured recursive descriptors were not preserved through upvalues')
+   assert(#fixed is 3 and fixed[1][0] is 17 and fixed[2] is nil,
+      'a size on the constructed outer array should remain valid')
+   assert(identity_matrix(glRecursiveDoubles)[1][1] is 1.0,
+      'recursive descriptors were not preserved through parameters, results and globals')
+end
+
+@Test function CanonicalAliasesAndWhitespaceRemainStable()
+   local matrix:array< array < char > > = array< array < char > > {
+      array<char> { 65 }
+   }
+
+   assert(rawtype(matrix) is 'array<array<byte>>',
+      'recursive identities should remain rooted after whitespace and alias canonicalisation')
+   assert(matrix[0][0] is 65, 'a canonical recursive descriptor lost its element type')
+end
+
+@Test function ThreeDimensionalAndNamedStructureTypes()
+   local cube:array<array<array<int>>> = array<array<array<int>>> {
+      array<array<int>> { array<int> { 17 } }
+   }
+   local points:array<array<struct<RecursiveArrayPoint>>> = array<array<struct<RecursiveArrayPoint>>> {
+      array<struct<RecursiveArrayPoint>> { struct<RecursiveArrayPoint> { Value=23 } }
+   }
+
+   assert(cube[0][0][0] is 17, 'three-dimensional indexing lost recursive element descriptors')
+   assert(points[0][0].Value is 23, 'nested named structure identity was not retained')
+end
+
+@Test function UnconstrainedInnerArrayRemainsValid()
+   local broad:array<array> = array<array> {
+      array<int> { 1 },
+      array<str> { 'two' }
+   }
+   assert(broad[0][0] is 1 and broad[1][0] is 'two',
+      'array<array> should remain an unconstrained inner-array annotation')
+end
+
+@Test function RecursiveIdentityIsPubliclyVisible()
+   local matrix = array<array<int>> { array<int> { 1 } }
+   local cube = array<array<array<double>>> { array<array<double>> { array<double> { 1.0 } } }
+
+   assert(type(matrix) is 'array', 'type() should continue to report the public array category')
+   assert(matrix.type() is 'array', 'array.type() should continue to report the immediate public category')
+   assert(rawtype(matrix) is 'array<array<int>>', 'rawtype() lost the complete recursive array identity')
+   assert(rawtype(cube) is 'array<array<array<double>>>', 'rawtype() lost a three-dimensional identity')
+
+   for _ in {0 to 200} do
+      assert(rawtype(matrix) is 'array<array<int>>', 'traced rawtype() lost the recursive array identity')
+   end
+end
+
+function expect_recursive_store_failure(Operation:func, Message:str)
+   try
+      Operation()
+      error(Message)
+   except e
+      assert(e.message.find('element type') != nil, 'Unexpected recursive array runtime diagnostic: ' .. e.message)
+   end
+end
+
+function recursive_dynamic(Value:any):any
+   return Value
+end
+
+function recursive_parameter(Matrix:array<array<int>>!):num
+   return #Matrix
+end
+
+function recursive_wildcard_parameter(Matrix:array<array<any>>!):num
+   return #Matrix
+end
+
+function recursive_result(Value:any):array<array<int>>!
+   return Value
+end
+
+function expect_recursive_contract_failure(Operation:func, Message:str)
+   try
+      Operation()
+      error(Message)
+   except e
+      assert(e.message.find('array<array<int>>') != nil,
+         'Recursive contract diagnostic lost the complete expected type: ' .. e.message)
+   end
+end
+
+@Test function RecursiveRuntimeContractsAreExact()
+   local matching:any = array<array<int>> { array<int> { 1 } }
+   local mismatch:any = array<array<str>> { array<str> { 'wrong' } }
+
+   assert(recursive_parameter(matching) is 1, 'a matching recursive parameter contract was rejected')
+   expect_recursive_contract_failure(() => recursive_parameter(mismatch),
+      'a recursive parameter contract accepted an incompatible array')
+   expect_recursive_contract_failure(() => recursive_result(mismatch),
+      'a recursive result contract accepted an incompatible array')
+
+   expect_recursive_contract_failure(() => do
+      local matrix:array<array<int>> = matching
+      matrix = recursive_dynamic(mismatch)
+   end, 'a recursive local contract accepted an incompatible array')
+
+   local captured:array<array<int>> = matching
+   local function update(Value:any):nil
+      captured = Value
+   end
+   expect_recursive_contract_failure(() => update(mismatch),
+      'a recursive upvalue contract accepted an incompatible array')
+
+   global glRecursiveContract:array<array<int>> = matching
+   expect_recursive_contract_failure(() => do glRecursiveContract = mismatch end,
+      'a persisted recursive global contract accepted an incompatible array')
+   assert(glRecursiveContract is matching, 'a failed recursive global contract changed the stored value')
+
+   exec('global glRecursiveCrossChunk:array<array<int>> = array<array<int>> { array<int> { 2 } }')
+   expect_recursive_contract_failure(
+      () => exec("glRecursiveCrossChunk = array<array<str>> { array<str> { 'wrong' } }"),
+      'a separately compiled chunk bypassed a persisted recursive global contract')
+end
+
+@Test function RecursiveContractsRemainSafeOnTraces()
+   local matching:any = array<array<int>> { array<int> { 1 } }
+   local mismatch:any = array<array<str>> { array<str> { 'wrong' } }
+   for _ in {0 to 200} do
+      assert(recursive_parameter(matching) is 1, 'a traced recursive parameter rejected a matching value')
+   end
+   expect_recursive_contract_failure(() => recursive_parameter(mismatch),
+      'a traced recursive parameter contract accepted an incompatible array')
+   assert(recursive_parameter(matching) is 1,
+      'a recursive contract trace was unstable after rejecting an incompatible array')
+
+   local destination = array<array<int>, 1>
+   for _ in {0 to 200} do destination[0] = matching[0] end
+   expect_recursive_store_failure(() => do destination[0] = mismatch[0] end,
+      'a traced recursive indexed store accepted an incompatible inner array')
+   assert(destination[0] is matching[0], 'a traced recursive indexed store corrupted its destination')
+end
+
+@Test function RecursiveWildcardContractsGuardObservedIdentity()
+   defer
+      jit.flush()
+      jit.opt.start()
+   end
+
+   local matching:any = array<array<int>> { array<int> { 1 } }
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 200} do
+      assert(recursive_wildcard_parameter(matching) is 1,
+         'a traced recursive wildcard rejected a compatible specialisation')
+   end
+
+   local found_identity = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         for instruction in {1 into info.nins} do
+            local _, _, operand_1, operand_2 = jit.util.traceIR(trace_no, instruction)
+            if operand_1 != nil and operand_1 < 0 then
+               local constant = jit.util.traceK(trace_no, operand_1)
+               if constant is 'array<array<int>>' then found_identity = true end
+            end
+            if operand_2 != nil and operand_2 < 0 then
+               local constant = jit.util.traceK(trace_no, operand_2)
+               if constant is 'array<array<int>>' then found_identity = true end
+            end
+         end
+      end
+   end
+   assert(found_identity,
+      'a recursive wildcard trace should guard the compatible identity observed during recording')
+end
+
+@Test function RecursiveRuntimeStoresAreValidatedAtomically()
+   local matching:any = array<int> { 5 }
+   local mismatch:any = array<str> { 'wrong' }
+
+   expect_recursive_store_failure(() => do
+      local values = array<array<int>> { matching }
+      values[0] = mismatch
+   end, 'Indexed assignment accepted an incompatible inner array')
+
+   local values = array<array<int>> { matching, matching }
+   expect_recursive_store_failure(() => values.push(mismatch),
+      'push() accepted an incompatible inner array')
+   expect_recursive_store_failure(() => values.insert(1, matching, mismatch),
+      'insert() accepted an incompatible inner array')
+   expect_recursive_store_failure(() => values.fill(mismatch),
+      'fill() accepted an incompatible inner array')
+   assert(#values is 2 and values[0] is matching and values[1] is matching,
+      'a failed recursive store partially mutated its destination')
+
+   local staged = array<array<int>> { matching, matching }
+   expect_recursive_store_failure(() => array.copy(staged, { matching, mismatch }),
+      'table-backed copy accepted an incompatible inner array')
+   assert(staged[0] is matching and staged[1] is matching,
+      'table-backed copy exposed a partial mutation')
+
+   local incompatible = array<array<str>> { mismatch, mismatch }
+   expect_recursive_store_failure(() => array.copy(staged, incompatible),
+      'bulk array copy accepted an incompatible recursive identity')
+   assert(staged[0] is matching and staged[1] is matching,
+      'bulk array copy mutated its destination before rejecting the source identity')
+end
+
+@Test function DerivedArraysPreserveRecursiveIdentity()
+   local row = array<int> { 3 }
+   local mismatch:any = array<str> { 'wrong' }
+   local source = array<array<int>> { row, row }
+   local derived = {
+      source.clone(),
+      source.filter(Value => bool: true),
+      source.slice({0 into 1}),
+      source.mapSame(Value => array: Value),
+      source.map(Value => array: Value, 'array<int>')
+   }
+
+   for _, value in derived do
+      expect_recursive_store_failure(() => do value[0] = mismatch end,
+         'an array-producing operation lost its recursive identity')
+      assert(value[0] is row, 'a derived array changed after rejecting an incompatible row')
+   end
+
+   local wildcard = array<array<any>> { row }
+   wildcard[0] = mismatch
+   assert(wildcard[0] is mismatch, 'array<array<any>> did not retain wildcard runtime semantics')
+end
+
+@Test function MalformedRecursiveTypesAreRejected()
+   function assert_rejected(Source:str, Expected:str)
+      try
+         exec(Source)
+         error('Expected recursive array type syntax to be rejected')
+      except e
+         assert(e.message.find(Expected) != nil, 'Unexpected recursive array diagnostic: ' .. e.message)
+      end
+   end
+
+   assert_rejected('function invalid(Value:array<array<int, 4>>) end', 'nested size')
+   assert_rejected('function invalid(Value:array<array<missing>>) end', 'Unknown array element type')
+   assert_rejected('function invalid(Value:array<array<struct<Missing>>>) end', 'Unknown array element type')
+   assert_rejected('function invalid(Value:array<array<pointer>>) end', 'Unknown array element type')
+   assert_rejected('local values = array<array<int, 4>> {}', 'declare a size')
+   assert_rejected('local values = array<array<missing>> {}', 'Unknown or malformed array element type')
+   assert_rejected('local values = array<array<int> {}', "'>' expected")
+end

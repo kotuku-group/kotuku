@@ -50,7 +50,7 @@ struct RuntimeContractEntry {
    uint8_t flags = 0;
    uint8_t position = 0;
    CLASSID object_class_id = CLASSID::NIL;
-   std::string_view constraint_name; // Named structure, or the structure member of array<struct<Name>>.
+   std::string_view constraint_name; // Structure name or canonical nested-array member identity.
    std::string_view label;
 };
 
@@ -86,7 +86,7 @@ struct RuntimeContractDescriptor {
 struct CachedRuntimeContractEntry {
    union {
       uint32_t object_class_id;
-      uint16_t constraint_offset; // Structure or array-member structure name, selected by type.
+      uint16_t constraint_offset; // Structure name or canonical nested-array identity, selected by type.
    };
    uint16_t label_offset;
    TiriType type;
@@ -272,6 +272,40 @@ private:
    const uint8_t *end_;
 };
 
+[[nodiscard]] inline bool runtime_array_identity_is_canonical(std::string_view Identity) noexcept
+{
+   auto identifier = [](std::string_view Text) {
+      if (Text.empty()) return false;
+      bool first_alpha = (Text[0] >= 'a' and Text[0] <= 'z') or
+         (Text[0] >= 'A' and Text[0] <= 'Z') or Text[0] IS '_';
+      if (not first_alpha) return false;
+      for (char character : Text.substr(1)) {
+         bool alpha = (character >= 'a' and character <= 'z') or
+            (character >= 'A' and character <= 'Z') or character IS '_';
+         bool digit = character >= '0' and character <= '9';
+         if (not alpha and not digit) return false;
+      }
+      return true;
+   };
+   auto member_valid = [&identifier](auto &Self, std::string_view Member, uint8_t Depth) -> bool {
+      if (Depth >= 32 or Member.empty()) return false;
+      if (Member.starts_with("array<") and Member.ends_with('>')) {
+         return Self(Self, Member.substr(6, Member.size() - 7), uint8_t(Depth + 1));
+      }
+      if (Member.starts_with("struct<") and Member.ends_with('>')) {
+         return identifier(Member.substr(7, Member.size() - 8));
+      }
+      constexpr std::array<std::string_view, 16> names = {
+         "any", "array", "byte", "double", "float", "int", "int8", "int16", "int64", "obj",
+         "str", "table", "uint", "uint8", "uint16", "uint64"
+      };
+      for (std::string_view name : names) if (Member IS name) return true;
+      return false;
+   };
+   return Identity.starts_with("array<") and Identity.ends_with('>') and
+      member_valid(member_valid, Identity.substr(6, Identity.size() - 7), 0);
+}
+
 // Result is usable only when decoding succeeds.  Avoid clearing the fixed-capacity entry array here because callers
 // already default-initialise it and every live entry is overwritten below.
 [[nodiscard]] inline bool decode_runtime_contract(
@@ -324,6 +358,10 @@ private:
             return fail(RuntimeContractDecodeError::Entry);
          }
          entry.array_element_type = AET(array_element_type);
+         if (entry.array_element_type IS AET::ARRAY and not array_struct_name.empty() and
+             not runtime_array_identity_is_canonical(array_struct_name)) {
+            return fail(RuntimeContractDecodeError::Entry);
+         }
       }
       if (not reader.read_text(entry.label)) return fail(RuntimeContractDecodeError::Entry);
       bool is_const = contract_entry_is_const(entry);
@@ -347,7 +385,9 @@ private:
          if (entry.array_element_type IS AET::STRUCT) {
             if (array_struct_name.empty()) return fail(RuntimeContractDecodeError::Entry);
          }
-         else if (not array_struct_name.empty()) return fail(RuntimeContractDecodeError::Entry);
+         else if (entry.array_element_type != AET::ARRAY and not array_struct_name.empty()) {
+            return fail(RuntimeContractDecodeError::Entry);
+         }
       }
       if (entry.type IS TiriType::Object) entry.object_class_id = CLASSID(object_class_id);
       else if (entry.type IS TiriType::Struct) entry.constraint_name = struct_name;

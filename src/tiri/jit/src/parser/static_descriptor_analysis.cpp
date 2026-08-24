@@ -1113,7 +1113,8 @@ private:
          result.nullable = false;
       }
       else if (auto array_type = this->array_constructor_type(Call)) {
-         auto element = describe_array_element(array_type->first, &this->context_.lua());
+         auto element = parse_array_element_type(
+            array_type->first, &this->context_.lua(), &this->context_.lex());
          if (element) {
             result.primary = TiriType::Array;
             result.array_element = *element;
@@ -1296,7 +1297,8 @@ private:
             const auto &literal = std::get<LiteralValue>(type_expression.data);
             if (literal.kind IS LiteralKind::String and literal.string_value) {
                std::string_view type_name(strdata(literal.string_value), literal.string_value->len);
-               if (auto element = describe_array_element(type_name, &this->context_.lua())) {
+               if (auto element = parse_array_element_type(
+                      type_name, &this->context_.lua(), &this->context_.lex())) {
                   StaticValueDescriptor result;
                   result.primary = TiriType::Array;
                   result.array_element = *element;
@@ -1416,13 +1418,24 @@ private:
       return {};
    }
 
-   [[nodiscard]] static StaticValueDescriptor array_element_value(
-      const ArrayElementDescriptor &Element)
+   [[nodiscard]] StaticValueDescriptor array_element_value(
+      const ArrayElementDescriptor &Element) const
    {
       StaticValueDescriptor result;
       result.primary = Element.logical_type;
       result.object_class_id = Element.object_class_id;
       result.struct_def = Element.struct_def;
+      if (Element.storage IS AET::ARRAY and Element.nested_array_identity) {
+         std::string_view identity(
+            strdata(Element.nested_array_identity), Element.nested_array_identity->len);
+         if (identity.starts_with("array<") and identity.ends_with('>')) {
+            std::string_view member = identity.substr(6, identity.size() - 7);
+            if (auto nested = parse_array_element_type(
+                   member, &this->context_.lua(), &this->context_.lex())) {
+               result.array_element = *nested;
+            }
+         }
+      }
       result.proof = StaticProof::Trusted;
       result.nullable = Element.storage IS AET::STR_GC or Element.storage IS AET::OBJECT or
          Element.storage IS AET::TABLE or Element.storage IS AET::ARRAY;

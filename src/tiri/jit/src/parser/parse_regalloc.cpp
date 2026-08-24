@@ -605,6 +605,10 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
          descriptor.push_back(char(uint8_t(contract.array_element.storage)));
          std::string_view array_struct_name;
          if (contract.array_element.struct_def) array_struct_name = contract.array_element.struct_def->Name;
+         else if (contract.array_element.storage IS AET::ARRAY and contract.array_element.nested_array_identity) {
+            GCstr *identity = contract.array_element.nested_array_identity;
+            array_struct_name = std::string_view(strdata(identity), identity->len);
+         }
          contract_append_text(fs, descriptor, array_struct_name, "runtime array contract structure name");
       }
 

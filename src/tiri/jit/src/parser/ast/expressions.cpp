@@ -811,7 +811,17 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          Token start = this->ctx.tokens().current();
          GCstr *type_str = start.payload().as_string();
          std::string_view element_name(strdata(type_str), type_str->len);
-         if (element_name.starts_with("array<")) type_str = this->ctx.lex().keepstr("array");
+         if (element_name.starts_with("array<") and element_name.find(',') != std::string_view::npos) {
+            return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, start,
+               "Nested array element types cannot declare a size");
+         }
+         auto element = parse_array_element_type(
+            element_name IS "obj" ? "object" : element_name, &this->ctx.lua(), &this->ctx.lex());
+         if (not element or element->storage IS AET::PTR or
+             (element->storage IS AET::STRUCT and not element->struct_def)) {
+            return this->fail<ExprNodePtr>(ParserErrorCode::UnknownTypeName, start,
+               std::format("Unknown or malformed array element type '{}'", element_name));
+         }
          ArrayTypedSize specified_size = this->ctx.lex().array_typed_size;
          this->ctx.tokens().advance();
 

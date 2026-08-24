@@ -46,6 +46,7 @@
 #include "parser.h"
 #include "static_descriptor_analysis.h"
 #include "table_ownership.h"
+#include "../runtime/lj_array.h"
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
@@ -2222,7 +2223,8 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       "function required(Value:num!):num! return Value end\n"
       "local value = obj.new('time')\n"
       "value = dynamic(value)\n"
-      "local numbers:array<int> = dynamic(array<int> {})\n";
+      "local numbers:array<int> = dynamic(array<int> {})\n"
+      "local matrix:array<array<int>> = dynamic(array<array<int>> {})\n";
    if (lua_load(L, source, "contract-roundtrip")) {
       Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
       return false;
@@ -2287,6 +2289,25 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       return false;
    };
    bool array_survived = has_int_array_contract(has_int_array_contract, restored_proto);
+   auto has_recursive_array_contract = [](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             descriptor.entries[0].type IS TiriType::Array and
+             descriptor.entries[0].array_element_type IS AET::ARRAY and
+             descriptor.entries[0].constraint_name IS "array<int>") return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool recursive_array_survived = has_recursive_array_contract(has_recursive_array_contract, restored_proto);
    auto has_required_contract = [](auto &Self, GCproto *Proto) -> bool {
       for (uint32_t i = 1; i < Proto->sizebc; ++i) {
          BCIns instruction = proto_bc(Proto)[i];
@@ -2306,7 +2327,7 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
    };
    bool required_survived = has_required_contract(has_required_contract, restored_proto);
    lua_pop(L, 1);
-   if (not class_survived or not array_survived or not required_survived) {
+   if (not class_survived or not array_survived or not recursive_array_survived or not required_survived) {
       Log.error("reloaded bytecode lost an object, array member or required constraint in BC_CONTRACT");
       return false;
    }
@@ -2412,6 +2433,23 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
        array_decoded.entries[0].array_element_type != AET::STRUCT or
        array_decoded.entries[0].constraint_name != "Point") {
       Log.error("named-structure array constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string recursive_array_encoded = build_descriptor(
+      TiriType::Array, CLASSID::NIL, {}, "Matrix", const_flags, AET::ARRAY, "array<int>");
+   GCstr *recursive_array_descriptor = lj_str_new(
+      lua, recursive_array_encoded.data(), recursive_array_encoded.size());
+   if (not decode_runtime_contract(recursive_array_descriptor, array_decoded) or
+       array_decoded.entries[0].array_element_type != AET::ARRAY or
+       array_decoded.entries[0].constraint_name != "array<int>") {
+      Log.error("recursive array constraint did not round-trip through the shared decoder");
+      return false;
+   }
+   std::string malformed_recursive_array = build_descriptor(
+      TiriType::Array, CLASSID::NIL, {}, "Matrix", const_flags, AET::ARRAY, "array<int");
+   if (not rejected(malformed_recursive_array)) {
+      Log.error("runtime contract decoder accepted a malformed recursive array identity");
       return false;
    }
 
@@ -4661,6 +4699,45 @@ static bool test_static_descriptor_model(kt::Log &Log)
    }
    if (describe_array_element("unsupported", nullptr)) {
       Log.error("unsupported array storage name unexpectedly produced a descriptor");
+      return false;
+   }
+
+   LuaStateHolder recursive_state;
+   lua_State *recursive_lua = recursive_state.get();
+   auto recursive = parse_array_element_type(" array < array < char > > ", recursive_lua);
+   auto recursive_name = canonical_array_type_name(" array < array < char > > ", recursive_lua);
+   if (not recursive or recursive->storage != AET::ARRAY or
+       not recursive->nested_array_identity or
+       std::string_view(strdata(recursive->nested_array_identity), recursive->nested_array_identity->len) !=
+          "array<array<byte>>" or
+       not recursive_name or *recursive_name != "array<array<byte>>") {
+      Log.error("recursive array type parsing did not preserve and canonicalise the complete identity");
+      return false;
+   }
+   auto exact = parse_array_element_type("array<array<int>>", recursive_lua);
+   auto mismatch = parse_array_element_type("array<array<str>>", recursive_lua);
+   auto wildcard = parse_array_element_type("array<array<any>>", recursive_lua);
+   if (not exact or not mismatch or not wildcard or array_element_matches(*exact, *mismatch) or
+       not array_element_matches(*wildcard, *exact)) {
+      Log.error("recursive array descriptor comparison lost exact or wildcard semantics");
+      return false;
+   }
+   ArrayAllocationDescriptor matching_array {
+      .storage = AET::ARRAY,
+      .canonical_identity = "array<array<int>>"
+   };
+   ArrayAllocationDescriptor mismatched_array {
+      .storage = AET::ARRAY,
+      .canonical_identity = "array<array<str>>"
+   };
+   if (not array_element_matches(*exact, lj_array_new(recursive_lua, 0, matching_array)) or
+       array_element_matches(*exact, lj_array_new(recursive_lua, 0, mismatched_array))) {
+      Log.error("runtime arrays did not compare through their canonical recursive identities");
+      return false;
+   }
+   if (parse_array_element_type("array<array<int, 4>>") or parse_array_element_type("array<>") or
+       parse_array_element_type("array<array<int>")) {
+      Log.error("malformed recursive array type spelling was accepted");
       return false;
    }
    return true;

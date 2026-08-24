@@ -87,7 +87,7 @@ end
    local numbers = array<int> { 3, 7 }
    local strings = array<str> { 'a', 'b' }
    local tables = array<table> { { value=11 } }
-   local nested = array<array> { array<int> { 19 } }
+   local nested = array<array<int>> { array<int> { 19 } }
    local points = array<struct<EmissionPoint>> { struct<EmissionPoint> { Value=29 } }
    local clock = obj.new('time')
    local objects = array<obj> { clock }
@@ -95,10 +95,20 @@ end
    assert(numbers[1] is 7, 'array<int> indexing should return a number')
    assert(strings[0] is 'a', 'array<str> indexing should return a string')
    assert(tables[0].value is 11, 'array<table> indexing should retain table behaviour')
-   assert(nested[0][0] is 19, 'array<array> indexing should retain nested array behaviour')
+   assert(nested[0][0] is 19, 'recursive array indexing should retain the innermost descriptor')
    assert(points[0].Value is 29, 'named struct-array indexing should retain its layout')
    assert(objects[0].id is clock.id, 'array<obj> indexing should retain object behaviour')
    clock.free()
+end
+
+@Test function RecursiveArrayPropagationPaths()
+   local nested = array<array<int>> { array<int> { 2, 3 }, array<int> { 5, 7 } }
+   local clone = nested.clone()
+   local total = 0
+   for _, row in clone do total += row[0] end
+
+   assert(clone[1][1] is 7, 'array-preserving intrinsics should retain recursive descriptors')
+   assert(total is 7, 'generic iteration should expose the recursively typed row descriptor')
 end
 
 @Test function ArrayPropagationPaths()

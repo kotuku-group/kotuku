@@ -200,7 +200,11 @@ void lj_meta_raw_type_text(lua_State *L, cTValue *Value, char *Buffer, size_t Si
 
    if (tvisarray(Value)) {
       GCarray *array = arrayV(Value);
-      if (array->elemtype IS AET::STRUCT and array->structdef) {
+      if (gcref(array->type_identity)) {
+         GCstr *identity = strref(array->type_identity);
+         std::snprintf(Buffer, Size, "%.*s", int(identity->len), strdata(identity));
+      }
+      else if (array->elemtype IS AET::STRUCT and array->structdef) {
          std::snprintf(Buffer, Size, "array<struct<%s>>", array->structdef->Name.c_str());
       }
       else std::snprintf(Buffer, Size, "array<%s>", lj_array_elemtype_name(array->elemtype));
@@ -938,9 +942,14 @@ namespace {
    bool string_match = expected IS AET::STR_GC and
       (actual IS AET::STR_GC or actual IS AET::CSTR or actual IS AET::STR_CPP);
    if (not string_match and actual != expected) return false;
-   if (expected != AET::STRUCT) return true;
-   struct_record *definition = find_struct(L, Entry.constraint_name);
-   return definition and Array->structdef IS definition;
+   if (expected IS AET::STRUCT) {
+      struct_record *definition = find_struct(L, Entry.constraint_name);
+      return definition and Array->structdef IS definition;
+   }
+   if (expected IS AET::ARRAY and not Entry.constraint_name.empty()) {
+      return lj_array_member_identity_matches(Array, Entry.constraint_name);
+   }
+   return true;
 }
 
 [[nodiscard]] static bool contract_matches(lua_State *L, cTValue *Value, const RuntimeContractEntry &Entry)
@@ -1006,6 +1015,11 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    if (Entry.type IS TiriType::Array) {
       if (Entry.array_element_type IS AET::STRUCT and not Entry.constraint_name.empty()) {
          std::snprintf(Buffer, Size, "array<struct<%.*s>>", int(Entry.constraint_name.size()),
+            Entry.constraint_name.data());
+         return;
+      }
+      if (Entry.array_element_type IS AET::ARRAY and not Entry.constraint_name.empty()) {
+         std::snprintf(Buffer, Size, "array<%.*s>", int(Entry.constraint_name.size()),
             Entry.constraint_name.data());
          return;
       }
@@ -1140,7 +1154,8 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
          .position = cached.position,
          .object_class_id = cached.type IS TiriType::Object ? CLASSID(cached.object_class_id) : CLASSID::NIL,
          .constraint_name = (cached.type IS TiriType::Struct or
-            (cached.type IS TiriType::Array and cached.array_element_type IS AET::STRUCT)) ?
+            (cached.type IS TiriType::Array and
+             (cached.array_element_type IS AET::STRUCT or cached.array_element_type IS AET::ARRAY))) ?
             cached_contract_text(Descriptor, cached.constraint_offset) : std::string_view{},
          .label = cached_contract_text(Descriptor, cached.label_offset)
       };
@@ -1192,7 +1207,8 @@ extern "C" void lj_meta_type_test_pc(lua_State *L, const BCIns *PC)
       decoded_entry.position = cached.position;
       if (cached.type IS TiriType::Object) decoded_entry.object_class_id = CLASSID(cached.object_class_id);
       else if (cached.type IS TiriType::Struct or
-               (cached.type IS TiriType::Array and cached.array_element_type IS AET::STRUCT)) {
+               (cached.type IS TiriType::Array and
+                (cached.array_element_type IS AET::STRUCT or cached.array_element_type IS AET::ARRAY))) {
          decoded_entry.constraint_name = cached_contract_text(encoded, cached.constraint_offset);
       }
       decoded_entry.label = cached_contract_text(encoded, cached.label_offset);
@@ -1291,7 +1307,8 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
          CachedRuntimeContractEntry &target = entries[entry_index++];
          if (source.type IS TiriType::Object) target.object_class_id = uint32_t(source.object_class_id);
          else if (source.type IS TiriType::Struct or
-                  (source.type IS TiriType::Array and source.array_element_type IS AET::STRUCT)) {
+                  (source.type IS TiriType::Array and
+                   (source.array_element_type IS AET::STRUCT or source.array_element_type IS AET::ARRAY))) {
             target.constraint_offset = cached_contract_text_offset(encoded, source.constraint_name);
          }
          else target.object_class_id = 0;
@@ -1464,7 +1481,9 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
          .object_class_id = cached->entry.type IS TiriType::Object ?
             CLASSID(cached->entry.object_class_id) : CLASSID::NIL,
          .constraint_name = (cached->entry.type IS TiriType::Struct or
-            (cached->entry.type IS TiriType::Array and cached->entry.array_element_type IS AET::STRUCT)) ?
+            (cached->entry.type IS TiriType::Array and
+             (cached->entry.array_element_type IS AET::STRUCT or
+              cached->entry.array_element_type IS AET::ARRAY))) ?
             cached_contract_text(cached->descriptor, cached->entry.constraint_offset) : std::string_view{},
          .label = cached_contract_text(cached->descriptor, cached->entry.label_offset)
       };

@@ -154,6 +154,23 @@ mix(123, |)
    assert(help.activeParameter is 1, 'Second argument should be active.')
 end
 
+@Test function RecursiveArraySignature()
+   help = signatureAt([=[
+function matrixFirst(Matrix:array<array<int>>!):array<array<double>>
+   return array<array<double>> {}
+end
+
+matrixFirst(|)
+]=])
+
+   signature = firstSignature(help)
+   assert(signature.label is
+      'matrixFirst(Matrix: array<array<int>>!):array<array<double>>',
+      'Signature help should preserve balanced recursive array annotations.')
+   assert(signature.parameters[0].label is 'Matrix: array<array<int>>!',
+      'Signature parameter metadata should preserve the complete recursive type.')
+end
+
 @Test function NestedCallsStringsAndTablesDoNotAdvanceOuterParameter()
    help = signatureAt([=[
 function target(First, Second, Third)

@@ -1384,6 +1384,7 @@ struct GCarray {
    struct struct_record *structdef;  // Optional: struct definition for struct arrays
    std::vector<char> *strcache; // Optional: cached string content for CSTRING/STRING_CPP arrays
    RESOURCEID resource_id; // Optional Core resource pin owned by an external view
+   GCRef type_identity; // Interned complete public type name, appended to preserve fixed field offsets
 
 public:
    // Initialise the array structure. Storage must be pre-allocated by the caller using lj_mem_new()
@@ -1391,7 +1392,7 @@ public:
    // them! We avoid member initialiser lists to prevent GCC from zero-initializing the GCHeader
    // fields (nextgc, marked) that were set by lj_mem_newgco().
    void init(void *Data, AET Type, MSize ElemSize, MSize Length, MSize Capacity, uint8_t Flags,
-             struct struct_record *StructDef = nullptr) noexcept
+             struct struct_record *StructDef = nullptr, GCstr *TypeIdentity = nullptr) noexcept
    {
       gct       = ~LJ_TARRAY;
       luatype   = glArrayConversion[size_t(Type)].type;
@@ -1408,6 +1409,7 @@ public:
       structdef = StructDef;
       strcache  = nullptr;
       resource_id = 0;
+      type_identity.gcptr64 = uint64_t(TypeIdentity);
    }
 
    // Destructor only handles strcache. Storage is freed by lj_array_free() for proper GC tracking.

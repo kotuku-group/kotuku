@@ -180,15 +180,16 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
       }
       GCstr *element_symbol = type_token.payload().as_string();
       std::string_view element_name(strdata(element_symbol), element_symbol->len);
-      if (element_name.starts_with("array<")) {
+      if (element_name.starts_with("array<") and element_name.find(',') != std::string_view::npos) {
          return this->fail<Token>(ParserErrorCode::UnexpectedToken, type_token,
-            "Nested array specialisation is not supported; use array<array>");
+            "Array type annotations cannot declare a nested size");
       }
       if (element_name IS "object") {
          return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
             "Unknown array element type 'object'; use 'obj'");
       }
-      auto element = describe_array_element(element_name IS "obj" ? "object" : element_name, &this->ctx.lua());
+      auto element = parse_array_element_type(
+         element_name IS "obj" ? "object" : element_name, &this->ctx.lua(), &this->ctx.lex());
       if (not element or element->storage IS AET::PTR or
           (element->storage IS AET::STRUCT and not element->struct_def)) {
          return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
@@ -242,8 +243,13 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
             this->ctx.tokens().advance();
          }
          else if (element_token.kind() IS TokenKind::ArrayTyped) {
-            return this->fail<Token>(ParserErrorCode::UnexpectedToken, element_token,
-               "Nested array specialisation is not supported; use array<array>");
+            GCstr *name = element_token.payload().as_string();
+            element_storage.assign(strdata(name), name->len);
+            if (not this->ctx.lex().array_typed_size.is_absent()) {
+               return this->fail<Token>(ParserErrorCode::UnexpectedToken, element_token,
+                  "Array type annotations cannot declare a nested size");
+            }
+            this->ctx.tokens().advance();
          }
          else if (element_token.kind() IS TokenKind::Identifier) {
             GCstr *name = element_token.identifier();
@@ -266,7 +272,8 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
             return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,
                "Unknown array element type 'object'; use 'obj'");
          }
-         auto element = describe_array_element(element_storage IS "obj" ? "object" : element_storage, &this->ctx.lua());
+         auto element = parse_array_element_type(
+            element_storage IS "obj" ? "object" : element_storage, &this->ctx.lua(), &this->ctx.lex());
          if (not element or element->storage IS AET::PTR or
              (element->storage IS AET::STRUCT and not element->struct_def)) {
             return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,

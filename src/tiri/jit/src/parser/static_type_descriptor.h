@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -16,6 +17,7 @@
 struct ExprNode;
 struct FunctionField;
 struct FunctionExprPayload;
+class LexState;
 struct struct_field;
 struct struct_record;
 struct RuntimeContract;
@@ -40,15 +42,20 @@ struct ArrayElementDescriptor {
    CLASSID object_class_id = CLASSID::NIL;
    struct_record *struct_def = nullptr;
    bool known = false;
+   GCstr *nested_array_identity = nullptr;
 
    [[nodiscard]] bool operator==(const ArrayElementDescriptor &) const = default;
 };
 
 [[nodiscard]] bool array_element_matches(
-   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual) noexcept;
-[[nodiscard]] bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual) noexcept;
-[[nodiscard]] ArrayElementDescriptor describe_array_element(const GCarray *) noexcept;
+   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual);
+[[nodiscard]] bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual);
+[[nodiscard]] ArrayElementDescriptor describe_array_element(const GCarray *);
 [[nodiscard]] std::string array_element_name(const ArrayElementDescriptor &);
+[[nodiscard]] std::optional<ArrayElementDescriptor> parse_array_element_type(
+   std::string_view, lua_State *State = nullptr, LexState *Lexer = nullptr);
+[[nodiscard]] std::optional<std::string> canonical_array_type_name(
+   std::string_view, lua_State *State = nullptr);
 
 // Whether a table value is known to establish context when one of its members is called.  `Unknown` is the sound
 // classification wherever the analysed function cannot see every designation of the table, because a designation

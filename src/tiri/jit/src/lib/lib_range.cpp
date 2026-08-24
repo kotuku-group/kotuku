@@ -983,7 +983,7 @@ static int range_slice_impl(lua_State *L)
 
       // Check for empty/invalid ranges
       if (len IS 0 or (forward and start > effective_stop) or (not forward and start < effective_stop)) {
-         GCarray *new_arr = lj_array_new(L, 0, arr->elemtype);
+         GCarray *new_arr = lj_array_new_like(L, arr, 0);
          // Per-instance metatable is null - base metatable will be used automatically
          setarrayV(L, L->top++, new_arr);
          return 1;
@@ -995,22 +995,19 @@ static int range_slice_impl(lua_State *L)
       else result_size = ((start - effective_stop) / (-step)) + 1;
 
       // Create result array
-      GCarray *new_arr = lj_array_new(L, MSize(result_size), arr->elemtype);
-      auto src_base = arr->get<uint8_t>();
-      auto dst_base = new_arr->get<uint8_t>();
-      MSize elemsize = arr->elemsize;
+      GCarray *new_arr = lj_array_new_like(L, arr, MSize(result_size));
 
       // Copy elements
       int32_t dst_idx = 0;
       if (forward) {
          for (int32_t i = start; i <= effective_stop; i += step) {
-            memcpy(dst_base + dst_idx * elemsize, src_base + i * elemsize, elemsize);
+            lj_array_copy(L, new_arr, MSize(dst_idx), arr, MSize(i), 1);
             dst_idx++;
          }
       }
       else {
          for (int32_t i = start; i >= effective_stop; i += step) {
-            memcpy(dst_base + dst_idx * elemsize, src_base + i * elemsize, elemsize);
+            lj_array_copy(L, new_arr, MSize(dst_idx), arr, MSize(i), 1);
             dst_idx++;
          }
       }
