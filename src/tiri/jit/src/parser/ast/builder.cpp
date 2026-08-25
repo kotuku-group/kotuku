@@ -809,60 +809,34 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 }
 
 //********************************************************************************************************************
-// Check if an identifier is followed by a recognised declaration attribute.  Due to lexer lookahead complexities,
-// we access the lexer's buffered_tokens directly when the special '<identifier' handling has been triggered.
+// Check if any identifier in a comma-separated name list has a type annotation or recognised declaration attribute.
+// Due to lexer lookahead complexities, the attribute name appears before '<' when special '<identifier' handling has
+// been triggered.
 //
-// Patterns: `name <attr>`, `name:type <attr>`
-// Returns true if this looks like an implicit local declaration with an attribute.
+// Patterns: `name:type`, `name <attr>`, `name, name:type`, `name, name <attr>`
+// Returns true if this looks like an implicit local declaration.
 
-static bool is_implicit_local_with_attribute(TokenStreamAdapter& Tokens)
+static bool is_implicit_local_declaration(TokenStreamAdapter &Tokens)
 {
-   // Current token must be an identifier (the variable name)
    if (Tokens.current().kind() != TokenKind::Identifier) return false;
 
-   // The lexer has special handling for '<identifier': when it sees '<' followed immediately
-   // by an identifier, it buffers the identifier via push_front and returns '<'.
-   // This means when we peek, the buffered identifier appears BEFORE '<' in the peek order.
-   //
-   // For "b <const> = 10":
-   // - Current: b
-   // - peek(1): const (buffered via push_front by '<identifier' handling)
-   // - peek(2): <
-   // - peek(3): >
-   //
-   // We need to detect: identifier (current) followed by the attribute name, '<', then '>'.
-
    size_t pos = 1;
-   Token next = Tokens.peek(pos);
+   while (true) {
+      Token next = Tokens.peek(pos);
+      if (next.kind() IS TokenKind::Colon) return true;
 
-   // Handle optional type annotation before the attribute (:type <const>)
-   if (next.kind() IS TokenKind::Colon) {
-      pos++;
-      next = Tokens.peek(pos);
-      // Type name must be an identifier or reserved type keyword
-      if (next.kind() != TokenKind::Identifier and next.kind() != TokenKind::Function and next.kind() != TokenKind::Nil) {
-         return false;
+      if (next.kind() IS TokenKind::Identifier) {
+         GCstr *attribute = next.identifier();
+         if (attribute) {
+            std::string_view name(strdata(attribute), attribute->len);
+            if ((name IS "const" or name IS "close" or name IS "view") and
+                  Tokens.peek(pos + 1).raw() IS '<' and Tokens.peek(pos + 2).raw() IS '>') return true;
+         }
       }
-      pos++;
-      next = Tokens.peek(pos);
+
+      if (next.kind() != TokenKind::Comma or Tokens.peek(pos + 1).kind() != TokenKind::Identifier) return false;
+      pos += 2;
    }
-
-   // Next should be a recognised attribute (the buffered identifier from '<identifier' handling)
-   if (next.kind() != TokenKind::Identifier) return false;
-
-   GCstr* attr_name = next.identifier();
-   if (!attr_name) return false;
-
-   std::string_view attr_str(strdata(attr_name), attr_name->len);
-   if (attr_str != "const" and attr_str != "close" and attr_str != "view") return false;
-
-   // After the attribute name, we should see '<' (which was returned by the lexer)
-   Token angle_open = Tokens.peek(pos + 1);
-   if (angle_open.raw() != '<') return false;
-
-   // After '<', we should see '>'
-   Token angle_close = Tokens.peek(pos + 2);
-   return angle_close.raw() IS '>';
 }
 
 //********************************************************************************************************************
@@ -939,8 +913,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
          }
 
          // A type annotation or declaration attribute does not change Tiri's local-by-default assignment semantics.
-         if (this->ctx.tokens().peek(1).kind() IS TokenKind::Colon or
-               is_implicit_local_with_attribute(this->ctx.tokens())) {
+         if (is_implicit_local_declaration(this->ctx.tokens())) {
             return this->parse_local();
          }
          return this->parse_expression_stmt();
