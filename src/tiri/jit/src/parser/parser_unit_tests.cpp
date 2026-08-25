@@ -577,6 +577,54 @@ static bool test_global_callable_contract_without_type_analysis(kt::Log &Log)
 
 //********************************************************************************************************************
 
+static bool test_immutable_global_contract_analysis(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   auto compile_error = [L](std::string_view Source, const char *Chunk) -> std::string {
+      if (lua_load(L, Source, Chunk) IS 0) {
+         lua_pop(L, 1);
+         return {};
+      }
+      std::string result = lua_tostring(L, -1);
+      lua_pop(L, 1);
+      return result;
+   };
+
+   std::string concrete = compile_error(
+      "global glParserImmutable:str = 'first'\n"
+      "global glParserImmutable:any = 'variant'\n"
+      "glParserImmutable = 42\n", "parser-immutable-concrete");
+   if (concrete.find("cannot redeclare global 'glParserImmutable' from 'str' to 'any'") IS std::string::npos or
+       concrete.find("cannot assign 'num' to global of type 'str'") IS std::string::npos) {
+      Log.error("concrete-to-any redeclaration did not retain the original parser contract: %s", concrete.c_str());
+      return false;
+   }
+
+   std::string variant = compile_error(
+      "global glParserVariant:any = 'first'\n"
+      "global glParserVariant:num = 2\n"
+      "glParserVariant = 'still variant'\n", "parser-immutable-variant");
+   if (variant.find("cannot redeclare global 'glParserVariant' from 'any' to 'num'") IS std::string::npos or
+       variant.find("cannot assign") != std::string::npos) {
+      Log.error("any-to-concrete redeclaration changed the parser's variant flow policy: %s", variant.c_str());
+      return false;
+   }
+
+   std::string reduced = compile_error(
+      "global glParserReduced:str = 'first'\n"
+      "try global glParserReduced:any = 'variant' end\n"
+      "glParserReduced = 42\n", "parser-immutable-reduced");
+   if (reduced.find("cannot assign 'num' to global of type 'str'") IS std::string::npos or
+       reduced.find("cannot redeclare global 'glParserReduced'") != std::string::npos) {
+      Log.error("a reduced declaration discarded the established parser flow contract: %s", reduced.c_str());
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_loop_ast(kt::Log &log)
 {
    constexpr const char* source = R"(
@@ -2536,6 +2584,70 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
        not contract_entry_is_const(decoded.entries[0]) or
        decoded.entries[0].constraint_name != "Point" or decoded.entries[0].label != "Value") {
       Log.error("valid runtime contract descriptor did not round-trip through the shared decoder");
+      return false;
+   }
+
+   RuntimeContractEntry scalar{
+      .type = TiriType::Str,
+      .flags = contract_flag(ContractEntryFlag::Nullable),
+      .position = 1,
+      .label = "Value"
+   };
+   RuntimeContractEntry lifecycle = scalar;
+   lifecycle.flags |= contract_flag(ContractEntryFlag::Initialising) |
+      contract_flag(ContractEntryFlag::GlobalHint);
+   lifecycle.position = 7;
+   lifecycle.label = "OtherSite";
+   if (not global_contract_entries_equivalent(scalar, lifecycle)) {
+      Log.error("global contract identity included lifecycle or bytecode-site metadata");
+      return false;
+   }
+   for (ContractEntryFlag flag : { ContractEntryFlag::Nullable, ContractEntryFlag::Required,
+          ContractEntryFlag::Const }) {
+      RuntimeContractEntry changed = scalar;
+      changed.flags ^= contract_flag(flag);
+      if (global_contract_entries_equivalent(scalar, changed)) {
+         Log.error("global contract identity omitted nullable, required or const policy");
+         return false;
+      }
+   }
+   RuntimeContractEntry variant = scalar;
+   variant.type = TiriType::Any;
+   if (global_contract_entries_equivalent(scalar, variant)) {
+      Log.error("global contract identity treated a concrete contract as variant");
+      return false;
+   }
+   RuntimeContractEntry object = scalar;
+   object.type = TiriType::Object;
+   object.object_class_id = CLASSID::TIME;
+   RuntimeContractEntry other_object = object;
+   other_object.object_class_id = CLASSID::FILE;
+   if (global_contract_entries_equivalent(object, other_object)) {
+      Log.error("global contract identity omitted the object class constraint");
+      return false;
+   }
+   RuntimeContractEntry structure = scalar;
+   structure.type = TiriType::Struct;
+   structure.constraint_name = "Point";
+   RuntimeContractEntry other_structure = structure;
+   other_structure.constraint_name = "Vector";
+   if (global_contract_entries_equivalent(structure, other_structure)) {
+      Log.error("global contract identity omitted the structure layout");
+      return false;
+   }
+   RuntimeContractEntry array = scalar;
+   array.type = TiriType::Array;
+   array.array_element_type = AET::INT32;
+   RuntimeContractEntry wildcard_array = array;
+   wildcard_array.array_element_type = AET::ANY;
+   RuntimeContractEntry recursive_array = array;
+   recursive_array.array_element_type = AET::ARRAY;
+   recursive_array.constraint_name = "array<int>";
+   RuntimeContractEntry other_recursive_array = recursive_array;
+   other_recursive_array.constraint_name = "array<str>";
+   if (global_contract_entries_equivalent(array, wildcard_array) or
+       global_contract_entries_equivalent(recursive_array, other_recursive_array)) {
+      Log.error("global contract identity omitted an exact or recursive array member constraint");
       return false;
    }
 
@@ -5245,25 +5357,28 @@ static bool test_environment_store_boundary(kt::Log &Log)
    }
    lua_pop(L, 1);
 
-   // Policy replacement must update the decoded record and descriptor identity as one publication.  An explicit any
-   // declaration deliberately relaxes the earlier concrete policy.
-   if (lua_load(L, std::string_view("global glUnitEnvBoundary:any = 5"), "=envboundary-replacement") or
-       lua_pcall(L, 0, 0, 0)) {
-      Log.error("replacing the unit-test global policy failed: %s", lua_tostring(L, -1));
+   // A conflicting declaration must preserve the authoritative descriptor and its decoded cache record.
+   if (lua_load(L, std::string_view("global glUnitEnvBoundary:any = 5"), "=envboundary-redeclaration")) {
+      Log.error("compiling the unit-test global redeclaration failed: %s", lua_tostring(L, -1));
       return false;
    }
-   GCstr *replacement_descriptor = lj_tab_get_global_contract(environment, contract_name);
+   if (lua_pcall(L, 0, 0, 0) IS 0) {
+      Log.error("a conflicting any redeclaration replaced a concrete global policy");
+      return false;
+   }
+   lua_pop(L, 1);
+   GCstr *retained_descriptor = lj_tab_get_global_contract(environment, contract_name);
    cached = lj_tab_get_cached_global_contract(environment, contract_name);
-   if (not replacement_descriptor or replacement_descriptor IS original_descriptor or not cached or
-       cached->descriptor != replacement_descriptor or cached->entry.type != TiriType::Any) {
-      Log.error("global policy replacement left a stale decoded cache record");
+   if (retained_descriptor != original_descriptor or not cached or cached->descriptor != original_descriptor or
+       cached->entry.type != TiriType::Str) {
+      Log.error("a rejected global redeclaration changed the persisted descriptor or decoded cache record");
       return false;
    }
 
    lua_gc(L, LUA_GCCOLLECT, 0);
    cached = lj_tab_get_cached_global_contract(environment, contract_name);
-   if (not cached or cached->descriptor != replacement_descriptor or cached->entry.type != TiriType::Any) {
-      Log.error("a replaced decoded global policy did not survive collection");
+   if (not cached or cached->descriptor != original_descriptor or cached->entry.type != TiriType::Str) {
+      Log.error("the retained decoded global policy did not survive collection");
       return false;
    }
    return true;
@@ -9402,6 +9517,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "expression_list_entry_point", test_expression_list_entry_point },
       { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },
       { "global_callable_contract_without_type_analysis", test_global_callable_contract_without_type_analysis },
+      { "immutable_global_contract_analysis", test_immutable_global_contract_analysis },
       { "loop_ast", test_loop_ast },
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "local_function_table_ast", test_local_function_table_ast },

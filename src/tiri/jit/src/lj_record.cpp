@@ -705,24 +705,6 @@ static TRef rec_type_test(jit_State *J, BCREG Slot, GCstr *Encoded)
 }
 
 //********************************************************************************************************************
-// Return the incoming variant descriptor for a declaration store immediately following its initialising contract.
-// The interpreter derives the same override from its saved PC in lj_vm_envcheck().
-
-static GCstr * rec_global_declaration_override(jit_State *J, const BCIns *PC, const GCstr *Name)
-{
-   const BCIns *begin = proto_bc(J->pt) + 1;
-   if (PC <= begin or bc_op(PC[-1]) != BC_CONTRACT) return nullptr;
-
-   GCstr *candidate = gco_to_string(proto_kgc(J->pt, ~(ptrdiff_t)bc_d(PC[-1])));
-   RuntimeContractDescriptor descriptor;
-   if (not decode_runtime_contract(candidate, descriptor) or
-       not contract_descriptor_is_global_variant_initialiser(descriptor, Name)) {
-      return nullptr;
-   }
-   return candidate;
-}
-
-//********************************************************************************************************************
 // Get TRef for current function.
 
 static TRef getcurrf(jit_State *J)
@@ -2709,11 +2691,7 @@ handlemm:
          rec_emit_tvalue_store(J, value_slot, ix->val);
          emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
          TRef key = lj_ir_kstr(J, strV(&ix->keyv));
-         if (ix->declaration_override) {
-            lj_ir_call(J, IRCALL_lj_env_check_override, ix->tab, key, value_slot,
-               lj_ir_kstr(J, ix->declaration_override));
-         }
-         else lj_ir_call(J, IRCALL_lj_env_check, ix->tab, key, value_slot);
+         lj_ir_call(J, IRCALL_lj_env_check, ix->tab, key, value_slot);
          J->needsnap = 1;
       }
       else irb.guard_eq(marker, irb.knull(IRT_TAB), IRT_TAB);
@@ -3382,7 +3360,6 @@ static void rec_decode_operands(jit_State *J, cTValue *lbase, RecordOps *ops)
    ops->ra = bc_a(ins);
    ops->ix.val = 0;
    ops->ix.val_slot = -1;
-   ops->ix.declaration_override = nullptr;
 
    switch (bcmode_a(op)) {
       case BCMvar:
@@ -4603,9 +4580,6 @@ static TRef rec_table_op(jit_State *J, RecordOps *ops, const BCIns *pc)
          settabV(J->L, &ix->tabv, tabref(J->fn->l.env));
          ix->tab = emitir(IRT(IR_FLOAD, IRT_TAB), getcurrf(J), IRFL_FUNC_ENV);
          ix->idxchain = LJ_MAX_IDXCHAIN;
-         if (op IS BC_GSET) {
-            ix->declaration_override = rec_global_declaration_override(J, pc, strV(&ix->keyv));
-         }
          return lj_record_idx(J, ix);
 
       case BC_TGETB: case BC_TSETB:

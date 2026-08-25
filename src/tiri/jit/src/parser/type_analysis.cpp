@@ -52,6 +52,39 @@
    return Name and std::string_view(strdata(Name), Name->len) IS Text;
 }
 
+[[nodiscard]] static RuntimeContractEntry global_contract_entry(const InferredType &Type, bool IsConst)
+{
+   RuntimeContractEntry result{
+      .type = Type.primary,
+      .array_element_type = Type.primary IS TiriType::Array ? Type.array_element.storage : AET::MAX,
+      .flags = uint8_t(contract_flag(ContractEntryFlag::Nullable) |
+         (IsConst ? contract_flag(ContractEntryFlag::Const) : 0)),
+      .position = 1,
+      .object_class_id = Type.primary IS TiriType::Object ? Type.object_class_id : CLASSID::NIL
+   };
+   if (Type.primary IS TiriType::Struct and Type.struct_def) result.constraint_name = Type.struct_def->Name;
+   else if (Type.primary IS TiriType::Array) {
+      if (Type.array_element.storage IS AET::STRUCT and Type.array_element.struct_def) {
+         result.constraint_name = Type.array_element.struct_def->Name;
+      }
+      else if (Type.array_element.storage IS AET::ARRAY and Type.array_element.nested_array_identity) {
+         GCstr *identity = Type.array_element.nested_array_identity;
+         result.constraint_name = std::string_view(strdata(identity), identity->len);
+      }
+   }
+   return result;
+}
+
+[[nodiscard]] static std::string global_contract_type_name(const InferredType &Type)
+{
+   if (Type.primary IS TiriType::Array) return std::format("array<{}>", array_element_name(Type.array_element));
+   if (Type.primary IS TiriType::Struct and Type.struct_def) return std::format("struct<{}>", Type.struct_def->Name);
+   if (Type.primary IS TiriType::Object and Type.object_class_id != CLASSID::NIL) {
+      return std::format("obj<{}>", ResolveClassID(Type.object_class_id));
+   }
+   return std::string(type_name(Type.primary));
+}
+
 [[nodiscard]] static bool type_is_registered_constant(GCstr *Name)
 {
    if (not Name) return false;
@@ -3296,6 +3329,36 @@ void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceS
    GlobalContractPolicy ContractPolicy)
 {
    if (not Name) return;
+
+   if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end() and
+       existing->second.contract_policy != GlobalContractPolicy::Advisory) {
+      if (existing->second.is_const) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.code = ParserErrorCode::AssignToConstant;
+         diag.message = std::format("cannot redeclare const global '{}'", std::string_view(strdata(Name), Name->len));
+         this->record_diagnostic(std::move(diag));
+         return;
+      }
+
+      if (ContractPolicy IS GlobalContractPolicy::Advisory) return;
+
+      RuntimeContractEntry established = global_contract_entry(existing->second.type, existing->second.is_const);
+      RuntimeContractEntry incoming = global_contract_entry(Type, IsConst);
+      if (not global_contract_entries_equivalent(established, incoming)) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.expected = existing->second.type.primary;
+         diag.actual = Type.primary;
+         diag.code = ParserErrorCode::TypeMismatchAssignment;
+         diag.message = std::format("cannot redeclare global '{}' from '{}' to '{}'",
+            std::string_view(strdata(Name), Name->len), global_contract_type_name(existing->second.type),
+            global_contract_type_name(Type));
+         this->record_diagnostic(std::move(diag));
+      }
+      return;
+   }
+
    GlobalTypeInfo info;
    info.type = Type;
    info.location = Location;
@@ -3311,6 +3374,22 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
 
    const FunctionExprPayload *forward_declaration = nullptr;
    if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      if (existing->second.is_const or
+          (existing->second.contract_policy != GlobalContractPolicy::Advisory and
+           existing->second.type.primary != TiriType::Func)) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.expected = existing->second.type.primary;
+         diag.actual = TiriType::Func;
+         diag.code = existing->second.is_const ?
+            ParserErrorCode::AssignToConstant : ParserErrorCode::TypeMismatchAssignment;
+         diag.message = existing->second.is_const ?
+            std::format("cannot redeclare const global '{}'", std::string_view(strdata(Name), Name->len)) :
+            std::format("cannot redeclare global '{}' from '{}' to 'func'",
+               std::string_view(strdata(Name), Name->len), global_contract_type_name(existing->second.type));
+         this->record_diagnostic(std::move(diag));
+         return;
+      }
       forward_declaration = existing->second.forward_declaration;
       if (not forward_declaration and existing->second.function and
           is_function_forward_declaration(*existing->second.function)) {
@@ -3410,6 +3489,7 @@ void TypeAnalyser::invalidate_global_flow_policy(GCstr *Name, SourceSpan Locatio
 
    const FunctionExprPayload *forward_declaration = nullptr;
    if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      if (existing->second.contract_policy != GlobalContractPolicy::Advisory) return;
       forward_declaration = existing->second.forward_declaration;
       if (not forward_declaration and existing->second.function and
           is_function_forward_declaration(*existing->second.function)) {

@@ -203,21 +203,27 @@ static_assert(sizeof(GlobalContractCache) IS 16, "global contract cache header m
    return (Entry.flags & contract_flag(ContractEntryFlag::GlobalHint)) != 0;
 }
 
-[[nodiscard]] constexpr inline bool contract_entry_is_variant(const RuntimeContractEntry &Entry) noexcept
-{
-   return Entry.type IS TiriType::Any;
-    //or (Entry.type IS TiriType::Array and Entry.array_element_type IS AET::ANY);
-}
+// Compare public global binding identity while ignoring descriptor lifecycle metadata.
 
-[[nodiscard]] inline bool contract_descriptor_is_global_variant_initialiser(
-   const RuntimeContractDescriptor &Descriptor, const GCstr *Name) noexcept
+[[nodiscard]] inline bool global_contract_entries_equivalent(
+   const RuntimeContractEntry &Left, const RuntimeContractEntry &Right) noexcept
 {
-   if (Descriptor.boundary != ContractBoundary::Global or Descriptor.contract_count != 1) return false;
+   constexpr uint8_t identity_flags = contract_flag(ContractEntryFlag::Nullable) |
+      contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
+      contract_flag(ContractEntryFlag::Negated);
+   if (Left.type != Right.type or (Left.flags & identity_flags) != (Right.flags & identity_flags)) return false;
 
-   const RuntimeContractEntry &entry = Descriptor.entries[0];
-   return contract_entry_is_initialising(entry) and not contract_entry_is_const(entry) and
-      contract_entry_is_variant(entry) and entry.label.size() IS Name->len and
-      not std::memcmp(entry.label.data(), strdata(Name), Name->len);
+   switch (Left.type) {
+      case TiriType::Object:
+         return Left.object_class_id IS Right.object_class_id;
+      case TiriType::Struct:
+         return Left.constraint_name IS Right.constraint_name;
+      case TiriType::Array:
+         return Left.array_element_type IS Right.array_element_type and
+            Left.constraint_name IS Right.constraint_name;
+      default:
+         return true;
+   }
 }
 
 enum class RuntimeContractDecodeError : uint8_t {

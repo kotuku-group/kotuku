@@ -45,7 +45,6 @@ extern "C" void lj_meta_type_test_pc(lua_State *, const BCIns *);
 [[nodiscard]] bool lj_meta_object_class_matches(const GCobject *, CLASSID) noexcept;
 LJ_FUNC void lj_contract_build_cache(lua_State *, GCproto *);
 extern "C" void lj_env_check(lua_State *, GCtab *, GCstr *, cTValue *);
-extern "C" void lj_env_check_override(lua_State *, GCtab *, GCstr *, cTValue *, GCstr *);
 extern "C" void lj_env_store(lua_State *, GCtab *, GCstr *, cTValue *);
 extern "C" GCstr * lj_vm_envcheck(lua_State *, GCtab *, GCstr *, TValue *);
 extern "C" int lj_meta_call(lua_State *L, TValue *func, TValue *top, bool TailTransfer);

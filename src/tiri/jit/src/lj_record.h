@@ -26,7 +26,6 @@ typedef struct RecordIndex {
    TRef mobj;        //  Metamethod object reference.
    int idxchain;              //  Index indirections left or 0 for raw lookup.
    int32_t val_slot = -1;     //  Lua stack slot for a stored value, or -1 if the value is not stack-backed.
-   GCstr* declaration_override = nullptr; // Incoming variant policy for a recorded global declaration store.
 } RecordIndex;
 
 LJ_FUNC int lj_record_objcmp(jit_State* J, TRef a, TRef b, cTValue* av, cTValue* bv);
