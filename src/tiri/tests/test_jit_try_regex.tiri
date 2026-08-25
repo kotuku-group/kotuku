@@ -15,7 +15,7 @@ function jit_regex_failure_convert(Value:any, Param:table):any
    try
       return regex.new(jit_regex_failure_value)
    except e
-      raise ERR_WrongType, f"Intentional exception raised for parent to capture."
+      raise ERR_TypeMismatch, f"Intentional exception raised for parent to capture."
    end
 end
 
@@ -117,7 +117,7 @@ end
       count++
       assert(i < 80, 'Terminal JIT failure, index exceeded 80 iterations')
       assert(err != nil, "Invalid regex should raise an error")
-      assert(err.code is ERR_WrongType, f"Expected ERR_WrongType, got {err.code}")
+      assert(err.code is ERR_TypeMismatch, f"Expected ERR_TypeMismatch, got {err.code}")
       assert(err.message is expected_message, f"Expected '{expected_message}', got '{err.message}'")
    end
 

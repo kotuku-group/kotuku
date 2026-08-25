@@ -174,7 +174,7 @@ function declareErrors()
     "OpenGL",                  -- Failure has been reported from OpenGL
     "OutsideMainThread",       -- An operation has been attempted that is only possible from within the main thread
     "UseDerived",              -- Requested to use a registered derived class (not an error)
-    "WrongType",               -- The expected type was not provided
+    "TypeMismatch",            -- The provided value does not match the expected type
     "ThreadNotLocked",         -- Thread objects must be locked prior to activation
     "MessageOperation",        -- A message queue operation has failed
     "SetVolume",               -- A call to SetVolume() failed

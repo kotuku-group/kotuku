@@ -1049,6 +1049,11 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
 [[noreturn]] static void contract_error(lua_State *L, cTValue *Value, ContractBoundary Boundary,
    const RuntimeContractEntry &Entry, uint32_t Position)
 {
+   // Stamp the error code before raising.  Without this the exception inherits whatever CaughtError was left behind
+   // by an earlier operation, which allows an unrelated 'except when' filter to intercept a type contract failure.
+
+   L->CaughtError = ERR::TypeMismatch;
+
    char expected[280];
    char actual[280];
    contract_type_name(expected, sizeof(expected), Entry);

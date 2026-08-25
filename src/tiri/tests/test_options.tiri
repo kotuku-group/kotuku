@@ -292,8 +292,8 @@ end
    assert(args.file is 'scene.svg', 'File converter failed')
    assert(args.folder is 'examples', 'Folder converter failed')
 
-   expect_error(parser, array<str> { 'count=4.5' }, ERR_WrongType, "Parameter 'count' requires an integer.")
-   expect_error(parser, array<str> { 'enabled=maybe' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'count=4.5' }, ERR_TypeMismatch, "Parameter 'count' requires an integer.")
+   expect_error(parser, array<str> { 'enabled=maybe' }, ERR_TypeMismatch,
       "Parameter 'enabled' requires a boolean value.")
 end
 
@@ -716,12 +716,12 @@ end
          { name = 'count', type = 'int' }
       }
    })
-   expect_error(bad_json_parser, array<str> { }, ERR_WrongType, 'requires valid JSON')
+   expect_error(bad_json_parser, array<str> { }, ERR_TypeMismatch, 'requires valid JSON')
    result, err = bad_json_parser.tryProcess(nil, {
       taskParameters = array<str> { '--log-warning', 'demo.tiri' }
    })
    assert(result is nil, 'Invalid selected user config should not return automatic help')
-   assert(err.code is ERR_WrongType, 'Invalid selected user config should report the config parse error')
+   assert(err.code is ERR_TypeMismatch, 'Invalid selected user config should report the config parse error')
 
    array_json_parser = options({
       userConfig = array_json_path,
@@ -729,7 +729,7 @@ end
          { name = 'count', type = 'int' }
       }
    })
-   expect_error(array_json_parser, array<str> { }, ERR_WrongType, 'requires a JSON object')
+   expect_error(array_json_parser, array<str> { }, ERR_TypeMismatch, 'requires a JSON object')
 
    folder_parser = options({
       userConfig = 'temp:',
@@ -785,7 +785,7 @@ end
 
    args = env_parser.process(array<str> { 'count=3' })
    assert(args.count is 3, 'Explicit input should override an invalid environment value before conversion')
-   expect_error(env_parser, array<str> { }, ERR_WrongType, "Parameter 'count' requires an integer.")
+   expect_error(env_parser, array<str> { }, ERR_TypeMismatch, "Parameter 'count' requires an integer.")
 
    default_parser = options({
       defaults = { count = 'bad' },
@@ -796,7 +796,7 @@ end
 
    args = default_parser.process(array<str> { 'count=4' })
    assert(args.count is 4, 'Explicit input should override an invalid default before conversion')
-   expect_error(default_parser, array<str> { }, ERR_WrongType, "Parameter 'count' requires an integer.")
+   expect_error(default_parser, array<str> { }, ERR_TypeMismatch, "Parameter 'count' requires an integer.")
 
    set_test_env('KOTUKU_OPTIONS_BAD_COUNT', nil)
 end
@@ -1213,7 +1213,7 @@ end
    ignore_parser = options({
       onError = function(Parser:table, Error:table, Param:table, ArgName:str, RawValue:any):str
          assert(Param.name is 'count', 'onError should receive the rejected parameter')
-         assert(Error.code is ERR_WrongType, 'onError should receive the conversion error')
+         assert(Error.code is ERR_TypeMismatch, 'onError should receive the conversion error')
          seen_arg = ArgName
          seen_raw = RawValue
          return 'ignore'
@@ -1249,7 +1249,7 @@ end
       }
    })
 
-   expect_error(fail_parser, array<str> { 'count=bad' }, ERR_WrongType,
+   expect_error(fail_parser, array<str> { 'count=bad' }, ERR_TypeMismatch,
       "Parameter 'count' requires an integer.")
 end
 
@@ -1657,19 +1657,19 @@ end
       }
    })
 
-   expect_error(parser, array<str> { 'delay=10' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'delay=10' }, ERR_TypeMismatch,
       "Parameter 'delay' requires a duration with an ms, s, m, h, or d suffix.")
-   expect_error(parser, array<str> { 'delay=1w' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'delay=1w' }, ERR_TypeMismatch,
       "Parameter 'delay' requires a duration with an ms, s, m, h, or d suffix.")
-   expect_error(parser, array<str> { 'limit=4pb' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'limit=4pb' }, ERR_TypeMismatch,
       "Parameter 'limit' requires a size with a b, kb, mb, gb, or tb suffix.")
-   expect_error(parser, array<str> { 'scale=half' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'scale=half' }, ERR_TypeMismatch,
       "Parameter 'scale' requires a percent value.")
-   expect_error(parser, array<str> { 'pattern=(' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'pattern=(' }, ERR_TypeMismatch,
       "Parameter 'pattern' requires a valid regex pattern.")
-   expect_error(parser, array<str> { 'config={bad}' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'config={bad}' }, ERR_TypeMismatch,
       "Parameter 'config' requires valid JSON.")
-   expect_error(parser, array<str> { 'config=1 2' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'config=1 2' }, ERR_TypeMismatch,
       "Parameter 'config' requires valid JSON.")
 end
 
@@ -1719,27 +1719,27 @@ end
       }
    })
 
-   expect_error(parser, array<str> { 'day=2023-02-29' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'day=2023-02-29' }, ERR_TypeMismatch,
       "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
-   expect_error(parser, array<str> { 'day=1900-02-29' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'day=1900-02-29' }, ERR_TypeMismatch,
       "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
-   expect_error(parser, array<str> { 'day=2100-02-29' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'day=2100-02-29' }, ERR_TypeMismatch,
       "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
-   expect_error(parser, array<str> { 'day=2025-13-01' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'day=2025-13-01' }, ERR_TypeMismatch,
       "Parameter 'day' requires an ISO date in YYYY-MM-DD form.")
-   expect_error(parser, array<str> { 'start=24:00' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'start=24:00' }, ERR_TypeMismatch,
       "Parameter 'start' requires an ISO time value.")
-   expect_error(parser, array<str> { 'start=12:60' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'start=12:60' }, ERR_TypeMismatch,
       "Parameter 'start' requires an ISO time value.")
-   expect_error(parser, array<str> { 'release=2023-02-29T12:00Z' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'release=2023-02-29T12:00Z' }, ERR_TypeMismatch,
       "Parameter 'release' requires an ISO date-time value.")
-   expect_error(parser, array<str> { 'release=1900-02-29T12:00Z' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'release=1900-02-29T12:00Z' }, ERR_TypeMismatch,
       "Parameter 'release' requires an ISO date-time value.")
-   expect_error(parser, array<str> { 'release=2100-02-29T12:00Z' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'release=2100-02-29T12:00Z' }, ERR_TypeMismatch,
       "Parameter 'release' requires an ISO date-time value.")
-   expect_error(parser, array<str> { 'release=2025-01-01 12:00Z' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'release=2025-01-01 12:00Z' }, ERR_TypeMismatch,
       "Parameter 'release' requires an ISO date-time value.")
-   expect_error(parser, array<str> { 'release=2025-01-01T12:00+24:00' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'release=2025-01-01T12:00+24:00' }, ERR_TypeMismatch,
       "Parameter 'release' requires an ISO date-time value.")
 end
 
@@ -1781,18 +1781,18 @@ end
       }
    })
 
-   expect_error(parser, array<str> { 'fill=lab(50% 0 0)' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'fill=lab(50% 0 0)' }, ERR_TypeMismatch,
       "Parameter 'fill' requires a supported CSS colour value.")
-   expect_error(parser, array<str> { 'fill=rgb(256 0 0)' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'fill=rgb(256 0 0)' }, ERR_TypeMismatch,
       "Parameter 'fill' requires a supported CSS colour value.")
-   expect_error(parser, array<str> { 'fill=rgb(10 20)' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'fill=rgb(10 20)' }, ERR_TypeMismatch,
       "Parameter 'fill' requires a supported CSS colour value.")
-   expect_error(parser, array<str> { 'fill=rgb(10, 20, 30 / 0.5)' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'fill=rgb(10, 20, 30 / 0.5)' }, ERR_TypeMismatch,
       "Parameter 'fill' requires a supported CSS colour value.")
-   expect_error(parser, array<str> { 'fill=hsl(10 50 50%)' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'fill=hsl(10 50 50%)' }, ERR_TypeMismatch,
       "Parameter 'fill' requires a supported CSS colour value.")
-   expect_error(parser, array<str> { 'fill=hsv(10 50% 120%)' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'fill=hsv(10 50% 120%)' }, ERR_TypeMismatch,
       "Parameter 'fill' requires a supported CSS colour value.")
-   expect_error(parser, array<str> { 'fill=oklch(50% -0.2 20)' }, ERR_WrongType,
+   expect_error(parser, array<str> { 'fill=oklch(50% -0.2 20)' }, ERR_TypeMismatch,
       "Parameter 'fill' requires a supported CSS colour value.")
 end

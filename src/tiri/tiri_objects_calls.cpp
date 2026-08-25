@@ -676,7 +676,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       cleanup_argbuffer(Lua, Args, ArgsSize, ArgBuffer, true);
       ErrorArg = ArgIndex;
       ErrorMsg = Message;
-      return ERR::WrongType;
+      return ERR::TypeMismatch;
    };
 
    int i, n;
@@ -743,7 +743,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else {
             log.warning("Unsupported result arg %s, flags $%.8x, aborting now.", Args[i].Name, Args[i].Type);
-            return fail(ERR::WrongType);
+            return fail(ERR::TypeMismatch);
          }
 
          continue;
@@ -901,7 +901,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       }
       else {
          log.warning("Unsupported arg %s, flags $%.8x, aborting now.", Args[i].Name, Args[i].Type);
-         return fail(ERR::WrongType);
+         return fail(ERR::TypeMismatch);
       }
 
       n++;

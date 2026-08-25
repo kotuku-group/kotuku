@@ -166,7 +166,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "Failure reported from OpenGL",
  "Operation permitted from the main thread only",
  "Requested to use a registered derived class (not an error)",
- "The expected type was not provided",
+ "The provided value does not match the expected type",
  "Thread objects must be locked prior to activation",
  "A message queue operation has failed",
  "A call to SetVolume() failed",

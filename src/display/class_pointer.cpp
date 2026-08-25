@@ -157,7 +157,7 @@ static ERR POINTER_DataFeed(extPointer *Self, struct acDataFeed *Args)
          }
       }
    }
-   else return log.warning(ERR::WrongType);
+   else return log.warning(ERR::TypeMismatch);
 
    return ERR::Okay;
 }

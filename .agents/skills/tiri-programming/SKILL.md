@@ -162,10 +162,13 @@ Regex object properties: `pattern`, `flags`, and `error`.
   object automatically and raises on error.
 - If fields must be set in stages, call `obj.new('Class')`, assign fields, then call `object.init()`.
 - Use `obj.find(NameOrUID)` to access existing objects; it returns `nil` if not found.
-- Use `with object do ... end` to lock Kotuku objects for thread-safe and faster repeated field access.
+- Use `local resource <close> = obj.new(...)` for deterministic native-object ownership.  Scope exit follows the
+  same destructive path as `resource.free()`, including for detached wrappers returned by `obj.find()`.
+- Use `with object do ... end` only to lock Kotuku objects for thread-safe and faster repeated field access; it never
+  frees the object.  `array<obj>` is a reference container, so closing an array does not close its elements.
 - Child objects created through `parent.new(...)` follow parent lifetime and are weakly referenced.
 - Prefer clearing object references to `nil` over manual `free()` unless weak references or immediate termination
-  require `free()`.
+  require deterministic `<close>` ownership or an explicit `free()`.
 - Actions use the `ac` prefix, methods use the `mt` prefix, and fields are direct properties. Consult generated API
   docs for class-specific names.
 - Use `subscribe()`/`unsubscribe()` for action and method subscriptions and clean up subscriptions when finished.
