@@ -3161,6 +3161,26 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
       Log.error("a global const contract became JIT-eligible despite its post-store policy side effect");
       return false;
    }
+
+   GCproto *conditional_global = compile_child(
+      "return function()\n"
+      "   global glRecordedConditional:str ?= 'fallback'\n"
+      "end\n",
+      "conditional-global-contract");
+   if (not conditional_global or not (conditional_global->flags & PROTO_NOJIT)) {
+      Log.error("a conditional global contract became JIT-eligible despite its policy-publication side effect");
+      return false;
+   }
+
+   GCproto *empty_conditional_global = compile_child(
+      "return function()\n"
+      "   global glRecordedEmptyConditional:str ?" "?= 'fallback'\n"
+      "end\n",
+      "empty-conditional-global-contract");
+   if (not empty_conditional_global or not (empty_conditional_global->flags & PROTO_NOJIT)) {
+      Log.error("an empty-conditional global contract became JIT-eligible despite its policy-publication side effect");
+      return false;
+   }
    return true;
 }
 
@@ -5272,6 +5292,55 @@ static bool test_environment_store_boundary(kt::Log &Log)
    const char *cached_label = strdata(cached->descriptor) + cached->entry.label_offset;
    if (std::string_view(cached_label, uint8_t(cached_label[-1])) != "glUnitEnvBoundary") {
       Log.error("the decoded environment policy cache lost its rooted global label");
+      return false;
+   }
+
+   auto conflicting_conditional_declaration = [&](std::string_view Source, const char *Chunk) {
+      if (lua_load(L, Source, Chunk)) {
+         Log.error("compiling a conflicting conditional declaration failed: %s", lua_tostring(L, -1));
+         return false;
+      }
+      if (lua_pcall(L, 0, 0, 0) IS 0) {
+         Log.error("a skipped conditional declaration bypassed persisted-policy validation");
+         return false;
+      }
+      std::string_view error = lua_tostring(L, -1);
+      if (error.find("cannot redeclare str as any") IS std::string_view::npos) {
+         Log.error("a conflicting conditional declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
+         return false;
+      }
+      lua_pop(L, 1);
+      if (lj_tab_get_global_contract(environment, contract_name) != original_descriptor) {
+         Log.error("a rejected conditional declaration replaced the persisted policy");
+         return false;
+      }
+      return true;
+   };
+
+   if (not conflicting_conditional_declaration(
+         "global glUnitEnvBoundary:any ?= 'fallback'", "=envboundary-if-nil") or
+       not conflicting_conditional_declaration(
+         "global glUnitEnvBoundary:any ?" "?= 'fallback'", "=envboundary-if-empty")) {
+      return false;
+   }
+
+   lua_pushstring(L, "retained");
+   lua_setglobal(L, "glUnitConditionalPolicy");
+   if (lua_load(L, std::string_view("global glUnitConditionalPolicy:str ?= 'fallback'"),
+         "=envboundary-conditional-publication") or lua_pcall(L, 0, 0, 0)) {
+      Log.error("a compatible skipped declaration failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCstr *conditional_name = lj_str_newz(L, "glUnitConditionalPolicy");
+   const CachedGlobalContractRecord *conditional_contract =
+      lj_tab_get_cached_global_contract(environment, conditional_name);
+   lua_getglobal(L, "glUnitConditionalPolicy");
+   bool conditional_value_kept = lua_isstring(L, -1) and
+      std::string_view(lua_tostring(L, -1)) IS "retained";
+   lua_pop(L, 1);
+   if (not conditional_contract or conditional_contract->entry.type != TiriType::Str or
+       not conditional_value_kept) {
+      Log.error("a compatible skipped declaration did not retain its value and publish its policy");
       return false;
    }
 

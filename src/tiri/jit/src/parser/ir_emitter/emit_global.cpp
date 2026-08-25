@@ -23,10 +23,10 @@
    };
 }
 
-static void bcemit_skipped_global_const(FuncState *State, BCReg Value,
+static void bcemit_skipped_global_declaration(FuncState *State, BCReg Value,
    const std::optional<RuntimeContract> &Contract)
 {
-   if (not Contract or not Contract->is_const) return;
+   if (not Contract) return;
 
    bcemit_contract(State, Value, std::span(&*Contract, 1), 1);
    RuntimeContract finaliser = *Contract;
@@ -109,10 +109,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ControlFlowEdge falsey_edge = emit_falsey_jumps(
          this->func_state, this->control_flow, lhs_reg, options);
 
-      // A retained value still initialises a const binding.  Validate it and publish policy without storing it.
+      // A retained value still completes the declaration.  Validate it and publish policy without storing it.
 
       auto contract = global_declaration_contract(identifier);
-      bcemit_skipped_global_const(&this->func_state, lhs_reg, contract);
+      bcemit_skipped_global_declaration(&this->func_state, lhs_reg, contract);
       ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
       BCPos assign_pos = BCPos(this->func_state.pc);
 
@@ -182,10 +182,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ControlFlowEdge check_nil = emit_falsey_jumps(
          this->func_state, this->control_flow, lhs_reg, nil_only);
 
-      // A retained value still initialises a const binding.  Validate it and publish policy without storing it.
+      // A retained value still completes the declaration.  Validate it and publish policy without storing it.
 
       auto contract = global_declaration_contract(identifier);
-      bcemit_skipped_global_const(&this->func_state, lhs_reg, contract);
+      bcemit_skipped_global_declaration(&this->func_state, lhs_reg, contract);
       ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
       BCPos assign_pos = BCPos(this->func_state.pc);
 

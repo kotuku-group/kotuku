@@ -564,9 +564,11 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    // recorder predicates, including callable values, named structures, ranges and userdata.
    if (DynamicCount) fs->flags |= PROTO_NOJIT;
    for (const RuntimeContract &contract : Contracts) {
-      // Global const descriptors validate before the store and publish environment policy afterwards.  The recorder
-      // only emits type guards for BC_CONTRACT, so the post-store side effect must remain interpreter-only.
-      if (contract.is_const) {
+      // Global declaration finalisers publish environment policy after a store, or after a conditional declaration
+      // retains its existing value.  The recorder only emits type guards for BC_CONTRACT, so this side effect must
+      // remain interpreter-only.  Const contracts require the same treatment throughout their initialisation.
+      if (contract.is_const or (contract.boundary IS ContractBoundary::Global and not contract.initialising and
+          not contract.global_hint)) {
          fs->flags |= PROTO_NOJIT;
          break;
       }
