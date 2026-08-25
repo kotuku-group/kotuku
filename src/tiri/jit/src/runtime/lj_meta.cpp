@@ -1189,6 +1189,21 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
    lj_err_callermsg(L, message);
 }
 
+[[noreturn]] static void global_contract_redeclaration_error(lua_State *L, const GCstr *Name,
+   const RuntimeContractEntry &Existing, const RuntimeContractEntry &Incoming)
+{
+   L->CaughtError = ERR::TypeMismatch;
+   char existing[280];
+   char incoming[280];
+   contract_type_name(existing, sizeof(existing), Existing);
+   contract_type_name(incoming, sizeof(incoming), Incoming);
+   CSTRING message = lj_strfmt_pushf(L,
+      "type contract failed for global '%s': cannot redeclare %s%s as %s%s",
+      strdata(Name), contract_entry_is_const(Existing) ? "const " : "", existing,
+      contract_entry_is_const(Incoming) ? "const " : "", incoming);
+   lj_err_callermsg(L, message);
+}
+
 } // namespace
 
 extern "C" void lj_meta_type_test_pc(lua_State *L, const BCIns *PC)
@@ -1360,6 +1375,12 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
                 contract_entry_is_const(current_descriptor.entries[0])) {
                const_global_error(L, global_name);
             }
+            if (current_descriptor.contract_count != 1 or
+                not global_contract_entries_equivalent(current_descriptor.entries[0], incoming)) {
+               global_contract_redeclaration_error(
+                  L, global_name, current_descriptor.entries[0], incoming);
+            }
+            descriptor = current_descriptor;
          }
 
          if (contract_entry_is_const(incoming) and not contract_entry_is_initialising(incoming)) {
@@ -1372,24 +1393,15 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
          if (contract_entry_is_initialising(incoming)) {
             // Validate the declaration that will be published while leaving the current environment contract in
             // place.  BC_GSET validates the same value against that existing policy before the post-store descriptor
-            // commits the transition.  This keeps ordinary and const declaration publication transactional when an
-            // environment __newindex handler rejects the store.
+            // publishes a first contract.  This keeps declaration publication transactional when an environment
+            // __newindex handler rejects the store.
          }
          else if (contract_entry_is_global_hint(incoming)) {
             // No environment policy exists yet.  Validate and publish the hint so type-guided reads and indirect
             // stores retain the same runtime invariant even when the declaration has not executed.
             publish_global_contract = true;
          }
-         else if (incoming.type IS TiriType::Any) {
-            // An explicit 'any' declaration is the only ordinary operation that relaxes a sticky global contract.
-            lj_tab_set_global_contract(L, environment, global_name, Descriptor);
-         }
-         else if (current) {
-            // Bytecode may outlive the declaration policy it was compiled against.  The environment policy is
-            // authoritative for ordinary stores and concrete redeclarations.
-            if (current != Descriptor) decode_contract_or_error(L, current, descriptor);
-         }
-         else publish_global_contract = true;
+         else if (not current) publish_global_contract = true;
       }
    }
 
@@ -1455,8 +1467,7 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 // Value must reference a rooted Lua stack slot.  The recorder materialises JIT values in their corresponding Lua stack
 // slot before emitting this call; branches that allocate or raise synchronise the interpreter stack on demand.
 
-static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
-   GCstr *DeclarationOverride)
+static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
 {
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
       JITStackSync stack_sync(L);
@@ -1467,13 +1478,7 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
    RuntimeContractEntry cached_entry;
    RuntimeContractDescriptor descriptor;
    const RuntimeContractEntry *entry = nullptr;
-   if (DeclarationOverride) {
-      JITStackSync stack_sync(L);
-      decode_contract_or_error(L, DeclarationOverride, descriptor);
-      stack_sync.restore();
-      if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
-   }
-   else if (const CachedGlobalContractRecord *cached =
+   if (const CachedGlobalContractRecord *cached =
          lj_tab_get_cached_global_contract(Environment, Name)) {
       lj_assertX(lj_tab_get_global_contract(Environment, Name) IS cached->descriptor,
          "decoded global contract cache does not match persisted policy");
@@ -1538,13 +1543,7 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
 
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
 {
-   env_check_contract(L, Environment, Name, Value, nullptr);
-}
-
-extern "C" void lj_env_check_override(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
-   GCstr *DeclarationOverride)
-{
-   env_check_contract(L, Environment, Name, Value, DeclarationOverride);
+   env_check_contract(L, Environment, Name, Value);
 }
 
 //********************************************************************************************************************
@@ -1569,22 +1568,7 @@ extern "C" void lj_env_store(lua_State *L, GCtab *Environment, GCstr *Name, cTVa
 extern "C" GCstr * lj_vm_envcheck(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value)
 {
    L->top = curr_topL(L);
-   GCstr *declaration_override = nullptr;
-   const BCIns *pc = cframe_Lpc(L);
-   GCproto *prototype = funcproto(curr_func(L));
-   const BCIns *begin = proto_bc(prototype) + 1;
-   if (pc >= begin + 2 and bc_op(pc[-1]) IS BC_GSET and bc_op(pc[-2]) IS BC_CONTRACT) {
-      GCstr *candidate = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(pc[-2])));
-      RuntimeContractDescriptor descriptor;
-      if (decode_runtime_contract(candidate, descriptor) and
-          contract_descriptor_is_global_variant_initialiser(descriptor, Name)) {
-         // A variant redeclaration deliberately replaces the existing concrete policy.  Validate BC_GSET against the
-         // incoming descriptor without publishing it; the following CONTRACT commits only after the ordinary store
-         // path (including __newindex dispatch) succeeds.
-         declaration_override = candidate;
-      }
-   }
-   lj_env_check_override(L, Environment, Name, Value, declaration_override);
+   lj_env_check(L, Environment, Name, Value);
    return Name;
 }
 

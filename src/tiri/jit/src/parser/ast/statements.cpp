@@ -130,6 +130,24 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
       }
    }
 
+   if (implicit_local) {
+      bool has_declaration_attribute = std::ranges::any_of(name_list, [](const Identifier &Identifier) {
+         return Identifier.has_close or Identifier.has_const or Identifier.has_view;
+      });
+
+      if (not has_declaration_attribute) {
+         ExprNodeList targets;
+         targets.reserve(name_list.size());
+         for (Identifier &identifier : name_list) {
+            NameRef reference;
+            reference.identifier = std::move(identifier);
+            targets.push_back(make_identifier_expr(reference.identifier.span, reference));
+         }
+         return ParserResult<StmtNodePtr>::success(
+            make_assignment_stmt(local_token.span(), assign_op, std::move(targets), std::move(values)));
+      }
+   }
+
    auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalDeclStmt, local_token.span());
    stmt->data.emplace<LocalDeclStmtPayload>(assign_op, std::move(name_list), std::move(values));
    return ParserResult<StmtNodePtr>::success(std::move(stmt));

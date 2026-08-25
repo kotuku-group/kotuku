@@ -255,7 +255,6 @@ typedef struct CCallInfo {
   _(ANY,        jit_object_getobj, 4, S, NIL, CCI_L|CCI_T) \
   /* Environment mutation boundary */ \
   _(ANY,        lj_env_check,      4, S, NIL, CCI_L|CCI_T) \
-  _(ANY,        lj_env_check_override, 5, S, NIL, CCI_L|CCI_T) \
   /* Permanent contextual table designation */ \
   _(ANY,        lj_tab_mark_contextual_jit, 1, S, NIL, 0) \
   _(ANY,        lj_context_begin_block_jit, 5, S, NIL, CCI_L) \
@@ -306,5 +305,3 @@ extern "C" void lj_context_end_block_jit(lua_State *L, TValue *OwnerBase, uint32
 
 // Environment mutation boundary (see lj_meta.cpp).
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value);
-extern "C" void lj_env_check_override(
-   lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value, GCstr *DeclarationOverride);

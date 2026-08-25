@@ -197,7 +197,9 @@ function expect_const_global_failure(Store:func, Message:str)
       Store()
    except e
       trapped = true
-      assert(tostring(e.message).find('cannot assign to const global') != nil,
+      assert(tostring(e.message).find('cannot assign to const global') != nil or
+             tostring(e.message).find('cannot redeclare const global') != nil or
+             tostring(e.message).find('type contract failed for global') != nil,
          Message .. ' should raise a const-global error, got: ' .. tostring(e.message))
    end
    assert(trapped, Message .. ' should raise')
@@ -266,41 +268,36 @@ end
    expect_const_global_failure(
       function() exec(f"global {const_first} <const> = 1 global {const_first} = 2") end,
       'non-const declaration after const declaration')
-   assert(_G[const_first] is 1, 'The rejected later declaration should preserve the first const value')
+   assert(_G[const_first] is nil,
+      'A same-chunk const redeclaration diagnostic should prevent the compilation unit from executing')
 
-   exec(f"global {const_second} = 1 global {const_second} <const> = 2")
-   assert(_G[const_second] is 2, 'The later const declaration should store its own initial value')
-   expect_const_global_failure(function() _G[const_second] = 3 end,
-      'assignment after a later const declaration')
+   exec(f"global {const_second} = 1")
+   expect_const_global_failure(
+      function() exec(f"global {const_second} <const> = 2") end,
+      'const declaration after mutable declaration')
+   assert(_G[const_second] is 1, 'The rejected const declaration should preserve the mutable value')
+   _G[const_second] = 3
+   assert(_G[const_second] is 3, 'A rejected const declaration must not publish const policy')
 end
 
-@Test function ConstTransitionValidatesPublishedContract()
+@Test function ConstRedeclarationCannotChangeVariantContract()
    local global_name = f"glConstTransition{failed_const_test_id}"
-   failed_const_test_id++
-   local source_name = f"glConstTransitionSource{failed_const_test_id}"
    failed_const_test_id++
    local trapped = false
 
    exec(f"global {global_name}:any = 1")
-   rawset(_G, source_name, 'wrong')
    try
-      exec(f"global {global_name} <const>:num = _G['{source_name}']")
+      exec(f"global {global_name} <const>:num = 3")
    except e
       trapped = true
       assert(tostring(e.message).find('type contract failed for global') != nil,
-         'The incoming const contract should reject its mismatched initial value: ' .. tostring(e.message))
+         'The incoming const contract should reject the policy transition: ' .. tostring(e.message))
    end
 
-   assert(trapped, 'A mismatched const initialiser should raise')
-   assert(_G[global_name] is 1, 'A rejected const initialiser should preserve the old value')
-   _G[global_name] = 2
-   assert(_G[global_name] is 2, 'Failed validation should not publish const policy')
-
-   rawset(_G, source_name, 3)
-   exec(f"global {global_name} <const>:num = _G['{source_name}']")
-   assert(_G[global_name] is 3, 'A corrected const initialiser should be retryable')
-   expect_const_global_failure(function() _G[global_name] = 4 end,
-      'assignment after a retried const transition')
+   assert(trapped, 'A const declaration must not replace an established variant contract')
+   assert(_G[global_name] is 1, 'A rejected const redeclaration should preserve the old value')
+   _G[global_name] = 'still variant'
+   assert(_G[global_name] is 'still variant', 'A rejected const redeclaration must preserve variant policy')
 end
 
 @Test function ConstTransitionRetainsExistingContractUntilStore()

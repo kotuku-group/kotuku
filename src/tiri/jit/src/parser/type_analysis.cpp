@@ -52,6 +52,39 @@
    return Name and std::string_view(strdata(Name), Name->len) IS Text;
 }
 
+[[nodiscard]] static RuntimeContractEntry global_contract_entry(const InferredType &Type, bool IsConst)
+{
+   RuntimeContractEntry result{
+      .type = Type.primary,
+      .array_element_type = Type.primary IS TiriType::Array ? Type.array_element.storage : AET::MAX,
+      .flags = uint8_t(contract_flag(ContractEntryFlag::Nullable) |
+         (IsConst ? contract_flag(ContractEntryFlag::Const) : 0)),
+      .position = 1,
+      .object_class_id = Type.primary IS TiriType::Object ? Type.object_class_id : CLASSID::NIL
+   };
+   if (Type.primary IS TiriType::Struct and Type.struct_def) result.constraint_name = Type.struct_def->Name;
+   else if (Type.primary IS TiriType::Array) {
+      if (Type.array_element.storage IS AET::STRUCT and Type.array_element.struct_def) {
+         result.constraint_name = Type.array_element.struct_def->Name;
+      }
+      else if (Type.array_element.storage IS AET::ARRAY and Type.array_element.nested_array_identity) {
+         GCstr *identity = Type.array_element.nested_array_identity;
+         result.constraint_name = std::string_view(strdata(identity), identity->len);
+      }
+   }
+   return result;
+}
+
+[[nodiscard]] static std::string global_contract_type_name(const InferredType &Type)
+{
+   if (Type.primary IS TiriType::Array) return std::format("array<{}>", array_element_name(Type.array_element));
+   if (Type.primary IS TiriType::Struct and Type.struct_def) return std::format("struct<{}>", Type.struct_def->Name);
+   if (Type.primary IS TiriType::Object and Type.object_class_id != CLASSID::NIL) {
+      return std::format("obj<{}>", ResolveClassID(Type.object_class_id));
+   }
+   return std::string(type_name(Type.primary));
+}
+
 [[nodiscard]] static bool type_is_registered_constant(GCstr *Name)
 {
    if (not Name) return false;
@@ -1493,6 +1526,7 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          auto existing = this->resolve_identifier(name);
          bool is_global = false;
          bool is_const = false;
+         bool environment_global = false;
 
          // If not found as local, check global variables
 
@@ -1500,10 +1534,88 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             existing = this->lookup_global_type(name);
             is_global = existing.has_value();
             if (is_global) is_const = this->is_global_const(name);
+            else {
+               cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), name);
+               environment_global = global and not tvisnil(global);
+            }
          }
          else is_const = this->is_local_const(name);
 
+         const Identifier &identifier = name_ref->identifier;
+         if ((existing or environment_global) and identifier.type != TiriType::Unknown) {
+            std::string_view name_view(strdata(name), name->len);
+            TypeDiagnostic diag;
+            diag.location = identifier.span;
+            diag.code = ParserErrorCode::InvalidAssignment;
+            diag.message = std::format(
+               "cannot redeclare existing {} '{}' with a type annotation",
+               (is_global or environment_global) ? "global" : "local", name_view);
+            this->record_diagnostic(std::move(diag));
+            continue;
+         }
+
          if (not existing) {
+            if (name_ref->binding_id and identifier.type != TiriType::Unknown) {
+               InferredType inferred;
+               inferred.primary = TiriType::Nil;
+
+               if (not Payload.values.empty()) {
+                  size_t source = std::min(i, Payload.values.size() - 1);
+                  size_t result_position = i - source;
+                  if (result_position IS 0) inferred = this->infer_expression_type(*Payload.values[source]);
+                  else inferred = this->infer_call_return_type(*Payload.values[source], result_position);
+
+                  if (identifier.type != TiriType::Any and inferred.primary != TiriType::Nil and
+                      inferred.primary != TiriType::Any and inferred.primary != TiriType::Unknown and
+                      inferred.primary != identifier.type) {
+                     TypeDiagnostic diag;
+                     diag.location = Payload.values[source]->span;
+                     diag.expected = identifier.type;
+                     diag.actual = inferred.primary;
+                     diag.code = ParserErrorCode::TypeMismatchAssignment;
+                     diag.message = std::format("cannot assign '{}' to variable of type '{}'",
+                        type_name(inferred.primary), type_name(identifier.type));
+                     this->record_diagnostic(std::move(diag));
+                  }
+                  else if (identifier.type IS TiriType::Struct and inferred.primary IS TiriType::Struct and
+                      identifier.struct_def and inferred.struct_def and
+                      identifier.struct_def != inferred.struct_def) {
+                     TypeDiagnostic diag;
+                     diag.location = Payload.values[source]->span;
+                     diag.expected = TiriType::Struct;
+                     diag.actual = TiriType::Struct;
+                     diag.code = ParserErrorCode::TypeMismatchAssignment;
+                     diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
+                        inferred.struct_def->Name, identifier.struct_def->Name);
+                     this->record_diagnostic(std::move(diag));
+                  }
+                  else if (identifier.type IS TiriType::Array and inferred.primary IS TiriType::Array and
+                      inferred.array_element.known and
+                      not array_element_matches(identifier.array_element, inferred.array_element)) {
+                     TypeDiagnostic diag;
+                     diag.location = Payload.values[source]->span;
+                     diag.expected = TiriType::Array;
+                     diag.actual = TiriType::Array;
+                     diag.code = ParserErrorCode::TypeMismatchAssignment;
+                     diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
+                        array_element_name(identifier.array_element), array_element_name(inferred.array_element));
+                     this->record_diagnostic(std::move(diag));
+                  }
+               }
+
+               inferred.primary = identifier.type;
+               inferred.struct_def = identifier.struct_def;
+               inferred.array_element = identifier.array_element;
+               inferred.requires_destination_type = false;
+               inferred.is_fixed = identifier.type != TiriType::Any;
+               this->current_scope().declare_local(name, inferred, target.span);
+               if (identifier.type IS TiriType::Any) {
+                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
+               }
+               this->publish_binding_type(name_ref->binding_id, inferred);
+               continue;
+            }
+
             if (name_ref->binding_id and not Payload.values.empty()) {
                size_t source = std::min(i, Payload.values.size() - 1);
                size_t result_position = i - source;
@@ -3217,6 +3329,36 @@ void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceS
    GlobalContractPolicy ContractPolicy)
 {
    if (not Name) return;
+
+   if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end() and
+       existing->second.contract_policy != GlobalContractPolicy::Advisory) {
+      if (existing->second.is_const) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.code = ParserErrorCode::AssignToConstant;
+         diag.message = std::format("cannot redeclare const global '{}'", std::string_view(strdata(Name), Name->len));
+         this->record_diagnostic(std::move(diag));
+         return;
+      }
+
+      if (ContractPolicy IS GlobalContractPolicy::Advisory) return;
+
+      RuntimeContractEntry established = global_contract_entry(existing->second.type, existing->second.is_const);
+      RuntimeContractEntry incoming = global_contract_entry(Type, IsConst);
+      if (not global_contract_entries_equivalent(established, incoming)) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.expected = existing->second.type.primary;
+         diag.actual = Type.primary;
+         diag.code = ParserErrorCode::TypeMismatchAssignment;
+         diag.message = std::format("cannot redeclare global '{}' from '{}' to '{}'",
+            std::string_view(strdata(Name), Name->len), global_contract_type_name(existing->second.type),
+            global_contract_type_name(Type));
+         this->record_diagnostic(std::move(diag));
+      }
+      return;
+   }
+
    GlobalTypeInfo info;
    info.type = Type;
    info.location = Location;
@@ -3232,6 +3374,22 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
 
    const FunctionExprPayload *forward_declaration = nullptr;
    if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      if (existing->second.is_const or
+          (existing->second.contract_policy != GlobalContractPolicy::Advisory and
+           existing->second.type.primary != TiriType::Func)) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.expected = existing->second.type.primary;
+         diag.actual = TiriType::Func;
+         diag.code = existing->second.is_const ?
+            ParserErrorCode::AssignToConstant : ParserErrorCode::TypeMismatchAssignment;
+         diag.message = existing->second.is_const ?
+            std::format("cannot redeclare const global '{}'", std::string_view(strdata(Name), Name->len)) :
+            std::format("cannot redeclare global '{}' from '{}' to 'func'",
+               std::string_view(strdata(Name), Name->len), global_contract_type_name(existing->second.type));
+         this->record_diagnostic(std::move(diag));
+         return;
+      }
       forward_declaration = existing->second.forward_declaration;
       if (not forward_declaration and existing->second.function and
           is_function_forward_declaration(*existing->second.function)) {
@@ -3331,6 +3489,7 @@ void TypeAnalyser::invalidate_global_flow_policy(GCstr *Name, SourceSpan Locatio
 
    const FunctionExprPayload *forward_declaration = nullptr;
    if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      if (existing->second.contract_policy != GlobalContractPolicy::Advisory) return;
       forward_declaration = existing->second.forward_declaration;
       if (not forward_declaration and existing->second.function and
           is_function_forward_declaration(*existing->second.function)) {

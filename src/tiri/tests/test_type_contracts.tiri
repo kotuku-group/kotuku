@@ -896,7 +896,7 @@ end
    exec("glContractTimeObject = obj.new('time')")
 
    exec("global glContractTimeObject = obj.new('time')")
-   expect_object_contract_failure(
+   expect_contract_failure(
       function() exec("global glContractTimeObject = obj.new('file')") end, 'global redeclaration')
    assert(glContractTimeObject.class.name is 'Time',
       'A rejected cross-class redeclaration must preserve the global value and policy')
@@ -914,9 +914,12 @@ end
    assert(glContractBroadObject.class.name is 'File', 'An explicit global obj contract should remain broad')
 
    global glContractRelaxedObject = obj.new('time')
-   exec("global glContractRelaxedObject:any = obj.new('file')")
-   exec("glContractRelaxedObject = 42")
-   assert(glContractRelaxedObject is 42, 'An explicit global any redeclaration should relax object-class policy')
+   expect_contract_failure(
+      function() exec("global glContractRelaxedObject:any = obj.new('file')") end, 'global redeclaration')
+   assert(glContractRelaxedObject.class.name is 'Time',
+      'A rejected any redeclaration must preserve the object value and class policy')
+   expect_object_contract_failure(
+      function() exec("glContractRelaxedObject = obj.new('file')") end, 'preserved object policy')
 end
 
 @Test function ExplicitGlobalStores()
@@ -937,13 +940,25 @@ end
 
    global glContractAny:any = 1
    glContractAny = 'allowed'
-   assert(glContractAny is 'allowed', 'Explicit any remains the global contract opt-out')
+   local environment = _G
+   environment.glContractAny = {}
+   rawset(_G, 'glContractAny', false)
+   exec("glContractAny = 'allowed'")
+   assert(glContractAny is 'allowed', 'An initially explicit any remains variant through every store route')
+
+   expect_contract_failure(
+      function() exec('global glContractAny:num = 5') end, 'any-to-concrete global redeclaration')
+   exec('glContractAny = {}')
+   assert(type(glContractAny) is 'table',
+      'A rejected concrete redeclaration must preserve an initially variant contract')
 
    global glContractRedeclared:num = 1
-   exec("global glContractRedeclared:any = 'variant'")
-   exec("glContractRedeclared = {}")
-   assert(type(glContractRedeclared) is 'table',
-      'An explicit any redeclaration must replace a previously persisted concrete contract')
+   expect_contract_failure(
+      function() exec("global glContractRedeclared:any = 'variant'") end, 'concrete-to-any global redeclaration')
+   assert(glContractRedeclared is 1, 'A rejected any redeclaration must preserve the concrete value')
+   exec('glContractRedeclared = 2')
+   expect_contract_failure(function() exec("glContractRedeclared = 'wrong'") end, 'preserved concrete policy')
+   assert(glContractRedeclared is 2, 'The original concrete policy must survive a rejected any redeclaration')
 end
 
 @Test function InferredGlobalStores()
@@ -1132,21 +1147,44 @@ return local_contract_scoped(5)
    assert(scoped_result is 5, 'A nested local function must not inherit an outer forward declaration')
 end
 
-@Test function CompiledGlobalWriterObservesVariantPolicy()
+@Test function CompiledGlobalWriterRetainsImmutablePolicy()
    global glContractWriter:num = 1
+   global glContractVariantWriter:any = 1
 
    function write_contract_global(Value:any)
       glContractWriter = Value
    end
-
-   for i in {0 to 200} do
-      write_contract_global(i)
+   function write_variant_contract_global(Value:any)
+      glContractVariantWriter = Value
    end
 
-   exec("global glContractWriter:any = 'variant'")
-   write_contract_global('allowed')
-   assert(glContractWriter is 'allowed',
-      'A writer compiled against an older concrete contract must observe a later explicit any declaration')
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {0 to 200} do
+      write_contract_global(i)
+      write_variant_contract_global(i)
+   end
+
+   local traces = 0
+   for trace_no in {1 into 100} do
+      if jit.util.traceInfo(trace_no) != nil then traces++ end
+   end
+   assert(traces > 0, 'The immutable global writer regression must exercise a compiled trace')
+
+   expect_contract_failure(
+      function() exec("global glContractWriter:any = 'variant'") end, 'compiled-writer redeclaration')
+   expect_contract_failure(
+      function() write_contract_global('wrong') end, 'compiled writer with preserved concrete policy')
+   write_contract_global(201)
+   assert(glContractWriter is 201,
+      'A compiled writer must retain the original concrete policy after a rejected any declaration')
+
+   expect_contract_failure(
+      function() exec('global glContractVariantWriter:num = 2') end, 'compiled variant-writer redeclaration')
+   write_variant_contract_global({ retained = true })
+   assert(type(glContractVariantWriter) is 'table',
+      'A compiled writer must remain variant after a rejected concrete declaration')
 end
 
 @Test function MultiReturnGlobalContracts()
@@ -1265,12 +1303,20 @@ end
       'Statements after a rejected reduced declaration must use the active runtime policy')
 
    global glContractReducedVariant:num = 1
+   local variant_trapped = false
    try
       global glContractReducedVariant:any = 'variant'
+   except e
+      variant_trapped = true
+      assert(tostring(e.message).find('type contract failed for global') != nil,
+         'The any redeclaration should raise a catchable global contract error: ' .. tostring(e.message))
    end
-   glContractReducedVariant = {}
-   assert(type(glContractReducedVariant) is 'table',
-      'An explicit any declaration inside try must replace the previous concrete policy')
+   assert(variant_trapped, 'An any redeclaration inside try must fail catchably')
+   expect_contract_failure(
+      function() exec('glContractReducedVariant = {}') end, 'preserved reduced concrete policy')
+   glContractReducedVariant = 2
+   assert(glContractReducedVariant is 2,
+      'A failed reduced any declaration must preserve the original concrete contract')
 end
 
 @Test function ReducedAnalysisMultiResultAndImportContracts()

@@ -1248,6 +1248,11 @@ BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)
 
    VarInfo *info = &this->func_state.var_get(slot.raw());
    info->binding_id = Target.binding_id;
+   if (Target.pending_type != TiriType::Unknown) {
+      info->fixed_type = Target.pending_type;
+      info->struct_def = Target.pending_struct_def;
+      info->array_element = Target.pending_array_element;
+   }
    this->apply_analysed_local_type(slot, Target.binding_id);
    this->update_local_binding(Target.pending_symbol, slot);
    return slot;

@@ -134,6 +134,9 @@ struct PreparedAssignment {
    bool needs_var_add = false;   // True if var_add() must be called after expression evaluation
    GCstr* pending_symbol = nullptr;  // Symbol name for deferred var_add
    StaticBindingID binding_id{};
+   TiriType pending_type = TiriType::Unknown;
+   struct_record *pending_struct_def = nullptr;
+   ArrayElementDescriptor pending_array_element{};
    BCLine pending_line = 0;      // Line number for deferred variable declaration
    BCLine pending_column = 0;    // Column number for deferred variable declaration
    ControlFlowEdge safe_nav_skip;
