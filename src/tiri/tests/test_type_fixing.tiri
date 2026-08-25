@@ -16,6 +16,20 @@ function enforce_hotpath() end
    assert(count is 3.14159, "float value should work for num type")
 end
 
+@Test function BareAnnotationCreatesLocal()
+   entry, count:num = 5, 6
+   assert(entry is 5, "bare annotated assignment should retain its initial value")
+   assert(count is 6, "bare annotation on a later name should retain its initial value")
+   assert(debug.locality('entry') is 'local', "bare annotated assignment should create a local variable")
+   assert(debug.locality('count') is 'local', "bare annotation on a later name should create a local variable")
+
+   try
+      exec("entry, count:num = 5, 6; count = 'text'")
+   success
+      error("bare annotated assignment should enforce its declared type")
+   end
+end
+
 @Test function ExplicitStrAnnotation()
    local message: str = "hello"
    assert(message is "hello", "initial value should be 'hello'")
