@@ -129,6 +129,10 @@ end
       {
          name = 'view',
          source = "thing = {}\ndo\n   thing <view> = {}\nend"
+      },
+      {
+         name = 'constant-false branch',
+         source = "thing = 1\nif false then\n   thing <const> = 2\nend"
       }
    }
 

@@ -42,8 +42,10 @@ static bool is_builtin_interface_namespace(uint32_t Hash)
 
 class StaticDescriptorAnalyser {
 public:
-   explicit StaticDescriptorAnalyser(ParserContext &Context, bool NativeCallsOnly = false)
-      : context_(Context), catalogue_(Context.descriptors()), native_calls_only_(NativeCallsOnly) {}
+   explicit StaticDescriptorAnalyser(
+      ParserContext &Context, bool NativeCallsOnly = false, bool ValidationOnly = false)
+      : context_(Context), catalogue_(Context.descriptors()), native_calls_only_(NativeCallsOnly),
+        validation_only_(ValidationOnly) {}
 
    void discover(BlockStmt &Module)
    {
@@ -120,6 +122,14 @@ private:
    StaticBindingID declare(Identifier &Name, const ExprNode *Initialiser, uint8_t ResultPosition,
       const FunctionExprPayload *Function = nullptr, bool IsParameter = false)
    {
+      if (this->validation_only_) {
+         StaticBindingID placeholder(1);
+         if (Name.symbol and not Name.is_blank) {
+            this->scopes_.back().entries.emplace_back(Name.symbol, placeholder);
+         }
+         return placeholder;
+      }
+
       StaticBindingDescriptor binding;
       binding.name = Name.symbol;
       binding.initialiser = Initialiser;
@@ -137,6 +147,8 @@ private:
 
    void reference(NameRef &Reference, bool Write = false)
    {
+      if (this->validation_only_) return;
+
       StaticBindingID id = this->resolve(Reference.identifier.symbol);
       Reference.binding_id = id;
       Reference.identifier.binding_id = id;
@@ -295,6 +307,22 @@ private:
       if (NewScope) this->scopes_.pop_back();
    }
 
+   void validate_unreachable_expression(ExprNode &Expression)
+   {
+      StaticDescriptorAnalyser validator(this->context_, this->native_calls_only_, true);
+      validator.scopes_ = this->scopes_;
+      validator.global_names_ = this->global_names_;
+      validator.discover_expression(Expression);
+   }
+
+   void validate_unreachable_block(BlockStmt &Block)
+   {
+      StaticDescriptorAnalyser validator(this->context_, this->native_calls_only_, true);
+      validator.scopes_ = this->scopes_;
+      validator.global_names_ = this->global_names_;
+      validator.discover_block(Block);
+   }
+
    void discover_statement(StmtNode &Statement)
    {
       switch (Statement.kind) {
@@ -333,8 +361,8 @@ private:
                         (payload.values.empty() ? nullptr : payload.values.back().get());
                      uint8_t position = i < payload.values.size() ? 0 :
                         uint8_t(i - payload.values.size() + 1);
-                     reference.binding_id = this->declare(
-                        reference.identifier, initialiser, position);
+                     StaticBindingID binding = this->declare(reference.identifier, initialiser, position);
+                     if (not this->validation_only_) reference.binding_id = binding;
                      continue;
                   }
                }
@@ -376,13 +404,24 @@ private:
             break;
          }
          case AstNodeKind::IfStmt: {
-            for (auto &clause : std::get<IfStmtPayload>(Statement.data).clauses) {
+            auto &clauses = std::get<IfStmtPayload>(Statement.data).clauses;
+            for (size_t i = 0; i < clauses.size(); ++i) {
+               auto &clause = clauses[i];
                if (clause.condition) {
                   this->discover_expression(*clause.condition);
                   auto truth = this->constant_truth(*clause.condition);
-                  if (truth and not *truth) continue;
+                  if (truth and not *truth) {
+                     if (clause.block) this->validate_unreachable_block(*clause.block);
+                     continue;
+                  }
                   if (clause.block) this->discover_block(*clause.block);
-                  if (truth and *truth) break;
+                  if (truth and *truth) {
+                     for (++i; i < clauses.size(); ++i) {
+                        if (clauses[i].condition) this->validate_unreachable_expression(*clauses[i].condition);
+                        if (clauses[i].block) this->validate_unreachable_block(*clauses[i].block);
+                     }
+                     break;
+                  }
                }
                else {
                   if (clause.block) this->discover_block(*clause.block);
@@ -2534,6 +2573,7 @@ private:
    const BlockStmt *enclosing_body_ = nullptr;
    uint16_t function_depth_ = 0;
    bool native_calls_only_ = false;
+   bool validation_only_ = false;
 };
 
 } // namespace
