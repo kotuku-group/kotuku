@@ -3161,6 +3161,26 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
       Log.error("a global const contract became JIT-eligible despite its post-store policy side effect");
       return false;
    }
+
+   GCproto *conditional_global = compile_child(
+      "return function()\n"
+      "   global glRecordedConditional:str ?= 'fallback'\n"
+      "end\n",
+      "conditional-global-contract");
+   if (not conditional_global or not (conditional_global->flags & PROTO_NOJIT)) {
+      Log.error("a conditional global contract became JIT-eligible despite its policy-publication side effect");
+      return false;
+   }
+
+   GCproto *empty_conditional_global = compile_child(
+      "return function()\n"
+      "   global glRecordedEmptyConditional:str ?" "?= 'fallback'\n"
+      "end\n",
+      "empty-conditional-global-contract");
+   if (not empty_conditional_global or not (empty_conditional_global->flags & PROTO_NOJIT)) {
+      Log.error("an empty-conditional global contract became JIT-eligible despite its policy-publication side effect");
+      return false;
+   }
    return true;
 }
 
