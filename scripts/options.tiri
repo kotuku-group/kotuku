@@ -147,7 +147,7 @@ function clone_definition(Definition:table!):table
    param.metavar  ?= string.upper(param.name)
 
    if param.kind != 'option' and param.kind != 'flag' and param.kind != 'positional' then
-      raise ERR_WrongType, f"Unsupported parameter kind '{param.kind}'."
+      raise ERR_TypeMismatch, f"Unsupported parameter kind '{param.kind}'."
    end
 
    for name in values(names) do
@@ -240,7 +240,7 @@ function convert_csv(Value:any!, Param:table!):array<str>
    end
 
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a comma-separated string."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a comma-separated string."
    end
 
    result = array<str>
@@ -260,7 +260,7 @@ function convert_array(Value:any!, Param:table!):array<str>
    end
 
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires an array value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an array value."
    end
 
    text = Value.trim()
@@ -276,12 +276,12 @@ end
 
 function split_number_unit(Value:any!, Param:table!, Description:str!):<num, str>
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires {Description}."
    end
 
    text = Value.trim()
    if text is '' then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires {Description}."
    end
 
    index = #text
@@ -297,7 +297,7 @@ function split_number_unit(Value:any!, Param:table!, Description:str!):<num, str
    unit = text.sub(index).trim().lower()
    number = tonumber(number_text)
    if number is nil or unit is '' then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires {Description}."
    end
 
    return number, unit
@@ -313,7 +313,7 @@ function convert_duration(Value:any!, Param:table!):num
    multiplier = duration_multipliers[unit]
 
    if multiplier is nil then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a duration with an ms, s, m, h, or d suffix."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a duration with an ms, s, m, h, or d suffix."
    end
 
    return number * multiplier
@@ -329,7 +329,7 @@ function convert_size(Value:any!, Param:table!):num
    multiplier = size_multipliers[unit]
 
    if multiplier is nil then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a size with a b, kb, mb, gb, or tb suffix."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a size with a b, kb, mb, gb, or tb suffix."
    end
 
    return number * multiplier
@@ -346,14 +346,14 @@ function convert_percent(Value:any!, Param:table!):num
       number_text = text.sub(0, #text - 1)
       number = tonumber(number_text)
       if number is nil then
-         raise ERR_WrongType, f"Parameter '{Param.name}' requires a percent value."
+         raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a percent value."
       end
       return number / 100
    end
 
    number = tonumber(text)
    if number is nil then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a percent value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a percent value."
    end
    return number
 end
@@ -364,14 +364,14 @@ end
 function convert_regex(Value:any!, Param:table!):any
    if Value is <userdata> then return Value end
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a regex pattern."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a regex pattern."
    end
 
    local param_name = Param.name
    try
       return regex.new(Value)
    except e
-      raise ERR_WrongType, f"Parameter '{param_name}' requires a valid regex pattern."
+      raise ERR_TypeMismatch, f"Parameter '{param_name}' requires a valid regex pattern."
    end
 end
 
@@ -390,7 +390,7 @@ function convert_json(Value:any, Param:table!):any
 
       return decoded
    except e
-      raise ERR_WrongType, f"Parameter '{param_name}' requires valid JSON."
+      raise ERR_TypeMismatch, f"Parameter '{param_name}' requires valid JSON."
    end
 end
 
@@ -399,12 +399,12 @@ end
 
 function convert_date(Value:any!, Param:table!):str
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
    end
 
    text = Value.trim()
    if not rx_iso_date.test(text) then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an ISO date in YYYY-MM-DD form."
    end
 
    return text
@@ -415,12 +415,12 @@ end
 
 function convert_time(Value:any!, Param:table!):str
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO time value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an ISO time value."
    end
 
    text = Value.trim()
    if not rx_iso_time.test(text) then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO time value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an ISO time value."
    end
 
    return text
@@ -431,12 +431,12 @@ end
 
 function convert_datetime(Value:any!, Param:table!):str
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date-time value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an ISO date-time value."
    end
 
    text = Value.trim()
    if not rx_iso_datetime.test(text) then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires an ISO date-time value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an ISO date-time value."
    end
 
    return text
@@ -447,12 +447,12 @@ end
 
 function convert_colour(Value:any!, Param:table!):str
    if Value != <str> then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a supported CSS colour value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a supported CSS colour value."
    end
 
    text = Value.trim()
    if not rx_css_colour.test(text) then
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a supported CSS colour value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a supported CSS colour value."
    end
 
    return text
@@ -470,7 +470,7 @@ function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
 
       number = tonumber(Value)
       if number is nil then
-         raise ERR_WrongType, f"Parameter '{Param.name}' requires a number."
+         raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a number."
       end
       return number
    elseif TypeName is 'int' then
@@ -482,7 +482,7 @@ function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
       end
 
       if number is nil or math.floor(number) != number then
-         raise ERR_WrongType, f"Parameter '{Param.name}' requires an integer."
+         raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires an integer."
       end
       return number
    elseif TypeName is 'bool' then
@@ -492,7 +492,7 @@ function convert_builtin(TypeName:str!, Value:any!, Param:table!):any
       if text is 'true' or text is '1' or text is 'yes' or text is 'on' then return true end
       if text is 'false' or text is '0' or text is 'no' or text is 'off' then return false end
 
-      raise ERR_WrongType, f"Parameter '{Param.name}' requires a boolean value."
+      raise ERR_TypeMismatch, f"Parameter '{Param.name}' requires a boolean value."
    elseif TypeName is 'path' or TypeName is 'file' or TypeName is 'folder' then
       if Value is <str> then return Value end
       return tostring(Value)
@@ -1761,11 +1761,11 @@ function load_user_config_defaults(Parser:table!, RawResult:table!):table
          raise ERR_Syntax, 'Trailing content after JSON value.'
       end
    except e
-      raise ERR_WrongType, f"User config '{config_path}' requires valid JSON."
+      raise ERR_TypeMismatch, f"User config '{config_path}' requires valid JSON."
    end
 
    if defaults != <table> then
-      raise ERR_WrongType, f"User config '{config_path}' requires a JSON object."
+      raise ERR_TypeMismatch, f"User config '{config_path}' requires a JSON object."
    end
 
    Parser._user_config_defaults = defaults
@@ -2035,7 +2035,7 @@ function parse_input(Parser:table!, Input:any, Options:table):table
       if has_commands then return parse_command_table_input(Parser, Input) end
       parse_table_input(Parser, input_result, input_arg_names, input_presence, Input)
    else
-      raise ERR_WrongType, 'Input must be an array, table, or nil.'
+      raise ERR_TypeMismatch, 'Input must be an array, table, or nil.'
    end
 
    return resolve_input_result(Parser, input_result, input_arg_names, input_presence)

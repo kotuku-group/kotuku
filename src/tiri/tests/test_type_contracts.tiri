@@ -26,6 +26,17 @@ function expect_contract_failure(Callback:func, Boundary:str)
    assert(failed, 'Expected a catchable ' .. Boundary .. ' contract failure')
 end
 
+function contract_failure_code(Callback:func):num
+   local code:num = 0
+   try
+      Callback()
+   except e
+      if e.code != nil then code = e.code end
+   end
+   assert(code != 0, 'Expected a contract failure that carries an error code')
+   return code
+end
+
 function expect_object_contract_failure(Callback:func, Boundary:str)
    local failed = false
    try
@@ -1350,6 +1361,52 @@ end
 
    local deferred_range = <{ {0 to 2} }>
    expect_contract_failure(function() accept_userdata(dynamic_value(deferred_range)) end, 'parameter')
+end
+
+@Test function ContractFailureErrorCode()
+   function coded_parameter(Value:num):num return Value end
+   function coded_result(Value:any):num return Value end
+
+   assert(contract_failure_code(function() coded_parameter(dynamic_value('wrong')) end) is ERR_TypeMismatch,
+      'A parameter contract failure must report ERR_TypeMismatch')
+   assert(contract_failure_code(function() coded_result('wrong') end) is ERR_TypeMismatch,
+      'A result contract failure must report ERR_TypeMismatch')
+
+   global glContractCode:num = 1
+   assert(contract_failure_code(function() glContractCode = dynamic_value('wrong') end) is ERR_TypeMismatch,
+      'A global contract failure must report ERR_TypeMismatch')
+
+   -- The failure must be selectable by a filtered handler, not only by a catch-all.
+
+   local filtered = false
+   try
+      coded_parameter(dynamic_value('wrong'))
+   except e when ERR_TypeMismatch
+      filtered = true
+   except e
+      assert(false, 'A contract failure must match an ERR_TypeMismatch filter, got code ' .. tostring(e.code))
+   end
+   assert(filtered, 'Expected the ERR_TypeMismatch handler to run')
+end
+
+@Test function ContractFailureIgnoresStaleErrorCodes()
+   -- A soft API failure parks its ERR code in the script state without raising.  The next contract failure must
+   -- stamp its own code rather than inherit the stale one, otherwise an unrelated filter intercepts it.
+
+   function stale_parameter(Value:num):num return Value end
+
+   local config = obj.new('config', { path = '' })
+   config.get('NoSuchKeyAtAll', 'fallback')
+
+   try
+      stale_parameter(dynamic_value('wrong'))
+   except e when ERR_NoAction
+      assert(false, 'A contract failure must not inherit the stale ERR code of an earlier soft failure')
+   except e when ERR_TypeMismatch
+      assert(e.code is ERR_TypeMismatch, 'A contract failure must report ERR_TypeMismatch after a soft API failure')
+   except e
+      assert(false, 'Unexpected contract failure code: ' .. tostring(e.code))
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

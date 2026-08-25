@@ -410,7 +410,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">Operation not supported</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
-        <error code="WrongType">The expected type was not provided</error>
+        <error code="TypeMismatch">The provided value does not match the expected type</error>
         <error code="Function">A function call failed</error>
       </result>
       <tags>pure-query, callback-inlines</tags>

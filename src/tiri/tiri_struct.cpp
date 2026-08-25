@@ -380,7 +380,7 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, const struct_fiel
 
    Result.reset();
 
-   if (not lua_istable(Lua, -1)) return log.warning(ERR::WrongType);
+   if (not lua_istable(Lua, -1)) return log.warning(ERR::TypeMismatch);
 
    auto def = find_struct(Lua, StructName);
    if (not def) return ERR::Search;

@@ -196,7 +196,7 @@ enum class ERR : int32_t {
    OpenGL = 164,
    OutsideMainThread = 165,
    UseDerived = 166,
-   WrongType = 167,
+   TypeMismatch = 167,
    ThreadNotLocked = 168,
    MessageOperation = 169,
    SetVolume = 170,

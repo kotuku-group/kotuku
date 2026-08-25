@@ -1902,7 +1902,7 @@ Okay
 NoSupport
 NullArgs
 Function
-WrongType
+TypeMismatch
 
 -TAGS-
 pure-query, callback-inlines
@@ -1964,7 +1964,7 @@ static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
                { "CompressedItem:Item", &meta, FD_STRUCT|FD_PTR }
             }), error) != ERR::Okay) error = ERR::Function;
          }
-         else error = log.warning(ERR::WrongType);
+         else error = log.warning(ERR::TypeMismatch);
 
          if (error != ERR::Okay) break; // Break the scanning loop.
       }

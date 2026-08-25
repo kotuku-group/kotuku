@@ -2000,7 +2000,7 @@ LJLIB_CF(array_sort)
    // Reject element types that cannot be pushed to the stack for comparison.
    if (lua_isfunction(L, 2)) {
       if (arr->elemtype IS AET::STRUCT or arr->elemtype IS AET::PTR or arr->elemtype IS AET::STR_CPP) {
-         luaL_error(L, ERR::WrongType, "sort() with comparator does not support this array type.");
+         luaL_error(L, ERR::TypeMismatch, "sort() with comparator does not support this array type.");
       }
       quicksort_func(L, arr, 0, int32_t(arr->len - 1), 2);
       return 0;
@@ -2045,7 +2045,7 @@ LJLIB_CF(array_sort)
          });
          break;
       }
-      default: luaL_error(L, ERR::WrongType, "sort() does not support this array type."); return 0;
+      default: luaL_error(L, ERR::TypeMismatch, "sort() does not support this array type."); return 0;
    }
 
    return 0;
