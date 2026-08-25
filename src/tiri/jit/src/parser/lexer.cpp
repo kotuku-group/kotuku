@@ -1961,7 +1961,19 @@ LexState::BufferedToken LexState::scan_buffered_token()
 void LexState::ensure_lookahead(size_t count)
 {
    while (this->available_lookahead() < count) {
-      this->buffered_tokens.push_back(this->scan_buffered_token());
+      size_t buffered_count = this->buffered_tokens.size();
+      BufferedToken buffered = this->scan_buffered_token();
+
+      // Scanning '<identifier' temporarily pushes the identifier to the front so direct token consumption can return
+      // '<' first.  Preserve tokens already gathered by lookahead and normalise this expansion to '<', identifier.
+
+      if (buffered.token IS '<' and this->buffered_tokens.size() IS buffered_count + 1) {
+         BufferedToken identifier = std::move(this->buffered_tokens.front());
+         this->buffered_tokens.pop_front();
+         this->buffered_tokens.push_back(std::move(buffered));
+         this->buffered_tokens.push_back(std::move(identifier));
+      }
+      else this->buffered_tokens.push_back(std::move(buffered));
    }
 }
 

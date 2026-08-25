@@ -84,6 +84,27 @@ end
    assert(b is 20, 'Non-const should be reassignable')
 end
 
+@Test function ConstAttributeOnLaterImplicitName()
+   mutable_value, fixed_value <const> = 1, 2
+   mutable_value = 3
+
+   assert(mutable_value is 3, 'Earlier mutable name should remain assignable')
+   assert(fixed_value is 2, 'Later const name should retain its initial value')
+   assert(debug.locality('mutable_value') is 'local', 'Earlier name should be an implicit local')
+   assert(debug.locality('fixed_value') is 'local', 'Later const name should be an implicit local')
+
+   typed_mutable, typed_fixed <const>:num = 4, 5
+   typed_mutable = 6
+   assert(typed_mutable is 6, 'Earlier name should remain mutable when the later const has a type annotation')
+   assert(typed_fixed is 5, 'Later typed const should retain its initial value')
+
+   try
+      exec('mutable_value, fixed_value <const> = 1, 2; fixed_value = 3')
+   success
+      error('Reassigning a later const name should fail')
+   end
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Test const with nil value (should fail - const requires initialiser)
 -- This is tested via compile error in separate tests below

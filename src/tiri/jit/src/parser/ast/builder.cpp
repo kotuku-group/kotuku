@@ -810,9 +810,6 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 
 //********************************************************************************************************************
 // Check if any identifier in a comma-separated name list has a type annotation or recognised declaration attribute.
-// Due to lexer lookahead complexities, the attribute name appears before '<' when special '<identifier' handling has
-// been triggered.
-//
 // Patterns: `name:type`, `name <attr>`, `name, name:type`, `name, name <attr>`
 // Returns true if this looks like an implicit local declaration.
 
@@ -825,12 +822,13 @@ static bool is_implicit_local_declaration(TokenStreamAdapter &Tokens)
       Token next = Tokens.peek(pos);
       if (next.kind() IS TokenKind::Colon) return true;
 
-      if (next.kind() IS TokenKind::Identifier) {
-         GCstr *attribute = next.identifier();
+      if (next.raw() IS '<') {
+         Token attribute_token = Tokens.peek(pos + 1);
+         GCstr *attribute = attribute_token.kind() IS TokenKind::Identifier ? attribute_token.identifier() : nullptr;
          if (attribute) {
             std::string_view name(strdata(attribute), attribute->len);
             if ((name IS "const" or name IS "close" or name IS "view") and
-                  Tokens.peek(pos + 1).raw() IS '<' and Tokens.peek(pos + 2).raw() IS '>') return true;
+                  Tokens.peek(pos + 2).raw() IS '>') return true;
          }
       }
 
