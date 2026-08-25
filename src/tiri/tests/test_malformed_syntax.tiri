@@ -114,6 +114,47 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Implicit declaration attribute shadowing
+
+@Test function ValidateImplicitAttributeShadowing()
+   local cases = {
+      {
+         name = 'close',
+         source = "thing = 'goodbye'\ndo\n   thing <close> = 'hello'\nend"
+      },
+      {
+         name = 'const',
+         source = "thing = 1\ndo\n   thing <const> = 2\nend"
+      },
+      {
+         name = 'view',
+         source = "thing = {}\ndo\n   thing <view> = {}\nend"
+      }
+   }
+
+   for case in values(cases) do
+      local result = debug.validate(case.source)
+      assert(result.success is false, case.name .. ' shadow should fail validation')
+      assert(#result.diagnostics > 0, case.name .. ' shadow should report a diagnostic')
+      local found_shadowing_diagnostic = false
+      for diagnostic in values(result.diagnostics) do
+         if diagnostic.code is 'InvalidAssignment' and
+            diagnostic.message.find("requires explicit 'local'") then
+            found_shadowing_diagnostic = true
+         end
+      end
+      assert(found_shadowing_diagnostic,
+         case.name .. ' shadow should report InvalidAssignment and explain how to make the declaration explicit')
+   end
+
+   local explicit_shadow = debug.validate("thing = 1\ndo\n   local thing <const> = 2\nend")
+   assert(explicit_shadow.success is true, 'explicit local attributed shadow should validate')
+
+   local new_declaration = debug.validate("fresh <const> = 1")
+   assert(new_declaration.success is true, 'new bare attributed local should validate')
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Malformed type declarations and annotations
 
 @Test function ValidateMalformedTypeDeclarations()

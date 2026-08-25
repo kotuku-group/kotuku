@@ -3,6 +3,7 @@
 #include "static_descriptor_analysis.h"
 
 #include <algorithm>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 
@@ -78,6 +79,42 @@ private:
    [[nodiscard]] bool is_declared_global(GCstr *Name) const
    {
       return std::find(this->global_names_.begin(), this->global_names_.end(), Name) != this->global_names_.end();
+   }
+
+   [[nodiscard]] bool is_registered_constant(GCstr *Name) const
+   {
+      if (not Name) return false;
+
+      std::shared_lock lock(glConstantMutex);
+      return glConstantRegistry.contains(Name->hash);
+   }
+
+   [[nodiscard]] bool implicit_declaration_conflicts(GCstr *Name) const
+   {
+      if (not Name) return false;
+      if (this->resolve(Name) or this->is_declared_global(Name) or this->is_registered_constant(Name)) return true;
+      if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return true;
+
+      cTValue *global = lj_tab_getstr(tabref(this->context_.lua().env), Name);
+      return global and not tvisnil(global);
+   }
+
+   void validate_implicit_declaration(const LocalDeclStmtPayload &Payload)
+   {
+      if (not Payload.implicit_declaration) return;
+
+      for (const Identifier &name : Payload.names) {
+         if (name.is_blank or not this->implicit_declaration_conflicts(name.symbol)) continue;
+
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         ParserDiagnostic diagnostic;
+         diagnostic.severity = ParserDiagnosticSeverity::Error;
+         diagnostic.code = ParserErrorCode::InvalidAssignment;
+         diagnostic.message = std::format(
+            "declaration attribute on existing variable '{}' requires explicit 'local'", name_view);
+         diagnostic.token = Token::from_span(name.span, TokenKind::Identifier);
+         this->context_.diagnostics().report(diagnostic);
+      }
    }
 
    StaticBindingID declare(Identifier &Name, const ExprNode *Initialiser, uint8_t ResultPosition,
@@ -264,6 +301,7 @@ private:
          case AstNodeKind::LocalDeclStmt: {
             auto &payload = std::get<LocalDeclStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->discover_expression(*value);
+            this->validate_implicit_declaration(payload);
             for (size_t i = 0; i < payload.names.size(); ++i) {
                const ExprNode *initialiser = i < payload.values.size() ? payload.values[i].get() :
                   (payload.values.empty() ? nullptr : payload.values.back().get());
