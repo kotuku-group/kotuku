@@ -36,6 +36,7 @@ end
       t.hour = 5
    end
    -- Object should still be accessible after the with block
+   assert(t.exists(), 'Expected object to remain alive after with block')
    val = t.hour
    assert(val is 5, 'Expected hour to be 5 after with block, got ' .. tostring(val))
 end

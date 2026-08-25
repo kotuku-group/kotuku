@@ -18,6 +18,136 @@ function enforce_hotpath() end
    assert(closed, 'Basic close: __close should be called when scope ends')
 end
 
+-- Native objects are explicitly terminated when their owning <close> scope exits.
+
+@Test function CloseNativeObjectOnScopeExit()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   do
+      local resource <close>:obj = obj.new('time')
+      id = resource.id
+      alias = obj.find(id)
+   end
+
+   assert(obj.find(id) is nil, 'Expected object <close> to terminate the native object')
+   assert(not alias.exists(), 'Expected detached alias to become stale after object <close>')
+end
+
+-- Closing an object must also run while exceptions unwind its scope.
+
+@Test function CloseNativeObjectOnException()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   function fail_with_resource()
+      do
+         local resource <close>:obj = obj.new('time')
+         id = resource.id
+         alias = obj.find(id)
+         error('Intentional native object close test error')
+      end
+   end
+
+   caught = false
+   try
+      fail_with_resource()
+   except e
+      caught = true
+   end
+
+   assert(caught, 'Expected the test exception to be caught')
+   assert(obj.find(id) is nil, 'Expected object <close> to terminate during exception unwinding')
+   assert(not alias.exists(), 'Expected alias to become stale during exception unwinding')
+end
+
+-- A manual free before lexical close is a harmless, idempotent cleanup path.
+
+@Test function ManualFreeBeforeObjectClose()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   do
+      local resource <close>:obj = obj.new('time')
+      id = resource.id
+      alias = obj.find(id)
+      resource.free()
+      assert(not resource.exists(), 'Expected manual free to terminate the object immediately')
+   end
+
+   assert(obj.find(id) is nil, 'Expected manual free to keep the object absent after scope close')
+   assert(not alias.exists(), 'Expected alias to remain stale after repeated cleanup')
+end
+
+-- Explicit close matches free() even for detached wrappers returned by obj.find().
+
+@Test function CloseDetachedNativeObject()
+   owner = obj.new('time')
+   id = owner.id
+   defer
+      if owner.exists() then owner.free() end
+   end
+
+   do
+      local alias <close>:obj = obj.find(id)
+      assert(alias.exists(), 'Expected detached alias to resolve before close')
+   end
+
+   assert(obj.find(id) is nil, 'Expected detached wrapper <close> to terminate the object')
+   assert(not owner.exists(), 'Expected original wrapper to become stale after detached close')
+end
+
+-- The with lock guard must not close the object before the outer owning scope ends.
+
+@Test function CloseNativeObjectAroundWith()
+   id = 0
+   alias = nil
+   defer
+      if alias != nil and alias.exists() then alias.free() end
+   end
+
+   do
+      local resource <close>:obj = obj.new('time')
+      id = resource.id
+      alias = obj.find(id)
+      with resource do
+         resource.hour = 9
+      end
+      assert(resource.exists(), 'Expected with scope to release only its lock')
+      assert(resource.hour is 9, 'Expected object to remain usable after with scope')
+   end
+
+   assert(obj.find(id) is nil, 'Expected outer object <close> to terminate after with scope')
+   assert(not alias.exists(), 'Expected alias to become stale after outer object close')
+end
+
+-- Arrays are reference containers: closing their storage must not close native object elements.
+
+@Test function CloseObjectArrayDoesNotCloseElements()
+   target = obj.new('time')
+   id = target.id
+   defer
+      if target.exists() then target.free() end
+   end
+
+   do
+      local resources <close>:array<obj> = array<obj> { target }
+      assert(#resources is 1, 'Expected object array to retain its element')
+   end
+
+   assert(target.exists(), 'Expected closing array<obj> not to terminate its element')
+   assert(obj.find(id) != nil, 'Expected object to remain findable after array close')
+end
+
 -- __close exposes the closed table as dispatch context
 
 @Test function CloseSelfArg()

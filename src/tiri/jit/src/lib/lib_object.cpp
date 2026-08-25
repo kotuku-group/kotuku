@@ -31,6 +31,7 @@
 #include "lj_object.h"
 #include "lj_array.h"
 #include "lj_struct.h"
+#include "lj_state.h"
 #include "lj_proto_registry.h"
 #include "lib.h"
 
@@ -43,6 +44,8 @@
 #include "../../defs.h"
 
 #define LJLIB_MODULE_object
+
+constexpr CSTRING OBJECT_LOCK_GUARD_METATABLE = "Kotuku.object_lock_guard";
 
 template<class... Args> void RMSG(Args...) {
    //log.trace(Args)  // Enable if you want to debug results returned from functions, actions etc
@@ -69,6 +72,7 @@ template<class... Args> void RMSG(Args...) {
 [[nodiscard]] static int object_unsubscribe(lua_State *);
 
 [[nodiscard]] static int object_close_handler(lua_State *);
+[[nodiscard]] static int object_lock_guard_close(lua_State *);
 [[nodiscard]] static int object_with_lock(lua_State *);
 
 [[nodiscard]] static int object_get_array(lua_State *, const obj_read &, GCobject *);
@@ -949,28 +953,41 @@ static int object_unsubscribe(lua_State *Lua)
 
 //********************************************************************************************************************
 
+static void object_clear_wrapper(GCobject *Def)
+{
+   if (Def->is_pinned()) {
+      Def->ptr->unpinWeak();
+      Def->set_pinned(false);
+   }
+
+   Def->uid = 0;
+   Def->ptr = nullptr;
+   Def->classptr = nullptr;
+   Def->accesscount = 0;
+}
+
+//********************************************************************************************************************
+// Explicit object termination shared by object.free() and the object __close metamethod.  It is intentionally
+// separate from GC finalisation: close is destructive for detached wrappers as well as Tiri-owned wrappers.
+
+static void object_terminate(GCobject *Def)
+{
+   if (not Def or not Def->uid) return;
+
+   Def->set_detached(true); // Prevents a second object free at finalise.
+
+   if (object_is_dead(Def) or FreeObject(Def->uid) != ERR::InUse) {
+      object_clear_wrapper(Def);
+   }
+   // ERR::InUse marks the object for termination.  Its wrapper must remain intact until outstanding locks and pins
+   // are released, at which point Core completes the free.
+}
+
+//********************************************************************************************************************
+
 static int object_free(lua_State *Lua)
 {
-   auto def = object_method_receiver(Lua);
-
-   def->flags |= GCOBJ_DETACHED; // Prevents a second object free at finalise.
-
-   if (FreeObject(def->uid) IS ERR::InUse) {
-      // The object has been marked for termination, automatically freeing it once it has been unlocked and unpinned.
-      // Clearing the definition would have adverse effects on any areas that have pinned the object in a thread or
-      // closure.
-      return 0;
-   }
-
-   if (def->is_pinned()) {
-      def->ptr->unpinWeak();
-      def->set_pinned(false);
-   }
-
-   def->uid = 0;
-   def->ptr = nullptr;
-   def->classptr = nullptr;
-   def->accesscount = 0;
+   object_terminate(object_method_receiver(Lua));
    return 0;
 }
 
@@ -1007,31 +1024,53 @@ LJLIB_CF(object_subscribe) { return object_subscribe(L); }
 LJLIB_CF(object_unsubscribe) { return object_unsubscribe(L); }
 
 //********************************************************************************************************************
-// __close metamethod handler for object auto-unlock.  Called automatically by scope exit for <close> variables.
-// Safe no-op if accesscount is 0 (object was never locked or already unlocked).
-//
-// This feature ensure that locks acquired via `with` statements are always released, even if an exception occurs
-// within the block.
+// __close metamethod handler for explicit object-resource termination.  The optional error argument supplied during
+// close unwinding is intentionally ignored; object termination follows the same idempotent path as object.free().
 
 static int object_close_handler(lua_State *Lua)
 {
    auto *def = lj_get_object_fast(Lua, 1);
-   if (def and def->accesscount > 0) release_object(def);
+   object_terminate(def);
    return 0;
 }
 
 //********************************************************************************************************************
-// __lock helper for `with` statement.  Validates the argument is an object, acquires the lock, and raises an error
-// if the object is dead.
+// Close one `with` lock guard.  The guard is contextual, so its retained object wrapper is recovered from the active
+// table context instead of from the close error argument.  Clearing the slot after releasing makes repeated close
+// attempts harmless and keeps every guard responsible for exactly one lock acquisition.
+
+static int object_lock_guard_close(lua_State *Lua)
+{
+   auto *guard = lj_context_current(Lua);
+   if (auto *object_slot = lj_tab_getint(guard, 0); object_slot and tvisobject(object_slot)) {
+      auto *def = objectV(object_slot);
+      if (def->accesscount > 0) release_object(def);
+      setnilV(lj_tab_setint(Lua, guard, 0));
+   }
+   return 0;
+}
+
+//********************************************************************************************************************
+// __lock helper for `with` statements.  It creates the closeable guard before acquiring the object lock so a failed
+// allocation cannot strand a lock.  The guard retains the wrapper strongly, including when the with operand is an
+// expression whose result has no other reference.
 
 static int object_with_lock(lua_State *Lua)
 {
    if (auto *def = lj_get_object_fast(Lua, 1)) {
+      lua_createtable(Lua, 1, 0);
+      auto *guard = tabV(Lua->top - 1);
+      lj_tab_mark_contextual(guard);
+
+      lua_pushvalue(Lua, 1);
+      lua_rawseti(Lua, -2, 0);
+      luaL_getmetatable(Lua, OBJECT_LOCK_GUARD_METATABLE);
+      lua_setmetatable(Lua, -2);
+
       OBJECTPTR obj;
       if (auto error = access_object(def, obj); error != ERR::Okay) {
          luaL_error(Lua, error, "Failed to access object for 'with' statement.");
       }
-      lua_pushvalue(Lua, 1); // Return the object
    }
    else luaL_argerror(Lua, 1, "Object expected for 'with' statement.");
    return 1;
@@ -1062,6 +1101,11 @@ extern "C" int luaopen_object(lua_State *L)
 
    lua_pushcfunction(L, object_with_lock);
    lua_setfield(L, -2, "__lock");
+
+   luaL_newmetatable(L, OBJECT_LOCK_GUARD_METATABLE);
+   lua_pushcfunction(L, object_lock_guard_close);
+   lua_setfield(L, -2, "__close");
+   lua_pop(L, 1);
 
    // Use the library table directly as the base metatable for objects.
    // NOBARRIER: basemt is a GC root.

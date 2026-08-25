@@ -2889,9 +2889,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_defer_stmt(const DeferStmtPayload &Payl
 //
 // For each object expression:
 //   1. Evaluate to a register
-//   2. Store in a hidden local slot flagged with VarInfoFlag::Close
-//   3. Emit bytecode to call obj.__lock(obj) to acquire the lock
-// The scope exit then automatically calls __close (= release_object) via the <close> machinery.
+//   2. Store in a hidden local slot
+//   3. Call obj.__lock(obj), replacing the hidden object with its private lock guard
+//   4. Flag that guard as closeable
+// The scope exit then closes the guard, which releases exactly its matching object lock.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payload)
 {
@@ -2916,7 +2917,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
    }
 
-   // Evaluate each object expression and store in <close> locals
+   // Evaluate each object expression and store its returned lock guard in a hidden <close> local.
 
    for (auto i = BCReg(0); i < obj_count; ++i) {
       const ExprNodePtr &obj_expr = Payload.objects[i.raw()];
@@ -2939,7 +2940,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       allocator.reserve(BCReg(1));  // Reserve the local slot
       ls->var_add(1);
 
-      // Mark the local as <close> so scope exit calls __close
+      // Mark the local as closeable.  It is armed only after __lock replaces the object with its lock guard.
       uint8_t slot = uint8_t(obj_reg.raw());
       if (slot >= 64) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
@@ -2949,7 +2950,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       VarInfo *info = &fs->var_get(fs->varmap.size() - 1);
       info->info |= VarInfoFlag::Close;
 
-      // Emit bytecode to call __lock(obj) to acquire the lock
+      // Emit bytecode to call __lock(obj) to acquire the lock and return its closeable guard.
       // Pattern: getmetatable(obj) -> get __lock field -> call __lock(obj)
 
       BCREG base = fs->freereg;
@@ -2979,7 +2980,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       BCREG call_base = base;
       bcemit_AD(fs, BC_MOV, call_base, lock_fn_reg);
       bcemit_AD(fs, BC_MOV, call_base + 1 + LJ_FR2, obj_reg);
-      bcemit_ABC(fs, BC_CALL, call_base, 1, 2);  // 0 results, 1 arg
+      bcemit_ABC(fs, BC_CALL, call_base, 2, 2);  // 1 result, 1 arg
+      bcemit_AD(fs, BC_MOV, obj_reg, call_base); // Replace the operand with the returned lock guard.
       bcemit_AD(fs, BC_CLOSEARM, obj_reg.raw(), 0);
 
       fs->reset_freereg(); // Release the temporary registers
