@@ -547,6 +547,14 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
    if (not decode_runtime_contract(Encoded, descriptor)) return RecordedContract::Invalid;
    if (descriptor.dynamic_count()) return RecordedContract::Complex;
 
+   // A declaration finaliser can validate or publish environment policy, reject a conflicting redeclaration and
+   // enforce const lifecycle rules.  These effects are not pure value predicates and must remain interpreter-owned,
+   // even when an equivalent policy currently exists.  Other boundaries cannot match, declaration pre-contracts
+   // carry Initialising, and ordinary assignment hints carry GlobalHint.
+   if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1 and
+       not contract_entry_is_initialising(descriptor.entries[0]) and
+       not contract_entry_is_global_hint(descriptor.entries[0])) return RecordedContract::SideEffect;
+
    if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1 and
        contract_entry_is_global_hint(descriptor.entries[0])) {
       const RuntimeContractEntry &entry = descriptor.entries[0];

@@ -3107,79 +3107,83 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *lua = state.get();
-   auto compile_child = [lua, &Log](std::string_view Source, const char *Label) -> GCproto * {
+   auto compile_proto = [lua, &Log](std::string_view Source, const char *Label, bool Child) -> GCproto * {
       if (lua_load(lua, Source, Label)) {
          Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
          lua_pop(lua, 1);
          return nullptr;
       }
 
-      GCproto *child = first_child_proto(funcproto(funcV(lua->top - 1)));
+      GCproto *root = funcproto(funcV(lua->top - 1));
+      GCproto *result = Child ? first_child_proto(root) : root;
       lua->top--;
-      return child;
+      return result;
    };
 
-   GCproto *fixed = compile_child(
+   GCproto *fixed = compile_proto(
       "return function(Value:func):func\n"
       "   return Value\n"
       "end\n",
-      "fixed-complex-contract");
+      "fixed-complex-contract", true);
    if (not fixed or (fixed->flags & PROTO_NOJIT)) {
       Log.error("a fixed complex contract remained interpreter-only");
       return false;
    }
 
-   GCproto *fixed_object_class = compile_child(
+   GCproto *fixed_object_class = compile_proto(
       "extern obj\n"
       "return function(Value:any)\n"
       "   local stored = obj.new('time')\n"
       "   stored = Value\n"
       "   return stored\n"
       "end\n",
-      "fixed-object-class-contract");
+      "fixed-object-class-contract", true);
    if (not fixed_object_class or (fixed_object_class->flags & PROTO_NOJIT)) {
       Log.error("a fixed object-class contract became interpreter-only");
       return false;
    }
 
-   GCproto *dynamic = compile_child(
+   GCproto *dynamic = compile_proto(
       "return function(...):<num, ...>\n"
       "   return ...\n"
       "end\n",
-      "dynamic-result-contract");
+      "dynamic-result-contract", true);
    if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
       Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
       return false;
    }
 
-   GCproto *global_const = compile_child(
-      "return function()\n"
-      "   global glRecordedConst <const> = 1\n"
-      "end\n",
-      "global-const-contract");
-   if (not global_const or not (global_const->flags & PROTO_NOJIT)) {
-      Log.error("a global const contract became JIT-eligible despite its post-store policy side effect");
-      return false;
-   }
+   struct EligibilityCase {
+      const char *label;
+      const char *statement;
+      bool no_jit;
+   };
+   constexpr EligibilityCase cases[] = {
+      { "inferred-global-contract", "global glRecordedInferred = 'value'", false },
+      { "typed-global-contract", "global glRecordedTyped:str = 'value'", false },
+      { "any-global-contract", "global glRecordedAny:any = 'value'", false },
+      { "conditional-global-contract", "global glRecordedConditional:str ?= 'fallback'", false },
+      { "empty-conditional-global-contract", "global glRecordedEmptyConditional:str ?" "?= 'fallback'", false },
+      { "global-function-contract", "global function glRecordedFunction() return 1 end", false },
+      { "plain-global-store", "glRecordedStore = 1", false },
+      { "global-const-contract", "global glRecordedConst <const> = 1", true }
+   };
 
-   GCproto *conditional_global = compile_child(
-      "return function()\n"
-      "   global glRecordedConditional:str ?= 'fallback'\n"
-      "end\n",
-      "conditional-global-contract");
-   if (not conditional_global or not (conditional_global->flags & PROTO_NOJIT)) {
-      Log.error("a conditional global contract became JIT-eligible despite its policy-publication side effect");
-      return false;
-   }
+   for (const EligibilityCase &test : cases) {
+      std::string child_source = std::format("return function()\n   {}\nend\n", test.statement);
+      std::string child_label = std::format("{}-child", test.label);
+      GCproto *child = compile_proto(child_source, child_label.c_str(), true);
+      if (not child or bool(child->flags & PROTO_NOJIT) != test.no_jit) {
+         Log.error("%s had unexpected child prototype JIT eligibility", test.label);
+         return false;
+      }
 
-   GCproto *empty_conditional_global = compile_child(
-      "return function()\n"
-      "   global glRecordedEmptyConditional:str ?" "?= 'fallback'\n"
-      "end\n",
-      "empty-conditional-global-contract");
-   if (not empty_conditional_global or not (empty_conditional_global->flags & PROTO_NOJIT)) {
-      Log.error("an empty-conditional global contract became JIT-eligible despite its policy-publication side effect");
-      return false;
+      std::string main_label = std::format("{}-main", test.label);
+      GCproto *main = compile_proto(test.statement, main_label.c_str(), false);
+      if (not main or bool(main->flags & PROTO_NOJIT) != test.no_jit) {
+         Log.error("%s had unexpected main prototype JIT eligibility", test.label);
+         return false;
+      }
    }
    return true;
 }

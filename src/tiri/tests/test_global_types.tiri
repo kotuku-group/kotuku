@@ -24,6 +24,43 @@ local function assert_global_contract_before_store(Statement, Context)
    return disasm
 end
 
+local function count_global_contract_traces():num
+   local count = 0
+   for trace_no in {1 into 100} do
+      if jit.util.traceInfo(trace_no) != nil then count++ end
+   end
+   return count
+end
+
+local function run_global_contract_jit_workload(Workload:func):<any, any, num, num, num>
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   defer
+      jit.attach(trace_event)
+      jit.flush()
+      jit.opt.start()
+      jit.on()
+   end
+
+   jit.off()
+   jit.flush()
+   local expected = Workload()
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   jit.attach(trace_event, 'trace')
+   local result = Workload()
+   jit.attach(trace_event)
+   return expected, result, compiled, aborted, count_global_contract_traces()
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Inferred scalar globals emit a declaration contract and retain a bootstrap hint for stores that may execute before
 -- declaration publication.  Once policy exists, the environment boundary owns semantic validation.
@@ -108,6 +145,165 @@ end
    exec([[global glGTFailedDeclaration = 42]])
    assert(glGTFailedDeclaration is 42,
       'A rejected declaration must not leave a stale type policy that prevents retry')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Non-const declaration finalisers are local recorder boundaries.  They must not disable later loops in the same
+-- prototype, while finalisers reached during recording must remain interpreter-owned so policy effects are preserved.
+
+@Test function OrdinaryGlobalDeclarationsRetainJitEligibility()
+   local function hot_loop_only():num
+      local total = 0
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local function plain_store():num
+      glGTJitPlainStore = 'value'
+      local total = 0
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local function inferred():num
+      global glGTJitInferred = 'value'
+      local total = 0
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local function typed():num
+      global glGTJitTyped:str = 'value'
+      local total = 0
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local function variant():num
+      global glGTJitAny:any = 'value'
+      local total = 0
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local function conditional():num
+      global glGTJitConditional:str ?= 'value'
+      local total = 0
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local function empty_conditional():num
+      global glGTJitEmptyConditional:str ??= 'value'
+      local total = 0
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local function verify_case(CaseNo:num, Workload:func)
+      local expected, result, compiled, _, traces = run_global_contract_jit_workload(Workload)
+      assert(expected is 120 and result is expected,
+         f'Global declaration JIT case {CaseNo} diverged from the interpreter')
+      assert(compiled > 0 and traces > 0,
+         f'Global declaration JIT case {CaseNo} did not complete a trace')
+   end
+
+   verify_case(0, hot_loop_only)
+   verify_case(1, plain_store)
+   verify_case(2, inferred)
+   verify_case(3, typed)
+   verify_case(4, variant)
+   verify_case(5, conditional)
+   verify_case(6, empty_conditional)
+end
+
+@Test function MainChunkGlobalDeclarationRetainsJitEligibility()
+   local function run_main_chunk():num
+      return exec([[
+global glGTJitMainChunk = 'value'
+local total = 0
+for _ in {0 to 120} do total++ end
+return total
+]])
+   end
+
+   local expected, result, compiled, _, traces = run_global_contract_jit_workload(run_main_chunk)
+   assert(expected is 120 and result is expected,
+      'A dynamically compiled main chunk should preserve interpreter/JIT parity')
+   assert(compiled > 0 and traces > 0,
+      'An ordinary global declaration must not disable an unrelated top-level loop')
+end
+
+@Test function DeclarationFinaliserAbortsLocallyAndPublishesPolicy()
+   local function boundary_workload():num
+      local total = 0
+      for _ in {0 to 80} do
+         global glGTJitBoundary:str ?= 'retained'
+         total++
+      end
+      for _ in {0 to 120} do total++ end
+      return total
+   end
+
+   local expected, result, compiled, aborted, traces = run_global_contract_jit_workload(boundary_workload)
+   assert(expected is 200 and result is expected,
+      'Interpreter hand-off at a declaration finaliser changed the workload result')
+   assert(aborted > 0, 'Recording should abort when it reaches a policy-publishing declaration finaliser')
+   assert(compiled > 0 and traces > 0,
+      'A finaliser abort must not prevent a separate loop in the same prototype from compiling')
+   assert(glGTJitBoundary is 'retained', 'The interpreted finaliser should retain the existing global value')
+
+   local rejected = false
+   try
+      rawset(_G, 'glGTJitBoundary', 42)
+   except e
+      rejected = e.message.find('expected str') != nil
+   end
+   assert(rejected and glGTJitBoundary is 'retained',
+      'The interpreted finaliser should publish and preserve its string policy')
+end
+
+@Test function SkippedDeclarationsPublishCompatiblePolicies()
+   rawset(_G, 'glGTJitRetainedNil', 'nil-retained')
+   rawset(_G, 'glGTJitRetainedEmpty', 'empty-retained')
+   exec([[global glGTJitRetainedNil:str ?= 'fallback']])
+   exec([[global glGTJitRetainedEmpty:str ??= 'fallback']])
+
+   assert(glGTJitRetainedNil is 'nil-retained' and glGTJitRetainedEmpty is 'empty-retained',
+      'Compatible skipped declarations should retain their existing values')
+
+   local nil_rejected = false
+   local empty_rejected = false
+   try
+      rawset(_G, 'glGTJitRetainedNil', 1)
+   except e
+      nil_rejected = e.message.find('expected str') != nil
+   end
+   try
+      rawset(_G, 'glGTJitRetainedEmpty', 1)
+   except e
+      empty_rejected = e.message.find('expected str') != nil
+   end
+   assert(nil_rejected and empty_rejected,
+      'Both compatible retained-value paths should publish their string policies')
+end
+
+@Test function ConflictingSkippedDeclarationPreservesPolicyAndValue()
+   exec([[global glGTJitConflicting:str = 'original']])
+   local rejected = false
+   try
+      exec([[global glGTJitConflicting:num ?= 42]])
+   except e
+      rejected = e.message.find('cannot redeclare str as num') != nil
+   end
+
+   assert(rejected, 'A conflicting retained-value declaration should raise the redeclaration diagnostic')
+   assert(glGTJitConflicting is 'original',
+      'A conflicting retained-value declaration must preserve the original value')
+
+   rawset(_G, 'glGTJitConflicting', 'compatible')
+   assert(glGTJitConflicting is 'compatible',
+      'A rejected redeclaration must preserve the original string policy')
 end
 -----------------------------------------------------------------------------------------------------------------------
 -- Direct global callable declarations must publish the same persistent binding contract as global variables.
