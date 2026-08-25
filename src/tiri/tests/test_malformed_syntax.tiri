@@ -133,6 +133,10 @@ end
       {
          name = 'constant-false branch',
          source = "thing = 1\nif false then\n   thing <const> = 2\nend"
+      },
+      {
+         name = 'duplicate sibling',
+         source = "fresh, fresh <const> = 1, 2"
       }
    }
 
@@ -153,6 +157,9 @@ end
 
    local explicit_shadow = debug.validate("thing = 1\ndo\n   local thing <const> = 2\nend")
    assert(explicit_shadow.success is true, 'explicit local attributed shadow should validate')
+
+   local explicit_duplicate = debug.validate("local fresh, fresh <const> = 1, 2")
+   assert(explicit_duplicate.success is true, 'explicit local duplicate should validate')
 
    local new_declaration = debug.validate("fresh <const> = 1")
    assert(new_declaration.success is true, 'new bare attributed local should validate')

@@ -105,8 +105,14 @@ private:
    {
       if (not Payload.implicit_declaration) return;
 
+      std::vector<GCstr *> declared_names;
+      declared_names.reserve(Payload.names.size());
       for (const Identifier &name : Payload.names) {
-         if (name.is_blank or not this->implicit_declaration_conflicts(name.symbol)) continue;
+         if (name.is_blank or not name.symbol) continue;
+
+         bool duplicate = std::find(declared_names.begin(), declared_names.end(), name.symbol) != declared_names.end();
+         declared_names.push_back(name.symbol);
+         if (not duplicate and not this->implicit_declaration_conflicts(name.symbol)) continue;
 
          std::string_view name_view(strdata(name.symbol), name.symbol->len);
          ParserDiagnostic diagnostic;

@@ -1286,7 +1286,7 @@ static bool test_implicit_attribute_shadowing(kt::Log &Log)
       bool add_environment_global = false;
    };
 
-   constexpr std::array<RejectedCase, 16> rejected = { {
+   constexpr std::array<RejectedCase, 17> rejected = { {
       { "nested close", "thing = 'goodbye'\ndo\n   thing <close> = 'hello'\nend" },
       { "nested const", "thing = 1\ndo\n   thing <const> = 2\nend" },
       { "nested view", "thing = {}\ndo\n   thing <view> = {}\nend" },
@@ -1300,6 +1300,7 @@ static bool test_implicit_attribute_shadowing(kt::Log &Log)
       { "protected global", "print <const> = 2", true, false },
       { "registered constant", "enum SHADOW { VALUE }\nSHADOW_VALUE <const> = 2" },
       { "mixed sibling", "thing = 1\nfresh, thing <const> = 2, 3" },
+      { "duplicate sibling", "fresh, fresh <const> = 1, 2" },
       { "constant-false branch", "thing = 1\nif false then\n   thing <const> = 2\nend" },
       { "clause after constant-true", "thing = 1\nif true then\n   fresh = 2\nelseif true then\n"
          "   thing <const> = 3\nend" },
@@ -1353,12 +1354,13 @@ static bool test_implicit_attribute_shadowing(kt::Log &Log)
       return false;
    }
 
-   constexpr std::array<std::string_view, 7> accepted = { {
+   constexpr std::array<std::string_view, 8> accepted = { {
       "thing = 1\ndo\n   local thing <const> = 2\nend",
       "thing = nil\ndo\n   local thing <close> = nil\nend",
       "thing = {}\ndo\n   local thing <view> = {}\nend",
       "fresh <const> = 1",
       "first, second <close> = nil, nil",
+      "local fresh, fresh <const> = 1, 2",
       "_, fresh <const> = 1, 2",
       "if false then\n   fresh <const> = 1\nend"
    } };
