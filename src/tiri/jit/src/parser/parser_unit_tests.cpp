@@ -1178,6 +1178,61 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
 
 //********************************************************************************************************************
 
+static bool test_implicit_later_name_attributes(kt::Log &Log)
+{
+   struct AttributeCase {
+      std::string_view source;
+      bool has_const;
+      bool has_close;
+      TiriType type;
+   };
+
+   constexpr std::array<AttributeCase, 3> cases = { {
+      { "first, second <const> = 1, 2", true, false, TiriType::Unknown },
+      { "first, second <close> = nil, nil", false, true, TiriType::Unknown },
+      { "first, second <const>:num = 1, 2", true, false, TiriType::Num }
+   } };
+
+   for (const AttributeCase &test_case : cases) {
+      auto result = build_ast_from_source(test_case.source, true);
+      if (not result.chunk.ok() or not result.diagnostics.empty()) {
+         Log.error("a declaration attribute on a later implicit-local name did not parse");
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+
+      StatementListView statements = result.chunk.value_ref()->view();
+      const auto *declaration = statements.size() IS 1 and statements[0].kind IS AstNodeKind::LocalDeclStmt ?
+         std::get_if<LocalDeclStmtPayload>(&statements[0].data) : nullptr;
+      if (not declaration or declaration->names.size() != 2 or declaration->values.size() != 2 or
+          declaration->names[0].has_const or declaration->names[0].has_close or
+          declaration->names[1].has_const != test_case.has_const or
+          declaration->names[1].has_close != test_case.has_close or declaration->names[1].type != test_case.type) {
+         Log.error("a declaration attribute on a later implicit-local name produced the wrong AST");
+         return false;
+      }
+   }
+
+   auto invalid_view = build_ast_from_source("first, second <view> = 1, 2", true);
+   bool has_view_diagnostic = false;
+   bool has_expression_diagnostic = false;
+   for (const ParserDiagnostic &diagnostic : invalid_view.diagnostics) {
+      if (diagnostic.message.find("requires exactly one local name") != std::string::npos) {
+         has_view_diagnostic = true;
+      }
+      if (diagnostic.message.find("Expected expression") != std::string::npos) has_expression_diagnostic = true;
+   }
+   if (not has_view_diagnostic or has_expression_diagnostic) {
+      Log.error("a later <view> attribute did not reach declaration validation");
+      log_diagnostics(invalid_view.diagnostics, Log);
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_ternary_colon_separators(kt::Log &Log)
 {
    auto result = build_ast_from_source("return true ? 1 : 2, false ?? 3 : 4");
@@ -9507,7 +9562,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 88> tests = { {
+   constexpr std::array<TestCase, 89> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -9530,6 +9585,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
+      { "implicit_later_name_attributes", test_implicit_later_name_attributes },
       { "ternary_colon_separators", test_ternary_colon_separators },
       { "extended_ternary_annotation_lookahead", test_extended_ternary_annotation_lookahead },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
