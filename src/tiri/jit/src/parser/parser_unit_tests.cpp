@@ -1045,6 +1045,22 @@ static bool test_colon_method_syntax_rejected(kt::Log &Log)
       return false;
    }
 
+   auto implicit = build_ast_from_source("entry:num = 5", true);
+   if (not implicit.chunk.ok() or not implicit.diagnostics.empty()) {
+      Log.error("bare type-annotated assignment did not parse as an implicit local declaration");
+      log_diagnostics(implicit.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = implicit.chunk.value_ref()->view();
+   const auto *declaration = statements.size() IS 1 and statements[0].kind IS AstNodeKind::LocalDeclStmt ?
+      std::get_if<LocalDeclStmtPayload>(&statements[0].data) : nullptr;
+   if (not declaration or declaration->names.size() != 1 or declaration->values.size() != 1 or
+       declaration->names[0].type != TiriType::Num) {
+      Log.error("bare type-annotated assignment lost its implicit-local declaration or numeric annotation");
+      return false;
+   }
+
    return true;
 }
 

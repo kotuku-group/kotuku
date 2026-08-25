@@ -938,8 +938,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
             }
          }
 
-         // Check for an implicit local declaration carrying an attribute.
-         if (is_implicit_local_with_attribute(this->ctx.tokens())) {
+         // A type annotation or declaration attribute does not change Tiri's local-by-default assignment semantics.
+         if (this->ctx.tokens().peek(1).kind() IS TokenKind::Colon or
+               is_implicit_local_with_attribute(this->ctx.tokens())) {
             return this->parse_local();
          }
          return this->parse_expression_stmt();
