@@ -1053,11 +1053,75 @@ static bool test_colon_method_syntax_rejected(kt::Log &Log)
    }
 
    StatementListView statements = implicit.chunk.value_ref()->view();
-   const auto *declaration = statements.size() IS 1 and statements[0].kind IS AstNodeKind::LocalDeclStmt ?
-      std::get_if<LocalDeclStmtPayload>(&statements[0].data) : nullptr;
-   if (not declaration or declaration->names.size() != 2 or declaration->values.size() != 2 or
-       declaration->names[0].type != TiriType::Unknown or declaration->names[1].type != TiriType::Num) {
-      Log.error("bare type-annotated assignment lost its implicit-local declaration or numeric annotation");
+   const auto *assignment = statements.size() IS 1 and statements[0].kind IS AstNodeKind::AssignmentStmt ?
+      std::get_if<AssignmentStmtPayload>(&statements[0].data) : nullptr;
+   const NameRef *first = assignment and assignment->targets.size() IS 2 ?
+      std::get_if<NameRef>(&assignment->targets[0]->data) : nullptr;
+   const NameRef *second = assignment and assignment->targets.size() IS 2 ?
+      std::get_if<NameRef>(&assignment->targets[1]->data) : nullptr;
+   if (not assignment or assignment->values.size() != 2 or not first or not second or
+       first->identifier.type != TiriType::Unknown or second->identifier.type != TiriType::Num) {
+      Log.error("bare type-annotated assignment lost its assignment semantics or numeric annotation");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_typed_assignment_name_resolution(kt::Log &Log)
+{
+   LuaStateHolder rejected_holder;
+   lua_State *rejected = rejected_holder.get();
+   constexpr std::string_view redeclaration =
+      "global counter:num = 1\n"
+      "counter:num = 2\n";
+
+   if (lua_load(rejected, redeclaration, "typed-global-redeclaration") IS 0) {
+      Log.error("a type annotation redeclared an existing global instead of producing a compile error");
+      return false;
+   }
+
+   std::string_view error = lua_tostring(rejected, -1);
+   if (error.find("cannot redeclare existing global 'counter' with a type annotation") IS std::string_view::npos) {
+      Log.error("typed global redeclaration produced the wrong diagnostic: %s", lua_tostring(rejected, -1));
+      return false;
+   }
+
+   LuaStateHolder host_holder;
+   lua_State *host = host_holder.get();
+   lua_pushnumber(host, 1);
+   lua_setglobal(host, "host_counter");
+   if (lua_load(host, "host_counter:num = 2", "typed-host-global-redeclaration") IS 0) {
+      Log.error("a type annotation redeclared a pre-existing environment global");
+      return false;
+   }
+
+   LuaStateHolder annotation_only_holder;
+   lua_State *annotation_only = annotation_only_holder.get();
+   constexpr std::string_view annotation_only_source =
+      "value:num\n"
+      "value = 'invalid'\n";
+   if (lua_load(annotation_only, annotation_only_source, "annotation-only-local") IS 0) {
+      Log.error("an annotation-only local did not retain its type for a later assignment");
+      return false;
+   }
+
+   LuaStateHolder mixed_holder;
+   lua_State *mixed = mixed_holder.get();
+   constexpr std::string_view mixed_assignment =
+      "global existing = 1\n"
+      "existing, fresh:num = 2, 3\n"
+      "return existing, fresh\n";
+
+   if (lua_load(mixed, mixed_assignment, "typed-mixed-assignment") or lua_pcall(mixed, 0, 2, 0)) {
+      Log.error("a mixed existing-global/new-typed-local assignment failed: %s", lua_tostring(mixed, -1));
+      return false;
+   }
+
+   if (lua_tonumber(mixed, -2) != 2 or lua_tonumber(mixed, -1) != 3) {
+      Log.error("a type annotation changed name resolution for another assignment target");
       return false;
    }
 
@@ -9328,7 +9392,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 86> tests = { {
+   constexpr std::array<TestCase, 87> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -9349,6 +9413,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "current_context_range_operands", test_current_context_range_operands },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
+      { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
       { "ternary_colon_separators", test_ternary_colon_separators },
       { "extended_ternary_annotation_lookahead", test_extended_ternary_annotation_lookahead },
       { "array_length_range_for_ast", test_array_length_range_for_ast },

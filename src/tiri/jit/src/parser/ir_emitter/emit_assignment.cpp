@@ -319,7 +319,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
    }
 
    // If ALL targets are new locals (undeclared), use a simpler approach similar to local declarations
-   if (pending_locals IS nvars) {
+   bool has_explicit_type = std::ranges::any_of(targets, [](const PreparedAssignment &Target) {
+      return Target.pending_type != TiriType::Unknown;
+   });
+   if (pending_locals IS nvars and not has_explicit_type) {
       // Register all new variable names with var_new
       BCReg idx = BCReg(0);
       for (PreparedAssignment& target : targets) {
@@ -419,10 +422,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
                this->apply_inferred_local_type(local_slot, *values[i]);
             }
 
-            // If the value isn't already at the local slot, move it
-            if (value_slot.raw() != local_slot.raw()) {
-               bcemit_AD(&this->func_state, BC_MOV, local_slot, value_slot);
-            }
+            ExpDesc value_expr;
+            value_expr.init(ExpKind::NonReloc, value_slot);
+            bcemit_store(&this->func_state, &target.storage, &value_expr);
          }
          else {
             // Existing target - copy value to it
@@ -851,6 +853,9 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
          prepared.pending_symbol = slot.u.sval;
          if (const auto *name_ref = std::get_if<NameRef>(&node->data)) {
             prepared.binding_id = name_ref->binding_id;
+            prepared.pending_type = name_ref->identifier.type;
+            prepared.pending_struct_def = name_ref->identifier.struct_def;
+            prepared.pending_array_element = name_ref->identifier.array_element;
          }
          prepared.pending_line   = node->span.line;
          prepared.pending_column = node->span.column;
