@@ -2069,6 +2069,19 @@ static bool test_assignment_target_regressions(kt::Log &Log)
       return false;
    }
 
+   LuaStateHolder import_holder;
+   lua_State *import_state = import_holder.get();
+   if (lua_load(import_state, "import 'options'\noptions = {}", "=assignment-import-namespace") IS 0) {
+      Log.error("an imported namespace assignment unexpectedly compiled");
+      return false;
+   }
+   std::string_view import_error(lua_tostring(import_state, -1));
+   if (import_error.find("cannot assign to const local 'options'") IS std::string_view::npos or
+       import_error.find("Internal invariant") != std::string_view::npos) {
+      Log.error("an imported namespace assignment produced the wrong diagnostic: %s", lua_tostring(import_state, -1));
+      return false;
+   }
+
    LuaStateHolder fixed_holder;
    lua_State *fixed = fixed_holder.get();
    if (lua_load(fixed, "fresh:num = 2\nfresh = 'wrong'", "=assignment-fixed-new-local") IS 0) {

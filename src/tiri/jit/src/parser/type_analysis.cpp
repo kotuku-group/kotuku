@@ -1482,11 +1482,21 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
             for (const auto &entry : payload->entries) {
-               if (not entry.inlined_body) continue;
-               ImportGuard guard(*this, entry.file_source_idx);
-               this->push_scope();
-               this->analyse_block(*entry.inlined_body);
-               this->pop_scope();
+               if (entry.inlined_body) {
+                  ImportGuard guard(*this, entry.file_source_idx);
+                  this->push_scope();
+                  this->analyse_block(*entry.inlined_body);
+                  this->pop_scope();
+               }
+
+               // Import emission publishes the namespace as a const local after the isolated library body.  Type
+               // analysis must mirror that declaration so later assignments receive a user-facing const diagnostic
+               // instead of appearing to reference an unknown lexical binding.
+               if (entry.namespace_name) {
+                  const Identifier &name = *entry.namespace_name;
+                  this->current_scope().declare_local(
+                     name.symbol, InferredType(TiriType::Any), name.span, name.has_const);
+               }
             }
          }
          break;
