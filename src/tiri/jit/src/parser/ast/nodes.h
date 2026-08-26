@@ -743,6 +743,7 @@ struct LocalDeclStmtPayload {
    AssignmentOperator op = AssignmentOperator::Plain;  // Supports ??= conditional assignment
    std::vector<Identifier> names;
    ExprNodeList values;
+   bool implicit_declaration = false; // Source omitted the explicit 'local' keyword
    uint32_t module_dependency = UINT32_MAX; // Descriptor ordinal for compiler-generated module activation
    ~LocalDeclStmtPayload();
 };

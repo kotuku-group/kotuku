@@ -1053,6 +1053,7 @@ static CSTRING diagnostic_code_name(ParserErrorCode Code)
       case ParserErrorCode::RecursiveFunctionNeedsType: return "RecursiveFunctionNeedsType";
       case ParserErrorCode::TooManyReturnTypes:     return "TooManyReturnTypes";
       case ParserErrorCode::RecoverySkippedTokens:  return "RecoverySkippedTokens";
+      case ParserErrorCode::InvalidAssignment:      return "InvalidAssignment";
       case ParserErrorCode::UnresolvedMethodReceiver: return "UnresolvedMethodReceiver";
       default: return "Unknown";
    }

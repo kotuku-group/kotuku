@@ -3,6 +3,7 @@
 #include "static_descriptor_analysis.h"
 
 #include <algorithm>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 
@@ -41,8 +42,10 @@ static bool is_builtin_interface_namespace(uint32_t Hash)
 
 class StaticDescriptorAnalyser {
 public:
-   explicit StaticDescriptorAnalyser(ParserContext &Context, bool NativeCallsOnly = false)
-      : context_(Context), catalogue_(Context.descriptors()), native_calls_only_(NativeCallsOnly) {}
+   explicit StaticDescriptorAnalyser(
+      ParserContext &Context, bool NativeCallsOnly = false, bool ValidationOnly = false)
+      : context_(Context), catalogue_(Context.descriptors()), native_calls_only_(NativeCallsOnly),
+        validation_only_(ValidationOnly) {}
 
    void discover(BlockStmt &Module)
    {
@@ -80,9 +83,59 @@ private:
       return std::find(this->global_names_.begin(), this->global_names_.end(), Name) != this->global_names_.end();
    }
 
+   [[nodiscard]] bool is_registered_constant(GCstr *Name) const
+   {
+      if (not Name) return false;
+
+      std::shared_lock lock(glConstantMutex);
+      return glConstantRegistry.contains(Name->hash);
+   }
+
+   [[nodiscard]] bool implicit_declaration_conflicts(GCstr *Name) const
+   {
+      if (not Name) return false;
+      if (this->resolve(Name) or this->is_declared_global(Name) or this->is_registered_constant(Name)) return true;
+      if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return true;
+
+      cTValue *global = lj_tab_getstr(tabref(this->context_.lua().env), Name);
+      return global and not tvisnil(global);
+   }
+
+   void validate_implicit_declaration(const LocalDeclStmtPayload &Payload)
+   {
+      if (not Payload.implicit_declaration) return;
+
+      std::vector<GCstr *> declared_names;
+      declared_names.reserve(Payload.names.size());
+      for (const Identifier &name : Payload.names) {
+         if (name.is_blank or not name.symbol) continue;
+
+         bool duplicate = std::find(declared_names.begin(), declared_names.end(), name.symbol) != declared_names.end();
+         declared_names.push_back(name.symbol);
+         if (not duplicate and not this->implicit_declaration_conflicts(name.symbol)) continue;
+
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         ParserDiagnostic diagnostic;
+         diagnostic.severity = ParserDiagnosticSeverity::Error;
+         diagnostic.code = ParserErrorCode::InvalidAssignment;
+         diagnostic.message = std::format(
+            "declaration attribute on existing variable '{}' requires explicit 'local'", name_view);
+         diagnostic.token = Token::from_span(name.span, TokenKind::Identifier);
+         this->context_.diagnostics().report(diagnostic);
+      }
+   }
+
    StaticBindingID declare(Identifier &Name, const ExprNode *Initialiser, uint8_t ResultPosition,
       const FunctionExprPayload *Function = nullptr, bool IsParameter = false)
    {
+      if (this->validation_only_) {
+         StaticBindingID placeholder(1);
+         if (Name.symbol and not Name.is_blank) {
+            this->scopes_.back().entries.emplace_back(Name.symbol, placeholder);
+         }
+         return placeholder;
+      }
+
       StaticBindingDescriptor binding;
       binding.name = Name.symbol;
       binding.initialiser = Initialiser;
@@ -100,6 +153,8 @@ private:
 
    void reference(NameRef &Reference, bool Write = false)
    {
+      if (this->validation_only_) return;
+
       StaticBindingID id = this->resolve(Reference.identifier.symbol);
       Reference.binding_id = id;
       Reference.identifier.binding_id = id;
@@ -258,12 +313,29 @@ private:
       if (NewScope) this->scopes_.pop_back();
    }
 
+   void validate_unreachable_expression(ExprNode &Expression)
+   {
+      StaticDescriptorAnalyser validator(this->context_, this->native_calls_only_, true);
+      validator.scopes_ = this->scopes_;
+      validator.global_names_ = this->global_names_;
+      validator.discover_expression(Expression);
+   }
+
+   void validate_unreachable_block(BlockStmt &Block)
+   {
+      StaticDescriptorAnalyser validator(this->context_, this->native_calls_only_, true);
+      validator.scopes_ = this->scopes_;
+      validator.global_names_ = this->global_names_;
+      validator.discover_block(Block);
+   }
+
    void discover_statement(StmtNode &Statement)
    {
       switch (Statement.kind) {
          case AstNodeKind::LocalDeclStmt: {
             auto &payload = std::get<LocalDeclStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->discover_expression(*value);
+            this->validate_implicit_declaration(payload);
             for (size_t i = 0; i < payload.names.size(); ++i) {
                const ExprNode *initialiser = i < payload.values.size() ? payload.values[i].get() :
                   (payload.values.empty() ? nullptr : payload.values.back().get());
@@ -295,8 +367,8 @@ private:
                         (payload.values.empty() ? nullptr : payload.values.back().get());
                      uint8_t position = i < payload.values.size() ? 0 :
                         uint8_t(i - payload.values.size() + 1);
-                     reference.binding_id = this->declare(
-                        reference.identifier, initialiser, position);
+                     StaticBindingID binding = this->declare(reference.identifier, initialiser, position);
+                     if (not this->validation_only_) reference.binding_id = binding;
                      continue;
                   }
                }
@@ -338,13 +410,24 @@ private:
             break;
          }
          case AstNodeKind::IfStmt: {
-            for (auto &clause : std::get<IfStmtPayload>(Statement.data).clauses) {
+            auto &clauses = std::get<IfStmtPayload>(Statement.data).clauses;
+            for (size_t i = 0; i < clauses.size(); ++i) {
+               auto &clause = clauses[i];
                if (clause.condition) {
                   this->discover_expression(*clause.condition);
                   auto truth = this->constant_truth(*clause.condition);
-                  if (truth and not *truth) continue;
+                  if (truth and not *truth) {
+                     if (clause.block) this->validate_unreachable_block(*clause.block);
+                     continue;
+                  }
                   if (clause.block) this->discover_block(*clause.block);
-                  if (truth and *truth) break;
+                  if (truth and *truth) {
+                     for (++i; i < clauses.size(); ++i) {
+                        if (clauses[i].condition) this->validate_unreachable_expression(*clauses[i].condition);
+                        if (clauses[i].block) this->validate_unreachable_block(*clauses[i].block);
+                     }
+                     break;
+                  }
                }
                else {
                   if (clause.block) this->discover_block(*clause.block);
@@ -2496,6 +2579,7 @@ private:
    const BlockStmt *enclosing_body_ = nullptr;
    uint16_t function_depth_ = 0;
    bool native_calls_only_ = false;
+   bool validation_only_ = false;
 };
 
 } // namespace

@@ -150,6 +150,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
 
    auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalDeclStmt, local_token.span());
    stmt->data.emplace<LocalDeclStmtPayload>(assign_op, std::move(name_list), std::move(values));
+   std::get<LocalDeclStmtPayload>(stmt->data).implicit_declaration = implicit_local;
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }
 

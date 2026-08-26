@@ -1205,6 +1205,7 @@ static bool test_implicit_later_name_attributes(kt::Log &Log)
       const auto *declaration = statements.size() IS 1 and statements[0].kind IS AstNodeKind::LocalDeclStmt ?
          std::get_if<LocalDeclStmtPayload>(&statements[0].data) : nullptr;
       if (not declaration or declaration->names.size() != 2 or declaration->values.size() != 2 or
+          not declaration->implicit_declaration or
           declaration->names[0].has_const or declaration->names[0].has_close or
           declaration->names[1].has_const != test_case.has_const or
           declaration->names[1].has_close != test_case.has_close or declaration->names[1].type != test_case.type) {
@@ -1225,6 +1226,164 @@ static bool test_implicit_later_name_attributes(kt::Log &Log)
    if (not has_view_diagnostic or has_expression_diagnostic) {
       Log.error("a later <view> attribute did not reach declaration validation");
       log_diagnostics(invalid_view.diagnostics, Log);
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+struct BindingDiscoveryResult {
+   ParserResult<std::unique_ptr<BlockStmt>> chunk;
+   std::vector<ParserDiagnostic> diagnostics;
+   std::unique_ptr<LuaStateHolder> state;
+};
+
+static BindingDiscoveryResult discover_bindings_from_source(std::string_view Source,
+   bool EnableTypeAnalysis = true, bool OpenLibraries = false, bool AddEnvironmentGlobal = false)
+{
+   BindingDiscoveryResult result;
+   result.state = std::make_unique<LuaStateHolder>();
+   lua_State *L = result.state->get();
+   if (OpenLibraries) luaL_openlibs(L);
+   if (AddEnvironmentGlobal) {
+      lua_pushnumber(L, 1);
+      lua_setglobal(L, "host_existing");
+   }
+
+   StringReaderCtx reader{ Source.data(), Source.size() };
+   LexState lex(L, unit_reader, &reader, "implicit-attribute-shadowing", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(L));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   config.enable_type_analysis = EnableTypeAnalysis;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   result.chunk = builder.parse_chunk();
+   if (result.chunk.ok()) {
+      discover_static_bindings(context, *result.chunk.value_ref());
+      if (EnableTypeAnalysis) run_type_analysis(context, *result.chunk.value_ref());
+   }
+
+   auto diagnostics = context.diagnostics().entries();
+   result.diagnostics.assign(diagnostics.begin(), diagnostics.end());
+   return result;
+}
+
+//********************************************************************************************************************
+
+static bool test_implicit_attribute_shadowing(kt::Log &Log)
+{
+   struct RejectedCase {
+      std::string_view name;
+      std::string_view source;
+      bool open_libraries = false;
+      bool add_environment_global = false;
+   };
+
+   constexpr std::array<RejectedCase, 17> rejected = { {
+      { "nested close", "thing = 'goodbye'\ndo\n   thing <close> = 'hello'\nend" },
+      { "nested const", "thing = 1\ndo\n   thing <const> = 2\nend" },
+      { "nested view", "thing = {}\ndo\n   thing <view> = {}\nend" },
+      { "same block", "thing = 1\nthing <const> = 2" },
+      { "parameter", "function test(thing)\n   thing <const> = 2\nend" },
+      { "captured local", "thing = 1\nfunction test()\n   thing <const> = 2\nend" },
+      { "declared global", "global thing = 1\nthing <const> = 2" },
+      { "global function", "global function thing() end\nthing <const> = 2" },
+      { "extern", "extern thing\nthing <const> = 2" },
+      { "environment global", "host_existing <const> = 2", false, true },
+      { "protected global", "print <const> = 2", true, false },
+      { "registered constant", "enum SHADOW { VALUE }\nSHADOW_VALUE <const> = 2" },
+      { "mixed sibling", "thing = 1\nfresh, thing <const> = 2, 3" },
+      { "duplicate sibling", "fresh, fresh <const> = 1, 2" },
+      { "constant-false branch", "thing = 1\nif false then\n   thing <const> = 2\nend" },
+      { "clause after constant-true", "thing = 1\nif true then\n   fresh = 2\nelseif true then\n"
+         "   thing <const> = 3\nend" },
+      { "earlier unreachable local", "if false then\n   local thing = 1\n   thing <const> = 2\nend" }
+   } };
+
+   for (const RejectedCase &test_case : rejected) {
+      auto result = discover_bindings_from_source(test_case.source, true,
+         test_case.open_libraries, test_case.add_environment_global);
+      size_t matching = 0;
+      for (const ParserDiagnostic &diagnostic : result.diagnostics) {
+         if (diagnostic.code IS ParserErrorCode::InvalidAssignment and
+             diagnostic.message.find("requires explicit 'local'") != std::string::npos) matching++;
+      }
+      if (not result.chunk.ok() or matching != 1) {
+         Log.error("implicit attributed %.*s shadow produced %zu targeted diagnostics",
+            int(test_case.name.size()), test_case.name.data(), matching);
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   auto unannotated_sibling = discover_bindings_from_source(
+      "thing = 1\nthing, fresh <const> = 2, 3");
+   if (unannotated_sibling.diagnostics.size() != 1 or
+       unannotated_sibling.diagnostics[0].code != ParserErrorCode::InvalidAssignment or
+       unannotated_sibling.diagnostics[0].token.span().line.lineNumber() != 2 or
+       unannotated_sibling.diagnostics[0].token.span().column.lineNumber() != 1) {
+      Log.error("an unannotated conflicting sibling did not report at its identifier");
+      log_diagnostics(unannotated_sibling.diagnostics, Log);
+      return false;
+   }
+
+   auto multiple = discover_bindings_from_source(
+      "first = 1\nsecond = 2\nfirst, second <const> = second, first");
+   if (not multiple.chunk.ok() or multiple.diagnostics.size() != 2) {
+      Log.error("multiple implicit attribute conflicts did not produce one diagnostic per name");
+      log_diagnostics(multiple.diagnostics, Log);
+      return false;
+   }
+   StatementListView multiple_statements = multiple.chunk.value_ref()->view();
+   const auto &first_assignment = std::get<AssignmentStmtPayload>(multiple_statements[0].data);
+   const auto &second_assignment = std::get<AssignmentStmtPayload>(multiple_statements[1].data);
+   const auto &declaration = std::get<LocalDeclStmtPayload>(multiple_statements[2].data);
+   const auto &first_rhs = std::get<NameRef>(declaration.values[0]->data);
+   const auto &second_rhs = std::get<NameRef>(declaration.values[1]->data);
+   const auto &first_original = std::get<NameRef>(first_assignment.targets[0]->data);
+   const auto &second_original = std::get<NameRef>(second_assignment.targets[0]->data);
+   if (first_rhs.binding_id != second_original.binding_id or second_rhs.binding_id != first_original.binding_id) {
+      Log.error("an invalid declaration changed right-hand-side binding resolution");
+      return false;
+   }
+
+   constexpr std::array<std::string_view, 8> accepted = { {
+      "thing = 1\ndo\n   local thing <const> = 2\nend",
+      "thing = nil\ndo\n   local thing <close> = nil\nend",
+      "thing = {}\ndo\n   local thing <view> = {}\nend",
+      "fresh <const> = 1",
+      "first, second <close> = nil, nil",
+      "local fresh, fresh <const> = 1, 2",
+      "_, fresh <const> = 1, 2",
+      "if false then\n   fresh <const> = 1\nend"
+   } };
+   for (std::string_view source : accepted) {
+      auto result = discover_bindings_from_source(source);
+      if (not result.chunk.ok() or not result.diagnostics.empty()) {
+         Log.error("valid explicit shadow or new implicit attributed local was rejected");
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   auto without_types = discover_bindings_from_source("thing = 1\nthing <const> = 2", false);
+   if (without_types.diagnostics.size() != 1 or
+       without_types.diagnostics[0].code != ParserErrorCode::InvalidAssignment) {
+      Log.error("implicit attribute shadowing depended on optional type analysis");
+      log_diagnostics(without_types.diagnostics, Log);
+      return false;
+   }
+
+   LocalDeclStmtPayload generated(AssignmentOperator::Plain, {}, {});
+   if (generated.implicit_declaration) {
+      Log.error("compiler-generated local declarations defaulted to implicit source provenance");
       return false;
    }
 
@@ -9635,7 +9794,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 89> tests = { {
+   constexpr std::array<TestCase, 90> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -9659,6 +9818,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
       { "implicit_later_name_attributes", test_implicit_later_name_attributes },
+      { "implicit_attribute_shadowing", test_implicit_attribute_shadowing },
       { "ternary_colon_separators", test_ternary_colon_separators },
       { "extended_ternary_annotation_lookahead", test_extended_ternary_annotation_lookahead },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
