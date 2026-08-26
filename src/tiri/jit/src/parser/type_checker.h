@@ -101,7 +101,7 @@ public:
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
    void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
       struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
-   void mark_dynamic_ingress(GCstr *);
+   void mark_dynamic_ingress(GCstr *, bool RequiresDestination);
 
    // Mark a variable as used (called when variable is referenced)
    void mark_used(GCstr *);

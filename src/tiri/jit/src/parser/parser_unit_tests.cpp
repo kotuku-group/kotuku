@@ -1156,6 +1156,108 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
       return false;
    }
 
+   LuaStateHolder implicit_holder;
+   lua_State *implicit = implicit_holder.get();
+   constexpr std::string_view implicit_redeclaration =
+      "total = 1\n"
+      "total:num = 5\n";
+   if (lua_load(implicit, implicit_redeclaration, "typed-implicit-local-redeclaration") IS 0) {
+      Log.error("a type annotation redeclared an existing implicit local");
+      return false;
+   }
+
+   error = lua_tostring(implicit, -1);
+   if (error.find("cannot redeclare existing local 'total' with a type annotation") IS std::string_view::npos) {
+      Log.error("typed implicit-local redeclaration produced the wrong diagnostic: %s", lua_tostring(implicit, -1));
+      return false;
+   }
+
+   LuaStateHolder dynamic_holder;
+   lua_State *dynamic = dynamic_holder.get();
+   constexpr std::string_view dynamic_implicit_local =
+      "function dynamic_value(Value:any):any return Value end\n"
+      "value = dynamic_value(1)\n"
+      "value = 'relaxed'\n"
+      "deferred = nil\n"
+      "deferred = dynamic_value(2)\n"
+      "deferred = 'also relaxed'\n"
+      "return value, deferred\n";
+   if (lua_load(dynamic, dynamic_implicit_local, "dynamic-implicit-local") or lua_pcall(dynamic, 0, 2, 0)) {
+      Log.error("an uninferable implicit local was not relaxed to 'any': %s", lua_tostring(dynamic, -1));
+      return false;
+   }
+   if (not lua_isstring(dynamic, -2) or std::string_view(lua_tostring(dynamic, -2)) != "relaxed" or
+       not lua_isstring(dynamic, -1) or std::string_view(lua_tostring(dynamic, -1)) != "also relaxed") {
+      Log.error("an implicit local relaxed to 'any' did not retain its reassigned value");
+      return false;
+   }
+
+   LuaStateHolder advisory_holder;
+   lua_State *advisory = advisory_holder.get();
+   lua_pushnumber(advisory, 1);
+   lua_setglobal(advisory, "host_dynamic");
+   constexpr std::string_view dynamic_implicit_global =
+      "function dynamic_value(Value:any):any return Value end\n"
+      "host_dynamic = dynamic_value('dynamic')\n"
+      "host_dynamic = 2\n"
+      "return host_dynamic\n";
+   if (lua_load(advisory, dynamic_implicit_global, "dynamic-implicit-global") or lua_pcall(advisory, 0, 1, 0)) {
+      Log.error("an advisory implicit global retained local-only inference state: %s", lua_tostring(advisory, -1));
+      return false;
+   }
+   if (lua_tonumber(advisory, -1) != 2) {
+      Log.error("an advisory implicit global did not retain its concrete reassignment");
+      return false;
+   }
+
+   LuaStateHolder fallback_holder;
+   lua_State *fallback = fallback_holder.get();
+   constexpr std::string_view logical_fallback =
+      "function select_value(Flag:bool):num\n"
+      "   value = Flag and 1 or 2\n"
+      "   value = {}\n"
+      "   return value\n"
+      "end\n";
+   if (lua_load(fallback, logical_fallback, "logical-fallback-type") IS 0) {
+      Log.error("an and/or fallback chain lost the shared type of its terminal branches");
+      return false;
+   }
+   error = lua_tostring(fallback, -1);
+   if (error.find("cannot assign 'table' to variable of type 'num'") IS std::string_view::npos) {
+      Log.error("an and/or fallback chain produced the wrong sticky-type diagnostic: %s", lua_tostring(fallback, -1));
+      return false;
+   }
+
+   LuaStateHolder heterogeneous_holder;
+   lua_State *heterogeneous = heterogeneous_holder.get();
+   constexpr std::string_view heterogeneous_fallback =
+      "function select_array(Flag:bool)\n"
+      "   value = Flag and array<int> { 1 } or array<str> { 'two' }\n"
+      "   value = array<float> { 3 }\n"
+      "   return value\n"
+      "end\n";
+   if (lua_load(heterogeneous, heterogeneous_fallback, "heterogeneous-fallback-type")) {
+      Log.error("an and/or fallback chain conflated distinct array types: %s", lua_tostring(heterogeneous, -1));
+      return false;
+   }
+
+   LuaStateHolder missing_scalar_holder;
+   lua_State *missing_scalar = missing_scalar_holder.get();
+   constexpr std::string_view missing_scalar_result =
+      "first, deferred = 1\n"
+      "deferred = 2\n"
+      "deferred = 'invalid'\n";
+   if (lua_load(missing_scalar, missing_scalar_result, "missing-scalar-result") IS 0) {
+      Log.error("a missing scalar assignment result relaxed an implicit local to 'any'");
+      return false;
+   }
+   error = lua_tostring(missing_scalar, -1);
+   if (error.find("cannot assign 'str' to variable of type 'num'") IS std::string_view::npos) {
+      Log.error("a missing scalar assignment result produced the wrong sticky-type diagnostic: %s",
+         lua_tostring(missing_scalar, -1));
+      return false;
+   }
+
    LuaStateHolder mixed_holder;
    lua_State *mixed = mixed_holder.get();
    constexpr std::string_view mixed_assignment =
