@@ -2958,6 +2958,22 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                      return *truth ? left_type : right_type;
                   }
 
+                  // In the common `condition and truthy_value or fallback` form, the falsey result of the inner
+                  // `and` is discarded by the outer `or`.  When both surviving branches share a concrete type, retain
+                  // that type instead of treating the intermediate `and` result as an unrepresentable union.
+
+                  if (payload->op IS AstBinaryOperator::LogicalOr and payload->left and
+                      payload->left->kind IS AstNodeKind::BinaryExpr) {
+                     const auto &conditional = std::get<BinaryExprPayload>(payload->left->data);
+                     if (conditional.op IS AstBinaryOperator::LogicalAnd and conditional.right) {
+                        InferredType truthy_type = this->infer_expression_type(*conditional.right);
+                        if ((truthy_type.primary IS right_type.primary) and
+                            (right_type.primary != TiriType::Any) and (right_type.primary != TiriType::Unknown)) {
+                           return right_type;
+                        }
+                     }
+                  }
+
                   // If both operands have the same concrete type, return that
 
                   if ((left_type.primary IS right_type.primary) and (left_type.primary != TiriType::Any) and

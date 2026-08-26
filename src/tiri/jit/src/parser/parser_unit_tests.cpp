@@ -1210,6 +1210,24 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
       return false;
    }
 
+   LuaStateHolder fallback_holder;
+   lua_State *fallback = fallback_holder.get();
+   constexpr std::string_view logical_fallback =
+      "function select_value(Flag:bool):num\n"
+      "   value = Flag and 1 or 2\n"
+      "   value = {}\n"
+      "   return value\n"
+      "end\n";
+   if (lua_load(fallback, logical_fallback, "logical-fallback-type") IS 0) {
+      Log.error("an and/or fallback chain lost the shared type of its terminal branches");
+      return false;
+   }
+   error = lua_tostring(fallback, -1);
+   if (error.find("cannot assign 'table' to variable of type 'num'") IS std::string_view::npos) {
+      Log.error("an and/or fallback chain produced the wrong sticky-type diagnostic: %s", lua_tostring(fallback, -1));
+      return false;
+   }
+
    LuaStateHolder mixed_holder;
    lua_State *mixed = mixed_holder.get();
    constexpr std::string_view mixed_assignment =
