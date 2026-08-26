@@ -78,11 +78,6 @@ private:
       return {};
    }
 
-   [[nodiscard]] bool is_declared_global(GCstr *Name) const
-   {
-      return std::find(this->global_names_.begin(), this->global_names_.end(), Name) != this->global_names_.end();
-   }
-
    [[nodiscard]] bool is_registered_constant(GCstr *Name) const
    {
       if (not Name) return false;
@@ -94,7 +89,9 @@ private:
    [[nodiscard]] bool implicit_declaration_conflicts(GCstr *Name) const
    {
       if (not Name) return false;
-      if (this->resolve(Name) or this->is_declared_global(Name) or this->is_registered_constant(Name)) return true;
+      if (this->resolve(Name) or
+          std::find(this->global_names_.begin(), this->global_names_.end(), Name) != this->global_names_.end() or
+          this->is_registered_constant(Name)) return true;
       if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return true;
 
       cTValue *global = lj_tab_getstr(tabref(this->context_.lua().env), Name);
@@ -125,15 +122,36 @@ private:
       }
    }
 
+   void report_binding_invariant(const Identifier &Name, std::string Message)
+   {
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::InternalInvariant;
+      diagnostic.message = std::move(Message);
+      diagnostic.token = Token::from_span(Name.span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
+   }
+
+   [[nodiscard]] bool binding_is_catalogued(StaticBindingID Binding) const
+   {
+      return Binding and Binding.raw() < this->catalogue_.binding_count();
+   }
+
    StaticBindingID declare(Identifier &Name, const ExprNode *Initialiser, uint8_t ResultPosition,
       const FunctionExprPayload *Function = nullptr, bool IsParameter = false)
    {
-      if (this->validation_only_) {
-         StaticBindingID placeholder(1);
-         if (Name.symbol and not Name.is_blank) {
-            this->scopes_.back().entries.emplace_back(Name.symbol, placeholder);
-         }
-         return placeholder;
+      if (not Name.symbol or Name.is_blank) {
+         if (Name.binding_id) this->report_binding_invariant(Name,
+            "blank or unnamed declaration unexpectedly has a published binding");
+         return {};
+      }
+
+      StaticBindingID expected(this->catalogue_.binding_count());
+      if (Name.binding_id != expected) {
+         this->report_binding_invariant(Name, std::format(
+            "published binding {} for '{}' disagrees with descriptor position {}",
+            Name.binding_id.raw(), std::string_view(strdata(Name.symbol), Name.symbol->len), expected.raw()));
+         return {};
       }
 
       StaticBindingDescriptor binding;
@@ -146,13 +164,55 @@ private:
       binding.is_parameter = IsParameter;
       binding.is_variant = Name.type IS TiriType::Any;
       StaticBindingID id = this->catalogue_.add_binding(binding);
-      Name.binding_id = id;
-      if (Name.symbol and not Name.is_blank) this->scopes_.back().entries.emplace_back(Name.symbol, id);
+      this->scopes_.back().entries.emplace_back(Name.symbol, id);
       return id;
+   }
+
+   void attach_assignment_write(NameRef &Reference)
+   {
+      AssignmentTargetResolution category = Reference.assignment_resolution;
+      if (category IS AssignmentTargetResolution::Unresolved or
+          category IS AssignmentTargetResolution::NewLocal) {
+         this->report_binding_invariant(Reference.identifier,
+            "assignment target reached descriptor discovery without a usable storage category");
+         return;
+      }
+      bool lexical = assignment_target_is_existing_lexical(category);
+      bool has_binding = bool(Reference.binding_id);
+      if (not lexical) {
+         if (has_binding) {
+            this->report_binding_invariant(Reference.identifier,
+               "non-lexical assignment target unexpectedly has a published binding");
+         }
+         return;
+      }
+
+      StaticBindingID resolved = this->resolve(Reference.identifier.symbol);
+      if (not has_binding or Reference.identifier.binding_id != Reference.binding_id or
+          resolved != Reference.binding_id or not this->binding_is_catalogued(Reference.binding_id)) {
+         this->report_binding_invariant(Reference.identifier,
+            "lexical assignment target does not agree with its published binding");
+         return;
+      }
+
+      auto &binding = this->catalogue_.binding(Reference.binding_id);
+      bool expected_upvalue = binding.function_depth < this->function_depth_;
+      if ((category IS AssignmentTargetResolution::ExistingUpvalue) != expected_upvalue) {
+         this->report_binding_invariant(Reference.identifier,
+            "assignment target local/upvalue category disagrees with its binding depth");
+         return;
+      }
+      if (this->validation_only_) return;
+      if (expected_upvalue) binding.captured = true;
+      binding.immutable = false;
    }
 
    void reference(NameRef &Reference, bool Write = false)
    {
+      if (Write) {
+         this->attach_assignment_write(Reference);
+         return;
+      }
       if (this->validation_only_) return;
 
       StaticBindingID id = this->resolve(Reference.identifier.symbol);
@@ -162,7 +222,6 @@ private:
 
       auto &binding = this->catalogue_.binding(id);
       if (binding.function_depth < this->function_depth_) binding.captured = true;
-      if (Write) binding.immutable = false;
    }
 
    void discover_function(FunctionExprPayload &Function)
@@ -318,6 +377,7 @@ private:
       StaticDescriptorAnalyser validator(this->context_, this->native_calls_only_, true);
       validator.scopes_ = this->scopes_;
       validator.global_names_ = this->global_names_;
+      validator.function_depth_ = this->function_depth_;
       validator.discover_expression(Expression);
    }
 
@@ -326,6 +386,7 @@ private:
       StaticDescriptorAnalyser validator(this->context_, this->native_calls_only_, true);
       validator.scopes_ = this->scopes_;
       validator.global_names_ = this->global_names_;
+      validator.function_depth_ = this->function_depth_;
       validator.discover_block(Block);
    }
 
@@ -356,19 +417,16 @@ private:
 
                if (target->kind IS AstNodeKind::IdentifierExpr) {
                   auto &reference = std::get<NameRef>(target->data);
-                  GCstr *name = reference.identifier.symbol;
-                  bool protected_global = name and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0);
-                  bool creates_local = payload.op IS AssignmentOperator::Plain or
-                     payload.op IS AssignmentOperator::IfEmpty or payload.op IS AssignmentOperator::IfNil;
-                  if (creates_local and
-                      name and not reference.identifier.is_blank and not protected_global and
-                      not this->is_declared_global(name) and not this->resolve(name)) {
+                  if (reference.assignment_resolution IS AssignmentTargetResolution::NewLocal) {
                      const ExprNode *initialiser = i < payload.values.size() ? payload.values[i].get() :
                         (payload.values.empty() ? nullptr : payload.values.back().get());
                      uint8_t position = i < payload.values.size() ? 0 :
                         uint8_t(i - payload.values.size() + 1);
                      StaticBindingID binding = this->declare(reference.identifier, initialiser, position);
-                     if (not this->validation_only_) reference.binding_id = binding;
+                     if (reference.binding_id != binding or reference.identifier.binding_id != reference.binding_id) {
+                        this->report_binding_invariant(reference.identifier,
+                           "new-local assignment target does not agree with its descriptor binding");
+                     }
                      continue;
                   }
                }
@@ -436,11 +494,18 @@ private:
             }
             break;
          }
-         case AstNodeKind::WhileStmt:
-         case AstNodeKind::RepeatStmt: {
+         case AstNodeKind::WhileStmt: {
             auto &payload = std::get<LoopStmtPayload>(Statement.data);
             if (payload.condition) this->discover_expression(*payload.condition);
             if (payload.body) this->discover_block(*payload.body);
+            break;
+         }
+         case AstNodeKind::RepeatStmt: {
+            auto &payload = std::get<LoopStmtPayload>(Statement.data);
+            this->scopes_.push_back(BindingScope{});
+            if (payload.body) this->discover_block(*payload.body, false);
+            if (payload.condition) this->discover_expression(*payload.condition);
+            this->scopes_.pop_back();
             break;
          }
          case AstNodeKind::NumericForStmt: {
@@ -535,6 +600,7 @@ private:
          case AstNodeKind::ImportStmt: {
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
                if (entry.inlined_body) this->discover_block(*entry.inlined_body);
+               if (entry.namespace_name) this->declare(*entry.namespace_name, nullptr, 0);
             }
             break;
          }

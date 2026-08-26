@@ -126,7 +126,9 @@ private:
 
    [[nodiscard]] ParserResult<std::unique_ptr<BlockStmt>> parse_block(std::span<const TokenKind> terminators);
    ParserResult<StmtNodePtr> parse_statement();
-   ParserResult<StmtNodePtr> parse_local();
+   ParserResult<StmtNodePtr> parse_explicit_local_declaration();
+   ParserResult<StmtNodePtr> parse_bare_annotated_assignment();
+   ParserResult<StmtNodePtr> parse_local_name_list(const Token &StartToken, bool BareAnnotatedSyntax);
    ParserResult<StmtNodePtr> parse_global();
    ParserResult<StmtNodePtr> parse_extern();
    ParserResult<StmtNodePtr> parse_enum(const Token &StartToken);

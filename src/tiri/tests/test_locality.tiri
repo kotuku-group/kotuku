@@ -72,6 +72,26 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- A global declared in one function must not affect assignment resolution in a sibling function.
+
+@Test function NestedGlobalDeclarationDoesNotLeakToSibling()
+   defer rawset(_G, 'nested_declaration_only', nil) end
+
+   local function declare_global()
+      global nested_declaration_only = 'global value'
+   end
+
+   local function assign_local()
+      nested_declaration_only = 'local value'
+      return true
+   end
+
+   assert(assign_local(), 'The sibling assignment function should run')
+   assert(rawget(_G, 'nested_declaration_only') is nil,
+      'A nested global declaration must not redirect a sibling assignment to the environment')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test that local shadows global
 
 @Test(hotpath=true) function LocalShadowsGlobal()

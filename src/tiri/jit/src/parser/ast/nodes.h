@@ -187,6 +187,20 @@ enum class NameResolution : uint8_t {
    BuiltinCallable
 };
 
+enum class AssignmentTargetResolution : uint8_t {
+   Unresolved,
+   Blank,
+   ExistingLocal,
+   ExistingUpvalue,
+   ExistingGlobal,
+   NewLocal,
+   Invalid
+};
+
+[[nodiscard]] bool assignment_target_is_existing_lexical(AssignmentTargetResolution Resolution) noexcept;
+[[nodiscard]] bool assignment_target_is_existing_storage(AssignmentTargetResolution Resolution) noexcept;
+[[nodiscard]] bool assignment_target_creates_local(AssignmentTargetResolution Resolution) noexcept;
+
 enum class TableFieldKind : uint8_t {
    Array,
    Record,
@@ -274,6 +288,7 @@ struct Identifier {
 struct NameRef {
    Identifier identifier;
    NameResolution resolution = NameResolution::Unresolved;
+   AssignmentTargetResolution assignment_resolution = AssignmentTargetResolution::Unresolved;
    uint16_t slot = 0;
    mutable StaticBindingID binding_id{};
 };

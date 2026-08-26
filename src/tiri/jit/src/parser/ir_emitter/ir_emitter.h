@@ -12,10 +12,10 @@
 
 #include "../ast/nodes.h"
 #include "../constant_evaluator.h"
+#include "../parse_regalloc.h"
 #include "operator_emitter.h"
 #include "../parser_context.h"
 #include "../parse_control_flow.h"
-#include "../parse_regalloc.h"
 #include "../parse_types.h"
 
 //********************************************************************************************************************
@@ -265,7 +265,9 @@ private:
    ParserResult<IrEmitUnit> emit_annotation_registration(BCReg func_reg, const std::vector<AnnotationEntry>& annotations, GCstr* funcname);
    ParserResult<ExpDesc> emit_expression_list(const ExprNodeList& expressions, BCReg& count);
    ParserResult<ExpDesc> emit_lvalue_expr(
-      const ExprNode& expr, bool allow_new_local = true, ControlFlowEdge* safe_nav_skip = nullptr);
+      const ExprNode& expr, bool allow_new_local = true, ControlFlowEdge* safe_nav_skip = nullptr,
+      bool UseAssignmentResolution = true);
+   ParserResult<ExpDesc> emit_assignment_identifier(const NameRef &, bool AllocNewLocal);
    ParserResult<ControlFlowEdge> emit_condition_jump(const ExprNode& expr);
    ParserResult<ExpDesc> emit_function_lvalue(const FunctionNamePath& path);
    ParserResult<std::vector<PreparedAssignment>> prepare_assignment_targets(
@@ -300,7 +302,7 @@ private:
       GCstr *Symbol, BCReg Slot, std::optional<CompileTimeValue> Value = std::nullopt) {
       this->binding_table.add(Symbol, Slot, std::move(Value));
    }
-   inline void release_expression(ExpDesc &expression, std::string_view usage) { expr_free(&this->func_state, &expression); this->ensure_register_floor(usage); }
+   void release_expression(ExpDesc &Expression, std::string_view Usage);
 
    struct LoopContext {
       ControlFlowEdge break_edge;

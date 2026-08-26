@@ -2,6 +2,7 @@
 
 import './type_contract_fixture'
 import './typ08_reduced_import_fixture'
+import './type_contract_local_store_fixture'
 
 struct ContractAlpha
    Value: int
@@ -238,6 +239,20 @@ target.acRefresh()
    assert(script.errorMessage.startsWith("[script:2:0] type contract failed for parameter 1 ('Window')"),
       'A native callback contract failure should report its Tiri source and line with an unavailable column: ' ..
       script.errorMessage)
+end
+
+@Test function LocalStoreContractLocation()
+   local failed = false
+   try
+      imported_local_store_contract_failure(true)
+   except e
+      failed = true
+      assert(tostring(e.source).endsWith('type_contract_local_store_fixture.tiri'),
+         'A local-store contract failure should retain the defining source file: ' .. tostring(e.source))
+      assert(e.line is 3,
+         'A local-store contract failure should report the failing assignment line: ' .. tostring(e.line))
+   end
+   assert(failed, 'The incompatible local store should fail its runtime contract')
 end
 
 @Test function ImportedNativeCallbackContractLocation()

@@ -1182,15 +1182,25 @@ std::optional<CompileTimeValue> IrEmitter::resolve_compile_time_value(const Name
 void IrEmitter::apply_inferred_local_type(BCReg Slot, const ExprNode& Value)
 {
    InferredTypeInfo inferred = infer_expression_type_ext(Value);
+   const StaticValueDescriptor *descriptor = Value.static_value ?
+      &this->ctx.descriptors().value(Value.static_value) : nullptr;
+   bool descriptor_is_complete = descriptor and
+      (descriptor->primary != TiriType::Array or descriptor->array_element.known);
+   if (descriptor and (inferred.type IS TiriType::Unknown or inferred.type IS TiriType::Any) and
+       descriptor->primary != TiriType::Unknown and descriptor->primary != TiriType::Any and
+       descriptor_is_complete) {
+      inferred.type = descriptor->primary;
+      inferred.object_class_id = descriptor->object_class_id;
+      inferred.struct_def = descriptor->struct_def;
+   }
    if (inferred.type IS TiriType::Unknown or inferred.type IS TiriType::Any or inferred.type IS TiriType::Nil) return;
+   if (inferred.type IS TiriType::Array and not descriptor_is_complete) return;
 
    VarInfo *info = &this->func_state.var_get(Slot.raw());
    info->fixed_type = inferred.type;
    info->object_class_id = (inferred.type IS TiriType::Object) ? inferred.object_class_id : CLASSID::NIL;
    info->struct_def = inferred.struct_def;
-   if (Value.static_value) {
-      info->array_element = this->ctx.descriptors().value(Value.static_value).array_element;
-   }
+   if (descriptor) info->array_element = descriptor->array_element;
    info->static_value = Value.static_value;
    info->static_results = Value.static_results;
 }
@@ -1204,7 +1214,8 @@ bool IrEmitter::apply_analysed_local_type(BCReg Slot, StaticBindingID Binding)
 
    const auto &value = this->ctx.descriptors().value(binding.analysed_value);
    if (value.primary IS TiriType::Unknown or value.primary IS TiriType::Any or
-       value.primary IS TiriType::Nil) return false;
+       value.primary IS TiriType::Nil or
+       (value.primary IS TiriType::Array and not value.array_element.known)) return false;
 
    VarInfo *info = &this->func_state.var_get(Slot.raw());
    info->fixed_type = value.primary;
@@ -1224,12 +1235,15 @@ void IrEmitter::assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) 
    if (not binding.analysed_value) return;
 
    const auto &value = this->ctx.descriptors().value(binding.analysed_value);
+   if (value.primary IS TiriType::Array and not value.array_element.known) return;
    const VarInfo &info = this->func_state.var_get(Slot.raw());
    lj_assertX(info.fixed_type IS value.primary, "analysed and emitted binding types diverged");
    lj_assertX(info.object_class_id IS value.object_class_id, "analysed and emitted binding object classes diverged");
    lj_assertX(info.struct_def IS value.struct_def, "analysed and emitted binding structures diverged");
-   lj_assertX(info.array_element IS value.array_element,
-      "analysed and emitted binding array member types diverged");
+   if (value.array_element.known) {
+      lj_assertX(info.array_element IS value.array_element,
+         "analysed and emitted binding array member types diverged");
+   }
 #endif
 }
 
@@ -2569,7 +2583,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_numeric_for_stmt(const NumericForStmtPa
       FuncScope visible_scope;
       ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
       this->lex_state.var_add(1);
-      fs->var_get(base.raw() + FORL_EXT).fixed_type = TiriType::Num;
+      VarInfo &control = fs->var_get(base.raw() + FORL_EXT);
+      control.fixed_type = TiriType::Num;
+      control.binding_id = Payload.control.binding_id;
+      control.static_value = Payload.control.static_value;
       RegisterAllocator allocator(fs);
       allocator.reserve(BCReg(1));
       std::array<BlockBinding, 1> loop_bindings{};
@@ -2691,7 +2708,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_range_for_stmt(const RangeForStmtPayloa
       ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
       this->lex_state.var_add(1);
       BCReg value_slot(base.raw() + BCREG(direct_integer ? int(FORL_EXT) : int(RANGE_FOR_VALUE)));
-      fs->var_get(value_slot.raw()).fixed_type = TiriType::Num;
+      VarInfo &control = fs->var_get(value_slot.raw());
+      control.fixed_type = TiriType::Num;
+      control.binding_id = Payload.control.binding_id;
+      control.static_value = Payload.control.static_value;
       RegisterAllocator allocator(fs);
       allocator.reserve(BCReg(1));
       if (not direct_integer) bcemit_AD(fs, BC_RANGEVAL, base, 0);
@@ -4549,6 +4569,15 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
    fs->freereg = base + 1;
 
    return ParserResult<ExpDesc>::success(result);
+}
+
+//********************************************************************************************************************
+// Release an emitted expression and restore the register floor.
+
+void IrEmitter::release_expression(ExpDesc &Expression, std::string_view Usage)
+{
+   expr_free(&this->func_state, &Expression);
+   this->ensure_register_floor(Usage);
 }
 
 //********************************************************************************************************************

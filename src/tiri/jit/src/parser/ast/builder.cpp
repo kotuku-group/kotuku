@@ -809,11 +809,10 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 }
 
 //********************************************************************************************************************
-// Check if any identifier in a comma-separated name list has a type annotation or recognised declaration attribute.
-// Patterns: `name:type`, `name <attr>`, `name, name:type`, `name, name <attr>`
-// Returns true if this looks like an implicit local declaration.
+// Checks whether a bare comma-separated name list contains a type annotation or recognised declaration attribute.
+// Patterns: `name:type`, `name <attr>`, `name, name:type`, `name, name <attr>`.
 
-static bool is_implicit_local_declaration(TokenStreamAdapter &Tokens)
+static bool starts_bare_annotated_name_list(TokenStreamAdapter &Tokens)
 {
    if (Tokens.current().kind() != TokenKind::Identifier) return false;
 
@@ -866,7 +865,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
 
    switch (current.kind()) {
       case TokenKind::Annotate:      return this->parse_annotated_statement();
-      case TokenKind::Local:         return this->parse_local();
+      case TokenKind::Local:         return this->parse_explicit_local_declaration();
       case TokenKind::Global:        return this->parse_global();
       case TokenKind::ExternToken:   return this->parse_extern();
       case TokenKind::Enum:          return this->parse_enum(current);
@@ -910,9 +909,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
             }
          }
 
-         // A type annotation or declaration attribute does not change Tiri's local-by-default assignment semantics.
-         if (is_implicit_local_declaration(this->ctx.tokens())) {
-            return this->parse_local();
+         // This is syntax routing only.  Assignment target resolution decides whether a bare typed assignment creates
+         // a local or writes existing storage.  Declaration attributes retain their legacy declaration AST path.
+         if (starts_bare_annotated_name_list(this->ctx.tokens())) {
+            return this->parse_bare_annotated_assignment();
          }
          return this->parse_expression_stmt();
       }

@@ -51,6 +51,7 @@ static const struct {
 #include "parse_internal.h"
 #include "parser_symbols.h"
 #include "parser_profiler.h"
+#include "assignment_target_resolution.h"
 #include "static_type_descriptor.h"
 #include "static_descriptor_analysis.h"
 #include "value_categories.h"
@@ -64,6 +65,7 @@ static const struct {
 #include "static_descriptor_analysis.cpp"
 #include "table_ownership.cpp"
 #include "ast/nodes.cpp"
+#include "assignment_target_resolution.cpp"
 #include "ast/builder.cpp"
 #include "parser_symbols.cpp"
 #include "parse_control_flow.cpp"
@@ -196,6 +198,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    }
 
    trace_ast_boundary(Context, *chunk, "parse");
+   resolve_assignment_targets(Context, *chunk);
    discover_static_bindings(Context, *chunk);
    // Publish the first descriptor pass before semantic type analysis so dynamic-ingress policy can distinguish
    // genuinely unknown values from concrete native and callable results.  A second pass below refreshes descriptors

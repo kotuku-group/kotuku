@@ -37,6 +37,7 @@
 
 #include "ast/builder.h"
 #include "ast/nodes.h"
+#include "assignment_target_resolution.h"
 #include "parser_context.h"
 #include "parser_diagnostics.h"
 #include "parse_types.h"
@@ -46,6 +47,7 @@
 #include "parser.h"
 #include "static_descriptor_analysis.h"
 #include "table_ownership.h"
+#include "ir_emitter/ir_emitter.h"
 #include "../runtime/lj_array.h"
 #include "../../../defs.h"
 
@@ -83,6 +85,57 @@ static std::string describe_instruction(BCIns instruction)
    std::snprintf(buffer, sizeof(buffer), "%s op=%d a=%d b=%d c=%d d=%d", name, (int)op,
       (int)bc_a(instruction), (int)bc_b(instruction), (int)bc_c(instruction), (int)bc_d(instruction));
    return std::string(buffer);
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_resolution_ast(kt::Log &Log)
+{
+   NameRef reference;
+   if (reference.resolution != NameResolution::Unresolved or
+       reference.assignment_resolution != AssignmentTargetResolution::Unresolved) {
+      Log.error("a default name reference did not retain independent unresolved read and assignment categories");
+      return false;
+   }
+
+   constexpr std::array<AssignmentTargetResolution, 7> categories = { {
+      AssignmentTargetResolution::Unresolved,
+      AssignmentTargetResolution::Blank,
+      AssignmentTargetResolution::ExistingLocal,
+      AssignmentTargetResolution::ExistingUpvalue,
+      AssignmentTargetResolution::ExistingGlobal,
+      AssignmentTargetResolution::NewLocal,
+      AssignmentTargetResolution::Invalid
+   } };
+
+   for (AssignmentTargetResolution category : categories) {
+      reference.resolution = NameResolution::BuiltinCallable;
+      reference.assignment_resolution = category;
+
+      ExprNodePtr expression = make_identifier_expr({}, reference);
+      ExprNode moved = std::move(*expression);
+      const auto *stored = std::get_if<NameRef>(&moved.data);
+      if (not stored or stored->resolution != NameResolution::BuiltinCallable or
+          stored->assignment_resolution != category) {
+         Log.error("an identifier AST copy or move lost assignment target category %d", int(category));
+         return false;
+      }
+   }
+
+   if (not assignment_target_is_existing_lexical(AssignmentTargetResolution::ExistingLocal) or
+       not assignment_target_is_existing_lexical(AssignmentTargetResolution::ExistingUpvalue) or
+       assignment_target_is_existing_lexical(AssignmentTargetResolution::ExistingGlobal) or
+       not assignment_target_is_existing_storage(AssignmentTargetResolution::ExistingLocal) or
+       not assignment_target_is_existing_storage(AssignmentTargetResolution::ExistingUpvalue) or
+       not assignment_target_is_existing_storage(AssignmentTargetResolution::ExistingGlobal) or
+       assignment_target_is_existing_storage(AssignmentTargetResolution::NewLocal) or
+       not assignment_target_creates_local(AssignmentTargetResolution::NewLocal) or
+       assignment_target_creates_local(AssignmentTargetResolution::ExistingLocal)) {
+      Log.error("assignment target category predicates produced inconsistent semantic classifications");
+      return false;
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -160,6 +213,520 @@ static AstHarnessResult build_ast_from_source(std::string_view source, bool Diag
    auto diag_entries = context.diagnostics().entries();
    result.diagnostics.assign(diag_entries.begin(), diag_entries.end());
    return result;
+}
+
+//********************************************************************************************************************
+
+static AstHarnessResult build_resolved_ast_from_source(std::string_view Source,
+   bool OpenLibraries = false, bool AddEnvironmentGlobal = false, bool AddNilContract = false)
+{
+   AstHarnessResult result;
+   result.state = std::make_unique<LuaStateHolder>();
+   lua_State *L = result.state->get();
+   if (OpenLibraries) luaL_openlibs(L);
+   if (AddEnvironmentGlobal) {
+      lua_pushnumber(L, 1);
+      lua_setglobal(L, "host_existing");
+   }
+   if (AddNilContract) {
+      GCstr *name = lj_str_newlit(L, "contracted_nil");
+      GCstr *descriptor = lj_str_newlit(L, "persisted-contract");
+      lj_tab_set_global_contract(L, tabref(L->env), name, descriptor);
+   }
+
+   StringReaderCtx reader{ Source.data(), Source.size() };
+   LexState lex(L, unit_reader, &reader, "assignment-target-resolution", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(L));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   result.chunk = builder.parse_chunk();
+   if (result.chunk.ok()) resolve_assignment_targets(context, *result.chunk.value_ref());
+
+   auto diagnostics = context.diagnostics().entries();
+   result.diagnostics.assign(diagnostics.begin(), diagnostics.end());
+   return result;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_semantic_resolution(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "extern counter\n"
+      "counter:num = 2\n"
+      "local print = 0\n"
+      "print = 1\n"
+      "fresh, sibling = sibling, 2\n"
+      "after = sibling\n"
+      "missing += 1\n"
+      "_ = 5\n"
+      "function nested(Parameter)\n"
+      "   Parameter = 3\n"
+      "   print = 2\n"
+      "end\n"
+      "glHostThing = 4\n"
+      "global declared = 0\n"
+      "declared = 1\n"
+      "if_empty ?= 5\n"
+      "if_nil ?" "?= 6\n";
+
+   auto result = build_resolved_ast_from_source(source, true);
+   if (not result.chunk.ok() or not result.diagnostics.empty()) {
+      Log.error("assignment target semantic resolution fixture did not parse cleanly");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   auto assignment = [](BlockStmt &Block, size_t Index) -> AssignmentStmtPayload * {
+      if (Index >= Block.statements.size() or not Block.statements[Index] or
+          Block.statements[Index]->kind != AstNodeKind::AssignmentStmt) return nullptr;
+      return std::get_if<AssignmentStmtPayload>(&Block.statements[Index]->data);
+   };
+   auto target = [](AssignmentStmtPayload *Assignment, size_t Index) -> NameRef * {
+      if (not Assignment or Index >= Assignment->targets.size() or not Assignment->targets[Index]) return nullptr;
+      return std::get_if<NameRef>(&Assignment->targets[Index]->data);
+   };
+
+   BlockStmt &chunk = *result.chunk.value_ref();
+   NameRef *external = target(assignment(chunk, 1), 0);
+   NameRef *local = target(assignment(chunk, 3), 0);
+   AssignmentStmtPayload *siblings = assignment(chunk, 4);
+   NameRef *fresh = target(siblings, 0);
+   NameRef *sibling = target(siblings, 1);
+   NameRef *missing = target(assignment(chunk, 6), 0);
+   NameRef *blank = target(assignment(chunk, 7), 0);
+   NameRef *named_external_policy = target(assignment(chunk, 9), 0);
+   NameRef *declared_global = target(assignment(chunk, 11), 0);
+   NameRef *if_empty = target(assignment(chunk, 12), 0);
+   NameRef *if_nil = target(assignment(chunk, 13), 0);
+   const auto *local_declaration = std::get_if<LocalDeclStmtPayload>(&chunk.statements[2]->data);
+   const auto *sibling_rhs = siblings and not siblings->values.empty() ?
+      std::get_if<NameRef>(&siblings->values.front()->data) : nullptr;
+   AssignmentStmtPayload *after = assignment(chunk, 5);
+   const auto *published_sibling = after and not after->values.empty() ?
+      std::get_if<NameRef>(&after->values.front()->data) : nullptr;
+
+   if (not external or external->assignment_resolution != AssignmentTargetResolution::ExistingGlobal or
+       external->resolution != NameResolution::Unresolved or not local or
+       local->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       not local_declaration or local_declaration->names.empty() or
+       local->binding_id != local_declaration->names.front().binding_id or
+       not fresh or fresh->assignment_resolution != AssignmentTargetResolution::NewLocal or not fresh->binding_id or
+       not sibling or sibling->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not sibling->binding_id or sibling->binding_id IS fresh->binding_id or
+       not sibling_rhs or sibling_rhs->binding_id or not published_sibling or
+       published_sibling->binding_id != sibling->binding_id or
+       not missing or missing->assignment_resolution != AssignmentTargetResolution::Invalid or
+       not blank or blank->assignment_resolution != AssignmentTargetResolution::Blank or
+       not named_external_policy or
+       named_external_policy->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not declared_global or
+       declared_global->assignment_resolution != AssignmentTargetResolution::ExistingGlobal or
+       not if_empty or if_empty->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not if_nil or if_nil->assignment_resolution != AssignmentTargetResolution::NewLocal) {
+      Log.error("assignment target categories or statement-order binding publication were incorrect");
+      return false;
+   }
+
+   const auto *function = std::get_if<FunctionStmtPayload>(&chunk.statements[8]->data);
+   BlockStmt *body = function and function->function ? function->function->body.get() : nullptr;
+   NameRef *parameter = body ? target(assignment(*body, 0), 0) : nullptr;
+   NameRef *upvalue = body ? target(assignment(*body, 1), 0) : nullptr;
+   if (not function or function->name.segments.empty() or not function->function or
+       function->function->parameters.empty() or not parameter or
+       parameter->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       parameter->binding_id != function->function->parameters.front().name.binding_id or not upvalue or
+       upvalue->assignment_resolution != AssignmentTargetResolution::ExistingUpvalue or
+       upvalue->binding_id != local_declaration->names.front().binding_id) {
+      Log.error("function parameters or captured assignment targets received the wrong lexical category");
+      return false;
+   }
+
+   auto environment = build_resolved_ast_from_source("host_existing = 2", false, true);
+   NameRef *environment_target = environment.chunk.ok() ?
+      target(assignment(*environment.chunk.value_ref(), 0), 0) : nullptr;
+   if (not environment_target or
+       environment_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("a non-nil environment global did not resolve as existing global storage");
+      return false;
+   }
+
+   auto protected_global = build_resolved_ast_from_source("print = 2", true);
+   NameRef *protected_target = protected_global.chunk.ok() ?
+      target(assignment(*protected_global.chunk.value_ref(), 0), 0) : nullptr;
+   if (not protected_target or
+       protected_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("an unshadowed protected global did not resolve as existing global storage");
+      return false;
+   }
+
+   auto contracted = build_resolved_ast_from_source("contracted_nil = 2", false, false, true);
+   NameRef *contracted_target = contracted.chunk.ok() ?
+      target(assignment(*contracted.chunk.value_ref(), 0), 0) : nullptr;
+   cTValue *contracted_value = lj_tab_getstr(
+      tabref(contracted.state->get()->env), lj_str_newlit(contracted.state->get(), "contracted_nil"));
+   if ((contracted_value and not tvisnil(contracted_value)) or not contracted_target or
+       contracted_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("a persisted contract did not keep its nil-valued name in global storage");
+      return false;
+   }
+
+   auto constant = build_resolved_ast_from_source("enum FLAGS { VALUE }\nFLAGS_VALUE = 2");
+   AssignmentStmtPayload *constant_assignment =
+      constant.chunk.ok() and not constant.chunk.value_ref()->statements.empty() ?
+         assignment(*constant.chunk.value_ref(), constant.chunk.value_ref()->statements.size() - 1) : nullptr;
+   NameRef *constant_target = target(constant_assignment, 0);
+   if (not constant_target or
+       constant_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("a registered constant assignment target was incorrectly classified as a new local");
+      return false;
+   }
+
+   auto update = build_resolved_ast_from_source("update_missing++");
+   const auto *expression_statement = update.chunk.ok() and not update.chunk.value_ref()->statements.empty() ?
+      std::get_if<ExpressionStmtPayload>(&update.chunk.value_ref()->statements.front()->data) : nullptr;
+   const auto *update_expression = expression_statement and expression_statement->expression ?
+      std::get_if<UpdateExprPayload>(&expression_statement->expression->data) : nullptr;
+   const NameRef *update_target = update_expression and update_expression->target ?
+      std::get_if<NameRef>(&update_expression->target->data) : nullptr;
+   if (not update_target or update_target->assignment_resolution != AssignmentTargetResolution::Invalid) {
+      Log.error("an undefined update target was not classified as invalid");
+      return false;
+   }
+
+   auto compound = build_resolved_ast_from_source("compound_missing -= 1");
+   NameRef *compound_target = compound.chunk.ok() ?
+      target(assignment(*compound.chunk.value_ref(), 0), 0) : nullptr;
+   if (not compound_target or compound_target->assignment_resolution != AssignmentTargetResolution::Invalid) {
+      Log.error("an undefined compound target was not classified as invalid");
+      return false;
+   }
+
+   constexpr std::string_view lvalue_source =
+      "local object = {}\n"
+      "local key = 'field'\n"
+      "object.field = 1\n"
+      "object[key] = 2\n"
+      "object?.field = 3\n"
+      "object?[key] = 4\n";
+   auto lvalues = build_resolved_ast_from_source(lvalue_source);
+   if (not lvalues.chunk.ok() or not lvalues.diagnostics.empty()) {
+      Log.error("member, index or safe-navigation assignment controls did not parse cleanly");
+      log_diagnostics(lvalues.diagnostics, Log);
+      return false;
+   }
+
+   constexpr std::array<AstNodeKind, 4> lvalue_kinds = { {
+      AstNodeKind::MemberExpr,
+      AstNodeKind::IndexExpr,
+      AstNodeKind::SafeMemberExpr,
+      AstNodeKind::SafeIndexExpr
+   } };
+   for (size_t i = 0; i < lvalue_kinds.size(); ++i) {
+      AssignmentStmtPayload *payload = assignment(*lvalues.chunk.value_ref(), i + 2);
+      if (not payload or payload->targets.size() IS 0 or
+          payload->targets.front()->kind != lvalue_kinds[i]) {
+         Log.error("non-identifier assignment control %zu changed AST shape", i);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_descriptor_discovery(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "if false then\n"
+      "   local unreachable = 0\n"
+      "end\n"
+      "fresh = 1\n"
+      "fresh = 2\n"
+      "function touch(parameter)\n"
+      "   fresh = parameter\n"
+      "end\n"
+      "extern external\n"
+      "external = 3\n"
+      "contracted_nil = 4\n"
+      "_ = 5\n"
+      "missing += 1\n"
+      "function pair():<num, num> return 6, 7 end\n"
+      "left, right = pair()\n";
+
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   GCstr *contracted_name = lj_str_newlit(lua, "contracted_nil");
+   lj_tab_set_global_contract(lua, tabref(lua->env), contracted_name, lj_str_newlit(lua, "persisted-contract"));
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(lua, unit_reader, &reader, "assignment-target-descriptors", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(lua));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Log.error("assignment descriptor fixture did not parse");
+      return false;
+   }
+   resolve_assignment_targets(context, *chunk.value_ref());
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   if (context.diagnostics().has_errors()) {
+      Log.error("assignment descriptor discovery reported an unexpected invariant");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+
+   auto target = [&chunk](size_t Statement) -> NameRef * {
+      if (Statement >= chunk.value_ref()->statements.size()) return nullptr;
+      auto *assignment = std::get_if<AssignmentStmtPayload>(&chunk.value_ref()->statements[Statement]->data);
+      if (not assignment or assignment->targets.empty() or not assignment->targets.front()) return nullptr;
+      return std::get_if<NameRef>(&assignment->targets.front()->data);
+   };
+
+   NameRef *fresh = target(1);
+   NameRef *existing = target(2);
+   NameRef *external = target(5);
+   NameRef *contracted = target(6);
+   NameRef *blank = target(7);
+   NameRef *invalid = target(8);
+   const auto *function = std::get_if<FunctionStmtPayload>(&chunk.value_ref()->statements[3]->data);
+   const auto *capture_assignment = function and function->function and function->function->body and
+      not function->function->body->statements.empty() ?
+         std::get_if<AssignmentStmtPayload>(&function->function->body->statements.front()->data) : nullptr;
+   const NameRef *capture = capture_assignment and not capture_assignment->targets.empty() and
+      capture_assignment->targets.front() ?
+         std::get_if<NameRef>(&capture_assignment->targets.front()->data) : nullptr;
+   const auto *pair_assignment = std::get_if<AssignmentStmtPayload>(&chunk.value_ref()->statements[10]->data);
+   const NameRef *left = pair_assignment and pair_assignment->targets.size() IS 2 ?
+      std::get_if<NameRef>(&pair_assignment->targets[0]->data) : nullptr;
+   const NameRef *right = pair_assignment and pair_assignment->targets.size() IS 2 ?
+      std::get_if<NameRef>(&pair_assignment->targets[1]->data) : nullptr;
+
+   if (not fresh or fresh->assignment_resolution != AssignmentTargetResolution::NewLocal or not fresh->binding_id or
+       not existing or existing->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       existing->binding_id != fresh->binding_id or not capture or
+       capture->assignment_resolution != AssignmentTargetResolution::ExistingUpvalue or
+       capture->binding_id != fresh->binding_id or not external or external->binding_id or not contracted or
+       contracted->binding_id or not blank or blank->binding_id or not invalid or invalid->binding_id or
+       not left or left->assignment_resolution != AssignmentTargetResolution::NewLocal or not left->binding_id or
+       not right or right->assignment_resolution != AssignmentTargetResolution::NewLocal or not right->binding_id) {
+      Log.error("descriptor discovery changed an assignment category or published binding");
+      return false;
+   }
+
+   // The unreachable local, fresh local, two local functions, parameter and result pair are the lexical declarations.
+   if (context.descriptors().binding_count() != 8) {
+      Log.error("assignment discovery allocated %zu descriptors instead of seven",
+         context.descriptors().binding_count() - 1);
+      return false;
+   }
+   const StaticBindingDescriptor &fresh_descriptor = context.descriptors().binding(fresh->binding_id);
+   if (fresh_descriptor.name != fresh->identifier.symbol or fresh_descriptor.immutable or
+       not fresh_descriptor.captured) {
+      Log.error("existing local/upvalue writes did not update the original descriptor");
+      return false;
+   }
+   const StaticBindingDescriptor &left_descriptor = context.descriptors().binding(left->binding_id);
+   const StaticBindingDescriptor &right_descriptor = context.descriptors().binding(right->binding_id);
+   if (left_descriptor.result_position != 0 or right_descriptor.result_position != 1 or
+       left_descriptor.initialiser != right_descriptor.initialiser) {
+      Log.error("multi-result assignment descriptors lost their source expression or result positions");
+      return false;
+   }
+
+   constexpr std::string_view invalid_source = "broken = 1";
+   LuaStateHolder invalid_state;
+   lua_State *invalid_lua = invalid_state.get();
+   StringReaderCtx invalid_reader{ invalid_source.data(), invalid_source.size() };
+   LexState invalid_lex(invalid_lua, unit_reader, &invalid_reader, "assignment-target-invariant", std::nullopt);
+   invalid_lex.diagnose_mode = true;
+   FuncState &invalid_fs = invalid_lex.fs_init();
+   ParserContext invalid_context = ParserContext::from(
+      invalid_lex, invalid_fs, ParserAllocator::from(invalid_lua));
+   ParserSession invalid_session(invalid_context, config);
+   invalid_lex.next();
+   AstBuilder invalid_builder(invalid_context);
+   auto invalid_chunk = invalid_builder.parse_chunk();
+   if (not invalid_chunk.ok()) return false;
+   resolve_assignment_targets(invalid_context, *invalid_chunk.value_ref());
+   auto &broken_assignment = std::get<AssignmentStmtPayload>(invalid_chunk.value_ref()->statements.front()->data);
+   auto &broken = std::get<NameRef>(broken_assignment.targets.front()->data);
+   broken.assignment_resolution = AssignmentTargetResolution::ExistingLocal;
+   broken.binding_id = {};
+   broken.identifier.binding_id = {};
+   discover_static_bindings(invalid_context, *invalid_chunk.value_ref());
+
+   bool found_invariant = false;
+   for (const ParserDiagnostic &diagnostic : invalid_context.diagnostics().entries()) {
+      if (diagnostic.code IS ParserErrorCode::InternalInvariant) found_invariant = true;
+   }
+   if (not found_invariant or invalid_context.descriptors().binding_count() != 1) {
+      Log.error("diagnose mode manufactured a binding instead of reporting the resolver mismatch");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_environment_types(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   luaL_openlibs(lua);
+   constexpr std::string_view declarations =
+      "struct AssignmentPersistedRecord Value: int end\n"
+      "global glAssignmentPersistedArray:array<int> = array<int> { 1 }\n"
+      "global glAssignmentPersistedStruct:struct<AssignmentPersistedRecord> = "
+         "struct<AssignmentPersistedRecord> { Value = 1 }\n";
+   if (lua_load(lua, declarations, "=assignment-environment-types") or lua_pcall(lua, 0, 0, 0)) {
+      Log.error("failed to establish persisted assignment types: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   lua_pushnil(lua);
+   lua_setglobal(lua, "glAssignmentPersistedArray");
+   lua_pushnil(lua);
+   lua_setglobal(lua, "glAssignmentPersistedStruct");
+
+   constexpr std::string_view source =
+      "extern glAssignmentPersistedArray, glAssignmentPersistedStruct\n"
+      "glAssignmentPersistedArray = array<int> { 2 }\n"
+      "glAssignmentPersistedStruct = struct<AssignmentPersistedRecord> { Value = 2 }\n";
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(lua, unit_reader, &reader, "assignment-environment-types", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(lua));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) return false;
+
+   resolve_assignment_targets(context, *chunk.value_ref());
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   run_type_analysis(context, *chunk.value_ref());
+   if (context.diagnostics().has_errors()) {
+      Log.error("persisted assignment types produced unexpected diagnostics");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+
+   GCstr *array_name = lj_str_newlit(lua, "glAssignmentPersistedArray");
+   GCstr *struct_name = lj_str_newlit(lua, "glAssignmentPersistedStruct");
+   auto array_hint = lex.global_type_hints.find(array_name);
+   auto struct_hint = lex.global_type_hints.find(struct_name);
+   struct_record *definition = find_struct(lua, "AssignmentPersistedRecord");
+   if (array_hint IS lex.global_type_hints.end() or struct_hint IS lex.global_type_hints.end() or
+       array_hint->second.primary != TiriType::Array or
+       array_hint->second.array_element.storage != AET::INT32 or
+       array_hint->second.contract_policy != GlobalContractPolicy::Advisory or
+       struct_hint->second.primary != TiriType::Struct or struct_hint->second.struct_def != definition or
+       struct_hint->second.contract_policy != GlobalContractPolicy::Advisory) {
+      Log.error("persisted array or structure identity was not seeded as advisory environment metadata");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_emitter_invariant(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "local value = 1\n"
+      "value = 2\n";
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(lua, unit_reader, &reader, "assignment-emitter-invariant", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(lua));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) return false;
+
+   resolve_assignment_targets(context, *chunk.value_ref());
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   run_type_analysis(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+
+   StatementListView statements = chunk.value_ref()->view();
+   auto *assignment = statements.size() IS 2 ?
+      std::get_if<AssignmentStmtPayload>(&statements[1].data) : nullptr;
+   auto *reference = assignment and assignment->targets.size() IS 1 ?
+      std::get_if<NameRef>(&assignment->targets[0]->data) : nullptr;
+   if (not reference or reference->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       not reference->binding_id) {
+      Log.error("emitter invariant fixture did not resolve to an existing local");
+      return false;
+   }
+
+   ++reference->binding_id;
+   reference->identifier.binding_id = reference->binding_id;
+   IrEmitter emitter(context);
+   auto emitted = emitter.emit_chunk(*chunk.value_ref());
+   if (emitted.ok() or emitted.error_ref().code != ParserErrorCode::InternalInvariant) {
+      Log.error("emitter accepted a lexical target whose binding disagreed with semantic resolution");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_new_local_emission(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "function values():<num, num> return 17, 23 end\n"
+      "first, second = values()\n"
+      "return first, second\n";
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   if (lua_load(lua, source, "assignment-new-local-emission")) {
+      Log.error("compiling deferred new-local assignment failed: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   if (lua_pcall(lua, 0, 2, 0)) {
+      Log.error("executing deferred new-local assignment failed: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   bool ordered = lua_tointeger(lua, -2) IS 17 and lua_tointeger(lua, -1) IS 23;
+   lua_pop(lua, 2);
+   if (not ordered) {
+      Log.error("deferred new-local assignment changed multi-result register ordering");
+      return false;
+   }
+
+   return true;
 }
 
 struct ExpressionParseHarness {
@@ -1095,7 +1662,7 @@ static bool test_colon_method_syntax_rejected(kt::Log &Log)
 
    auto implicit = build_ast_from_source("entry, count:num = 5, 6", true);
    if (not implicit.chunk.ok() or not implicit.diagnostics.empty()) {
-      Log.error("bare type-annotated assignment did not parse as an implicit local declaration");
+      Log.error("bare type-annotated assignment did not parse successfully");
       log_diagnostics(implicit.diagnostics, Log);
       return false;
    }
@@ -1280,6 +1847,84 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
 
 //********************************************************************************************************************
 
+static bool test_annotated_local_validation_parity(kt::Log &Log)
+{
+   struct ValidationCase {
+      std::string_view label;
+      std::string_view prefix;
+      std::string_view explicit_local;
+      std::string_view new_local;
+      std::string_view expected_error;
+   };
+
+   constexpr std::array<ValidationCase, 13> cases = { {
+      { "primary match", {}, "local value:num = 1", "value:num = 1", {} },
+      { "primary mismatch", {}, "local value:num = 'wrong'", "value:num = 'wrong'", "cannot assign 'str'" },
+      { "dynamic ingress", "function dynamic(Value:any):any return Value end\n",
+         "local value:num = dynamic(1)", "value:num = dynamic(1)", {} },
+      { "explicit any", {}, "local value:any = 1\nvalue = 'text'", "value:any = 1\nvalue = 'text'", {} },
+      { "structure match", "struct ParityRecord Value: int end\n",
+         "local value:struct<ParityRecord> = struct<ParityRecord> { Value = 1 }",
+         "value:struct<ParityRecord> = struct<ParityRecord> { Value = 1 }", {} },
+      { "structure mismatch", "struct ParityExpected Value: int end\nstruct ParityActual Value: double end\n",
+         "local value:struct<ParityExpected> = struct<ParityActual> { Value = 1 }",
+         "value:struct<ParityExpected> = struct<ParityActual> { Value = 1 }", "struct layout mismatch" },
+      { "array match", {}, "local value:array<int> = array<int> { 1 }",
+         "value:array<int> = array<int> { 1 }", {} },
+      { "array mismatch", {}, "local value:array<int> = array<str> { 'wrong' }",
+         "value:array<int> = array<str> { 'wrong' }", "array member mismatch" },
+      { "broad object", {}, "local value:obj = obj.new('time')\nvalue = obj.new('file')",
+         "value:obj = obj.new('time')\nvalue = obj.new('file')", {} },
+      { "inferred object match", {}, "local value = obj.new('time')\nvalue = obj.new('time')",
+         "value = obj.new('time')\nvalue = obj.new('time')", {} },
+      { "inferred object mismatch", {}, "local value = obj.new('time')\nvalue = obj.new('file')",
+         "value = obj.new('time')\nvalue = obj.new('file')", "object class mismatch" },
+      { "multi-result mismatch", "local function pair():<num, str> return 1, 'wrong' end\n",
+         "local first:num, second:bool = pair()", "first:num, second:bool = pair()", "cannot assign 'str'" },
+      { "missing result", "local function one():num return 1 end\n",
+         "local first:num, second:str = one()", "first:num, second:str = one()", {} }
+   } };
+
+   auto compile = [](const ValidationCase &Case, std::string_view Declaration, std::string &Error) {
+      LuaStateHolder holder;
+      lua_State *lua = holder.get();
+      luaL_openlibs(lua);
+      std::string source(Case.prefix);
+      source.append(Declaration);
+      if (lua_load(lua, source, Case.label.data())) {
+         Error.assign(lua_tostring(lua, -1));
+         return false;
+      }
+      lua_pop(lua, 1);
+      Error.clear();
+      return true;
+   };
+
+   for (const ValidationCase &test_case : cases) {
+      std::string explicit_error;
+      std::string assignment_error;
+      bool explicit_ok = compile(test_case, test_case.explicit_local, explicit_error);
+      bool assignment_ok = compile(test_case, test_case.new_local, assignment_error);
+      bool expected_ok = test_case.expected_error.empty();
+      if (explicit_ok != expected_ok or assignment_ok != expected_ok) {
+         Log.error("annotated %.*s parity failed: explicit='%s', assignment='%s'",
+            int(test_case.label.size()), test_case.label.data(), explicit_error.c_str(), assignment_error.c_str());
+         return false;
+      }
+      if (not expected_ok and
+          (explicit_error.find(test_case.expected_error) IS std::string::npos or
+           assignment_error.find(test_case.expected_error) IS std::string::npos)) {
+         Log.error("annotated %.*s parity produced different diagnostics: explicit='%s', assignment='%s'",
+            int(test_case.label.size()), test_case.label.data(), explicit_error.c_str(), assignment_error.c_str());
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_implicit_later_name_attributes(kt::Log &Log)
 {
    struct AttributeCase {
@@ -1368,6 +2013,7 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
    AstBuilder builder(context);
    result.chunk = builder.parse_chunk();
    if (result.chunk.ok()) {
+      resolve_assignment_targets(context, *result.chunk.value_ref());
       discover_static_bindings(context, *result.chunk.value_ref());
       if (EnableTypeAnalysis) run_type_analysis(context, *result.chunk.value_ref());
    }
@@ -1375,6 +2021,153 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
    auto diagnostics = context.diagnostics().entries();
    result.diagnostics.assign(diagnostics.begin(), diagnostics.end());
    return result;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_regressions(kt::Log &Log)
+{
+   auto first_target = [](BindingDiscoveryResult &Result, size_t Statement = 0) -> NameRef * {
+      if (not Result.chunk.ok() or Statement >= Result.chunk.value_ref()->statements.size()) return nullptr;
+      auto *assignment = std::get_if<AssignmentStmtPayload>(
+         &Result.chunk.value_ref()->statements[Statement]->data);
+      if (not assignment or assignment->targets.empty() or not assignment->targets.front()) return nullptr;
+      return std::get_if<NameRef>(&assignment->targets.front()->data);
+   };
+   auto has_diagnostic = [](const std::vector<ParserDiagnostic> &Diagnostics, std::string_view Text) {
+      return std::ranges::any_of(Diagnostics, [Text](const ParserDiagnostic &Diagnostic) {
+         return Diagnostic.message.find(Text) != std::string::npos;
+      });
+   };
+   auto count_root_opcode = [](lua_State *Lua, BCOp Opcode) {
+      GCproto *prototype = funcproto(funcV(Lua->top - 1));
+      size_t count = 0;
+      for (MSize i = 1; i < prototype->sizebc; ++i) {
+         if (bc_op(proto_bc(prototype)[i]) IS Opcode) ++count;
+      }
+      return count;
+   };
+
+   auto typed_extern = discover_bindings_from_source("extern counter\ncounter:num = 2");
+   NameRef *typed_extern_target = first_target(typed_extern, 1);
+   if (not typed_extern_target or
+       typed_extern_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal or
+       not has_diagnostic(typed_extern.diagnostics,
+          "cannot redeclare existing global 'counter' with a type annotation")) {
+      Log.error("a typed named-extern assignment lost its category or redeclaration diagnostic");
+      log_diagnostics(typed_extern.diagnostics, Log);
+      return false;
+   }
+
+   auto fresh_typed = discover_bindings_from_source("fresh:num = 2");
+   NameRef *fresh_target = first_target(fresh_typed);
+   if (not fresh_target or fresh_target->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not fresh_target->binding_id or fresh_target->identifier.type != TiriType::Num or
+       not fresh_typed.diagnostics.empty()) {
+      Log.error("a fresh typed assignment did not publish a typed NewLocal binding");
+      log_diagnostics(fresh_typed.diagnostics, Log);
+      return false;
+   }
+
+   LuaStateHolder import_holder;
+   lua_State *import_state = import_holder.get();
+   if (lua_load(import_state, "import 'options'\noptions = {}", "=assignment-import-namespace") IS 0) {
+      Log.error("an imported namespace assignment unexpectedly compiled");
+      return false;
+   }
+   std::string_view import_error(lua_tostring(import_state, -1));
+   if (import_error.find("cannot assign to const local 'options'") IS std::string_view::npos or
+       import_error.find("Internal invariant") != std::string_view::npos) {
+      Log.error("an imported namespace assignment produced the wrong diagnostic: %s", lua_tostring(import_state, -1));
+      return false;
+   }
+
+   LuaStateHolder fixed_holder;
+   lua_State *fixed = fixed_holder.get();
+   if (lua_load(fixed, "fresh:num = 2\nfresh = 'wrong'", "=assignment-fixed-new-local") IS 0) {
+      Log.error("a typed NewLocal assignment did not establish a fixed local contract");
+      return false;
+   }
+   if (std::string_view(lua_tostring(fixed, -1)).find("cannot assign 'str'") IS std::string_view::npos) {
+      Log.error("a typed NewLocal reassignment produced the wrong diagnostic: %s", lua_tostring(fixed, -1));
+      return false;
+   }
+
+   LuaStateHolder extern_holder;
+   lua_State *external = extern_holder.get();
+   constexpr std::string_view extern_source =
+      "extern task_eight_external\n"
+      "task_eight_external = 2\n";
+   if (lua_load(external, extern_source, "=assignment-named-extern")) {
+      Log.error("an untyped named-extern assignment did not compile: %s", lua_tostring(external, -1));
+      return false;
+   }
+   if (count_root_opcode(external, BC_GSET) != 1) {
+      Log.error("an untyped named-extern assignment did not emit exactly one global store");
+      return false;
+   }
+   if (lua_pcall(external, 0, 0, 0)) {
+      Log.error("an untyped named-extern assignment did not execute: %s", lua_tostring(external, -1));
+      return false;
+   }
+   lua_getglobal(external, "task_eight_external");
+   bool extern_stored = lua_tointeger(external, -1) IS 2;
+   lua_pop(external, 1);
+   if (not extern_stored) {
+      Log.error("an untyped named-extern assignment did not update the environment");
+      return false;
+   }
+
+   LuaStateHolder contract_holder;
+   lua_State *contract = contract_holder.get();
+   if (lua_load(contract, "global glTaskEightContract:num = 1", "=assignment-contract-declaration") or
+       lua_pcall(contract, 0, 0, 0)) {
+      Log.error("failed to establish the task-eight persisted contract: %s", lua_tostring(contract, -1));
+      return false;
+   }
+   lua_pushnil(contract);
+   lua_setglobal(contract, "glTaskEightContract");
+
+   if (lua_load(contract, "glTaskEightContract:num = 2", "=assignment-contract-redeclaration") IS 0) {
+      Log.error("a typed assignment redeclared a nil-valued persisted global");
+      return false;
+   }
+   if (std::string_view(lua_tostring(contract, -1)).find(
+         "cannot redeclare existing global 'glTaskEightContract'") IS std::string_view::npos) {
+      Log.error("a nil-valued persisted-global annotation produced the wrong diagnostic: %s",
+         lua_tostring(contract, -1));
+      return false;
+   }
+   lua_pop(contract, 1);
+
+   if (lua_load(contract, "glTaskEightContract = 2", "=assignment-contracted-global")) {
+      Log.error("an untyped persisted-global assignment did not compile: %s", lua_tostring(contract, -1));
+      return false;
+   }
+   if (count_root_opcode(contract, BC_GSET) != 1) {
+      Log.error("an untyped persisted-global assignment did not emit exactly one global store");
+      return false;
+   }
+   if (lua_pcall(contract, 0, 0, 0)) {
+      Log.error("an untyped persisted-global assignment did not execute: %s", lua_tostring(contract, -1));
+      return false;
+   }
+   lua_getglobal(contract, "glTaskEightContract");
+   bool contract_stored = lua_tointeger(contract, -1) IS 2;
+   lua_pop(contract, 1);
+   if (not contract_stored) {
+      Log.error("an untyped persisted-global assignment did not update the environment");
+      return false;
+   }
+
+   auto wildcard = build_ast_from_source("extern *", true);
+   if (not has_diagnostic(wildcard.diagnostics, "Extern wildcard '*' is not supported")) {
+      Log.error("removed extern wildcard syntax produced the wrong parser diagnostic");
+      log_diagnostics(wildcard.diagnostics, Log);
+      return false;
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -5662,9 +6455,8 @@ static bool test_environment_store_boundary(kt::Log &Log)
    }
 
    // A separately compiled direct assignment must rely on BC_GSET instead of copying the persisted descriptor into a
-   // preceding BC_CONTRACT.
+   // preceding BC_CONTRACT.  No source extern is needed: semantic resolution recognises the nil-valued contract.
    constexpr std::string_view assignment_source =
-      "extern glUnitEnvBoundary\n"
       "glUnitEnvBoundary = 'compiled'\n";
    if (lua_load(L, assignment_source, "=envboundary-assignment")) {
       Log.error("compiling the persisted-policy assignment failed: %s", lua_tostring(L, -1));
@@ -5691,6 +6483,77 @@ static bool test_environment_store_boundary(kt::Log &Log)
    lua_pop(L, 1);
    if (not cleared) {
       Log.error("a nil store through the boundary did not clear the global");
+      return false;
+   }
+
+   if (lua_load(L, std::string_view("glUnitEnvBoundary:str = 'annotated'"),
+         "=envboundary-annotated-assignment") IS 0) {
+      Log.error("a typed assignment redeclared a nil-valued persisted global");
+      lua_pop(L, 1);
+      return false;
+   }
+   std::string_view annotated_error = lua_tostring(L, -1);
+   if (annotated_error.find("cannot redeclare existing global 'glUnitEnvBoundary'") IS std::string_view::npos) {
+      Log.error("a persisted-global annotation produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (lua_load(L, std::string_view("extern glUnitNamedExtern\nglUnitNamedExtern:num = 2"),
+         "=named-extern-annotated-assignment") IS 0) {
+      Log.error("a typed assignment redeclared a named extern");
+      lua_pop(L, 1);
+      return false;
+   }
+   std::string_view extern_error = lua_tostring(L, -1);
+   if (extern_error.find("cannot redeclare existing global 'glUnitNamedExtern'") IS std::string_view::npos) {
+      Log.error("a named-extern annotation produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view exact_contract_source =
+      "struct UnitPersistedRecord\n"
+      "   Value: int\n"
+      "end\n"
+      "global glUnitPersistedArray:array<int> = array<int> { 1 }\n"
+      "global glUnitPersistedStruct:struct<UnitPersistedRecord> = "
+         "struct<UnitPersistedRecord> { Value = 1 }\n";
+   if (lua_load(L, exact_contract_source, "=environment-exact-contracts") or lua_pcall(L, 0, 0, 0)) {
+      Log.error("establishing exact persisted contracts failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pushnil(L);
+   lua_setglobal(L, "glUnitPersistedArray");
+   lua_pushnil(L);
+   lua_setglobal(L, "glUnitPersistedStruct");
+
+   constexpr std::string_view exact_assignment_source =
+      "extern glUnitPersistedArray, glUnitPersistedStruct\n"
+      "glUnitPersistedArray = array<int> { 2 }\n"
+      "glUnitPersistedStruct = struct<UnitPersistedRecord> { Value = 2 }\n"
+      "return glUnitPersistedArray[0], glUnitPersistedStruct.Value\n";
+   if (lua_load(L, exact_assignment_source, "=environment-exact-assignments")) {
+      Log.error("compiling exact persisted assignments failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot exact_assignment = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (count_opcode_tree(exact_assignment, BC_CONTRACT) != 0 or
+       count_opcode_tree(exact_assignment, BC_GSET) != 2) {
+      Log.error("persisted metadata emitted contracts=%zu and global stores=%zu",
+         count_opcode_tree(exact_assignment, BC_CONTRACT), count_opcode_tree(exact_assignment, BC_GSET));
+      return false;
+   }
+   if (lua_pcall(L, 0, 2, 0)) {
+      Log.error("executing exact persisted assignments failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   bool exact_values = lua_tointeger(L, -2) IS 2 and lua_tointeger(L, -1) IS 2;
+   lua_pop(L, 2);
+   if (not exact_values) {
+      Log.error("exact persisted assignments returned the wrong values");
       return false;
    }
 
@@ -6192,6 +7055,7 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
       log_diagnostics(context.diagnostics().entries(), Log);
       return false;
    }
+   resolve_assignment_targets(context, *chunk.value_ref());
    discover_static_bindings(context, *chunk.value_ref());
    propagate_static_descriptors(context, *chunk.value_ref());
    run_type_analysis(context, *chunk.value_ref());
@@ -6332,6 +7196,7 @@ static bool test_stage_b_collection_api_contracts(kt::Log &Log)
       log_diagnostics(context.diagnostics().entries(), Log);
       return false;
    }
+   resolve_assignment_targets(context, *chunk.value_ref());
    discover_static_bindings(context, *chunk.value_ref());
    propagate_static_descriptors(context, *chunk.value_ref());
    run_type_analysis(context, *chunk.value_ref());
@@ -6457,6 +7322,7 @@ static bool test_unresolved_method_receiver_diagnostic(kt::Log &Log)
       AstBuilder builder(context);
       result.chunk = builder.parse_chunk();
       if (result.chunk.ok()) {
+         resolve_assignment_targets(context, *result.chunk.value_ref());
          discover_static_bindings(context, *result.chunk.value_ref());
          propagate_static_descriptors(context, *result.chunk.value_ref());
          run_type_analysis(context, *result.chunk.value_ref());
@@ -9477,6 +10343,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
       log_diagnostics(context.diagnostics().entries(), Log);
       return false;
    }
+   resolve_assignment_targets(context, *chunk.value_ref());
    discover_static_bindings(context, *chunk.value_ref());
    propagate_static_descriptors(context, *chunk.value_ref());
 
@@ -9896,9 +10763,15 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 90> tests = { {
+   constexpr std::array<TestCase, 98> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
+      { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
+      { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
+      { "assignment_target_descriptor_discovery", test_assignment_target_descriptor_discovery },
+      { "assignment_target_environment_types", test_assignment_target_environment_types },
+      { "assignment_target_emitter_invariant", test_assignment_target_emitter_invariant },
+      { "assignment_new_local_emission", test_assignment_new_local_emission },
       { "literal_binary_expr", test_literal_binary_expr },
       { "type_test_ast", test_type_test_ast },
       { "choose_type_pattern_ast", test_choose_type_pattern_ast },
@@ -9919,6 +10792,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
+      { "annotated_local_validation_parity", test_annotated_local_validation_parity },
+      { "assignment_target_regressions", test_assignment_target_regressions },
       { "implicit_later_name_attributes", test_implicit_later_name_attributes },
       { "implicit_attribute_shadowing", test_implicit_attribute_shadowing },
       { "ternary_colon_separators", test_ternary_colon_separators },

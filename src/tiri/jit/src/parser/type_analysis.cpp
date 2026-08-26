@@ -21,6 +21,8 @@
 #include <ankerl/unordered_dense.h>
 #include <kotuku/main.h>
 #include "parser/parser_context.h"
+#include "../runtime/lj_array.h"
+#include "../runtime/lj_tab.h"
 #include "../../../defs.h"
 
 #ifdef INCLUDE_TIPS
@@ -296,6 +298,13 @@ private:
    [[nodiscard]] bool is_variant_expression(const ExprNode &, size_t Position = 0) const;
    [[nodiscard]] bool is_table_read_expression(const ExprNode &);
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
+   struct LocalInitialiser {
+      InferredType type;
+      const ExprNode *expression = nullptr;
+   };
+   [[nodiscard]] std::optional<LocalInitialiser> infer_local_initialiser(const ExprNodeList &, size_t Position);
+   [[nodiscard]] InferredType analyse_annotated_local_binding(
+      const Identifier &, const ExprNodeList &, size_t Position);
 
    // Symbol resolution - looks up variables and functions in scope stack
    [[nodiscard]] std::optional<InferredType> resolve_identifier(GCstr *) const;
@@ -401,16 +410,27 @@ private:
       const FunctionExprPayload* forward_declaration = nullptr; // Original empty declaration used as the contract
       bool is_const = false;  // True if declared with <const> attribute
       bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
+      bool environment_contract = false; // Persisted policy already enforced by the environment store boundary.
+      GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
+   };
+
+   struct EnvironmentGlobalFacts {
+      bool exists = false;
+      bool is_const = false;
+      std::optional<InferredType> exact_type;
       GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
    };
 
    void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false,
       GlobalContractPolicy ContractPolicy = GlobalContractPolicy::Advisory);
    void declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location);
-   [[nodiscard]] bool declare_implicit_global(GCstr *Name, InferredType Type, SourceSpan Location);
+   void record_implicit_global(GCstr *Name, InferredType Type, SourceSpan Location);
+   [[nodiscard]] EnvironmentGlobalFacts environment_global_facts(GCstr *Name) const;
+   void seed_environment_global(GCstr *Name, SourceSpan Location);
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
    [[nodiscard]] bool is_global_const(GCstr *Name) const;
    [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
+   [[nodiscard]] bool has_environment_contract(GCstr *Name) const;
    void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
       struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
    void mark_dynamic_ingress(GCstr *Name, bool IsGlobal, bool RequiresDestination = true);
@@ -1462,11 +1482,21 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
             for (const auto &entry : payload->entries) {
-               if (not entry.inlined_body) continue;
-               ImportGuard guard(*this, entry.file_source_idx);
-               this->push_scope();
-               this->analyse_block(*entry.inlined_body);
-               this->pop_scope();
+               if (entry.inlined_body) {
+                  ImportGuard guard(*this, entry.file_source_idx);
+                  this->push_scope();
+                  this->analyse_block(*entry.inlined_body);
+                  this->pop_scope();
+               }
+
+               // Import emission publishes the namespace as a const local after the isolated library body.  Type
+               // analysis must mirror that declaration so later assignments receive a user-facing const diagnostic
+               // instead of appearing to reference an unknown lexical binding.
+               if (entry.namespace_name) {
+                  const Identifier &name = *entry.namespace_name;
+                  this->current_scope().declare_local(
+                     name.symbol, InferredType(TiriType::Any), name.span, name.has_const);
+               }
             }
          }
          break;
@@ -1522,109 +1552,100 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          if (not name_ref) continue;
 
          GCstr *name = name_ref->identifier.symbol;
+         AssignmentTargetResolution category = name_ref->assignment_resolution;
+         if (category IS AssignmentTargetResolution::Unresolved) {
+            TypeDiagnostic diag;
+            diag.location = target.span;
+            diag.code = ParserErrorCode::InternalInvariant;
+            diag.message = "assignment target reached type analysis without semantic resolution";
+            this->record_diagnostic(std::move(diag));
+            continue;
+         }
+         if (category IS AssignmentTargetResolution::Blank or
+             category IS AssignmentTargetResolution::Invalid) continue;
+
+         bool is_global = category IS AssignmentTargetResolution::ExistingGlobal;
+         bool is_lexical = assignment_target_is_existing_lexical(category);
 
          // A plain identifier target naming a host pre-registered global is an override unless an
          // explicit local shadow or parameter is in scope.
 
-         if (name and not name_ref->identifier.is_blank and
-             ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) and
-             not this->resolve_identifier(name)) {
+         if (is_global and name and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
             this->report_protected_global_override(name, target.span);
             continue;
          }
 
-         // First check local variables
-
-         auto existing = this->resolve_identifier(name);
-         bool is_global = false;
-         bool is_const = false;
-         bool environment_global = false;
-
-         // If not found as local, check global variables
-
-         if (not existing) {
-            existing = this->lookup_global_type(name);
-            is_global = existing.has_value();
-            if (is_global) is_const = this->is_global_const(name);
-            else {
-               cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), name);
-               environment_global = global and not tvisnil(global);
-            }
+         if (is_global and type_is_registered_constant(name)) {
+            TypeDiagnostic diag;
+            diag.location = target.span;
+            diag.code = ParserErrorCode::AssignToConstant;
+            diag.message = std::format("cannot assign to constant '{}'", std::string_view(strdata(name), name->len));
+            this->record_diagnostic(std::move(diag));
+            continue;
          }
-         else is_const = this->is_local_const(name);
 
          const Identifier &identifier = name_ref->identifier;
-         if ((existing or environment_global) and identifier.type != TiriType::Unknown) {
+         std::optional<InferredType> existing;
+         bool is_const = false;
+         if (is_lexical) {
+            existing = this->resolve_identifier(name);
+            is_const = this->is_local_const(name);
+            bool valid_binding = name_ref->binding_id and identifier.binding_id IS name_ref->binding_id and
+               name_ref->binding_id.raw() < this->ctx_.descriptors().binding_count();
+            if (valid_binding) {
+               valid_binding = this->ctx_.descriptors().binding(name_ref->binding_id).name IS name;
+            }
+            if (not existing or not valid_binding) {
+               TypeDiagnostic diag;
+               diag.location = target.span;
+               diag.code = ParserErrorCode::InternalInvariant;
+               diag.message = "lexical assignment target does not match an analysed binding";
+               this->record_diagnostic(std::move(diag));
+               continue;
+            }
+         }
+
+         if (assignment_target_is_existing_storage(category) and identifier.type != TiriType::Unknown) {
             std::string_view name_view(strdata(name), name->len);
             TypeDiagnostic diag;
             diag.location = identifier.span;
             diag.code = ParserErrorCode::InvalidAssignment;
             diag.message = std::format(
                "cannot redeclare existing {} '{}' with a type annotation",
-               (is_global or environment_global) ? "global" : "local", name_view);
+               is_global ? "global" : "local", name_view);
             this->record_diagnostic(std::move(diag));
             continue;
          }
 
-         if (not existing) {
-            if (name_ref->binding_id and identifier.type != TiriType::Unknown) {
-               InferredType inferred;
-               inferred.primary = TiriType::Nil;
-
-               if (not Payload.values.empty()) {
+         if (is_global) {
+            this->seed_environment_global(name, target.span);
+            existing = this->lookup_global_type(name);
+            if (existing) is_const = this->is_global_const(name);
+            else {
+               InferredType inferred(TiriType::Any, false, true, true);
+               if (Payload.op IS AssignmentOperator::Plain and not Payload.values.empty()) {
                   size_t source = std::min(i, Payload.values.size() - 1);
                   size_t result_position = i - source;
                   if (result_position IS 0) inferred = this->infer_expression_type(*Payload.values[source]);
                   else inferred = this->infer_call_return_type(*Payload.values[source], result_position);
-
-                  if (identifier.type != TiriType::Any and inferred.primary != TiriType::Nil and
-                      inferred.primary != TiriType::Any and inferred.primary != TiriType::Unknown and
-                      inferred.primary != identifier.type) {
-                     TypeDiagnostic diag;
-                     diag.location = Payload.values[source]->span;
-                     diag.expected = identifier.type;
-                     diag.actual = inferred.primary;
-                     diag.code = ParserErrorCode::TypeMismatchAssignment;
-                     diag.message = std::format("cannot assign '{}' to variable of type '{}'",
-                        type_name(inferred.primary), type_name(identifier.type));
-                     this->record_diagnostic(std::move(diag));
-                  }
-                  else if (identifier.type IS TiriType::Struct and inferred.primary IS TiriType::Struct and
-                      identifier.struct_def and inferred.struct_def and
-                      identifier.struct_def != inferred.struct_def) {
-                     TypeDiagnostic diag;
-                     diag.location = Payload.values[source]->span;
-                     diag.expected = TiriType::Struct;
-                     diag.actual = TiriType::Struct;
-                     diag.code = ParserErrorCode::TypeMismatchAssignment;
-                     diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
-                        inferred.struct_def->Name, identifier.struct_def->Name);
-                     this->record_diagnostic(std::move(diag));
-                  }
-                  else if (identifier.type IS TiriType::Array and inferred.primary IS TiriType::Array and
-                      inferred.array_element.known and
-                      not array_element_matches(identifier.array_element, inferred.array_element)) {
-                     TypeDiagnostic diag;
-                     diag.location = Payload.values[source]->span;
-                     diag.expected = TiriType::Array;
-                     diag.actual = TiriType::Array;
-                     diag.code = ParserErrorCode::TypeMismatchAssignment;
-                     diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
-                        array_element_name(identifier.array_element), array_element_name(inferred.array_element));
-                     this->record_diagnostic(std::move(diag));
-                  }
                }
+               this->record_implicit_global(name, inferred, target.span);
+               existing = this->lookup_global_type(name);
+            }
+         }
 
-               inferred.primary = identifier.type;
-               inferred.struct_def = identifier.struct_def;
-               inferred.array_element = identifier.array_element;
-               inferred.requires_destination_type = false;
-               inferred.is_fixed = identifier.type != TiriType::Any;
+         if (not existing) {
+            if (category != AssignmentTargetResolution::NewLocal) {
+               TypeDiagnostic diag;
+               diag.location = target.span;
+               diag.code = ParserErrorCode::InternalInvariant;
+               diag.message = "existing assignment target has no type-analysis record";
+               this->record_diagnostic(std::move(diag));
+               continue;
+            }
+            if (name_ref->binding_id and identifier.type != TiriType::Unknown) {
+               InferredType inferred = this->analyse_annotated_local_binding(identifier, Payload.values, i);
                this->current_scope().declare_local(name, inferred, target.span);
-               if (identifier.type IS TiriType::Any) {
-                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
-               }
-               this->publish_binding_type(name_ref->binding_id, inferred);
                continue;
             }
 
@@ -1632,7 +1653,10 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                size_t source = std::min(i, Payload.values.size() - 1);
                size_t result_position = i - source;
                InferredType inferred;
-               if (result_position IS 0) inferred = this->infer_expression_type(*Payload.values[source]);
+               if (result_position IS 0) {
+                  inferred = this->infer_expression_type(*Payload.values[source]);
+                  inferred = this->refine_static_expression_type(*Payload.values[source], inferred);
+               }
                else {
                   const ExprNode &value_expr = *Payload.values[source];
                   bool provides_multiple_results = value_expr.kind IS AstNodeKind::CallExpr or
@@ -1657,35 +1681,20 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                if (result_position IS 0 and is_table_read_expression(*Payload.values[source])) {
                   this->explicit_variant_bindings_.insert(name_ref->binding_id);
                }
-               if (Payload.op != AssignmentOperator::Plain and not inferred.requires_destination_type) {
-                  this->current_scope().declare_local(name, inferred, target.span);
-                  this->implicit_local_bindings_.insert(name_ref->binding_id);
-                  this->publish_binding_type(name_ref->binding_id, inferred);
-                  continue;
+               if (inferred.requires_destination_type) {
+                  inferred = InferredType(TiriType::Any);
+                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
                }
-
-               if (Payload.op IS AssignmentOperator::Plain) {
-                  if (not this->declare_implicit_global(name, inferred, target.span)) {
-                     if (inferred.requires_destination_type) {
-                        inferred = InferredType(TiriType::Any);
-                        this->explicit_variant_bindings_.insert(name_ref->binding_id);
-                     }
-                     this->current_scope().declare_local(name, inferred, target.span);
-                     this->implicit_local_bindings_.insert(name_ref->binding_id);
-                     this->publish_binding_type(name_ref->binding_id, inferred);
-                  }
-                  continue;
-               }
+               this->current_scope().declare_local(name, inferred, target.span);
+               this->implicit_local_bindings_.insert(name_ref->binding_id);
+               this->publish_binding_type(name_ref->binding_id, inferred);
+               continue;
             }
 
-            // The name is neither a local nor a known global.  A plain assignment to a name that already exists in
-            // the environment table updates that global at runtime, so record an implicit global type for it.  Only
-            // simple '=' assignments are used for inference; compound operators require an existing value and never
-            // create a global.
-            if (Payload.op IS AssignmentOperator::Plain and i < Payload.values.size()) {
-               InferredType inferred = this->infer_expression_type(*Payload.values[i]);
-               (void)this->declare_implicit_global(name, inferred, target.span);
-            }
+            InferredType inferred(TiriType::Nil, false, true, false);
+            this->current_scope().declare_local(name, inferred, target.span);
+            this->implicit_local_bindings_.insert(name_ref->binding_id);
+            this->publish_binding_type(name_ref->binding_id, inferred);
             continue;
          }
 
@@ -1729,6 +1738,10 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             }
             continue;
          }
+
+         // Persisted contracts remain authoritative at the environment boundary.  Static metadata supports reads
+         // and redeclaration checks, but ordinary stores must still compile so runtime validation remains catchable.
+         if (is_global and this->has_environment_contract(name)) continue;
 
          if (existing->is_fixed) {
             // Fixed type: check compatibility
@@ -1859,119 +1872,37 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
 
 void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
 {
-   // Track which position we're at for multi-value returns from function calls
-   // When a function call is the last (or only) value, it may provide multiple return values
-   size_t value_index = 0;
-   size_t call_return_index = 0;  // Position within a multi-return call
-   const ExprNode* multi_return_call = nullptr;  // The function call providing multi-returns
-
    for (size_t name_index = 0; name_index < Payload.names.size(); ++name_index) {
       const auto& name = Payload.names[name_index];
       InferredType inferred;
-      InferredType value_type;
-      bool have_value_type = false;
-      const ExprNode *initialiser = nullptr;  // Direct initialiser, excluding trailing multi-return positions
-
-      // Determine the value type for this variable
-      if (value_index < Payload.values.size()) {
-         // We have an explicit value at this position
-         const ExprNode& value_expr = *Payload.values[value_index];
-         value_type = this->infer_expression_type(value_expr);
-         value_type = this->refine_static_expression_type(value_expr, value_type);
-         have_value_type = true;
-         initialiser = &value_expr;
-
-         // If this is the last value and it can provide multiple results, retain it for later declaration positions.
-         if (value_index IS Payload.values.size() - 1 and
-             (value_expr.kind IS AstNodeKind::CallExpr or value_expr.kind IS AstNodeKind::SafeCallExpr or
-              (value_expr.static_results and
-               (this->ctx_.descriptors().results(value_expr.static_results).declared_count > 1 or
-                this->ctx_.descriptors().results(value_expr.static_results).variadic)))) {
-            multi_return_call = &value_expr;
-            call_return_index = 0;
-         }
-
-         value_index += 1;
-      }
-      else if (multi_return_call) {
-         // No more explicit values, but we have a trailing function call
-         // Use the next return value position from the multi-return call
-         call_return_index += 1;
-         value_type = this->infer_call_return_type(*multi_return_call, call_return_index);
-         have_value_type = true;
-      }
+      std::optional<LocalInitialiser> initialiser;
 
       // Explicit type annotation takes precedence (Unknown = no annotation)
       if (name.type != TiriType::Unknown) {
-         inferred.primary = name.type;
-         inferred.struct_def = name.struct_def;
-         inferred.array_element = name.array_element;
-         // 'any' type is not fixed - it accepts any value
-         inferred.is_fixed = (name.type != TiriType::Any);
-
-         // Check that initial value matches declared type (if present and not 'any')
-         if (name.type != TiriType::Any and have_value_type) {
-            // Nil is always allowed as initial value for typed variables
-            if (value_type.primary != TiriType::Nil and
-                value_type.primary != TiriType::Any and
-                value_type.primary != name.type) {
-               TypeDiagnostic diag;
-               if (value_index > 0 and value_index - 1 < Payload.values.size()) {
-                  diag.location = Payload.values[value_index - 1]->span;
-               }
-               diag.expected = name.type;
-               diag.actual = value_type.primary;
-               diag.code = ParserErrorCode::TypeMismatchAssignment;
-               diag.message = std::format("cannot assign '{}' to variable of type '{}'",
-                  type_name(value_type.primary), type_name(name.type));
-               this->record_diagnostic(std::move(diag));
-            }
-            else if (name.type IS TiriType::Struct and value_type.primary IS TiriType::Struct and
-                name.struct_def and value_type.struct_def and name.struct_def != value_type.struct_def) {
-               TypeDiagnostic diag;
-               if (value_index > 0 and value_index - 1 < Payload.values.size()) {
-                  diag.location = Payload.values[value_index - 1]->span;
-               }
-               diag.expected = TiriType::Struct;
-               diag.actual = TiriType::Struct;
-               diag.code = ParserErrorCode::TypeMismatchAssignment;
-               diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
-                  value_type.struct_def->Name, name.struct_def->Name);
-               this->record_diagnostic(std::move(diag));
-            }
-            else if (name.type IS TiriType::Array and value_type.primary IS TiriType::Array and
-                value_type.array_element.known and
-                not array_element_matches(name.array_element, value_type.array_element)) {
-               TypeDiagnostic diag;
-               diag.location = initialiser ? initialiser->span : name.span;
-               diag.expected = TiriType::Array;
-               diag.actual = TiriType::Array;
-               diag.code = ParserErrorCode::TypeMismatchAssignment;
-               diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
-                  array_element_name(name.array_element), array_element_name(value_type.array_element));
-               this->record_diagnostic(std::move(diag));
-            }
-         }
-      }
-      else if (have_value_type) {
-         // No annotation: infer type from initial value
-         inferred = value_type;
-
-         inferred.requires_destination_type = not name.is_blank and
-            (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown) and
-            not (initialiser and is_table_read_expression(*initialiser));
-
-         // Non-nil, non-any initial values fix the type
-         if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
-             inferred.primary != TiriType::Unknown) {
-            inferred.is_fixed = true;
-         }
+         inferred = this->analyse_annotated_local_binding(name, Payload.values, name_index);
       }
       else {
-         // No annotation and no initialiser: starts as nil, type not yet determined
-         // Use Nil (not Any) so the first non-nil assignment will fix the type
-         inferred.primary = TiriType::Nil;
-         inferred.is_fixed = false;
+         initialiser = this->infer_local_initialiser(Payload.values, name_index);
+         if (initialiser) {
+            // No annotation: infer type from initial value
+            inferred = initialiser->type;
+
+            inferred.requires_destination_type = not name.is_blank and
+               (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown) and
+               not is_table_read_expression(*initialiser->expression);
+
+            // Non-nil, non-any initial values fix the type
+            if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
+                inferred.primary != TiriType::Unknown) {
+               inferred.is_fixed = true;
+            }
+         }
+         else {
+            // No annotation and no initialiser: starts as nil, type not yet determined
+            // Use Nil (not Any) so the first non-nil assignment will fix the type
+            inferred.primary = TiriType::Nil;
+            inferred.is_fixed = false;
+         }
       }
 
       #ifdef INCLUDE_TIPS
@@ -1979,17 +1910,89 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       #endif
 
       this->current_scope().declare_local(name.symbol, inferred, name.span, name.has_const);
-      if ((name.type IS TiriType::Any or (initialiser and is_table_read_expression(*initialiser))) and
-          name.binding_id) {
+      if (name.type IS TiriType::Unknown and initialiser and
+          is_table_read_expression(*initialiser->expression) and name.binding_id) {
          this->explicit_variant_bindings_.insert(name.binding_id);
       }
-      this->publish_binding_type(name.binding_id, inferred);
+      if (name.type IS TiriType::Unknown) this->publish_binding_type(name.binding_id, inferred);
       this->trace_decl(this->ctx_.lex().linenumber, name.symbol, inferred.primary, inferred.is_fixed);
    }
 
    for (const auto &value : Payload.values) {
       this->analyse_expression(*value);
    }
+}
+
+std::optional<TypeAnalyser::LocalInitialiser> TypeAnalyser::infer_local_initialiser(
+   const ExprNodeList &Values, size_t Position)
+{
+   if (Values.empty()) return std::nullopt;
+
+   size_t source = std::min(Position, Values.size() - 1);
+   size_t result_position = Position - source;
+   const ExprNode &expression = *Values[source];
+   InferredType type;
+   if (result_position IS 0) {
+      type = this->infer_expression_type(expression);
+      type = this->refine_static_expression_type(expression, type);
+   }
+   else {
+      bool provides_multiple_results = expression.kind IS AstNodeKind::CallExpr or
+         expression.kind IS AstNodeKind::SafeCallExpr or
+         (expression.static_results and
+          (this->ctx_.descriptors().results(expression.static_results).declared_count > 1 or
+           this->ctx_.descriptors().results(expression.static_results).variadic));
+      if (not provides_multiple_results) return std::nullopt;
+      type = this->infer_call_return_type(expression, result_position);
+   }
+   return LocalInitialiser { type, &expression };
+}
+
+InferredType TypeAnalyser::analyse_annotated_local_binding(
+   const Identifier &Name, const ExprNodeList &Values, size_t Position)
+{
+   InferredType inferred;
+   inferred.primary = Name.type;
+   inferred.struct_def = Name.struct_def;
+   inferred.array_element = Name.array_element;
+   inferred.requires_destination_type = false;
+   inferred.is_fixed = Name.type != TiriType::Any;
+
+   auto initialiser = this->infer_local_initialiser(Values, Position);
+   if (Name.type != TiriType::Any and initialiser) {
+      const InferredType &value_type = initialiser->type;
+      TypeDiagnostic diag;
+      diag.location = initialiser->expression->span;
+      diag.expected = Name.type;
+      diag.actual = value_type.primary;
+      diag.code = ParserErrorCode::TypeMismatchAssignment;
+
+      if (value_type.primary != TiriType::Nil and value_type.primary != TiriType::Any and
+          value_type.primary != TiriType::Unknown and value_type.primary != Name.type) {
+         diag.message = std::format("cannot assign '{}' to variable of type '{}'",
+            type_name(value_type.primary), type_name(Name.type));
+         this->record_diagnostic(std::move(diag));
+      }
+      else if (Name.type IS TiriType::Struct and value_type.primary IS TiriType::Struct and
+          Name.struct_def and value_type.struct_def and Name.struct_def != value_type.struct_def) {
+         diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
+            value_type.struct_def->Name, Name.struct_def->Name);
+         this->record_diagnostic(std::move(diag));
+      }
+      else if (Name.type IS TiriType::Array and value_type.primary IS TiriType::Array and
+          value_type.array_element.known and
+          not array_element_matches(Name.array_element, value_type.array_element)) {
+         diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
+            array_element_name(Name.array_element), array_element_name(value_type.array_element));
+         this->record_diagnostic(std::move(diag));
+      }
+   }
+
+   if (Name.type IS TiriType::Any and Name.binding_id) {
+      this->explicit_variant_bindings_.insert(Name.binding_id);
+   }
+   this->publish_binding_type(Name.binding_id, inferred);
+   return inferred;
 }
 
 //********************************************************************************************************************
@@ -3500,18 +3503,12 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Func, true);
 }
 
-// Records a pre-existing environment global updated through plain assignment.  The inferred type is advisory only:
-// conflicting later assignments degrade it to 'any' instead of diagnosing, since the assignment carries no
-// user-declared type contract.
+// Records an ExistingGlobal assignment that has no exact persisted contract.  Storage identity is supplied by the
+// assignment resolver; this advisory type never decides whether the target is local or global.
 
-bool TypeAnalyser::declare_implicit_global(GCstr *Name, InferredType Type, SourceSpan Location)
+void TypeAnalyser::record_implicit_global(GCstr *Name, InferredType Type, SourceSpan Location)
 {
-   if (not Name) return false;
-   if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return false;
-
-   cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), Name);
-   bool is_global_store = (global != nullptr) and not tvisnil(global);
-   if (not is_global_store) return false;  // Plain assignment to this name creates a local, not a global
+   if (not Name or (Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return;
 
    Type.requires_destination_type = false;
    if (Type.primary != TiriType::Nil and Type.primary != TiriType::Any and Type.primary != TiriType::Unknown) {
@@ -3525,7 +3522,73 @@ bool TypeAnalyser::declare_implicit_global(GCstr *Name, InferredType Type, Sourc
    info.implicit = true;
    this->global_types_[Name] = info;
    this->trace_decl(this->ctx_.lex().linenumber, Name, Type.primary, Type.is_fixed);
-   return true;
+}
+
+TypeAnalyser::EnvironmentGlobalFacts TypeAnalyser::environment_global_facts(GCstr *Name) const
+{
+   EnvironmentGlobalFacts facts;
+   if (not Name) return facts;
+
+   GCtab *environment = tabref(this->ctx_.lua().env);
+   if (not environment) return facts;
+
+   cTValue *value = lj_tab_getstr(environment, Name);
+   facts.exists = value and not tvisnil(value);
+
+   GCstr *persisted = lj_tab_get_global_contract(environment, Name);
+   if (not persisted) return facts;
+   facts.exists = true;
+
+   RuntimeContractDescriptor descriptor;
+   if (not decode_runtime_contract(persisted, descriptor) or
+       descriptor.boundary != ContractBoundary::Global or descriptor.contract_count IS 0) return facts;
+
+   const RuntimeContractEntry &entry = descriptor.entries[0];
+   InferredType type;
+   type.primary = entry.type;
+   type.object_class_id = entry.type IS TiriType::Object ? entry.object_class_id : CLASSID::NIL;
+   type.is_nullable = (entry.flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
+   type.is_fixed = entry.type != TiriType::Any and entry.type != TiriType::Unknown;
+
+   if (entry.type IS TiriType::Struct and not entry.constraint_name.empty()) {
+      type.struct_def = find_struct(&this->ctx_.lua(), entry.constraint_name);
+   }
+   else if (entry.type IS TiriType::Array and entry.array_element_type != AET::MAX) {
+      std::string element_name;
+      if (entry.array_element_type IS AET::STRUCT and not entry.constraint_name.empty()) {
+         element_name = std::format("struct<{}>", entry.constraint_name);
+      }
+      else if (entry.array_element_type IS AET::ARRAY and not entry.constraint_name.empty()) {
+         element_name.assign(entry.constraint_name);
+      }
+      else element_name = lj_array_elemtype_name(entry.array_element_type);
+
+      if (auto element = parse_array_element_type(element_name, &this->ctx_.lua())) {
+         type.array_element = *element;
+      }
+   }
+
+   facts.is_const = contract_entry_is_const(entry);
+   facts.exact_type = type;
+   facts.contract_policy = entry.type IS TiriType::Any ?
+      GlobalContractPolicy::Variant : GlobalContractPolicy::Enforced;
+   return facts;
+}
+
+void TypeAnalyser::seed_environment_global(GCstr *Name, SourceSpan Location)
+{
+   if (not Name or this->global_types_.contains(Name)) return;
+   EnvironmentGlobalFacts facts = this->environment_global_facts(Name);
+   if (not facts.exists or not facts.exact_type) return;
+
+   GlobalTypeInfo info;
+   info.type = *facts.exact_type;
+   info.location = Location;
+   info.is_const = facts.is_const;
+   info.environment_contract = true;
+   info.contract_policy = facts.contract_policy;
+   this->global_types_[Name] = info;
+   this->trace_decl(this->ctx_.lex().linenumber, Name, info.type.primary, info.type.is_fixed);
 }
 
 std::optional<InferredType> TypeAnalyser::lookup_global_type(GCstr *Name) const
@@ -3539,6 +3602,15 @@ bool TypeAnalyser::is_implicit_global(GCstr *Name) const
 {
    if (not Name) return false;
    if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) return it->second.implicit;
+   return false;
+}
+
+bool TypeAnalyser::has_environment_contract(GCstr *Name) const
+{
+   if (not Name) return false;
+   if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) {
+      return it->second.environment_contract;
+   }
    return false;
 }
 
@@ -4094,6 +4166,17 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
 void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
 {
    for (const auto &[name, info] : this->global_types_) {
+      if (info.environment_contract) {
+         if (info.type.is_fixed and
+             (info.type.primary IS TiriType::Struct or info.type.primary IS TiriType::Object or
+              info.type.primary IS TiriType::Array)) {
+            Lex.global_type_hints[name] = {
+               info.type.primary, info.type.object_class_id, info.type.struct_def, info.type.array_element,
+               GlobalContractPolicy::Advisory
+            };
+         }
+         continue;
+      }
       if (info.contract_policy IS GlobalContractPolicy::Variant) {
          Lex.global_type_hints[name] = {
             TiriType::Any, CLASSID::NIL, nullptr, {}, GlobalContractPolicy::Variant

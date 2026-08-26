@@ -106,6 +106,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
    // Inherit declared globals from parent so nested functions recognize them
    child_state.declared_globals = parent_state->declared_globals;
+   child_state.const_globals = parent_state->const_globals;
    child_state.external_symbols = parent_state->external_symbols;
 
    // Set linedefined to the earliest line that bytecode might reference.
@@ -394,7 +395,100 @@ ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &pa
 // AllocNewLocal must be false when dealing with update operators like compound assignments (+=, -=) and (++, --)
 // where the variable must already exist.
 
-ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool AllocNewLocal, ControlFlowEdge* SafeNavSkip)
+ParserResult<ExpDesc> IrEmitter::emit_assignment_identifier(const NameRef &Reference, bool AllocNewLocal)
+{
+   const Identifier &identifier = Reference.identifier;
+   AssignmentTargetResolution category = Reference.assignment_resolution;
+   auto invariant = [&](std::string_view Message) {
+      return ParserResult<ExpDesc>::failure(
+         this->make_error(ParserErrorCode::InternalInvariant, Message, identifier.span));
+   };
+
+   if (category IS AssignmentTargetResolution::Unresolved) {
+      return invariant("assignment target reached IR emission without semantic resolution");
+   }
+
+   if (category IS AssignmentTargetResolution::Blank) {
+      if (not identifier.is_blank) return invariant("blank assignment category disagrees with its identifier");
+      ExpDesc blank;
+      blank.init(ExpKind::Global, 0);
+      blank.u.sval = NAME_BLANK;
+      return ParserResult<ExpDesc>::success(blank);
+   }
+
+   if (not identifier.symbol or identifier.is_blank) {
+      return invariant("resolved assignment category has no usable identifier");
+   }
+
+   if (assignment_target_is_existing_lexical(category)) {
+      ExpDesc resolved;
+      MSize variable_index = this->lex_state.var_lookup_symbol(identifier.symbol, &resolved);
+      ExpKind expected = category IS AssignmentTargetResolution::ExistingLocal ?
+         ExpKind::Local : ExpKind::Upval;
+      bool valid_binding = variable_index != MSize(-1) and Reference.binding_id and
+         identifier.binding_id IS Reference.binding_id and resolved.k IS expected and
+         this->lex_state.vstack[variable_index].binding_id IS Reference.binding_id;
+      if (not valid_binding) {
+         return invariant("lexical assignment target disagrees with its emitted binding");
+      }
+      if (resolved.k IS ExpKind::Local) resolved.u.s.aux = this->func_state.varmap[resolved.u.s.info];
+      return ParserResult<ExpDesc>::success(resolved);
+   }
+
+   if (category IS AssignmentTargetResolution::ExistingGlobal) {
+      if (Reference.binding_id or identifier.binding_id) {
+         return invariant("global assignment target unexpectedly has a lexical binding");
+      }
+      if ((identifier.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
+            std::format("cannot override built-in '{}'",
+               std::string_view(strdata(identifier.symbol), identifier.symbol->len)), identifier.span));
+      }
+      if (lookup_constant(identifier.symbol) or this->func_state.const_globals.contains(identifier.symbol)) {
+         return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::AssignToConstant,
+            std::format("cannot assign to constant '{}'",
+               std::string_view(strdata(identifier.symbol), identifier.symbol->len)), identifier.span));
+      }
+
+      ExpDesc global;
+      global.init(ExpKind::Global, 0);
+      global.u.sval = identifier.symbol;
+      if (auto hint = this->lex_state.global_type_hints.find(identifier.symbol);
+          hint != this->lex_state.global_type_hints.end()) {
+         global.result_type = hint->second.primary;
+         global.object_class_id = hint->second.object_class_id;
+         global.struct_def = hint->second.struct_def;
+      }
+      return ParserResult<ExpDesc>::success(global);
+   }
+
+   if (category IS AssignmentTargetResolution::NewLocal) {
+      bool valid_binding = AllocNewLocal and Reference.binding_id and
+         identifier.binding_id IS Reference.binding_id and
+         Reference.binding_id.raw() < this->ctx.descriptors().binding_count();
+      if (valid_binding) {
+         valid_binding = this->ctx.descriptors().binding(Reference.binding_id).name IS identifier.symbol;
+      }
+
+      ExpDesc resolved;
+      this->lex_state.var_lookup_symbol(identifier.symbol, &resolved);
+      if (not valid_binding or resolved.k != ExpKind::Unscoped) {
+         return invariant("new-local assignment target disagrees with emitted storage");
+      }
+      return ParserResult<ExpDesc>::success(resolved);
+   }
+
+   if (category IS AssignmentTargetResolution::Invalid) {
+      std::string name(strdata(identifier.symbol), identifier.symbol->len);
+      return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UndefinedVariable,
+         std::format("cannot use compound/update operator on undeclared variable '{}'", name), identifier.span));
+   }
+
+   return invariant("assignment target has an unknown semantic category");
+}
+
+ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(
+   const ExprNode &Expr, bool AllocNewLocal, ControlFlowEdge* SafeNavSkip, bool UseAssignmentResolution)
 {
    auto append_safe_nav_skip = [&](BCPos SkipPos) {
       if (not SafeNavSkip) return;
@@ -405,51 +499,12 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
    switch (Expr.kind) {
       case AstNodeKind::IdentifierExpr: {
          const NameRef& name_ref = std::get<NameRef>(Expr.data);
+         if (UseAssignmentResolution) return this->emit_assignment_identifier(name_ref, AllocNewLocal);
 
-         // Blank identifiers (_) are treated specially - they discard values
-         if (name_ref.identifier.is_blank) {
-            ExpDesc blank_expr;
-            blank_expr.init(ExpKind::Global, 0);
-            blank_expr.u.sval = NAME_BLANK;
-            return ParserResult<ExpDesc>::success(blank_expr);
-         }
-
-         // Registered constants are immutable unless this target resolves to an explicit local/upvalue shadow.
-         ExpDesc resolved;
-         this->lex_state.var_lookup_symbol(name_ref.identifier.symbol, &resolved);
-         if (lookup_constant(name_ref.identifier.symbol) and
-             resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
-            std::string var_name(strdata(name_ref.identifier.symbol), name_ref.identifier.symbol->len);
-            std::string msg = "cannot assign to constant '" + var_name + "'";
-            return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::AssignToConstant, msg));
-         }
-
-         auto result = this->emit_identifier_expr(name_ref, true);
+         auto result = this->emit_identifier_expr(name_ref, false);
          if (not result.ok()) return result;
          ExpDesc value = result.value_ref();
-         if (value.k IS ExpKind::Local) { // Local variable already exists
-            value.u.s.aux = this->func_state.varmap[value.u.s.info];
-         }
-         else if (value.k IS ExpKind::Unscoped) { // Undeclared variable used as assignment target
-            GCstr *name = value.u.sval;
-
-            // Check if this was explicitly declared as global (in this or parent scope)
-            if (this->func_state.declared_globals.count(name) > 0) {
-               value.k = ExpKind::Global;
-            }
-            else if (AllocNewLocal) {
-               // Plain assignment: return Unscoped and let prepare_assignment_targets handle
-               // the local creation with proper timing for multi-value assignments.
-               // The ExpKind::Unscoped with name will signal that a new local should be created.
-               // value is already Unscoped with name set, so just return it.
-            }
-            else { // Compound/update assignment on an undeclared variable is an error
-               std::string var_name(strdata(name), name->len);
-               std::string msg = "cannot use compound/update operator on undeclared variable '" + var_name + "'";
-               return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UndefinedVariable, msg));
-            }
-         }
-         // Allow Unscoped for deferred local creation in prepare_assignment_targets
+         if (value.k IS ExpKind::Local) value.u.s.aux = this->func_state.varmap[value.u.s.info];
          if (not expkind_is_variable_like(value.k)) return this->unsupported_expr(Expr.kind, Expr.span);
          return ParserResult<ExpDesc>::success(value);
       }
@@ -459,7 +514,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          if (not payload.table or not payload.member.symbol) return this->unsupported_expr(Expr.kind, Expr.span);
 
          auto table_result = SafeNavSkip
-            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip)
+            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false)
             : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
@@ -508,7 +563,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          if (not payload.table or not payload.index) return this->unsupported_expr(Expr.kind, Expr.span);
 
          auto table_result = SafeNavSkip
-            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip)
+            ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false)
             : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
 
@@ -574,7 +629,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          const auto &payload = std::get<SafeMemberExprPayload>(Expr.data);
          if (not payload.table or not payload.member.symbol) return this->unsupported_expr(Expr.kind, Expr.span);
 
-         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
+         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
          StaticValueHandle receiver_descriptor = table.static_value;
@@ -627,7 +682,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          const auto &payload = std::get<SafeIndexExprPayload>(Expr.data);
          if (not payload.table or not payload.index) return this->unsupported_expr(Expr.kind, Expr.span);
 
-         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
+         auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
          StaticValueHandle receiver_descriptor = table.static_value;

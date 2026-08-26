@@ -4,15 +4,15 @@
 function enforce_hotpath() end
 
 @Test function Nil()
-   v = nil ?? "A"
+   local v = nil ?? "A"
    assert(v is "A", "Failed nil case: expected 'A', got '" .. tostring(v) .. "'")
 
    Options = { quit = nil }
-   v = (Options.quit ?? nil)
+   local v = (Options.quit ?? nil)
    assert(v is nil, "Expected nil, got " .. tostring(v))
 
    Options.quit = true
-   v = (Options.quit ?? nil)
+   local v = (Options.quit ?? nil)
    assert(v is true, "Expected true, got " .. tostring(v))
 end
 

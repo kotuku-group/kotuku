@@ -228,7 +228,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_annotated_statement()
       stmt = std::move(result.value_ref());
    }
    else if (current.kind() IS TokenKind::Local) {
-      auto result = this->parse_local();
+      auto result = this->parse_explicit_local_declaration();
       if (not result.ok()) return result;
       stmt = std::move(result.value_ref());
    }

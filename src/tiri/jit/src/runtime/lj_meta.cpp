@@ -1082,11 +1082,13 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    if (not Entry.label.empty()) {
       CSTRING message = lj_strfmt_pushf(L, "type contract failed for %s %u ('%.*s'): expected %s, got %s",
          boundary, Position, int(Entry.label.size()), Entry.label.data(), expected, actual);
+      if (Boundary IS ContractBoundary::Local) lj_err_currentmsg(L, message);
       lj_err_callermsg(L, message);
    }
    else {
       CSTRING message = lj_strfmt_pushf(L, "type contract failed for %s %u: expected %s, got %s",
          boundary, Position, expected, actual);
+      if (Boundary IS ContractBoundary::Local) lj_err_currentmsg(L, message);
       lj_err_callermsg(L, message);
    }
 }

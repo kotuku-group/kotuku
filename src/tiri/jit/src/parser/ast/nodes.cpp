@@ -619,6 +619,29 @@ ImportStmtPayload::~ImportStmtPayload() = default;
 WithStmtPayload::~WithStmtPayload() = default;
 BlockStmt::~BlockStmt() = default;
 
+//********************************************************************************************************************
+
+bool assignment_target_is_existing_lexical(AssignmentTargetResolution Resolution) noexcept
+{
+   return Resolution IS AssignmentTargetResolution::ExistingLocal or
+      Resolution IS AssignmentTargetResolution::ExistingUpvalue;
+}
+
+//********************************************************************************************************************
+
+bool assignment_target_is_existing_storage(AssignmentTargetResolution Resolution) noexcept
+{
+   return assignment_target_is_existing_lexical(Resolution) or
+      Resolution IS AssignmentTargetResolution::ExistingGlobal;
+}
+
+//********************************************************************************************************************
+
+bool assignment_target_creates_local(AssignmentTargetResolution Resolution) noexcept
+{
+   return Resolution IS AssignmentTargetResolution::NewLocal;
+}
+
 ExprNodePtr make_literal_expr(SourceSpan Span, const LiteralValue &Literal)
 {
    ExprNodePtr node = std::make_unique<ExprNode>();

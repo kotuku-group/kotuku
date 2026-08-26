@@ -213,7 +213,7 @@ Examples:
 
    -- Build search options
 
-   options = {
+   local options = {
       maxDepth = glMaxDepth,
    }
 
