@@ -183,6 +183,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
          this->lex_state.var_add(BCReg(1));
 
          exception_reg = saved_nactvar; // The exception register is the slot we just added
+         fs->var_get(exception_reg).binding_id = clause.exception_var->binding_id;
 
          // Update local binding so the variable can be referenced
          this->update_local_binding(clause.exception_var->symbol, BCReg(exception_reg));
@@ -408,6 +409,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
       // Mark as const
       VarInfo* info = &fs->var_get(fs->varmap.size() - 1);
       info->info |= VarInfoFlag::Const;
+      info->binding_id = ns_id.binding_id;
 
       // Update binding table
       this->update_local_binding(ns_id.symbol, BCReg(fs->varmap.size() - 1));

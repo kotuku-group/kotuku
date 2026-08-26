@@ -298,6 +298,13 @@ private:
    [[nodiscard]] bool is_variant_expression(const ExprNode &, size_t Position = 0) const;
    [[nodiscard]] bool is_table_read_expression(const ExprNode &);
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
+   struct LocalInitialiser {
+      InferredType type;
+      const ExprNode *expression = nullptr;
+   };
+   [[nodiscard]] std::optional<LocalInitialiser> infer_local_initialiser(const ExprNodeList &, size_t Position);
+   [[nodiscard]] InferredType analyse_annotated_local_binding(
+      const Identifier &, const ExprNodeList &, size_t Position);
 
    // Symbol resolution - looks up variables and functions in scope stack
    [[nodiscard]] std::optional<InferredType> resolve_identifier(GCstr *) const;
@@ -1627,63 +1634,8 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                continue;
             }
             if (name_ref->binding_id and identifier.type != TiriType::Unknown) {
-               InferredType inferred;
-               inferred.primary = TiriType::Nil;
-
-               if (not Payload.values.empty()) {
-                  size_t source = std::min(i, Payload.values.size() - 1);
-                  size_t result_position = i - source;
-                  if (result_position IS 0) inferred = this->infer_expression_type(*Payload.values[source]);
-                  else inferred = this->infer_call_return_type(*Payload.values[source], result_position);
-
-                  if (identifier.type != TiriType::Any and inferred.primary != TiriType::Nil and
-                      inferred.primary != TiriType::Any and inferred.primary != TiriType::Unknown and
-                      inferred.primary != identifier.type) {
-                     TypeDiagnostic diag;
-                     diag.location = Payload.values[source]->span;
-                     diag.expected = identifier.type;
-                     diag.actual = inferred.primary;
-                     diag.code = ParserErrorCode::TypeMismatchAssignment;
-                     diag.message = std::format("cannot assign '{}' to variable of type '{}'",
-                        type_name(inferred.primary), type_name(identifier.type));
-                     this->record_diagnostic(std::move(diag));
-                  }
-                  else if (identifier.type IS TiriType::Struct and inferred.primary IS TiriType::Struct and
-                      identifier.struct_def and inferred.struct_def and
-                      identifier.struct_def != inferred.struct_def) {
-                     TypeDiagnostic diag;
-                     diag.location = Payload.values[source]->span;
-                     diag.expected = TiriType::Struct;
-                     diag.actual = TiriType::Struct;
-                     diag.code = ParserErrorCode::TypeMismatchAssignment;
-                     diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
-                        inferred.struct_def->Name, identifier.struct_def->Name);
-                     this->record_diagnostic(std::move(diag));
-                  }
-                  else if (identifier.type IS TiriType::Array and inferred.primary IS TiriType::Array and
-                      inferred.array_element.known and
-                      not array_element_matches(identifier.array_element, inferred.array_element)) {
-                     TypeDiagnostic diag;
-                     diag.location = Payload.values[source]->span;
-                     diag.expected = TiriType::Array;
-                     diag.actual = TiriType::Array;
-                     diag.code = ParserErrorCode::TypeMismatchAssignment;
-                     diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
-                        array_element_name(identifier.array_element), array_element_name(inferred.array_element));
-                     this->record_diagnostic(std::move(diag));
-                  }
-               }
-
-               inferred.primary = identifier.type;
-               inferred.struct_def = identifier.struct_def;
-               inferred.array_element = identifier.array_element;
-               inferred.requires_destination_type = false;
-               inferred.is_fixed = identifier.type != TiriType::Any;
+               InferredType inferred = this->analyse_annotated_local_binding(identifier, Payload.values, i);
                this->current_scope().declare_local(name, inferred, target.span);
-               if (identifier.type IS TiriType::Any) {
-                  this->explicit_variant_bindings_.insert(name_ref->binding_id);
-               }
-               this->publish_binding_type(name_ref->binding_id, inferred);
                continue;
             }
 
@@ -1691,7 +1643,10 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                size_t source = std::min(i, Payload.values.size() - 1);
                size_t result_position = i - source;
                InferredType inferred;
-               if (result_position IS 0) inferred = this->infer_expression_type(*Payload.values[source]);
+               if (result_position IS 0) {
+                  inferred = this->infer_expression_type(*Payload.values[source]);
+                  inferred = this->refine_static_expression_type(*Payload.values[source], inferred);
+               }
                else {
                   const ExprNode &value_expr = *Payload.values[source];
                   bool provides_multiple_results = value_expr.kind IS AstNodeKind::CallExpr or
@@ -1907,119 +1862,37 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
 
 void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
 {
-   // Track which position we're at for multi-value returns from function calls
-   // When a function call is the last (or only) value, it may provide multiple return values
-   size_t value_index = 0;
-   size_t call_return_index = 0;  // Position within a multi-return call
-   const ExprNode* multi_return_call = nullptr;  // The function call providing multi-returns
-
    for (size_t name_index = 0; name_index < Payload.names.size(); ++name_index) {
       const auto& name = Payload.names[name_index];
       InferredType inferred;
-      InferredType value_type;
-      bool have_value_type = false;
-      const ExprNode *initialiser = nullptr;  // Direct initialiser, excluding trailing multi-return positions
-
-      // Determine the value type for this variable
-      if (value_index < Payload.values.size()) {
-         // We have an explicit value at this position
-         const ExprNode& value_expr = *Payload.values[value_index];
-         value_type = this->infer_expression_type(value_expr);
-         value_type = this->refine_static_expression_type(value_expr, value_type);
-         have_value_type = true;
-         initialiser = &value_expr;
-
-         // If this is the last value and it can provide multiple results, retain it for later declaration positions.
-         if (value_index IS Payload.values.size() - 1 and
-             (value_expr.kind IS AstNodeKind::CallExpr or value_expr.kind IS AstNodeKind::SafeCallExpr or
-              (value_expr.static_results and
-               (this->ctx_.descriptors().results(value_expr.static_results).declared_count > 1 or
-                this->ctx_.descriptors().results(value_expr.static_results).variadic)))) {
-            multi_return_call = &value_expr;
-            call_return_index = 0;
-         }
-
-         value_index += 1;
-      }
-      else if (multi_return_call) {
-         // No more explicit values, but we have a trailing function call
-         // Use the next return value position from the multi-return call
-         call_return_index += 1;
-         value_type = this->infer_call_return_type(*multi_return_call, call_return_index);
-         have_value_type = true;
-      }
+      std::optional<LocalInitialiser> initialiser;
 
       // Explicit type annotation takes precedence (Unknown = no annotation)
       if (name.type != TiriType::Unknown) {
-         inferred.primary = name.type;
-         inferred.struct_def = name.struct_def;
-         inferred.array_element = name.array_element;
-         // 'any' type is not fixed - it accepts any value
-         inferred.is_fixed = (name.type != TiriType::Any);
-
-         // Check that initial value matches declared type (if present and not 'any')
-         if (name.type != TiriType::Any and have_value_type) {
-            // Nil is always allowed as initial value for typed variables
-            if (value_type.primary != TiriType::Nil and
-                value_type.primary != TiriType::Any and
-                value_type.primary != name.type) {
-               TypeDiagnostic diag;
-               if (value_index > 0 and value_index - 1 < Payload.values.size()) {
-                  diag.location = Payload.values[value_index - 1]->span;
-               }
-               diag.expected = name.type;
-               diag.actual = value_type.primary;
-               diag.code = ParserErrorCode::TypeMismatchAssignment;
-               diag.message = std::format("cannot assign '{}' to variable of type '{}'",
-                  type_name(value_type.primary), type_name(name.type));
-               this->record_diagnostic(std::move(diag));
-            }
-            else if (name.type IS TiriType::Struct and value_type.primary IS TiriType::Struct and
-                name.struct_def and value_type.struct_def and name.struct_def != value_type.struct_def) {
-               TypeDiagnostic diag;
-               if (value_index > 0 and value_index - 1 < Payload.values.size()) {
-                  diag.location = Payload.values[value_index - 1]->span;
-               }
-               diag.expected = TiriType::Struct;
-               diag.actual = TiriType::Struct;
-               diag.code = ParserErrorCode::TypeMismatchAssignment;
-               diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
-                  value_type.struct_def->Name, name.struct_def->Name);
-               this->record_diagnostic(std::move(diag));
-            }
-            else if (name.type IS TiriType::Array and value_type.primary IS TiriType::Array and
-                value_type.array_element.known and
-                not array_element_matches(name.array_element, value_type.array_element)) {
-               TypeDiagnostic diag;
-               diag.location = initialiser ? initialiser->span : name.span;
-               diag.expected = TiriType::Array;
-               diag.actual = TiriType::Array;
-               diag.code = ParserErrorCode::TypeMismatchAssignment;
-               diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
-                  array_element_name(name.array_element), array_element_name(value_type.array_element));
-               this->record_diagnostic(std::move(diag));
-            }
-         }
-      }
-      else if (have_value_type) {
-         // No annotation: infer type from initial value
-         inferred = value_type;
-
-         inferred.requires_destination_type = not name.is_blank and
-            (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown) and
-            not (initialiser and is_table_read_expression(*initialiser));
-
-         // Non-nil, non-any initial values fix the type
-         if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
-             inferred.primary != TiriType::Unknown) {
-            inferred.is_fixed = true;
-         }
+         inferred = this->analyse_annotated_local_binding(name, Payload.values, name_index);
       }
       else {
-         // No annotation and no initialiser: starts as nil, type not yet determined
-         // Use Nil (not Any) so the first non-nil assignment will fix the type
-         inferred.primary = TiriType::Nil;
-         inferred.is_fixed = false;
+         initialiser = this->infer_local_initialiser(Payload.values, name_index);
+         if (initialiser) {
+            // No annotation: infer type from initial value
+            inferred = initialiser->type;
+
+            inferred.requires_destination_type = not name.is_blank and
+               (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown) and
+               not is_table_read_expression(*initialiser->expression);
+
+            // Non-nil, non-any initial values fix the type
+            if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
+                inferred.primary != TiriType::Unknown) {
+               inferred.is_fixed = true;
+            }
+         }
+         else {
+            // No annotation and no initialiser: starts as nil, type not yet determined
+            // Use Nil (not Any) so the first non-nil assignment will fix the type
+            inferred.primary = TiriType::Nil;
+            inferred.is_fixed = false;
+         }
       }
 
       #ifdef INCLUDE_TIPS
@@ -2027,17 +1900,89 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       #endif
 
       this->current_scope().declare_local(name.symbol, inferred, name.span, name.has_const);
-      if ((name.type IS TiriType::Any or (initialiser and is_table_read_expression(*initialiser))) and
-          name.binding_id) {
+      if (name.type IS TiriType::Unknown and initialiser and
+          is_table_read_expression(*initialiser->expression) and name.binding_id) {
          this->explicit_variant_bindings_.insert(name.binding_id);
       }
-      this->publish_binding_type(name.binding_id, inferred);
+      if (name.type IS TiriType::Unknown) this->publish_binding_type(name.binding_id, inferred);
       this->trace_decl(this->ctx_.lex().linenumber, name.symbol, inferred.primary, inferred.is_fixed);
    }
 
    for (const auto &value : Payload.values) {
       this->analyse_expression(*value);
    }
+}
+
+std::optional<TypeAnalyser::LocalInitialiser> TypeAnalyser::infer_local_initialiser(
+   const ExprNodeList &Values, size_t Position)
+{
+   if (Values.empty()) return std::nullopt;
+
+   size_t source = std::min(Position, Values.size() - 1);
+   size_t result_position = Position - source;
+   const ExprNode &expression = *Values[source];
+   InferredType type;
+   if (result_position IS 0) {
+      type = this->infer_expression_type(expression);
+      type = this->refine_static_expression_type(expression, type);
+   }
+   else {
+      bool provides_multiple_results = expression.kind IS AstNodeKind::CallExpr or
+         expression.kind IS AstNodeKind::SafeCallExpr or
+         (expression.static_results and
+          (this->ctx_.descriptors().results(expression.static_results).declared_count > 1 or
+           this->ctx_.descriptors().results(expression.static_results).variadic));
+      if (not provides_multiple_results) return std::nullopt;
+      type = this->infer_call_return_type(expression, result_position);
+   }
+   return LocalInitialiser { type, &expression };
+}
+
+InferredType TypeAnalyser::analyse_annotated_local_binding(
+   const Identifier &Name, const ExprNodeList &Values, size_t Position)
+{
+   InferredType inferred;
+   inferred.primary = Name.type;
+   inferred.struct_def = Name.struct_def;
+   inferred.array_element = Name.array_element;
+   inferred.requires_destination_type = false;
+   inferred.is_fixed = Name.type != TiriType::Any;
+
+   auto initialiser = this->infer_local_initialiser(Values, Position);
+   if (Name.type != TiriType::Any and initialiser) {
+      const InferredType &value_type = initialiser->type;
+      TypeDiagnostic diag;
+      diag.location = initialiser->expression->span;
+      diag.expected = Name.type;
+      diag.actual = value_type.primary;
+      diag.code = ParserErrorCode::TypeMismatchAssignment;
+
+      if (value_type.primary != TiriType::Nil and value_type.primary != TiriType::Any and
+          value_type.primary != TiriType::Unknown and value_type.primary != Name.type) {
+         diag.message = std::format("cannot assign '{}' to variable of type '{}'",
+            type_name(value_type.primary), type_name(Name.type));
+         this->record_diagnostic(std::move(diag));
+      }
+      else if (Name.type IS TiriType::Struct and value_type.primary IS TiriType::Struct and
+          Name.struct_def and value_type.struct_def and Name.struct_def != value_type.struct_def) {
+         diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
+            value_type.struct_def->Name, Name.struct_def->Name);
+         this->record_diagnostic(std::move(diag));
+      }
+      else if (Name.type IS TiriType::Array and value_type.primary IS TiriType::Array and
+          value_type.array_element.known and
+          not array_element_matches(Name.array_element, value_type.array_element)) {
+         diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
+            array_element_name(Name.array_element), array_element_name(value_type.array_element));
+         this->record_diagnostic(std::move(diag));
+      }
+   }
+
+   if (Name.type IS TiriType::Any and Name.binding_id) {
+      this->explicit_variant_bindings_.insert(Name.binding_id);
+   }
+   this->publish_binding_type(Name.binding_id, inferred);
+   return inferred;
 }
 
 //********************************************************************************************************************

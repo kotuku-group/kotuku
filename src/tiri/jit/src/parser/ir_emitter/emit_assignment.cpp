@@ -350,9 +350,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       for (BCReg i = BCReg(0); i < nvars; ++i) {
          PreparedAssignment& target = targets[i.raw()];
          if (target.pending_symbol) {
+            VarInfo *info = &this->func_state.var_get((base + i).raw());
+            info->binding_id = target.binding_id;
             this->update_local_binding(target.pending_symbol, base + i);
 
-            if (i.raw() < values.size()) {
+            if (not this->apply_analysed_local_type(base + i, target.binding_id) and i.raw() < values.size()) {
                this->apply_inferred_local_type(base + i, *values[i.raw()]);
             }
          }
@@ -815,27 +817,6 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
             std::format("cannot override built-in '{}'",
                std::string_view(strdata(protected_name), protected_name->len)),
             node->span));
-      }
-
-      // A plain identifier target naming a host pre-registered global is an override unless an explicit
-      // local shadow is in scope.  Member and index stores (math.foo = 1) remain legal table mutations.
-
-      if (node->kind IS AstNodeKind::IdentifierExpr) {
-         if (const auto *name_ref = std::get_if<NameRef>(&node->data)) {
-            GCstr *symbol = name_ref->identifier.symbol;
-            if (symbol and not name_ref->identifier.is_blank and
-                ((symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
-               ExpDesc resolved;
-               this->lex_state.var_lookup_symbol(symbol, &resolved);
-               if (resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
-                  return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
-                     ParserErrorCode::OverrideProtectedGlobal,
-                     std::format("cannot override built-in '{}'",
-                        std::string_view(strdata(symbol), symbol->len)),
-                     node->span));
-               }
-            }
-         }
       }
 
       PreparedAssignment prepared;

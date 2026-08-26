@@ -47,6 +47,7 @@
 #include "parser.h"
 #include "static_descriptor_analysis.h"
 #include "table_ownership.h"
+#include "ir_emitter/ir_emitter.h"
 #include "../runtime/lj_array.h"
 #include "../../../defs.h"
 
@@ -569,6 +570,86 @@ static bool test_assignment_target_environment_types(kt::Log &Log)
        struct_hint->second.primary != TiriType::Struct or struct_hint->second.struct_def != definition or
        struct_hint->second.contract_policy != GlobalContractPolicy::Advisory) {
       Log.error("persisted array or structure identity was not seeded as advisory environment metadata");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_emitter_invariant(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "local value = 1\n"
+      "value = 2\n";
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(lua, unit_reader, &reader, "assignment-emitter-invariant", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(lua));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) return false;
+
+   resolve_assignment_targets(context, *chunk.value_ref());
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   run_type_analysis(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+
+   StatementListView statements = chunk.value_ref()->view();
+   auto *assignment = statements.size() IS 2 ?
+      std::get_if<AssignmentStmtPayload>(&statements[1].data) : nullptr;
+   auto *reference = assignment and assignment->targets.size() IS 1 ?
+      std::get_if<NameRef>(&assignment->targets[0]->data) : nullptr;
+   if (not reference or reference->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       not reference->binding_id) {
+      Log.error("emitter invariant fixture did not resolve to an existing local");
+      return false;
+   }
+
+   ++reference->binding_id;
+   reference->identifier.binding_id = reference->binding_id;
+   IrEmitter emitter(context);
+   auto emitted = emitter.emit_chunk(*chunk.value_ref());
+   if (emitted.ok() or emitted.error_ref().code != ParserErrorCode::InternalInvariant) {
+      Log.error("emitter accepted a lexical target whose binding disagreed with semantic resolution");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_new_local_emission(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "function values():<num, num> return 17, 23 end\n"
+      "first, second = values()\n"
+      "return first, second\n";
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   if (lua_load(lua, source, "assignment-new-local-emission")) {
+      Log.error("compiling deferred new-local assignment failed: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   if (lua_pcall(lua, 0, 2, 0)) {
+      Log.error("executing deferred new-local assignment failed: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   bool ordered = lua_tointeger(lua, -2) IS 17 and lua_tointeger(lua, -1) IS 23;
+   lua_pop(lua, 2);
+   if (not ordered) {
+      Log.error("deferred new-local assignment changed multi-result register ordering");
       return false;
    }
 
@@ -1686,6 +1767,80 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
    if (lua_tonumber(mixed, -2) != 2 or lua_tonumber(mixed, -1) != 3) {
       Log.error("a type annotation changed name resolution for another assignment target");
       return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_annotated_local_validation_parity(kt::Log &Log)
+{
+   struct ValidationCase {
+      std::string_view label;
+      std::string_view prefix;
+      std::string_view explicit_local;
+      std::string_view new_local;
+      std::string_view expected_error;
+   };
+
+   constexpr std::array<ValidationCase, 11> cases = { {
+      { "primary match", {}, "local value:num = 1", "value:num = 1", {} },
+      { "primary mismatch", {}, "local value:num = 'wrong'", "value:num = 'wrong'", "cannot assign 'str'" },
+      { "dynamic ingress", "function dynamic(Value:any):any return Value end\n",
+         "local value:num = dynamic(1)", "value:num = dynamic(1)", {} },
+      { "explicit any", {}, "local value:any = 1\nvalue = 'text'", "value:any = 1\nvalue = 'text'", {} },
+      { "structure match", "struct ParityRecord Value: int end\n",
+         "local value:struct<ParityRecord> = struct<ParityRecord> { Value = 1 }",
+         "value:struct<ParityRecord> = struct<ParityRecord> { Value = 1 }", {} },
+      { "structure mismatch", "struct ParityExpected Value: int end\nstruct ParityActual Value: double end\n",
+         "local value:struct<ParityExpected> = struct<ParityActual> { Value = 1 }",
+         "value:struct<ParityExpected> = struct<ParityActual> { Value = 1 }", "struct layout mismatch" },
+      { "array match", {}, "local value:array<int> = array<int> { 1 }",
+         "value:array<int> = array<int> { 1 }", {} },
+      { "array mismatch", {}, "local value:array<int> = array<str> { 'wrong' }",
+         "value:array<int> = array<str> { 'wrong' }", "array member mismatch" },
+      { "broad object", {}, "local value:obj = obj.new('time')\nvalue = obj.new('file')",
+         "value:obj = obj.new('time')\nvalue = obj.new('file')", {} },
+      { "multi-result mismatch", "local function pair():<num, str> return 1, 'wrong' end\n",
+         "local first:num, second:bool = pair()", "first:num, second:bool = pair()", "cannot assign 'str'" },
+      { "missing result", "local function one():num return 1 end\n",
+         "local first:num, second:str = one()", "first:num, second:str = one()", {} }
+   } };
+
+   auto compile = [](const ValidationCase &Case, std::string_view Declaration, std::string &Error) {
+      LuaStateHolder holder;
+      lua_State *lua = holder.get();
+      luaL_openlibs(lua);
+      std::string source(Case.prefix);
+      source.append(Declaration);
+      if (lua_load(lua, source, Case.label.data())) {
+         Error.assign(lua_tostring(lua, -1));
+         return false;
+      }
+      lua_pop(lua, 1);
+      Error.clear();
+      return true;
+   };
+
+   for (const ValidationCase &test_case : cases) {
+      std::string explicit_error;
+      std::string assignment_error;
+      bool explicit_ok = compile(test_case, test_case.explicit_local, explicit_error);
+      bool assignment_ok = compile(test_case, test_case.new_local, assignment_error);
+      bool expected_ok = test_case.expected_error.empty();
+      if (explicit_ok != expected_ok or assignment_ok != expected_ok) {
+         Log.error("annotated %.*s parity failed: explicit='%s', assignment='%s'",
+            int(test_case.label.size()), test_case.label.data(), explicit_error.c_str(), assignment_error.c_str());
+         return false;
+      }
+      if (not expected_ok and
+          (explicit_error.find(test_case.expected_error) IS std::string::npos or
+           assignment_error.find(test_case.expected_error) IS std::string::npos)) {
+         Log.error("annotated %.*s parity produced different diagnostics: explicit='%s', assignment='%s'",
+            int(test_case.label.size()), test_case.label.data(), explicit_error.c_str(), assignment_error.c_str());
+         return false;
+      }
    }
 
    return true;
@@ -6076,9 +6231,8 @@ static bool test_environment_store_boundary(kt::Log &Log)
    }
 
    // A separately compiled direct assignment must rely on BC_GSET instead of copying the persisted descriptor into a
-   // preceding BC_CONTRACT.
+   // preceding BC_CONTRACT.  No source extern is needed: semantic resolution recognises the nil-valued contract.
    constexpr std::string_view assignment_source =
-      "extern glUnitEnvBoundary\n"
       "glUnitEnvBoundary = 'compiled'\n";
    if (lua_load(L, assignment_source, "=envboundary-assignment")) {
       Log.error("compiling the persisted-policy assignment failed: %s", lua_tostring(L, -1));
@@ -10385,13 +10539,15 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 94> tests = { {
+   constexpr std::array<TestCase, 97> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
       { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
       { "assignment_target_descriptor_discovery", test_assignment_target_descriptor_discovery },
       { "assignment_target_environment_types", test_assignment_target_environment_types },
+      { "assignment_target_emitter_invariant", test_assignment_target_emitter_invariant },
+      { "assignment_new_local_emission", test_assignment_new_local_emission },
       { "literal_binary_expr", test_literal_binary_expr },
       { "type_test_ast", test_type_test_ast },
       { "choose_type_pattern_ast", test_choose_type_pattern_ast },
@@ -10412,6 +10568,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
+      { "annotated_local_validation_parity", test_annotated_local_validation_parity },
       { "implicit_later_name_attributes", test_implicit_later_name_attributes },
       { "implicit_attribute_shadowing", test_implicit_attribute_shadowing },
       { "ternary_colon_separators", test_ternary_colon_separators },
