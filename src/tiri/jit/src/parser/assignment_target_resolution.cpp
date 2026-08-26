@@ -169,12 +169,14 @@ private:
 
    void resolve_function(FunctionExprPayload &Function)
    {
+      const size_t inherited_global_count = this->global_names_.size();
       ++this->function_depth_;
       this->scopes_.push_back(AssignmentScope{});
       for (FunctionParameter &parameter : Function.parameters) this->declare(parameter.name);
       if (Function.body) this->resolve_block(*Function.body, false);
       this->scopes_.pop_back();
       --this->function_depth_;
+      this->global_names_.resize(inherited_global_count);
    }
 
    void resolve_expression(ExprNode &Expression)
