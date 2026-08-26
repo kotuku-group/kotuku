@@ -571,6 +571,20 @@ end
    assert(inner and inner.type is 11, 'A constrained array element name should be a class token.')
 end
 
+@Test function StructArrayTypeTestReceivesNestedTypeTokens()
+   source = 'ok = points is <array struct<Point>>\n'
+
+   tokens = tokenizeTiri(source)
+
+   array_type = findToken(tokens, 0, 16, 'array')
+   struct_type = findToken(tokens, 0, 22, 'struct')
+   struct_name = findToken(tokens, 0, 29, 'Point')
+
+   assert(array_type and array_type.type is 7, 'The array descriptor primary should be a type token.')
+   assert(struct_type and struct_type.type is 7, 'The nested struct descriptor should be a type token.')
+   assert(struct_name and struct_name.type is 11, 'The nested structure name should be a class token.')
+end
+
 @Test function StructTypeTestIsNotAStructDeclaration()
    -- A mid-line `<struct Name>` type test must not trip the struct-declaration branch, which would emit the name
    -- with a declaration modifier and mislead go-to-definition and document symbols.

@@ -209,8 +209,9 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       return Pos
    end
 
-   -- A type-test primary word may carry an inner constraint name: `<array int>`, `<obj Vector>` and
-   -- `<struct Point>`.  The remaining primaries (`num`, `str`, `nil`, `range`, ...) are unconstrained.
+   -- A type-test primary word may carry an inner constraint: `<array int>`, `<array struct<Point>>`,
+   -- `<obj Vector>` and `<struct Point>`.  The remaining primaries (`num`, `str`, `nil`, `range`, ...) are
+   -- unconstrained.
    type_test_types = {
       ['any'] = true, ['nil'] = true, ['bool'] = true, ['num'] = true, ['str'] = true, ['table'] = true,
       ['array'] = true, ['func'] = true, ['struct'] = true, ['obj'] = true, ['object'] = true, ['range'] = true,
@@ -288,6 +289,10 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
 
       inner_col = nil
       inner_len = 0
+      nested_type_col = nil
+      nested_type_len = 0
+      nested_open_col = nil
+      nested_close_col = nil
       if type_test_constrainable[primary] then
          mark_pos = pos
          mark_col = col
@@ -296,12 +301,61 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             col++
          end
          if pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+            inner_pos = pos
             inner_col = col
             while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
                pos++
                col++
             end
             inner_len = col - inner_col
+            inner_name = Source.sub(inner_pos, pos)
+
+            if primary is 'array' and inner_name is 'struct' then
+               nested_type_col = inner_col
+               nested_type_len = inner_len
+
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos >= len or Source.sub(pos, pos + 1) != '<' then
+                  pos = save_pos
+                  col = save_col
+                  return false
+               end
+               nested_open_col = col
+               pos++
+               col++
+
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos >= len or not isIdentStart(Source.sub(pos, pos + 1)) then
+                  pos = save_pos
+                  col = save_col
+                  return false
+               end
+               inner_col = col
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+               inner_len = col - inner_col
+
+               while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos >= len or Source.sub(pos, pos + 1) != '>' then
+                  pos = save_pos
+                  col = save_col
+                  return false
+               end
+               nested_close_col = col
+               pos++
+               col++
+            end
          else
             pos = mark_pos
             col = mark_col
@@ -332,9 +386,14 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
       if NotCol then addToken(NotLine, NotCol, 3, 1, 0) end  -- 'not' operator
       addToken(line, open_col, 1, 1, 0)                    -- '<' operator
       addToken(line, primary_col, primary_len, 7, 0)       -- descriptor primary: type
+      if nested_type_col then
+         addToken(line, nested_type_col, nested_type_len, 7, 0) -- nested element descriptor: type
+         addToken(line, nested_open_col, 1, 1, 0)           -- nested '<' operator
+      end
       if inner_col then
          addToken(line, inner_col, inner_len, 11, 0)       -- inner constraint name: class
       end
+      if nested_close_col then addToken(line, nested_close_col, 1, 1, 0) end -- nested '>' operator
       addToken(line, close_col, 1, 1, 0)                   -- '>' operator
       return true
    end

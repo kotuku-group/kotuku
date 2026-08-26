@@ -27,7 +27,7 @@ bool AstBuilder::choose_case_has_type_test_descriptor() const
       close_offset = 2;
    }
    else if (close_or_constraint.kind() IS TokenKind::Identifier or
-      close_or_constraint.kind() IS TokenKind::ArrayTyped) {
+      close_or_constraint.kind() IS TokenKind::ArrayTyped or close_or_constraint.kind() IS TokenKind::StructTyped) {
       if (this->ctx.tokens().peek(3).kind() != TokenKind::Greater) return false;
       close_offset = 3;
    }

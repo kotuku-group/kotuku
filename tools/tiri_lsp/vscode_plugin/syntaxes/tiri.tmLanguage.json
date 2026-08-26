@@ -33,6 +33,22 @@
          "patterns": [
             {
                "name": "meta.type-test.tiri",
+               "comment": "Contextual structure-array `is [not] <array struct<Name>>` boolean type test.",
+               "match": "\\b(is)\\b(?:\\s+(not))?\\s*(<)\\s*(array)\\s+(struct)\\s*(<)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(>)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.logical.tiri" },
+                  "2": { "name": "keyword.operator.logical.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "support.type.primitive.tiri" },
+                  "6": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "7": { "name": "entity.name.type.tiri" },
+                  "8": { "name": "punctuation.definition.type-test.end.tiri" },
+                  "9": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
                "comment": "Contextual constrained `is [not] <aggregate Name>` boolean type test.",
                "match": "\\b(is)\\b(?:\\s+(not))?\\s*(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
                "captures": {
@@ -42,6 +58,21 @@
                   "4": { "name": "support.type.primitive.tiri" },
                   "5": { "name": "entity.name.type.tiri" },
                   "6": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Structure-array `!= <array struct<Name>>` or `≠ <array struct<Name>>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(array)\\s+(struct)\\s*(<)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(>)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.comparison.tiri" },
+                  "2": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "6": { "name": "entity.name.type.tiri" },
+                  "7": { "name": "punctuation.definition.type-test.end.tiri" },
+                  "8": { "name": "punctuation.definition.type-test.end.tiri" }
                }
             },
             {
@@ -83,6 +114,20 @@
       },
       "choose-type-patterns": {
          "patterns": [
+            {
+               "name": "meta.choose.type-pattern.tiri",
+               "comment": "Structure-array `<array struct<Name>>` choose type pattern before when or ->.",
+               "match": "(<)\\s*(array)\\s+(struct)\\s*(<)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(>)\\s*(>)(?=\\s*(?:when\\b|->))",
+               "captures": {
+                  "1": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "2": { "name": "support.type.primitive.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "5": { "name": "entity.name.type.tiri" },
+                  "6": { "name": "punctuation.definition.type-test.end.tiri" },
+                  "7": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
             {
                "name": "meta.choose.type-pattern.tiri",
                "comment": "Constrained `<aggregate Name>` choose type pattern before when or ->.",

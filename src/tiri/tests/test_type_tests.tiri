@@ -60,7 +60,14 @@ end
    assert(alpha is <struct>, 'unconstrained struct should match')
    assert(alpha is <struct TypeTestAlpha>, 'named structure identity should match')
    assert(bravo is not <struct TypeTestAlpha>, 'different structure definitions should not match')
-   assert(alpha_array is <array TypeTestAlpha>, 'structure-array identity should match')
+   assert(alpha_array is <array struct<TypeTestAlpha>>, 'structure-array identity should match')
+   assert(alpha_array is not <array struct<TypeTestBravo>>, 'structure-array identity should reject a mismatch')
+
+   local array_kind = choose alpha_array from
+      <array struct<TypeTestAlpha>> -> 'alpha'
+      else -> 'other'
+   end
+   assert(array_kind is 'alpha', 'choose should recognise a structure-array type pattern')
 end
 
 @Test function ObjectDescriptorsAndInheritance()
@@ -139,7 +146,15 @@ end
    try
       exec([[return 1 is <array int str>]])
    except error_value
-      failed = error_value.message.find('at most one inner name') != nil
+      failed = error_value.message.find('at most one inner constraint') != nil
    end
    assert(failed, 'surplus descriptor names should have a focused diagnostic')
+
+   failed = false
+   try
+      exec([[return array<struct<TypeTestAlpha>> {} is <array TypeTestAlpha>]])
+   except error_value
+      failed = error_value.message.find("use '<array struct<TypeTestAlpha>>'") != nil
+   end
+   assert(failed, 'bare structure-array descriptors should report the canonical spelling')
 end
