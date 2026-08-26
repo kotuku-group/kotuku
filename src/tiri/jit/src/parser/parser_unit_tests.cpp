@@ -1156,6 +1156,22 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
       return false;
    }
 
+   LuaStateHolder implicit_holder;
+   lua_State *implicit = implicit_holder.get();
+   constexpr std::string_view implicit_redeclaration =
+      "total = 1\n"
+      "total:num = 5\n";
+   if (lua_load(implicit, implicit_redeclaration, "typed-implicit-local-redeclaration") IS 0) {
+      Log.error("a type annotation redeclared an existing implicit local");
+      return false;
+   }
+
+   error = lua_tostring(implicit, -1);
+   if (error.find("cannot redeclare existing local 'total' with a type annotation") IS std::string_view::npos) {
+      Log.error("typed implicit-local redeclaration produced the wrong diagnostic: %s", lua_tostring(implicit, -1));
+      return false;
+   }
+
    LuaStateHolder mixed_holder;
    lua_State *mixed = mixed_holder.get();
    constexpr std::string_view mixed_assignment =

@@ -396,7 +396,7 @@ private:
    void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false,
       GlobalContractPolicy ContractPolicy = GlobalContractPolicy::Advisory);
    void declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location);
-   void declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location);
+   [[nodiscard]] bool declare_implicit_global(GCstr *Name, InferredType Type, SourceSpan Location);
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
    [[nodiscard]] bool is_global_const(GCstr *Name) const;
    [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
@@ -1636,6 +1636,14 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   this->publish_binding_type(name_ref->binding_id, inferred);
                   continue;
                }
+
+               if (Payload.op IS AssignmentOperator::Plain) {
+                  if (not this->declare_implicit_global(name, inferred, target.span)) {
+                     this->current_scope().declare_local(name, inferred, target.span);
+                     this->publish_binding_type(name_ref->binding_id, inferred);
+                  }
+                  continue;
+               }
             }
 
             // The name is neither a local nor a known global.  A plain assignment to a name that already exists in
@@ -1643,7 +1651,8 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             // simple '=' assignments are used for inference; compound operators require an existing value and never
             // create a global.
             if (Payload.op IS AssignmentOperator::Plain and i < Payload.values.size()) {
-               this->declare_implicit_global(name, Payload.values[i].get(), target.span);
+               InferredType inferred = this->infer_expression_type(*Payload.values[i]);
+               (void)this->declare_implicit_global(name, inferred, target.span);
             }
             continue;
          }
@@ -3427,28 +3436,27 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
 // conflicting later assignments degrade it to 'any' instead of diagnosing, since the assignment carries no
 // user-declared type contract.
 
-void TypeAnalyser::declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location)
+bool TypeAnalyser::declare_implicit_global(GCstr *Name, InferredType Type, SourceSpan Location)
 {
-   if (not Name or not Value) return;
-   if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return;
+   if (not Name) return false;
+   if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return false;
 
    cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), Name);
    bool is_global_store = (global != nullptr) and not tvisnil(global);
-   if (not is_global_store) return;  // Plain assignment to this name creates a local, not a global
+   if (not is_global_store) return false;  // Plain assignment to this name creates a local, not a global
 
-   InferredType inferred = this->infer_expression_type(*Value);
-   if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
-       inferred.primary != TiriType::Unknown) {
-      inferred.is_fixed = true;
+   if (Type.primary != TiriType::Nil and Type.primary != TiriType::Any and Type.primary != TiriType::Unknown) {
+      Type.is_fixed = true;
    }
-   else inferred.is_fixed = false;
+   else Type.is_fixed = false;
 
    GlobalTypeInfo info;
-   info.type = inferred;
+   info.type = Type;
    info.location = Location;
    info.implicit = true;
    this->global_types_[Name] = info;
-   this->trace_decl(this->ctx_.lex().linenumber, Name, inferred.primary, inferred.is_fixed);
+   this->trace_decl(this->ctx_.lex().linenumber, Name, Type.primary, Type.is_fixed);
+   return true;
 }
 
 std::optional<InferredType> TypeAnalyser::lookup_global_type(GCstr *Name) const
