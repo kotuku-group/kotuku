@@ -382,6 +382,133 @@ static bool test_assignment_target_semantic_resolution(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+
+static bool test_assignment_target_descriptor_discovery(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "if false then\n"
+      "   local unreachable = 0\n"
+      "end\n"
+      "fresh = 1\n"
+      "fresh = 2\n"
+      "function touch(parameter)\n"
+      "   fresh = parameter\n"
+      "end\n"
+      "extern external\n"
+      "external = 3\n"
+      "contracted_nil = 4\n"
+      "_ = 5\n"
+      "missing += 1\n";
+
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   GCstr *contracted_name = lj_str_newlit(lua, "contracted_nil");
+   lj_tab_set_global_contract(lua, tabref(lua->env), contracted_name, lj_str_newlit(lua, "persisted-contract"));
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(lua, unit_reader, &reader, "assignment-target-descriptors", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(lua));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Log.error("assignment descriptor fixture did not parse");
+      return false;
+   }
+   resolve_assignment_targets(context, *chunk.value_ref());
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   if (context.diagnostics().has_errors()) {
+      Log.error("assignment descriptor discovery reported an unexpected invariant");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+
+   auto target = [&chunk](size_t Statement) -> NameRef * {
+      if (Statement >= chunk.value_ref()->statements.size()) return nullptr;
+      auto *assignment = std::get_if<AssignmentStmtPayload>(&chunk.value_ref()->statements[Statement]->data);
+      if (not assignment or assignment->targets.empty() or not assignment->targets.front()) return nullptr;
+      return std::get_if<NameRef>(&assignment->targets.front()->data);
+   };
+
+   NameRef *fresh = target(1);
+   NameRef *existing = target(2);
+   NameRef *external = target(5);
+   NameRef *contracted = target(6);
+   NameRef *blank = target(7);
+   NameRef *invalid = target(8);
+   const auto *function = std::get_if<FunctionStmtPayload>(&chunk.value_ref()->statements[3]->data);
+   const auto *capture_assignment = function and function->function and function->function->body and
+      not function->function->body->statements.empty() ?
+         std::get_if<AssignmentStmtPayload>(&function->function->body->statements.front()->data) : nullptr;
+   const NameRef *capture = capture_assignment and not capture_assignment->targets.empty() and
+      capture_assignment->targets.front() ?
+         std::get_if<NameRef>(&capture_assignment->targets.front()->data) : nullptr;
+
+   if (not fresh or fresh->assignment_resolution != AssignmentTargetResolution::NewLocal or not fresh->binding_id or
+       not existing or existing->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       existing->binding_id != fresh->binding_id or not capture or
+       capture->assignment_resolution != AssignmentTargetResolution::ExistingUpvalue or
+       capture->binding_id != fresh->binding_id or not external or external->binding_id or not contracted or
+       contracted->binding_id or not blank or blank->binding_id or not invalid or invalid->binding_id) {
+      Log.error("descriptor discovery changed an assignment category or published binding");
+      return false;
+   }
+
+   // The unreachable local, fresh local, local function and parameter are the only lexical declarations.
+   if (context.descriptors().binding_count() != 5) {
+      Log.error("assignment discovery allocated %zu descriptors instead of four",
+         context.descriptors().binding_count() - 1);
+      return false;
+   }
+   const StaticBindingDescriptor &fresh_descriptor = context.descriptors().binding(fresh->binding_id);
+   if (fresh_descriptor.name != fresh->identifier.symbol or fresh_descriptor.immutable or
+       not fresh_descriptor.captured) {
+      Log.error("existing local/upvalue writes did not update the original descriptor");
+      return false;
+   }
+
+   constexpr std::string_view invalid_source = "broken = 1";
+   LuaStateHolder invalid_state;
+   lua_State *invalid_lua = invalid_state.get();
+   StringReaderCtx invalid_reader{ invalid_source.data(), invalid_source.size() };
+   LexState invalid_lex(invalid_lua, unit_reader, &invalid_reader, "assignment-target-invariant", std::nullopt);
+   invalid_lex.diagnose_mode = true;
+   FuncState &invalid_fs = invalid_lex.fs_init();
+   ParserContext invalid_context = ParserContext::from(
+      invalid_lex, invalid_fs, ParserAllocator::from(invalid_lua));
+   ParserSession invalid_session(invalid_context, config);
+   invalid_lex.next();
+   AstBuilder invalid_builder(invalid_context);
+   auto invalid_chunk = invalid_builder.parse_chunk();
+   if (not invalid_chunk.ok()) return false;
+   resolve_assignment_targets(invalid_context, *invalid_chunk.value_ref());
+   auto &broken_assignment = std::get<AssignmentStmtPayload>(invalid_chunk.value_ref()->statements.front()->data);
+   auto &broken = std::get<NameRef>(broken_assignment.targets.front()->data);
+   broken.assignment_resolution = AssignmentTargetResolution::ExistingLocal;
+   broken.binding_id = {};
+   broken.identifier.binding_id = {};
+   discover_static_bindings(invalid_context, *invalid_chunk.value_ref());
+
+   bool found_invariant = false;
+   for (const ParserDiagnostic &diagnostic : invalid_context.diagnostics().entries()) {
+      if (diagnostic.code IS ParserErrorCode::InternalInvariant) found_invariant = true;
+   }
+   if (not found_invariant or invalid_context.descriptors().binding_count() != 1) {
+      Log.error("diagnose mode manufactured a binding instead of reporting the resolver mismatch");
+      return false;
+   }
+
+   return true;
+}
+
 struct ExpressionParseHarness {
    std::unique_ptr<LuaStateHolder> holder;
    std::unique_ptr<StringReaderCtx> reader;
@@ -1588,6 +1715,7 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
    AstBuilder builder(context);
    result.chunk = builder.parse_chunk();
    if (result.chunk.ok()) {
+      resolve_assignment_targets(context, *result.chunk.value_ref());
       discover_static_bindings(context, *result.chunk.value_ref());
       if (EnableTypeAnalysis) run_type_analysis(context, *result.chunk.value_ref());
    }
@@ -6412,6 +6540,7 @@ static bool test_builtin_method_static_classification(kt::Log &Log)
       log_diagnostics(context.diagnostics().entries(), Log);
       return false;
    }
+   resolve_assignment_targets(context, *chunk.value_ref());
    discover_static_bindings(context, *chunk.value_ref());
    propagate_static_descriptors(context, *chunk.value_ref());
    run_type_analysis(context, *chunk.value_ref());
@@ -6552,6 +6681,7 @@ static bool test_stage_b_collection_api_contracts(kt::Log &Log)
       log_diagnostics(context.diagnostics().entries(), Log);
       return false;
    }
+   resolve_assignment_targets(context, *chunk.value_ref());
    discover_static_bindings(context, *chunk.value_ref());
    propagate_static_descriptors(context, *chunk.value_ref());
    run_type_analysis(context, *chunk.value_ref());
@@ -6677,6 +6807,7 @@ static bool test_unresolved_method_receiver_diagnostic(kt::Log &Log)
       AstBuilder builder(context);
       result.chunk = builder.parse_chunk();
       if (result.chunk.ok()) {
+         resolve_assignment_targets(context, *result.chunk.value_ref());
          discover_static_bindings(context, *result.chunk.value_ref());
          propagate_static_descriptors(context, *result.chunk.value_ref());
          run_type_analysis(context, *result.chunk.value_ref());
@@ -9697,6 +9828,7 @@ static bool test_contextual_designation_ownership(kt::Log &Log)
       log_diagnostics(context.diagnostics().entries(), Log);
       return false;
    }
+   resolve_assignment_targets(context, *chunk.value_ref());
    discover_static_bindings(context, *chunk.value_ref());
    propagate_static_descriptors(context, *chunk.value_ref());
 
@@ -10116,11 +10248,12 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 92> tests = { {
+   constexpr std::array<TestCase, 93> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
       { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
+      { "assignment_target_descriptor_discovery", test_assignment_target_descriptor_discovery },
       { "literal_binary_expr", test_literal_binary_expr },
       { "type_test_ast", test_type_test_ast },
       { "choose_type_pattern_ast", test_choose_type_pattern_ast },
