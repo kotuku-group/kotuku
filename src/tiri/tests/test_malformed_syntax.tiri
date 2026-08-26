@@ -98,17 +98,21 @@ end
    assertInvalidCode("local something = externalValue", 'UndefinedVariable',
       'extern symbols should not leak between validation runs')
 
-   result = debug.validate("extern *\nlocal value = anyMissingSymbol")
-   assert(result.success is true, "Extern wildcard read should validate")
+   result = debug.validate("extern *")
+   assert(result.success is false, "Extern wildcard should fail validation")
+   assert(result.diagnostics[0].code is 'UnexpectedToken',
+      "Extern wildcard should report an UnexpectedToken diagnostic")
+   assert(result.diagnostics[0].message.find('list external symbols by name') != nil,
+      "Extern wildcard diagnostic should explain the named-symbol migration")
 
-   result = debug.validate("extern *\nfunction nested():any\n   return anyMissingSymbol\nend")
-   assert(result.success is true, "Extern wildcard read inside nested function should validate")
+   result = debug.validate("extern *\nlocal value = anyMissingSymbol")
+   assert(result.success is false, "Extern wildcard should remain invalid before an unresolved read")
+   assert(result.diagnostics[0].message.find('list external symbols by name') != nil,
+      "Extern wildcard with a following read should retain the migration diagnostic")
 
    assertInvalidCode("local value = anyMissingSymbol", 'UndefinedVariable',
-      'extern wildcard should not leak between validation runs')
+      'removed extern wildcard should not affect later validation runs')
 
-   assertInvalid("extern * = value", 'extern wildcard with initialiser')
-   assertInvalid("extern *, namedSymbol", 'extern wildcard combined with named symbols')
    assertInvalid("extern externalValue:num", 'extern declaration with type annotation')
    assertInvalid("extern externalValue <const>", 'extern declaration with attribute')
 end

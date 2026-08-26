@@ -66,7 +66,6 @@ struct FuncState {
 
    // Track externally supplied symbols for this parse so strict identifier reads can allow cross-file references.
    ankerl::unordered_dense::set<GCstr*> external_symbols;
-   bool allow_external_symbol_reads = false;
 
    // Function name for named function declarations (used for tostring() output).
    // Set before fs_finish() is called. nullptr for anonymous functions.

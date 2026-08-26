@@ -2114,11 +2114,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
 
 ParserResult<IrEmitUnit> IrEmitter::emit_extern_decl_stmt(const ExternDeclStmtPayload &Payload)
 {
-   if (Payload.all_symbols) {
-      this->func_state.allow_external_symbol_reads = true;
-      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
-   }
-
    for (const Identifier &identifier : Payload.names) {
       if (is_blank_symbol(identifier)) continue;
       if (identifier.symbol) this->func_state.external_symbols.insert(identifier.symbol);
@@ -2146,7 +2141,6 @@ bool IrEmitter::can_elide_expression(const ExprNode &Expression) const
          if (lookup_constant(reference.identifier.symbol)) return true;
          if (this->func_state.declared_globals.contains(reference.identifier.symbol)) return true;
          if (this->func_state.external_symbols.contains(reference.identifier.symbol)) return true;
-         if (this->func_state.allow_external_symbol_reads) return true;
 
          cTValue *global = lj_tab_getstr(tabref(this->lex_state.L->env), reference.identifier.symbol);
          return (global and not tvisnil(global)) or is_named_external_global(reference.identifier.symbol);
@@ -3362,9 +3356,6 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
          resolved.k = ExpKind::Global;
       }
       else if (this->func_state.external_symbols.count(reference.identifier.symbol) > 0) {
-         resolved.k = ExpKind::Global;
-      }
-      else if (this->func_state.allow_external_symbol_reads) {
          resolved.k = ExpKind::Global;
       }
       else if (reference.identifier.symbol) {

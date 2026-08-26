@@ -286,24 +286,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_extern()
    this->ctx.tokens().advance();
 
    if (this->ctx.check(TokenKind::Multiply)) {
-      this->ctx.tokens().advance();
-
-      if (this->ctx.check(TokenKind::Comma)) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "Extern wildcard cannot be combined with named symbols");
-      }
-
-      if (this->ctx.check(TokenKind::Equals) or
-            token_to_assignment_op(this->ctx.tokens().current().kind()).has_value()) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "Extern declarations cannot have an initialiser");
-      }
-
-      auto stmt = std::make_unique<StmtNode>(AstNodeKind::ExternStmt, extern_token.span());
-      ExternDeclStmtPayload payload;
-      payload.all_symbols = true;
-      stmt->data = std::move(payload);
-      return ParserResult<StmtNodePtr>::success(std::move(stmt));
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "Extern wildcard '*' is not supported; list external symbols by name");
    }
 
    auto names = this->parse_name_list();
