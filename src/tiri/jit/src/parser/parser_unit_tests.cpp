@@ -37,6 +37,7 @@
 
 #include "ast/builder.h"
 #include "ast/nodes.h"
+#include "assignment_target_resolution.h"
 #include "parser_context.h"
 #include "parser_diagnostics.h"
 #include "parse_types.h"
@@ -83,6 +84,57 @@ static std::string describe_instruction(BCIns instruction)
    std::snprintf(buffer, sizeof(buffer), "%s op=%d a=%d b=%d c=%d d=%d", name, (int)op,
       (int)bc_a(instruction), (int)bc_b(instruction), (int)bc_c(instruction), (int)bc_d(instruction));
    return std::string(buffer);
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_resolution_ast(kt::Log &Log)
+{
+   NameRef reference;
+   if (reference.resolution != NameResolution::Unresolved or
+       reference.assignment_resolution != AssignmentTargetResolution::Unresolved) {
+      Log.error("a default name reference did not retain independent unresolved read and assignment categories");
+      return false;
+   }
+
+   constexpr std::array<AssignmentTargetResolution, 7> categories = { {
+      AssignmentTargetResolution::Unresolved,
+      AssignmentTargetResolution::Blank,
+      AssignmentTargetResolution::ExistingLocal,
+      AssignmentTargetResolution::ExistingUpvalue,
+      AssignmentTargetResolution::ExistingGlobal,
+      AssignmentTargetResolution::NewLocal,
+      AssignmentTargetResolution::Invalid
+   } };
+
+   for (AssignmentTargetResolution category : categories) {
+      reference.resolution = NameResolution::BuiltinCallable;
+      reference.assignment_resolution = category;
+
+      ExprNodePtr expression = make_identifier_expr({}, reference);
+      ExprNode moved = std::move(*expression);
+      const auto *stored = std::get_if<NameRef>(&moved.data);
+      if (not stored or stored->resolution != NameResolution::BuiltinCallable or
+          stored->assignment_resolution != category) {
+         Log.error("an identifier AST copy or move lost assignment target category %d", int(category));
+         return false;
+      }
+   }
+
+   if (not assignment_target_is_existing_lexical(AssignmentTargetResolution::ExistingLocal) or
+       not assignment_target_is_existing_lexical(AssignmentTargetResolution::ExistingUpvalue) or
+       assignment_target_is_existing_lexical(AssignmentTargetResolution::ExistingGlobal) or
+       not assignment_target_is_existing_storage(AssignmentTargetResolution::ExistingLocal) or
+       not assignment_target_is_existing_storage(AssignmentTargetResolution::ExistingUpvalue) or
+       not assignment_target_is_existing_storage(AssignmentTargetResolution::ExistingGlobal) or
+       assignment_target_is_existing_storage(AssignmentTargetResolution::NewLocal) or
+       not assignment_target_creates_local(AssignmentTargetResolution::NewLocal) or
+       assignment_target_creates_local(AssignmentTargetResolution::ExistingLocal)) {
+      Log.error("assignment target category predicates produced inconsistent semantic classifications");
+      return false;
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -160,6 +212,174 @@ static AstHarnessResult build_ast_from_source(std::string_view source, bool Diag
    auto diag_entries = context.diagnostics().entries();
    result.diagnostics.assign(diag_entries.begin(), diag_entries.end());
    return result;
+}
+
+//********************************************************************************************************************
+
+static AstHarnessResult build_resolved_ast_from_source(std::string_view Source,
+   bool OpenLibraries = false, bool AddEnvironmentGlobal = false, bool AddNilContract = false)
+{
+   AstHarnessResult result;
+   result.state = std::make_unique<LuaStateHolder>();
+   lua_State *L = result.state->get();
+   if (OpenLibraries) luaL_openlibs(L);
+   if (AddEnvironmentGlobal) {
+      lua_pushnumber(L, 1);
+      lua_setglobal(L, "host_existing");
+   }
+   if (AddNilContract) {
+      GCstr *name = lj_str_newlit(L, "contracted_nil");
+      GCstr *descriptor = lj_str_newlit(L, "persisted-contract");
+      lj_tab_set_global_contract(L, tabref(L->env), name, descriptor);
+   }
+
+   StringReaderCtx reader{ Source.data(), Source.size() };
+   LexState lex(L, unit_reader, &reader, "assignment-target-resolution", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(L));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   result.chunk = builder.parse_chunk();
+   if (result.chunk.ok()) resolve_assignment_targets(context, *result.chunk.value_ref());
+
+   auto diagnostics = context.diagnostics().entries();
+   result.diagnostics.assign(diagnostics.begin(), diagnostics.end());
+   return result;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_semantic_resolution(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "extern counter\n"
+      "counter:num = 2\n"
+      "local print = 0\n"
+      "print = 1\n"
+      "fresh, sibling = sibling, 2\n"
+      "after = sibling\n"
+      "missing += 1\n"
+      "_ = 5\n"
+      "function nested(Parameter)\n"
+      "   Parameter = 3\n"
+      "   print = 2\n"
+      "end\n"
+      "glHostThing = 4\n";
+
+   auto result = build_resolved_ast_from_source(source, true);
+   if (not result.chunk.ok() or not result.diagnostics.empty()) {
+      Log.error("assignment target semantic resolution fixture did not parse cleanly");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   auto assignment = [](BlockStmt &Block, size_t Index) -> AssignmentStmtPayload * {
+      if (Index >= Block.statements.size() or not Block.statements[Index] or
+          Block.statements[Index]->kind != AstNodeKind::AssignmentStmt) return nullptr;
+      return std::get_if<AssignmentStmtPayload>(&Block.statements[Index]->data);
+   };
+   auto target = [](AssignmentStmtPayload *Assignment, size_t Index) -> NameRef * {
+      if (not Assignment or Index >= Assignment->targets.size() or not Assignment->targets[Index]) return nullptr;
+      return std::get_if<NameRef>(&Assignment->targets[Index]->data);
+   };
+
+   BlockStmt &chunk = *result.chunk.value_ref();
+   NameRef *external = target(assignment(chunk, 1), 0);
+   NameRef *local = target(assignment(chunk, 3), 0);
+   AssignmentStmtPayload *siblings = assignment(chunk, 4);
+   NameRef *fresh = target(siblings, 0);
+   NameRef *sibling = target(siblings, 1);
+   NameRef *missing = target(assignment(chunk, 6), 0);
+   NameRef *blank = target(assignment(chunk, 7), 0);
+   NameRef *named_external_policy = target(assignment(chunk, 9), 0);
+   const auto *local_declaration = std::get_if<LocalDeclStmtPayload>(&chunk.statements[2]->data);
+   const auto *sibling_rhs = siblings and not siblings->values.empty() ?
+      std::get_if<NameRef>(&siblings->values.front()->data) : nullptr;
+   AssignmentStmtPayload *after = assignment(chunk, 5);
+   const auto *published_sibling = after and not after->values.empty() ?
+      std::get_if<NameRef>(&after->values.front()->data) : nullptr;
+
+   if (not external or external->assignment_resolution != AssignmentTargetResolution::ExistingGlobal or
+       external->resolution != NameResolution::Unresolved or not local or
+       local->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       not local_declaration or local_declaration->names.empty() or
+       local->binding_id != local_declaration->names.front().binding_id or
+       not fresh or fresh->assignment_resolution != AssignmentTargetResolution::NewLocal or not fresh->binding_id or
+       not sibling or sibling->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not sibling->binding_id or sibling->binding_id IS fresh->binding_id or
+       not sibling_rhs or sibling_rhs->binding_id or not published_sibling or
+       published_sibling->binding_id != sibling->binding_id or
+       not missing or missing->assignment_resolution != AssignmentTargetResolution::Invalid or
+       not blank or blank->assignment_resolution != AssignmentTargetResolution::Blank or
+       not named_external_policy or
+       named_external_policy->assignment_resolution != AssignmentTargetResolution::NewLocal) {
+      Log.error("assignment target categories or statement-order binding publication were incorrect");
+      return false;
+   }
+
+   const auto *function = std::get_if<FunctionStmtPayload>(&chunk.statements[8]->data);
+   BlockStmt *body = function and function->function ? function->function->body.get() : nullptr;
+   NameRef *parameter = body ? target(assignment(*body, 0), 0) : nullptr;
+   NameRef *upvalue = body ? target(assignment(*body, 1), 0) : nullptr;
+   if (not function or function->name.segments.empty() or not function->function or
+       function->function->parameters.empty() or not parameter or
+       parameter->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
+       parameter->binding_id != function->function->parameters.front().name.binding_id or not upvalue or
+       upvalue->assignment_resolution != AssignmentTargetResolution::ExistingUpvalue or
+       upvalue->binding_id != local_declaration->names.front().binding_id) {
+      Log.error("function parameters or captured assignment targets received the wrong lexical category");
+      return false;
+   }
+
+   auto environment = build_resolved_ast_from_source("host_existing = 2", false, true);
+   NameRef *environment_target = environment.chunk.ok() ?
+      target(assignment(*environment.chunk.value_ref(), 0), 0) : nullptr;
+   if (not environment_target or
+       environment_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("a non-nil environment global did not resolve as existing global storage");
+      return false;
+   }
+
+   auto contracted = build_resolved_ast_from_source("contracted_nil = 2", false, false, true);
+   NameRef *contracted_target = contracted.chunk.ok() ?
+      target(assignment(*contracted.chunk.value_ref(), 0), 0) : nullptr;
+   cTValue *contracted_value = lj_tab_getstr(
+      tabref(contracted.state->get()->env), lj_str_newlit(contracted.state->get(), "contracted_nil"));
+   if ((contracted_value and not tvisnil(contracted_value)) or not contracted_target or
+       contracted_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("a persisted contract did not keep its nil-valued name in global storage");
+      return false;
+   }
+
+   auto constant = build_resolved_ast_from_source("enum FLAGS { VALUE }\nFLAGS_VALUE = 2");
+   AssignmentStmtPayload *constant_assignment =
+      constant.chunk.ok() and not constant.chunk.value_ref()->statements.empty() ?
+         assignment(*constant.chunk.value_ref(), constant.chunk.value_ref()->statements.size() - 1) : nullptr;
+   NameRef *constant_target = target(constant_assignment, 0);
+   if (not constant_target or
+       constant_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("a registered constant assignment target was incorrectly classified as a new local");
+      return false;
+   }
+
+   auto update = build_resolved_ast_from_source("update_missing++");
+   const auto *expression_statement = update.chunk.ok() and not update.chunk.value_ref()->statements.empty() ?
+      std::get_if<ExpressionStmtPayload>(&update.chunk.value_ref()->statements.front()->data) : nullptr;
+   const auto *update_expression = expression_statement and expression_statement->expression ?
+      std::get_if<UpdateExprPayload>(&expression_statement->expression->data) : nullptr;
+   const NameRef *update_target = update_expression and update_expression->target ?
+      std::get_if<NameRef>(&update_expression->target->data) : nullptr;
+   if (not update_target or update_target->assignment_resolution != AssignmentTargetResolution::Invalid) {
+      Log.error("an undefined update target was not classified as invalid");
+      return false;
+   }
+
+   return true;
 }
 
 struct ExpressionParseHarness {
@@ -9896,9 +10116,11 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 90> tests = { {
+   constexpr std::array<TestCase, 92> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
+      { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
+      { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
       { "literal_binary_expr", test_literal_binary_expr },
       { "type_test_ast", test_type_test_ast },
       { "choose_type_pattern_ast", test_choose_type_pattern_ast },
