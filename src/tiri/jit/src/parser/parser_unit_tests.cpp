@@ -1228,6 +1228,36 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
       return false;
    }
 
+   LuaStateHolder heterogeneous_holder;
+   lua_State *heterogeneous = heterogeneous_holder.get();
+   constexpr std::string_view heterogeneous_fallback =
+      "function select_array(Flag:bool)\n"
+      "   value = Flag and array<int> { 1 } or array<str> { 'two' }\n"
+      "   value = array<float> { 3 }\n"
+      "   return value\n"
+      "end\n";
+   if (lua_load(heterogeneous, heterogeneous_fallback, "heterogeneous-fallback-type")) {
+      Log.error("an and/or fallback chain conflated distinct array types: %s", lua_tostring(heterogeneous, -1));
+      return false;
+   }
+
+   LuaStateHolder missing_scalar_holder;
+   lua_State *missing_scalar = missing_scalar_holder.get();
+   constexpr std::string_view missing_scalar_result =
+      "first, deferred = 1\n"
+      "deferred = 2\n"
+      "deferred = 'invalid'\n";
+   if (lua_load(missing_scalar, missing_scalar_result, "missing-scalar-result") IS 0) {
+      Log.error("a missing scalar assignment result relaxed an implicit local to 'any'");
+      return false;
+   }
+   error = lua_tostring(missing_scalar, -1);
+   if (error.find("cannot assign 'str' to variable of type 'num'") IS std::string_view::npos) {
+      Log.error("a missing scalar assignment result produced the wrong sticky-type diagnostic: %s",
+         lua_tostring(missing_scalar, -1));
+      return false;
+   }
+
    LuaStateHolder mixed_holder;
    lua_State *mixed = mixed_holder.get();
    constexpr std::string_view mixed_assignment =

@@ -47,6 +47,17 @@
    return result;
 }
 
+[[nodiscard]] static bool same_concrete_type(const InferredType &Left, const InferredType &Right)
+{
+   if (Left.primary != Right.primary or Left.primary IS TiriType::Any or Left.primary IS TiriType::Unknown) {
+      return false;
+   }
+   if (Left.primary IS TiriType::Object) return Left.object_class_id IS Right.object_class_id;
+   if (Left.primary IS TiriType::Struct) return Left.struct_def IS Right.struct_def;
+   if (Left.primary IS TiriType::Array) return Left.array_element IS Right.array_element;
+   return true;
+}
+
 [[nodiscard]] static bool type_identifier_name_is(GCstr *Name, std::string_view Text)
 {
    return Name and std::string_view(strdata(Name), Name->len) IS Text;
@@ -1622,7 +1633,21 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                size_t result_position = i - source;
                InferredType inferred;
                if (result_position IS 0) inferred = this->infer_expression_type(*Payload.values[source]);
-               else inferred = this->infer_call_return_type(*Payload.values[source], result_position);
+               else {
+                  const ExprNode &value_expr = *Payload.values[source];
+                  bool provides_multiple_results = value_expr.kind IS AstNodeKind::CallExpr or
+                     value_expr.kind IS AstNodeKind::SafeCallExpr or
+                     (value_expr.static_results and
+                      (this->ctx_.descriptors().results(value_expr.static_results).declared_count > 1 or
+                       this->ctx_.descriptors().results(value_expr.static_results).variadic));
+                  if (provides_multiple_results) {
+                     inferred = this->infer_call_return_type(value_expr, result_position);
+                  }
+                  else {
+                     inferred.primary = TiriType::Nil;
+                     inferred.is_nullable = true;
+                  }
+               }
 
                inferred.requires_destination_type =
                   (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown) and
@@ -2967,8 +2992,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                      const auto &conditional = std::get<BinaryExprPayload>(payload->left->data);
                      if (conditional.op IS AstBinaryOperator::LogicalAnd and conditional.right) {
                         InferredType truthy_type = this->infer_expression_type(*conditional.right);
-                        if ((truthy_type.primary IS right_type.primary) and
-                            (right_type.primary != TiriType::Any) and (right_type.primary != TiriType::Unknown)) {
+                        if (same_concrete_type(truthy_type, right_type)) {
                            return right_type;
                         }
                      }
@@ -2976,8 +3000,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
 
                   // If both operands have the same concrete type, return that
 
-                  if ((left_type.primary IS right_type.primary) and (left_type.primary != TiriType::Any) and
-                      (left_type.primary != TiriType::Unknown)) {
+                  if (same_concrete_type(left_type, right_type)) {
                      return left_type;
                   }
 
