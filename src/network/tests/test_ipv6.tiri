@@ -132,7 +132,7 @@ end
       callback = function(Lookup, Error)
          addresses = Lookup.addresses
          if (Error is ERR_Okay) and addresses then
-            assert(addresses is <array IPAddress>, 'NetLookup.addresses should be an IPAddress struct array')
+            assert(addresses is <array struct<IPAddress>>, 'NetLookup.addresses should be an IPAddress struct array')
             logOutput('[DNS] Resolved ' .. tostring(Lookup.hostName) .. ' to ' .. #addresses .. ' addresses:')
             for i, addr in ipairs(addresses) do
                assert(type(addr) is 'struct', 'NetLookup.addresses should contain native structs')

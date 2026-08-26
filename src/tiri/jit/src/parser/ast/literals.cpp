@@ -304,7 +304,7 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
 
 //********************************************************************************************************************
 // Parses the contextual descriptor following `is` or `is not`.  Aggregate type tests permit an optional,
-// whitespace-separated inner name, unlike declaration annotations.
+// whitespace-separated inner constraint, unlike declaration annotations.
 
 ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
 {
@@ -356,9 +356,14 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
          constraint_name = std::format("array<{}>",
             std::string_view(strdata(constraint_symbol), constraint_symbol->len));
       }
+      else if (descriptor.type IS TiriType::Array and constraint_token.kind() IS TokenKind::StructTyped) {
+         GCstr *constraint_symbol = constraint_token.payload().as_string();
+         constraint_name = std::format("struct<{}>",
+            std::string_view(strdata(constraint_symbol), constraint_symbol->len));
+      }
       else {
          return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedIdentifier, constraint_token,
-            "Expected one inner name in type-test descriptor");
+            "Expected one inner constraint in type-test descriptor");
       }
 
       this->ctx.tokens().advance();
@@ -369,7 +374,9 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
          if (element and element->storage != AET::PTR and
              (element->storage != AET::STRUCT or element->struct_def)) descriptor.array_element = *element;
          else if (struct_record *definition = find_struct(&this->ctx.lua(), constraint_name)) {
-            descriptor.array_element = { AET::STRUCT, TiriType::Struct, CLASSID::NIL, definition, true };
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Structure array type tests require 'struct<{}>'; use '<array struct<{}>>'",
+                  definition->Name, definition->Name));
          }
          else {
             return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
@@ -393,7 +400,7 @@ ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
 
       if (not this->ctx.check(TokenKind::Greater)) {
          return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "Type-test descriptors accept at most one inner name");
+            "Type-test descriptors accept at most one inner constraint");
       }
    }
 
