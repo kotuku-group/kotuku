@@ -128,6 +128,7 @@ struct RuntimeContract {
    bool is_const = false;
    bool initialising = false;
    bool global_hint = false;
+   bool retained_value = false;
 };
 
 // Associates a transient contract with the register it validates.  Dense batching uses the register separately from

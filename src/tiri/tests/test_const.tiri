@@ -373,7 +373,8 @@ end
       exec(f"global {global_name} <const>:num ?= 1")
    except e
       trapped = true
-      assert(tostring(e.message).find('type contract failed for global') != nil,
+      local expected = f"cannot declare global '{global_name}' as num: existing value has type string"
+      assert(tostring(e.message).endsWith(expected),
          'The retained value should be checked against the const declaration: ' .. tostring(e.message))
    end
 

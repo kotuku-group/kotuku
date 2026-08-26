@@ -1072,6 +1072,12 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    }
    else std::snprintf(actual, sizeof(actual), "%s", lj_meta_display_name(L, Value));
 
+   if (Boundary IS ContractBoundary::Global and contract_entry_retains_value(Entry) and not Entry.label.empty()) {
+      CSTRING message = lj_strfmt_pushf(L, "cannot declare global '%.*s' as %s: existing value has type %s",
+         int(Entry.label.size()), Entry.label.data(), expected, actual);
+      lj_err_callermsg(L, message);
+   }
+
    const char *boundary = contract_boundary_name(Boundary);
    if (not Entry.label.empty()) {
       CSTRING message = lj_strfmt_pushf(L, "type contract failed for %s %u ('%.*s'): expected %s, got %s",
