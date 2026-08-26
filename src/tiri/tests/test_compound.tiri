@@ -200,7 +200,7 @@ end
 
    -- Unlike ??=, false should NOT trigger RHS evaluation
    calls = 0
-   falseVal = false
+   falseVal:any = false
    falseVal ?= fallback()
    assert(calls is 0, 'false with ?= should NOT evaluate the RHS')
    assert(falseVal is false, 'false ?= should keep the false value')

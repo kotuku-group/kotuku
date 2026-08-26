@@ -402,7 +402,7 @@ private:
    [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
    void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
       struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
-   void mark_dynamic_ingress(GCstr *Name, bool IsGlobal);
+   void mark_dynamic_ingress(GCstr *Name, bool IsGlobal, bool RequiresDestination = true);
    void degrade_global_type(GCstr *Name);
    void invalidate_global_flow_policy(GCstr *Name, SourceSpan Location);
 
@@ -416,6 +416,7 @@ private:
    uint8_t current_file_index_{0};                  // FileSource index of the file being analysed
    ankerl::unordered_dense::map<GCstr*, GlobalTypeInfo> global_types_{};  // Type info for global variables
    ankerl::unordered_dense::set<StaticBindingID> explicit_variant_bindings_{};
+   ankerl::unordered_dense::set<StaticBindingID> implicit_local_bindings_{};
    #ifdef INCLUDE_TIPS
    std::vector<GCstr*> declared_globals_{};         // Globals explicitly declared with 'global' keyword
    #endif
@@ -1633,13 +1634,19 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                }
                if (Payload.op != AssignmentOperator::Plain and not inferred.requires_destination_type) {
                   this->current_scope().declare_local(name, inferred, target.span);
+                  this->implicit_local_bindings_.insert(name_ref->binding_id);
                   this->publish_binding_type(name_ref->binding_id, inferred);
                   continue;
                }
 
                if (Payload.op IS AssignmentOperator::Plain) {
                   if (not this->declare_implicit_global(name, inferred, target.span)) {
+                     if (inferred.requires_destination_type) {
+                        inferred = InferredType(TiriType::Any);
+                        this->explicit_variant_bindings_.insert(name_ref->binding_id);
+                     }
                      this->current_scope().declare_local(name, inferred, target.span);
+                     this->implicit_local_bindings_.insert(name_ref->binding_id);
                      this->publish_binding_type(name_ref->binding_id, inferred);
                   }
                   continue;
@@ -1783,7 +1790,16 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   this->fix_local_type(name, name_ref->binding_id, TiriType::Any);
                   this->explicit_variant_bindings_.insert(name_ref->binding_id);
                }
-               else this->mark_dynamic_ingress(name, is_global);
+               else {
+                  bool requires_destination = is_global ? not this->is_implicit_global(name) :
+                     not this->implicit_local_bindings_.contains(name_ref->binding_id);
+                  this->mark_dynamic_ingress(name, is_global, requires_destination);
+                  if (not is_global and not requires_destination) {
+                     InferredType variant(TiriType::Any);
+                     this->explicit_variant_bindings_.insert(name_ref->binding_id);
+                     this->publish_binding_type(name_ref->binding_id, variant);
+                  }
+               }
             }
             else if ((existing->primary != TiriType::Any) and (value_type.primary != TiriType::Nil)) {
                if (is_global) {
@@ -2918,6 +2934,30 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   if (payload->left) left_type = this->infer_expression_type(*payload->left);
                   if (payload->right) right_type = this->infer_expression_type(*payload->right);
 
+                  auto known_truth = [this](const ExprNode *Operand) -> std::optional<bool> {
+                     if (not Operand) return std::nullopt;
+
+                     const ExprNode *candidate = Operand;
+                     if (Operand->kind IS AstNodeKind::IdentifierExpr) {
+                        const auto &reference = std::get<NameRef>(Operand->data);
+                        if (reference.binding_id) {
+                           const auto &binding = this->ctx_.descriptors().binding(reference.binding_id);
+                           if (binding.is_const and binding.initialiser) candidate = binding.initialiser;
+                        }
+                     }
+
+                     if (candidate->kind != AstNodeKind::LiteralExpr) return std::nullopt;
+                     const auto &literal = std::get<LiteralValue>(candidate->data);
+                     if (literal.kind IS LiteralKind::Nil) return false;
+                     if (literal.kind IS LiteralKind::Boolean) return literal.bool_value;
+                     return true;
+                  };
+
+                  if (auto truth = known_truth(payload->left.get())) {
+                     if (payload->op IS AstBinaryOperator::LogicalAnd) return *truth ? right_type : left_type;
+                     return *truth ? left_type : right_type;
+                  }
+
                   // If both operands have the same concrete type, return that
 
                   if ((left_type.primary IS right_type.primary) and (left_type.primary != TiriType::Any) and
@@ -2925,23 +2965,12 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                      return left_type;
                   }
 
-                  // For `or`, the right operand is the fallback, so prefer its type if known
+                  // A nil left operand has a statically known short-circuit outcome.  Other differing operand types
+                  // produce a union that cannot be represented by a concrete TiriType and must remain variant.
 
-                  if (payload->op IS AstBinaryOperator::LogicalOr) {
-                     if ((right_type.primary != TiriType::Any) and (right_type.primary != TiriType::Unknown)) {
-                        return right_type;
-                     }
-                     if ((left_type.primary != TiriType::Any) and (left_type.primary != TiriType::Unknown)) {
-                        return left_type;
-                     }
-                  }
-                  else { // For `and`, the left operand short-circuits, so prefer left type if known
-                     if ((left_type.primary != TiriType::Any) and (left_type.primary != TiriType::Unknown)) {
-                        return left_type;
-                     }
-                     if ((right_type.primary != TiriType::Any) and (right_type.primary != TiriType::Unknown)) {
-                        return right_type;
-                     }
+                  if (left_type.primary IS TiriType::Nil) {
+                     if (payload->op IS AstBinaryOperator::LogicalOr) return right_type;
+                     return left_type;
                   }
 
                   result.primary = TiriType::Any;
@@ -3306,7 +3335,7 @@ void TypeAnalyser::fix_local_type(GCstr *Name, StaticBindingID Binding, TiriType
    }
 }
 
-void TypeAnalyser::mark_dynamic_ingress(GCstr *Name, bool IsGlobal)
+void TypeAnalyser::mark_dynamic_ingress(GCstr *Name, bool IsGlobal, bool RequiresDestination)
 {
    if (not Name) return;
 
@@ -3314,14 +3343,14 @@ void TypeAnalyser::mark_dynamic_ingress(GCstr *Name, bool IsGlobal)
       if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) {
          it->second.type.primary = TiriType::Any;
          it->second.type.is_fixed = false;
-         it->second.type.requires_destination_type = true;
+         it->second.type.requires_destination_type = RequiresDestination;
       }
       return;
    }
 
    for (auto it = this->scope_stack_.rbegin(); it != this->scope_stack_.rend(); ++it) {
       if (it->lookup_local_type(Name)) {
-         it->mark_dynamic_ingress(Name);
+         it->mark_dynamic_ingress(Name, RequiresDestination);
          return;
       }
    }
@@ -3445,6 +3474,7 @@ bool TypeAnalyser::declare_implicit_global(GCstr *Name, InferredType Type, Sourc
    bool is_global_store = (global != nullptr) and not tvisnil(global);
    if (not is_global_store) return false;  // Plain assignment to this name creates a local, not a global
 
+   Type.requires_destination_type = false;
    if (Type.primary != TiriType::Nil and Type.primary != TiriType::Any and Type.primary != TiriType::Unknown) {
       Type.is_fixed = true;
    }

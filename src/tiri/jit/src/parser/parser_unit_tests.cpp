@@ -1172,6 +1172,44 @@ static bool test_typed_assignment_name_resolution(kt::Log &Log)
       return false;
    }
 
+   LuaStateHolder dynamic_holder;
+   lua_State *dynamic = dynamic_holder.get();
+   constexpr std::string_view dynamic_implicit_local =
+      "function dynamic_value(Value:any):any return Value end\n"
+      "value = dynamic_value(1)\n"
+      "value = 'relaxed'\n"
+      "deferred = nil\n"
+      "deferred = dynamic_value(2)\n"
+      "deferred = 'also relaxed'\n"
+      "return value, deferred\n";
+   if (lua_load(dynamic, dynamic_implicit_local, "dynamic-implicit-local") or lua_pcall(dynamic, 0, 2, 0)) {
+      Log.error("an uninferable implicit local was not relaxed to 'any': %s", lua_tostring(dynamic, -1));
+      return false;
+   }
+   if (not lua_isstring(dynamic, -2) or std::string_view(lua_tostring(dynamic, -2)) != "relaxed" or
+       not lua_isstring(dynamic, -1) or std::string_view(lua_tostring(dynamic, -1)) != "also relaxed") {
+      Log.error("an implicit local relaxed to 'any' did not retain its reassigned value");
+      return false;
+   }
+
+   LuaStateHolder advisory_holder;
+   lua_State *advisory = advisory_holder.get();
+   lua_pushnumber(advisory, 1);
+   lua_setglobal(advisory, "host_dynamic");
+   constexpr std::string_view dynamic_implicit_global =
+      "function dynamic_value(Value:any):any return Value end\n"
+      "host_dynamic = dynamic_value('dynamic')\n"
+      "host_dynamic = 2\n"
+      "return host_dynamic\n";
+   if (lua_load(advisory, dynamic_implicit_global, "dynamic-implicit-global") or lua_pcall(advisory, 0, 1, 0)) {
+      Log.error("an advisory implicit global retained local-only inference state: %s", lua_tostring(advisory, -1));
+      return false;
+   }
+   if (lua_tonumber(advisory, -1) != 2) {
+      Log.error("an advisory implicit global did not retain its concrete reassignment");
+      return false;
+   }
+
    LuaStateHolder mixed_holder;
    lua_State *mixed = mixed_holder.get();
    constexpr std::string_view mixed_assignment =
