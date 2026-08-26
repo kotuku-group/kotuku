@@ -509,6 +509,72 @@ static bool test_assignment_target_descriptor_discovery(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+
+static bool test_assignment_target_environment_types(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   luaL_openlibs(lua);
+   constexpr std::string_view declarations =
+      "struct AssignmentPersistedRecord Value: int end\n"
+      "global glAssignmentPersistedArray:array<int> = array<int> { 1 }\n"
+      "global glAssignmentPersistedStruct:struct<AssignmentPersistedRecord> = "
+         "struct<AssignmentPersistedRecord> { Value = 1 }\n";
+   if (lua_load(lua, declarations, "=assignment-environment-types") or lua_pcall(lua, 0, 0, 0)) {
+      Log.error("failed to establish persisted assignment types: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   lua_pushnil(lua);
+   lua_setglobal(lua, "glAssignmentPersistedArray");
+   lua_pushnil(lua);
+   lua_setglobal(lua, "glAssignmentPersistedStruct");
+
+   constexpr std::string_view source =
+      "extern glAssignmentPersistedArray, glAssignmentPersistedStruct\n"
+      "glAssignmentPersistedArray = array<int> { 2 }\n"
+      "glAssignmentPersistedStruct = struct<AssignmentPersistedRecord> { Value = 2 }\n";
+   StringReaderCtx reader{ source.data(), source.size() };
+   LexState lex(lua, unit_reader, &reader, "assignment-environment-types", std::nullopt);
+   FuncState &fs = lex.fs_init();
+   ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(lua));
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) return false;
+
+   resolve_assignment_targets(context, *chunk.value_ref());
+   discover_static_bindings(context, *chunk.value_ref());
+   propagate_static_descriptors(context, *chunk.value_ref());
+   run_type_analysis(context, *chunk.value_ref());
+   if (context.diagnostics().has_errors()) {
+      Log.error("persisted assignment types produced unexpected diagnostics");
+      log_diagnostics(context.diagnostics().entries(), Log);
+      return false;
+   }
+
+   GCstr *array_name = lj_str_newlit(lua, "glAssignmentPersistedArray");
+   GCstr *struct_name = lj_str_newlit(lua, "glAssignmentPersistedStruct");
+   auto array_hint = lex.global_type_hints.find(array_name);
+   auto struct_hint = lex.global_type_hints.find(struct_name);
+   struct_record *definition = find_struct(lua, "AssignmentPersistedRecord");
+   if (array_hint IS lex.global_type_hints.end() or struct_hint IS lex.global_type_hints.end() or
+       array_hint->second.primary != TiriType::Array or
+       array_hint->second.array_element.storage != AET::INT32 or
+       array_hint->second.contract_policy != GlobalContractPolicy::Advisory or
+       struct_hint->second.primary != TiriType::Struct or struct_hint->second.struct_def != definition or
+       struct_hint->second.contract_policy != GlobalContractPolicy::Advisory) {
+      Log.error("persisted array or structure identity was not seeded as advisory environment metadata");
+      return false;
+   }
+
+   return true;
+}
+
 struct ExpressionParseHarness {
    std::unique_ptr<LuaStateHolder> holder;
    std::unique_ptr<StringReaderCtx> reader;
@@ -6042,6 +6108,77 @@ static bool test_environment_store_boundary(kt::Log &Log)
       return false;
    }
 
+   if (lua_load(L, std::string_view("glUnitEnvBoundary:str = 'annotated'"),
+         "=envboundary-annotated-assignment") IS 0) {
+      Log.error("a typed assignment redeclared a nil-valued persisted global");
+      lua_pop(L, 1);
+      return false;
+   }
+   std::string_view annotated_error = lua_tostring(L, -1);
+   if (annotated_error.find("cannot redeclare existing global 'glUnitEnvBoundary'") IS std::string_view::npos) {
+      Log.error("a persisted-global annotation produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (lua_load(L, std::string_view("extern glUnitNamedExtern\nglUnitNamedExtern:num = 2"),
+         "=named-extern-annotated-assignment") IS 0) {
+      Log.error("a typed assignment redeclared a named extern");
+      lua_pop(L, 1);
+      return false;
+   }
+   std::string_view extern_error = lua_tostring(L, -1);
+   if (extern_error.find("cannot redeclare existing global 'glUnitNamedExtern'") IS std::string_view::npos) {
+      Log.error("a named-extern annotation produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view exact_contract_source =
+      "struct UnitPersistedRecord\n"
+      "   Value: int\n"
+      "end\n"
+      "global glUnitPersistedArray:array<int> = array<int> { 1 }\n"
+      "global glUnitPersistedStruct:struct<UnitPersistedRecord> = "
+         "struct<UnitPersistedRecord> { Value = 1 }\n";
+   if (lua_load(L, exact_contract_source, "=environment-exact-contracts") or lua_pcall(L, 0, 0, 0)) {
+      Log.error("establishing exact persisted contracts failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pushnil(L);
+   lua_setglobal(L, "glUnitPersistedArray");
+   lua_pushnil(L);
+   lua_setglobal(L, "glUnitPersistedStruct");
+
+   constexpr std::string_view exact_assignment_source =
+      "extern glUnitPersistedArray, glUnitPersistedStruct\n"
+      "glUnitPersistedArray = array<int> { 2 }\n"
+      "glUnitPersistedStruct = struct<UnitPersistedRecord> { Value = 2 }\n"
+      "return glUnitPersistedArray[0], glUnitPersistedStruct.Value\n";
+   if (lua_load(L, exact_assignment_source, "=environment-exact-assignments")) {
+      Log.error("compiling exact persisted assignments failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot exact_assignment = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (count_opcode_tree(exact_assignment, BC_CONTRACT) != 0 or
+       count_opcode_tree(exact_assignment, BC_GSET) != 2) {
+      Log.error("persisted metadata emitted contracts=%zu and global stores=%zu",
+         count_opcode_tree(exact_assignment, BC_CONTRACT), count_opcode_tree(exact_assignment, BC_GSET));
+      return false;
+   }
+   if (lua_pcall(L, 0, 2, 0)) {
+      Log.error("executing exact persisted assignments failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   bool exact_values = lua_tointeger(L, -2) IS 2 and lua_tointeger(L, -1) IS 2;
+   lua_pop(L, 2);
+   if (not exact_values) {
+      Log.error("exact persisted assignments returned the wrong values");
+      return false;
+   }
+
    // Non-raw C API stores must validate policy without bypassing the environment's __newindex handler.
    lua_pushvalue(L, LUA_GLOBALSINDEX);
    lua_newtable(L);
@@ -10248,12 +10385,13 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 93> tests = { {
+   constexpr std::array<TestCase, 94> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
       { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
       { "assignment_target_descriptor_discovery", test_assignment_target_descriptor_discovery },
+      { "assignment_target_environment_types", test_assignment_target_environment_types },
       { "literal_binary_expr", test_literal_binary_expr },
       { "type_test_ast", test_type_test_ast },
       { "choose_type_pattern_ast", test_choose_type_pattern_ast },
