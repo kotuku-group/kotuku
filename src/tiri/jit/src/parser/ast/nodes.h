@@ -762,7 +762,6 @@ struct GlobalDeclStmtPayload {
 };
 
 struct ExternDeclStmtPayload {
-   ExternDeclStmtPayload() = default;
    explicit ExternDeclStmtPayload(std::vector<Identifier> Names)
       : names(std::move(Names)) {}
    ExternDeclStmtPayload(const ExternDeclStmtPayload&) = delete;
@@ -770,7 +769,6 @@ struct ExternDeclStmtPayload {
    ExternDeclStmtPayload(ExternDeclStmtPayload&&) noexcept = default;
    ExternDeclStmtPayload& operator=(ExternDeclStmtPayload&&) noexcept = default;
    std::vector<Identifier> names;
-   bool all_symbols = false;
    ~ExternDeclStmtPayload();
 };
 

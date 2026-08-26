@@ -202,7 +202,7 @@ glKeywords = {
    ['local'] = { comment = 'Declares a local variable (block-scoped).' },
    ['global'] = { comment = 'Declares a global variable.' },
    ['extern'] = {
-      comment = 'Declares that a symbol is supplied externally and should be resolved as a global.'
+      comment = 'Declares one or more named symbols supplied externally and resolves them as globals.'
    },
    ['import'] = {
       comment = 'Inlines one or more Tiri script libraries at parse time. List entries must be string literals; ' ..

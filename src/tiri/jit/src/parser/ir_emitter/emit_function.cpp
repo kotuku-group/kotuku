@@ -107,7 +107,6 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    // Inherit declared globals from parent so nested functions recognize them
    child_state.declared_globals = parent_state->declared_globals;
    child_state.external_symbols = parent_state->external_symbols;
-   child_state.allow_external_symbol_reads = parent_state->allow_external_symbol_reads;
 
    // Set linedefined to the earliest line that bytecode might reference.
    // Note: SourceSpan.line represents the END line of a span (due to combine_spans behavior),

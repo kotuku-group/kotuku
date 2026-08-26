@@ -170,6 +170,15 @@ end
    result = computeDiagnostics(doc)
 
    assert(#result.diagnostics is 0, 'LSP diagnostics should accept extern declarations.')
+
+   doc = makeDoc('extern *\nlocal runner = missingRunner\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics > 0, 'LSP diagnostics should reject the removed extern wildcard.')
+   assert(result.diagnostics[0].code is 'UnexpectedToken',
+      'LSP diagnostics should preserve the extern wildcard parser code.')
+   assert(result.diagnostics[0].message.find('list external symbols by name') != nil,
+      'LSP diagnostics should explain how to replace the extern wildcard.')
 end
 
 @Test function RangeSeparatorsReceiveContextualSemanticTokens()
