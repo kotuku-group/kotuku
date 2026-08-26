@@ -288,6 +288,21 @@ end
       'Both compatible retained-value paths should publish their string policies')
 end
 
+@Test function SkippedDeclarationMismatchDiagnostic()
+   rawset(_G, 'glGTDiagnostic', 42)
+   local message = ''
+   local expected = "cannot declare global 'glGTDiagnostic' as str: existing value has type number"
+   try
+      exec([[global glGTDiagnostic:str ?= 'default']])
+   except e
+      message = e.message
+   end
+
+   assert(message.endsWith(expected),
+      'A retained value mismatch should identify the declaration contract and existing value type, got: ' .. message)
+   assert(glGTDiagnostic is 42, 'A failed retained-value declaration must preserve the existing global value')
+end
+
 @Test function ConflictingSkippedDeclarationPreservesPolicyAndValue()
    exec([[global glGTJitConflicting:str = 'original']])
    local rejected = false

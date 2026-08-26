@@ -31,7 +31,8 @@ enum class ContractEntryFlag : uint8_t {
    Const = 1 << 2,
    Initialising = 1 << 3,
    GlobalHint = 1 << 4,
-   Negated = 1 << 5
+   Negated = 1 << 5,
+   RetainedValue = 1 << 6
 };
 
 [[nodiscard]] constexpr inline uint8_t contract_flag(ContractDescriptorFlag Flag) noexcept
@@ -203,6 +204,11 @@ static_assert(sizeof(GlobalContractCache) IS 16, "global contract cache header m
    return (Entry.flags & contract_flag(ContractEntryFlag::GlobalHint)) != 0;
 }
 
+[[nodiscard]] constexpr inline bool contract_entry_retains_value(const RuntimeContractEntry &Entry) noexcept
+{
+   return (Entry.flags & contract_flag(ContractEntryFlag::RetainedValue)) != 0;
+}
+
 // Compare public global binding identity while ignoring descriptor lifecycle metadata.
 
 [[nodiscard]] inline bool global_contract_entries_equivalent(
@@ -343,7 +349,8 @@ private:
       std::string_view array_struct_name;
       uint8_t allowed_entry_flags = contract_flag(ContractEntryFlag::Nullable) |
          contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
-         contract_flag(ContractEntryFlag::Initialising) | contract_flag(ContractEntryFlag::GlobalHint);
+         contract_flag(ContractEntryFlag::Initialising) | contract_flag(ContractEntryFlag::GlobalHint) |
+         contract_flag(ContractEntryFlag::RetainedValue);
       allowed_entry_flags |= contract_flag(ContractEntryFlag::Negated);
       if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
           not reader.read_byte(entry.flags) or
@@ -373,8 +380,11 @@ private:
       bool is_const = contract_entry_is_const(entry);
       bool is_initialising = contract_entry_is_initialising(entry);
       bool is_global_hint = contract_entry_is_global_hint(entry);
+      bool retains_value = contract_entry_retains_value(entry);
       if ((is_const and Result.boundary != ContractBoundary::Global) or
           (is_initialising and Result.boundary != ContractBoundary::Global) or
+          (retains_value and
+             (Result.boundary != ContractBoundary::Global or not is_initialising or entry.label.empty())) or
           (is_global_hint and
              (Result.boundary != ContractBoundary::Global or Result.static_value_count != 1 or
               Result.contract_count != 1 or entry.position != 1 or entry.label.empty() or is_const or

@@ -590,6 +590,7 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       if (contract.is_const) entry_flags |= contract_flag(ContractEntryFlag::Const);
       if (contract.initialising) entry_flags |= contract_flag(ContractEntryFlag::Initialising);
       if (contract.global_hint) entry_flags |= contract_flag(ContractEntryFlag::GlobalHint);
+      if (contract.retained_value) entry_flags |= contract_flag(ContractEntryFlag::RetainedValue);
       descriptor.push_back(char(entry_flags));
       descriptor.push_back(char(contract.position));
       CLASSID object_class_id = contract.type IS TiriType::Object ? contract.object_class_id : CLASSID::NIL;

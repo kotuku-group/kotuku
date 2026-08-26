@@ -28,7 +28,9 @@ static void bcemit_skipped_global_declaration(FuncState *State, BCReg Value,
 {
    if (not Contract) return;
 
-   bcemit_contract(State, Value, std::span(&*Contract, 1), 1);
+   RuntimeContract retained = *Contract;
+   retained.retained_value = true;
+   bcemit_contract(State, Value, std::span(&retained, 1), 1);
    RuntimeContract finaliser = *Contract;
    finaliser.initialising = false;
    bcemit_contract(State, Value, std::span(&finaliser, 1), 1);
