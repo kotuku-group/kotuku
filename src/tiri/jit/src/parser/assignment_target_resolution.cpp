@@ -305,7 +305,7 @@ private:
    void resolve_assignment(AssignmentStmtPayload &Payload)
    {
       // Assignment expressions execute against the pre-assignment scope.  Resolve every RHS and lvalue operand before
-      // publishing any implicit local so sibling targets cannot affect one another.
+      // publishing any new local so sibling targets cannot affect one another.
       for (auto &value : Payload.values) if (value) this->resolve_expression(*value);
 
       bool allows_creation = Payload.op IS AssignmentOperator::Plain or

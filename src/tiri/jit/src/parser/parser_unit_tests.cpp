@@ -270,7 +270,11 @@ static bool test_assignment_target_semantic_resolution(kt::Log &Log)
       "   Parameter = 3\n"
       "   print = 2\n"
       "end\n"
-      "glHostThing = 4\n";
+      "glHostThing = 4\n"
+      "global declared = 0\n"
+      "declared = 1\n"
+      "if_empty ?= 5\n"
+      "if_nil ?" "?= 6\n";
 
    auto result = build_resolved_ast_from_source(source, true);
    if (not result.chunk.ok() or not result.diagnostics.empty()) {
@@ -298,6 +302,9 @@ static bool test_assignment_target_semantic_resolution(kt::Log &Log)
    NameRef *missing = target(assignment(chunk, 6), 0);
    NameRef *blank = target(assignment(chunk, 7), 0);
    NameRef *named_external_policy = target(assignment(chunk, 9), 0);
+   NameRef *declared_global = target(assignment(chunk, 11), 0);
+   NameRef *if_empty = target(assignment(chunk, 12), 0);
+   NameRef *if_nil = target(assignment(chunk, 13), 0);
    const auto *local_declaration = std::get_if<LocalDeclStmtPayload>(&chunk.statements[2]->data);
    const auto *sibling_rhs = siblings and not siblings->values.empty() ?
       std::get_if<NameRef>(&siblings->values.front()->data) : nullptr;
@@ -318,7 +325,11 @@ static bool test_assignment_target_semantic_resolution(kt::Log &Log)
        not missing or missing->assignment_resolution != AssignmentTargetResolution::Invalid or
        not blank or blank->assignment_resolution != AssignmentTargetResolution::Blank or
        not named_external_policy or
-       named_external_policy->assignment_resolution != AssignmentTargetResolution::NewLocal) {
+       named_external_policy->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not declared_global or
+       declared_global->assignment_resolution != AssignmentTargetResolution::ExistingGlobal or
+       not if_empty or if_empty->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not if_nil or if_nil->assignment_resolution != AssignmentTargetResolution::NewLocal) {
       Log.error("assignment target categories or statement-order binding publication were incorrect");
       return false;
    }
@@ -343,6 +354,15 @@ static bool test_assignment_target_semantic_resolution(kt::Log &Log)
    if (not environment_target or
        environment_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
       Log.error("a non-nil environment global did not resolve as existing global storage");
+      return false;
+   }
+
+   auto protected_global = build_resolved_ast_from_source("print = 2", true);
+   NameRef *protected_target = protected_global.chunk.ok() ?
+      target(assignment(*protected_global.chunk.value_ref(), 0), 0) : nullptr;
+   if (not protected_target or
+       protected_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal) {
+      Log.error("an unshadowed protected global did not resolve as existing global storage");
       return false;
    }
 
@@ -380,6 +400,43 @@ static bool test_assignment_target_semantic_resolution(kt::Log &Log)
       return false;
    }
 
+   auto compound = build_resolved_ast_from_source("compound_missing -= 1");
+   NameRef *compound_target = compound.chunk.ok() ?
+      target(assignment(*compound.chunk.value_ref(), 0), 0) : nullptr;
+   if (not compound_target or compound_target->assignment_resolution != AssignmentTargetResolution::Invalid) {
+      Log.error("an undefined compound target was not classified as invalid");
+      return false;
+   }
+
+   constexpr std::string_view lvalue_source =
+      "local object = {}\n"
+      "local key = 'field'\n"
+      "object.field = 1\n"
+      "object[key] = 2\n"
+      "object?.field = 3\n"
+      "object?[key] = 4\n";
+   auto lvalues = build_resolved_ast_from_source(lvalue_source);
+   if (not lvalues.chunk.ok() or not lvalues.diagnostics.empty()) {
+      Log.error("member, index or safe-navigation assignment controls did not parse cleanly");
+      log_diagnostics(lvalues.diagnostics, Log);
+      return false;
+   }
+
+   constexpr std::array<AstNodeKind, 4> lvalue_kinds = { {
+      AstNodeKind::MemberExpr,
+      AstNodeKind::IndexExpr,
+      AstNodeKind::SafeMemberExpr,
+      AstNodeKind::SafeIndexExpr
+   } };
+   for (size_t i = 0; i < lvalue_kinds.size(); ++i) {
+      AssignmentStmtPayload *payload = assignment(*lvalues.chunk.value_ref(), i + 2);
+      if (not payload or payload->targets.size() IS 0 or
+          payload->targets.front()->kind != lvalue_kinds[i]) {
+         Log.error("non-identifier assignment control %zu changed AST shape", i);
+         return false;
+      }
+   }
+
    return true;
 }
 
@@ -400,7 +457,9 @@ static bool test_assignment_target_descriptor_discovery(kt::Log &Log)
       "external = 3\n"
       "contracted_nil = 4\n"
       "_ = 5\n"
-      "missing += 1\n";
+      "missing += 1\n"
+      "function pair():<num, num> return 6, 7 end\n"
+      "left, right = pair()\n";
 
    LuaStateHolder state;
    lua_State *lua = state.get();
@@ -452,20 +511,27 @@ static bool test_assignment_target_descriptor_discovery(kt::Log &Log)
    const NameRef *capture = capture_assignment and not capture_assignment->targets.empty() and
       capture_assignment->targets.front() ?
          std::get_if<NameRef>(&capture_assignment->targets.front()->data) : nullptr;
+   const auto *pair_assignment = std::get_if<AssignmentStmtPayload>(&chunk.value_ref()->statements[10]->data);
+   const NameRef *left = pair_assignment and pair_assignment->targets.size() IS 2 ?
+      std::get_if<NameRef>(&pair_assignment->targets[0]->data) : nullptr;
+   const NameRef *right = pair_assignment and pair_assignment->targets.size() IS 2 ?
+      std::get_if<NameRef>(&pair_assignment->targets[1]->data) : nullptr;
 
    if (not fresh or fresh->assignment_resolution != AssignmentTargetResolution::NewLocal or not fresh->binding_id or
        not existing or existing->assignment_resolution != AssignmentTargetResolution::ExistingLocal or
        existing->binding_id != fresh->binding_id or not capture or
        capture->assignment_resolution != AssignmentTargetResolution::ExistingUpvalue or
        capture->binding_id != fresh->binding_id or not external or external->binding_id or not contracted or
-       contracted->binding_id or not blank or blank->binding_id or not invalid or invalid->binding_id) {
+       contracted->binding_id or not blank or blank->binding_id or not invalid or invalid->binding_id or
+       not left or left->assignment_resolution != AssignmentTargetResolution::NewLocal or not left->binding_id or
+       not right or right->assignment_resolution != AssignmentTargetResolution::NewLocal or not right->binding_id) {
       Log.error("descriptor discovery changed an assignment category or published binding");
       return false;
    }
 
-   // The unreachable local, fresh local, local function and parameter are the only lexical declarations.
-   if (context.descriptors().binding_count() != 5) {
-      Log.error("assignment discovery allocated %zu descriptors instead of four",
+   // The unreachable local, fresh local, two local functions, parameter and result pair are the lexical declarations.
+   if (context.descriptors().binding_count() != 8) {
+      Log.error("assignment discovery allocated %zu descriptors instead of seven",
          context.descriptors().binding_count() - 1);
       return false;
    }
@@ -473,6 +539,13 @@ static bool test_assignment_target_descriptor_discovery(kt::Log &Log)
    if (fresh_descriptor.name != fresh->identifier.symbol or fresh_descriptor.immutable or
        not fresh_descriptor.captured) {
       Log.error("existing local/upvalue writes did not update the original descriptor");
+      return false;
+   }
+   const StaticBindingDescriptor &left_descriptor = context.descriptors().binding(left->binding_id);
+   const StaticBindingDescriptor &right_descriptor = context.descriptors().binding(right->binding_id);
+   if (left_descriptor.result_position != 0 or right_descriptor.result_position != 1 or
+       left_descriptor.initialiser != right_descriptor.initialiser) {
+      Log.error("multi-result assignment descriptors lost their source expression or result positions");
       return false;
    }
 
@@ -1589,7 +1662,7 @@ static bool test_colon_method_syntax_rejected(kt::Log &Log)
 
    auto implicit = build_ast_from_source("entry, count:num = 5, 6", true);
    if (not implicit.chunk.ok() or not implicit.diagnostics.empty()) {
-      Log.error("bare type-annotated assignment did not parse as an implicit local declaration");
+      Log.error("bare type-annotated assignment did not parse successfully");
       log_diagnostics(implicit.diagnostics, Log);
       return false;
    }
@@ -1784,7 +1857,7 @@ static bool test_annotated_local_validation_parity(kt::Log &Log)
       std::string_view expected_error;
    };
 
-   constexpr std::array<ValidationCase, 11> cases = { {
+   constexpr std::array<ValidationCase, 13> cases = { {
       { "primary match", {}, "local value:num = 1", "value:num = 1", {} },
       { "primary mismatch", {}, "local value:num = 'wrong'", "value:num = 'wrong'", "cannot assign 'str'" },
       { "dynamic ingress", "function dynamic(Value:any):any return Value end\n",
@@ -1802,6 +1875,10 @@ static bool test_annotated_local_validation_parity(kt::Log &Log)
          "value:array<int> = array<str> { 'wrong' }", "array member mismatch" },
       { "broad object", {}, "local value:obj = obj.new('time')\nvalue = obj.new('file')",
          "value:obj = obj.new('time')\nvalue = obj.new('file')", {} },
+      { "inferred object match", {}, "local value = obj.new('time')\nvalue = obj.new('time')",
+         "value = obj.new('time')\nvalue = obj.new('time')", {} },
+      { "inferred object mismatch", {}, "local value = obj.new('time')\nvalue = obj.new('file')",
+         "value = obj.new('time')\nvalue = obj.new('file')", "object class mismatch" },
       { "multi-result mismatch", "local function pair():<num, str> return 1, 'wrong' end\n",
          "local first:num, second:bool = pair()", "first:num, second:bool = pair()", "cannot assign 'str'" },
       { "missing result", "local function one():num return 1 end\n",
@@ -1944,6 +2021,140 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
    auto diagnostics = context.diagnostics().entries();
    result.diagnostics.assign(diagnostics.begin(), diagnostics.end());
    return result;
+}
+
+//********************************************************************************************************************
+
+static bool test_assignment_target_regressions(kt::Log &Log)
+{
+   auto first_target = [](BindingDiscoveryResult &Result, size_t Statement = 0) -> NameRef * {
+      if (not Result.chunk.ok() or Statement >= Result.chunk.value_ref()->statements.size()) return nullptr;
+      auto *assignment = std::get_if<AssignmentStmtPayload>(
+         &Result.chunk.value_ref()->statements[Statement]->data);
+      if (not assignment or assignment->targets.empty() or not assignment->targets.front()) return nullptr;
+      return std::get_if<NameRef>(&assignment->targets.front()->data);
+   };
+   auto has_diagnostic = [](const std::vector<ParserDiagnostic> &Diagnostics, std::string_view Text) {
+      return std::ranges::any_of(Diagnostics, [Text](const ParserDiagnostic &Diagnostic) {
+         return Diagnostic.message.find(Text) != std::string::npos;
+      });
+   };
+   auto count_root_opcode = [](lua_State *Lua, BCOp Opcode) {
+      GCproto *prototype = funcproto(funcV(Lua->top - 1));
+      size_t count = 0;
+      for (MSize i = 1; i < prototype->sizebc; ++i) {
+         if (bc_op(proto_bc(prototype)[i]) IS Opcode) ++count;
+      }
+      return count;
+   };
+
+   auto typed_extern = discover_bindings_from_source("extern counter\ncounter:num = 2");
+   NameRef *typed_extern_target = first_target(typed_extern, 1);
+   if (not typed_extern_target or
+       typed_extern_target->assignment_resolution != AssignmentTargetResolution::ExistingGlobal or
+       not has_diagnostic(typed_extern.diagnostics,
+          "cannot redeclare existing global 'counter' with a type annotation")) {
+      Log.error("a typed named-extern assignment lost its category or redeclaration diagnostic");
+      log_diagnostics(typed_extern.diagnostics, Log);
+      return false;
+   }
+
+   auto fresh_typed = discover_bindings_from_source("fresh:num = 2");
+   NameRef *fresh_target = first_target(fresh_typed);
+   if (not fresh_target or fresh_target->assignment_resolution != AssignmentTargetResolution::NewLocal or
+       not fresh_target->binding_id or fresh_target->identifier.type != TiriType::Num or
+       not fresh_typed.diagnostics.empty()) {
+      Log.error("a fresh typed assignment did not publish a typed NewLocal binding");
+      log_diagnostics(fresh_typed.diagnostics, Log);
+      return false;
+   }
+
+   LuaStateHolder fixed_holder;
+   lua_State *fixed = fixed_holder.get();
+   if (lua_load(fixed, "fresh:num = 2\nfresh = 'wrong'", "=assignment-fixed-new-local") IS 0) {
+      Log.error("a typed NewLocal assignment did not establish a fixed local contract");
+      return false;
+   }
+   if (std::string_view(lua_tostring(fixed, -1)).find("cannot assign 'str'") IS std::string_view::npos) {
+      Log.error("a typed NewLocal reassignment produced the wrong diagnostic: %s", lua_tostring(fixed, -1));
+      return false;
+   }
+
+   LuaStateHolder extern_holder;
+   lua_State *external = extern_holder.get();
+   constexpr std::string_view extern_source =
+      "extern task_eight_external\n"
+      "task_eight_external = 2\n";
+   if (lua_load(external, extern_source, "=assignment-named-extern")) {
+      Log.error("an untyped named-extern assignment did not compile: %s", lua_tostring(external, -1));
+      return false;
+   }
+   if (count_root_opcode(external, BC_GSET) != 1) {
+      Log.error("an untyped named-extern assignment did not emit exactly one global store");
+      return false;
+   }
+   if (lua_pcall(external, 0, 0, 0)) {
+      Log.error("an untyped named-extern assignment did not execute: %s", lua_tostring(external, -1));
+      return false;
+   }
+   lua_getglobal(external, "task_eight_external");
+   bool extern_stored = lua_tointeger(external, -1) IS 2;
+   lua_pop(external, 1);
+   if (not extern_stored) {
+      Log.error("an untyped named-extern assignment did not update the environment");
+      return false;
+   }
+
+   LuaStateHolder contract_holder;
+   lua_State *contract = contract_holder.get();
+   if (lua_load(contract, "global glTaskEightContract:num = 1", "=assignment-contract-declaration") or
+       lua_pcall(contract, 0, 0, 0)) {
+      Log.error("failed to establish the task-eight persisted contract: %s", lua_tostring(contract, -1));
+      return false;
+   }
+   lua_pushnil(contract);
+   lua_setglobal(contract, "glTaskEightContract");
+
+   if (lua_load(contract, "glTaskEightContract:num = 2", "=assignment-contract-redeclaration") IS 0) {
+      Log.error("a typed assignment redeclared a nil-valued persisted global");
+      return false;
+   }
+   if (std::string_view(lua_tostring(contract, -1)).find(
+         "cannot redeclare existing global 'glTaskEightContract'") IS std::string_view::npos) {
+      Log.error("a nil-valued persisted-global annotation produced the wrong diagnostic: %s",
+         lua_tostring(contract, -1));
+      return false;
+   }
+   lua_pop(contract, 1);
+
+   if (lua_load(contract, "glTaskEightContract = 2", "=assignment-contracted-global")) {
+      Log.error("an untyped persisted-global assignment did not compile: %s", lua_tostring(contract, -1));
+      return false;
+   }
+   if (count_root_opcode(contract, BC_GSET) != 1) {
+      Log.error("an untyped persisted-global assignment did not emit exactly one global store");
+      return false;
+   }
+   if (lua_pcall(contract, 0, 0, 0)) {
+      Log.error("an untyped persisted-global assignment did not execute: %s", lua_tostring(contract, -1));
+      return false;
+   }
+   lua_getglobal(contract, "glTaskEightContract");
+   bool contract_stored = lua_tointeger(contract, -1) IS 2;
+   lua_pop(contract, 1);
+   if (not contract_stored) {
+      Log.error("an untyped persisted-global assignment did not update the environment");
+      return false;
+   }
+
+   auto wildcard = build_ast_from_source("extern *", true);
+   if (not has_diagnostic(wildcard.diagnostics, "Extern wildcard '*' is not supported")) {
+      Log.error("removed extern wildcard syntax produced the wrong parser diagnostic");
+      log_diagnostics(wildcard.diagnostics, Log);
+      return false;
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -10539,7 +10750,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 97> tests = { {
+   constexpr std::array<TestCase, 98> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
@@ -10569,6 +10780,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "colon_method_syntax_rejected", test_colon_method_syntax_rejected },
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
       { "annotated_local_validation_parity", test_annotated_local_validation_parity },
+      { "assignment_target_regressions", test_assignment_target_regressions },
       { "implicit_later_name_attributes", test_implicit_later_name_attributes },
       { "implicit_attribute_shadowing", test_implicit_attribute_shadowing },
       { "ternary_colon_separators", test_ternary_colon_separators },

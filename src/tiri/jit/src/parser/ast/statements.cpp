@@ -10,50 +10,63 @@
 // - Expression statements
 
 //********************************************************************************************************************
-// Parses local variable declarations, local function statements and local thunk function statements.
-// Supports both explicit 'local' keyword and implicit local declarations with declaration attributes.
+// Parses an explicit local variable declaration, local function statement, or local thunk function statement.
 
-ParserResult<StmtNodePtr> AstBuilder::parse_local()
+ParserResult<StmtNodePtr> AstBuilder::parse_explicit_local_declaration()
 {
    Token local_token = this->ctx.tokens().current();
-   bool implicit_local = (local_token.kind() IS TokenKind::Identifier);
+   this->ctx.tokens().advance();  // Consume the 'local' keyword
 
-   if (not implicit_local) {
-      this->ctx.tokens().advance();  // Consume the 'local' keyword
-
-      if (this->ctx.check(TokenKind::Enum)) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "Local enum declarations are not supported");
-      }
-
-      bool is_thunk = false;
-      if (this->ctx.check(TokenKind::ThunkToken)) {
-         is_thunk = true;
-         this->ctx.tokens().advance();
-      }
-
-      if (this->ctx.check(TokenKind::Function) or is_thunk) {
-         if (not is_thunk) {
-            this->ctx.tokens().advance();
-         }
-         Token function_token = local_token;  // Use local_token as span start
-         auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
-         if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
-         if (this->is_module_namespace_name(name_token.value_ref().identifier())) {
-            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
-               "Module namespaces cannot be declared as functions");
-         }
-         GCstr *funcname = name_token.value_ref().identifier();
-         auto fn = this->parse_function_literal(function_token, is_thunk, funcname);
-         if (not fn.ok()) return ParserResult<StmtNodePtr>::failure(fn.error_ref());
-         ExprNodePtr function_expr = std::move(fn.value_ref());
-         auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalFunctionStmt, this->span_from(local_token, name_token.value_ref()));
-         LocalFunctionStmtPayload payload(make_identifier(name_token.value_ref()), move_function_payload(function_expr));
-         stmt->data = std::move(payload);
-         return ParserResult<StmtNodePtr>::success(std::move(stmt));
-      }
+   if (this->ctx.check(TokenKind::Enum)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "Local enum declarations are not supported");
    }
 
+   bool is_thunk = false;
+   if (this->ctx.check(TokenKind::ThunkToken)) {
+      is_thunk = true;
+      this->ctx.tokens().advance();
+   }
+
+   if (this->ctx.check(TokenKind::Function) or is_thunk) {
+      if (not is_thunk) {
+         this->ctx.tokens().advance();
+      }
+      Token function_token = local_token;  // Use local_token as span start
+      auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
+      if (this->is_module_namespace_name(name_token.value_ref().identifier())) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
+            "Module namespaces cannot be declared as functions");
+      }
+      GCstr *funcname = name_token.value_ref().identifier();
+      auto fn = this->parse_function_literal(function_token, is_thunk, funcname);
+      if (not fn.ok()) return ParserResult<StmtNodePtr>::failure(fn.error_ref());
+      ExprNodePtr function_expr = std::move(fn.value_ref());
+      auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalFunctionStmt,
+         this->span_from(local_token, name_token.value_ref()));
+      LocalFunctionStmtPayload payload(make_identifier(name_token.value_ref()), move_function_payload(function_expr));
+      stmt->data = std::move(payload);
+      return ParserResult<StmtNodePtr>::success(std::move(stmt));
+   }
+
+   return this->parse_local_name_list(local_token, false);
+}
+
+//********************************************************************************************************************
+// Parses a bare annotated name list.  Type-only syntax produces an assignment; declaration attributes retain the
+// legacy LocalDeclStmt representation and diagnostics.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_bare_annotated_assignment()
+{
+   return this->parse_local_name_list(this->ctx.tokens().current(), true);
+}
+
+//********************************************************************************************************************
+// Parses the name list and optional initialiser shared by explicit locals and bare annotated syntax.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_local_name_list(const Token &StartToken, bool BareAnnotatedSyntax)
+{
    auto names = this->parse_name_list();
    if (not names.ok()) return ParserResult<StmtNodePtr>::failure(names.error_ref());
 
@@ -130,7 +143,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
       }
    }
 
-   if (implicit_local) {
+   if (BareAnnotatedSyntax) {
       bool has_declaration_attribute = std::ranges::any_of(name_list, [](const Identifier &Identifier) {
          return Identifier.has_close or Identifier.has_const or Identifier.has_view;
       });
@@ -144,13 +157,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
             targets.push_back(make_identifier_expr(reference.identifier.span, reference));
          }
          return ParserResult<StmtNodePtr>::success(
-            make_assignment_stmt(local_token.span(), assign_op, std::move(targets), std::move(values)));
+            make_assignment_stmt(StartToken.span(), assign_op, std::move(targets), std::move(values)));
       }
    }
 
-   auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalDeclStmt, local_token.span());
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalDeclStmt, StartToken.span());
    stmt->data.emplace<LocalDeclStmtPayload>(assign_op, std::move(name_list), std::move(values));
-   std::get<LocalDeclStmtPayload>(stmt->data).implicit_declaration = implicit_local;
+   std::get<LocalDeclStmtPayload>(stmt->data).implicit_declaration = BareAnnotatedSyntax;
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }
 

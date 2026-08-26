@@ -567,6 +567,152 @@ end
 -- Environment mutation boundary: separately compiled chunks writing through _G aliases must honour the persisted
 -- contract, and a declaration composes with a value seeded earlier through rawset().
 
+struct GTNilIntervalRecord
+   Value: int
+end
+
+struct GTNilIntervalOther
+   Value: int
+end
+
+local function expect_cross_chunk_failure(Source:str, Expected:str):str
+   local message = nil
+   try
+      exec(Source)
+   except e
+      message = tostring(e.message)
+   end
+
+   assert(message != nil, 'Expected separately compiled source to fail')
+   assert(message.find(Expected) != nil,
+      'Expected cross-chunk diagnostic to contain "' .. Expected .. '", got: ' .. message)
+   return message
+end
+
+@Test function NilValuedContractRetainsGlobalIdentity()
+   global glGTNilIdentityCounter:num = 1
+   defer
+      rawset(_G, 'glGTNilIdentityCounter', nil)
+   end
+
+   glGTNilIdentityCounter = nil
+   assert(rawget(_G, 'glGTNilIdentityCounter') is nil,
+      'The fixture must clear the global value before compiling the assignment')
+
+   exec([[glGTNilIdentityCounter = 2]])
+   assert(glGTNilIdentityCounter is 2,
+      'A separately compiled assignment must update a nil-valued contracted global')
+end
+
+@Test function NilValuedContractRejectsIncompatibleStore()
+   global glGTNilRejectedCounter:num = 1
+   defer
+      rawset(_G, 'glGTNilRejectedCounter', nil)
+   end
+
+   glGTNilRejectedCounter = nil
+   local message = expect_cross_chunk_failure(
+      [[glGTNilRejectedCounter = 'wrong']], 'type contract failed for global')
+   assert(message.find('expected num') != nil and message.find('got string') != nil,
+      'The incompatible store diagnostic must identify both scalar types: ' .. message)
+   assert(rawget(_G, 'glGTNilRejectedCounter') is nil,
+      'A rejected separately compiled store must preserve the nil value')
+end
+
+@Test function NilValuedContractRejectsAnnotationRedeclaration()
+   global glGTNilAnnotatedCounter:num = 1
+   defer
+      rawset(_G, 'glGTNilAnnotatedCounter', nil)
+   end
+
+   glGTNilAnnotatedCounter = nil
+   local message = expect_cross_chunk_failure(
+      [[glGTNilAnnotatedCounter:num = 2]],
+      "cannot redeclare existing global 'glGTNilAnnotatedCounter' with a type annotation")
+   assert(message.find('glGTNilAnnotatedCounter') != nil,
+      'The annotation diagnostic must identify the persisted global: ' .. message)
+   assert(rawget(_G, 'glGTNilAnnotatedCounter') is nil,
+      'A rejected annotation redeclaration must preserve the nil value')
+end
+
+@Test function NilValuedExactContractsRetainIdentity()
+   global glGTNilIdentityArray:array<int> = array<int> { 1 }
+   global glGTNilIdentityStruct:struct<GTNilIntervalRecord> =
+      struct<GTNilIntervalRecord> { Value = 1 }
+   defer
+      rawset(_G, 'glGTNilIdentityArray', nil)
+      rawset(_G, 'glGTNilIdentityStruct', nil)
+   end
+
+   glGTNilIdentityArray = nil
+   glGTNilIdentityStruct = nil
+   exec([[
+glGTNilIdentityArray = array<int> { 2 }
+glGTNilIdentityStruct = struct<GTNilIntervalRecord> { Value = 3 }
+]])
+   assert(glGTNilIdentityArray[0] is 2,
+      'A matching array member identity must survive a nil interval')
+   assert(glGTNilIdentityStruct.Value is 3,
+      'A matching structure identity must survive a nil interval')
+
+   glGTNilIdentityArray = nil
+   glGTNilIdentityStruct = nil
+   local array_message = expect_cross_chunk_failure(
+      [[glGTNilIdentityArray = array<str> { 'wrong' }]], 'expected array<int>')
+   assert(array_message.find('got array<str>') != nil,
+      'The array mismatch must identify the actual member identity: ' .. array_message)
+   assert(rawget(_G, 'glGTNilIdentityArray') is nil,
+      'A rejected array identity must preserve the nil value')
+
+   local struct_message = expect_cross_chunk_failure(
+      [[glGTNilIdentityStruct = struct<GTNilIntervalOther> { Value = 4 }]],
+      'expected struct<GTNilIntervalRecord>')
+   assert(struct_message.find('got struct<GTNilIntervalOther>') != nil,
+      'The structure mismatch must identify the actual layout: ' .. struct_message)
+   assert(rawget(_G, 'glGTNilIdentityStruct') is nil,
+      'A rejected structure identity must preserve the nil value')
+end
+
+@Test function ExplicitLocalShadowsNilValuedContract()
+   global glGTNilShadowCounter:num = 1
+   defer
+      rawset(_G, 'glGTNilShadowCounter', nil)
+   end
+
+   glGTNilShadowCounter = nil
+   local result = exec([[
+local glGTNilShadowCounter = 'local value'
+return glGTNilShadowCounter
+]])
+   assert(result is 'local value',
+      'The separately compiled explicit local must retain its own value')
+   assert(rawget(_G, 'glGTNilShadowCounter') is nil,
+      'The separately compiled explicit local must not mutate the contracted global')
+end
+
+@Test function NamedExternAssignmentsUseGlobalStorage()
+   defer
+      rawset(_G, 'glGTNamedExternStore', nil)
+      rawset(_G, 'glGTNamedExternAnnotated', nil)
+   end
+
+   exec([[
+extern glGTNamedExternStore
+glGTNamedExternStore = 9
+]])
+   assert(glGTNamedExternStore is 9,
+      'An untyped named-extern assignment must update the environment')
+
+   local message = expect_cross_chunk_failure([[
+extern glGTNamedExternAnnotated
+glGTNamedExternAnnotated:num = 9
+]], "cannot redeclare existing global 'glGTNamedExternAnnotated' with a type annotation")
+   assert(message.find('glGTNamedExternAnnotated') != nil,
+      'The named-extern annotation diagnostic must identify the symbol: ' .. message)
+   assert(rawget(_G, 'glGTNamedExternAnnotated') is nil,
+      'A rejected named-extern annotation must not publish a value')
+end
+
 @Test function CrossChunkAliasStoreIsChecked()
    global glGTCrossAlias = 'text'
 
