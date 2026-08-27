@@ -11,7 +11,7 @@ inline constexpr uint8_t FF_LUA = 0;
 inline constexpr uint8_t FF_C   = 1;
 
 enum class BuiltinCallableID : uint16_t {
-   Invalid = std::numeric_limits<uint16_t>::max()
+   Invalid = (std::numeric_limits<uint16_t>::max)()
 };
 
 [[nodiscard]] inline constexpr unsigned int builtin_callable_index(BuiltinCallableID Value) noexcept
@@ -27,4 +27,4 @@ enum class BuiltinCallableID : uint16_t {
 // GCfunc::ffid is an 8-bit field.  Keep the state layout independent of the generated fast-function count so buildvm
 // can compile before it creates lj_ffdef.h.
 
-inline constexpr size_t BUILTIN_CALLABLE_CAPACITY = size_t(std::numeric_limits<uint8_t>::max()) + 1;
+inline constexpr size_t BUILTIN_CALLABLE_CAPACITY = size_t((std::numeric_limits<uint8_t>::max)()) + 1;
