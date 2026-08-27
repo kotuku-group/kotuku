@@ -61,9 +61,6 @@ constexpr auto HASH_ARRAY   = kt::strhash("array");
 constexpr auto HASH_ANY     = kt::strhash("any");
 
 // Forward declarations
-static int32_t find_in_array(GCarray *Arr, lua_Number Value, int32_t Start, int32_t Stop, int32_t Step);
-static int32_t find_object_in_array(GCarray *Arr, OBJECTID SearchUid, int32_t Start, int32_t Stop, int32_t Step);
-static int32_t find_string_in_array(GCarray *Arr, GCstr *SearchStr, int32_t Start, int32_t Stop, int32_t Step);
 static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx);
 
 const array_meta glArrayConversion[size_t(AET::MAX)] = {
@@ -1517,8 +1514,6 @@ LJLIB_CF(array_fill)
 }
 
 //********************************************************************************************************************
-#include "lj_array_search.h"
-
 // Usage: array.indexOf(arr, value [, start]) or array.indexOf(arr, value, {range})
 //
 // Searches for a value in the array.
@@ -1630,13 +1625,13 @@ static int array_index_of(lua_State *L)
       if (tiri_range *r = check_range(L, 3)) {
          auto span = array_range_to_span(L, r, arr->len);
          if (span.empty) return array_push_find_result(L, -1);
-         return array_push_find_result(L, find_object_in_array(arr, search_uid, span.start, span.stop, span.step));
+         return array_push_find_result(L, lj_arr_find_object(arr, search_uid, span.start, span.stop, span.step));
       }
 
       auto start = lj_lib_optint(L, 3, 0);
       if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
       if (start >= stop) return array_push_find_result(L, -1);
-      return array_push_find_result(L, find_object_in_array(arr, search_uid, start, stop - 1, 1));
+      return array_push_find_result(L, lj_arr_find_object(arr, search_uid, start, stop - 1, 1));
    }
    if (arr->elemtype IS AET::STR_GC) {
       GCstr *search_str = lj_lib_checkstr(L, 2);
@@ -1644,13 +1639,13 @@ static int array_index_of(lua_State *L)
       if (tiri_range *r = check_range(L, 3)) {
          auto span = array_range_to_span(L, r, arr->len);
          if (span.empty) return array_push_find_result(L, -1);
-         return array_push_find_result(L, find_string_in_array(arr, search_str, span.start, span.stop, span.step));
+         return array_push_find_result(L, lj_arr_find_str(arr, search_str, span.start, span.stop, span.step));
       }
 
       auto start = lj_lib_optint(L, 3, 0);
       if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
       if (start >= stop) return array_push_find_result(L, -1);
-      return array_push_find_result(L, find_string_in_array(arr, search_str, start, stop - 1, 1));
+      return array_push_find_result(L, lj_arr_find_str(arr, search_str, start, stop - 1, 1));
    }
 
    if (glArrayConversion[size_t(arr->elemtype)].primitive) {
@@ -1661,13 +1656,13 @@ static int array_index_of(lua_State *L)
       if (tiri_range *r = check_range(L, 3)) {
          auto span = array_range_to_span(L, r, arr->len);
          if (span.empty) return array_push_find_result(L, -1);
-         return array_push_find_result(L, find_in_array(arr, value, span.start, span.stop, span.step));
+         return array_push_find_result(L, lj_arr_find_num(arr, value, span.start, span.stop, span.step));
       }
 
       auto start = lj_lib_optint(L, 3, 0);
       if (not array_find_start(start, arr->len, &start)) return array_push_find_result(L, -1);
       if (start >= stop) return array_push_find_result(L, -1);
-      return array_push_find_result(L, find_in_array(arr, value, start, stop - 1, 1));
+      return array_push_find_result(L, lj_arr_find_num(arr, value, start, stop - 1, 1));
    }
 
    if (tiri_range *r = check_range(L, 3)) {

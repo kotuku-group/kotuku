@@ -4797,12 +4797,28 @@ static void rec_range_value(jit_State *J, BCREG Base)
    int32_t integer_result = numberVnum(runtime_flag) != 0.0;
    ir.guard(IR_EQ, IRT_NUM, integer_values, lj_ir_knum(J, lua_Number(integer_result)));
 
+   lua_Number runtime_start = numberVnum(&J->L->base[Base + RANGE_FOR_START]);
+   lua_Number runtime_step = numberVnum(&J->L->base[Base + RANGE_FOR_VALUE_STEP]);
+   lua_Number runtime_ordinal_stop = numberVnum(&J->L->base[Base + FORL_STOP]);
+   int step_exponent;
+   bool exact_scaled_integer = runtime_start IS 0.0 and not std::signbit(runtime_start) and
+      std::isnormal(runtime_step) and std::frexp(std::abs(runtime_step), &step_exponent) IS 0.5 and
+      runtime_ordinal_stop >= 0.0 and runtime_ordinal_stop <= 0x1p53 and
+      runtime_ordinal_stop <= DBL_MAX / std::abs(runtime_step);
+   if (exact_scaled_integer) {
+      TRef ordinal_stop = rec_range_number(J, Base + FORL_STOP, inherited_constant);
+      ir.guard(IR_EQ, IRT_NUM, start, lj_ir_knum(J, runtime_start));
+      ir.guard(IR_EQ, IRT_NUM, step, lj_ir_knum(J, runtime_step));
+      ir.guard(IR_EQ, IRT_NUM, ordinal_stop, lj_ir_knum(J, runtime_ordinal_stop));
+   }
+
    TRef value;
-   if (integer_result) {
-      // Integer-valued ranges stay within signed 32-bit bounds, so the double product and sum are exact and avoid a
-      // per-element helper call.  Fractional ranges retain the shared FMA helper below.
+   if (integer_result or exact_scaled_integer) {
+      // Integer-valued ranges stay within signed 32-bit bounds. Zero-based ranges whose step is a normal power of two
+      // also produce exact scaled integers while their ordinal remains exactly representable. Both cases can avoid the
+      // per-element fma() helper without changing the generated value.
       value = ir.emit_num(IR_ADD, start, ir.emit_num(IR_MUL, ordinal, step));
-      value = ir.conv_int_num(value);
+      if (integer_result) value = ir.conv_int_num(value);
    }
    else {
       value = lj_ir_call(J, IRCALL_lj_range_value, ordinal, start, step);
