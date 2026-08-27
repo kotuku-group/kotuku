@@ -1381,10 +1381,14 @@ struct GCarray {
    MSize   len;         // Number of elements currently in use
    MSize   capacity;    // Number of elements that can be stored (allocated capacity)
    MSize   elemsize;    // Size of each element in bytes
-   struct struct_record *structdef;  // Optional: struct definition for struct arrays
+   // Structure definitions and specialised nested-array identities are mutually exclusive and share the historic
+   // structure-definition offset.  Access this storage only through the tagged helpers below.
+   union {
+      struct struct_record *structure_definition;
+      GCRef nested_array_identity;
+   } type_metadata;
    std::vector<char> *strcache; // Optional: cached string content for CSTRING/STRING_CPP arrays
    RESOURCEID resource_id; // Optional Core resource pin owned by an external view
-   GCRef type_identity; // Interned complete public type name, appended to preserve fixed field offsets
 
 public:
    // Initialise the array structure. Storage must be pre-allocated by the caller using lj_mem_new()
@@ -1406,10 +1410,21 @@ public:
       len       = Length;
       capacity  = Capacity;
       elemsize  = ElemSize;
-      structdef = StructDef;
+      type_metadata.nested_array_identity.gcptr64 = 0;
+      if (Type IS AET::STRUCT) type_metadata.structure_definition = StructDef;
+      else if (Type IS AET::ARRAY) type_metadata.nested_array_identity.gcptr64 = uint64_t(TypeIdentity);
       strcache  = nullptr;
       resource_id = 0;
-      type_identity.gcptr64 = uint64_t(TypeIdentity);
+   }
+
+   [[nodiscard]] inline struct struct_record * struct_definition() const noexcept
+   {
+      return elemtype IS AET::STRUCT ? type_metadata.structure_definition : nullptr;
+   }
+
+   [[nodiscard]] inline GCstr * nested_identity() const noexcept
+   {
+      return elemtype IS AET::ARRAY ? (GCstr *)(void *)type_metadata.nested_array_identity.gcptr64 : nullptr;
    }
 
    // Destructor only handles strcache. Storage is freed by lj_array_free() for proper GC tracking.
@@ -1448,6 +1463,8 @@ public:
 // Ensure metatable field is at the same offset in GCtab, GCarray, GCudata
 static_assert(offsetof(GCarray, metatable) IS offsetof(GCtab, metatable));
 static_assert(offsetof(GCarray, gclist) IS offsetof(GCtab, gclist));
+static_assert(offsetof(GCarray, type_metadata) IS 56);
+static_assert(sizeof(GCarray) IS 80);
 
 // Forward declaration - defined after GCobj is complete
 inline GCarray* arrayref(GCRef r) noexcept;

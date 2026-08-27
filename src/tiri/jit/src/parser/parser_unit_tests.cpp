@@ -6126,11 +6126,11 @@ static bool test_static_descriptor_model(kt::Log &Log)
    }
    ArrayAllocationDescriptor matching_array {
       .storage = AET::ARRAY,
-      .canonical_identity = "array<array<int>>"
+      .nested_identity = lj_str_new(recursive_lua, "array<array<int>>", sizeof("array<array<int>>") - 1)
    };
    ArrayAllocationDescriptor mismatched_array {
       .storage = AET::ARRAY,
-      .canonical_identity = "array<array<str>>"
+      .nested_identity = lj_str_new(recursive_lua, "array<array<str>>", sizeof("array<array<str>>") - 1)
    };
    if (not array_element_matches(*exact, lj_array_new(recursive_lua, 0, matching_array)) or
        array_element_matches(*exact, lj_array_new(recursive_lua, 0, mismatched_array))) {

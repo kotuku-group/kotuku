@@ -408,7 +408,7 @@ static int regex_search(lua_State *Lua)
 
    ArrayAllocationDescriptor descriptor {
       .storage = AET::ARRAY,
-      .canonical_identity = "array<array<str>>"
+      .nested_identity = lj_str_new(Lua, "array<array<str>>", sizeof("array<array<str>>") - 1)
    };
    GCarray *results = lj_array_new(Lua, 0, descriptor);
    setarrayV(Lua, Lua->top++, results); // Root results to prevent GC during callbacks

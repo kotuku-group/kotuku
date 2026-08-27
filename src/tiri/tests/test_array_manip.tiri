@@ -1529,3 +1529,33 @@ end
       error("Positional fill should reject a negative Stop")
    end
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Slice copying paths
+
+@Test function ArraySlicesPreserveOrdinaryValues()
+   local integers = array<int> { 0, 1, 2, 3, 4 }
+   local strings = array<str> { 'zero', 'one', 'two', 'three', 'four' }
+   local mixed = array<any> { 0, 'one', true, 3, 'four' }
+
+   local empty = integers.slice({0 to 0})
+   local contiguous = integers.slice({1 into 3})
+   local stepped = integers.slice({0 into 4 by 2})
+   local descending = integers.slice({4 into 0 by -2})
+   assert(#empty is 0 and rawtype(empty) is 'array<int>', 'an empty primitive slice lost its type')
+   assert(contiguous[0] is 1 and contiguous[2] is 3, 'a contiguous primitive slice lost values')
+   assert(stepped[0] is 0 and stepped[2] is 4, 'a stepped primitive slice lost values')
+   assert(descending[0] is 4 and descending[2] is 0, 'a descending primitive slice lost values')
+
+   local string_slice = strings.slice({4 into 0 by -2})
+   local mixed_slice = mixed.slice({0 into 4 by 2})
+   strings = nil
+   mixed = nil
+   processing.collect('full')
+   assert(string_slice[0] is 'four' and string_slice[1] is 'two' and string_slice[2] is 'zero',
+      'a string slice lost references after collection')
+   assert(mixed_slice[0] is 0 and mixed_slice[1] is true and mixed_slice[2] is 'four',
+      'an any slice lost values after collection')
+   assert(rawtype(string_slice) is 'array<str>' and rawtype(mixed_slice) is 'array<any>',
+      'an ordinary reference slice lost its implicit identity')
+end

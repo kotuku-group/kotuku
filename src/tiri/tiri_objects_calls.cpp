@@ -494,7 +494,7 @@ static ERR build_span_arg(lua_State *Lua, int StackIndex, const FunctionField &F
          *ErrorMsg = "Array element type does not match the span element type.";
          return ERR::InvalidType;
       }
-      if ((element_type IS AET::STRUCT) and (array->structdef != struct_def)) {
+      if ((element_type IS AET::STRUCT) and (array->struct_definition() != struct_def)) {
          *ErrorMsg = "Structure array type does not match the span structure type.";
          return ERR::InvalidType;
       }

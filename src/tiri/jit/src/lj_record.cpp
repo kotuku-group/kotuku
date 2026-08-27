@@ -525,7 +525,7 @@ static RecordedContract rec_contract_guard_array(
 
    if (Entry.array_element_type IS AET::STRUCT) {
       struct_record *definition = find_struct(J->L, Entry.constraint_name);
-      if (not definition or array->structdef != definition) return RecordedContract::Mismatch;
+      if (not definition or array->struct_definition() != definition) return RecordedContract::Mismatch;
       TRef definition_ref = ir.fload(ValueRef, IRFL_ARRAY_STRUCTDEF, IRT_PTR);
       ir.guard_eq(definition_ref, ir.kkptr(definition), IRT_PTR);
    }
@@ -533,9 +533,10 @@ static RecordedContract rec_contract_guard_array(
       if (not lj_array_member_identity_matches(array, Entry.constraint_name)) return RecordedContract::Mismatch;
       std::string expected_identity = std::format("array<{}>", Entry.constraint_name);
       if (not lj_array_identity_matches(array, expected_identity)) return RecordedContract::Complex;
-      GCstr *identity = strref(array->type_identity);
-      TRef identity_ref = ir.fload(ValueRef, IRFL_ARRAY_IDENTITY, IRT_STR);
-      ir.guard_eq(identity_ref, ir.kstr(identity), IRT_STR);
+      if (GCstr *identity = array->nested_identity()) {
+         TRef identity_ref = ir.fload(ValueRef, IRFL_ARRAY_IDENTITY, IRT_STR);
+         ir.guard_eq(identity_ref, ir.kstr(identity), IRT_STR);
+      }
    }
 
    return RecordedContract::Basic;
@@ -678,11 +679,10 @@ static TRef rec_type_test(jit_State *J, BCREG Slot, GCstr *Encoded)
          RuntimeContractEntry observed;
          observed.type = TiriType::Array;
          observed.array_element_type = arrayV(value)->elemtype;
-         if (arrayV(value)->elemtype IS AET::STRUCT and arrayV(value)->structdef) {
-            observed.constraint_name = arrayV(value)->structdef->Name;
+         if (struct_record *definition = arrayV(value)->struct_definition()) {
+            observed.constraint_name = definition->Name;
          }
-         else if (arrayV(value)->elemtype IS AET::ARRAY and gcref(arrayV(value)->type_identity)) {
-            GCstr *identity = strref(arrayV(value)->type_identity);
+         else if (GCstr *identity = arrayV(value)->nested_identity()) {
             std::string_view outer(strdata(identity), identity->len);
             if (outer.starts_with("array<") and outer.ends_with('>')) {
                observed.constraint_name = outer.substr(6, outer.size() - 7);

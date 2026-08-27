@@ -189,7 +189,7 @@ static void write_array_field(lua_State *L, APTR Address, const struct_field &Fi
             "Array field '%s' has an unresolved struct element type.", FieldName);
       }
       if (source->elemtype IS AET::STRUCT) {
-         if ((source->structdef != field_def) or (source->elemsize != Field.ElementStride)) {
+         if ((source->struct_definition() != field_def) or (source->elemsize != Field.ElementStride)) {
             struct_field_error(L, CurrentFrame, ERR::InvalidType,
                "Array field '%s' requires '%s' struct elements.", FieldName,
                field_def->Name.c_str());

@@ -79,7 +79,8 @@ ArrayElementDescriptor describe_array_element(const GCarray *Array)
    ArrayElementDescriptor result;
    result.storage = public_array_storage(Array->elemtype);
    result.logical_type = TiriType::Any;
-   result.struct_def = Array->elemtype IS AET::STRUCT ? Array->structdef : nullptr;
+   result.struct_def = Array->struct_definition();
+   result.nested_array_identity = Array->nested_identity();
    result.known = true;
    switch (result.storage) {
       case AET::BYTE:
@@ -110,11 +111,9 @@ ArrayElementDescriptor describe_array_element(const GCarray *Array)
 bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual)
 {
    if (Expected.storage IS AET::ARRAY and Expected.nested_array_identity) {
-      if (not Actual or Actual->elemtype != AET::ARRAY or not gcref(Actual->type_identity)) return false;
-      GCstr *actual_identity = strref(Actual->type_identity);
+      if (not Actual or Actual->elemtype != AET::ARRAY) return false;
       std::string_view expected_name(strdata(Expected.nested_array_identity), Expected.nested_array_identity->len);
-      std::string_view actual_name(strdata(actual_identity), actual_identity->len);
-      return recursive_array_identity_matches(expected_name, actual_name);
+      return lj_array_identity_matches(Actual, expected_name);
    }
    return array_element_matches(Expected, describe_array_element(Actual));
 }
@@ -147,6 +146,7 @@ public:
 
    std::optional<std::string> canonical_name()
    {
+      this->retain_nested_identity_ = false;
       std::string canonical;
       auto result = this->parse_member(0, &canonical);
       this->skip_space();
@@ -206,8 +206,10 @@ private:
             return std::nullopt;
          }
          std::string identity = std::format("array<{}>", member_name);
-         if (this->lexer_) result.nested_array_identity = this->lexer_->keepstr(identity);
-         else if (this->state_) {
+         if (this->retain_nested_identity_ and this->lexer_) {
+            result.nested_array_identity = this->lexer_->keepstr(identity);
+         }
+         else if (this->retain_nested_identity_ and this->state_) {
             result.nested_array_identity = lj_str_new(this->state_, identity.data(), identity.size());
          }
          if (Canonical) *Canonical = identity;
@@ -237,6 +239,7 @@ private:
    lua_State *state_ = nullptr;
    LexState *lexer_ = nullptr;
    size_t position_ = 0;
+   bool retain_nested_identity_ = true;
 };
 
 } // namespace

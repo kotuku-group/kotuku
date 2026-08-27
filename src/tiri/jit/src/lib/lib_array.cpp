@@ -34,6 +34,7 @@
 #include "lib_range.h"
 #include "../parser/static_type_descriptor.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
@@ -110,12 +111,27 @@ static ArrayAllocationDescriptor parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
    std::string_view type_name(strdata(type_str), type_str->len);
-   if (auto element = parse_array_element_type(type_name, L)) {
+   while (not type_name.empty() and std::isspace(uint8_t(type_name.front()))) type_name.remove_prefix(1);
+   while (not type_name.empty() and std::isspace(uint8_t(type_name.back()))) type_name.remove_suffix(1);
+
+   if (auto element = describe_array_element(type_name, L)) {
       ArrayAllocationDescriptor descriptor;
       descriptor.storage = element->storage;
       descriptor.struct_def = element->struct_def;
-      descriptor.canonical_identity = std::format("array<{}>", array_element_name(*element));
       return descriptor;
+   }
+
+   if (type_name.starts_with("array")) {
+      if (auto member_identity = canonical_array_type_name(type_name, L)) {
+         std::string complete_identity = std::format("array<{}>", *member_identity);
+         return {
+            .storage = AET::ARRAY,
+            .nested_identity = lj_str_new(L, complete_identity.data(), complete_identity.size())
+         };
+      }
+   }
+   else if (auto element = parse_array_element_type(type_name, L)) {
+      return { .storage = element->storage, .struct_def = element->struct_def };
    }
 
    lj_err_argv(L, NArg, ErrMsg::BADTYPE, "valid array type", strdata(type_str));
@@ -2102,7 +2118,7 @@ static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx)
          break;
       }
       case AET::STRUCT: {
-         auto value = lj_struct_new(L, *Arr->structdef);
+         auto value = lj_struct_new(L, *Arr->struct_definition());
          memcpy(value->data, elem, Arr->elemsize);
          setstructV(L, L->top++, value);
          break;
