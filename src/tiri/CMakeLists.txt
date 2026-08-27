@@ -328,7 +328,7 @@ if (MSVC)
          ${JIT_BUILD_DIR}/buildvm_lib.obj
          ${JIT_BUILD_DIR}/buildvm_fold.obj
       DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
-         ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+         "${JIT_SRC}/lj_ircall.h" ${JIT_KOTUKU_HEADER_DEPENDENCIES}
       WORKING_DIRECTORY "${JIT_BUILD_DIR}"
       COMMENT "Building buildvm host tool for ${JIT_ARCH}"
       VERBATIM
@@ -553,6 +553,11 @@ else ()
       set (BUILDVM_OBJECT "${JIT_BUILD_DIR}/host_${BUILDVM_FILENAME}.o")
       list (APPEND BUILDVM_OBJECTS ${BUILDVM_OBJECT})
 
+      set (BUILDVM_SOURCE_DEPENDENCIES "")
+      if (BUILDVM_FILENAME STREQUAL "buildvm")
+         list (APPEND BUILDVM_SOURCE_DEPENDENCIES "${JIT_SRC}/lj_ircall.h")
+      endif ()
+
       add_custom_command(
          OUTPUT ${BUILDVM_OBJECT}
          COMMAND ${CMAKE_CXX_COMPILER} ${JIT_COMMON_CXXFLAGS}
@@ -560,7 +565,7 @@ else ()
             ${JIT_INCLUDE_DIRS}
             -c ${BUILDVM_SOURCE} -o ${BUILDVM_OBJECT}
          DEPENDS ${BUILDVM_SOURCE} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
-            ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+            ${BUILDVM_SOURCE_DEPENDENCIES} ${JIT_KOTUKU_HEADER_DEPENDENCIES}
          COMMENT "Compiling host/${BUILDVM_FILENAME}.cpp"
          VERBATIM
       )

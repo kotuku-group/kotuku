@@ -3507,6 +3507,24 @@ static void rec_comp_equality(jit_State *J, RecordOps *ops)
 // Record membership metamethod dispatch.  The target is the receiver and the candidate is its single visible
 // argument for table handlers; native handlers retain their explicit receiver-first ABI.
 
+static IRCallID rec_contains_numeric_call(AET ElementType) noexcept
+{
+   switch (ElementType) {
+      case AET::INT8:   return IRCALL_lj_arr_contains_i8;
+      case AET::BYTE:
+      case AET::UINT8:  return IRCALL_lj_arr_contains_u8;
+      case AET::INT16:  return IRCALL_lj_arr_contains_i16;
+      case AET::UINT16: return IRCALL_lj_arr_contains_u16;
+      case AET::INT32:  return IRCALL_lj_arr_contains_i32;
+      case AET::UINT32: return IRCALL_lj_arr_contains_u32;
+      case AET::INT64:  return IRCALL_lj_arr_contains_i64;
+      case AET::UINT64: return IRCALL_lj_arr_contains_u64;
+      case AET::FLOAT:  return IRCALL_lj_arr_contains_f32;
+      case AET::DOUBLE: return IRCALL_lj_arr_contains_f64;
+      default:          return IRCALL__MAX;
+   }
+}
+
 static void rec_contains(jit_State *J, RecordOps *ops)
 {
    RecordIndex *ix = &ops->ix;
@@ -3535,16 +3553,16 @@ static void rec_contains(jit_State *J, RecordOps *ops)
          // The helper result guard needs the comparison snapshot that rec_comp_fixup adjusts.
          rec_comp_prep(J);
          TRef result_ref;
+         IRCallID numeric_call = rec_contains_numeric_call(array->elemtype);
          if (array->elemtype IS AET::STR_GC and tref_isstr(ix->key)) {
             result_ref = lj_ir_call(J, IRCALL_lj_arr_contains_str, ix->val, ix->key);
          }
-         else if (glArrayConversion[size_t(array->elemtype)].itype IS uint8_t(LJ_TNUMX) and
-             tref_isnumber(ix->key)) {
+         else if (numeric_call != IRCALL__MAX and tref_isnumber(ix->key)) {
             TRef candidate_ref = ix->key;
             if (tref_isinteger(candidate_ref)) {
                candidate_ref = emitir(IRTN(IR_CONV), candidate_ref, IRCONV_NUM_INT);
             }
-            result_ref = lj_ir_call(J, IRCALL_lj_arr_contains_num, ix->val, candidate_ref);
+            result_ref = lj_ir_call(J, numeric_call, ix->val, candidate_ref);
          }
          else if (array->elemtype IS AET::STR_GC or array->elemtype IS AET::OBJECT or
              glArrayConversion[size_t(array->elemtype)].primitive) {

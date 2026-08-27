@@ -26,6 +26,19 @@ static int32_t find_forward_contiguous(const void *Data, int32_t Start, int32_t 
 }
 
 template<typename T>
+static int32_t contains_contiguous(GCarray *Array, lua_Number Candidate) noexcept
+{
+   if (Array->len IS 0) return 0;
+
+   const T *values = Array->get<T>();
+   T candidate = T(Candidate);
+   for (MSize i = 0; i < Array->len; i++) {
+      if (values[i] IS candidate) return 1;
+   }
+   return 0;
+}
+
+template<typename T>
 static int32_t find_stepped(const void *Data, int32_t Start, int32_t Stop, int32_t Step, lua_Number Value)
 {
    const T *base = (const T *)Data;
@@ -105,16 +118,24 @@ static int32_t find_object_in_array(GCarray *Array, OBJECTID SearchUid, int32_t 
    return -1;
 }
 
+static bool array_strings_equal(GCstr *Element, GCstr *Candidate, bool CandidateMutable) noexcept
+{
+   if (Element IS Candidate) return true;
+   if (not CandidateMutable and not lj_str_ismutable(Element)) return false;
+   return Element->len IS Candidate->len and
+      memcmp(strdata(Element), strdata(Candidate), Element->len) IS 0;
+}
+
 static int32_t find_string_in_array(GCarray *Array, GCstr *SearchStr, int32_t Start, int32_t Stop, int32_t Step)
 {
    auto refs = Array->get<GCRef>();
+   bool search_mutable = lj_str_ismutable(SearchStr);
    if (Step > 0) {
       for (int32_t i = Start; i <= Stop; i += Step) {
          GCRef ref = refs[i];
          if (gcref(ref)) {
             GCstr *element = gco_to_string(gcref(ref));
-            if (element->len IS SearchStr->len and
-                memcmp(strdata(element), strdata(SearchStr), element->len) IS 0) return i;
+            if (array_strings_equal(element, SearchStr, search_mutable)) return i;
          }
       }
    }
@@ -123,8 +144,7 @@ static int32_t find_string_in_array(GCarray *Array, GCstr *SearchStr, int32_t St
          GCRef ref = refs[i];
          if (gcref(ref)) {
             GCstr *element = gco_to_string(gcref(ref));
-            if (element->len IS SearchStr->len and
-                memcmp(strdata(element), strdata(SearchStr), element->len) IS 0) return i;
+            if (array_strings_equal(element, SearchStr, search_mutable)) return i;
          }
       }
    }

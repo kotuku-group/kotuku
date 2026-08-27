@@ -53,7 +53,16 @@ extern "C" [[nodiscard]] int32_t lj_arr_is_contains_handler(cTValue *);
 // Search an array using the canonical membership rules. Returns exactly zero or one.
 
 extern "C" [[nodiscard]] int32_t lj_arr_contains(lua_State *, GCarray *, cTValue *);
-extern "C" [[nodiscard]] int32_t lj_arr_contains_num(GCarray *, lua_Number);
+extern "C" [[nodiscard]] int32_t lj_arr_contains_i8(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_u8(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_i16(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_u16(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_i32(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_u32(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_i64(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_u64(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_f32(GCarray *, lua_Number) noexcept;
+extern "C" [[nodiscard]] int32_t lj_arr_contains_f64(GCarray *, lua_Number) noexcept;
 extern "C" [[nodiscard]] int32_t lj_arr_contains_str(GCarray *, GCstr *);
 LJ_NOAPI [[nodiscard]] int32_t lj_arr_find_num(GCarray *, lua_Number, int32_t, int32_t, int32_t);
 LJ_NOAPI [[nodiscard]] int32_t lj_arr_find_str(GCarray *, GCstr *, int32_t, int32_t, int32_t);
