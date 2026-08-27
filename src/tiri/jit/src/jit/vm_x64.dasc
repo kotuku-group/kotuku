@@ -3764,13 +3764,13 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
 
   case BC_BMETH:
     |  // RA = call base, RD = field-fallback jump, P32 = member string constant
-    |  mov L:CARG1, SAVE_L
-    |  mov L:CARG1->base, BASE
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
     |  lea CARG2, [BASE+RA*8+(1+LJ_FR2)*8]
+    |  mov L:CARG1, L:RB
     |  ins_getp32 CARG3d
     |  not CARG3
     |  mov STR:CARG3, [KBASE+CARG3*8]
-    |  mov L:RB, L:CARG1
     |  mov SAVE_PC, PC
     |  call extern lj_bmeth_lookup  // (lua_State *L, cTValue *receiver, GCstr *method)
     |  mov BASE, L:RB->base
@@ -3795,11 +3795,11 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  movzx RDd, PC_RD
     |  branchPC RD
     |2:
-    |  mov L:CARG1, SAVE_L
-    |  mov L:CARG1->base, BASE
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
     |  lea CARG2, [BASE+RA*8+(1+LJ_FR2)*8]
     |  lea CARG3, [DISPATCH+DISPATCH_GL(tmptv)]
-    |  mov L:RB, L:CARG1
+    |  mov L:CARG1, L:RB
     |  mov SAVE_PC, PC
     |  call extern lj_meta_tget
     |  mov BASE, L:RB->base
