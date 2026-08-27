@@ -10,6 +10,9 @@ set (FUNCTIONS # Full paths are required for add_custom_command() dependencies t
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_cursor.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_input.cpp")
 
+set (DISPLAY_DRIVERS
+   "${CMAKE_CURRENT_SOURCE_DIR}/driver/headless.cpp")
+
 set (CLASSES
    "${CMAKE_CURRENT_SOURCE_DIR}/class_bitmap.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/class_display.cpp"
@@ -99,14 +102,30 @@ target_include_directories (${MOD} PRIVATE
 target_link_libraries (${MOD} PUBLIC unicode)
 target_link_libraries (${MOD} PUBLIC linear_rgb)
 
+if (UNIT_TESTS)
+   add_executable (test_display_headless "tests/test_headless_driver.cpp" ${DISPLAY_DRIVERS})
+   set_target_properties (test_display_headless PROPERTIES CXX_STANDARD 20)
+   add_test (NAME display_headless_driver COMMAND test_display_headless)
+   set_tests_properties (display_headless_driver PROPERTIES LABELS display)
+endif ()
+
 if (WIN32)
-   target_link_libraries (${MOD} PRIVATE ole32 gdi32 setupapi uuid xinput ${MATH_LINK})
-   target_sources (${MOD} PRIVATE ${FUNCTIONS} "win32/windows.cpp" "win32/clipboard.c" ${CLASSES})
+   target_link_libraries (${MOD} PRIVATE ole32 oleaut32 gdi32 setupapi uuid xinput dinput8 dxguid wbemuuid ${MATH_LINK})
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "win32/windows.cpp" "win32/controller.cpp"
+      "win32/controller_mapping.cpp" "win32/clipboard.c" ${CLASSES})
    target_compile_definitions (${MOD} PRIVATE "WIN_DRAGDROP")
+
+   if (UNIT_TESTS)
+      add_executable (test_display_windows_controller "tests/test_windows_controller.cpp"
+         "win32/controller_mapping.cpp")
+      set_target_properties (test_display_windows_controller PROPERTIES CXX_STANDARD 20)
+      add_test (NAME display_windows_controller COMMAND test_display_windows_controller)
+      set_tests_properties (display_windows_controller PROPERTIES LABELS display)
+   endif ()
 elseif (ANDROID)
    # Android uses OpenGL.  A separate driver library is compiled for this purpose.
    add_library (display-gles1 SHARED)
-   target_sources (display-gles1 PRIVATE ${FUNCTIONS} "android/android.cpp" ${CLASSES})
+   target_sources (display-gles1 PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "android/android.cpp" ${CLASSES})
    target_compile_definitions (display-gles1 PRIVATE "_GLES_" "_GLES1_")
    target_link_libraries (display-gles1 PRIVATE ${MATH_LINK} android EGL GLESv1_CM)
    # GL2 Link: -ljnigraphics -lEGL -lGLESv2 -DGLES2
@@ -115,7 +134,7 @@ else ()
 	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-strict-overflow")
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-strict-overflow")
 
-   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${CLASSES} "linux/controller.cpp")
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES} "linux/controller.cpp")
 
    set (DISPLAY_PRIVATE_LIBS ${MATH_LINK})
 

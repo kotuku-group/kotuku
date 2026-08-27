@@ -119,6 +119,7 @@ constexpr int BLEND_MIN_THRESHOLD = 1;
 #include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 #include "../link/unicode.h"
+#include "driver/display_driver.h"
 
 using namespace kt;
 class extBitmap;
@@ -558,6 +559,8 @@ extern objCompression *glCompress;
 extern struct CoreBase *CoreBase;
 extern ColourFormat glColourFormat;
 extern bool glHeadless;
+extern DisplayDriver *glDriver;
+extern const DriverCallbacks glDriverCallbacks;
 extern TIMER glRefreshPointerTimer;
 extern extBitmap *glComposite;
 extern double glpRefreshRate, glpGammaRed, glpGammaGreen, glpGammaBlue;

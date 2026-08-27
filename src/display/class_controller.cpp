@@ -23,6 +23,7 @@ so may mean that the Controller object works inconsistently across different sys
 #include "defs.h"
 
 #ifdef _WIN32
+#include "win32/controller.h"
 using namespace display;
 #endif
 
@@ -36,12 +37,14 @@ extern ERR linuxGetControllerPorts(int &Value);
 Query: Get the current controller state.
 
 Query will update the controller field values with the state of the controller connected to the specified port.
-The most likely failure is a disconnection - if this occurs the port number will be set to `-1` and
-`ERR::Disconnected` is returned.  Repeated calls to Query() will return the same error until a controller is
-connected to any port.
+On failure, all axis and button fields are cleared while #Port is preserved.  Repeated calls to Query() return
+`ERR::Disconnected` until a controller is connected to the selected port, or any port when #Port is `-1`.
 
 -ERRORS-
 Okay:
+Args:
+AccessObject:
+NotInitialised: Controller access is not enabled on a suitable display.
 NoSupport: The host does not support controller input.
 Disconnected: No controller is connected to the specified port.
 OutOfRange: The port number is outside of acceptable range.
@@ -90,6 +93,10 @@ Set the port number to choose the controller that will be queried for state chan
 to indicate the primary (first available) controller.  Fixed port numbers start from zero.  There is no guarantee
 that the existence of a port means that a controller is connected to it.
 
+On Windows, XInput user indices occupy ports zero through three.  DirectInput controllers use stable slots from four
+through 31 while connected.  This reservation means that a DirectInput-only controller can produce a #TotalPorts value
+of five while ports zero through three remain disconnected.
+
 It is acceptable to set the port number post-initialisation, so multiple controllers can be queried through one
 interface at the cost of overwriting the previous state.  Enumeration for the discovery of controllers can be
 achieved by calling #Query() for each port and checking for `ERR::Okay`.
@@ -99,17 +106,17 @@ Read #TotalPorts to get the maximum number of controller ports.
 -FIELD-
 TotalPorts: Reports the number of controller ports that should be scanned.
 
-Port values range from zero to `TotalPorts - 1`.  Some platforms, including Linux, may expose sparse controller
-indices, so an individual port in that range can fail to query if its device is not currently connected.
+Port values range from zero to `TotalPorts - 1`.  Some platforms, including Linux and Windows, may expose sparse
+controller indices, so an individual port in that range can fail to query if its device is not currently connected.
+Windows DirectInput mappings support two sticks, two triggers, the first POV hat and the first 12 common gamepad
+buttons.  Additional or specialist controls are ignored.
 
 *********************************************************************************************************************/
 
 static ERR CONTROLLER_GET_TotalPorts(extSurface *Self, int &Value)
 {
 #ifdef _WIN32
-   if (glLastPort.load() >= 0) Value = glLastPort.load() + 1;
-   else Value = 0;
-   return ERR::Okay;
+   return winGetControllerPorts(Value);
 #elif defined(__linux__)
    return linuxGetControllerPorts(Value);
 #endif

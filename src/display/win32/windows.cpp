@@ -16,7 +16,6 @@
 #include <winuser.h>
 #include <shlobj.h>
 #include <objidl.h>
-#include <xinput.h>
 #include <setupapi.h>
 #include <map>
 #include <atomic>
@@ -31,6 +30,7 @@
 #include <algorithm>
 
 #include "windows.h"
+#include "controller.h"
 
 typedef unsigned char uint8_t;
 
@@ -81,10 +81,8 @@ static const GUID glMonitorClassGuid = {
 #define MSG(...)
 
 extern HINSTANCE glInstance;
-extern std::atomic<int> glLastPort;
 void KillMessageHook(void);
 
-static std::atomic<int> glPrimaryPort = -1;
 static HWND glMainScreen = 0;
 static char glCursorEntry = FALSE;
 static HCURSOR glDefaultCursor = 0;
@@ -1099,20 +1097,19 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
                //XInputEnable(FALSE);
             #endif
 
-            glLastPort = -1;
-            for (DWORD i = 0; i < XUSER_MAX_COUNT; i++) {
-               XINPUT_CAPABILITIES cap;
-               if (!XInputGetCapabilities(i, XINPUT_FLAG_GAMEPAD, &cap)) {
-                  glLastPort = i;
-               }
-            }
+            winControllerActivateWindow(window);
          }
          else {
             // We have lost the focus
             MsgFocusState(surface, FALSE);
          }
+         winControllerMarkDirty(window);
          return 0;
       }
+
+      case WM_DEVICECHANGE:
+         winControllerMarkDirty(window);
+         return DefWindowProc(window, msgcode, wParam, lParam);
 
       case WM_MOVE: {
          int wx, wy, wwidth, wheight, cx, cy, cwidth, cheight;
@@ -1371,6 +1368,7 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
          // The window has gained the keyboard focus.  MSDN says this is for displaying a caret if the window accepts text input.
 
          MSG("WM_SETFOCUS: Surface: %d\n", winLookupSurfaceID(window));
+         winControllerActivateWindow(window);
          MsgSetFocus(winLookupSurfaceID(window));
          return 0;
 
@@ -1422,103 +1420,6 @@ void winSetSurfaceID(HWND Window, int SurfaceID)
 void winDisableBatching(void)
 {
    GdiSetBatchLimit(1);
-}
-
-//********************************************************************************************************************
-
-static int winFindPrimaryController(void)
-{
-   for (DWORD port=0; port < XUSER_MAX_COUNT; port++) {
-      XINPUT_CAPABILITIES cap = { };
-      if (!XInputGetCapabilities(port, XINPUT_FLAG_GAMEPAD, &cap)) {
-         const auto primary_port = int(port);
-         glPrimaryPort.store(primary_port);
-         return primary_port;
-      }
-   }
-
-   return -1;
-}
-
-//********************************************************************************************************************
-
-static ERR winControllerError(DWORD Result)
-{
-   switch (Result) {
-      case ERROR_DEVICE_NOT_CONNECTED:
-         return ERR::Disconnected;
-
-      case ERROR_INVALID_PARAMETER:
-         return ERR::Args;
-
-      default:
-         return ERR::SystemCall;
-   }
-}
-
-//********************************************************************************************************************
-
-ERR winReadController(int Port, double *Values, CON &Buttons)
-{
-   constexpr double tolerance = 0.08; // At-rest dead zone tolerance for thumb sticks
-
-   if (Port < 0) {
-      if (Port < -1) return ERR::OutOfRange;
-      const auto primary_port = glPrimaryPort.load();
-      if (primary_port >= 0) Port = primary_port;
-      else {
-         Port = winFindPrimaryController();
-         if (Port < 0) return ERR::Disconnected;
-      }
-   }
-   else if (Port >= int(XUSER_MAX_COUNT)) return ERR::OutOfRange;
-
-   XINPUT_STATE state;
-   const auto result = XInputGetState(DWORD(Port), &state);
-   if (!result) {
-      Values[0] = double(state.Gamepad.bLeftTrigger) * (1.0 / 255.0);
-      Values[1] = double(state.Gamepad.bRightTrigger) * (1.0 / 255.0);
-      Values[2] = std::clamp(double(state.Gamepad.sThumbLX) * (1.0 / 32767.0), -1.0, 1.0);
-      Values[3] = std::clamp(double(state.Gamepad.sThumbLY) * (1.0 / 32767.0), -1.0, 1.0);
-      Values[4] = std::clamp(double(state.Gamepad.sThumbRX) * (1.0 / 32767.0), -1.0, 1.0);
-      Values[5] = std::clamp(double(state.Gamepad.sThumbRY) * (1.0 / 32767.0), -1.0, 1.0);
-
-      if ((Values[2] < tolerance) and (Values[2] > -tolerance) and
-          (Values[3] < tolerance) and (Values[3] > -tolerance)) {
-         Values[2] = 0;
-         Values[3] = 0;
-      }
-
-      if ((Values[4] < tolerance) and (Values[4] > -tolerance) and
-          (Values[5] < tolerance) and (Values[5] > -tolerance)) {
-         Values[4] = 0;
-         Values[5] = 0;
-      }
-
-      Buttons = CON::NIL;
-      if (state.Gamepad.wButtons) {
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) Buttons |= CON::DPAD_UP;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) Buttons |= CON::DPAD_DOWN;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) Buttons |= CON::DPAD_LEFT;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) Buttons |= CON::DPAD_RIGHT;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_START) Buttons |= CON::START;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_BACK) Buttons |= CON::SELECT;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_THUMB) Buttons |= CON::LEFT_THUMB;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB) Buttons |= CON::RIGHT_THUMB;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) Buttons |= CON::LEFT_BUMPER_1;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) Buttons |= CON::RIGHT_BUMPER_1;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_A) Buttons |= CON::GAMEPAD_S;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_B) Buttons |= CON::GAMEPAD_E;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_X) Buttons |= CON::GAMEPAD_W;
-         if (state.Gamepad.wButtons & XINPUT_GAMEPAD_Y) Buttons |= CON::GAMEPAD_N;
-      }
-      return ERR::Okay;
-   }
-   else {
-      auto primary_port = Port;
-      glPrimaryPort.compare_exchange_strong(primary_port, -1);
-      return winControllerError(result);
-   }
 }
 
 //********************************************************************************************************************
@@ -1807,6 +1708,7 @@ int winDestroyWindow(HWND window)
 {
    NOTIFYICONDATA notify;
 
+   winControllerRemoveWindow(window);
    if (window == glMainScreen) glMainScreen = nullptr;
    RevokeDragDrop(window);
 
@@ -2122,6 +2024,7 @@ HBITMAP winCreateBitmap(int width, int height, int bpp)
 
 void winTerminate(void)
 {
+   winControllerShutdown();
    winTerminateClipboard();
 
    if (glScreenClassInit) {
