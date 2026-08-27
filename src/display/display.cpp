@@ -341,6 +341,8 @@ static objCompression *glIconArchive = nullptr;
 struct CoreBase *CoreBase;
 ColourFormat glColourFormat;
 bool glHeadless = false;
+DisplayDriver *glDriver = nullptr;
+static HeadlessDriver glHeadlessDriver;
 OBJECTPTR glModule = nullptr, glDisplayContext = nullptr;
 static OBJECTPTR modRegex = nullptr;
 OBJECTPTR clDisplay = nullptr, clPointer = nullptr, clBitmap = nullptr, clClipboard = nullptr, clSurface = nullptr, clController = nullptr;
@@ -362,6 +364,46 @@ std::atomic<int> glLastPort = -1;
 std::vector<OBJECTID> glFocusList;
 std::recursive_mutex glFocusLock;
 std::recursive_mutex glSurfaceLock;
+
+namespace display {
+void DriverKeyPress(KQ Flags, KEY Value, int Printable);
+void DriverKeyRelease(KQ Flags, KEY Value);
+void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
+void DriverWheelMovement(OBJECTID SurfaceID, float Wheel);
+void DriverButtonInput(int Buttons, bool State);
+void DriverFocusState(OBJECTID SurfaceID, bool State);
+void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, int WinHeight,
+   int ClientX, int ClientY, int ClientWidth, int ClientHeight);
+void DriverExposeRegion(OBJECTID SurfaceID, int X, int Y, int Width, int Height);
+ERR DriverWindowClose(OBJECTID SurfaceID);
+void DriverWindowDestroyed(OBJECTID SurfaceID);
+void DriverDPIChanged(OBJECTID SurfaceID);
+void DriverSetFocus(OBJECTID SurfaceID);
+void DriverClipboardUpdated();
+void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);
+void DriverControllerPorts(int Port, bool Connected, int Total);
+OBJECTID DriverResolveSurface(APTR HostHandle);
+}
+
+const DriverCallbacks glDriverCallbacks = {
+   .Version = DISPLAY_DRIVER_INTERFACE_VERSION,
+   .KeyPressed = display::DriverKeyPress,
+   .KeyReleased = display::DriverKeyRelease,
+   .Movement = display::DriverMovement,
+   .WheelMovement = display::DriverWheelMovement,
+   .ButtonInput = display::DriverButtonInput,
+   .FocusState = display::DriverFocusState,
+   .WindowResized = display::DriverWindowResized,
+   .ExposeRegion = display::DriverExposeRegion,
+   .WindowClose = display::DriverWindowClose,
+   .WindowDestroyed = display::DriverWindowDestroyed,
+   .DPIChanged = display::DriverDPIChanged,
+   .SetFocus = display::DriverSetFocus,
+   .ClipboardUpdated = display::DriverClipboardUpdated,
+   .DragDropped = display::DriverDragDropped,
+   .ControllerPorts = display::DriverControllerPorts,
+   .ResolveSurface = display::DriverResolveSurface
+};
 
 thread_local int16_t tlNoDrawing = 0, tlNoExpose = 0, tlVolatileIndex = 0;
 thread_local OBJECTID tlFreeExpose = 0;
@@ -1038,11 +1080,25 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 {
    kt::Log log(__FUNCTION__);
 
+   struct InitGuard {
+      bool Complete = false;
+
+      ~InitGuard() {
+         if ((not Complete) and (glDriver)) {
+            glDriver->close();
+            glDriver = nullptr;
+            glHeadless = false;
+         }
+      }
+   } init_guard;
+
    #ifdef __xwindows__
       int shmmajor, shmminor, pixmaps;
    #endif
 
    CoreBase = argCoreBase;
+   glDriver = nullptr;
+   glHeadless = false;
    glDisplayContext = CurrentContext();
 
    glModule = (OBJECTPTR)((objModule *)argModule)->Root;
@@ -1067,6 +1123,13 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       log.msg("User requested display driver '%s'", driver_name);
       if ((iequals(driver_name, "none")) or (iequals(driver_name, "headless"))) {
          glHeadless = true;
+         glDriver = &glHeadlessDriver;
+         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
+            glDriver->close();
+            glDriver = nullptr;
+            glHeadless = false;
+            return error;
+         }
       }
    }
 
@@ -1389,6 +1452,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 #endif
 
+   init_guard.Complete = true;
    return ERR::Okay;
 }
 
@@ -1406,6 +1470,13 @@ static ERR MODExpunge(void)
 {
    kt::Log log(__FUNCTION__);
    ERR error = ERR::Okay;
+   const bool headless = glHeadless;
+
+   if (glDriver) {
+      error = glDriver->close();
+      glDriver = nullptr;
+      glHeadless = false;
+   }
 
    if (clDisplay) {
       clean_clipboard();
@@ -1424,7 +1495,7 @@ static ERR MODExpunge(void)
 
 #ifdef __xwindows__
 
-   if (!glHeadless) {
+   if (!headless) {
       if (modXRR) { FreeResource(modXRR); modXRR = nullptr; }
 
       if (glXFD != -1) { DeregisterFD(glXFD); glXFD = -1; }
@@ -1784,6 +1855,8 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 #ifdef __xwindows__
 #include "x11/handlers.cpp"
 #endif
+
+#include "driver/callbacks.cpp"
 
 #ifdef _WIN32
 #include "win32/handlers.cpp"
