@@ -1,0 +1,17 @@
+-- Runtime contracts for statically described module results.
+
+include 'display'
+
+module display as mGfx
+
+@Test; @Requires(display=true) function MixedAssignmentPreservesTableBackedStructureMetadata()
+   local surface <close> = obj.new('Surface')
+
+   err, surface_info = mGfx.GetSurfaceInfo(surface)
+   err, display_info = mGfx.GetDisplayInfo(0)
+
+   assert(err is ERR_Okay, 'Display information should be available')
+   assert(type(display_info) is 'table', 'A non-resource structure result should remain a table')
+   assert(display_info.width > 0 and display_info.height > 0,
+      'Static structure metadata should preserve access to the display dimensions')
+end
