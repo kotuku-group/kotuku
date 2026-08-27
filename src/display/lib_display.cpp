@@ -79,6 +79,7 @@ pure-query
 
 DT GetDisplayType(void)
 {
+   if ((glDriver) and (not glHeadless)) return glDriver->displayType();
 #ifdef _WIN32
    return DT::WINGDI;
 #elif __xwindows__
@@ -140,7 +141,8 @@ Okay
 
 ERR SetHostOption(HOST Option, int64_t Value)
 {
-#if defined(_WIN32) || defined(__xwindows__)
+   if (glDriver) return glDriver->setHostOption(Option, Value);
+#ifdef __xwindows__
    kt::Log log(__FUNCTION__);
 
    switch (Option) {

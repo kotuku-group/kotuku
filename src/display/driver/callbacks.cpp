@@ -236,7 +236,8 @@ void DriverDPIChanged(OBJECTID SurfaceID)
 // Called from WM_SIZE and WM_SIZING events to confirm that the requested window size is within the limits set by the
 // surface object.
 
-void CheckWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight, int Axis)
+void DriverConstrainWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
+   int Axis)
 {
    if (!SurfaceID) return;
    if ((Width IS CurrentWidth) and (Height IS CurrentHeight)) return;
@@ -290,7 +291,7 @@ void DriverExposeRegion(OBJECTID SurfaceID, int X, int Y, int Width, int Height)
 
 //********************************************************************************************************************
 
-void MsgTimer(void)
+void DriverProcessMessages()
 {
    ProcessMessages(PMF::NIL, 0);
 }

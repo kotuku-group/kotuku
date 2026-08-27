@@ -33,19 +33,6 @@ data to a destination object that supports writing.
 
 #include "defs.h"
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
-#ifdef _WIN32
-#define DLLCALL // __declspec(dllimport)
-#define WINAPI  __stdcall
-
-DLLCALL int WINAPI SetPixelV(APTR, int, int, int);
-DLLCALL int WINAPI SetPixel(APTR, int, int, int);
-DLLCALL int WINAPI GetPixel(APTR, int, int);
-#endif
-
 static ERR calc_pixel_routines(extBitmap *);
 
 //********************************************************************************************************************
@@ -53,16 +40,7 @@ static ERR calc_pixel_routines(extBitmap *);
 
 // Video Pixel Routines
 
-#ifdef _WIN32
-
-static void  VideoDrawPixel(objBitmap *, int, int, uint32_t);
-static void  VideoDrawRGBPixel(objBitmap *, int, int, RGB8 *);
-static void  VideoDrawRGBIndex(objBitmap *, uint8_t *, RGB8 *);
-static uint32_t VideoReadPixel(objBitmap *, int, int);
-static void  VideoReadRGBPixel(objBitmap *, int, int, RGB8 *);
-static void  VideoReadRGBIndex(objBitmap *, uint8_t *, RGB8 *);
-
-#elif defined(__xwindows__) or defined(__ANDROID__) or defined(_GLES_)
+#if defined(__xwindows__) or defined(__ANDROID__) or defined(_GLES_)
 
 static void VideoDrawPixel32(objBitmap *, int, int, uint32_t);
 static void VideoDrawPixel24(objBitmap *, int, int, uint32_t);
@@ -168,25 +146,7 @@ static const FieldDef clMemType[] = {
 // If you do not need this overhead because the bitmap content is going to be refreshed, then specify SURFACE_WRITE
 // only.  You will still be able to read the bitmap content with the CPU, it just avoids the copy overhead.
 
-#ifdef _WIN32
-
-ERR lock_surface(extBitmap *Bitmap, int16_t Access)
-{
-   if (not Bitmap->Data) {
-      kt::Log log(__FUNCTION__);
-      log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
-      return ERR::FieldNotSet;
-   }
-
-   return ERR::Okay;
-}
-
-ERR unlock_surface(extBitmap *Bitmap)
-{
-   return ERR::Okay;
-}
-
-#elif __xwindows__
+#ifdef __xwindows__
 
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
@@ -344,6 +304,7 @@ ERR unlock_surface(extBitmap *Bitmap)
 
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
+   if (glDriver) return glDriver->lockBitmap(Bitmap);
    if (not Bitmap->Data) {
       kt::Log log(__FUNCTION__);
       log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
@@ -355,6 +316,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 
 ERR unlock_surface(extBitmap *Bitmap)
 {
+   if (glDriver) return glDriver->unlockBitmap(Bitmap);
    return ERR::Okay;
 }
 
@@ -1006,7 +968,31 @@ static ERR BITMAP_Init(extBitmap *Self)
       Self->Bkgd.Blue  &= 0xf8;
    }
 
+   if ((glDriver) and (not glHeadless)) {
+      if ((Self->MemType IS BMT::VIDEO) or (Self->MemType IS BMT::TEXTURE)) {
+         if (auto error = glDriver->allocBitmap(Self); (error != ERR::Okay) and (error != ERR::NoSupport)) {
+            return log.warning(error);
+         }
+      }
+
+      if ((Self->MemType IS BMT::DATA) and (not Self->Data) and ((Self->Flags & BMF::NO_DATA) IS BMF::NIL)) {
+         if (not Self->Size) return log.warning(ERR::FieldNotSet);
+         Self->Data = (uint8_t *)malloc(Self->Size);
+         if (not Self->Data) return log.warning(ERR::AllocMemory);
+         Self->prvAFlags |= BF_DATA;
+      }
+   }
+   else if (glHeadless) {
+      Self->MemType = BMT::DATA;
+      if ((not Self->Data) and ((Self->Flags & BMF::NO_DATA) IS BMF::NIL)) {
+         if (not Self->Size) return log.warning(ERR::FieldNotSet);
+         Self->Data = (uint8_t *)malloc(Self->Size);
+         if (not Self->Data) return log.warning(ERR::AllocMemory);
+         Self->prvAFlags |= BF_DATA;
+      }
+   }
 #ifdef __xwindows__
+   else {
 
    if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Blitter memory not available in X11
 
@@ -1050,29 +1036,10 @@ static ERR BITMAP_Init(extBitmap *Self)
    }
 
    if (not glHeadless) XSync(XDisplay, False);
-
-#elif _WIN32
-
-   if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Video buffer memory not available in Win32
-
-   if (not Self->Data) {
-      if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
-         if (not Self->Size) return log.warning(ERR::FieldNotSet);
-
-         if (Self->MemType IS BMT::VIDEO) {
-            Self->prvAFlags |= BF_WINVIDEO;
-            if (not (Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
-         }
-         else {
-            Self->Data = (uint8_t *)malloc(Self->Size);
-            if (not Self->Data) return log.warning(ERR::AllocMemory);
-            Self->prvAFlags |= BF_DATA;
-         }
-      }
-      else if (Self->MemType IS BMT::VIDEO) Self->prvAFlags |= BF_WINVIDEO;
    }
 
 #elif _GLES_
+   else {
    // BMT::VIDEO + BMF::NO_DATA: The bitmap represents the OpenGL display.  No data area will be allocated because
    // direct access to the OpenGL video frame buffer is not possible.
    // BMT::VIDEO: Not currently used as a means of allocating a particular type of OpenGL buffer.
@@ -1103,8 +1070,10 @@ static ERR BITMAP_Init(extBitmap *Self)
    }
 
    if (Self->MemType != BMT::DATA) Self->Flags |= BMF::2DACCELERATED;
+   }
 
 #else // Software rendering only
+   else {
    Self->MemType = BMT::DATA;
 
    if (not Self->Data) {
@@ -1115,11 +1084,18 @@ static ERR BITMAP_Init(extBitmap *Self)
          Self->prvAFlags |= BF_DATA;
       }
    }
+   }
 #endif
 
    // Determine the correct pixel format for the bitmap
 
+   if ((glDriver) and (Self->MemType IS BMT::VIDEO)) {
+      if (glDriver->pixelFormat(*Self->ColourFormat) != ERR::Okay) {
+         gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
+      }
+   }
 #ifdef __xwindows__
+   else {
 
    if (not glHeadless) {
       if (Self->x11.drawable) {
@@ -1135,29 +1111,19 @@ static ERR BITMAP_Init(extBitmap *Self)
       else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, Self->x11.ximage.red_mask, Self->x11.ximage.green_mask, Self->x11.ximage.blue_mask, 0xff000000);
    }
    else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
-
-#elif _WIN32
-
-   if (Self->MemType IS BMT::VIDEO) {
-      int red, green, blue, alpha;
-
-      if (not winGetPixelFormat(&red, &green, &blue, &alpha)) {
-         gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, red, green, blue, alpha);
-      }
-      else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
    }
-   else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
 
 #elif _GLES_
+   else {
 
    if (Self->BitsPerPixel >= 24) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0x0000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
    else if (Self->BitsPerPixel IS 16) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0xf800, 0x07e0, 0x001f, 0x0000);
    else if (Self->BitsPerPixel IS 15) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0x7c00, 0x03e0, 0x001f, 0x0000);
    else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
+   }
 
 #else
-
-   gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
+   else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
 
 #endif
 
@@ -1627,6 +1593,11 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
 
    if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::DISPLAY)) goto setfields;
 
+   if ((Self->prvAFlags & BF_WINVIDEO) and (glDriver)) {
+      if (auto error = glDriver->resizeBitmap(Self, width, height); error != ERR::NoSupport) return error;
+      return ERR::NoSupport;
+   }
+
 #ifdef __xwindows__
 
    //if (Self->x11.drawable) {
@@ -1639,8 +1610,6 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
    //   goto setfields;
    //}
 
-#elif _WIN32
-   if (Self->prvAFlags & BF_WINVIDEO) return ERR::NoSupport;
 #endif
 
    if ((Self->Flags & BMF::NO_DATA) != BMF::NIL);
@@ -2266,10 +2235,11 @@ Handle: Platform-dependent field for referencing video memory.
 
 static ERR GET_Handle(extBitmap *Self, APTR *Value)
 {
-#ifdef _WIN32
-   *Value = (APTR)Self->win.Drawable;
-   return ERR::Okay;
-#elif __xwindows__
+   if (glDriver) {
+      *Value = Self->DriverData;
+      return ERR::Okay;
+   }
+#ifdef __xwindows__
    *Value = (APTR)Self->x11.drawable;
    return ERR::Okay;
 #else
@@ -2281,10 +2251,11 @@ static ERR SET_Handle(extBitmap *Self, APTR Value)
 {
    // Note: The only area of the system allowed to set this field are the Display/Surface classes for video management.
 
-#ifdef _WIN32
-   Self->win.Drawable = Value;
-   return ERR::Okay;
-#elif __xwindows__
+   if (glDriver) {
+      Self->DriverData = Value;
+      return ERR::Okay;
+   }
+#ifdef __xwindows__
    Self->x11.drawable = (MAXINT)Value;
    return ERR::Okay;
 #else
@@ -2504,19 +2475,11 @@ static ERR calc_pixel_routines(extBitmap *Self)
       return ERR::NoSupport;
    }
 
-#ifdef _WIN32
-
-   if (Self->prvAFlags & BF_WINVIDEO) {
-      Self->ReadUCPixel  = &VideoReadPixel;
-      Self->ReadUCRPixel = &VideoReadRGBPixel;
-      Self->ReadUCRIndex = &VideoReadRGBIndex;
-      Self->DrawUCPixel  = &VideoDrawPixel;
-      Self->DrawUCRPixel = &VideoDrawRGBPixel;
-      Self->DrawUCRIndex = &VideoDrawRGBIndex;
-      return ERR::Okay;
+   if ((glDriver) and (Self->prvAFlags & BF_WINVIDEO)) {
+      return glDriver ? glDriver->bitmapRoutines(Self) : ERR::NoSupport;
    }
 
-#elif defined(__xwindows__) or defined(__ANDROID__) or defined(_GLES_)
+#if defined(__xwindows__) or defined(__ANDROID__) or defined(_GLES_)
 
    if ((Self->MemType IS BMT::VIDEO) or (Self->MemType IS BMT::TEXTURE)) {
       switch(Self->BytesPerPixel) {
@@ -2632,6 +2595,7 @@ extBitmap::extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID) : objBitmap(Clas
    ColourSpace  = CS::SRGB;
    BlendMode    = BLM::AUTO;
    Opacity      = 255;
+   DriverData   = nullptr;
 
    // Generate the standard colour palette
 
@@ -2717,9 +2681,7 @@ extBitmap::~extBitmap()
    if (x11.readable) XDestroyImage(x11.readable);
 #endif
 
-#ifdef _WIN32
-   if (win.Drawable) winDeleteDC(win.Drawable);
-#endif
+   if (glDriver) glDriver->freeBitmap(this);
 }
 
 //********************************************************************************************************************
@@ -2728,10 +2690,6 @@ extBitmap::~extBitmap()
 
 #ifdef __xwindows__
 #include "x11/lib_pixels.cpp"
-#endif
-
-#ifdef _WIN32
-#include "win32/lib_pixels.cpp"
 #endif
 
 #ifdef __ANDROID__

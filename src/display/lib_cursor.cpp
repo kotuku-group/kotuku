@@ -8,10 +8,6 @@ Name: Cursor
 
 #include "defs.h"
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
 #ifdef __xwindows__
 
 #undef True // X11 name clash
@@ -103,21 +99,6 @@ void free_xcursors(void)
    for (int16_t i=0; i < std::ssize(XCursors); i++) {
       if (XCursors[i].XCursor) XFreeCursor(XDisplay, XCursors[i].XCursor);
    }
-}
-#endif
-
-//********************************************************************************************************************
-
-#ifdef _WIN32
-HCURSOR GetWinCursor(PTC CursorID)
-{
-   for (int16_t i=0; i < std::ssize(winCursors); i++) {
-      if (winCursors[i].CursorID IS CursorID) return winCursors[i].WinCursor;
-   }
-
-   kt::Log log;
-   log.warning("Cursor #%d is not a recognised cursor ID.", int(CursorID));
-   return winCursors[0].WinCursor;
 }
 #endif
 
@@ -497,7 +478,11 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
 
          log.trace("Adjusting hardware/hosted cursor image.");
 
+         if (glDriver) {
+            if (glDriver->setCursor(CursorID) IS ERR::Okay) pointer->CursorID = CursorID;
+         }
          #ifdef __xwindows__
+         else {
 
             APTR xwin;
             Cursor xcursor;
@@ -519,12 +504,7 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
                }
             }
             else log.warning("Pointer surface undefined or inaccessible.");
-
-         #elif _WIN32
-
-            winSetCursor(GetWinCursor(CursorID));
-            pointer->CursorID = CursorID;
-
+         }
          #endif
       }
 

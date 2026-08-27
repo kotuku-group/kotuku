@@ -625,11 +625,7 @@ DLLCALL int WINAPI SetPixel(APTR, int, int, int);
 DLLCALL int WINAPI GetPixel(APTR, int, int);
 }
 
-#include "win32/windows.h"
-
-HCURSOR GetWinCursor(PTC CursorID);
-
-extern WinCursor winCursors[24];
+#include "drivers/win32/windows.h"
 
 #endif // _WIN32
 
@@ -781,6 +777,7 @@ class extBitmap : public objBitmap {
    RGBPalette prvPaletteArray;
    struct ColourFormat prvColourFormat;
    uint8_t *prvCompress;
+   APTR DriverData;                  // Opaque display-driver bitmap backing.
    int   prvAFlags;                  // Private allocation flags
    #ifdef __xwindows__
       struct {
@@ -799,10 +796,6 @@ class extBitmap : public objBitmap {
          else return glXGC;
       }
 
-   #elif _WIN32
-      struct {
-         APTR Drawable;  // HDC for the Bitmap
-      } win;
    #elif _GLES_
       uint32_t prvWriteBackBuffer:1;  // For OpenGL surface locking.
       int prvGLPixel;

@@ -22,7 +22,7 @@ struct ColourFormat;
 struct DisplayInfo;
 struct resolution;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 1;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 2;
 
 enum class DCAP : uint64_t {
    NIL             = 0,
@@ -72,6 +72,9 @@ struct DriverCallbacks {
    void (*DragDropped)(OBJECTID SurfaceID, CSTRING Datatypes);
    void (*ControllerPorts)(int Port, bool Connected, int Total);
    OBJECTID (*ResolveSurface)(APTR HostHandle);
+   void (*ConstrainWindowSize)(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
+      int Axis);
+   void (*ProcessMessages)();
 };
 
 class DisplayDriver {
@@ -101,6 +104,16 @@ public:
    virtual ERR setSizeHints(HOSTWINDOW Window, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect) = 0;
    virtual ERR windowCoords(HOSTWINDOW Window, int &X, int &Y, int &Width, int &Height) = 0;
    virtual ERR frameMargins(HOSTWINDOW Window, int &Left, int &Top, int &Right, int &Bottom) = 0;
+
+   // Transitional helpers used while the platform drivers are extracted from the common Surface and Display code.
+   // They keep native host operations behind the driver without exposing native types in this contract.
+
+   virtual ERR windowTitle(HOSTWINDOW Window, std::string &Title) { return ERR::NoSupport; }
+   virtual ERR setWindowSurface(HOSTWINDOW Window, OBJECTID SurfaceID) { return ERR::NoSupport; }
+   virtual ERR windowSurface(HOSTWINDOW Window, OBJECTID &SurfaceID) { return ERR::NoSupport; }
+   virtual ERR setWindowControllers(HOSTWINDOW Window, bool Enabled) { return ERR::NoSupport; }
+   virtual ERR acquireWindowBitmap(HOSTWINDOW Window, extBitmap *Bitmap) { return ERR::NoSupport; }
+   virtual ERR releaseWindowBitmap(HOSTWINDOW Window, extBitmap *Bitmap) { return ERR::NoSupport; }
 
    virtual ERR displayInfo(DisplayInfo &Info) = 0;
    virtual ERR density(HOSTWINDOW Window, int &Horizontal, int &Vertical) = 0;
@@ -194,3 +207,9 @@ public:
 private:
    bool Open = false;
 };
+
+#ifdef _WIN32
+namespace display {
+DisplayDriver * get_win32_driver();
+}
+#endif

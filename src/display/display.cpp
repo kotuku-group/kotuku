@@ -62,36 +62,6 @@ bool glXRRAvailable = false;
 #endif
 
 #ifdef _WIN32
-
-HINSTANCE glInstance = 0;
-
-WinCursor winCursors[24] = {
-   { 0, PTC::DEFAULT,           },  // NOTE: Refer to the microsoft.c file if you change anything here
-   { 0, PTC::SIZE_BOTTOM_LEFT,  },
-   { 0, PTC::SIZE_BOTTOM_RIGHT, },
-   { 0, PTC::SIZE_TOP_LEFT,     },
-   { 0, PTC::SIZE_TOP_RIGHT,    },
-   { 0, PTC::SIZE_LEFT,         },
-   { 0, PTC::SIZE_RIGHT,        },
-   { 0, PTC::SIZE_TOP,          },
-   { 0, PTC::SIZE_BOTTOM,       },
-   { 0, PTC::CROSSHAIR,         },
-   { 0, PTC::SLEEP,             },
-   { 0, PTC::SIZING,            },
-   { 0, PTC::SPLIT_VERTICAL,    },
-   { 0, PTC::SPLIT_HORIZONTAL,  },
-   { 0, PTC::MAGNIFIER,         },
-   { 0, PTC::HAND,              },
-   { 0, PTC::HAND_LEFT,         },
-   { 0, PTC::HAND_RIGHT,        },
-   { 0, PTC::TEXT,              },
-   { 0, PTC::PAINTBRUSH,        },
-   { 0, PTC::STOP,              },
-   { 0, PTC::INVISIBLE,         },
-   { 0, PTC::INVISIBLE,         },
-   { 0, PTC::DRAGGABLE,         }
-};
-
 extern int16_t GetWindowsIcon()
 {
    return GetResource(RES::WINDOWS_ICON);
@@ -383,6 +353,9 @@ void DriverClipboardUpdated();
 void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);
 void DriverControllerPorts(int Port, bool Connected, int Total);
 OBJECTID DriverResolveSurface(APTR HostHandle);
+void DriverConstrainWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
+   int Axis);
+void DriverProcessMessages();
 }
 
 const DriverCallbacks glDriverCallbacks = {
@@ -402,7 +375,9 @@ const DriverCallbacks glDriverCallbacks = {
    .ClipboardUpdated = display::DriverClipboardUpdated,
    .DragDropped = display::DriverDragDropped,
    .ControllerPorts = display::DriverControllerPorts,
-   .ResolveSurface = display::DriverResolveSurface
+   .ResolveSurface = display::DriverResolveSurface,
+   .ConstrainWindowSize = display::DriverConstrainWindowSize,
+   .ProcessMessages = display::DriverProcessMessages
 };
 
 thread_local int16_t tlNoDrawing = 0, tlNoExpose = 0, tlVolatileIndex = 0;
@@ -821,6 +796,8 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
          Info->HostedX       = display->X;
          Info->HostedY       = display->Y;
 
+         if (glDriver) glDriver->displayInfo(*Info);
+
          #ifdef __xwindows__
             int monitor_x = Info->HostedX + (Info->Width / 2);
             int monitor_y = Info->HostedY + (Info->Height / 2);
@@ -830,27 +807,6 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
                // X11DGA does not provide blitter syncing.
                Info->AccelFlags &= ~ACF::VIDEO_BLIT;
             }
-         #elif _WIN32
-            Info->AccelFlags = ACF(-1);
-
-            int monitor_x, monitor_y, monitor_width, monitor_height;
-            winGetDisplayGeometry(display->WindowHandle,
-               Info->MonitorX, Info->MonitorY, Info->MonitorWidth, Info->MonitorHeight,
-               Info->VirtualX, Info->VirtualY, Info->VirtualWidth, Info->VirtualHeight,
-               Info->PhysicalWidth, Info->PhysicalHeight);
-
-            double refresh_rate = 0;
-            winGetDisplaySettings(display->WindowHandle, nullptr, nullptr, nullptr, &refresh_rate);
-            if (refresh_rate <= 1.0) {
-               refresh_rate = display->RefreshRate;
-            }
-
-            if (refresh_rate > 1.0) {
-               Info->RefreshRate = float(refresh_rate);
-               Info->MinRefresh  = Info->RefreshRate;
-               Info->MaxRefresh  = Info->RefreshRate;
-            }
-
          #else
             Info->AccelFlags = ACF(-1);
          #endif
@@ -876,7 +832,24 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
 
       Info->Flags = SCR::NIL;
 
+      if (glDriver) {
+         if (auto error = glDriver->displayInfo(*Info); error IS ERR::NoSupport) {
+            Info->Width = 1024;
+            Info->Height = 768;
+            Info->BitsPerPixel = 32;
+            Info->BytesPerPixel = 4;
+            Info->AccelFlags = ACF::NIL;
+            Info->HDensity = 96;
+            Info->VDensity = 96;
+            Info->MonitorWidth = Info->Width;
+            Info->MonitorHeight = Info->Height;
+            Info->VirtualWidth = Info->Width;
+            Info->VirtualHeight = Info->Height;
+         }
+      }
+
 #ifdef __xwindows__
+      if (not glDriver) {
       if ((glHeadless) or (!XDisplay)) {
          Info->Width         = 1024;
          Info->Height        = 768;
@@ -933,45 +906,7 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
             XFree(list);
          }
       }
-
-#elif _WIN32
-
-      // TODO: Allow the user to set a custom DPI via style values.
-
-      if (!winGetDisplayGeometry(nullptr,
-            Info->MonitorX, Info->MonitorY, Info->MonitorWidth, Info->MonitorHeight,
-            Info->VirtualX, Info->VirtualY, Info->VirtualWidth,
-            Info->VirtualHeight, Info->PhysicalWidth, Info->PhysicalHeight)) {
-         Info->Width  = Info->MonitorWidth;
-         Info->Height = Info->MonitorHeight;
       }
-      else {
-         winGetDesktopSize(&Info->VirtualWidth, &Info->VirtualHeight);
-         Info->Width = Info->VirtualWidth;
-         Info->Height = Info->VirtualHeight;
-      }
-
-      int bits = 0;
-      int bytes = 0;
-      int colours = 0;
-      int hdpi = 96;
-      int vdpi = 96;
-      double refresh_rate = 0;
-      winGetDisplaySettings(nullptr, &bits, &bytes, &colours, &refresh_rate);
-      winGetDPI(&hdpi, &vdpi);
-
-      Info->BitsPerPixel  = bits;
-      Info->BytesPerPixel = bytes;
-      Info->AccelFlags    = ACF(-1);
-      Info->HDensity      = hdpi;
-      Info->VDensity      = vdpi;
-      if (refresh_rate > 1.0) {
-         Info->RefreshRate = float(refresh_rate);
-         Info->MinRefresh  = Info->RefreshRate;
-         Info->MaxRefresh  = Info->RefreshRate;
-      }
-      if (Info->HDensity < 96) Info->HDensity = 96;
-      if (Info->VDensity < 96) Info->VDensity = 96;
 
 #elif __ANDROID__
       // On Android the current display information is always returned.
@@ -1031,7 +966,7 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
       kt::copymem(&glDisplayInfo, Info, sizeof(DisplayInfo));
       return ERR::Okay;
 #else
-
+      if (not glDriver) {
       if (glDisplayInfo.DisplayID) {
          kt::copymem(&glDisplayInfo, Info, sizeof(DisplayInfo));
          return ERR::Okay;
@@ -1044,6 +979,7 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
          Info->AccelFlags = ACF::SOFTWARE_BLIT;
          Info->HDensity = 96;
          Info->VDensity = 96;
+      }
       }
 #endif
 
@@ -1131,7 +1067,27 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
             return error;
          }
       }
+      #ifdef _WIN32
+      else if (iequals(driver_name, "windows")) {
+         glDriver = display::get_win32_driver();
+         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
+            glDriver = nullptr;
+            return error;
+         }
+      }
+      else return log.warning(ERR::NoSupport);
+      #endif
    }
+
+   #ifdef _WIN32
+      if (not glDriver) {
+         glDriver = display::get_win32_driver();
+         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
+            glDriver = nullptr;
+            return error;
+         }
+      }
+   #endif
 
    #ifdef _GLES_
       pthread_mutexattr_t attr;
@@ -1346,17 +1302,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    }
 
-#elif _WIN32
-
-   if ((glInstance = winGetModuleHandle())) {
-      if (!winCreateScreenClass()) return log.warning(ERR::SystemCall);
-   }
-   else return log.warning(ERR::SystemCall);
-
-   winDisableBatching();
-
-   winInitCursors(winCursors, std::ssize(winCursors));
-
 #endif
 
    // Register input dispatch after platform event sources so that newly queued input is handled before the task sleeps.
@@ -1540,9 +1485,8 @@ static ERR MODExpunge(void)
    }
 
 #elif _WIN32
-
-   winRemoveWindowClass("ScreenClass");
-   winTerminate();
+   winTerminateClipboard();
+   winTerminateOLE();
 
 #endif
 
@@ -1778,8 +1722,11 @@ void free_egl(void)
 
 ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width, int Height, int XDest, int YDest)
 {
-#ifdef _WIN32
-   auto dest   = Self->Bitmap;
+   if ((not glDriver) or (glHeadless)) {
+      return gfx::CopyArea(Bitmap, (extBitmap *)Self->Bitmap, BAF::NIL, X, Y, Width, Height, XDest, YDest);
+   }
+
+   auto dest   = (extBitmap *)Self->Bitmap;
    auto x      = X;
    auto y      = Y;
    auto width  = Width;
@@ -1832,22 +1779,7 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 
    // Adjust coordinates by offset values
 
-   APTR drawable;
-   dest->getHandle(drawable);
-
-   win32RedrawWindow(Self->WindowHandle, drawable,
-      x, y, width, height, xdest, ydest,
-      Bitmap->Width, Bitmap->Height,
-      Bitmap->BitsPerPixel, Bitmap->Data,
-      Bitmap->ColourFormat->RedMask   << Bitmap->ColourFormat->RedPos,
-      Bitmap->ColourFormat->GreenMask << Bitmap->ColourFormat->GreenPos,
-      Bitmap->ColourFormat->BlueMask  << Bitmap->ColourFormat->BluePos,
-      ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) ? (Bitmap->ColourFormat->AlphaMask << Bitmap->ColourFormat->AlphaPos) : 0,
-      Self->Opacity);
-   return ERR::Okay;
-#else
-   return(gfx::CopyArea(Bitmap, (extBitmap *)Self->Bitmap, BAF::NIL, X, Y, Width, Height, XDest, YDest));
-#endif
+   return glDriver->present(Self->WindowHandle, Bitmap, x, y, width, height, xdest, ydest);
 }
 
 //********************************************************************************************************************
@@ -1857,10 +1789,6 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 #endif
 
 #include "driver/callbacks.cpp"
-
-#ifdef _WIN32
-#include "win32/handlers.cpp"
-#endif
 
 #ifdef __ANDROID__
 #include "android/android.cpp"

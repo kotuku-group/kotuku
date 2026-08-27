@@ -8,7 +8,7 @@
 
 #include <kotuku/system/errors_c.h>
 
-#include "keys.h"
+#include "../drivers/win32/keys.h"
 #include <windows.h>
 #include <windowsx.h>
 //#include <resource.h>
@@ -21,7 +21,7 @@
 #include <math.h>
 #include <stdint.h>
 
-#include "windows.h"
+#include "../drivers/win32/windows.h"
 
 enum {
    CT_DATA=0,

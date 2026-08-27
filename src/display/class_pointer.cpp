@@ -19,10 +19,6 @@ this shared object, usually via ~Display.AccessPointer(), when reading pointer s
 
 #include "defs.h"
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
 static ERR GET_ButtonOrder(extPointer *, std::string_view &);
 static ERR GET_ButtonState(extPointer *, int *);
 
@@ -31,10 +27,8 @@ static ERR SET_MaxSpeed(extPointer *, int);
 static ERR POINTER_SET_X(extPointer *, double);
 static ERR POINTER_SET_Y(extPointer *, double);
 
-#ifdef _WIN32
 static ERR POINTER_SetWinCursor(extPointer *, struct ptrSetWinCursor *);
 static FunctionField mthSetWinCursor[]  = { { "Cursor", FD_INT }, { nullptr, 0 } };
-#endif
 
 #ifdef __xwindows__
 #undef True
@@ -76,14 +70,13 @@ inline void add_input(CSTRING Debug, InputEvent &input, JTYPE Flags, OBJECTID Re
 }
 
 //********************************************************************************************************************
-#ifdef _WIN32
 static ERR POINTER_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 {
-   winSetCursor(GetWinCursor(Args->Cursor));
+   if (not glDriver) return ERR::NoSupport;
+   if (auto error = glDriver->setCursor(Args->Cursor); error != ERR::Okay) return error;
    Self->CursorID = Args->Cursor;
    return ERR::Okay;
 }
-#endif
 
 //********************************************************************************************************************
 // Private action used to grab the window cursor under X11.  Can only be executed by the task that owns the pointer.
@@ -524,6 +517,7 @@ static ERR POINTER_Hide(extPointer *Self)
 
    log.branch();
 
+   if (glDriver) glDriver->showCursor(false);
    #ifdef __xwindows__
 /*
       APTR xwin;
@@ -535,8 +529,6 @@ static ERR POINTER_Hide(extPointer *Self)
          ReleaseObject(surface);
       }
 */
-   #elif _WIN32
-      winShowCursor(0);
    #endif
 
    Self->Flags &= ~PF::VISIBLE;
@@ -628,7 +620,20 @@ static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
       }
    }
 */
+   if (glDriver) {
+      if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = Args->X;
+      if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = Args->Y;
+      if (Self->X < 0) Self->X = 0;
+      if (Self->Y < 0) Self->Y = 0;
+
+      if (auto error = glDriver->warpPointer(Self->X, Self->Y); error != ERR::Okay) {
+         return log.warning(error)|ERR::Notified;
+      }
+      Self->HostX = Self->X;
+      Self->HostY = Self->Y;
+   }
 #ifdef __xwindows__
+   else {
    if (ScopedObjectLock<objSurface> surface(Self->SurfaceID, 3000); surface.granted()) {
       APTR xwin;
 
@@ -644,21 +649,7 @@ static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
       }
    }
    else return log.warning(surface.error)|ERR::Notified;
-#elif _WIN32
-   OBJECTPTR surface;
-
-   if (auto error = AccessObject(Self->SurfaceID, 3000, &surface); !error) {
-      if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = Args->X;
-      if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = Args->Y;
-      if (Self->X < 0) Self->X = 0;
-      if (Self->Y < 0) Self->Y = 0;
-
-      winSetCursorPos(Self->X, Self->Y);
-      Self->HostX = Self->X;
-      Self->HostY = Self->Y;
-      ReleaseObject(surface);
    }
-   else return log.warning(error)|ERR::Notified;
 #endif
 
    // Determine the surface object that we are currently positioned over.  If it has set a cursor image, switch to it if the pointer is not locked.
@@ -754,6 +745,7 @@ static ERR POINTER_Show(extPointer *Self)
 
    log.branch();
 
+   if (glDriver) glDriver->showCursor(true);
    #ifdef __xwindows__
 /*
       APTR xwin;
@@ -765,9 +757,6 @@ static ERR POINTER_Show(extPointer *Self)
          ReleaseObject(surface);
       }
 */
- #elif _WIN32
-
-      winShowCursor(1);
    #endif
 
    Self->Flags |= PF::VISIBLE;
@@ -1207,9 +1196,7 @@ static const FunctionField mthRestoreCursor[] = { { "Cursor", FD_INT }, { "Owner
 
 static const MethodEntry clPointerMethods[] = {
    // Private methods
-#ifdef _WIN32
    { MT_PtrSetWinCursor,     (APTR)POINTER_SetWinCursor,   "SetWinCursor",   mthSetWinCursor,  sizeof(struct ptrSetWinCursor) },
-#endif
 #ifdef __xwindows__
    { MT_PtrGrabX11Pointer,   (APTR)POINTER_GrabX11Pointer,   "GrabX11Pointer",   mthGrabX11Pointer, sizeof(struct ptrGrabX11Pointer) },
    { MT_PtrUngrabX11Pointer, (APTR)POINTER_UngrabX11Pointer, "UngrabX11Pointer", nullptr, 0 },

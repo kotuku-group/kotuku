@@ -12,10 +12,6 @@ Name: Bitmap
 #include <algorithm>
 #include <cstring>
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
 #ifdef KOTUKU_SSE2
 
 // SIMD helpers for the 32-bit blitting routines.  All arithmetic is performed on 16-bit lanes so that the
@@ -479,85 +475,12 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    if (Width < 1) return ERR::Okay;
    if (Height < 1) return ERR::Okay;
 
-#ifdef _WIN32
-   if (dest->win.Drawable) { // Destination is a window
-
-      if (src->win.Drawable) { // Both the source and destination are window areas
-         int error;
-         if ((error = winBlit(dest->win.Drawable, DestX, DestY, Width, Height, src->win.Drawable, X, Y))) {
-            char buffer[80];
-            buffer[0] = 0;
-            winGetError(error, buffer, sizeof(buffer));
-            log.warning("BitBlt(): %s", buffer);
-         }
-      }
-      else { // The source is a software image
-         if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-            uint32_t *srcdata;
-            uint8_t destred, destgreen, destblue, red, green, blue, alpha;
-
-            // 32-bit alpha blending is enabled
-
-            srcdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
-
-            while (Height > 0) {
-               for (i=0; i < Width; i++) {
-                  alpha = 255 - CFUnpackAlpha(&src->prvColourFormat, srcdata[i]);
-
-                  if (alpha >= BLEND_MAX_THRESHOLD) {
-                     red   = srcdata[i] >> src->prvColourFormat.RedPos;
-                     green = srcdata[i] >> src->prvColourFormat.GreenPos;
-                     blue  = srcdata[i] >> src->prvColourFormat.BluePos;
-                     SetPixelV(dest->win.Drawable, DestX+i, DestY, (blue<<16) | (green<<8) | red);
-                  }
-                  else if (alpha >= BLEND_MIN_THRESHOLD) {
-                     colour = GetPixel(dest->win.Drawable, DestX+i, DestY);
-                     destred   = colour & 0xff;
-                     destgreen = (colour>>8) & 0xff;
-                     destblue  = (colour>>16) & 0xff;
-                     red   = srcdata[i] >> src->prvColourFormat.RedPos;
-                     green = srcdata[i] >> src->prvColourFormat.GreenPos;
-                     blue  = srcdata[i] >> src->prvColourFormat.BluePos;
-                     red   = destred   + (((red   - destred)   * alpha)>>8);
-                     green = destgreen + (((green - destgreen) * alpha)>>8);
-                     blue  = destblue  + (((blue  - destblue)  * alpha)>>8);
-                     SetPixelV(dest->win.Drawable, DestX+i, DestY, (blue<<16) | (green<<8) | red);
-                  }
-               }
-               srcdata = (uint32_t *)(((uint8_t *)srcdata) + src->LineWidth);
-               DestY++;
-               Height--;
-            }
-         }
-         else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
-            uint32_t wincolour;
-            while (Height > 0) {
-               for (i=0; i < Width; i++) {
-                  colour = src->ReadUCPixel(src, X + i, Y);
-                  if (colour != (uint32_t)src->TransIndex) {
-                     wincolour = src->unpackRed(colour);
-                     wincolour |= src->unpackGreen(colour)<<8;
-                     wincolour |= src->unpackBlue(colour)<<16;
-                     SetPixelV(dest->win.Drawable, DestX + i, DestY, wincolour);
-                  }
-               }
-               Y++; DestY++;
-               Height--;
-            }
-         }
-         else  {
-            winSetDIBitsToDevice(dest->win.Drawable, DestX, DestY, Width, Height, X, Y,
-               src->Width, src->Height, src->BitsPerPixel, src->Data,
-               src->ColourFormat->RedMask   << src->ColourFormat->RedPos,
-               src->ColourFormat->GreenMask << src->ColourFormat->GreenPos,
-               src->ColourFormat->BlueMask  << src->ColourFormat->BluePos);
-         }
-      }
-
-      return ERR::Okay;
+   if (glDriver) {
+      if (auto error = glDriver->blitBitmap(dest, src, Flags, X, Y, Width, Height, DestX, DestY);
+            error != ERR::NoSupport) return error;
    }
 
-#elif __xwindows__
+#ifdef __xwindows__
 
    // Use this routine if the destination is a pixmap (write only memory).  X11 windows are always represented as pixmaps.
 
@@ -1871,12 +1794,7 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
       }
    #endif
 
-   #ifdef _WIN32
-      if (Bitmap->win.Drawable) {
-         winDrawRectangle(Bitmap->win.Drawable, X, Y, w, h, red, green, blue);
-         return;
-      }
-   #endif
+   if ((glDriver) and (glDriver->fillBitmap(Bitmap, X, Y, w, h, Colour) IS ERR::Okay)) return;
 
    #ifdef __xwindows__
       if (Bitmap->MemType != BMT::DATA) {

@@ -111,13 +111,18 @@ endif ()
 
 if (WIN32)
    target_link_libraries (${MOD} PRIVATE ole32 oleaut32 gdi32 setupapi uuid xinput dinput8 dxguid wbemuuid ${MATH_LINK})
-   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "win32/windows.cpp" "win32/controller.cpp"
-      "win32/controller_mapping.cpp" "win32/clipboard.c" ${CLASSES})
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS}
+      "drivers/win32/win32_driver.cpp"
+      "drivers/win32/windows.cpp"
+      "drivers/win32/handlers.cpp"
+      "drivers/win32/controller.cpp"
+      "drivers/win32/controller_mapping.cpp"
+      "win32/clipboard.c" ${CLASSES})
    target_compile_definitions (${MOD} PRIVATE "WIN_DRAGDROP")
 
    if (UNIT_TESTS)
       add_executable (test_display_windows_controller "tests/test_windows_controller.cpp"
-         "win32/controller_mapping.cpp")
+         "drivers/win32/controller_mapping.cpp")
       set_target_properties (test_display_windows_controller PROPERTIES CXX_STANDARD 20)
       add_test (NAME display_windows_controller COMMAND test_display_windows_controller)
       set_tests_properties (display_windows_controller PROPERTIES LABELS display)

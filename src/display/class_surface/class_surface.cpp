@@ -34,10 +34,6 @@ separate bitmap buffer.
 #include <kotuku/modules/image.h>
 #include <numeric> // For std::gcd
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
 static ERR SET_Opacity(extSurface *, double);
 static ERR SET_XOffset(extSurface *, Unit &);
 static ERR SET_YOffset(extSurface *, Unit &);
@@ -92,12 +88,17 @@ void refresh_pointer(extSurface *Self)
 static ERR access_video(OBJECTID DisplayID, objDisplay **Display, objBitmap **Bitmap)
 {
    if (!AccessObject(DisplayID, 5000, (OBJECTPTR *)Display)) {
-      #ifdef _WIN32
-      APTR winhandle;
-      if (!Display[0]->getWindowHandle(winhandle)) {
-         Display[0]->Bitmap->setHandle(winGetDC(winhandle));
+      if (glDriver) {
+         APTR window;
+         if (Display[0]->getWindowHandle(window) IS ERR::Okay) {
+            if (auto error = glDriver->acquireWindowBitmap(window, (extBitmap *)Display[0]->Bitmap);
+                  (error != ERR::Okay) and (error != ERR::NoSupport)) {
+               ReleaseObject(*Display);
+               *Display = nullptr;
+               return error;
+            }
+         }
       }
-      #endif
 
       if (Bitmap) *Bitmap = Display[0]->Bitmap;
       return ERR::Okay;
@@ -109,17 +110,12 @@ static ERR access_video(OBJECTID DisplayID, objDisplay **Display, objBitmap **Bi
 
 static void release_video(objDisplay *Display)
 {
-   #ifdef _WIN32
-      APTR surface;
-      Display->Bitmap->getHandle(surface);
-
+   if (glDriver) {
       APTR winhandle;
-      if (!Display->getWindowHandle(winhandle)) {
-         winReleaseDC(winhandle, surface);
+      if (Display->getWindowHandle(winhandle) IS ERR::Okay) {
+         glDriver->releaseWindowBitmap(winhandle, (extBitmap *)Display->Bitmap);
       }
-
-      Display->Bitmap->setHandle((APTR)nullptr);
-   #endif
+   }
 
    acFlush(Display);
 
@@ -1324,9 +1320,7 @@ static ERR SURFACE_Init(extSurface *Self)
 
          display->getWindowHandle(Self->DisplayWindow);
 
-         #ifdef _WIN32
-            winSetSurfaceID(Self->DisplayWindow, Self->UID);
-         #endif
+         if (glDriver) glDriver->setWindowSurface(Self->DisplayWindow, Self->UID);
 
          // Subscribe to Redimension notifications if the display is hosted.  Also subscribe to Draw because this
          // can be used by the host to notify of window exposures.

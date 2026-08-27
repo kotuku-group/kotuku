@@ -2025,13 +2025,16 @@ HBITMAP winCreateBitmap(int width, int height, int bpp)
 void winTerminate(void)
 {
    winControllerShutdown();
-   winTerminateClipboard();
 
    if (glScreenClassInit) {
       UnregisterClass("ScreenClass", GetModuleHandle(nullptr));
       glScreenClassInit = 0;
    }
 
+}
+
+void winTerminateOLE(void)
+{
    if (glOleInit == 1) {
       OleUninitialize();
       glOleInit = 0;

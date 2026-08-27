@@ -1,4 +1,6 @@
 
+#pragma once
+
 #ifdef KOTUKU_MAIN_H
 typedef void * HWND;
 typedef void * HDC;
@@ -87,6 +89,7 @@ extern "C" int winCurrentClipboardID(void);
 extern "C" int winGetData(char *, struct WinDT **, int *);
 
 extern void winTerminate(void);
+extern void winTerminateOLE(void);
 extern HDC winGetDC(HWND);
 extern void winReleaseDC(HWND, HDC);
 extern void winSetSurfaceID(HWND, int);
