@@ -10,6 +10,7 @@
 #include "lj_array.h"
 #include "lj_bulk.h"
 #include "lj_object.h"
+#include "lj_state.h"
 #include "lj_str.h"
 #include "lj_tab.h"
 #include "stack_helpers.h"
@@ -18,7 +19,6 @@
 #include <cfloat>
 #include <climits>
 #include <cmath>
-#include <format>
 #include <limits>
 #include <string_view>
 #include <kotuku/main.h>
@@ -204,7 +204,7 @@ static LJ_AINLINE ArrayElementResult array_validate_element(GCarray *Array, cTVa
       case AET::STRUCT:
          if (tvisstruct(Value)) {
             auto source = structV(Value);
-            if (source->def IS Array->structdef and source->structsize IS Array->elemsize) {
+            if (source->def IS Array->struct_definition() and source->structsize IS Array->elemsize) {
                return ArrayElementResult::OK;
             }
          }
@@ -537,12 +537,6 @@ static void array_attach_basemt(lua_State *L, GCarray *Arr)
 // - String content is copied into a vector<char> owned by the array
 // - The storage area stores CSTRING pointers into the vector
 
-std::string lj_array_default_identity(AET Type, const struct_record *StructDef)
-{
-   if (Type IS AET::STRUCT and StructDef) return std::format("array<struct<{}>>", StructDef->Name);
-   return std::format("array<{}>", lj_array_elemtype_name(Type));
-}
-
 static bool array_identity_text_matches(std::string_view Expected, std::string_view Actual)
 {
    if (Expected IS Actual) return true;
@@ -565,53 +559,61 @@ static bool array_identity_text_matches(std::string_view Expected, std::string_v
 bool lj_array_identity_accepts(const GCarray *Destination, const GCarray *Value)
 {
    if (not Destination or not Value or Destination->elemtype != AET::ARRAY) return false;
-   if (not gcref(Destination->type_identity)) return true;
+   GCstr *destination_identity = Destination->nested_identity();
+   if (not destination_identity) return true;
 
-   GCstr *destination_identity = strref(Destination->type_identity);
    std::string_view destination_name(strdata(destination_identity), destination_identity->len);
    if (destination_name IS "array<array>") return true;
-   if (not destination_name.starts_with("array<") or not destination_name.ends_with('>') or
-       not gcref(Value->type_identity)) return false;
+   if (not destination_name.starts_with("array<") or not destination_name.ends_with('>')) return false;
 
    std::string_view expected_member = destination_name.substr(6, destination_name.size() - 7);
-   GCstr *value_identity = strref(Value->type_identity);
-   std::string_view actual_name(strdata(value_identity), value_identity->len);
-   return array_identity_text_matches(expected_member, actual_name);
+   return lj_array_identity_matches(Value, expected_member);
 }
 
 bool lj_array_identity_matches(const GCarray *Array, std::string_view Expected)
 {
-   if (not Array or not gcref(Array->type_identity)) return false;
-   GCstr *identity = strref(Array->type_identity);
-   return array_identity_text_matches(Expected, std::string_view(strdata(identity), identity->len));
+   if (not Array) return false;
+   if (GCstr *identity = Array->nested_identity()) {
+      return array_identity_text_matches(Expected, std::string_view(strdata(identity), identity->len));
+   }
+   if (Expected IS "array" or Expected IS "array<any>") return true;
+   if (not Expected.starts_with("array<") or not Expected.ends_with('>')) return false;
+   return lj_array_member_identity_matches(Array, Expected.substr(6, Expected.size() - 7));
 }
 
 bool lj_array_member_identity_matches(const GCarray *Array, std::string_view ExpectedMember)
 {
-   if (not Array or not gcref(Array->type_identity)) return false;
-   GCstr *identity = strref(Array->type_identity);
-   std::string_view actual(strdata(identity), identity->len);
-   if (not actual.starts_with("array<") or not actual.ends_with('>')) return false;
-   return array_identity_text_matches(ExpectedMember, actual.substr(6, actual.size() - 7));
+   if (not Array) return false;
+   if (GCstr *identity = Array->nested_identity()) {
+      std::string_view actual(strdata(identity), identity->len);
+      if (not actual.starts_with("array<") or not actual.ends_with('>')) return false;
+      return array_identity_text_matches(ExpectedMember, actual.substr(6, actual.size() - 7));
+   }
+   if (ExpectedMember IS "any") return true;
+   if (Array->elemtype IS AET::ARRAY) return array_identity_text_matches(ExpectedMember, "array");
+   if (Array->elemtype IS AET::STRUCT) {
+      struct_record *definition = Array->struct_definition();
+      if (not definition or not ExpectedMember.starts_with("struct<") or not ExpectedMember.ends_with('>')) {
+         return false;
+      }
+      return ExpectedMember.substr(7, ExpectedMember.size() - 8) IS definition->Name;
+   }
+   return ExpectedMember IS lj_array_elemtype_name(Array->elemtype);
 }
 
 static bool array_copy_identity_compatible(const GCarray *Destination, const GCarray *Source)
 {
    if (Destination->elemtype != AET::ARRAY) return true;
-   if (not gcref(Destination->type_identity)) return true;
+   GCstr *destination_identity = Destination->nested_identity();
+   if (not destination_identity) return true;
 
-   GCstr *destination_identity = strref(Destination->type_identity);
    std::string_view destination_name(strdata(destination_identity), destination_identity->len);
    if (destination_name IS "array<array>") return true;
-   if (not gcref(Source->type_identity)) return false;
-
-   GCstr *source_identity = strref(Source->type_identity);
-   std::string_view source_name(strdata(source_identity), source_identity->len);
-   return array_identity_text_matches(destination_name, source_name);
+   return lj_array_identity_matches(Source, destination_name);
 }
 
 extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags,
-   std::string_view StructName, struct_record *StructDef)
+   std::string_view StructName, struct_record *StructDef, GCstr *NestedIdentity)
 {
    MSize elem_size;
    struct_record *sdef = nullptr;
@@ -629,9 +631,6 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
    }
    else elem_size = lj_array_elemsize(Type);
 
-   std::string identity = lj_array_default_identity(Type, sdef);
-   GCstr *type_identity = lj_str_new(L, identity.data(), identity.size());
-
    lj_assertL(elem_size > 0, "invalid element size for array creation");
 
    if (Data or (Flags & ARRAY_EXTERNAL)) {
@@ -639,7 +638,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
          // External data - caller manages lifetime (no storage allocation needed)
          // External arrays have capacity = length and cannot grow
          auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-         arr->init(Data, Type, elem_size, Length, Length, Flags, sdef, type_identity);
+         arr->init(Data, Type, elem_size, Length, Length, Flags, sdef, NestedIdentity);
          array_attach_basemt(L, arr);
          return arr;
       }
@@ -650,7 +649,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             size_t byte_size = Length * sizeof(CSTRING);
             void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
             auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-            arr->init(storage, AET::CSTR, sizeof(CSTRING), Length, Length, 0, sdef, type_identity);
+            arr->init(storage, AET::CSTR, sizeof(CSTRING), Length, Length, 0, sdef);
             array_attach_basemt(L, arr);
 
             // Calculate total string content size
@@ -710,7 +709,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             size_t byte_size = Length * elem_size;
             void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
             auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-            arr->init(storage, Type, elem_size, Length, Length, Flags, sdef, type_identity);
+            arr->init(storage, Type, elem_size, Length, Length, Flags, sdef, NestedIdentity);
             array_attach_basemt(L, arr);
 
             auto refs = arr->get<GCRef>();
@@ -732,7 +731,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             size_t byte_size = Length * elem_size;
             void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
             auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-            arr->init(storage, Type, elem_size, Length, Length, Flags, sdef, type_identity);
+            arr->init(storage, Type, elem_size, Length, Length, Flags, sdef, NestedIdentity);
             array_attach_basemt(L, arr);
             if (byte_size > 0) {
                if (Type IS AET::ANY) lj_bulk_copy_tvalue((TValue *)storage, (const TValue *)Data, Length);
@@ -748,7 +747,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
       size_t byte_size = Length * elem_size;
       void *storage = (byte_size > 0) ? lj_mem_new(L, byte_size) : nullptr;
       auto arr = (GCarray *)lj_mem_newgco(L, sizeof(GCarray));
-      arr->init(storage, Type, elem_size, Length, Length, Flags & ~(ARRAY_EXTERNAL|ARRAY_CACHED), sdef, type_identity);
+      arr->init(storage, Type, elem_size, Length, Length, Flags & ~(ARRAY_EXTERNAL|ARRAY_CACHED), sdef, NestedIdentity);
       array_attach_basemt(L, arr);
       if (storage) {
          if (Type IS AET::ANY) {
@@ -764,15 +763,17 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
 GCarray * lj_array_new(lua_State *L, uint32_t Length, const ArrayAllocationDescriptor &Descriptor, void *Data,
    uint8_t Flags)
 {
+   ptrdiff_t saved_top = savestack(L, L->top);
+   if (Descriptor.nested_identity) {
+      setstrV(L, L->top, Descriptor.nested_identity);
+      incr_top(L);
+   }
    std::string_view struct_name = Descriptor.storage IS AET::STRUCT and Descriptor.struct_def ?
       std::string_view(Descriptor.struct_def->Name) : std::string_view{};
-   GCarray *array = lj_array_new(
-      L, Length, Descriptor.storage, Data, Flags, struct_name, Descriptor.struct_def);
-   if (not Descriptor.canonical_identity.empty()) {
-      GCstr *identity = lj_str_new(L, Descriptor.canonical_identity.data(), Descriptor.canonical_identity.size());
-      setgcref(array->type_identity, obj2gco(identity));
-      lj_gc_objbarrier(L, array, identity);
-   }
+   GCarray *array = lj_array_new(L, Length, Descriptor.storage, Data, Flags, struct_name, Descriptor.struct_def,
+      Descriptor.nested_identity);
+   if (Descriptor.nested_identity) lj_gc_objbarrier(L, array, Descriptor.nested_identity);
+   L->top = restorestack(L, saved_top);
    return array;
 }
 
@@ -780,11 +781,8 @@ GCarray * lj_array_new_like(lua_State *L, const GCarray *Source, uint32_t Length
 {
    ArrayAllocationDescriptor descriptor;
    descriptor.storage = Source->elemtype;
-   descriptor.struct_def = Source->structdef;
-   if (gcref(Source->type_identity)) {
-      GCstr *identity = strref(Source->type_identity);
-      descriptor.canonical_identity.assign(strdata(identity), identity->len);
-   }
+   descriptor.struct_def = Source->struct_definition();
+   descriptor.nested_identity = Source->nested_identity();
    return lj_array_new(L, Length, descriptor);
 }
 
@@ -868,19 +866,13 @@ void lj_array_clear_range(GCarray *Array, MSize Start, MSize Count)
 
 //********************************************************************************************************************
 
-void lj_array_copy(lua_State *L, GCarray *Dest, uint32_t DstIdx, GCarray *Src, uint32_t SrcIdx, uint32_t Count)
+void lj_array_copy_unchecked(
+   lua_State *L, GCarray *Dest, uint32_t DstIdx, const GCarray *Src, uint32_t SrcIdx, uint32_t Count)
 {
-   if (SrcIdx > Src->len or Count > Src->len - SrcIdx or DstIdx > Dest->len or Count > Dest->len - DstIdx) {
-      lj_err_caller(L, ErrMsg::IDXRNG);
-   }
-   if (Dest->is_readonly()) lj_err_caller(L, ErrMsg::ARRRO);
-   if (not (Dest->elemtype IS Src->elemtype) or not array_copy_identity_compatible(Dest, Src)) {
-      lj_err_caller(L, ErrMsg::ARRTYPE);
-   }
    if (Count IS 0) return;
 
    void *dst_ptr = lj_array_index(Dest, DstIdx);
-   void *src_ptr = lj_array_index(Src, SrcIdx);
+   const void *src_ptr = lj_array_index(Src, SrcIdx);
    if (Dest->elemtype IS AET::ANY) {
       lj_bulk_move_tvalue((TValue *)dst_ptr, (const TValue *)src_ptr, Count);
       auto dst_slots = (TValue *)dst_ptr;
@@ -901,6 +893,18 @@ void lj_array_copy(lua_State *L, GCarray *Dest, uint32_t DstIdx, GCarray *Src, u
       size_t byte_count = Count * Dest->elemsize;
       memmove(dst_ptr, src_ptr, byte_count); // Use memmove to handle overlapping regions
    }
+}
+
+void lj_array_copy(lua_State *L, GCarray *Dest, uint32_t DstIdx, GCarray *Src, uint32_t SrcIdx, uint32_t Count)
+{
+   if (SrcIdx > Src->len or Count > Src->len - SrcIdx or DstIdx > Dest->len or Count > Dest->len - DstIdx) {
+      lj_err_caller(L, ErrMsg::IDXRNG);
+   }
+   if (Dest->is_readonly()) lj_err_caller(L, ErrMsg::ARRRO);
+   if (not (Dest->elemtype IS Src->elemtype) or not array_copy_identity_compatible(Dest, Src)) {
+      lj_err_caller(L, ErrMsg::ARRTYPE);
+   }
+   lj_array_copy_unchecked(L, Dest, DstIdx, Src, SrcIdx, Count);
 }
 
 //********************************************************************************************************************

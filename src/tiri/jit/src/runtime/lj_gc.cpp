@@ -495,7 +495,7 @@ static void gc_traverse_array(global_State *g, GCarray *Arr)
 {
    GCtab *mt = tabref(Arr->metatable);
    if (mt) gc_markobj(g, mt);
-   if (gcref(Arr->type_identity)) gc_markobj(g, gcref(Arr->type_identity));
+   if (GCstr *identity = Arr->nested_identity()) gc_markobj(g, obj2gco(identity));
 
    if (Arr->elemtype IS AET::STR_GC or Arr->elemtype IS AET::TABLE or Arr->elemtype IS AET::ARRAY or Arr->elemtype IS AET::OBJECT) {
       GCRef *refs = Arr->get<GCRef>();

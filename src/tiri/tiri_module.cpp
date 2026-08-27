@@ -1412,7 +1412,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                ErrorMsg = std::format("Arg #{} ({}) array element type does not match the span.", i, args[i].Name);
                return ERR::InvalidType;
             }
-            if ((element_type IS AET::STRUCT) and (array->structdef != struct_def)) {
+            if ((element_type IS AET::STRUCT) and (array->struct_definition() != struct_def)) {
                ErrorMsg = std::format("Arg #{} ({}) structure array type does not match the span.", i, args[i].Name);
                return ERR::InvalidType;
             }

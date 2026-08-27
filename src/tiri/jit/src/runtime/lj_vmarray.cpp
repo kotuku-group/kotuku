@@ -118,7 +118,7 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
       }
 
       case AET::STRUCT: {
-         auto value = lj_struct_new(L, *Array->structdef);
+         auto value = lj_struct_new(L, *Array->struct_definition());
          memcpy(value->data, elem, Array->elemsize);
          setstructV(L, Result, value);
          break;

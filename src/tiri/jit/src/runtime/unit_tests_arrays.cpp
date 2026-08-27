@@ -170,24 +170,41 @@ static bool test_array_recursive_identity(kt::Log &Log)
    lua_State *lua = holder.get();
    if (not lua) return false;
 
-   GCarray *ordinary = lj_array_new(lua, 0, AET::ARRAY);
-   if (not gcref(ordinary->type_identity) or
-       std::string_view(strdata(strref(ordinary->type_identity)), strref(ordinary->type_identity)->len) !=
-          "array<array>") {
-      Log.error("the C++ convenience allocator did not derive an unconstrained canonical identity");
+   std::array<AET, 4> implicit_types { AET::INT32, AET::STR_GC, AET::ANY, AET::ARRAY };
+   for (AET type : implicit_types) {
+      GCarray *ordinary = lj_array_new(lua, 0, type);
+      if (ordinary->nested_identity()) {
+         Log.error("ordinary array type %d stored a redundant identity", int(type));
+         return false;
+      }
+   }
+
+   struct_record structure("ArrayIdentityStructure");
+   structure.Size = sizeof(int32_t);
+   GCarray *structures = lj_array_new(lua, 0, AET::STRUCT, nullptr, 0, structure.Name, &structure);
+   if (structures->struct_definition() != &structure or structures->nested_identity()) {
+      Log.error("a structure array did not use the tagged structure-definition slot");
       return false;
    }
 
+   GCstr *matrix_identity = lj_str_new(lua, "array<array<double>>", sizeof("array<array<double>>") - 1);
+
    ArrayAllocationDescriptor descriptor {
       .storage = AET::ARRAY,
-      .canonical_identity = "array<array<double>>"
+      .nested_identity = matrix_identity
    };
-   GCarray *matrix = lj_array_new(lua, 0, descriptor);
+   GCarray *matrix = lj_array_new(lua, 3, descriptor);
    setarrayV(lua, lua->top++, matrix);
    lua_gc(lua, LUA_GCCOLLECT);
-   GCstr *identity = strref(matrix->type_identity);
-   if (not identity or std::string_view(strdata(identity), identity->len) != "array<array<double>>") {
+   GCstr *identity = matrix->nested_identity();
+   if (identity != matrix_identity or std::string_view(strdata(identity), identity->len) != "array<array<double>>") {
       Log.error("a descriptor-aware array allocation lost its identity during GC traversal");
+      return false;
+   }
+
+   GCarray *derived = lj_array_new_like(lua, matrix, 0);
+   if (derived->nested_identity() != matrix_identity) {
+      Log.error("a derived recursive array did not share its source identity");
       return false;
    }
 
@@ -207,7 +224,7 @@ static bool test_array_recursive_identity(kt::Log &Log)
 
    ArrayAllocationDescriptor wildcard_descriptor {
       .storage = AET::ARRAY,
-      .canonical_identity = "array<array<any>>"
+      .nested_identity = lj_str_new(lua, "array<array<any>>", sizeof("array<array<any>>") - 1)
    };
    GCarray *wildcard = lj_array_new(lua, 0, wildcard_descriptor);
    if (lj_array_validate_element(wildcard, &value) != ArrayElementResult::OK) {
@@ -217,11 +234,11 @@ static bool test_array_recursive_identity(kt::Log &Log)
 
    ArrayAllocationDescriptor deep_wildcard_descriptor {
       .storage = AET::ARRAY,
-      .canonical_identity = "array<array<array>>"
+      .nested_identity = lj_str_new(lua, "array<array<array>>", sizeof("array<array<array>>") - 1)
    };
    ArrayAllocationDescriptor specialised_matrix_descriptor {
       .storage = AET::ARRAY,
-      .canonical_identity = "array<array<int>>"
+      .nested_identity = lj_str_new(lua, "array<array<int>>", sizeof("array<array<int>>") - 1)
    };
    GCarray *deep_wildcard = lj_array_new(lua, 0, deep_wildcard_descriptor);
    GCarray *specialised_matrix = lj_array_new(lua, 0, specialised_matrix_descriptor);
@@ -235,6 +252,28 @@ static bool test_array_recursive_identity(kt::Log &Log)
    if (not lj_array_member_identity_matches(bare_matrix, "array<any>") or
        not lj_array_identity_matches(bare_matrix, "array<array<any>>")) {
       Log.error("an array<any> wildcard rejected a bare array identity");
+      return false;
+   }
+
+   GCarray *source = lj_array_new(lua, 5, AET::INT32);
+   GCarray *copy = lj_array_new_like(lua, source, 5);
+   for (MSize i = 0; i < source->len; i++) source->get<int32_t>()[i] = int32_t(i + 1);
+   lj_array_copy(lua, copy, 0, source, 0, source->len);
+   if (copy->get<int32_t>()[4] != 5) {
+      Log.error("a contiguous internal array copy lost values");
+      return false;
+   }
+   lj_array_copy_unchecked(lua, copy, 0, source, 4, 1);
+   lj_array_copy_unchecked(lua, copy, 1, source, 2, 1);
+   lj_array_copy_unchecked(lua, copy, 2, source, 0, 1);
+   if (copy->get<int32_t>()[0] != 5 or copy->get<int32_t>()[1] != 3 or copy->get<int32_t>()[2] != 1) {
+      Log.error("stepped or descending internal copies lost values");
+      return false;
+   }
+
+   GCarray *empty = lj_array_new_like(lua, matrix, 0);
+   if (empty->len != 0 or empty->nested_identity() != matrix_identity) {
+      Log.error("an empty derived array lost its recursive identity");
       return false;
    }
    return true;

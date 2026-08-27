@@ -221,8 +221,8 @@ typedef enum {
   _(STRUCT_DEF, offsetof(GCstruct, def)) \
   _(TAB_GCONTRACTS, offsetof(GCtab, global_type_contracts)) \
   _(OBJ_CLASSPTR, offsetof(GCobject, classptr)) \
-  _(ARRAY_STRUCTDEF, offsetof(GCarray, structdef)) \
-  _(ARRAY_IDENTITY, offsetof(GCarray, type_identity)) \
+  _(ARRAY_STRUCTDEF, offsetof(GCarray, type_metadata)) \
+  _(ARRAY_IDENTITY, offsetof(GCarray, type_metadata)) \
   _(TAB_FLAGS, offsetof(GCtab, flags))
 
 typedef enum {

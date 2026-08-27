@@ -200,12 +200,11 @@ void lj_meta_raw_type_text(lua_State *L, cTValue *Value, char *Buffer, size_t Si
 
    if (tvisarray(Value)) {
       GCarray *array = arrayV(Value);
-      if (gcref(array->type_identity)) {
-         GCstr *identity = strref(array->type_identity);
+      if (GCstr *identity = array->nested_identity()) {
          std::snprintf(Buffer, Size, "%.*s", int(identity->len), strdata(identity));
       }
-      else if (array->elemtype IS AET::STRUCT and array->structdef) {
-         std::snprintf(Buffer, Size, "array<struct<%s>>", array->structdef->Name.c_str());
+      else if (struct_record *definition = array->struct_definition()) {
+         std::snprintf(Buffer, Size, "array<struct<%s>>", definition->Name.c_str());
       }
       else std::snprintf(Buffer, Size, "array<%s>", lj_array_elemtype_name(array->elemtype));
       return;
@@ -944,7 +943,7 @@ namespace {
    if (not string_match and actual != expected) return false;
    if (expected IS AET::STRUCT) {
       struct_record *definition = find_struct(L, Entry.constraint_name);
-      return definition and Array->structdef IS definition;
+      return definition and Array->struct_definition() IS definition;
    }
    if (expected IS AET::ARRAY and not Entry.constraint_name.empty()) {
       return lj_array_member_identity_matches(Array, Entry.constraint_name);

@@ -351,14 +351,13 @@ static void recff_rawtype(jit_State* J, RecordFFData* Data)
       IRBuilder ir(J);
       TRef element_type_ref = ir.fload(value_ref, IRFL_ARRAY_ELEMTYPE, IRT_U8);
       ir.guard_eq_int(element_type_ref, ir.kint(int32_t(array->elemtype)));
-      if (gcref(array->type_identity)) {
-         GCstr *identity = strref(array->type_identity);
+      if (GCstr *identity = array->nested_identity()) {
          TRef identity_ref = ir.fload(value_ref, IRFL_ARRAY_IDENTITY, IRT_STR);
          ir.guard_eq(identity_ref, ir.kstr(identity), IRT_STR);
       }
       else if (array->elemtype IS AET::STRUCT) {
          TRef definition_ref = ir.fload(value_ref, IRFL_ARRAY_STRUCTDEF, IRT_PTR);
-         TRef definition = array->structdef ? ir.kkptr(array->structdef) : ir.knull(IRT_PTR);
+         TRef definition = array->struct_definition() ? ir.kkptr(array->struct_definition()) : ir.knull(IRT_PTR);
          ir.guard_eq(definition_ref, definition, IRT_PTR);
       }
    }
