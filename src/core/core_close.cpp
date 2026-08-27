@@ -497,16 +497,20 @@ __export void Expunge(int16_t Force)
          }
       }
 
-      // If we are shutting down, force the expunging of any stubborn modules.  Freeing the modules in order of their
-      // original allocation (i.e. by UID) is a good heuristic for avoiding problems with modules that have circular
-      // dependencies on each other.
+      // If we are shutting down, force the expunging of any stubborn modules.  A forced expunge can release module
+      // handles and make other roots normally eligible, so always process those roots before forcing another module.
 
       objRootModule *sanity_check = nullptr;
 restart_forced_expunge:
-      auto mod_master = glModuleList;
-      for (auto scan=mod_master; scan; scan=scan->Next) {
-         if (scan->UID < mod_master->UID) mod_master = scan;
+      objRootModule *mod_master = nullptr;
+      objRootModule *stubborn_module = nullptr;
+      for (auto scan=glModuleList; scan; scan=scan->Next) {
+         if (scan->OpenCount <= 0) {
+            if ((not mod_master) or (scan->UID < mod_master->UID)) mod_master = scan;
+         }
+         else if ((not stubborn_module) or (scan->UID < stubborn_module->UID)) stubborn_module = scan;
       }
+      if (not mod_master) mod_master = stubborn_module;
 
       if ((mod_master) and (sanity_check != mod_master)) {
          if (mod_master->Expunge) {

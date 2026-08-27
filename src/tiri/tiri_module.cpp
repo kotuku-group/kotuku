@@ -614,7 +614,7 @@ static ERR resolve_module(std::string_view Name, ModuleBinding *&Result)
    // holding the index lock.  Two threads racing on the same name may therefore both construct a module; the loser's
    // instance is discarded below so that exactly one binding is ever published.
 
-   auto loaded_module = objModule::create::global(fl::Name(Name));
+   auto loaded_module = objModule::create::untracked(fl::Name(Name));
    if (not loaded_module) return ERR::CreateObject;
 
    auto entry = std::make_unique<ModuleBinding>();
