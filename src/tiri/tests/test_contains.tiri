@@ -24,6 +24,40 @@ function generic_array_membership_workload(Values:array<any>, Candidate:any, Cou
    return matches
 end
 
+function numeric_array_membership_workload(Values:array<any>, Present:num, Missing:num, Count:num):num
+   local matches = 0
+   for _ in {0 to Count} do
+      if Present in Values then matches++ end
+      if not (Missing in Values) then matches++ end
+   end
+   return matches
+end
+
+function numeric_membership_call_address(Values:array<any>, Candidate:num):any
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   generic_array_membership_workload(Values, Candidate, 100)
+
+   jit.off()
+   local address:any
+   for trace_no in {1 into 40} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+
+      for instruction in {1 into info.nins} do
+         local _, ir_ot, _, call_id = jit.util.traceIR(trace_no, instruction)
+         if ir_ot != nil and (ir_ot >> 8) is 98 then
+            local call_address = jit.util.irCallAddr(call_id)
+            if call_address != nil then address = call_address end
+         end
+      end
+   end
+   jit.on()
+   jit.opt.start()
+   return address
+end
+
 function builtin_struct_membership_workload(Value:struct<ContainsStruct>, Count:num):num
    local matches = 0
    for index in {0 to Count} do
@@ -80,6 +114,37 @@ end
    assert('tuk' in 'Kōtuku' and not ('xyz' in 'Kōtuku'), 'String membership must remain substring based')
    assert('Present' in struct_value and not ('Missing' in struct_value),
       'Struct membership must use field presence rather than field values')
+end
+
+@Test function MutableStringArrayMembershipUsesContent()
+   local first = string.alloc(3)
+   local equal = string.alloc(3)
+   local shorter = string.alloc(2)
+   local values = array<str, 3>
+   values[1] = first
+
+   assert(not (first is equal), 'Separately allocated mutable strings must have distinct identities')
+   assert(equal in values,
+      'Mutable strings with equal embedded-NUL content must compare by bytes during array membership')
+   assert(values.indexOf(equal) is 1,
+      'Mutable-string indexOf() must share membership content semantics')
+   assert(not (shorter in values), 'Mutable strings with different lengths must not compare equal')
+
+   local mutable_empty = string.alloc(0)
+   local interned_empty_values = array<str> { '' }
+   local mutable_empty_values = array<str> { mutable_empty }
+   assert(mutable_empty in interned_empty_values,
+      'A mutable string must match an equal ordinary interned string')
+   assert('' in mutable_empty_values,
+      'An ordinary interned string must match an equal mutable array element')
+
+   local matches = 0
+   for _ in {0 to 100} do
+      if equal in values then matches++ end
+      if mutable_empty in interned_empty_values then matches++ end
+      if '' in mutable_empty_values then matches++ end
+   end
+   assert(matches is 300, 'Mutable-string content equality must remain stable after JIT warming')
 end
 
 @Test function VariantArrayMembershipUsesEqualitySemantics()
@@ -237,6 +302,28 @@ end
    jit.opt.start()
 
    assert(native_calls > 0, 'Canonical array membership should lower to a native side-effecting helper call')
+end
+
+@Test function NumericArrayRepresentationsUseNativeMembership()
+   assert(numeric_array_membership_workload(array<int8> { -128, 0, 127 }, 127, 12, 100) is 200,
+      'Signed eight-bit membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<int> { -2147483648, 0, 2147483647 }, 2147483647, 12, 100) is 200,
+      'Signed integer membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<uint64> { 0, 17, 9007199254740991 }, 9007199254740991, 12, 100)
+      is 200, 'Unsigned 64-bit membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<float> { -1.25, 0.0, 7.5 }, 7.5, 12.0, 100) is 200,
+      'Float membership failed after JIT warming')
+   assert(numeric_array_membership_workload(array<double> { -1.25, 0.0, 7.5 }, 7.5, 12.0, 100) is 200,
+      'Double membership failed after JIT warming')
+end
+
+@Test function NumericArrayRepresentationsUseDistinctTraceCalls()
+   local integer_address = numeric_membership_call_address(array<int> { 2, 4, 6 }, 4)
+   local double_address = numeric_membership_call_address(array<double> { 2.0, 4.0, 6.0 }, 4.0)
+   assert(integer_address != nil and double_address != nil,
+      'Numeric membership traces must contain native helper calls')
+   assert(integer_address != double_address,
+      'Integer and double membership traces must call representation-specific helpers')
 end
 
 @Test function BuiltinArrayMembershipGuardsElementType()

@@ -24,6 +24,7 @@
 #include <array>
 #include <atomic>
 #include <limits>
+#include <type_traits>
 
 #include "../../defs.h"
 
@@ -799,6 +800,184 @@ static bool test_numeric_search_type(lua_State *L, AET ElementType, kt::Log &Log
       Log.error("numeric runtime search failed for element type %d", int(ElementType));
       return false;
    }
+   return true;
+}
+
+using NumericContainsHelper = int32_t (*)(GCarray *, lua_Number) noexcept;
+
+template<typename T>
+static bool test_numeric_contains_type(lua_State *L, AET ElementType, NumericContainsHelper Helper,
+   lua_Number Minimum, lua_Number Maximum, kt::Log &Log)
+{
+   GCarray *empty = lj_array_new(L, 0, ElementType);
+   if (Helper(empty, 1) != 0) {
+      Log.error("numeric membership helper matched an empty array for element type %d", int(ElementType));
+      return false;
+   }
+
+   GCarray *single = lj_array_new(L, 1, ElementType);
+   single->get<T>()[0] = T(31);
+   if (Helper(single, 31) != 1 or Helper(single, 32) != 0) {
+      Log.error("numeric membership helper failed a single-element array for element type %d", int(ElementType));
+      return false;
+   }
+
+   GCarray *array = lj_array_new(L, 5, ElementType);
+   T *values = array->get<T>();
+   values[0] = T(Minimum);
+   values[1] = T(3);
+   values[2] = T(7);
+   values[3] = T(11);
+   values[4] = T(Maximum);
+
+   int32_t fractional_result = Helper(array, 7.75);
+   int32_t expected_fractional = std::is_integral_v<T> ? 1 : 0;
+   if (Helper(array, Minimum) != 1 or Helper(array, 7) != 1 or Helper(array, Maximum) != 1 or
+       Helper(array, 13) != 0 or fractional_result != expected_fractional) {
+      Log.error("numeric membership helper failed for element type %d", int(ElementType));
+      return false;
+   }
+   return true;
+}
+
+static bool test_array_runtime_contains_numeric(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   constexpr lua_Number exact_integer_limit = 9007199254740991.0;
+   if (not test_numeric_contains_type<int8_t>(lua, AET::INT8, lj_arr_contains_i8,
+          lua_Number(INT8_MIN), lua_Number(INT8_MAX), Log) or
+       not test_numeric_contains_type<uint8_t>(lua, AET::BYTE, lj_arr_contains_u8,
+          0, lua_Number(UINT8_MAX), Log) or
+       not test_numeric_contains_type<uint8_t>(lua, AET::UINT8, lj_arr_contains_u8,
+          0, lua_Number(UINT8_MAX), Log) or
+       not test_numeric_contains_type<int16_t>(lua, AET::INT16, lj_arr_contains_i16,
+          lua_Number(INT16_MIN), lua_Number(INT16_MAX), Log) or
+       not test_numeric_contains_type<uint16_t>(lua, AET::UINT16, lj_arr_contains_u16,
+          0, lua_Number(UINT16_MAX), Log) or
+       not test_numeric_contains_type<int32_t>(lua, AET::INT32, lj_arr_contains_i32,
+          lua_Number(INT32_MIN), lua_Number(INT32_MAX), Log) or
+       not test_numeric_contains_type<uint32_t>(lua, AET::UINT32, lj_arr_contains_u32,
+          0, lua_Number(UINT32_MAX), Log) or
+       not test_numeric_contains_type<int64_t>(lua, AET::INT64, lj_arr_contains_i64,
+          -exact_integer_limit, exact_integer_limit, Log) or
+       not test_numeric_contains_type<uint64_t>(lua, AET::UINT64, lj_arr_contains_u64,
+          0, exact_integer_limit, Log) or
+       not test_numeric_contains_type<float>(lua, AET::FLOAT, lj_arr_contains_f32,
+          lua_Number(std::numeric_limits<float>::lowest()), lua_Number(std::numeric_limits<float>::max()), Log) or
+       not test_numeric_contains_type<double>(lua, AET::DOUBLE, lj_arr_contains_f64,
+          std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(), Log)) return false;
+
+   GCarray *floats = lj_array_new(lua, 2, AET::FLOAT);
+   floats->get<float>()[0] = -0.0f;
+   floats->get<float>()[1] = std::numeric_limits<float>::quiet_NaN();
+   if (lj_arr_contains_f32(floats, 0.0) != 1 or
+       lj_arr_contains_f32(floats, std::numeric_limits<lua_Number>::quiet_NaN()) != 0) {
+      Log.error("float membership helper changed signed-zero or NaN behaviour");
+      return false;
+   }
+
+   GCarray *doubles = lj_array_new(lua, 2, AET::DOUBLE);
+   doubles->get<double>()[0] = -0.0;
+   doubles->get<double>()[1] = std::numeric_limits<double>::quiet_NaN();
+   if (lj_arr_contains_f64(doubles, 0.0) != 1 or
+       lj_arr_contains_f64(doubles, std::numeric_limits<lua_Number>::quiet_NaN()) != 0) {
+      Log.error("double membership helper changed signed-zero or NaN behaviour");
+      return false;
+   }
+
+   return true;
+}
+
+static GCstr * make_mutable_test_string(lua_State *L, std::string_view Text)
+{
+   GCstr *string = lj_str_newbuf(L, MSize(Text.size()));
+   if (not Text.empty()) memcpy(strdatawr(string), Text.data(), Text.size());
+   return string;
+}
+
+static bool test_array_runtime_search_strings(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCstr *interned_alpha = lj_str_newz(lua, "alpha");
+   GCstr *interned_alpha_again = lj_str_newz(lua, "alpha");
+   GCstr *interned_omega = lj_str_newz(lua, "omega");
+   GCstr *interned_missing = lj_str_newz(lua, "missing");
+   if (interned_alpha != interned_alpha_again) {
+      Log.error("equal ordinary strings were not interned to one GC string");
+      return false;
+   }
+
+   TValue value;
+   GCarray *sparse = lj_array_new(lua, 7, AET::STR_GC);
+   setstrV(lua, &value, interned_alpha);
+   lj_array_store_checked(lua, sparse, 1, &value);
+   setstrV(lua, &value, interned_omega);
+   lj_array_store_checked(lua, sparse, 5, &value);
+   if (lj_arr_find_str(sparse, interned_alpha_again, 0, 6, 1) != 1 or
+       lj_arr_find_str(sparse, interned_omega, 6, 0, -1) != 5 or
+       lj_arr_find_str(sparse, interned_missing, 0, 6, 1) != -1 or
+       lj_arr_contains_str(sparse, interned_alpha_again) != 1 or
+       lj_arr_contains_str(sparse, interned_missing) != 0) {
+      Log.error("interned string search failed with sparse nil entries");
+      return false;
+   }
+
+   GCstr *mutable_first = make_mutable_test_string(lua, "mutable");
+   GCstr *mutable_equal = make_mutable_test_string(lua, "mutable");
+   GCstr *mutable_different = make_mutable_test_string(lua, "mutablf");
+   GCarray *mutable_values = lj_array_new(lua, 3, AET::STR_GC);
+   setstrV(lua, &value, mutable_first);
+   lj_array_store_checked(lua, mutable_values, 1, &value);
+   if (mutable_first IS mutable_equal or lj_arr_find_str(mutable_values, mutable_equal, 0, 2, 1) != 1 or
+       lj_arr_contains_str(mutable_values, mutable_equal) != 1 or
+       lj_arr_find_str(mutable_values, mutable_different, 0, 2, 1) != -1) {
+      Log.error("distinct mutable string content comparison failed");
+      return false;
+   }
+
+   GCstr *interned_shared = lj_str_newz(lua, "shared");
+   GCstr *mutable_shared = make_mutable_test_string(lua, "shared");
+   GCarray *interned_values = lj_array_new(lua, 1, AET::STR_GC);
+   setstrV(lua, &value, interned_shared);
+   lj_array_store_checked(lua, interned_values, 0, &value);
+   GCarray *mutable_shared_values = lj_array_new(lua, 1, AET::STR_GC);
+   setstrV(lua, &value, mutable_shared);
+   lj_array_store_checked(lua, mutable_shared_values, 0, &value);
+   if (lj_arr_find_str(interned_values, mutable_shared, 0, 0, 1) != 0 or
+       lj_arr_find_str(mutable_shared_values, interned_shared, 0, 0, 1) != 0) {
+      Log.error("mutable and interned string content comparison was not symmetric");
+      return false;
+   }
+
+   const char embedded_text[] = { 'a', '\0', 'b' };
+   const char embedded_miss_text[] = { 'a', '\0', 'c' };
+   GCstr *mutable_embedded = make_mutable_test_string(lua,
+      std::string_view(embedded_text, sizeof(embedded_text)));
+   GCstr *mutable_embedded_match = make_mutable_test_string(lua,
+      std::string_view(embedded_text, sizeof(embedded_text)));
+   GCstr *mutable_embedded_miss = make_mutable_test_string(lua,
+      std::string_view(embedded_miss_text, sizeof(embedded_miss_text)));
+   GCarray *embedded_values = lj_array_new(lua, 3, AET::STR_GC);
+   setstrV(lua, &value, mutable_embedded);
+   lj_array_store_checked(lua, embedded_values, 1, &value);
+   if (lj_arr_find_str(embedded_values, mutable_embedded_match, 0, 2, 1) != 1 or
+       lj_arr_find_str(embedded_values, mutable_embedded_miss, 0, 2, 1) != -1) {
+      Log.error("mutable embedded-NUL string comparison failed");
+      return false;
+   }
+
    return true;
 }
 
@@ -1703,7 +1882,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 39> Tests = { {
+   constexpr std::array<TestCase, 41> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1719,6 +1898,8 @@ void array_unit_tests(int &Passed, int &Total)
       { "array_external_resource", test_array_external_resource },
       { "array_element_contract", test_array_element_contract },
       { "array_runtime_search", test_array_runtime_search },
+      { "array_runtime_contains_numeric", test_array_runtime_contains_numeric },
+      { "array_runtime_search_strings", test_array_runtime_search_strings },
       { "array_to_table", test_array_to_table },
       { "array_type_tag", test_array_type_tag },
       // VM Type System

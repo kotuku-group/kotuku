@@ -219,7 +219,16 @@ typedef struct CCallInfo {
   _(ANY,        lj_arr_resize,     3,   S, INT, CCI_L|CCI_T) \
   _(ANY,        lj_arr_getstring,  4,   S, STR, CCI_L|CCI_T) \
   _(ANY,        lj_arr_contains,   3,   S, INT, CCI_L|CCI_T) \
-  _(ANY,        lj_arr_contains_num, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_i8,  2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u8,  2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_i16, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u16, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_i32, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u32, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_i64, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_u64, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_f32, 2, S, INT, 0) \
+  _(ANY,        lj_arr_contains_f64, 2, S, INT, 0) \
   _(ANY,        lj_arr_contains_str, 2, S, INT, 0) \
   _(ANY,        lj_arr_getidx_noalloc, 4, S, NIL, CCI_L) \
   /* Direct range-loop helpers */ \
