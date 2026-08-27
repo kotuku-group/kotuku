@@ -3564,11 +3564,47 @@ function run_defer_trace(Workload, Count):<str, str, num, num, num>
 end
 
 @Test function JITDeferNormalCleanupAndOrdering()
+   local function flat_stack_workload(Count:num):str
+      local events = {}
+      function recursive(Depth:num, Value:num):nil
+         defer(CapturedDepth, CapturedValue)
+            events.insert('recursive-' .. tostring(CapturedValue) .. '-' .. tostring(CapturedDepth))
+         end(Depth, Value)
+         if Depth > 0 then recursive(Depth - 1, Value) end
+      end
+      function nested(Value:num)
+         defer(Captured) events.insert('nested-defer-' .. tostring(Captured)) end(Value)
+         events.insert('nested-body-' .. tostring(Value))
+      end
+
+      for iteration in {0 to Count} do
+         defer(Value) events.insert('outer-' .. tostring(Value)) end(iteration)
+         defer(Value)
+            events.insert('handler-enter-' .. tostring(Value))
+            nested(Value)
+            events.insert('handler-leave-' .. tostring(Value))
+         end(iteration)
+         if iteration % 2 is 0 then
+            defer(Value) events.insert('conditional-' .. tostring(Value)) end(iteration)
+         end
+         recursive(1, iteration)
+         events.insert('body-' .. tostring(iteration))
+      end
+      return events.concat(',')
+   end
+
    local expected, result, compiled, aborted, defer_aborts = run_defer_trace(defer_ordering_workload, 80)
    assert(result is expected, 'Recorded defer cleanup should match complete interpreter event ordering')
    assert(compiled > 0, 'A hot loop containing defer registration and consumption should compile')
    assert(defer_aborts is 0,
       f'DEFERARM and DEFERCONSUME should not abort trace recording (total aborts={aborted}, defer aborts={defer_aborts})')
+
+   expected, result, compiled, aborted, defer_aborts = run_defer_trace(flat_stack_workload, 80)
+   assert(result is expected,
+      'Recorded recursive, conditional and nested-handler defers should match interpreter ordering')
+   assert(compiled > 0, 'The flat defer-stack ordering workload should compile')
+   assert(defer_aborts is 0,
+      f'DEFERARM and DEFERCONSUME should not abort the ordering workload (aborts={aborted}, defer={defer_aborts})')
 end
 
 @Test function JITDeferRegistrationSurvivesSideExit()

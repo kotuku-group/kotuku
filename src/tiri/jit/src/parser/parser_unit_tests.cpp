@@ -10710,13 +10710,13 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
    ptrdiff_t owner_offset = savestack(lua, lua->base);
    lj_defer_arm(lua, lua->base, 3, 2, 1);
    lj_defer_arm(lua, lua->base, 7, 1, 1);
-   if (lua->defer_frames.size() != 1 or lua->defer_frames[0].owner_base != owner_offset or
-       lua->defer_frames[0].registrations.size() != 2) {
-      Log.error("defer registrations were not appended to their owning frame");
+   if (lua->defer_stack.size() != 2 or lua->defer_stack[0].owner_base != owner_offset or
+       lua->defer_stack[1].owner_base != owner_offset) {
+      Log.error("defer registrations were not appended to the active stack");
       return false;
    }
 
-   const DeferRegistration &first = lua->defer_frames[0].registrations[0];
+   const DeferRegistration &first = lua->defer_stack[0];
    if (first.callable_slot != 3 or first.argument_count != 2 or first.scope_base != 1) {
       Log.error("defer registration metadata was not retained");
       return false;
@@ -10724,36 +10724,65 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
    lj_state_growstack(lua, 64);
    TValue *owner = restorestack(lua, owner_offset);
-   if (lua->defer_frames[0].owner_base != savestack(lua, owner) or
-       not lj_defer_consume(lua, owner, 7) or lua->defer_frames[0].registrations.size() != 1) {
+   if (lua->defer_stack[0].owner_base != savestack(lua, owner) or
+       not lj_defer_consume(lua, owner, 7) or lua->defer_stack.size() != 1) {
       Log.error("defer ownership did not survive stack relocation or consume in LIFO order");
       return false;
    }
-   if (not lj_defer_consume(lua, owner, 3) or not lua->defer_frames.empty()) {
-      Log.error("consuming the last defer did not remove its empty frame state");
+   if (not lj_defer_consume(lua, owner, 3) or not lua->defer_stack.empty()) {
+      Log.error("consuming the last defer did not empty the active stack");
       return false;
    }
 
    TValue *inner_owner = owner + 8;
    lj_defer_arm(lua, owner, 2, 0, 1);
+   lj_defer_arm(lua, inner_owner, 2, 0, 1);
+   if (lua->defer_stack.size() != 2 or lua->defer_stack[0].owner_base IS lua->defer_stack[1].owner_base or
+       not lj_defer_consume(lua, inner_owner, 2) or not lj_defer_consume(lua, owner, 2)) {
+      Log.error("identical defer slots in nested activations did not retain independent LIFO ownership");
+      return false;
+   }
+
+   lj_defer_arm(lua, owner, 2, 0, 1);
    lj_defer_arm(lua, owner, 5, 1, 4);
    lj_defer_arm(lua, inner_owner, 1, 0, 0);
    lj_defer_unwind(lua, owner);
-   if (lua->defer_frames.size() != 1 or lua->defer_frames[0].owner_base != owner_offset or
-       lua->defer_frames[0].registrations.size() != 2) {
-      Log.error("unwinding did not discard only frame states above the surviving owner");
+   if (lua->defer_stack.size() != 2 or lua->defer_stack[0].owner_base != owner_offset or
+       lua->defer_stack[1].owner_base != owner_offset) {
+      Log.error("unwinding did not discard only registrations above the surviving owner");
       return false;
    }
 
    lj_defer_discard(lua, owner, 4);
-   if (lua->defer_frames.size() != 1 or lua->defer_frames[0].registrations.size() != 1 or
-       lua->defer_frames[0].registrations[0].callable_slot != 2) {
+   if (lua->defer_stack.size() != 1 or lua->defer_stack[0].callable_slot != 2) {
       Log.error("lexical defer discard removed registrations outside the abandoned slot range");
       return false;
    }
-   if (not lj_defer_consume(lua, owner, 2) or not lua->defer_frames.empty()) {
+   if (not lj_defer_consume(lua, owner, 2) or not lua->defer_stack.empty()) {
       Log.error("surviving defer registration could not be consumed after a partial unwind");
       return false;
+   }
+
+   for (uint32_t slot = 0; slot < 3; ++slot) lj_defer_arm(lua, owner, slot, 0, 0);
+   for (uint32_t slot = 3; slot > 0; --slot) {
+      if (not lj_defer_consume(lua, owner, slot - 1)) {
+         Log.error("failed to consume a defer while establishing the active-stack high-water mark");
+         return false;
+      }
+   }
+   const size_t retained_capacity = lua->defer_stack.capacity();
+   for (uint32_t iteration = 0; iteration < 32; ++iteration) {
+      for (uint32_t slot = 0; slot < 3; ++slot) lj_defer_arm(lua, owner, slot, 0, 0);
+      for (uint32_t slot = 3; slot > 0; --slot) {
+         if (not lj_defer_consume(lua, owner, slot - 1)) {
+            Log.error("failed to consume a repeated defer registration");
+            return false;
+         }
+      }
+      if (not lua->defer_stack.empty() or lua->defer_stack.capacity() != retained_capacity) {
+         Log.error("repeated defer scopes did not retain stable empty-stack capacity");
+         return false;
+      }
    }
 
    return true;

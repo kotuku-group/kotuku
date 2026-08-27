@@ -550,6 +550,48 @@ end
    assert(join(order) is 'enter-3,enter-2,enter-1,leave-1,defer-1,leave-2,defer-2,leave-3,defer-3', "Unexpected recursive defer order: '" .. join(order) .. "'")
 end
 
+function flat_stack_recurse(Depth:num, Events:table)
+   defer(Captured)
+      Events.insert('defer-' .. tostring(Captured))
+   end(Depth)
+   Events.insert('body-' .. tostring(Depth))
+   if Depth > 0 then flat_stack_recurse(Depth - 1, Events) end
+end
+
+@Test function RecursiveActivationsShareCallableSlot()
+   local events = {}
+   flat_stack_recurse(3, events)
+   assert(join(events) is 'body-3,body-2,body-1,body-0,defer-0,defer-1,defer-2,defer-3',
+      "Recursive activations of one compiled defer must retain independent registrations: '" .. join(events) .. "'")
+end
+
+function conditional_flat_stack(First:bool, Second:bool, Events:table)
+   defer Events.insert('outer') end
+   if First then
+      defer Events.insert('first-a') end
+      if Second then defer Events.insert('second') end end
+      defer Events.insert('first-b') end
+      Events.insert('body')
+   end
+end
+
+@Test function ConditionalRegistrationUsesDynamicOrder()
+   local events = {}
+   conditional_flat_stack(true, true, events)
+   assert(join(events) is 'second,body,first-b,first-a,outer',
+      "Reached conditional defers should retain dynamic LIFO order: '" .. join(events) .. "'")
+
+   events.clear()
+   conditional_flat_stack(true, false, events)
+   assert(join(events) is 'body,first-b,first-a,outer',
+      "An unreached conditional defer must not leave an active registration: '" .. join(events) .. "'")
+
+   events.clear()
+   conditional_flat_stack(false, true, events)
+   assert(join(events) is 'outer',
+      "A skipped conditional scope must leave only its active outer defer: '" .. join(events) .. "'")
+end
+
 @Test function RepeatedLoopAndRecursiveUnwind()
    local events = {}
    local caught_message = nil
@@ -711,6 +753,56 @@ end
    assert(join(events) is 'abandoned,survivor-body,survivor',
       "An abandoned frame should not leak registrations into a later call: '" .. join(events) .. "'")
    assert(caught_message.find('abandon frame') != nil, 'Abandoning a frame should preserve the body error')
+end
+
+function repeated_flat_stack_iteration(Index:num, ShouldThrow:bool, Events:table)
+   defer(Captured) Events.insert('cleanup-' .. tostring(Captured)) end(Index)
+   Events.insert('body-' .. tostring(Index))
+   if ShouldThrow then error('iteration failure ' .. tostring(Index)) end
+end
+
+@Test function RepeatedNormalAndThrowingIterationsLeaveNoRegistrations()
+   local events = {}
+   for iteration in {0 to 12} do
+      try
+         repeated_flat_stack_iteration(iteration, iteration % 2 is 1, events)
+      except e
+         assert(e.message.find('iteration failure') != nil, 'The expected iteration error should propagate')
+      end
+   end
+   repeated_flat_stack_iteration(99, false, events)
+
+   local event_log = ',' .. join(events) .. ','
+   for iteration in {0 to 12} do
+      assert(event_log.count(',cleanup-' .. tostring(iteration) .. ',') is 1,
+         f'Iteration {iteration} should execute its defer exactly once')
+   end
+   assert(event_log.count(',cleanup-99,') is 1, 'A later normal call should execute only its own defer once')
+   assert(event_log.endsWith('body-99,cleanup-99,'),
+      'No stale registration should execute after the final normal cleanup')
+end
+
+function nested_defer_from_cleanup(Events:table)
+   defer Events.insert('nested-defer') end
+   Events.insert('nested-body')
+end
+
+@Test function CleanupHandlerPreservesOuterRegistrationStack()
+   local events = {}
+   function subject()
+      defer events.insert('outer-first') end
+      defer
+         events.insert('handler-enter')
+         nested_defer_from_cleanup(events)
+         events.insert('handler-leave')
+      end
+      defer events.insert('outer-last') end
+   end
+
+   subject()
+   assert(join(events) is
+      'outer-last,handler-enter,nested-body,nested-defer,handler-leave,outer-first',
+      "Nested Tiri cleanup must preserve the remaining outer registration order: '" .. join(events) .. "'")
 end
 
 @Test function ClosureReturn()
