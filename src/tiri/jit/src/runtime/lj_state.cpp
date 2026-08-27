@@ -478,21 +478,16 @@ extern "C" void lj_defer_arm(lua_State *L, TValue *OwnerBase, uint32_t CallableS
    }
 
    ptrdiff_t owner_base = savestack(L, OwnerBase);
-   auto frame = std::find_if(L->defer_frames.rbegin(), L->defer_frames.rend(),
-      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
-   if (frame IS L->defer_frames.rend()) {
-      L->defer_frames.push_back(DeferFrameState{ .owner_base = owner_base });
-      frame = L->defer_frames.rbegin();
-   }
-
-   auto duplicate = std::find_if(frame->registrations.rbegin(), frame->registrations.rend(),
-      [CallableSlot](const DeferRegistration &Registration) {
-         return Registration.callable_slot IS CallableSlot;
+#ifdef LUA_USE_ASSERT
+   auto duplicate = std::find_if(L->defer_stack.rbegin(), L->defer_stack.rend(),
+      [owner_base, CallableSlot](const DeferRegistration &Registration) {
+         return Registration.owner_base IS owner_base and Registration.callable_slot IS CallableSlot;
       });
-   lj_assertL(duplicate IS frame->registrations.rend(), "defer callable slot armed more than once");
-   if (duplicate != frame->registrations.rend()) return;
+   lj_assertL(duplicate IS L->defer_stack.rend(), "defer callable slot armed more than once");
+#endif
 
-   frame->registrations.push_back(DeferRegistration{
+   L->defer_stack.push_back(DeferRegistration{
+      .owner_base = owner_base,
       .callable_slot = uint8_t(CallableSlot),
       .argument_count = uint8_t(ArgumentCount),
       .scope_base = uint8_t(ScopeBase)
@@ -515,21 +510,15 @@ extern "C" bool lj_defer_consume(lua_State *L, TValue *OwnerBase, uint32_t Calla
    if (OwnerBase < stack or OwnerBase > stack_end or CallableSlot >= LJ_MAX_SLOTS) return false;
 
    ptrdiff_t owner_base = savestack(L, OwnerBase);
-   auto frame = std::find_if(L->defer_frames.rbegin(), L->defer_frames.rend(),
-      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
-   lj_assertL(frame != L->defer_frames.rend(), "defer consumption has no owning frame state");
-   if (frame IS L->defer_frames.rend()) return false;
+   lj_assertL(not L->defer_stack.empty(), "defer consumption has no active registration");
+   if (L->defer_stack.empty()) return false;
 
-   auto registration = std::find_if(frame->registrations.rbegin(), frame->registrations.rend(),
-      [CallableSlot](const DeferRegistration &Registration) {
-         return Registration.callable_slot IS CallableSlot;
-      });
-   lj_assertL(registration != frame->registrations.rend(), "defer callable slot is not armed");
-   if (registration IS frame->registrations.rend()) return false;
+   const DeferRegistration &registration = L->defer_stack.back();
+   lj_assertL(registration.owner_base IS owner_base, "defer registrations consumed out of activation order");
+   lj_assertL(registration.callable_slot IS CallableSlot, "defer registrations consumed out of LIFO order");
+   if (registration.owner_base != owner_base or registration.callable_slot != CallableSlot) return false;
 
-   lj_assertL(registration IS frame->registrations.rbegin(), "defer registrations consumed out of LIFO order");
-   frame->registrations.erase(std::next(registration).base());
-   if (frame->registrations.empty()) L->defer_frames.erase(std::next(frame).base());
+   L->defer_stack.pop_back();
    return true;
 }
 
@@ -548,21 +537,15 @@ bool lj_defer_find_scope(lua_State *State, const TValue *OwnerBase, uint32_t Low
    if (not State or not OwnerBase or not ScopeBase or LowerCallableSlot > UpperCallableSlot) return false;
 
    ptrdiff_t owner_base = savestack(State, OwnerBase);
-   auto frame = std::find_if(State->defer_frames.rbegin(), State->defer_frames.rend(),
-      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
-   if (frame IS State->defer_frames.rend()) return false;
-
-   bool found = false;
-   uint32_t scope_base = 0;
-   for (const DeferRegistration &registration : frame->registrations) {
-      if (registration.callable_slot < LowerCallableSlot or registration.callable_slot >= UpperCallableSlot) continue;
-      if (not found or registration.scope_base > scope_base) {
-         found = true;
-         scope_base = registration.scope_base;
-      }
+   // Registrations are appended in dynamic execution order.  The newest matching entry therefore belongs to the
+   // innermost active lexical scope, irrespective of the bytecode slots used by conditional control flow.
+   for (auto registration = State->defer_stack.rbegin(); registration != State->defer_stack.rend(); ++registration) {
+      if (registration->owner_base != owner_base or registration->callable_slot < LowerCallableSlot or
+          registration->callable_slot >= UpperCallableSlot) continue;
+      *ScopeBase = registration->scope_base;
+      return true;
    }
-   if (found) *ScopeBase = scope_base;
-   return found;
+   return false;
 }
 
 //********************************************************************************************************************
@@ -574,16 +557,12 @@ bool lj_defer_peek_scope(lua_State *State, const TValue *OwnerBase, uint32_t Low
    if (not State or not OwnerBase or not Registration or LowerCallableSlot > UpperCallableSlot) return false;
 
    ptrdiff_t owner_base = savestack(State, OwnerBase);
-   auto frame = std::find_if(State->defer_frames.rbegin(), State->defer_frames.rend(),
-      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
-   if (frame IS State->defer_frames.rend()) return false;
-
-   auto registration = std::find_if(frame->registrations.rbegin(), frame->registrations.rend(),
-      [LowerCallableSlot, UpperCallableSlot, ScopeBase](const DeferRegistration &Candidate) {
-         return Candidate.callable_slot >= LowerCallableSlot and Candidate.callable_slot < UpperCallableSlot and
-            Candidate.scope_base IS ScopeBase;
+   auto registration = std::find_if(State->defer_stack.rbegin(), State->defer_stack.rend(),
+      [owner_base, LowerCallableSlot, UpperCallableSlot, ScopeBase](const DeferRegistration &Candidate) {
+         return Candidate.owner_base IS owner_base and Candidate.callable_slot >= LowerCallableSlot and
+            Candidate.callable_slot < UpperCallableSlot and Candidate.scope_base IS ScopeBase;
       });
-   if (registration IS frame->registrations.rend()) return false;
+   if (registration IS State->defer_stack.rend()) return false;
    *Registration = *registration;
    return true;
 }
@@ -595,8 +574,10 @@ bool lj_defer_has_owner_above(lua_State *State, const TValue *SurvivingBase) noe
 {
    if (not State or not SurvivingBase) return false;
    ptrdiff_t surviving_base = savestack(State, SurvivingBase);
-   return std::any_of(State->defer_frames.begin(), State->defer_frames.end(),
-      [surviving_base](const DeferFrameState &Frame) { return Frame.owner_base > surviving_base; });
+   return std::any_of(State->defer_stack.begin(), State->defer_stack.end(),
+      [surviving_base](const DeferRegistration &Registration) {
+         return Registration.owner_base > surviving_base;
+      });
 }
 
 //********************************************************************************************************************
@@ -615,15 +596,12 @@ void lj_defer_discard(lua_State *State, const TValue *OwnerBase, uint32_t Minimu
    if (OwnerBase < stack or OwnerBase > stack_end or MinimumCallableSlot > LJ_MAX_SLOTS) return;
 
    ptrdiff_t owner_base = savestack(State, OwnerBase);
-   auto frame = std::find_if(State->defer_frames.begin(), State->defer_frames.end(),
-      [owner_base](const DeferFrameState &Frame) { return Frame.owner_base IS owner_base; });
-   if (frame IS State->defer_frames.end()) return;
-
-   frame->registrations.erase(std::remove_if(frame->registrations.begin(), frame->registrations.end(),
-      [MinimumCallableSlot](const DeferRegistration &Registration) {
-         return Registration.callable_slot >= MinimumCallableSlot;
-      }), frame->registrations.end());
-   if (frame->registrations.empty()) State->defer_frames.erase(frame);
+   // Protected transfers can abandon a lexical range while retaining earlier entries for the same activation.
+   // Keep the exceptional path general so registrations outside that range retain their dynamic order.
+   State->defer_stack.erase(std::remove_if(State->defer_stack.begin(), State->defer_stack.end(),
+      [owner_base, MinimumCallableSlot](const DeferRegistration &Registration) {
+         return Registration.owner_base IS owner_base and Registration.callable_slot >= MinimumCallableSlot;
+      }), State->defer_stack.end());
 }
 
 void lj_defer_unwind(lua_State *State, const TValue *SurvivingBase) noexcept
@@ -636,9 +614,19 @@ void lj_defer_unwind(lua_State *State, const TValue *SurvivingBase) noexcept
    if (SurvivingBase < stack or SurvivingBase > stack_end) return;
 
    ptrdiff_t surviving_base = savestack(State, SurvivingBase);
-   State->defer_frames.erase(std::remove_if(State->defer_frames.begin(), State->defer_frames.end(),
-      [surviving_base](const DeferFrameState &Frame) { return Frame.owner_base > surviving_base; }),
-      State->defer_frames.end());
+   // Nested activations register after their callers and finish before control returns, so abandoned owners form a
+   // suffix.  Truncating that suffix retains vector capacity for later calls.
+   while (not State->defer_stack.empty() and State->defer_stack.back().owner_base > surviving_base) {
+      State->defer_stack.pop_back();
+   }
+#ifdef LUA_USE_ASSERT
+   auto abandoned = std::find_if(State->defer_stack.begin(), State->defer_stack.end(),
+      [surviving_base](const DeferRegistration &Registration) {
+         return Registration.owner_base > surviving_base;
+      });
+   lj_assertG_(G(State), abandoned IS State->defer_stack.end(),
+      "abandoned defer registrations did not form a stack suffix");
+#endif
 }
 
 extern "C" void lj_array_view_mode(lua_State *L, uint32_t Enabled)
@@ -948,7 +936,7 @@ static void close_state(lua_State *L)
 {
    global_State *g = G(L);
    // Teardown also covers states terminated while an activation or asynchronous root boundary is still live.
-   L->defer_frames.clear();
+   L->defer_stack.clear();
    L->context_stack.clear();
    L->context_active = 0;
    L->context_root_floors.clear();
@@ -1108,7 +1096,7 @@ void lj_state_free(global_State* g, lua_State *L)
    if (obj2gco(L) IS gcref(g->cur_L)) setgcrefnull(g->cur_L);
    lj_assertG(L->context_stack.empty(), "state freed with active contextual activations");
    lj_assertG(L->context_root_floors.empty(), "state freed with active asynchronous root boundaries");
-   L->defer_frames.clear();
+   L->defer_stack.clear();
 
    if (L->parser_diagnostics) { delete (ParserDiagnostics*)L->parser_diagnostics; L->parser_diagnostics = nullptr; }
    if (L->parser_tips) { delete L->parser_tips; L->parser_tips = nullptr; }
