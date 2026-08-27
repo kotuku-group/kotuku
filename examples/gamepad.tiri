@@ -31,6 +31,10 @@ Gamepad demonstration
       x=win.margins.left, y=110, string='Buttons:', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
    })
 
+   --txtStatus = viewport.new('vectortext', {
+   --   x=win.margins.left, y=140, string='Controller:', face='Noto Sans', fontSize=16, fill='rgb(0,0,0)'
+   --})
+
    hardness = 0.75
    if hardness < 0 then
       hardness = 0
@@ -45,7 +49,7 @@ Gamepad demonstration
       min    = 0,
       max    = 1,
       x      = win.margins.left,
-      y      = 140,
+      y      = 120,
       events = {
          activate = function(Widget, Value)
             hardness = Value
@@ -128,13 +132,16 @@ function hitBall(NormalX, NormalY, ImpactSpeed)
    end
 end
 
-   ctrl = obj.new('controller', { port=0 })
+   controller_port = tonumber(arg('port', '-1'))
+   ctrl = obj.new('controller', { port=controller_port })
    err, controllerTimer = mSys.SubscribeTimer(1/60, function(Subscriber, Elapsed, CurrentTime)
-      ctrl.acQuery()
+      query_error = ctrl.acQuery()
 
       txtLeftStick.string  = 'Left Stick: ' .. string.format('%.2f %.2f', ctrl.leftStickX, ctrl.leftStickY)
       txtRightStick.string = 'Right Stick: ' .. string.format('%.2f %.2f', ctrl.rightStickX, ctrl.rightStickY)
       txtButtons.string    = 'Buttons: ' .. string.format('%.8x', ctrl.buttons)
+      port_label = ctrl.port is -1 ? '-1 (primary)' : tostring(ctrl.port)
+      --txtStatus.string = f"Controller: port {port_label}, total ports {ctrl.totalPorts}, {mSys.GetErrorMsg(query_error)}"
 
       dt = 1 / 60
       if last_time then

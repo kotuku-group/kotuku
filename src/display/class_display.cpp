@@ -18,6 +18,7 @@ display mode, palette, gamma or hardware-facing bitmap.
 #include "defs.h"
 
 #ifdef _WIN32
+#include "win32/controller.h"
 using namespace display;
 #endif
 
@@ -415,6 +416,7 @@ extDisplay::~extDisplay()
 #endif
 
 #ifdef _WIN32
+   if (WindowHandle) winControllerRemoveWindow(HWND(WindowHandle));
    if ((Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
       if (WindowHandle) winDestroyWindow(WindowHandle);
    }
@@ -953,6 +955,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       }
 
       Self->Flags |= SCR::HOSTED;
+      winControllerSetWindow(HWND(Self->WindowHandle), (Self->Flags & SCR::GRAB_CONTROLLERS) != SCR::NIL);
 
       // Get the size of the host window frame.  Note that the winCreateScreen() function we called earlier
       // would have already reset the X/Y fields so that they reflect the absolute client position of the window.
@@ -2279,6 +2282,12 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
       auto accept = Value & ACCEPT_FLAGS;
       Self->Flags = (Self->Flags & (~ACCEPT_FLAGS)) | accept;
 
+      #ifdef _WIN32
+         if (Self->WindowHandle) {
+            winControllerSetWindow(HWND(Self->WindowHandle), (Self->Flags & SCR::GRAB_CONTROLLERS) != SCR::NIL);
+         }
+      #endif
+
       if ((((Self->Flags & SCR::BORDERLESS) != SCR::NIL) and ((Value & SCR::BORDERLESS) IS SCR::NIL)) or
           (((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) and ((Value & SCR::BORDERLESS) != SCR::NIL))) {
       #ifdef _WIN32
@@ -2298,6 +2307,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
                maximise, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? false : true, title.data(), FALSE, 255, TRUE))) {
 
             Self->Flags = Self->Flags ^ SCR::BORDERLESS;
+            winControllerSetWindow(HWND(Self->WindowHandle), (Self->Flags & SCR::GRAB_CONTROLLERS) != SCR::NIL);
 
             winSetSurfaceID(Self->WindowHandle, surface_id);
             winGetMargins(Self->WindowHandle, &Self->LeftMargin, &Self->TopMargin, &Self->RightMargin, &Self->BottomMargin);

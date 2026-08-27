@@ -11,6 +11,14 @@ void MsgMovement(OBJECTID SurfaceID, double AbsX, double AbsY, int WinX, int Win
 void MsgWheelMovement(OBJECTID SurfaceID, float Wheel) { DriverWheelMovement(SurfaceID, Wheel); }
 void MsgButtonPress(int Buttons, int State) { DriverButtonInput(Buttons, bool(State)); }
 void MsgFocusState(OBJECTID SurfaceID, int State) { DriverFocusState(SurfaceID, bool(State)); }
+void MsgControllerPorts(int Port, bool Connected, int Total) { DriverControllerPorts(Port, Connected, Total); }
+
+void MsgControllerLog(bool Warning, const char *Message)
+{
+   kt::Log log("ControllerManager");
+   if (Warning) log.warning("%s", Message);
+   else log.msg("%s", Message);
+}
 
 void MsgResizedWindow(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, int WinHeight,
    int ClientX, int ClientY, int ClientWidth, int ClientHeight)
