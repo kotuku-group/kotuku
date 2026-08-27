@@ -610,8 +610,8 @@ struct fprototype {
    }
 };
 
-static_assert(FPROTO_MAX_PARAMS <= std::numeric_limits<uint8_t>::max());
-static_assert(PROTO_MAX_RETURN_TYPES <= std::numeric_limits<uint8_t>::max());
+static_assert(FPROTO_MAX_PARAMS <= (std::numeric_limits<uint8_t>::max)());
+static_assert(PROTO_MAX_RETURN_TYPES <= (std::numeric_limits<uint8_t>::max)());
 static_assert(sizeof(fprototype) IS 16);
 
 // Lookup key for prototype registry (interface_hash=0 for globals)
