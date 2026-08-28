@@ -93,7 +93,7 @@ public:
    ERR allocBitmap(extBitmap *Bitmap) override;
    ERR freeBitmap(extBitmap *Bitmap) override;
    ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) override { return ERR::NoSupport; }
-   ERR lockBitmap(extBitmap *Bitmap) override;
+   ERR lockBitmap(extBitmap *Bitmap, int16_t Access) override;
    ERR unlockBitmap(extBitmap *Bitmap) override { return ERR::Okay; }
    ERR bitmapRoutines(extBitmap *Bitmap) override;
 
@@ -551,7 +551,10 @@ ERR Win32Driver::freeBitmap(extBitmap *Bitmap)
    return ERR::Okay;
 }
 
-ERR Win32Driver::lockBitmap(extBitmap *Bitmap)
+// GDI video bitmaps are read through the device context by the pixel routines rather than a host-side snapshot, so
+// there is no read-back for Access to control.
+
+ERR Win32Driver::lockBitmap(extBitmap *Bitmap, int16_t)
 {
    if (not Bitmap) return ERR::NullArgs;
    if (not Bitmap->Data) return ERR::FieldNotSet;

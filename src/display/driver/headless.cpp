@@ -50,7 +50,7 @@ ERR HeadlessDriver::flush() { return ERR::Okay; }
 ERR HeadlessDriver::allocBitmap(extBitmap *) { return ERR::NoSupport; }
 ERR HeadlessDriver::freeBitmap(extBitmap *) { return ERR::NoSupport; }
 ERR HeadlessDriver::resizeBitmap(extBitmap *, int, int) { return ERR::NoSupport; }
-ERR HeadlessDriver::lockBitmap(extBitmap *) { return ERR::NoSupport; }
+ERR HeadlessDriver::lockBitmap(extBitmap *, int16_t) { return ERR::NoSupport; }
 ERR HeadlessDriver::unlockBitmap(extBitmap *) { return ERR::NoSupport; }
 ERR HeadlessDriver::bitmapRoutines(extBitmap *) { return ERR::NoSupport; }
 ERR HeadlessDriver::setCursor(HOSTWINDOW, PTC) { return ERR::NoSupport; }

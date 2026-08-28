@@ -56,7 +56,7 @@ public:
    ERR allocBitmap(extBitmap *Bitmap) override;
    ERR freeBitmap(extBitmap *Bitmap) override;
    ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) override;
-   ERR lockBitmap(extBitmap *Bitmap) override;
+   ERR lockBitmap(extBitmap *Bitmap, int16_t Access) override;
    ERR unlockBitmap(extBitmap *Bitmap) override;
    ERR bitmapRoutines(extBitmap *Bitmap) override;
 

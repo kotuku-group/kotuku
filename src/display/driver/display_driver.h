@@ -22,7 +22,7 @@ struct ColourFormat;
 struct DisplayInfo;
 struct resolution;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 3;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 4;
 
 enum class DCAP : uint64_t {
    NIL             = 0,
@@ -134,7 +134,12 @@ public:
    virtual ERR allocBitmap(extBitmap *Bitmap) = 0;
    virtual ERR freeBitmap(extBitmap *Bitmap) = 0;
    virtual ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) = 0;
-   virtual ERR lockBitmap(extBitmap *Bitmap) = 0;
+
+   // Access is a mask of SURFACE_READ and SURFACE_WRITE.  Drivers must copy the host surface into the bitmap's
+   // data area only when SURFACE_READ is requested, because the read-back is expensive and the caller may intend
+   // to overwrite the content in full.
+
+   virtual ERR lockBitmap(extBitmap *Bitmap, int16_t Access) = 0;
    virtual ERR unlockBitmap(extBitmap *Bitmap) = 0;
    virtual ERR bitmapRoutines(extBitmap *Bitmap) = 0;
 
@@ -198,7 +203,7 @@ public:
    ERR allocBitmap(extBitmap *Bitmap) override;
    ERR freeBitmap(extBitmap *Bitmap) override;
    ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) override;
-   ERR lockBitmap(extBitmap *Bitmap) override;
+   ERR lockBitmap(extBitmap *Bitmap, int16_t Access) override;
    ERR unlockBitmap(extBitmap *Bitmap) override;
    ERR bitmapRoutines(extBitmap *Bitmap) override;
    ERR setCursor(HOSTWINDOW Window, PTC CursorID) override;

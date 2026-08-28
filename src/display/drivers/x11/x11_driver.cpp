@@ -900,7 +900,7 @@ static void refresh_readable(X11Driver::State *State, extBitmap *Bitmap, X11Bitm
       0xffffffff, ZPixmap, Record->Readable, Bitmap->Clip.Left, Bitmap->Clip.Top);
 }
 
-ERR X11Driver::lockBitmap(extBitmap *Bitmap)
+ERR X11Driver::lockBitmap(extBitmap *Bitmap, int16_t Access)
 {
    if (not Bitmap) return ERR::NullArgs;
    auto record = x11_bitmap(Bitmap);
@@ -909,6 +909,11 @@ ERR X11Driver::lockBitmap(extBitmap *Bitmap)
    // DGA maps the framebuffer directly, so no read-back is required.
 
    if (((Bitmap->Flags & BMF::X11_DGA) != BMF::NIL) and Data->DGA) return ERR::Okay;
+
+   // A host-side copy is required only for readers.  Write-only callers reach the drawable through the pixel
+   // routines, so allocating and populating a readable image for them would be wasted effort.
+
+   if (not (Access & SURFACE_READ)) return ERR::Okay;
 
    if (record->Readable) {
       // Reuse the existing image when it remains large enough for the bitmap.

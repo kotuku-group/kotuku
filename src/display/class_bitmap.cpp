@@ -237,7 +237,7 @@ ERR unlock_surface(extBitmap *Bitmap)
 
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
-   if (glDriver) return glDriver->lockBitmap(Bitmap);
+   if (glDriver) return glDriver->lockBitmap(Bitmap, Access);
    if (not Bitmap->Data) {
       kt::Log log(__FUNCTION__);
       log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
