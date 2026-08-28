@@ -82,8 +82,6 @@ DT GetDisplayType(void)
    if ((glDriver) and (not glHeadless)) return glDriver->displayType();
 #ifdef _WIN32
    return DT::WINGDI;
-#elif __xwindows__
-   return DT::X11;
 #elif _GLES_
    return DT::GLES;
 #else
@@ -142,28 +140,6 @@ Okay
 ERR SetHostOption(HOST Option, int64_t Value)
 {
    if (glDriver) return glDriver->setHostOption(Option, Value);
-#ifdef __xwindows__
-   kt::Log log(__FUNCTION__);
-
-   switch (Option) {
-      case HOST::TRAY_ICON:
-         glTrayIcon = Value;
-         if (glTrayIcon) glTaskBar = 0;
-         break;
-
-      case HOST::TASKBAR:
-         glTaskBar = Value;
-         if (glTaskBar) glTrayIcon = 0;
-         break;
-
-      case HOST::STICK_TO_FRONT:
-         glStickToFront = Value;
-         break;
-
-      default:
-         log.warning("Invalid option %d, Data %" PF64, int(Option), (long long)Value);
-   }
-#endif
 
    return ERR::Okay;
 }

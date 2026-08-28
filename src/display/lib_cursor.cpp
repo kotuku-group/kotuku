@@ -8,99 +8,6 @@ Name: Cursor
 
 #include "defs.h"
 
-#ifdef __xwindows__
-
-#undef True // X11 name clash
-#undef False // X11 name clash
-
-struct XCursor {
-   Cursor XCursor;
-   PTC CursorID;
-   int XCursorID;
-};
-
-static XCursor XCursors[] = {
-   { 0, PTC::DEFAULT,           XC_left_ptr },
-   { 0, PTC::SIZE_BOTTOM_LEFT,  XC_bottom_left_corner },
-   { 0, PTC::SIZE_BOTTOM_RIGHT, XC_bottom_right_corner },
-   { 0, PTC::SIZE_TOP_LEFT,     XC_top_left_corner },
-   { 0, PTC::SIZE_TOP_RIGHT,    XC_top_right_corner },
-   { 0, PTC::SIZE_LEFT,         XC_left_side },
-   { 0, PTC::SIZE_RIGHT,        XC_right_side },
-   { 0, PTC::SIZE_TOP,          XC_top_side },
-   { 0, PTC::SIZE_BOTTOM,       XC_bottom_side },
-   { 0, PTC::CROSSHAIR,         XC_crosshair },
-   { 0, PTC::SLEEP,             XC_clock },
-   { 0, PTC::SIZING,            XC_sizing },
-   { 0, PTC::SPLIT_VERTICAL,    XC_sb_v_double_arrow },
-   { 0, PTC::SPLIT_HORIZONTAL,  XC_sb_h_double_arrow },
-   { 0, PTC::MAGNIFIER,         XC_hand2 },
-   { 0, PTC::HAND,              XC_hand2 },
-   { 0, PTC::HAND_LEFT,         XC_hand1 },
-   { 0, PTC::HAND_RIGHT,        XC_hand1 },
-   { 0, PTC::TEXT,              XC_xterm },
-   { 0, PTC::PAINTBRUSH,        XC_pencil },
-   { 0, PTC::STOP,              XC_left_ptr },
-   { 0, PTC::INVISIBLE,         XC_dot },
-   { 0, PTC::DRAGGABLE,         XC_sizing }
-};
-
-static Cursor create_blank_cursor(void)
-{
-   kt::Log log(__FUNCTION__);
-   Pixmap data_pixmap, mask_pixmap;
-   XColor black = { 0, 0, 0, 0 };
-   Window rootwindow;
-   Cursor cursor;
-
-   log.function("Creating blank cursor for X11.");
-
-   rootwindow = DefaultRootWindow(XDisplay);
-
-   data_pixmap = XCreatePixmap(XDisplay, rootwindow, 1, 1, 1);
-   mask_pixmap = XCreatePixmap(XDisplay, rootwindow, 1, 1, 1);
-
-   //XSetWindowBackground(XDisplay, data_pixmap, 0);
-   //XSetWindowBackground(XDisplay, mask_pixmap, 0);
-   //XClearArea(XDisplay, data_pixmap, 0, 0, 1, 1, False);
-   //XClearArea(XDisplay, mask_pixmap, 0, 0, 1, 1, False);
-
-   cursor = XCreatePixmapCursor(XDisplay, data_pixmap, mask_pixmap, &black, &black, 0, 0);
-
-   XFreePixmap(XDisplay, data_pixmap); // According to XFree documentation, it is OK to free the pixmaps
-   XFreePixmap(XDisplay, mask_pixmap);
-
-   XSync(XDisplay, 0);
-   return cursor;
-}
-
-static Cursor get_x11_cursor(PTC CursorID)
-{
-   kt::Log log(__FUNCTION__);
-
-   for (int16_t i=0; i < std::ssize(XCursors); i++) {
-      if (XCursors[i].CursorID IS CursorID) return XCursors[i].XCursor;
-   }
-
-   log.warning("Cursor #%d is not a recognised cursor ID.", int(CursorID));
-   return XCursors[0].XCursor;
-}
-
-void init_xcursors(void)
-{
-   for (int16_t i=0; i < std::ssize(XCursors); i++) {
-      if (XCursors[i].CursorID IS PTC::INVISIBLE) XCursors[i].XCursor = create_blank_cursor();
-      else XCursors[i].XCursor = XCreateFontCursor(XDisplay, XCursors[i].XCursorID);
-   }
-}
-
-void free_xcursors(void)
-{
-   for (int16_t i=0; i < std::ssize(XCursors); i++) {
-      if (XCursors[i].XCursor) XFreeCursor(XDisplay, XCursors[i].XCursor);
-   }
-}
-#endif
 
 namespace gfx {
 
@@ -478,34 +385,18 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
 
          log.trace("Adjusting hardware/hosted cursor image.");
 
-         if (glDriver) {
-            if (glDriver->setCursor(CursorID) IS ERR::Okay) pointer->CursorID = CursorID;
-         }
-         #ifdef __xwindows__
-         else {
-
-            APTR xwin;
-            Cursor xcursor;
-
-            if (pointer->SurfaceID) {
-               if (ScopedObjectLock<objSurface> surface(pointer->SurfaceID, 1000); surface.granted()) {
-                  if (surface->DisplayID) {
-                     if (ScopedObjectLock<objDisplay> display(surface->DisplayID, 1000); display.granted()) {
-                        if ((!display->getWindowHandle(xwin)) and (xwin)) {
-                           xcursor = get_x11_cursor(CursorID);
-                           XDefineCursor(XDisplay, (Window)xwin, xcursor);
-                           XFlush(XDisplay);
-                           pointer->CursorID = CursorID;
-                        }
-                        else log.warning("Failed to acquire window handle for surface #%d.", pointer->SurfaceID);
+         if (glDriver and pointer->SurfaceID) {
+            if (ScopedObjectLock<objSurface> surface(pointer->SurfaceID, 1000); surface.granted()) {
+               if (surface->DisplayID) {
+                  if (ScopedObjectLock<extDisplay> display(surface->DisplayID, 1000); display.granted()) {
+                     if ((display->WindowHandle) and
+                           (glDriver->setCursor(display->WindowHandle, CursorID) IS ERR::Okay)) {
+                        pointer->CursorID = CursorID;
                      }
-                     else log.warning("Display of surface #%d undefined or inaccessible.", pointer->SurfaceID);
                   }
                }
             }
-            else log.warning("Pointer surface undefined or inaccessible.");
          }
-         #endif
       }
 
       if ((ObjectID < 0) and (GetClassID(ObjectID) IS CLASSID::SURFACE) and ((Flags & CRF::RESTRICT) IS CRF::NIL)) {
@@ -538,14 +429,6 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
          // Restrict the pointer to the specified surface
          pointer->RestrictID = ObjectID;
 
-         #ifdef __xwindows__
-            // Pointer grabbing has been turned off for X11 because LBreakout2 was not receiving
-            // movement events when run from the desktop.  The reason for this
-            // is that only the desktop (which does the X11 input handling) is allowed
-            // to grab the pointer.
-
-            //QueueAction(MT_GrabX11Pointer, pointer->Head.UID);
-         #endif
       }
       else log.warning("The pointer may only be restricted to public surfaces.");
    }

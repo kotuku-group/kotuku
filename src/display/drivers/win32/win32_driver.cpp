@@ -97,10 +97,10 @@ public:
    ERR unlockBitmap(extBitmap *Bitmap) override { return ERR::Okay; }
    ERR bitmapRoutines(extBitmap *Bitmap) override;
 
-   ERR setCursor(PTC CursorID) override;
-   ERR setCustomCursor(extBitmap *Image, int HotX, int HotY) override { return ERR::NoSupport; }
-   ERR showCursor(bool Visible) override;
-   ERR warpPointer(int X, int Y) override;
+   ERR setCursor(HOSTWINDOW Window, PTC CursorID) override;
+   ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) override { return ERR::NoSupport; }
+   ERR showCursor(HOSTWINDOW Window, bool Visible) override;
+   ERR warpPointer(HOSTWINDOW Window, int X, int Y) override;
    ERR pointerPosition(double &X, double &Y) override { return ERR::NoSupport; }
 
    ERR setHostOption(HOST Option, int64_t Value) override;
@@ -571,7 +571,7 @@ ERR Win32Driver::bitmapRoutines(extBitmap *Bitmap)
    return ERR::Okay;
 }
 
-ERR Win32Driver::setCursor(PTC CursorID)
+ERR Win32Driver::setCursor(HOSTWINDOW Window, PTC CursorID)
 {
    for (auto &cursor : glWin32Cursors) {
       if (cursor.CursorID IS CursorID) {
@@ -584,13 +584,13 @@ ERR Win32Driver::setCursor(PTC CursorID)
    return ERR::Search;
 }
 
-ERR Win32Driver::showCursor(bool Visible)
+ERR Win32Driver::showCursor(HOSTWINDOW Window, bool Visible)
 {
    winShowCursor(Visible ? 1 : 0);
    return ERR::Okay;
 }
 
-ERR Win32Driver::warpPointer(int X, int Y)
+ERR Win32Driver::warpPointer(HOSTWINDOW Window, int X, int Y)
 {
    winSetCursorPos(X, Y);
    return ERR::Okay;

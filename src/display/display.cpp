@@ -21,45 +21,6 @@ ERR GET_VDensity(extDisplay *Self, int *Value);
 
 std::array<uint8_t, 256 * 256> glAlphaLookup;
 
-#ifdef __xwindows__
-
-#define MAX_KEYCODES 256
-#define TIME_X11DBLCLICK 600
-
-void X11ManagerLoop(HOSTHANDLE, APTR);
-void handle_button_press(XEvent *);
-void handle_button_release(XEvent *);
-void handle_configure_notify(XConfigureEvent *);
-void handle_enter_notify(XCrossingEvent *);
-void handle_exposure(XExposeEvent *);
-void handle_key_press(XEvent *);
-void handle_key_release(XEvent *);
-void handle_motion_notify(XMotionEvent *);
-void handle_stack_change(XCirculateEvent *);
-
-X11Globals glX11;
-_XDisplay *XDisplay = 0;
-XVisualInfo glXInfoAlpha;
-bool glX11ShmImage = false;
-bool glXCompositeSupported = false;
-uint8_t KeyHeld[int(KEY::LIST_END)];
-uint8_t glTrayIcon = 0, glTaskBar = 1, glStickToFront = 0;
-KQ glKeyFlags = KQ::NIL;
-int glXFD = -1, glDGAPixelsPerLine = 0, glDGABankSize = 0;
-Atom atomSurfaceID = 0, XWADeleteWindow = 0, XWATakeFocus = 0;
-GC glXGC = 0, glClipXGC = 0;
-XWindowAttributes glRootWindow;
-Window glDisplayWindow = 0;
-Cursor C_Default;
-OBJECTPTR modXRR = nullptr;
-int16_t glPlugin = FALSE;
-APTR glDGAVideo = nullptr;
-
-#ifdef XRANDR_ENABLED
-bool glXRRAvailable = false;
-#endif
-
-#endif
 
 #ifdef _WIN32
 extern int16_t GetWindowsIcon()
@@ -144,165 +105,6 @@ static int glLockCount = 0;
 static OBJECTID glActiveDisplayID = 0;
 #endif
 
-#ifdef __xwindows__
-
-#ifdef XRANDR_ENABLED
-static XRRScreenSize glCustomSizes[] = { { 640,480,0,0 }, { 800,600,0,0 }, { 1024,768,0,0 }, { 1280,1024,0,0 } };
-static XRRScreenSize *glSizes = glCustomSizes;
-static int glSizeCount = std::ssize(glCustomSizes);
-static int glActualCount = 0;
-
-static bool get_xrandr_version(int *Major, int *Minor)
-{
-   if ((!XDisplay) or (!Major) or (!Minor)) return false;
-
-   int event_base = 0;
-   int error_base = 0;
-   if (!XRRQueryExtension(XDisplay, &event_base, &error_base)) return false;
-
-   *Major = 0;
-   *Minor = 0;
-   if (!XRRQueryVersion(XDisplay, Major, Minor)) return false;
-
-   return true;
-}
-
-static bool get_xrandr_refresh_rate(RRCrtc Crtc, float *RefreshRate)
-{
-   if ((!XDisplay) or (!RefreshRate)) return false;
-
-   auto resources = XRRGetScreenResourcesCurrent(XDisplay, DefaultRootWindow(XDisplay));
-   if (!resources) return false;
-
-   auto result = false;
-
-   for (int i=0; i < resources->ncrtc; i++) {
-      if ((Crtc) and (resources->crtcs[i] != Crtc)) continue;
-
-      if (auto crtc_info = XRRGetCrtcInfo(XDisplay, resources, resources->crtcs[i])) {
-         if ((crtc_info->mode) and (crtc_info->noutput > 0)) {
-            for (int m=0; m < resources->nmode; m++) {
-               if (resources->modes[m].id IS crtc_info->mode) {
-                  auto &mode = resources->modes[m];
-                  if ((mode.hTotal > 0) and (mode.vTotal > 0) and (mode.dotClock > 0)) {
-                     *RefreshRate = float((double)mode.dotClock / ((double)mode.hTotal * (double)mode.vTotal));
-                     result = true;
-                  }
-                  break;
-               }
-            }
-         }
-
-         XRRFreeCrtcInfo(crtc_info);
-      }
-
-      if (result) break;
-   }
-
-   XRRFreeScreenResources(resources);
-   return result;
-}
-
-static bool get_xrandr_output_refresh_rate(RROutput Output, float *RefreshRate)
-{
-   if ((!XDisplay) or (!Output) or (!RefreshRate)) return false;
-
-   auto resources = XRRGetScreenResourcesCurrent(XDisplay, DefaultRootWindow(XDisplay));
-   if (!resources) return false;
-
-   auto result = false;
-
-   if (auto output_info = XRRGetOutputInfo(XDisplay, resources, Output)) {
-      if (output_info->crtc) result = get_xrandr_refresh_rate(output_info->crtc, RefreshRate);
-      XRRFreeOutputInfo(output_info);
-   }
-
-   XRRFreeScreenResources(resources);
-   return result;
-}
-#endif
-
-static void get_x11_display_geometry(DisplayInfo *Info, int X, int Y, bool MatchPoint)
-{
-   if ((!Info) or (!XDisplay)) return;
-
-   Info->VirtualX      = 0;
-   Info->VirtualY      = 0;
-   Info->VirtualWidth  = glRootWindow.width;
-   Info->VirtualHeight = glRootWindow.height;
-   Info->MonitorX      = 0;
-   Info->MonitorY      = 0;
-   Info->MonitorWidth  = glRootWindow.width;
-   Info->MonitorHeight = glRootWindow.height;
-   Info->PhysicalWidth = DisplayWidthMM(XDisplay, DefaultScreen(XDisplay));
-   Info->PhysicalHeight = DisplayHeightMM(XDisplay, DefaultScreen(XDisplay));
-
-   #ifdef XRANDR_ENABLED
-      int major_version = 0;
-      int minor_version = 0;
-      if (not get_xrandr_version(&major_version, &minor_version)) return;
-
-      if ((major_version > 1) or ((major_version IS 1) and (minor_version >= 5))) {
-         int monitor_count = 0;
-         auto monitors = XRRGetMonitors(XDisplay, DefaultRootWindow(XDisplay), True, &monitor_count);
-         if ((monitors) and (monitor_count > 0)) {
-            int monitor_index = 0;
-            int primary_x = monitors[0].x;
-            int primary_y = monitors[0].y;
-
-            for (int i=0; i < monitor_count; i++) {
-               if (monitors[i].primary) {
-                  primary_x = monitors[i].x;
-                  primary_y = monitors[i].y;
-                  break;
-               }
-            }
-
-            for (int i=0; i < monitor_count; i++) {
-               if ((MatchPoint) and (X >= monitors[i].x) and (X < monitors[i].x + monitors[i].width) and
-                     (Y >= monitors[i].y) and (Y < monitors[i].y + monitors[i].height)) {
-                  monitor_index = i;
-                  break;
-               }
-               else if ((not MatchPoint) and (monitors[i].primary)) {
-                  monitor_index = i;
-                  break;
-               }
-            }
-
-            Info->MonitorX       = monitors[monitor_index].x - primary_x;
-            Info->MonitorY       = monitors[monitor_index].y - primary_y;
-            Info->MonitorWidth   = monitors[monitor_index].width;
-            Info->MonitorHeight  = monitors[monitor_index].height;
-            Info->PhysicalWidth  = monitors[monitor_index].mwidth;
-            Info->PhysicalHeight = monitors[monitor_index].mheight;
-
-            if (monitors[monitor_index].noutput > 0) {
-               float refresh_rate = 0;
-               if (get_xrandr_output_refresh_rate(monitors[monitor_index].outputs[0], &refresh_rate)) {
-                  Info->RefreshRate = refresh_rate;
-                  Info->MinRefresh  = refresh_rate;
-                  Info->MaxRefresh  = refresh_rate;
-               }
-            }
-
-            XRRFreeMonitors(monitors);
-            return;
-         }
-
-         if (monitors) XRRFreeMonitors(monitors);
-      }
-
-      float refresh_rate = 0;
-      if (get_xrandr_refresh_rate(0, &refresh_rate)) {
-         Info->RefreshRate = refresh_rate;
-         Info->MinRefresh  = refresh_rate;
-         Info->MaxRefresh  = refresh_rate;
-      }
-   #endif
-}
-
-#endif
 
 std::recursive_mutex glInputLock;
 
@@ -330,6 +132,9 @@ SWIN glpWindowType = SWIN::HOST;
 char glpDPMS[20] = "Standby";
 std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 std::atomic<int> glLastPort = -1;
+#ifndef _WIN32
+uint8_t glTrayIcon = 0, glTaskBar = 0, glStickToFront = 0;
+#endif
 
 std::vector<OBJECTID> glFocusList;
 std::recursive_mutex glFocusLock;
@@ -341,6 +146,7 @@ void DriverKeyRelease(KQ Flags, KEY Value);
 void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
 void DriverWheelMovement(OBJECTID SurfaceID, float Wheel);
 void DriverButtonInput(int Buttons, bool State);
+void DriverCrossing(OBJECTID SurfaceID, bool Entered, double AbsX, double AbsY);
 void DriverFocusState(OBJECTID SurfaceID, bool State);
 void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, int WinHeight,
    int ClientX, int ClientY, int ClientWidth, int ClientHeight);
@@ -365,6 +171,7 @@ const DriverCallbacks glDriverCallbacks = {
    .Movement = display::DriverMovement,
    .WheelMovement = display::DriverWheelMovement,
    .ButtonInput = display::DriverButtonInput,
+   .Crossing = display::DriverCrossing,
    .FocusState = display::DriverFocusState,
    .WindowResized = display::DriverWindowResized,
    .ExposeRegion = display::DriverExposeRegion,
@@ -398,102 +205,13 @@ inline uint8_t clipByte(int value)
 
 void get_resolutions(extDisplay *Self)
 {
-#if defined(__xwindows__) && defined(XRANDR_ENABLED)
-   kt::Log log(__FUNCTION__);
-
-   if (glXRRAvailable) {
-      if (!Self->Resolutions.empty()) return;
-
-      if (!glActualCount) {
-         for (int i=0; i < glSizeCount; i++) {
-            if ((glSizes[i].width >= 640) and (glSizes[i].height >= 480)) {
-               glActualCount++;
-            }
-         }
-      }
-
-      auto get_mode = [&Self, &log](int Index) {
-         for (int i=0; i < glSizeCount; i++) {
-            if ((glSizes[i].width >= 640) and (glSizes[i].height >= 480)) {
-               if (!Index) {
-                  Self->Resolutions.emplace_back(glSizes[i].width, glSizes[i].height, DefaultDepth(XDisplay, DefaultScreen(XDisplay)));
-                  return;
-               }
-               Index--;
-            }
-         }
+   Self->Resolutions.clear();
+   if ((not glDriver) or (glDriver->resolutions(Self->Resolutions) != ERR::Okay)) {
+      Self->Resolutions = {
+         { 640, 480, 32 }, { 800, 600, 32 }, { 1024, 768, 32 }, { 1152, 864, 32 }, { 1280, 960, 32 }
       };
-
-      for (int i=0; i < glActualCount; i++) {
-         get_mode(i);
-      }
    }
-   else {
-      log.msg("RandR extension not available.");
-      Self->Resolutions.emplace_back(glRootWindow.width, glRootWindow.height, DefaultDepth(XDisplay, DefaultScreen(XDisplay)));
-   }
-#else
-   Self->Resolutions = {
-      { 640, 480, 32 },
-      { 800, 600, 32 },
-      { 1024, 768, 32 },
-      { 1152, 864, 32 },
-      { 1280, 960, 32 },
-      { 0, 0, 0 }
-   };
-#endif
 }
-
-//********************************************************************************************************************
-
-#ifdef XRANDR_ENABLED
-ERR xr_set_display_mode(int *Width, int *Height)
-{
-   kt::Log log(__FUNCTION__);
-   int count, i;
-   int width = *Width;
-   int height = *Height;
-
-   if (glX11.WSLg) return ERR::NoSupport;
-
-   XRRScreenSize *sizes;
-   if ((sizes = XRRSizes(XDisplay, DefaultScreen(XDisplay), &count)) and (count)) {
-      int16_t index    = -1;
-      int bestweight = 0x7fffffff;
-
-      for (i=0; i < count; i++) {
-         int weight = std::abs(sizes[i].width - width) + std::abs(sizes[i].height - height);
-         if (weight < bestweight) {
-            index = i;
-            bestweight = weight;
-         }
-      }
-
-      if (index IS -1) {
-         log.warning("No support for requested screen mode %dx%d", width, height);
-         return ERR::NoSupport;
-      }
-
-      if (auto scrconfig = XRRGetScreenInfo(XDisplay, DefaultRootWindow(XDisplay))) {
-         if (!XRRSetScreenConfig(XDisplay, scrconfig, DefaultRootWindow(XDisplay), index, RR_Rotate_0, CurrentTime)) {
-            *Width = sizes[index].width;
-            *Height = sizes[index].height;
-
-            log.msg("New mode: %dx%d (index %d/%d) from request %dx%d", sizes[index].width, sizes[index].height, index, count, width, height);
-
-            XRRFreeScreenConfigInfo(scrconfig);
-            return ERR::Okay;
-         }
-         else {
-            XRRFreeScreenConfigInfo(scrconfig);
-            return log.warning(ERR::SystemCall);
-         }
-      }
-      else return log.warning(ERR::SystemCall);
-   }
-   else return log.warning(ERR::SystemCall);
-}
-#endif // XRANDR_ENABLED
 
 //********************************************************************************************************************
 // GLES specific functions
@@ -594,181 +312,6 @@ void unlock_graphics(void)
 
 //********************************************************************************************************************
 
-#ifdef __xwindows__
-
-int16_t glDGAAvailable = -1; // -1 indicates that we have not tried the setup process yet
-
-static bool detect_wslg(void)
-{
-   if (auto gui_enabled = getenv("WSL2_GUI_APPS_ENABLED")) {
-      if (gui_enabled[0] IS '1') return true;
-   }
-
-   return access("/mnt/wslg", F_OK) IS 0;
-}
-
-#ifdef XDGA_AVAILABLE
-APTR glDGAMemory = nullptr;
-
-int x11DGAAvailable(APTR *VideoAddress, int *PixelsPerLine, int *BankSize)
-{
-   kt::Log log(__FUNCTION__);
-   STRING displayname;
-
-   static int checked = true;
-   *VideoAddress = NULL;
-
-   if (glX11.WSLg) {
-      glDGAAvailable = FALSE;
-      glDGAMemory = nullptr;
-      glDGAVideo = nullptr;
-      glX11.PixelsPerLine = 0;
-      glX11.BankSize = 0;
-
-      if (PixelsPerLine) *PixelsPerLine = 0;
-      if (BankSize) *BankSize = 0;
-      return glDGAAvailable;
-   }
-
-   if (glDGAAvailable IS -1) {
-      // Check for the DGA driver.  This will only work if the extension is version 2.0+ and we have permissions
-      // to map memory.
-
-      glDGAAvailable = FALSE;
-
-      displayname = XDisplayName(nullptr);
-      if ((startswith(displayname, ":")) or (startswith(displayname, "unix:")) ) {
-         int events, errors, major, minor, screen;
-
-         if (XDGAQueryExtension(XDisplay, &events, &errors) and XDGAQueryVersion(XDisplay, &major, &minor)) {
-            screen = DefaultScreen(XDisplay);
-
-            // This part will map the video buffer memory into our process.  Access to /dev/mem is required in order
-            // for this to work.  After doing this, superuser privileges are dropped immediately.
-
-            if (!SetResource(RES::PRIVILEGED_USER, TRUE)) {
-               if ((major >= 2) and (XDGAOpenFramebuffer(XDisplay, screen))) { // Success, DGA is enabled
-                  int ram;
-
-                  // Get RAM address, pixels-per-line, bank-size and total amount of video memory
-
-                  XF86DGAGetVideo(XDisplay, DefaultScreen(XDisplay), (char **)&glDGAMemory, &glX11.PixelsPerLine, &glX11.BankSize, &ram);
-
-                  XDGACloseFramebuffer(XDisplay, screen);
-                  glDGAAvailable = TRUE;
-               }
-               else if (checked <= 1) printf("\033[1mFast video access is not available (driver needs root access)\033[0m\n");
-
-               SetResource(RES::PRIVILEGED_USER, FALSE);
-
-               // Now we permanently drop root capabilities.  The exception to the rule is the desktop executable,
-               // which always runs with privileges (indicated via RES::PRIVILEGED).
-
-               if (GetResource(RES::PRIVILEGED) IS FALSE) setuid(getuid());
-            }
-            else if (checked <= 1) printf("\033[1mFast video access is not available (driver needs root access)\033[0m\n");
-         }
-         else if (checked <= 1) printf("Fast video access is not available (DGA extension failure).\n");
-      }
-      else log.warning("DGA is not available (display %s).", displayname);
-   }
-
-   if (VideoAddress)  *VideoAddress = glDGAMemory;
-   if (PixelsPerLine) *PixelsPerLine = glX11.PixelsPerLine;
-   if (BankSize)      *BankSize = glX11.BankSize;
-   return glDGAAvailable;
-}
-#else
-int x11DGAAvailable(APTR *VideoAddress, int *PixelsPerLine, int *BankSize)
-{
-   glDGAAvailable = FALSE;
-   return glDGAAvailable;
-}
-#endif
-
-//********************************************************************************************************************
-// This routine is called if there is another window manager running.
-
-XErrorHandler CatchRedirectError(Display *XDisplay, XErrorEvent *event)
-{
-   kt::Log log("X11");
-   log.msg("A window manager has been detected on this X11 server.");
-   glX11.Manager = false;
-   return 0;
-}
-
-//********************************************************************************************************************
-
-const CSTRING glXProtoList[] = { nullptr,
-"CreateWindow","ChangeWindowAttributes","GetWindowAttributes","DestroyWindow","DestroySubwindows","ChangeSaveSet","ReparentWindow","MapWindow","MapSubwindows",
-"UnmapWindow","UnmapSubwindows","ConfigureWindow","CirculateWindow","GetGeometry","QueryTree","InternAtom","GetAtomName",
-"ChangeProperty","DeleteProperty","GetProperty","ListProperties","SetSelectionOwner","GetSelectionOwner","ConvertSelection","SendEvent",
-"GrabPointer","UngrabPointer","GrabButton","UngrabButton","ChangeActivePointerGrab","GrabKeyboard","UngrabKeyboard","GrabKey",
-"UngrabKey","AllowEvents","GrabServer","UngrabServer","QueryPointer","GetMotionEvents","TranslateCoords","WarpPointer",
-"SetInputFocus","GetInputFocus","QueryKeymap","OpenFont","CloseFont","QueryFont","QueryTextExtents","ListFonts",
-"ListFontsWithInfo","SetFontPath","GetFontPath","CreatePixmap","FreePixmap","CreateGC","ChangeGC","CopyGC",
-"SetDashes","SetClipRectangles","FreeGC","ClearArea","CopyArea","CopyPlane","PolyVertex","PolyLine",
-"PolySegment","PolyRectangle","PolyArc","FillPoly","PolyFillRectangle","PolyFillArc","PutImage","GetImage",
-"PolyText8","PolyText16","ImageText8","ImageText16","CreateColormap","FreeColormap","CopyColormapAndFree","InstallColormap",
-"UninstallColormap","ListInstalledColormaps","AllocColor","AllocNamedColor","AllocColorCells","AllocColorPlanes","FreeColors","StoreColors",
-"StoreNamedColor","QueryColors","LookupColor","CreateCursor","CreateGlyphCursor","FreeCursor","RecolorCursor","QueryBestSize",
-"QueryExtension","ListExtensions","ChangeKeyboardMapping","GetKeyboardMapping","ChangeKeyboardControl","GetKeyboardControl","Bell","ChangePointerControl",
-"GetPointerControl","SetScreenSaver","GetScreenSaver","ChangeHosts","ListHosts","SetAccessControl","SetCloseDownMode","KillClient",
-"RotateProperties","ForceScreenSaver","SetPointerMapping","GetPointerMapping","SetModifierMapping","GetModifierMapping","NoOperation"
-};
-
-XErrorHandler CatchXError(Display *XDisplay, XErrorEvent *XEvent)
-{
-   kt::Log log("X11");
-   char buffer[80];
-
-   if (XDisplay) {
-      XGetErrorText(XDisplay, XEvent->error_code, buffer, sizeof(buffer)-1);
-      if ((XEvent->request_code > 0) and (XEvent->request_code < std::ssize(glXProtoList))) {
-         log.warning("Function: %s, XError: %s", glXProtoList[XEvent->request_code], buffer);
-      }
-      else log.warning("Function: Unknown, XError: %s", buffer);
-   }
-   return 0;
-}
-
-//********************************************************************************************************************
-
-int CatchXIOError(Display *XDisplay)
-{
-   kt::Log log("X11");
-   log.error("A fatal XIO error occurred in relation to display \"%s\".", XDisplayName(nullptr));
-   return 0;
-}
-
-//********************************************************************************************************************
-// Resize the pixmap buffer for a window, but only if the new dimensions exceed the existing values.
-
-extern ERR resize_pixmap(extDisplay *Self, int Width, int Height)
-{
-   auto bmp = (extBitmap *)Self->Bitmap;
-   if ((bmp->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) return ERR::Okay; // Composite window
-
-   if ((bmp->x11.pix_width > Width) and (bmp->x11.pix_height > Height)) return ERR::Okay;
-
-   if (Width  > bmp->x11.pix_width)  bmp->x11.pix_width  = Width;
-   if (Height > bmp->x11.pix_height) bmp->x11.pix_height = Height;
-
-   auto xbpp = DefaultDepth(XDisplay, DefaultScreen(XDisplay));
-
-   if ((bmp->Flags & BMF::FIXED_DEPTH) != BMF::NIL) xbpp = bmp->BitsPerPixel;
-
-   if (auto pixmap = XCreatePixmap(XDisplay, Self->XWindowHandle, bmp->x11.pix_width, bmp->x11.pix_height, xbpp)) {
-      XSetWindowBackgroundPixmap(XDisplay, Self->XWindowHandle, pixmap);
-      if (Self->XPixmap) XFreePixmap(XDisplay, Self->XPixmap);
-      Self->XPixmap = pixmap;
-      bmp->x11.drawable = pixmap;
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
-}
-
-#endif
 
 //********************************************************************************************************************
 
@@ -798,18 +341,7 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
 
          if (glDriver) glDriver->displayInfo(*Info);
 
-         #ifdef __xwindows__
-            int monitor_x = Info->HostedX + (Info->Width / 2);
-            int monitor_y = Info->HostedY + (Info->Height / 2);
-            get_x11_display_geometry(Info, monitor_x, monitor_y, true);
             Info->AccelFlags = ACF(-1);
-            if (glDGAAvailable IS TRUE) {
-               // X11DGA does not provide blitter syncing.
-               Info->AccelFlags &= ~ACF::VIDEO_BLIT;
-            }
-         #else
-            Info->AccelFlags = ACF(-1);
-         #endif
 
          Info->PixelFormat.RedShift   = display->Bitmap->ColourFormat->RedShift;
          Info->PixelFormat.GreenShift = display->Bitmap->ColourFormat->GreenShift;
@@ -848,67 +380,7 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
          }
       }
 
-#ifdef __xwindows__
-      if (not glDriver) {
-      if ((glHeadless) or (!XDisplay)) {
-         Info->Width         = 1024;
-         Info->Height        = 768;
-         Info->AccelFlags    = ACF::NIL;
-         Info->VDensity      = 96;
-         Info->HDensity      = 96;
-         Info->BitsPerPixel  = 32;
-         Info->BytesPerPixel = 4;
-         Info->MonitorWidth  = Info->Width;
-         Info->MonitorHeight = Info->Height;
-         Info->VirtualWidth  = Info->Width;
-         Info->VirtualHeight = Info->Height;
-      }
-      else {
-         XPixmapFormatValues *list;
-         int count, i;
-
-         Info->Width  = glRootWindow.width;
-         Info->Height = glRootWindow.height;
-         get_x11_display_geometry(Info, 0, 0, false);
-         if ((Info->MonitorWidth > 0) and (Info->MonitorHeight > 0)) {
-            Info->Width  = int16_t(Info->MonitorWidth);
-            Info->Height = int16_t(Info->MonitorHeight);
-         }
-         Info->AccelFlags = ACF(-1);
-         #warning TODO: Get display density
-         Info->VDensity = 96;
-         Info->HDensity = 96;
-
-         if (glDGAAvailable IS TRUE) {
-            Info->AccelFlags &= ~ACF::VIDEO_BLIT; // Turn off video blitting when DGA is active
-         }
-
-         Info->BitsPerPixel = DefaultDepth(XDisplay, DefaultScreen(XDisplay));
-
-         if (Info->BitsPerPixel <= 8) Info->BytesPerPixel = 1;
-         else if (Info->BitsPerPixel <= 16) Info->BytesPerPixel = 2;
-         else if (Info->BitsPerPixel <= 24) Info->BytesPerPixel = 3;
-         else Info->BytesPerPixel = 4;
-
-         if ((list = XListPixmapFormats(XDisplay, &count))) {
-            for (i=0; i < count; i++) {
-               if (list[i].depth IS Info->BitsPerPixel) {
-                  Info->BytesPerPixel = list[i].bits_per_pixel;
-                  if (list[i].bits_per_pixel <= 8) Info->BytesPerPixel = 1;
-                  else if (list[i].bits_per_pixel <= 16) Info->BytesPerPixel = 2;
-                  else if (list[i].bits_per_pixel <= 24) Info->BytesPerPixel = 3;
-                  else {
-                     Info->BytesPerPixel = 4;
-                     Info->BitsPerPixel  = 32;
-                  }
-               }
-            }
-            XFree(list);
-         }
-      }
-      }
-
-#elif __ANDROID__
+#if   __ANDROID__
       // On Android the current display information is always returned.
 
       log.trace("Refresh");
@@ -1028,9 +500,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       }
    } init_guard;
 
-   #ifdef __xwindows__
-      int shmmajor, shmminor, pixmaps;
-   #endif
 
    CoreBase = argCoreBase;
    glDriver = nullptr;
@@ -1077,6 +546,16 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       }
       else return log.warning(ERR::NoSupport);
       #endif
+      #ifdef __linux__
+      else if (iequals(driver_name, "x11")) {
+         glDriver = display::get_x11_driver();
+         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
+            glDriver = nullptr;
+            return error;
+         }
+      }
+      else return log.warning(ERR::NoSupport);
+      #endif
    }
 
    #ifdef _WIN32
@@ -1087,6 +566,22 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
             return error;
          }
       }
+   #endif
+
+   #if defined(__linux__)
+   #ifndef __ANDROID__
+      if (not glDriver) {
+         glDriver = display::get_x11_driver();
+         if (auto error = glDriver->isAvailable(); error != ERR::Okay) {
+            glDriver = nullptr;
+            return error;
+         }
+         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
+            glDriver = nullptr;
+            return error;
+         }
+      }
+   #endif
    #endif
 
    #ifdef _GLES_
@@ -1115,194 +610,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    glDisplayInfo.DisplayID = 0xffffffff; // Indicate a refresh of the cache is required.
 
-#ifdef __xwindows__
-   if (!glHeadless) {
-      // Attempt to open X11.  Use KOTUKU_XDISPLAY if set, otherwise use the DISPLAY variable.
-
-      CSTRING strdisplay = getenv("KOTUKU_XDISPLAY");
-      if (!strdisplay) strdisplay = getenv("DISPLAY");
-
-      if ((XDisplay = XOpenDisplay(strdisplay))) {
-         // Select the X messages that we want to receive from the root window.  This will also tell us if an X11 manager
-         // is currently running or not (refer to the CatchRedirectError() exception routine).
-
-         glX11.WSLg = detect_wslg();
-
-         if (glX11.WSLg) {
-            glX11.Manager = false;
-         }
-         else {
-            XSetErrorHandler((XErrorHandler)CatchRedirectError);
-
-            XSelectInput(XDisplay, RootWindow(XDisplay, DefaultScreen(XDisplay)),
-               LeaveWindowMask|EnterWindowMask|PointerMotionMask|
-               PropertyChangeMask|SubstructureRedirectMask| // SubstructureNotifyMask |
-               KeyPressMask|ButtonPressMask|ButtonReleaseMask);
-
-            XSync(XDisplay, 0);
-         }
-
-         if (!getenv("KOTUKU_XDISPLAY")) setenv("KOTUKU_XDISPLAY", strdisplay, FALSE);
-
-         XSetErrorHandler((XErrorHandler)CatchXError);
-         XSetIOErrorHandler(CatchXIOError);
-      }
-      else return ERR::SystemCall;
-
-      // Get the X11 file descriptor (for incoming events) and tell the Core to listen to it when the task is sleeping.
-      // Xlib can read events into its private queue while waiting for replies, leaving the connection FD unreadable.
-      // ALWAYS_CALL ensures that this queue is checked before select(), while READ wakes the task for new socket data.
-
-      glXFD = XConnectionNumber(XDisplay);
-      fcntl(glXFD, F_SETFD, 1); // FD does not duplicate across exec()
-      RegisterFD(glXFD, RFD::READ|RFD::ALWAYS_CALL, X11ManagerLoop, nullptr);
-
-      // This function checks for DGA and also maps the video memory for us
-
-      glDGAAvailable = x11DGAAvailable(&glDGAVideo, &glDGAPixelsPerLine, &glDGABankSize);
-
-      log.msg("DGA Enabled: %d", glDGAAvailable);
-
-      // Create the graphics contexts for drawing directly to X11 windows
-
-      XGCValues gcv;
-      gcv.function = GXcopy;
-      gcv.graphics_exposures = False;
-      glXGC = XCreateGC(XDisplay, DefaultRootWindow(XDisplay), GCGraphicsExposures|GCFunction, &gcv);
-
-      gcv.function = GXcopy;
-      gcv.graphics_exposures = False;
-      glClipXGC = XCreateGC(XDisplay, DefaultRootWindow(XDisplay), GCGraphicsExposures|GCFunction, &gcv);
-
-      #ifdef USE_XIMAGE
-         if (XShmQueryVersion(XDisplay, &shmmajor, &shmminor, &pixmaps)) {
-            log.msg("X11 shared image extension is active.");
-            glX11ShmImage = true;
-         }
-      #endif
-
-      if (!glX11.Manager) { // We are a client of X11
-//         XSelectInput(XDisplay, RootWindow(XDisplay, DefaultScreen(XDisplay)), NULL);
-      }
-
-      C_Default = XCreateFontCursor(XDisplay, XC_left_ptr);
-
-      XWADeleteWindow = XInternAtom(XDisplay, "WM_DELETE_WINDOW", False);
-      XWATakeFocus    = XInternAtom(XDisplay, "WM_TAKE_FOCUS", False);
-      atomSurfaceID   = XInternAtom(XDisplay, "KOTUKU_SCREENID", False);
-
-      XGetWindowAttributes(XDisplay, DefaultRootWindow(XDisplay), &glRootWindow);
-
-      if (XMatchVisualInfo(XDisplay, DefaultScreen(XDisplay), 32, TrueColor, &glXInfoAlpha)) {
-         glXCompositeSupported = true;
-      }
-      else glXCompositeSupported = false;
-
-      clearmem(KeyHeld, sizeof(KeyHeld));
-
-      // Drop superuser privileges following X11 initialisation (we only need suid for DGA).
-
-      seteuid(getuid());
-
-      init_xcursors();
-
-      // Set the DISPLAY variable for clients to :10, which is the default X11 display for the rootless X Server.
-
-      if (glX11.Manager) setenv("DISPLAY", ":10", TRUE);
-
-#ifdef XRANDR_ENABLED
-      int16_t i;
-      XRRScreenSize *sizes;
-      XPixmapFormatValues *list;
-      int errors, count;
-      char buffer[512];
-
-      int events;
-      if ((not glX11.WSLg) and (glX11.Manager) and (XRRQueryExtension(XDisplay, &events, &errors))) {
-         glXRRAvailable = true;
-         if ((sizes = XRRSizes(XDisplay, DefaultScreen(XDisplay), &count)) and (count)) {
-            glSizes = sizes;
-            glSizeCount = count;
-         }
-         else log.msg("XRRSizes() failed.");
-
-         // Build the screen.xml file if this is the first task to initialise the RandR extension.
-
-         auto file = objFile::create { fl::Path("user:config/screen.xml"), fl::Flags(FL::NEW|FL::WRITE) };
-
-         if (file.ok()) {
-            auto write_string = [](objFile *File, CSTRING String) {
-               struct acWrite write = {
-                  .Buffer = std::span<const int8_t>((const int8_t *)String, strlen(String))
-               };
-               Action(AC::Write, File, &write);
-            };
-
-            write_string(*file, "<?xml version=\"1.0\"?>\n\n");
-            write_string(*file, "<displayinfo>\n");
-            write_string(*file, "  <manufacturer value=\"XFree86\"/>\n");
-            write_string(*file, "  <chipset value=\"X11\"/>\n");
-            write_string(*file, "  <dac value=\"N/A\"/>\n");
-            write_string(*file, "  <clock value=\"N/A\"/>\n");
-            write_string(*file, "  <version value=\"1.00\"/>\n");
-            write_string(*file, "  <certified value=\"February 2023\"/>\n");
-            write_string(*file, "  <monitor_mfr value=\"Unknown\"/>\n");
-            write_string(*file, "  <monitor_model value=\"Unknown\"/>\n");
-            write_string(*file, "  <scanrates minhscan=\"0\" maxhscan=\"0\" minvscan=\"0\" maxvscan=\"0\"/>\n");
-            write_string(*file, "  <gfx_output unknown/>\n");
-            write_string(*file, "</displayinfo>\n\n");
-
-            int16_t xbpp = DefaultDepth(XDisplay, DefaultScreen(XDisplay));
-
-            int16_t xbytes;
-            if (xbpp <= 8) xbytes = 1;
-            else if (xbpp <= 16) xbytes = 2;
-            else if (xbpp <= 24) xbytes = 3;
-            else xbytes = 4;
-
-            if ((list = XListPixmapFormats(XDisplay, &count))) {
-               for (i=0; i < count; i++) {
-                  if (list[i].depth IS xbpp) {
-                     xbytes = list[i].bits_per_pixel;
-                     if (list[i].bits_per_pixel <= 8) xbytes = 1;
-                     else if (list[i].bits_per_pixel <= 16) xbytes = 2;
-                     else if (list[i].bits_per_pixel <= 24) xbytes = 3;
-                     else xbytes = 4;
-                  }
-               }
-            }
-
-            if (xbytes IS 4) xbpp = 32;
-
-            int xcolours;
-            switch(xbpp) {
-               case 1:  xcolours = 2; break;
-               case 8:  xcolours = 256; break;
-               case 15: xcolours = 32768; break;
-               case 16: xcolours = 65536; break;
-               default: xcolours = 16777216; break;
-            }
-
-            for (i=0; i < glSizeCount; i++) {
-               if ((glSizes[i].width >= 640) and (glSizes[i].height >= 480)) {
-                  snprintf(buffer, sizeof(buffer), "<screen name=\"%dx%d\" width=\"%d\" height=\"%d\" depth=\"%d\" colours=\"%d\"\n",
-                     glSizes[i].width, glSizes[i].height, glSizes[i].width, glSizes[i].height, xbpp, xcolours);
-                  write_string(*file, buffer);
-
-                  snprintf(buffer, sizeof(buffer), "  bytes=\"%d\" defaultrefresh=\"0\" minrefresh=\"0\" maxrefresh=\"0\">\n", xbytes);
-                  write_string(*file, buffer);
-
-                  write_string(*file, "</screen>\n\n");
-               }
-            }
-         }
-      }
-      else log.msg("XRRQueryExtension() failed.");
-#endif // XRANDR_ENABLED
-
-   }
-
-#endif
 
    // Register input dispatch after platform event sources so that newly queued input is handled before the task sleeps.
 
@@ -1415,8 +722,6 @@ static ERR MODExpunge(void)
 {
    kt::Log log(__FUNCTION__);
    ERR error = ERR::Okay;
-   const bool headless = glHeadless;
-
    if (glDriver) {
       error = glDriver->close();
       glDriver = nullptr;
@@ -1438,38 +743,7 @@ static ERR MODExpunge(void)
 
    DeregisterFD((HOSTHANDLE)-2); // Disable input_event_loop()
 
-#ifdef __xwindows__
-
-   if (!headless) {
-      if (modXRR) { FreeResource(modXRR); modXRR = nullptr; }
-
-      if (glXFD != -1) { DeregisterFD(glXFD); glXFD = -1; }
-
-      XSetErrorHandler(nullptr);
-      XSetIOErrorHandler(nullptr);
-
-      if (XDisplay) {
-         free_xcursors();
-
-         if (glXGC) { XFreeGC(XDisplay, glXGC); glXGC = 0; }
-         if (glClipXGC) { XFreeGC(XDisplay, glClipXGC); glClipXGC = 0; }
-
-         // Closing the display causes a crash, so we're not doing it anymore ...
-         /*
-         xtmp = XDisplay;
-         XDisplay = nullptr;
-         XCloseDisplay(xtmp);
-         */
-      }
-
-      // Note: In full-screen mode, expunging of the display module causes segfaults right at the end of program
-      // termination.  In order to resolve this problem we return DoNotExpunge to prevent the removal of X11
-      // dependent code.
-
-      error = ERR::DoNotExpunge;
-   }
-
-#elif __ANDROID__
+#if   __ANDROID__
 
    if (modAndroid) {
       FUNCTION fInitWindow, fTermWindow;
@@ -1784,9 +1058,6 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 
 //********************************************************************************************************************
 
-#ifdef __xwindows__
-#include "x11/handlers.cpp"
-#endif
 
 #include "driver/callbacks.cpp"
 

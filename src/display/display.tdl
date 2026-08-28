@@ -10,10 +10,6 @@ module({
     loadFile(glPath .. 'common-graphics.tdl')
   end)
 
-  platform("X11", function()
-    c_include("<X11/Xlib.h>", "<X11/extensions/XShm.h>")
-  end)
-
   enums("DRAG", { type="int", start=0, flags="Flags for the DragStatus field." },
     "NONE: The surface is not being dragged.",
     "ANCHOR: The surface is being dragged and the mouse pointer is anchored to the surface.",

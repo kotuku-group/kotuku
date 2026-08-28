@@ -8,13 +8,6 @@
 
 #define MODVERSION_DISPLAY (1)
 
-#ifdef __xwindows__
-
-#include <X11/Xlib.h>
-#include <X11/extensions/XShm.h>
-
-#endif
-
 class objBitmap;
 class objDisplay;
 class objClipboard;

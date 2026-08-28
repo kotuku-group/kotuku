@@ -53,8 +53,8 @@ ERR HeadlessDriver::resizeBitmap(extBitmap *, int, int) { return ERR::NoSupport;
 ERR HeadlessDriver::lockBitmap(extBitmap *) { return ERR::NoSupport; }
 ERR HeadlessDriver::unlockBitmap(extBitmap *) { return ERR::NoSupport; }
 ERR HeadlessDriver::bitmapRoutines(extBitmap *) { return ERR::NoSupport; }
-ERR HeadlessDriver::setCursor(PTC) { return ERR::NoSupport; }
-ERR HeadlessDriver::setCustomCursor(extBitmap *, int, int) { return ERR::NoSupport; }
-ERR HeadlessDriver::showCursor(bool) { return ERR::NoSupport; }
-ERR HeadlessDriver::warpPointer(int, int) { return ERR::NoSupport; }
+ERR HeadlessDriver::setCursor(HOSTWINDOW, PTC) { return ERR::NoSupport; }
+ERR HeadlessDriver::setCustomCursor(HOSTWINDOW, extBitmap *, int, int) { return ERR::NoSupport; }
+ERR HeadlessDriver::showCursor(HOSTWINDOW, bool) { return ERR::NoSupport; }
+ERR HeadlessDriver::warpPointer(HOSTWINDOW, int, int) { return ERR::NoSupport; }
 ERR HeadlessDriver::pointerPosition(double &, double &) { return ERR::NoSupport; }

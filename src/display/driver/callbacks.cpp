@@ -91,15 +91,31 @@ void DriverWheelMovement(OBJECTID SurfaceID, float Wheel)
 
 void DriverFocusState(OBJECTID SurfaceID, bool State)
 {
-   //log.msg("Windows focus state for surface #%d: %d", SurfaceID, State);
+   //log.msg("Host focus state for surface #%d: %d", SurfaceID, State);
 
-   kt::ScopedObjectLock surface(SurfaceID);
-   if (surface.granted()) {
-      if (State) acFocus(*surface);
-      else {
-         acLostFocus(*surface);
-         // for (auto &id : glFocusList) acLostFocus(id);
-      }
+   if (State) {
+      kt::ScopedObjectLock surface(SurfaceID);
+      if (surface.granted()) acFocus(*surface);
+      return;
+   }
+
+   std::vector<OBJECTID> list;
+   {
+      const std::lock_guard<std::recursive_mutex> lock(glFocusLock);
+      list = glFocusList;
+   }
+
+   bool in_focus = false;
+   for (auto id : list) {
+      if ((not in_focus) and (id != SurfaceID)) continue;
+      in_focus = true;
+      kt::ScopedObjectLock surface(id);
+      if (surface.granted()) acLostFocus(*surface);
+   }
+
+   if (not in_focus) {
+      kt::ScopedObjectLock surface(SurfaceID);
+      if (surface.granted()) acLostFocus(*surface);
    }
 }
 
@@ -164,6 +180,22 @@ void DriverButtonInput(int Buttons, bool State)
 
 //********************************************************************************************************************
 
+void DriverCrossing(OBJECTID SurfaceID, bool Entered, double AbsX, double AbsY)
+{
+   if (not SurfaceID) return;
+
+   if (auto pointer = gfx::AccessPointer(); pointer) {
+      if (Entered) pointer->setSurface(SurfaceID);
+      else if (pointer->SurfaceID IS SurfaceID) pointer->setSurface(0);
+
+      pointer->HostX = AbsX;
+      pointer->HostY = AbsY;
+      ReleaseObject(pointer);
+   }
+}
+
+//********************************************************************************************************************
+
 void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, int WinHeight,
    int ClientX, int ClientY, int ClientWidth, int ClientHeight)
 {
@@ -179,12 +211,12 @@ void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, i
       display_id = surface->DisplayID;
       if (ScopedObjectLock<extDisplay> display(display_id, 3000); display.granted()) {
          release_stale_resize_feedback(*display);
-         if (!display->ResizeFeedback.defined()) return;
-         feedback = display->ResizeFeedback;
          display->X = WinX;
          display->Y = WinY;
          display->Width  = WinWidth;
          display->Height = WinHeight;
+         acResize(display->Bitmap, ClientWidth, ClientHeight, 0);
+         if (display->ResizeFeedback.defined()) feedback = display->ResizeFeedback;
       }
       else return;
    }
@@ -192,7 +224,7 @@ void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, i
 
    // Notification occurs with the display and surface released so as to reduce the potential for dead-locking.
 
-   resize_feedback(&feedback, display_id, ClientX, ClientY, ClientWidth, ClientHeight);
+   if (feedback.defined()) resize_feedback(&feedback, display_id, ClientX, ClientY, ClientWidth, ClientHeight);
 }
 
 //********************************************************************************************************************

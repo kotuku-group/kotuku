@@ -81,19 +81,6 @@ endif ()
 
 add_library (${MOD})
 
-if (X11_FOUND)
-   target_compile_definitions (${MOD} PRIVATE "X11_ENABLED")
-   if (X11_Xrandr_FOUND)
-      target_compile_definitions (${MOD} PRIVATE "XRANDR_ENABLED")
-   else ()
-      message (STATUS "XRandR headers unavailable; building without XRandR support")
-   endif ()
-
-   if (XDGA_INSTALLED)
-      target_compile_definitions (${MOD} PRIVATE "XDGA_ENABLED")
-   endif ()
-endif ()
-
 set_module_defaults (${MOD} "Gfx")
 
 target_include_directories (${MOD} PRIVATE
@@ -146,12 +133,31 @@ else ()
    if (X11_FOUND)
       # Apt package requirements: libxrandr-dev libxxf86vm-dev libxxf86dga-dev
 
+      target_sources (${MOD} PRIVATE "drivers/x11/x11_driver.cpp" "drivers/x11/handlers.cpp"
+         "drivers/x11/lib_pixels.cpp")
       list (APPEND DISPLAY_PRIVATE_LIBS Xrender Xext X11)
+      set (X11_DRIVER_DEFINITIONS)
       if (X11_Xrandr_FOUND)
          list (APPEND DISPLAY_PRIVATE_LIBS Xrandr)
+         list (APPEND X11_DRIVER_DEFINITIONS XRANDR_ENABLED)
       endif ()
-      target_link_libraries (${MOD} PRIVATE ${DISPLAY_PRIVATE_LIBS}) # x11/libXxf86dga.a
+      if (XDGA_INSTALLED)
+         list (APPEND DISPLAY_PRIVATE_LIBS Xxf86dga)
+         list (APPEND X11_DRIVER_DEFINITIONS XDGA_ENABLED)
+      endif ()
+      target_link_libraries (${MOD} PRIVATE ${DISPLAY_PRIVATE_LIBS})
 
-      target_compile_definitions (${MOD} PRIVATE "__X11DGA__" "__xwindows__")
+      if (X11_DRIVER_DEFINITIONS)
+         set_source_files_properties ("drivers/x11/x11_driver.cpp" "drivers/x11/handlers.cpp"
+            PROPERTIES COMPILE_DEFINITIONS "${X11_DRIVER_DEFINITIONS}")
+      endif ()
+
+      if (UNIT_TESTS)
+         add_executable (test_display_x11_driver "tests/test_x11_driver.cpp")
+         target_link_libraries (test_display_x11_driver PRIVATE ${MOD})
+         set_target_properties (test_display_x11_driver PROPERTIES CXX_STANDARD 20)
+         add_test (NAME display_x11_driver COMMAND test_display_x11_driver)
+         set_tests_properties (display_x11_driver PROPERTIES LABELS display)
+      endif ()
    endif ()
 endif ()

@@ -29,7 +29,6 @@ separate bitmap buffer.
 
 *********************************************************************************************************************/
 
-#undef __xwindows__
 #include "../defs.h"
 #include <kotuku/modules/image.h>
 #include <numeric> // For std::gcd
@@ -1320,7 +1319,7 @@ static ERR SURFACE_Init(extSurface *Self)
 
          display->getWindowHandle(Self->DisplayWindow);
 
-         if (glDriver) glDriver->setWindowSurface(Self->DisplayWindow, Self->UID);
+         if (glDriver) glDriver->setWindowSurface(((extDisplay *)display)->WindowHandle, Self->UID);
 
          // Subscribe to Redimension notifications if the display is hosted.  Also subscribe to Draw because this
          // can be used by the host to notify of window exposures.

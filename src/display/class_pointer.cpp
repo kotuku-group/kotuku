@@ -30,7 +30,7 @@ static ERR POINTER_SET_Y(extPointer *, double);
 static ERR POINTER_SetWinCursor(extPointer *, struct ptrSetWinCursor *);
 static FunctionField mthSetWinCursor[]  = { { "Cursor", FD_INT }, { nullptr, 0 } };
 
-#ifdef __xwindows__
+#ifdef __linux__
 #undef True
 #undef False
 static ERR POINTER_GrabX11Pointer(extPointer *, struct ptrGrabX11Pointer *);
@@ -46,6 +46,24 @@ static bool get_over_object(extPointer *);
 static void process_ptr_button(extPointer *, struct dcDeviceInput *);
 static void process_ptr_movement(extPointer *, struct dcDeviceInput *);
 static void process_ptr_wheel(extPointer *, struct dcDeviceInput *);
+
+//********************************************************************************************************************
+
+static ERR pointer_window(OBJECTID SurfaceID, HOSTWINDOW &Window)
+{
+   Window = nullptr;
+   if (not SurfaceID) return ERR::NoSupport;
+
+   if (ScopedObjectLock<objSurface> surface(SurfaceID, 3000); surface.granted()) {
+      if (not surface->DisplayID) return ERR::NoSupport;
+      if (ScopedObjectLock<extDisplay> display(surface->DisplayID, 3000); display.granted()) {
+         Window = display->WindowHandle;
+         return Window ? ERR::Okay : ERR::NoSupport;
+      }
+      else return ERR::AccessObject;
+   }
+   else return ERR::AccessObject;
+}
 
 //********************************************************************************************************************
 
@@ -73,7 +91,9 @@ inline void add_input(CSTRING Debug, InputEvent &input, JTYPE Flags, OBJECTID Re
 static ERR POINTER_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 {
    if (not glDriver) return ERR::NoSupport;
-   if (auto error = glDriver->setCursor(Args->Cursor); error != ERR::Okay) return error;
+   HOSTWINDOW window;
+   if (auto error = pointer_window(Self->SurfaceID, window); error != ERR::Okay) return error;
+   if (auto error = glDriver->setCursor(window, Args->Cursor); error != ERR::Okay) return error;
    Self->CursorID = Args->Cursor;
    return ERR::Okay;
 }
@@ -81,23 +101,18 @@ static ERR POINTER_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 //********************************************************************************************************************
 // Private action used to grab the window cursor under X11.  Can only be executed by the task that owns the pointer.
 
-#ifdef __xwindows__
+#ifdef __linux__
 static ERR POINTER_GrabX11Pointer(extPointer *Self, struct ptrGrabX11Pointer *Args)
 {
-   APTR xwin;
-   if (ScopedObjectLock<objSurface> surface(Self->SurfaceID, 5000); surface.granted()) {
-      surface->getWindowHandle(xwin);
-
-      if (xwin) XGrabPointer(XDisplay, (Window)xwin, 1, 0, GrabModeAsync, GrabModeAsync, (Window)xwin, None, CurrentTime);
-   }
-
-   return ERR::Okay;
+   if (not glDriver) return ERR::NoSupport;
+   HOSTWINDOW window;
+   if (auto error = pointer_window(Args ? Args->SurfaceID : Self->SurfaceID, window); error != ERR::Okay) return error;
+   return glDriver->grabPointer(window);
 }
 
 static ERR POINTER_UngrabX11Pointer(extPointer *Self)
 {
-   XUngrabPointer(XDisplay, CurrentTime);
-   return ERR::Okay;
+   return glDriver ? glDriver->ungrabPointer() : ERR::NoSupport;
 }
 #endif
 
@@ -517,19 +532,10 @@ static ERR POINTER_Hide(extPointer *Self)
 
    log.branch();
 
-   if (glDriver) glDriver->showCursor(false);
-   #ifdef __xwindows__
-/*
-      APTR xwin;
-      OBJECTPTR surface;
-
-      if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
-         surface->getWindowHandle(xwin);
-         XDefineCursor(XDisplay, (Window)xwin, GetX11Cursor(Self->CursorID));
-         ReleaseObject(surface);
-      }
-*/
-   #endif
+   if (glDriver) {
+      HOSTWINDOW window;
+      if (pointer_window(Self->SurfaceID, window) IS ERR::Okay) glDriver->showCursor(window, false);
+   }
 
    Self->Flags &= ~PF::VISIBLE;
    return ERR::Okay;
@@ -626,31 +632,14 @@ static ERR POINTER_MoveToPoint(extPointer *Self, struct acMoveToPoint *Args)
       if (Self->X < 0) Self->X = 0;
       if (Self->Y < 0) Self->Y = 0;
 
-      if (auto error = glDriver->warpPointer(Self->X, Self->Y); error != ERR::Okay) {
+      HOSTWINDOW window;
+      if (auto error = pointer_window(Self->SurfaceID, window); error != ERR::Okay) return log.warning(error)|ERR::Notified;
+      if (auto error = glDriver->warpPointer(window, Self->X, Self->Y); error != ERR::Okay) {
          return log.warning(error)|ERR::Notified;
       }
       Self->HostX = Self->X;
       Self->HostY = Self->Y;
    }
-#ifdef __xwindows__
-   else {
-   if (ScopedObjectLock<objSurface> surface(Self->SurfaceID, 3000); surface.granted()) {
-      APTR xwin;
-
-      if (!surface->getWindowHandle(xwin)) {
-         if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = Args->X;
-         if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = Args->Y;
-         if (Self->X < 0) Self->X = 0;
-         if (Self->Y < 0) Self->Y = 0;
-
-         XWarpPointer(XDisplay, None, (Window)xwin, 0, 0, 0, 0, Self->X, Self->Y);
-         Self->HostX = Self->X;
-         Self->HostY = Self->Y;
-      }
-   }
-   else return log.warning(surface.error)|ERR::Notified;
-   }
-#endif
 
    // Determine the surface object that we are currently positioned over.  If it has set a cursor image, switch to it if the pointer is not locked.
 
@@ -745,19 +734,10 @@ static ERR POINTER_Show(extPointer *Self)
 
    log.branch();
 
-   if (glDriver) glDriver->showCursor(true);
-   #ifdef __xwindows__
-/*
-      APTR xwin;
-      OBJECTPTR surface;
-
-      if (!AccessObject(Self->SurfaceID, 5000, &surface)) {
-         surface->getWindowHandle(xwin);
-         XDefineCursor(XDisplay, (Window)xwin, GetX11Cursor(Self->CursorID));
-         ReleaseObject(surface);
-      }
-*/
-   #endif
+   if (glDriver) {
+      HOSTWINDOW window;
+      if (pointer_window(Self->SurfaceID, window) IS ERR::Okay) glDriver->showCursor(window, true);
+   }
 
    Self->Flags |= PF::VISIBLE;
    return ERR::Okay;
@@ -1197,7 +1177,7 @@ static const FunctionField mthRestoreCursor[] = { { "Cursor", FD_INT }, { "Owner
 static const MethodEntry clPointerMethods[] = {
    // Private methods
    { MT_PtrSetWinCursor,     (APTR)POINTER_SetWinCursor,   "SetWinCursor",   mthSetWinCursor,  sizeof(struct ptrSetWinCursor) },
-#ifdef __xwindows__
+#ifdef __linux__
    { MT_PtrGrabX11Pointer,   (APTR)POINTER_GrabX11Pointer,   "GrabX11Pointer",   mthGrabX11Pointer, sizeof(struct ptrGrabX11Pointer) },
    { MT_PtrUngrabX11Pointer, (APTR)POINTER_UngrabX11Pointer, "UngrabX11Pointer", nullptr, 0 },
 #endif

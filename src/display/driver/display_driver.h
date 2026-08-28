@@ -22,7 +22,7 @@ struct ColourFormat;
 struct DisplayInfo;
 struct resolution;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 2;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 3;
 
 enum class DCAP : uint64_t {
    NIL             = 0,
@@ -60,6 +60,7 @@ struct DriverCallbacks {
    void (*Movement)(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
    void (*WheelMovement)(OBJECTID SurfaceID, float Delta);
    void (*ButtonInput)(int Buttons, bool Pressed);
+   void (*Crossing)(OBJECTID SurfaceID, bool Entered, double AbsX, double AbsY);
    void (*FocusState)(OBJECTID SurfaceID, bool Focused);
    void (*WindowResized)(OBJECTID SurfaceID, int WindowX, int WindowY, int WindowWidth, int WindowHeight,
       int ClientX, int ClientY, int ClientWidth, int ClientHeight);
@@ -137,11 +138,13 @@ public:
    virtual ERR unlockBitmap(extBitmap *Bitmap) = 0;
    virtual ERR bitmapRoutines(extBitmap *Bitmap) = 0;
 
-   virtual ERR setCursor(PTC CursorID) = 0;
-   virtual ERR setCustomCursor(extBitmap *Image, int HotX, int HotY) = 0;
-   virtual ERR showCursor(bool Visible) = 0;
-   virtual ERR warpPointer(int X, int Y) = 0;
+   virtual ERR setCursor(HOSTWINDOW Window, PTC CursorID) = 0;
+   virtual ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) = 0;
+   virtual ERR showCursor(HOSTWINDOW Window, bool Visible) = 0;
+   virtual ERR warpPointer(HOSTWINDOW Window, int X, int Y) = 0;
    virtual ERR pointerPosition(double &X, double &Y) = 0;
+   virtual ERR grabPointer(HOSTWINDOW Window) { return ERR::NoSupport; }
+   virtual ERR ungrabPointer() { return ERR::NoSupport; }
 
    virtual ERR setHostOption(HOST Option, int64_t Value) { return ERR::NoSupport; }
    virtual ERR readController(int Port, double *Axes, CON &Buttons) { return ERR::NoSupport; }
@@ -154,7 +157,7 @@ public:
    virtual ERR clipboardRead() { return ERR::NoSupport; }
 };
 
-class HeadlessDriver final : public DisplayDriver {
+class HeadlessDriver : public DisplayDriver {
 public:
    CSTRING name() const override;
    DT displayType() const override;
@@ -198,10 +201,10 @@ public:
    ERR lockBitmap(extBitmap *Bitmap) override;
    ERR unlockBitmap(extBitmap *Bitmap) override;
    ERR bitmapRoutines(extBitmap *Bitmap) override;
-   ERR setCursor(PTC CursorID) override;
-   ERR setCustomCursor(extBitmap *Image, int HotX, int HotY) override;
-   ERR showCursor(bool Visible) override;
-   ERR warpPointer(int X, int Y) override;
+   ERR setCursor(HOSTWINDOW Window, PTC CursorID) override;
+   ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) override;
+   ERR showCursor(HOSTWINDOW Window, bool Visible) override;
+   ERR warpPointer(HOSTWINDOW Window, int X, int Y) override;
    ERR pointerPosition(double &X, double &Y) override;
 
 private:
@@ -211,5 +214,11 @@ private:
 #ifdef _WIN32
 namespace display {
 DisplayDriver * get_win32_driver();
+}
+#endif
+
+#ifdef __linux__
+namespace display {
+DisplayDriver * get_x11_driver();
 }
 #endif
