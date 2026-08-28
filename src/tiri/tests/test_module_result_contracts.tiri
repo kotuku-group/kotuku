@@ -1,10 +1,11 @@
 -- Runtime contracts for statically described module results.
 
-include 'display'
+@if(exists='modules:display')
+   module display as mGfx
+@end
 
-module display as mGfx
-
-@Test; @Requires(display=true) function MixedAssignmentPreservesTableBackedStructureMetadata()
+@Test; @Requires(display=true)
+function MixedAssignmentPreservesTableBackedStructureMetadata()
    local surface <close> = obj.new('Surface')
 
    err, surface_info = mGfx.GetSurfaceInfo(surface)
