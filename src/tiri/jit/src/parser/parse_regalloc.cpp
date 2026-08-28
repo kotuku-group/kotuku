@@ -597,7 +597,7 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       contract_append_uleb32(descriptor, uint32_t(object_class_id));
 
       std::string_view struct_name;
-      if (contract.struct_def) struct_name = contract.struct_def->Name;
+      if (contract.type IS TiriType::Struct and contract.struct_def) struct_name = contract.struct_def->Name;
       contract_append_text(fs, descriptor, struct_name, "runtime contract structure name");
 
       if (contract.type IS TiriType::Array) {
