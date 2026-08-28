@@ -493,7 +493,7 @@ ERR X11Driver::setSizeHints(HOSTWINDOW WindowHandle, int MinW, int MinH, int Max
    if ((MaxW > 0) and (MaxH > 0)) { hints.max_width = MaxW; hints.max_height = MaxH; hints.flags |= PMaxSize; }
    if ((MinW > 0) and (MinH > 0)) { hints.min_width = MinW; hints.min_height = MinH; hints.flags |= PMinSize; }
    if (EnforceAspect and (hints.flags & PMaxSize) and (hints.flags & PMinSize)) {
-      hints.flags |= PAspect; hints.min_aspect = { MinW, MinH }; hints.max_aspect = { MaxW, MaxH };
+      hints.flags |= PAspect; hints.min_aspect = { MinW, MinH }; hints.max_aspect = { MinW, MinH };
    }
    XSetWMNormalHints(Data->Connection, window->Native, &hints); return ERR::Okay;
 }
