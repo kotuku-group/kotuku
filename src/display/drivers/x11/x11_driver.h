@@ -38,7 +38,6 @@ public:
    ERR setWindowSurface(HOSTWINDOW Window, OBJECTID SurfaceID) override;
    ERR windowSurface(HOSTWINDOW Window, OBJECTID &SurfaceID) override;
    ERR acquireWindowBitmap(HOSTWINDOW Window, extBitmap *Bitmap) override;
-   ERR releaseWindowBitmap(HOSTWINDOW Window, extBitmap *Bitmap) override;
 
    ERR displayInfo(DisplayInfo &Info) override;
    ERR density(HOSTWINDOW Window, int &Horizontal, int &Vertical) override;

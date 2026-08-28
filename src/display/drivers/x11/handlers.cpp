@@ -19,7 +19,11 @@ static inline OBJECTID resolve_surface(Window Window)
    const std::lock_guard lock(glEventState->NativeLock);
    if (auto it = glEventState->Windows.find(Window); it != glEventState->Windows.end()) {
       if (it->second->SurfaceID) return it->second->SurfaceID;
-      return glDriverCallbacks.ResolveSurface(it->second);
+
+      // The fallback matches against Surface.DisplayWindow, which records the native window handle rather than
+      // the driver's opaque HOSTWINDOW.
+
+      return glDriverCallbacks.ResolveSurface((APTR)(uintptr_t)it->second->Native);
    }
    return 0;
 }

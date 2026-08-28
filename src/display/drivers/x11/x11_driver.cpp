@@ -536,22 +536,16 @@ ERR X11Driver::windowSurface(HOSTWINDOW WindowHandle, OBJECTID &SurfaceID)
    SurfaceID = window->SurfaceID; return ERR::Okay;
 }
 
+// Unlike the Win32 device context, the X11 drawable is owned by the window for as long as the window exists, so
+// there is no matching release operation.  Tearing the drawable down between paint cycles would leave the display
+// bitmap unusable for host-side blits, fills and resizes.
+
 ERR X11Driver::acquireWindowBitmap(HOSTWINDOW WindowHandle, extBitmap *Bitmap)
 {
    auto window = x11_window(Data, WindowHandle); auto bitmap = x11_bitmap(Bitmap);
    if ((not window) or (not bitmap)) return ERR::NullArgs;
    bitmap->WindowID = window->Native; bitmap->DrawableID = window->Background ? window->Background : window->Native;
    bitmap->WindowGraphicsContext = window->GraphicsContext;
-   return ERR::Okay;
-}
-
-ERR X11Driver::releaseWindowBitmap(HOSTWINDOW, extBitmap *Bitmap)
-{
-   if (auto bitmap = x11_bitmap(Bitmap)) {
-      bitmap->WindowID = 0;
-      bitmap->DrawableID = 0;
-      bitmap->WindowGraphicsContext = 0;
-   }
    return ERR::Okay;
 }
 
@@ -894,19 +888,56 @@ ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
    return ERR::Okay;
 }
 
+// Copy the clipped region of the drawable into the readable image so that the caller observes the current content
+// of the host surface rather than a snapshot taken by an earlier lock.
+
+static void refresh_readable(X11Driver::State *State, extBitmap *Bitmap, X11BitmapRecord *Record)
+{
+   const int width = Bitmap->Clip.Right - Bitmap->Clip.Left;
+   const int height = Bitmap->Clip.Bottom - Bitmap->Clip.Top;
+   if ((width < 1) or (height < 1)) return;
+   XGetSubImage(State->Connection, Record->DrawableID, Bitmap->Clip.Left, Bitmap->Clip.Top, width, height,
+      0xffffffff, ZPixmap, Record->Readable, Bitmap->Clip.Left, Bitmap->Clip.Top);
+}
+
 ERR X11Driver::lockBitmap(extBitmap *Bitmap)
 {
    if (not Bitmap) return ERR::NullArgs;
    auto record = x11_bitmap(Bitmap);
    if ((not record) or (not record->DrawableID)) return Bitmap->Data ? ERR::Okay : ERR::NoSupport;
-   if (Bitmap->Data) return ERR::Okay;
-   Bitmap->Data = (uint8_t *)std::malloc(Bitmap->Size);
+
+   // DGA maps the framebuffer directly, so no read-back is required.
+
+   if (((Bitmap->Flags & BMF::X11_DGA) != BMF::NIL) and Data->DGA) return ERR::Okay;
+
+   if (record->Readable) {
+      // Reuse the existing image when it remains large enough for the bitmap.
+
+      if ((record->Readable->width >= Bitmap->Width) and (record->Readable->height >= Bitmap->Height)) {
+         refresh_readable(Data, Bitmap, record);
+         return ERR::Okay;
+      }
+
+      XDestroyImage(record->Readable); // Releases Bitmap->Data, which the image owns
+      record->Readable = nullptr;
+      Bitmap->Data = nullptr;
+   }
+   else if (Bitmap->Data) return ERR::Okay; // The data area is owned elsewhere, e.g. a shared memory segment
+
+   int alignment;
+   if (Bitmap->LineWidth & 0x0001) alignment = 8;
+   else if (Bitmap->LineWidth & 0x0002) alignment = 16;
+   else alignment = 32;
+
+   const int size = Bitmap->Type IS BMP::PLANAR ? Bitmap->LineWidth * Bitmap->Height * Bitmap->BitsPerPixel
+      : Bitmap->LineWidth * Bitmap->Height;
+
+   Bitmap->Data = (uint8_t *)std::malloc(size);
    if (not Bitmap->Data) return ERR::AllocMemory;
    record->Readable = XCreateImage(Data->Connection, CopyFromParent, Bitmap->BitsPerPixel, ZPixmap, 0,
-      (char *)Bitmap->Data, Bitmap->Width, Bitmap->Height, 32, Bitmap->LineWidth);
+      (char *)Bitmap->Data, Bitmap->Width, Bitmap->Height, alignment, Bitmap->LineWidth);
    if (not record->Readable) { std::free(Bitmap->Data); Bitmap->Data = nullptr; return ERR::CreateResource; }
-   XGetSubImage(Data->Connection, record->DrawableID, 0, 0, Bitmap->Width, Bitmap->Height, 0xffffffff, ZPixmap,
-      record->Readable, 0, 0);
+   refresh_readable(Data, Bitmap, record);
    return ERR::Okay;
 }
 
