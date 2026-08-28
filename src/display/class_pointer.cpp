@@ -48,8 +48,11 @@ static void process_ptr_movement(extPointer *, struct dcDeviceInput *);
 static void process_ptr_wheel(extPointer *, struct dcDeviceInput *);
 
 //********************************************************************************************************************
+// Resolve the host window that the pointer is currently associated with.  Window is cleared on entry and is therefore
+// safe to use even when the lookup fails, because the driver interprets a null window as a request that applies to
+// every window under its management.
 
-static ERR pointer_window(OBJECTID SurfaceID, HOSTWINDOW &Window)
+ERR pointer_window(OBJECTID SurfaceID, HOSTWINDOW &Window)
 {
    Window = nullptr;
    if (not SurfaceID) return ERR::NoSupport;
@@ -91,8 +94,9 @@ inline void add_input(CSTRING Debug, InputEvent &input, JTYPE Flags, OBJECTID Re
 static ERR POINTER_SetWinCursor(extPointer *Self, struct ptrSetWinCursor *Args)
 {
    if (not glDriver) return ERR::NoSupport;
+   if (not Args) return ERR::NullArgs;
    HOSTWINDOW window;
-   if (auto error = pointer_window(Self->SurfaceID, window); error != ERR::Okay) return error;
+   pointer_window(Self->SurfaceID, window);
    if (auto error = glDriver->setCursor(window, Args->Cursor); error != ERR::Okay) return error;
    Self->CursorID = Args->Cursor;
    return ERR::Okay;
@@ -533,8 +537,12 @@ static ERR POINTER_Hide(extPointer *Self)
    log.branch();
 
    if (glDriver) {
+      // The window is passed to the driver whether or not it resolved, because hosts with a process-wide cursor can
+      // still act on the request.  Failing to call the driver would leave PF::VISIBLE contradicting the real cursor.
+
       HOSTWINDOW window;
-      if (pointer_window(Self->SurfaceID, window) IS ERR::Okay) glDriver->showCursor(window, false);
+      pointer_window(Self->SurfaceID, window);
+      glDriver->showCursor(window, false);
    }
 
    Self->Flags &= ~PF::VISIBLE;
@@ -736,7 +744,8 @@ static ERR POINTER_Show(extPointer *Self)
 
    if (glDriver) {
       HOSTWINDOW window;
-      if (pointer_window(Self->SurfaceID, window) IS ERR::Okay) glDriver->showCursor(window, true);
+      pointer_window(Self->SurfaceID, window);
+      glDriver->showCursor(window, true);
    }
 
    Self->Flags |= PF::VISIBLE;

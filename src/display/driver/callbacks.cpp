@@ -53,6 +53,11 @@ void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient
    if (auto pointer = gfx::AccessPointer(); pointer) {
       pointer->setSurface(SurfaceID);  // Alter the surface of the pointer so that it refers to the correct root window
 
+      // Record the host cursor position, which the Pointer class reports through its HostX and HostY fields.
+
+      pointer->HostX = AbsX;
+      pointer->HostY = AbsY;
+
       struct dcDeviceInput joy = {
          .Values = { AbsX, AbsY },
          .Timestamp = PreciseTime(),
@@ -105,16 +110,20 @@ void DriverFocusState(OBJECTID SurfaceID, bool State)
       list = glFocusList;
    }
 
-   bool in_focus = false;
-   for (auto id : list) {
-      if ((not in_focus) and (id != SurfaceID)) continue;
-      in_focus = true;
-      kt::ScopedObjectLock surface(id);
+   // glFocusList is ordered with the most deeply focused surface first, followed by each of its ancestors.  The
+   // surface named by a host window therefore sits at the end of the chain, and every entry preceding it is a
+   // descendant that must also lose the focus.
+
+   auto pos = std::find(list.begin(), list.end(), SurfaceID);
+
+   if (pos IS list.end()) { // Not part of the focus chain, so the window surface is the only one affected
+      kt::ScopedObjectLock surface(SurfaceID);
       if (surface.granted()) acLostFocus(*surface);
+      return;
    }
 
-   if (not in_focus) {
-      kt::ScopedObjectLock surface(SurfaceID);
+   for (auto it = list.begin(); it != std::next(pos); it++) {
+      kt::ScopedObjectLock surface(*it);
       if (surface.granted()) acLostFocus(*surface);
    }
 }

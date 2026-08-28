@@ -312,7 +312,7 @@ public:
    ERR total(int &Value)
    {
       std::unique_lock lock(Lock);
-      if (not CooperativeWindow) {
+      if ((not CooperativeWindow) or Stopping) {
          Value = 0;
          return ERR::NotInitialised;
       }
@@ -422,6 +422,10 @@ public:
 private:
    void request_refresh()
    {
+      // A shutdown releases the lock while joining the worker, so a request arriving in that window would otherwise
+      // start a replacement thread that nothing joins.  Its destructor would then call std::terminate().
+
+      if (Stopping) return;
       RefreshRequested = true;
       if (not Worker.joinable()) Worker = std::thread([this]() { worker_loop(); });
       WorkerSignal.notify_one();

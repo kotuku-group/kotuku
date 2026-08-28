@@ -374,6 +374,7 @@ ERR X11Driver::adoptWindow(extDisplay *DisplayObject, APTR NativeHandle, HOSTWIN
    X11WindowRecord *record = nullptr;
    if (auto error = create_window_record(Data, DisplayObject, Window(uintptr_t(NativeHandle)), record);
          error != ERR::Okay) return error;
+   record->Adopted = true;
    Handle = record;
    DisplayObject->Flags |= SCR::HOSTED;
    if (auto bitmap = x11_bitmap((extBitmap *)DisplayObject->Bitmap)) {
@@ -957,8 +958,24 @@ ERR X11Driver::bitmapRoutines(extBitmap *Bitmap)
 
 ERR X11Driver::setCursor(HOSTWINDOW WindowHandle, PTC CursorID)
 {
+   if (not Data->Open) return ERR::NotInitialised;
+   auto cursor = cursor_for(Data, CursorID);
+
+   // X11 attaches the cursor to a window rather than the process, so a null handle is satisfied by applying the
+   // change to every window that this driver manages.
+
+   if (not WindowHandle) {
+      const std::lock_guard lock(Data->NativeLock);
+      if (Data->Windows.empty()) return ERR::NoSupport;
+      for (auto &entry : Data->Windows) XDefineCursor(Data->Connection, entry.first, cursor);
+      XFlush(Data->Connection);
+      return ERR::Okay;
+   }
+
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
-   XDefineCursor(Data->Connection, window->Native, cursor_for(Data, CursorID)); return ERR::Okay;
+   XDefineCursor(Data->Connection, window->Native, cursor);
+   XFlush(Data->Connection);
+   return ERR::Okay;
 }
 
 ERR X11Driver::setCustomCursor(HOSTWINDOW, extBitmap *, int, int) { return ERR::NoSupport; }

@@ -147,9 +147,11 @@ else ()
       endif ()
       target_link_libraries (${MOD} PRIVATE ${DISPLAY_PRIVATE_LIBS})
 
+      # Applied at target level because x11_native.h guards its extension headers on these definitions, and every
+      # file that includes it must agree on the layout of the structures that the header declares.
+
       if (X11_DRIVER_DEFINITIONS)
-         set_source_files_properties ("drivers/x11/x11_driver.cpp" "drivers/x11/handlers.cpp"
-            PROPERTIES COMPILE_DEFINITIONS "${X11_DRIVER_DEFINITIONS}")
+         target_compile_definitions (${MOD} PRIVATE ${X11_DRIVER_DEFINITIONS})
       endif ()
 
       if (UNIT_TESTS)

@@ -385,17 +385,14 @@ ERR SetCursor(OBJECTID ObjectID, CRF Flags, PTC CursorID, const std::string_view
 
          log.trace("Adjusting hardware/hosted cursor image.");
 
-         if (glDriver and pointer->SurfaceID) {
-            if (ScopedObjectLock<objSurface> surface(pointer->SurfaceID, 1000); surface.granted()) {
-               if (surface->DisplayID) {
-                  if (ScopedObjectLock<extDisplay> display(surface->DisplayID, 1000); display.granted()) {
-                     if ((display->WindowHandle) and
-                           (glDriver->setCursor(display->WindowHandle, CursorID) IS ERR::Okay)) {
-                        pointer->CursorID = CursorID;
-                     }
-                  }
-               }
-            }
+         if (glDriver) {
+            // A window that cannot be resolved is still forwarded to the driver, which applies the cursor to every
+            // window that it manages.  Hosts with a process-wide cursor depend on this because the pointer has no
+            // surface until the first movement event arrives.
+
+            HOSTWINDOW window;
+            pointer_window(pointer->SurfaceID, window);
+            if (glDriver->setCursor(window, CursorID) IS ERR::Okay) pointer->CursorID = CursorID;
          }
       }
 

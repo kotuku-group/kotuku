@@ -28,6 +28,13 @@ static inline OBJECTID resolve_surface(Window Window)
    return 0;
 }
 
+static inline bool adopted_window(Window Window)
+{
+   const std::lock_guard lock(glEventState->NativeLock);
+   auto it = glEventState->Windows.find(Window);
+   return (it != glEventState->Windows.end()) and it->second->Adopted;
+}
+
 //********************************************************************************************************************
 
 void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
@@ -97,7 +104,13 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
             break;
 
          case DestroyNotify:
-            glDriverCallbacks.WindowDestroyed(resolve_surface(xevent.xany.window));
+            // Only adopted windows are torn down here, because the client owns the parent and its destruction is the
+            // sole notification that the display has gone away.  Windows created by this driver are erased from the
+            // window table before XDestroyWindow() is issued, so this path must not be relied upon for them.
+
+            if (adopted_window(xevent.xany.window)) {
+               glDriverCallbacks.WindowDestroyed(resolve_surface(xevent.xany.window));
+            }
             break;
       }
 

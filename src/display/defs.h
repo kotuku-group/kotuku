@@ -21,6 +21,8 @@
 #include <stdio.h>
 #endif
 
+#include <algorithm>
+#include <iterator>
 #include <unordered_set>
 #include <mutex>
 #include <atomic>
@@ -487,6 +489,7 @@ extern ERR  get_surface_abs(OBJECTID, int *, int *, int *, int *);
 extern void input_event_loop(HOSTHANDLE, APTR);
 extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);
+extern ERR  pointer_window(OBJECTID, HOSTWINDOW &);
 extern ERR  get_display_info(OBJECTID, DisplayInfo *);
 extern void resize_feedback(FUNCTION *, OBJECTID, int X, int Y, int Width, int Height);
 

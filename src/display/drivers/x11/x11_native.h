@@ -32,6 +32,7 @@ struct X11WindowRecord {
    bool Owned = false;
    bool Root = false;
    bool Visible = false;
+   bool Adopted = false; // True if the window was created inside a host window supplied by the client
 };
 
 struct X11BitmapRecord {

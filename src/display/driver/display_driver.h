@@ -143,6 +143,11 @@ public:
    virtual ERR unlockBitmap(extBitmap *Bitmap) = 0;
    virtual ERR bitmapRoutines(extBitmap *Bitmap) = 0;
 
+   // The cursor image is not always attributable to a single window.  A null Window is therefore a valid request for
+   // the change to be applied to every window under the driver's management, which matches the process-wide cursor
+   // model used by Windows.  Drivers must return an error if they cannot satisfy the request at all, because the
+   // caller relies on that to decide whether the recorded cursor state can be updated.
+
    virtual ERR setCursor(HOSTWINDOW Window, PTC CursorID) = 0;
    virtual ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) = 0;
    virtual ERR showCursor(HOSTWINDOW Window, bool Visible) = 0;
