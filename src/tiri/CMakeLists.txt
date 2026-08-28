@@ -876,7 +876,7 @@ set (TIRI_TESTS
    annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options type_name
    try_except checkall import include_list processing metatables with thunk_table_index debug malformed_syntax numeric_limits return_types url tips tempus
    comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing config_library
-   module_namespaces builtin_methods
+   module_namespaces module_result_contracts builtin_methods
    object_pinning import_type_analysis global_types type_contracts type_tests thunk_contract_argument type_signature_dumps
    type_guided_emission type_guided_jit_signatures
    context_access contextual_member_calls contextual_designation context_blocks context_materialisation
