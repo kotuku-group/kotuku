@@ -237,19 +237,21 @@ ERR unlock_surface(extBitmap *Bitmap)
 
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
-   if (glDriver) return glDriver->lockBitmap(Bitmap, Access);
-   if (not Bitmap->Data) {
-      kt::Log log(__FUNCTION__);
-      log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
-      return ERR::FieldNotSet;
+   // A driver reports NoSupport when it has no host drawable standing behind the bitmap.  CPU access to such a
+   // bitmap only requires a data area, so the request falls through to the data check rather than failing.
+
+   if (glDriver) {
+      if (auto error = glDriver->lockBitmap(Bitmap, Access); error != ERR::NoSupport) return error;
    }
+
+   if (not Bitmap->Data) return kt::Log(__FUNCTION__).warning(ERR::FieldNotSet);
 
    return ERR::Okay;
 }
 
 ERR unlock_surface(extBitmap *Bitmap)
 {
-   if (glDriver) return glDriver->unlockBitmap(Bitmap);
+   if (glDriver) glDriver->unlockBitmap(Bitmap);
    return ERR::Okay;
 }
 
@@ -1398,6 +1400,8 @@ Errors returned by the destination object's Write action are propagated to the c
 Okay
 NullArgs
 BufferOverflow
+AllocMemory: The read buffer for a host drawable could not be allocated.
+NoSupport: The bitmap surface cannot be read by the CPU.
 *********************************************************************************************************************/
 
 static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
@@ -1451,7 +1455,12 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    if (Self->AmtColours <= 256) pcx.NumPlanes = 1;
    else pcx.NumPlanes = 3;
 
-   {
+   // The bitmap may be backed by a host drawable with no CPU accessible data area, so a read lock is required
+   // before the pixel readers can be used.
+
+   if (auto error = lock_surface(Self, SURFACE_READ); error != ERR::Okay) return log.warning(error);
+
+   auto error = [&]() -> ERR {
       const auto buffer_size = size_t(width) * size_t(height) * size_t(pcx.NumPlanes) * 2;
       std::vector<uint8_t> buffer(buffer_size);
       auto write_error = acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)&pcx, sizeof(pcx)));
@@ -1570,7 +1579,10 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
       }
 
       return ERR::Okay;
-   }
+   }();
+
+   unlock_surface(Self);
+   return error;
 }
 
 /*********************************************************************************************************************

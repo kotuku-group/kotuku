@@ -8,6 +8,21 @@ static GC x11_gc(extBitmap *Bitmap)
    return record->WindowGraphicsContext ? record->WindowGraphicsContext : record->DefaultGraphicsContext;
 }
 
+// Reads are served from the host-side copy of the drawable that lockBitmap() produces for SURFACE_READ.  A caller
+// that reads without taking a read lock has no image to draw from, so the readers report black rather than
+// dereferencing a null image.
+
+static XImage * x11_readable(objBitmap *Bitmap)
+{
+   auto record = x11_bitmap((extBitmap *)Bitmap);
+   return record ? record->Readable : nullptr;
+}
+
+static void black_pixel(RGB8 *RGB)
+{
+   RGB->Red = RGB->Green = RGB->Blue = RGB->Alpha = 0;
+}
+
 /*********************************************************************************************************************
 ** CHUNKY32
 */
@@ -33,13 +48,13 @@ static void VideoDrawRGBIndex32(objBitmap *Bitmap, uint32_t *Data, RGB8 *RGB)
 
 static uint32_t VideoReadPixel32(objBitmap *Bitmap, int X, int Y)
 {
-   auto readable = x11_bitmap((extBitmap *)Bitmap)->Readable;
+   auto readable = x11_readable(Bitmap); if (not readable) return 0;
    return ((uint32_t *)((uint8_t *)readable->data + (readable->bytes_per_line * Y) + (X<<2)))[0];
 }
 
 static void VideoReadRGBPixel32(objBitmap *Bitmap, int X, int Y, RGB8 *RGB)
 {
-   auto readable = x11_bitmap((extBitmap *)Bitmap)->Readable;
+   auto readable = x11_readable(Bitmap); if (not readable) { black_pixel(RGB); return; }
    uint32_t colour = ((uint32_t *)((uint8_t *)readable->data + (readable->bytes_per_line * Y) + (X<<2)))[0];
    RGB->Red   = (uint8_t)(colour >> ((extBitmap *)Bitmap)->prvColourFormat.RedPos);
    RGB->Green = (uint8_t)(colour >> ((extBitmap *)Bitmap)->prvColourFormat.GreenPos);
@@ -82,14 +97,16 @@ static void VideoDrawRGBIndex24(objBitmap *Bitmap, uint8_t *Data, RGB8 *RGB)
 
 static uint32_t VideoReadPixel24(objBitmap *Bitmap, int X, int Y)
 {
-   auto data = (uint8_t *)x11_bitmap((extBitmap *)Bitmap)->Readable->data + (Bitmap->LineWidth * Y) + (X + X + X);
+   auto readable = x11_readable(Bitmap); if (not readable) return 0;
+   auto data = (uint8_t *)readable->data + (Bitmap->LineWidth * Y) + (X + X + X);
    return (data[2]<<16)|(data[1]<<8)|data[0];
 }
 
 static void VideoReadRGBPixel24(objBitmap *Bitmap, int X, int Y, RGB8 *RGB)
 {
-   auto data = (uint8_t *)x11_bitmap((extBitmap *)Bitmap)->Readable->data;
-   data += x11_bitmap((extBitmap *)Bitmap)->Readable->bytes_per_line * Y;
+   auto readable = x11_readable(Bitmap); if (not readable) { black_pixel(RGB); return; }
+   auto data = (uint8_t *)readable->data;
+   data += readable->bytes_per_line * Y;
    data += X + X + X;
    RGB->Red   = data[2];
    RGB->Green = data[1];
@@ -130,13 +147,13 @@ static void VideoDrawRGBIndex16(objBitmap *Bitmap, uint16_t *Data, RGB8 *RGB)
 
 static uint32_t VideoReadPixel16(objBitmap *Bitmap, int X, int Y)
 {
-   auto readable = x11_bitmap((extBitmap *)Bitmap)->Readable;
+   auto readable = x11_readable(Bitmap); if (not readable) return 0;
    return ((uint16_t *)((int8_t *)readable->data + (readable->bytes_per_line * Y) + (X<<1)))[0];
 }
 
 static void VideoReadRGBPixel16(objBitmap *Bitmap, int X, int Y, RGB8 *RGB)
 {
-   auto readable = x11_bitmap((extBitmap *)Bitmap)->Readable;
+   auto readable = x11_readable(Bitmap); if (not readable) { black_pixel(RGB); return; }
    uint16_t data = ((uint16_t *)((int8_t *)readable->data + (readable->bytes_per_line * Y) + (X<<1)))[0];
    RGB->Red   = Bitmap->unpackRed(data);
    RGB->Green = Bitmap->unpackGreen(data);
@@ -176,14 +193,15 @@ static void VideoDrawRGBIndex8(objBitmap *Bitmap, uint8_t *Data, RGB8 *RGB)
 
 static uint32_t VideoReadPixel8(objBitmap *Bitmap, int X, int Y)
 {
-   auto readable = x11_bitmap((extBitmap *)Bitmap)->Readable;
+   auto readable = x11_readable(Bitmap); if (not readable) return 0;
    return (readable->data + (readable->bytes_per_line * Y) + X)[0];
 }
 
 static void VideoReadRGBPixel8(objBitmap *Bitmap, int X, int Y, RGB8 *RGB)
 {
-   auto data  = (uint8_t *)x11_bitmap((extBitmap *)Bitmap)->Readable->data;
-   auto index = data[(x11_bitmap((extBitmap *)Bitmap)->Readable->bytes_per_line * Y) + X];
+   auto readable = x11_readable(Bitmap); if (not readable) { black_pixel(RGB); return; }
+   auto data  = (uint8_t *)readable->data;
+   auto index = data[(readable->bytes_per_line * Y) + X];
    RGB->Red   = Bitmap->Palette->Col[index].Red;
    RGB->Green = Bitmap->Palette->Col[index].Green;
    RGB->Blue  = Bitmap->Palette->Col[index].Blue;

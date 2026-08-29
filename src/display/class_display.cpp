@@ -796,19 +796,18 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
    log.branch();
 
+   if (not Args) return log.warning(ERR::NullArgs);
    if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
    if (glDriver) {
-   if (not Args) return log.warning(ERR::NullArgs);
+      if (glDriver->resizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff,
+            Args->Width, Args->Height) != ERR::Okay) {
+         return ERR::Resize;
+      }
 
-   if (glDriver->resizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff,
-         Args->Width, Args->Height) != ERR::Okay) {
-      return ERR::Resize;
-   }
-
-   if (auto error = Action(AC::Resize, Self->Bitmap, Args); error != ERR::Okay) return error;
-   Self->Width = Self->Bitmap->Width;
-   Self->Height = Self->Bitmap->Height;
+      if (auto error = Action(AC::Resize, Self->Bitmap, Args); error != ERR::Okay) return error;
+      Self->Width = Self->Bitmap->Width;
+      Self->Height = Self->Bitmap->Height;
    }
 #if   __snap__
 
