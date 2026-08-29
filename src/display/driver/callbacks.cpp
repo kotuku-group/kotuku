@@ -425,9 +425,38 @@ void MsgShowObject(OBJECTID ObjectID)
 void DriverClipboardUpdated()
 {
    #ifdef _WIN32
-      win_clipboard_updated();
+      if (winClipboardChanged()) win_clipboard_updated();
    #endif
 }
+
+//********************************************************************************************************************
+
+ERR DriverEnableDragDrop(APTR HostHandle)
+{
+   #ifdef _WIN32
+      return ERR(winInitDragDrop(HWND(HostHandle)));
+   #else
+      return ERR::NoSupport;
+   #endif
+}
+
+//********************************************************************************************************************
+
+void DriverDisableDragDrop(APTR HostHandle)
+{
+   #ifdef _WIN32
+      winDisableDragDrop(HWND(HostHandle));
+   #endif
+}
+
+//********************************************************************************************************************
+
+#ifdef _WIN32
+extern "C" int winResolveSurfaceID(HWND Window)
+{
+   return int(DriverResolveSurface(Window));
+}
+#endif
 
 //********************************************************************************************************************
 

@@ -21,7 +21,7 @@
 #include <math.h>
 #include <stdint.h>
 
-#include "../drivers/win32/windows.h"
+#include "clipboard.h"
 
 enum {
    CT_DATA=0,
@@ -119,6 +119,27 @@ void winCreateScreenClassClipboard(void)
    if (!fmtPerformedDropEffect) fmtPerformedDropEffect = RegisterClipboardFormat(CFSTR_PERFORMEDDROPEFFECT);
    if (!fmtPreferredDropEffect) fmtPreferredDropEffect = RegisterClipboardFormat(CFSTR_PREFERREDDROPEFFECT);
    if (!fmtKotukuClip) fmtKotukuClip = RegisterClipboardFormat("Kotuku");
+}
+
+void winInitialiseClipboard(void)
+{
+   winCreateScreenClassClipboard();
+   if (!glOleInit) {
+      HRESULT result = OleInitialize(NULL);
+      if (SUCCEEDED(result)) glOleInit = 1;
+      else glOleInit = 2;
+   }
+}
+
+int winClipboardChanged(void)
+{
+   glClipboardUpdates++;
+   return GetTickCount() - glIgnoreClip >= 2000;
+}
+
+void winDisableDragDrop(HWND Window)
+{
+   RevokeDragDrop(Window);
 }
 
 //********************************************************************************************************************
@@ -274,7 +295,7 @@ static HRESULT STDMETHODCALLTYPE RKDT_Drop(struct rkDropTarget *Self, IDataObjec
 	*pdwEffect = DROPEFFECT_NONE;
 
    window = WindowFromPoint(pt);
-   surface_id = winLookupSurfaceID(window);
+   surface_id = winResolveSurfaceID(window);
    if (!surface_id) {
       MSG("rkDropTarget::Drop() Unable to determine surface ID from window, aborting.\n");
       return S_OK;
@@ -960,4 +981,6 @@ void winTerminateClipboard(void)
       RKDT_Release(glDropTarget);
       glDropTarget = NULL;
    }
+   if (glOleInit == 1) OleUninitialize();
+   glOleInit = 0;
 }

@@ -11,6 +11,28 @@ namespace display {
 
 static X11Driver::State *glX11State = nullptr;
 
+static void x11_colour_component(int SourceMask, uint8_t &Mask, uint8_t &Position, uint8_t &Shift)
+{
+   Position = 0;
+   Shift = 0;
+   while (SourceMask and (not (SourceMask & 1))) {
+      SourceMask >>= 1;
+      Position++;
+   }
+   Mask = SourceMask;
+   for (int bit = 0x80; bit and (not (bit & Mask)); bit >>= 1) Shift++;
+}
+
+static void x11_colour_format(ColourFormat &Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask,
+   int AlphaMask)
+{
+   x11_colour_component(RedMask, Format.RedMask, Format.RedPos, Format.RedShift);
+   x11_colour_component(GreenMask, Format.GreenMask, Format.GreenPos, Format.GreenShift);
+   x11_colour_component(BlueMask, Format.BlueMask, Format.BluePos, Format.BlueShift);
+   x11_colour_component(AlphaMask, Format.AlphaMask, Format.AlphaPos, Format.AlphaShift);
+   Format.BitsPerPixel = BitsPerPixel;
+}
+
 static constexpr std::array<std::pair<PTC, unsigned int>, 23> CURSORS = {{
    { PTC::DEFAULT, XC_left_ptr }, { PTC::SIZE_BOTTOM_LEFT, XC_bottom_left_corner },
    { PTC::SIZE_BOTTOM_RIGHT, XC_bottom_right_corner }, { PTC::SIZE_TOP_LEFT, XC_top_left_corner },
@@ -92,7 +114,7 @@ X11BitmapRecord * x11_bitmap(extBitmap *Bitmap)
 }
 
 X11Driver::X11Driver() : Data(new State) { }
-X11Driver::~X11Driver() { close(); delete Data; }
+X11Driver::~X11Driver() { delete Data; }
 CSTRING X11Driver::name() const { return "x11"; }
 DT X11Driver::displayType() const { return DT::X11; }
 
@@ -339,7 +361,7 @@ ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
          return ERR::AccessObject;
       }
    }
-   else if (glStickToFront) XSetTransientForHint(Data->Connection, record->Native,
+   else if (Data->StickToFront) XSetTransientForHint(Data->Connection, record->Native,
       DefaultRootWindow(Data->Connection));
    if (auto bitmap = x11_bitmap((extBitmap *)DisplayObject->Bitmap)) {
       bitmap->WindowID = record->Native;
@@ -647,7 +669,7 @@ ERR X11Driver::pixelFormat(ColourFormat &Format)
       for (int i=0; i < format_count; i++) if (formats[i].depth IS bits) { bits = formats[i].bits_per_pixel; break; }
       XFree(formats);
    }
-   gfx::GetColourFormat(&Format, bits, info->red_mask, info->green_mask, info->blue_mask, 0xff000000);
+   x11_colour_format(Format, bits, info->red_mask, info->green_mask, info->blue_mask, 0xff000000);
    XFree(info);
    return ERR::Okay;
 }
@@ -1016,22 +1038,16 @@ ERR X11Driver::ungrabPointer()
 ERR X11Driver::setHostOption(HOST Option, int64_t Value)
 {
    if (Option IS HOST::TRAY_ICON) {
-      glTrayIcon = Value;
-      if (glTrayIcon) glTaskBar = 0;
+      Data->TrayIcon = Value;
+      if (Data->TrayIcon) Data->TaskBar = false;
    }
    else if (Option IS HOST::TASKBAR) {
-      glTaskBar = Value;
-      if (glTaskBar) glTrayIcon = 0;
+      Data->TaskBar = Value;
+      if (Data->TaskBar) Data->TrayIcon = false;
    }
-   else if (Option IS HOST::STICK_TO_FRONT) glStickToFront = Value;
+   else if (Option IS HOST::STICK_TO_FRONT) Data->StickToFront = Value;
    else return ERR::NoSupport;
    return ERR::Okay;
-}
-
-DisplayDriver * get_x11_driver()
-{
-   static X11Driver driver;
-   return &driver;
 }
 
 }

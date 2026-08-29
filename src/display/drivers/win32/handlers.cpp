@@ -60,6 +60,21 @@ void MsgControllerLog(bool Warning, const char *Message)
    else log.msg("%s", Message);
 }
 
+void MsgClipboardUpdated()
+{
+   if ((glWin32Callbacks) and (glWin32Callbacks->ClipboardUpdated)) glWin32Callbacks->ClipboardUpdated();
+}
+
+void MsgEnableDragDrop(HWND Window)
+{
+   if ((glWin32Callbacks) and (glWin32Callbacks->EnableDragDrop)) glWin32Callbacks->EnableDragDrop(Window);
+}
+
+void MsgDisableDragDrop(HWND Window)
+{
+   if ((glWin32Callbacks) and (glWin32Callbacks->DisableDragDrop)) glWin32Callbacks->DisableDragDrop(Window);
+}
+
 void MsgResizedWindow(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, int WinHeight,
    int ClientX, int ClientY, int ClientWidth, int ClientHeight)
 {

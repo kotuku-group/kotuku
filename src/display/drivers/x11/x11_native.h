@@ -77,6 +77,9 @@ struct X11Driver::State {
    bool RandR = false;
    bool Closing = false;
    bool DGA = false;
+   bool TrayIcon = false;
+   bool TaskBar = false;
+   int StickToFront = 0;
    APTR DGAMemory = nullptr;
    int DGAPixelsPerLine = 0;
    int DGABankSize = 0;

@@ -587,8 +587,6 @@ ERR init_egl(void);
 void free_egl(void);
 #endif
 
-extern uint8_t glTrayIcon, glTaskBar, glStickToFront;
-
 #ifdef _WIN32
 
 #define DLLCALL // __declspec(dllimport)
@@ -601,6 +599,7 @@ DLLCALL int WINAPI GetPixel(APTR, int, int);
 }
 
 #include "drivers/win32/windows.h"
+#include "win32/clipboard.h"
 
 #endif // _WIN32
 

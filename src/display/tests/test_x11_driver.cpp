@@ -27,9 +27,15 @@ int main()
 {
    const auto original_kotuku_display = environment_value("KOTUKU_XDISPLAY");
    const auto original_display = environment_value("DISPLAY");
-   auto driver = display::get_x11_driver();
+   auto core = (struct CoreBase *)(uintptr_t)1;
+#ifdef KOTUKU_STATIC
+   auto driver = display::create_x11_display_driver(DISPLAY_DRIVER_INTERFACE_VERSION, core);
+#else
+   auto driver = create_display_driver(DISPLAY_DRIVER_INTERFACE_VERSION, core);
+#endif
    int failures = 0;
 
+   failures += check(driver != nullptr);
    failures += check(std::string(driver->name()) IS "x11");
    failures += check(driver->displayType() IS DT::X11);
    failures += check(driver->capabilities() IS DCAP::NIL);
@@ -53,6 +59,16 @@ int main()
    failures += check(driver->open(callbacks) IS ERR::SystemCall);
    failures += check(driver->close() IS ERR::Okay);
    failures += check(driver->close() IS ERR::Okay);
+
+#ifdef KOTUKU_STATIC
+   display::destroy_x11_display_driver(driver);
+   failures += check(display::create_x11_display_driver(DISPLAY_DRIVER_INTERFACE_VERSION - 1, core) IS nullptr);
+   failures += check(display::create_x11_display_driver(DISPLAY_DRIVER_INTERFACE_VERSION, nullptr) IS nullptr);
+#else
+   destroy_display_driver(driver);
+   failures += check(create_display_driver(DISPLAY_DRIVER_INTERFACE_VERSION - 1, core) IS nullptr);
+   failures += check(create_display_driver(DISPLAY_DRIVER_INTERFACE_VERSION, nullptr) IS nullptr);
+#endif
 
    restore_environment("KOTUKU_XDISPLAY", original_kotuku_display);
    restore_environment("DISPLAY", original_display);

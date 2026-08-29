@@ -4,6 +4,7 @@
 #include "windows.h"
 
 #include <cstdlib>
+#include <new>
 #include <unordered_map>
 
 HINSTANCE glInstance = nullptr;
@@ -38,6 +39,28 @@ static WinCursor glWin32Cursors[24] = {
    { nullptr, PTC::INVISIBLE },
    { nullptr, PTC::DRAGGABLE }
 };
+
+static void win32_colour_component(int SourceMask, uint8_t &Mask, uint8_t &Position, uint8_t &Shift)
+{
+   Position = 0;
+   Shift = 0;
+   while (SourceMask and (not (SourceMask & 1))) {
+      SourceMask >>= 1;
+      Position++;
+   }
+   Mask = SourceMask;
+   for (int bit = 0x80; bit and (not (bit & Mask)); bit >>= 1) Shift++;
+}
+
+static void win32_colour_format(ColourFormat &Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask,
+   int AlphaMask)
+{
+   win32_colour_component(RedMask, Format.RedMask, Format.RedPos, Format.RedShift);
+   win32_colour_component(GreenMask, Format.GreenMask, Format.GreenPos, Format.GreenShift);
+   win32_colour_component(BlueMask, Format.BlueMask, Format.BluePos, Format.BlueShift);
+   win32_colour_component(AlphaMask, Format.AlphaMask, Format.AlphaPos, Format.AlphaShift);
+   Format.BitsPerPixel = BitsPerPixel;
+}
 
 #include "lib_pixels.cpp"
 
@@ -109,6 +132,7 @@ public:
 
 private:
    bool Open = false;
+   Win32HostOptions HostOptions;
    std::mutex WindowLock;
    std::unordered_map<HOSTWINDOW, extDisplay *> Displays;
 };
@@ -126,10 +150,8 @@ ERR Win32Driver::open(const DriverCallbacks &Callbacks)
 
    glWin32Callbacks = &Callbacks;
    glInstance = winGetModuleHandle();
-   if ((not glInstance) or (not winCreateScreenClass())) {
+   if ((not glInstance) or (not winCreateScreenClass(GetResource(RES::WINDOWS_ICON)))) {
       winTerminate();
-      winTerminateClipboard();
-      winTerminateOLE();
       glInstance = nullptr;
       glWin32Callbacks = nullptr;
       return ERR::SystemCall;
@@ -180,7 +202,7 @@ ERR Win32Driver::createWindow(extDisplay *Display, HOSTWINDOW &Handle)
    Handle = winCreateScreen(HWND(popover), &Display->X, &Display->Y, &Display->Width, &Display->Height,
       ((Display->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0,
       ((Display->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name.data(),
-      ((Display->Flags & SCR::COMPOSITE) != SCR::NIL) ? 1 : 0, Display->Opacity, desktop ? 1 : 0);
+      ((Display->Flags & SCR::COMPOSITE) != SCR::NIL) ? 1 : 0, Display->Opacity, desktop ? 1 : 0, &HostOptions);
    if (not Handle) return ERR::SystemCall;
 
    winControllerSetWindow(HWND(Handle), (Display->Flags & SCR::GRAB_CONTROLLERS) != SCR::NIL);
@@ -401,7 +423,7 @@ ERR Win32Driver::pixelFormat(ColourFormat &Format)
 {
    int red, green, blue, alpha;
    if (winGetPixelFormat(&red, &green, &blue, &alpha)) return ERR::SystemCall;
-   gfx::GetColourFormat(&Format, 32, red, green, blue, alpha);
+   win32_colour_format(Format, 32, red, green, blue, alpha);
    return ERR::Okay;
 }
 
@@ -603,17 +625,17 @@ ERR Win32Driver::setHostOption(HOST Option, int64_t Value)
 {
    switch (Option) {
       case HOST::TRAY_ICON:
-         glTrayIcon = Value;
-         if (glTrayIcon) glTaskBar = 0;
+         HostOptions.TrayIcon = Value;
+         if (HostOptions.TrayIcon) HostOptions.TaskBar = 0;
          break;
 
       case HOST::TASKBAR:
-         glTaskBar = Value;
-         if (glTaskBar) glTrayIcon = 0;
+         HostOptions.TaskBar = Value;
+         if (HostOptions.TaskBar) HostOptions.TrayIcon = 0;
          break;
 
       case HOST::STICK_TO_FRONT:
-         glStickToFront = Value;
+         HostOptions.StickToFront = Value;
          break;
 
       default:
@@ -633,11 +655,15 @@ ERR Win32Driver::totalControllerPorts(int &Total)
    return winGetControllerPorts(Total);
 }
 
-static Win32Driver glWin32Driver;
-
-DisplayDriver * get_win32_driver()
+DisplayDriver * create_win32_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core)
 {
-   return &glWin32Driver;
+   if ((InterfaceVersion != DISPLAY_DRIVER_INTERFACE_VERSION) or (not Core)) return nullptr;
+   return new(std::nothrow) Win32Driver;
+}
+
+void destroy_win32_display_driver(DisplayDriver *Driver)
+{
+   delete Driver;
 }
 
 } // namespace display

@@ -22,13 +22,6 @@ ERR GET_VDensity(extDisplay *Self, int *Value);
 std::array<uint8_t, 256 * 256> glAlphaLookup;
 
 
-#ifdef _WIN32
-extern int16_t GetWindowsIcon()
-{
-   return GetResource(RES::WINDOWS_ICON);
-}
-#endif
-
 #ifdef __ANDROID__
 OBJECTPTR modAndroid;
 struct AndroidBase *AndroidBase;
@@ -115,6 +108,19 @@ ColourFormat glColourFormat;
 bool glHeadless = false;
 DisplayDriver *glDriver = nullptr;
 static HeadlessDriver glHeadlessDriver;
+
+enum class DriverSource { NIL, BUILT_IN, MODULE, STATIC };
+
+struct DriverOwnership {
+   DisplayDriver *Driver = nullptr;
+   OBJECTPTR Module = nullptr;
+   DestroyDisplayDriver Destroy = nullptr;
+   DriverSource Source = DriverSource::NIL;
+   bool Opened = false;
+   std::string CanonicalName;
+};
+
+static DriverOwnership glDriverOwnership;
 OBJECTPTR glModule = nullptr, glDisplayContext = nullptr;
 static OBJECTPTR modRegex = nullptr;
 OBJECTPTR clDisplay = nullptr, clPointer = nullptr, clBitmap = nullptr, clClipboard = nullptr, clSurface = nullptr, clController = nullptr;
@@ -132,10 +138,6 @@ SWIN glpWindowType = SWIN::HOST;
 char glpDPMS[20] = "Standby";
 std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 std::atomic<int> glLastPort = -1;
-#ifndef _WIN32
-uint8_t glTrayIcon = 0, glTaskBar = 0, glStickToFront = 0;
-#endif
-
 std::vector<OBJECTID> glFocusList;
 std::recursive_mutex glFocusLock;
 std::recursive_mutex glSurfaceLock;
@@ -156,6 +158,8 @@ void DriverWindowDestroyed(OBJECTID SurfaceID);
 void DriverDPIChanged(OBJECTID SurfaceID);
 void DriverSetFocus(OBJECTID SurfaceID);
 void DriverClipboardUpdated();
+ERR DriverEnableDragDrop(APTR HostHandle);
+void DriverDisableDragDrop(APTR HostHandle);
 void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);
 void DriverControllerPorts(int Port, bool Connected, int Total);
 OBJECTID DriverResolveSurface(APTR HostHandle);
@@ -180,6 +184,8 @@ const DriverCallbacks glDriverCallbacks = {
    .DPIChanged = display::DriverDPIChanged,
    .SetFocus = display::DriverSetFocus,
    .ClipboardUpdated = display::DriverClipboardUpdated,
+   .EnableDragDrop = display::DriverEnableDragDrop,
+   .DisableDragDrop = display::DriverDisableDragDrop,
    .DragDropped = display::DriverDragDropped,
    .ControllerPorts = display::DriverControllerPorts,
    .ResolveSurface = display::DriverResolveSurface,
@@ -484,24 +490,213 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
 
 //********************************************************************************************************************
 
+static CSTRING driver_source_name(DriverSource Source)
+{
+   if (Source IS DriverSource::BUILT_IN) return "built-in";
+   if (Source IS DriverSource::MODULE) return "module";
+   if (Source IS DriverSource::STATIC) return "static";
+   return "none";
+}
+
+static ERR release_driver(bool Expunging)
+{
+   auto close_error = ERR::Okay;
+   if (glDriverOwnership.Driver and glDriverOwnership.Opened) {
+      close_error = glDriverOwnership.Driver->close();
+      glDriverOwnership.Opened = false;
+   }
+   if (glDriverOwnership.Driver and glDriverOwnership.Destroy) {
+      glDriverOwnership.Destroy(glDriverOwnership.Driver);
+   }
+   glDriverOwnership.Driver = nullptr;
+   glDriverOwnership.Destroy = nullptr;
+   glDriver = nullptr;
+   glHeadless = false;
+
+   if (glDriverOwnership.Module) {
+      if ((not Expunging) or (close_error != ERR::DoNotExpunge)) {
+         FreeResource(glDriverOwnership.Module);
+         glDriverOwnership.Module = nullptr;
+      }
+   }
+
+   if (not glDriverOwnership.Module) glDriverOwnership = {};
+   else {
+      glDriverOwnership.Source = DriverSource::MODULE;
+      glDriverOwnership.CanonicalName.clear();
+   }
+   return close_error;
+}
+
+struct DriverCandidate {
+   CSTRING CanonicalName;
+   CSTRING ModuleName;
+#ifdef KOTUKU_STATIC
+   CreateDisplayDriver Create;
+   DestroyDisplayDriver Destroy;
+#endif
+};
+
+static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit)
+{
+   kt::Log log(__FUNCTION__);
+   DriverOwnership pending;
+   pending.CanonicalName = Candidate.CanonicalName;
+   log.msg("Considering display driver '%s'.", Candidate.CanonicalName);
+
+   if (iequals(Candidate.CanonicalName, "headless")) {
+      pending.Driver = &glHeadlessDriver;
+      pending.Source = DriverSource::BUILT_IN;
+   }
+   else {
+#ifdef KOTUKU_STATIC
+      pending.Source = DriverSource::STATIC;
+      pending.Destroy = Candidate.Destroy;
+      if ((not Candidate.Create) or (not Candidate.Destroy)) return ERR::NoSupport;
+      auto core = CoreBase ? CoreBase : (struct CoreBase *)(uintptr_t)1;
+      pending.Driver = Candidate.Create(DISPLAY_DRIVER_INTERFACE_VERSION, core);
+#else
+      pending.Source = DriverSource::MODULE;
+      auto error = objModule::load(Candidate.ModuleName, &pending.Module);
+      if (error != ERR::Okay) {
+         log.warning("Failed to load display driver module '%s': %s.", Candidate.ModuleName, GetErrorMsg(error));
+         return error;
+      }
+      APTR create_address = nullptr;
+      APTR destroy_address = nullptr;
+      if ((((objModule *)pending.Module)->resolveSymbol("create_display_driver", &create_address) != ERR::Okay) or
+            (((objModule *)pending.Module)->resolveSymbol("destroy_display_driver", &destroy_address) != ERR::Okay) or
+            (not create_address) or (not destroy_address)) {
+         log.warning("Display driver module '%s' does not export the required factory ABI.", Candidate.ModuleName);
+         FreeResource(pending.Module);
+         return ERR::ResolveSymbol;
+      }
+      auto create = CreateDisplayDriver(create_address);
+      pending.Destroy = DestroyDisplayDriver(destroy_address);
+      pending.Driver = create(DISPLAY_DRIVER_INTERFACE_VERSION, CoreBase);
+#endif
+      if (not pending.Driver) {
+         if (pending.Module) FreeResource(pending.Module);
+         return ERR::WrongVersion;
+      }
+   }
+
+   if (not iequals(pending.Driver->name(), Candidate.CanonicalName)) {
+      log.warning("Display driver identity does not match candidate '%s'.", Candidate.CanonicalName);
+      if (pending.Destroy) pending.Destroy(pending.Driver);
+      if (pending.Module) FreeResource(pending.Module);
+      return ERR::InvalidData;
+   }
+
+   auto available = pending.Driver->isAvailable();
+   log.msg("Display driver '%s' availability result: %s.", Candidate.CanonicalName, GetErrorMsg(available));
+   if ((not Explicit) and (available != ERR::Okay)) {
+      if (pending.Destroy) pending.Destroy(pending.Driver);
+      if (pending.Module) FreeResource(pending.Module);
+      return available;
+   }
+
+   auto error = pending.Driver->open(glDriverCallbacks);
+   log.msg("Display driver '%s' open result: %s.", Candidate.CanonicalName, GetErrorMsg(error));
+   if (error != ERR::Okay) {
+      if (pending.Destroy) pending.Destroy(pending.Driver);
+      if (pending.Module) FreeResource(pending.Module);
+      return error;
+   }
+
+   pending.Opened = true;
+   glDriverOwnership = std::move(pending);
+   glDriver = glDriverOwnership.Driver;
+   glHeadless = glDriverOwnership.Source IS DriverSource::BUILT_IN;
+   log.msg("Selected display driver '%s' from %s.", glDriverOwnership.CanonicalName.c_str(),
+      driver_source_name(glDriverOwnership.Source));
+   return ERR::Okay;
+}
+
+static ERR select_display_driver(CSTRING RequestedName)
+{
+   if (RequestedName) {
+      if ((iequals(RequestedName, "headless")) or (iequals(RequestedName, "none"))) {
+         const DriverCandidate candidate = { "headless", nullptr
+#ifdef KOTUKU_STATIC
+            , nullptr, nullptr
+#endif
+         };
+         return open_driver_candidate(candidate, true);
+      }
+#if defined(DISPLAY_X11_DRIVER)
+      if (iequals(RequestedName, "x11")) {
+         const DriverCandidate candidate = { "x11", "display-x11"
+#ifdef KOTUKU_STATIC
+            , display::create_x11_display_driver, display::destroy_x11_display_driver
+#endif
+         };
+         return open_driver_candidate(candidate, true);
+      }
+#endif
+#if defined(DISPLAY_WINDOWS_DRIVER)
+      if (iequals(RequestedName, "windows")) {
+         const DriverCandidate candidate = { "windows", "display-windows"
+#ifdef KOTUKU_STATIC
+            , display::create_win32_display_driver, display::destroy_win32_display_driver
+#endif
+         };
+         return open_driver_candidate(candidate, true);
+      }
+#endif
+      return ERR::NoSupport;
+   }
+
+#if defined(DISPLAY_X11_DRIVER)
+   const DriverCandidate candidates[] = {{ "x11", "display-x11"
+#ifdef KOTUKU_STATIC
+      , display::create_x11_display_driver, display::destroy_x11_display_driver
+#endif
+   }};
+#endif
+#if defined(DISPLAY_WINDOWS_DRIVER)
+   const DriverCandidate candidates[] = {{ "windows", "display-windows"
+#ifdef KOTUKU_STATIC
+      , display::create_win32_display_driver, display::destroy_win32_display_driver
+#endif
+   }};
+#endif
+
+   auto error = ERR::NoSupport;
+#if defined(DISPLAY_X11_DRIVER) or defined(DISPLAY_WINDOWS_DRIVER)
+   for (const auto &candidate : candidates) {
+      error = open_driver_candidate(candidate, false);
+      if (error IS ERR::Okay) return error;
+   }
+#endif
+   return error;
+}
+
+//********************************************************************************************************************
+
 static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 {
    kt::Log log(__FUNCTION__);
 
    struct InitGuard {
       bool Complete = false;
+#ifdef _WIN32
+      bool ClipboardInitialised = false;
+#endif
 
       ~InitGuard() {
-         if ((not Complete) and (glDriver)) {
-            glDriver->close();
-            glDriver = nullptr;
-            glHeadless = false;
+         if (not Complete) {
+            release_driver(false);
+#ifdef _WIN32
+            if (ClipboardInitialised) winTerminateClipboard();
+#endif
          }
       }
    } init_guard;
 
 
    CoreBase = argCoreBase;
+   release_driver(false);
    glDriver = nullptr;
    glHeadless = false;
    glDisplayContext = CurrentContext();
@@ -524,65 +719,21 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    }
 #endif
 
+#ifdef _WIN32
+   winInitialiseClipboard();
+   init_guard.ClipboardInitialised = true;
+#endif
+
    if (auto driver_name = (CSTRING)GetResourcePtr(RES::DISPLAY_DRIVER)) {
       log.msg("User requested display driver '%s'", driver_name);
-      if ((iequals(driver_name, "none")) or (iequals(driver_name, "headless"))) {
-         glHeadless = true;
-         glDriver = &glHeadlessDriver;
-         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
-            glDriver->close();
-            glDriver = nullptr;
-            glHeadless = false;
-            return error;
-         }
-      }
-      #ifdef _WIN32
-      else if (iequals(driver_name, "windows")) {
-         glDriver = display::get_win32_driver();
-         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
-            glDriver = nullptr;
-            return error;
-         }
-      }
-      else return log.warning(ERR::NoSupport);
-      #endif
-      #ifdef __linux__
-      else if (iequals(driver_name, "x11")) {
-         glDriver = display::get_x11_driver();
-         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
-            glDriver = nullptr;
-            return error;
-         }
-      }
-      else return log.warning(ERR::NoSupport);
-      #endif
+      if (auto error = select_display_driver(driver_name); error != ERR::Okay) return log.warning(error);
    }
-
-   #ifdef _WIN32
-      if (not glDriver) {
-         glDriver = display::get_win32_driver();
-         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
-            glDriver = nullptr;
-            return error;
-         }
-      }
-   #endif
-
-   #if defined(__linux__)
-   #ifndef __ANDROID__
-      if (not glDriver) {
-         glDriver = display::get_x11_driver();
-         if (auto error = glDriver->isAvailable(); error != ERR::Okay) {
-            glDriver = nullptr;
-            return error;
-         }
-         if (auto error = glDriver->open(glDriverCallbacks); error != ERR::Okay) {
-            glDriver = nullptr;
-            return error;
-         }
-      }
-   #endif
-   #endif
+   else {
+      log.msg("Selecting the display driver automatically.");
+#if !defined(__ANDROID__) and !defined(_GLES_)
+      if (auto error = select_display_driver(nullptr); error != ERR::Okay) return error;
+#endif
+   }
 
    #ifdef _GLES_
       pthread_mutexattr_t attr;
@@ -721,12 +872,7 @@ static ERR MODOpen(OBJECTPTR Module)
 static ERR MODExpunge(void)
 {
    kt::Log log(__FUNCTION__);
-   ERR error = ERR::Okay;
-   if (glDriver) {
-      error = glDriver->close();
-      glDriver = nullptr;
-      glHeadless = false;
-   }
+   ERR error = release_driver(true);
 
    if (clDisplay) {
       clean_clipboard();
@@ -760,7 +906,6 @@ static ERR MODExpunge(void)
 
 #elif _WIN32
    winTerminateClipboard();
-   winTerminateOLE();
 
 #endif
 

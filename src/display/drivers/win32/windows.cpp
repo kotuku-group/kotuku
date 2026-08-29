@@ -88,10 +88,10 @@ static char glCursorEntry = FALSE;
 static HCURSOR glDefaultCursor = 0;
 static HWND glDeferredActiveWindow = 0;
 static std::mutex glMonitorPhysicalSizeLock;
-uint8_t glTrayIcon = 0, glTaskBar = 0, glStickToFront = 0;
 struct WinCursor *glCursors = 0;
 HCURSOR glCurrentCursor = 0;
 static int8_t glScreenClassInit = 0;
+static int16_t glApplicationIcon = 0;
 
 struct MonitorPhysicalSize {
    int Width;
@@ -104,7 +104,7 @@ static std::map<std::string, MonitorPhysicalSize> glMonitorPhysicalSizes;
 
 static HICON win_load_application_icon(void)
 {
-   if (auto icon = LoadIcon(glInstance, MAKEINTRESOURCE(GetWindowsIcon()))) return icon;
+   if (auto icon = LoadIcon(glInstance, MAKEINTRESOURCE(glApplicationIcon))) return icon;
    return LoadIcon(glInstance, IDI_APPLICATION);
 }
 
@@ -1010,12 +1010,8 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
 
          // TODO: A better methodology would be to use a 1 second timer delay to process the clipboard
 
-         glClipboardUpdates++;
-         if (GetTickCount() - glIgnoreClip < 2000) return 1;
-         else {
-            win_clipboard_updated();
-            return 0;
-         }
+         MsgClipboardUpdated();
+         return 0;
 
       case WM_TIMER:
          MsgTimer(); // Calls ProcessMessages()
@@ -1441,11 +1437,11 @@ int winGetDesktopSize(int *width, int *height)
 
 //********************************************************************************************************************
 
-int winCreateScreenClass(void)
+int winCreateScreenClass(int16_t ApplicationIcon)
 {
    WNDCLASSEX winclass;
 
-   winCreateScreenClassClipboard();
+   glApplicationIcon = ApplicationIcon;
 
    if (!glCancelAutoPlayMsg) {
       glCancelAutoPlayMsg = RegisterWindowMessage(TEXT("QueryCancelAutoPlay"));
@@ -1468,13 +1464,6 @@ int winCreateScreenClass(void)
 
    if (RegisterClassEx(&winclass)) {
       glScreenClassInit = 1;
-
-      if (!glOleInit) {
-         HRESULT result = OleInitialize(nullptr);
-         if (result == S_OK) glOleInit = 1; // 1 = Successful initialisation
-         else if (result == S_FALSE) glOleInit = 2; // 2 = Attempted initialisation failed.
-      }
-
       return 1;
    }
    else return 0;
@@ -1523,19 +1512,21 @@ int winCreateScreenClass(void)
 */
 
 HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char Maximise, char Borderless, const char *Name,
-   char Composite, double Opacity, char Desktop)
+   char Composite, double Opacity, char Desktop, Win32HostOptions *Options)
 {
    if (!Name) Name = "Kotuku";
+   if (!Options) return nullptr;
 
    bool interactive;
-   if ((Borderless) and (!glTrayIcon) and (!glTaskBar)) interactive = FALSE;
+   if ((Borderless) and (!Options->TrayIcon) and (!Options->TaskBar)) interactive = FALSE;
    else interactive = TRUE;
 
    HWND Window;
    if (Borderless) {
       if (!(Window = CreateWindowEx(
-            (glTaskBar ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) | (glStickToFront ? WS_EX_TOPMOST : 0),
-            "ScreenClass", (glTaskBar ? Name : nullptr),
+            (Options->TaskBar ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) |
+               (Options->StickToFront ? WS_EX_TOPMOST : 0),
+            "ScreenClass", (Options->TaskBar ? Name : nullptr),
             WS_POPUP|WS_CLIPCHILDREN|WS_CLIPSIBLINGS|(Maximise ? WS_MAXIMIZE : 0),
             *X, *Y,
             CW_USEDEFAULT, CW_USEDEFAULT,
@@ -1544,7 +1535,8 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
             glInstance, nullptr))) return nullptr;
    }
    else if (!(Window = CreateWindowEx(
-      (glTaskBar ? WS_EX_APPWINDOW : 0) | WS_EX_WINDOWEDGE | (glStickToFront ? WS_EX_TOPMOST : 0),
+      (Options->TaskBar ? WS_EX_APPWINDOW : 0) | WS_EX_WINDOWEDGE |
+         (Options->StickToFront ? WS_EX_TOPMOST : 0),
       "ScreenClass", Name,
       WS_SIZEBOX|WS_MINIMIZEBOX|WS_MAXIMIZEBOX|WS_CAPTION|WS_SYSMENU|WS_CLIPCHILDREN|WS_CLIPSIBLINGS|(Maximise ? WS_MAXIMIZE : 0),
       *X, *Y,
@@ -1567,7 +1559,7 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
    int dummy;
    winGetCoords(Window, dummy, dummy, dummy, dummy, *X, *Y, *Width, *Height);
 
-   if (glTrayIcon) {
+   if (Options->TrayIcon) {
       NOTIFYICONDATA nid;
       nid.cbSize = sizeof(NOTIFYICONDATA);
       nid.hWnd   = Window;
@@ -1583,7 +1575,7 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
       SendMessage(Window, WM_SETICON, ICON_SMALL, (LPARAM)icon);
    }
 
-   if (glStickToFront > 0) glStickToFront--;
+   if (Options->StickToFront > 0) Options->StickToFront--;
 
    if ((Composite) or (Opacity < 1.0)) {
       SetLastError(0);
@@ -1610,7 +1602,7 @@ HWND winCreateScreen(HWND PopOver, int *X, int *Y, int *Width, int *Height, char
 
    AddClipboardFormatListener(Window);
 
-   winInitDragDrop(Window);
+   MsgEnableDragDrop(Window);
 
    return Window;
 }
@@ -1710,7 +1702,7 @@ int winDestroyWindow(HWND window)
 
    winControllerRemoveWindow(window);
    if (window == glMainScreen) glMainScreen = nullptr;
-   RevokeDragDrop(window);
+   MsgDisableDragDrop(window);
 
    ZeroMemory(&notify, sizeof(notify));
    notify.cbSize = sizeof(notify);
@@ -2032,16 +2024,6 @@ void winTerminate(void)
    }
 
 }
-
-void winTerminateOLE(void)
-{
-   if (glOleInit == 1) {
-      OleUninitialize();
-      glOleInit = 0;
-   }
-}
-
-//********************************************************************************************************************
 
 int winShowWindow(HANDLE window, int Maximise)
 {

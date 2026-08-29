@@ -21,8 +21,23 @@ enum class PTC : int;
 struct ColourFormat;
 struct DisplayInfo;
 struct resolution;
+class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 4;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 5;
+
+using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
+using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
+
+#ifndef KOTUKU_STATIC
+ #if defined(__GNUC__)
+  #define DISPLAY_DRIVER_EXPORT __attribute__((visibility("default")))
+ #else
+  #define DISPLAY_DRIVER_EXPORT
+ #endif
+extern "C" DISPLAY_DRIVER_EXPORT DisplayDriver * create_display_driver(uint32_t InterfaceVersion,
+   struct CoreBase *Core);
+extern "C" DISPLAY_DRIVER_EXPORT void destroy_display_driver(DisplayDriver *Driver);
+#endif
 
 enum class DCAP : uint64_t {
    NIL             = 0,
@@ -70,6 +85,8 @@ struct DriverCallbacks {
    void (*DPIChanged)(OBJECTID SurfaceID);
    void (*SetFocus)(OBJECTID SurfaceID);
    void (*ClipboardUpdated)();
+   ERR (*EnableDragDrop)(APTR HostHandle);
+   void (*DisableDragDrop)(APTR HostHandle);
    void (*DragDropped)(OBJECTID SurfaceID, CSTRING Datatypes);
    void (*ControllerPorts)(int Port, bool Connected, int Total);
    OBJECTID (*ResolveSurface)(APTR HostHandle);
@@ -221,14 +238,14 @@ private:
    bool Open = false;
 };
 
-#ifdef _WIN32
 namespace display {
-DisplayDriver * get_win32_driver();
-}
+#ifdef _WIN32
+DisplayDriver * create_win32_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
+void destroy_win32_display_driver(DisplayDriver *Driver);
 #endif
 
 #ifdef __linux__
-namespace display {
-DisplayDriver * get_x11_driver();
-}
+DisplayDriver * create_x11_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
+void destroy_x11_display_driver(DisplayDriver *Driver);
 #endif
+}
