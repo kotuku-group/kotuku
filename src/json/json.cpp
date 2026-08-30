@@ -765,7 +765,7 @@ static ERR write_native_object(const XTag &Tag, JSONOutput &Output, int Depth)
       if (child.Attribs.empty() or (child.Attribs[0].Name != "item")) return ERR::InvalidData;
 
       const std::string *name;
-      if (required_attribute(child, "name", name) != ERR::Okay or name->empty()) return ERR::InvalidData;
+      if (required_attribute(child, "name", name) != ERR::Okay) return ERR::InvalidData;
 
       if (i) Output.Text += ',';
       Output.line(Depth + 1);

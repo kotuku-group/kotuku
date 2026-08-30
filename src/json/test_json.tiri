@@ -286,6 +286,13 @@ end
    obj.new('json', { statement=output })
 end
 
+@Test function SaveNativeEmptyMemberName()
+   local json_object = obj.new('json', { statement='{ "":1 }' })
+   local output = save_as_json(json_object, 0)
+   assert(output is '{"":1}', 'An empty JSON object member name should remain valid during serialisation.')
+   obj.new('json', { statement=output })
+end
+
 @Test function SaveNativeRejectsMalformedTrees()
    local missing_name = obj.new('json', { statement='{ "value":1 }' })
    local err = missing_name.mtRemoveXPath('/item/item/@name', 0)
