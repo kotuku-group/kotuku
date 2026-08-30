@@ -14,7 +14,7 @@ function declareErrors()
     "Continue",         -- Please continue processing
     "Skip",             -- Skip this operation (do not raise an error)
     "Retry",            -- Retry the operation (could not succeed at this time)
-    "DirEmpty",
+    "EndOfSequence",    -- End of sequence reached
     -- Anything above this point is considered non-fatal for exception reporting purposes
     "Terminate|ExceptionThreshold",  -- Operation processed, but do not call again with these parameters
     "NoMemory",                      -- Not enough memory available

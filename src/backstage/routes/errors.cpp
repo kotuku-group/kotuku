@@ -262,7 +262,7 @@ static void append_error_entry(std::string &Output, const BackstageErrorEntry &E
    Output.push_back(',');
    append_error_json_field(Output, "message", message ? std::string_view(message) : std::string_view());
    Output.append(",\"exception\":");
-   Output.append(Entry.code > int(ERR::ExceptionThreshold) ? "true" : "false");
+   Output.append(Entry.code >= int(ERR::ExceptionThreshold) ? "true" : "false");
    Output.push_back('}');
 }
 

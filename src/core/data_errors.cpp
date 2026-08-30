@@ -7,7 +7,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "Please continue processing",
  "Skip this operation",
  "Retry the operation (could not succeed at this time)",
- "The folder is empty",
+ "The end of the sequence has been reached",
  "Termination requested",
  "Not enough memory available",
  "Required pointer not present",
