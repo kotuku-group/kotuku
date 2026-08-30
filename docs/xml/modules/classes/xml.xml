@@ -80,13 +80,16 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
 
     <action>
       <name>SaveToObject</name>
-      <comment>Saves XML data to a storage object (e.g. <class name="File">File</class>).</comment>
+      <comment>Saves XML data to a storage object (e.g. <class name="File">File</class>), optionally using another format encoder.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
       <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
         <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
+      <description>
+<p>Set <code>ClassID</code> to <code>NIL</code> or <code>XML</code> to write XML.  Another XML-derived class ID delegates the action to that class's distinct <code>SaveToObject</code> implementation, allowing XML-backed data to be exported in formats such as JSON.</p>
+      </description>
     </action>
 
     <action>

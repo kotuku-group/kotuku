@@ -63,7 +63,9 @@ It will be translated to the following when loaded into an XML object:
 #include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
+#include <limits>
 #include <utility>
+#include <vector>
 
 JUMPTABLE_CORE
 
@@ -72,13 +74,74 @@ static OBJECTPTR clJSON = nullptr;
 static ERR JSON_Init(objXML *);
 static ERR JSON_SaveToObject(objXML *, struct acSaveToObject *);
 
+static bool valid_utf8(std::string_view Text) noexcept;
+
 static ActionArray clActions[] = {
    { AC::Init,         JSON_Init },
    { AC::SaveToObject, JSON_SaveToObject },
    { AC::NIL, nullptr }
 };
 
+//********************************************************************************************************************
+
+struct JSONOutput {
+   std::string Text;
+   bool Readable;
+
+   explicit JSONOutput(bool ReadableValue) : Readable(ReadableValue) { }
+
+   ERR quoted(std::string_view Value)
+   {
+      static constexpr char hex[] = "0123456789ABCDEF";
+
+      if (not valid_utf8(Value)) return ERR::InvalidData;
+
+      Text += '"';
+      for (auto byte : Value) {
+         auto value = uint8_t(byte);
+         switch (value) {
+            case '"':  Text += "\\\""; break;
+            case '\\': Text += "\\\\"; break;
+            case '\b': Text += "\\b"; break;
+            case '\f': Text += "\\f"; break;
+            case '\n': Text += "\\n"; break;
+            case '\r': Text += "\\r"; break;
+            case '\t': Text += "\\t"; break;
+            default:
+               if (value < 0x20) {
+                  Text += "\\u00";
+                  Text += hex[value >> 4];
+                  Text += hex[value & 0x0f];
+               }
+               else Text += char(value);
+               break;
+         }
+      }
+      Text += '"';
+      return ERR::Okay;
+   }
+
+   void line(int Depth)
+   {
+      if (not Readable) return;
+      Text += '\n';
+      Text.append(size_t(Depth) * 3, ' ');
+   }
+
+   void colon()
+   {
+      Text += Readable ? ": " : ":";
+   }
+};
+
 static ERR txt_to_json(objXML *, std::string_view);
+static ERR write_native_value(const XTag &Tag, JSONOutput &Output, int Depth);
+static ERR write_xml_element(const XTag &Tag, JSONOutput &Output, int Depth);
+
+struct XMLGroup {
+   std::string_view Name;
+   std::vector<const XTag *> Tags;
+};
 
 static size_t string_segment_length(CSTRING Input, CSTRING End) noexcept
 {
@@ -162,15 +225,6 @@ static ERR JSON_Init(objXML *Self)
    else return ERR::Okay;
 
    return ERR::NoSupport;
-}
-
-//********************************************************************************************************************
-
-static ERR JSON_SaveToObject(objXML *Self, struct acSaveToObject *Args)
-{
-   if (!Args) return ERR::NullArgs;
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -584,6 +638,439 @@ struct JSONParser {
       return ERR::Okay;
    }
 };
+
+//********************************************************************************************************************
+
+static bool valid_utf8(std::string_view Text) noexcept
+{
+   for (size_t i=0; i < Text.size();) {
+      auto first = uint8_t(Text[i]);
+      if (first <= 0x7f) {
+         i++;
+         continue;
+      }
+
+      size_t count;
+      if ((first >= 0xc2) and (first <= 0xdf)) count = 2;
+      else if ((first >= 0xe0) and (first <= 0xef)) count = 3;
+      else if ((first >= 0xf0) and (first <= 0xf4)) count = 4;
+      else return false;
+
+      if (i + count > Text.size()) return false;
+      for (size_t j=1; j < count; j++) {
+         auto byte = uint8_t(Text[i + j]);
+         if ((byte < 0x80) or (byte > 0xbf)) return false;
+      }
+
+      auto second = uint8_t(Text[i + 1]);
+      if ((first IS 0xe0) and (second < 0xa0)) return false;
+      if ((first IS 0xed) and (second > 0x9f)) return false;
+      if ((first IS 0xf0) and (second < 0x90)) return false;
+      if ((first IS 0xf4) and (second > 0x8f)) return false;
+      i += count;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static ERR find_attribute(const XTag &Tag, std::string_view Name, const std::string *&Result, bool &Present)
+{
+   Result = nullptr;
+   Present = false;
+   if (Tag.Attribs.empty()) return ERR::InvalidData;
+
+   for (size_t i=1; i < Tag.Attribs.size(); i++) {
+      if (Tag.Attribs[i].Name IS Name) {
+         if (Present) return ERR::InvalidData;
+         Result = &Tag.Attribs[i].Value;
+         Present = true;
+      }
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR required_attribute(const XTag &Tag, std::string_view Name, const std::string *&Result)
+{
+   bool present;
+   if (auto error = find_attribute(Tag, Name, Result, present); error != ERR::Okay) return error;
+   return present ? ERR::Okay : ERR::InvalidData;
+}
+
+//********************************************************************************************************************
+
+static ERR scalar_content(const XTag &Tag, std::string &Result, bool &HasElements)
+{
+   Result.clear();
+   HasElements = false;
+
+   for (auto &child : Tag.Children) {
+      if (child.Attribs.empty()) return ERR::InvalidData;
+      if (child.Attribs[0].Name.empty()) {
+         if ((child.Attribs.size() != 1) or (not child.Children.empty())) return ERR::InvalidData;
+         Result += child.Attribs[0].Value;
+      }
+      else HasElements = true;
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR json_kind(std::string_view Name, JSONValueKind &Result)
+{
+   if (Name IS "object") Result = JSONValueKind::Object;
+   else if (Name IS "array") Result = JSONValueKind::Array;
+   else if (Name IS "string") Result = JSONValueKind::String;
+   else if (Name IS "integer") Result = JSONValueKind::Integer;
+   else if (Name IS "number") Result = JSONValueKind::Number;
+   else if (Name IS "boolean") Result = JSONValueKind::Boolean;
+   else if (Name IS "null") Result = JSONValueKind::Null;
+   else return ERR::InvalidData;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR validate_number(std::string_view Value, JSONValueKind Expected)
+{
+   if (Value.empty()) return ERR::InvalidData;
+
+   JSONParser parser(Value);
+   JSONValueKind kind;
+   std::string parsed;
+   if ((parser.parse_number(parsed, kind) != ERR::Okay) or (not parser.at_end()) or (kind != Expected)) {
+      return ERR::InvalidData;
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR write_native_object(const XTag &Tag, JSONOutput &Output, int Depth)
+{
+   Output.Text += '{';
+   if (Tag.Children.empty()) {
+      Output.Text += '}';
+      return ERR::Okay;
+   }
+
+   for (size_t i=0; i < Tag.Children.size(); i++) {
+      auto &child = Tag.Children[i];
+      if (child.Attribs.empty() or (child.Attribs[0].Name != "item")) return ERR::InvalidData;
+
+      const std::string *name;
+      if (required_attribute(child, "name", name) != ERR::Okay or name->empty()) return ERR::InvalidData;
+
+      if (i) Output.Text += ',';
+      Output.line(Depth + 1);
+      if (auto error = Output.quoted(*name); error != ERR::Okay) return error;
+      Output.colon();
+      if (auto error = write_native_value(child, Output, Depth + 1); error != ERR::Okay) return error;
+   }
+
+   Output.line(Depth);
+   Output.Text += '}';
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR write_native_array(const XTag &Tag, JSONOutput &Output, int Depth)
+{
+   Output.Text += '[';
+   if (Tag.Children.empty()) {
+      Output.Text += ']';
+      return ERR::Okay;
+   }
+
+   for (size_t i=0; i < Tag.Children.size(); i++) {
+      auto &child = Tag.Children[i];
+      if (child.Attribs.empty()) return ERR::InvalidData;
+
+      const std::string *type;
+      if (required_attribute(child, "type", type) != ERR::Okay) return ERR::InvalidData;
+      JSONValueKind kind;
+      if (json_kind(*type, kind) != ERR::Okay) return ERR::InvalidData;
+
+      bool compound = (kind IS JSONValueKind::Object) or (kind IS JSONValueKind::Array);
+      if ((compound and (child.Attribs[0].Name != "item")) or
+          ((not compound) and (child.Attribs[0].Name != "value"))) return ERR::InvalidData;
+
+      const std::string *name;
+      bool has_name;
+      if (find_attribute(child, "name", name, has_name) != ERR::Okay or has_name) return ERR::InvalidData;
+
+      if (i) Output.Text += ',';
+      Output.line(Depth + 1);
+      if (auto error = write_native_value(child, Output, Depth + 1); error != ERR::Okay) return error;
+   }
+
+   Output.line(Depth);
+   Output.Text += ']';
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR write_native_value(const XTag &Tag, JSONOutput &Output, int Depth)
+{
+   const std::string *type;
+   if (required_attribute(Tag, "type", type) != ERR::Okay) return ERR::InvalidData;
+
+   JSONValueKind kind;
+   if (json_kind(*type, kind) != ERR::Okay) return ERR::InvalidData;
+
+   if (kind IS JSONValueKind::Object) return write_native_object(Tag, Output, Depth);
+   if (kind IS JSONValueKind::Array) return write_native_array(Tag, Output, Depth);
+
+   std::string content;
+   bool has_elements;
+   if (scalar_content(Tag, content, has_elements) != ERR::Okay or has_elements) return ERR::InvalidData;
+
+   switch (kind) {
+      case JSONValueKind::String:
+         return Output.quoted(content);
+      case JSONValueKind::Integer:
+      case JSONValueKind::Number:
+         if (validate_number(content, kind) != ERR::Okay) return ERR::InvalidData;
+         Output.Text += content;
+         return ERR::Okay;
+      case JSONValueKind::Boolean:
+         if ((content != "true") and (content != "false")) return ERR::InvalidData;
+         Output.Text += content;
+         return ERR::Okay;
+      case JSONValueKind::Null:
+         if (not content.empty()) return ERR::InvalidData;
+         Output.Text += "null";
+         return ERR::Okay;
+      case JSONValueKind::Object:
+      case JSONValueKind::Array:
+         return ERR::InvalidData;
+   }
+
+   return ERR::InvalidData;
+}
+
+//********************************************************************************************************************
+
+static bool xml_metadata(const XTag &Tag) noexcept
+{
+   if (Tag.Attribs.empty()) return false;
+   if ((Tag.Flags & XTF::CDATA) != XTF::NIL) return false;
+   if ((Tag.Flags & XTF::COMMENT) != XTF::NIL) return true;
+   if ((Tag.Flags & XTF::INSTRUCTION) != XTF::NIL) return true;
+   if ((Tag.Flags & XTF::NOTATION) != XTF::NIL) return true;
+   if (Tag.Attribs[0].Name.empty()) return false;
+   return (Tag.Attribs[0].Name[0] IS '?') or (Tag.Attribs[0].Name[0] IS '!');
+}
+
+//********************************************************************************************************************
+
+static bool whitespace_only(std::string_view Text) noexcept
+{
+   return std::all_of(Text.begin(), Text.end(), [](unsigned char Char) {
+      return (Char IS ' ') or (Char IS '\t') or (Char IS '\r') or (Char IS '\n');
+   });
+}
+
+//********************************************************************************************************************
+
+static ERR collect_xml_element(const XTag &Tag, std::string &Text, std::vector<XMLGroup> &Groups)
+{
+   Text.clear();
+   Groups.clear();
+
+   for (auto &child : Tag.Children) {
+      if (child.Attribs.empty()) return ERR::InvalidData;
+      if (xml_metadata(child)) continue;
+      if (child.Attribs[0].Name.empty()) {
+         if (not child.Children.empty()) return ERR::InvalidData;
+         Text += child.Attribs[0].Value;
+         continue;
+      }
+
+      auto group = std::find_if(Groups.begin(), Groups.end(), [&child](const XMLGroup &Group) {
+         return Group.Name IS child.Attribs[0].Name;
+      });
+      if (group IS Groups.end()) Groups.push_back({ child.Attribs[0].Name, { &child } });
+      else group->Tags.push_back(&child);
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR write_xml_group(const XMLGroup &Group, JSONOutput &Output, int Depth)
+{
+   if (Group.Tags.size() IS 1) return write_xml_element(*Group.Tags[0], Output, Depth);
+
+   Output.Text += '[';
+   for (size_t i=0; i < Group.Tags.size(); i++) {
+      if (i) Output.Text += ',';
+      Output.line(Depth + 1);
+      if (auto error = write_xml_element(*Group.Tags[i], Output, Depth + 1); error != ERR::Okay) return error;
+   }
+   Output.line(Depth);
+   Output.Text += ']';
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR write_xml_element(const XTag &Tag, JSONOutput &Output, int Depth)
+{
+   if (Tag.Attribs.empty() or Tag.Attribs[0].Name.empty()) return ERR::InvalidData;
+
+   std::string content;
+   std::vector<XMLGroup> groups;
+   if (auto error = collect_xml_element(Tag, content, groups); error != ERR::Okay) return error;
+
+   if ((Tag.Attribs.size() IS 1) and groups.empty()) return Output.quoted(content);
+
+   std::vector<std::string> property_names;
+   property_names.reserve(Tag.Attribs.size() + groups.size());
+   for (size_t i=1; i < Tag.Attribs.size(); i++) {
+      if (Tag.Attribs[i].Name.empty()) return ERR::InvalidData;
+      std::string property = "@" + Tag.Attribs[i].Name;
+      if (std::find(property_names.begin(), property_names.end(), property) != property_names.end()) {
+         return ERR::InvalidData;
+      }
+      property_names.push_back(std::move(property));
+   }
+
+   bool has_text = (not content.empty()) and (groups.empty() or (not whitespace_only(content)));
+   if (has_text) property_names.emplace_back("#text");
+
+   for (auto &group : groups) {
+      if (std::find(property_names.begin(), property_names.end(), group.Name) != property_names.end()) {
+         return ERR::InvalidData;
+      }
+      property_names.emplace_back(group.Name);
+   }
+
+   Output.Text += '{';
+   size_t member = 0;
+   auto begin_member = [&Output, &member, Depth](std::string_view Name) -> ERR {
+      if (member++) Output.Text += ',';
+      Output.line(Depth + 1);
+      if (auto error = Output.quoted(Name); error != ERR::Okay) return error;
+      Output.colon();
+      return ERR::Okay;
+   };
+
+   for (size_t i=1; i < Tag.Attribs.size(); i++) {
+      std::string name = "@" + Tag.Attribs[i].Name;
+      if (auto error = begin_member(name); error != ERR::Okay) return error;
+      if (auto error = Output.quoted(Tag.Attribs[i].Value); error != ERR::Okay) return error;
+   }
+
+   if (has_text) {
+      if (auto error = begin_member("#text"); error != ERR::Okay) return error;
+      if (auto error = Output.quoted(content); error != ERR::Okay) return error;
+   }
+
+   for (auto &group : groups) {
+      if (auto error = begin_member(group.Name); error != ERR::Okay) return error;
+      if (auto error = write_xml_group(group, Output, Depth + 1); error != ERR::Okay) return error;
+   }
+
+   Output.line(Depth);
+   Output.Text += '}';
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR write_xml_document(const objXML::TAGS &Tags, JSONOutput &Output)
+{
+   std::vector<XMLGroup> groups;
+   for (auto &tag : Tags) {
+      if (tag.Attribs.empty()) return ERR::InvalidData;
+      if (xml_metadata(tag) or tag.Attribs[0].Name.empty()) continue;
+
+      auto group = std::find_if(groups.begin(), groups.end(), [&tag](const XMLGroup &Group) {
+         return Group.Name IS tag.Attribs[0].Name;
+      });
+      if (group IS groups.end()) groups.push_back({ tag.Attribs[0].Name, { &tag } });
+      else group->Tags.push_back(&tag);
+   }
+
+   Output.Text += '{';
+   for (size_t i=0; i < groups.size(); i++) {
+      if (i) Output.Text += ',';
+      Output.line(1);
+      if (auto error = Output.quoted(groups[i].Name); error != ERR::Okay) return error;
+      Output.colon();
+      if (auto error = write_xml_group(groups[i], Output, 1); error != ERR::Okay) return error;
+   }
+   if (not groups.empty()) Output.line(0);
+   Output.Text += '}';
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-ACTION-
+SaveToObject: Serialises JSON or XML-backed data as JSON and writes it to another object.
+
+Native JSON objects preserve their parsed JSON types and source number lexemes.  A base @XML object is transcribed to
+JSON using element names as properties, `@`-prefixed attribute properties, `#text` for mixed content, and arrays for
+repeated sibling names.  Attribute values and XML text remain strings.
+
+Set #Flags to `XMF::READABLE` for three-space indentation and a final line-feed.  Otherwise compact JSON is written.
+The complete tree is validated before one write is attempted, so invalid source data does not partially modify the
+destination.
+
+-ERRORS-
+Okay: The JSON data was written successfully, or the source tree contained no data.
+NullArgs: The action parameters or destination object were not supplied.
+InvalidData: The source tree is structurally invalid or contains invalid UTF-8 or scalar data.
+BufferOverflow: The serialised output is too large for the destination action.
+Write: The destination rejected the output or performed a short write.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR JSON_SaveToObject(objXML *Self, struct acSaveToObject *Args)
+{
+   if ((not Args) or (not Args->Dest)) return ERR::NullArgs;
+   if (Self->Tags.empty()) return ERR::Okay;
+
+   JSONOutput output((Self->Flags & XMF::READABLE) != XMF::NIL);
+   ERR error;
+   if (Self->isDerived()) {
+      if (Self->Tags.size() != 1) return ERR::InvalidData;
+
+      auto &root = Self->Tags[0];
+      if (root.Attribs.empty() or (root.Attribs[0].Name != "item")) return ERR::InvalidData;
+
+      const std::string *name;
+      bool has_name;
+      if (find_attribute(root, "name", name, has_name) != ERR::Okay or has_name) return ERR::InvalidData;
+
+      const std::string *type;
+      if ((required_attribute(root, "type", type) != ERR::Okay) or (*type != "object")) return ERR::InvalidData;
+      error = write_native_value(root, output, 0);
+   }
+   else error = write_xml_document(Self->Tags, output);
+
+   if (error != ERR::Okay) return error;
+   if (output.Readable) output.Text += '\n';
+   if (output.Text.size() > size_t(std::numeric_limits<int>::max())) return ERR::BufferOverflow;
+
+   int written = 0;
+   auto bytes = std::span<const int8_t>((const int8_t *)output.Text.data(), output.Text.size());
+   if ((acWrite(Args->Dest, bytes, &written) != ERR::Okay) or (written != int(output.Text.size()))) return ERR::Write;
+   return ERR::Okay;
+}
 
 //********************************************************************************************************************
 // Parse a bounded text string into the JSON class's XML representation.
