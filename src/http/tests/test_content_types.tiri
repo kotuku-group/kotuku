@@ -293,7 +293,7 @@ end
          assert(binarySent != true, 'Binary upload body requested more than once.')
          HTTP.acWrite(binaryData)
          binarySent = true
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -373,7 +373,7 @@ end
          assert(textSent != true, 'Text upload body requested more than once.')
          HTTP.acWrite(textData)
          textSent = true
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
