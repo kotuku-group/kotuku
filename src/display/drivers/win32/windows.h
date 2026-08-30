@@ -1,4 +1,6 @@
 
+#pragma once
+
 #ifdef KOTUKU_MAIN_H
 typedef void * HWND;
 typedef void * HDC;
@@ -21,12 +23,6 @@ struct WinCursor {
    #else
    int CursorID;
    #endif
-};
-
-struct WinDT {
-   int Datatype;
-   int Length;
-   void *Data;
 };
 
 #if !defined(KOTUKU_MAIN_H) && defined(__cplusplus)
@@ -53,38 +49,10 @@ enum class CON : unsigned int {
 DEFINE_ENUM_FLAG_OPERATORS(CON)
 #endif
 
-extern int16_t GetWindowsIcon();
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-extern int glIgnoreClip;
-extern int glClipboardUpdates;
-extern int8_t glOleInit;
-
 int winLookupSurfaceID(HWND);
-void winCreateScreenClassClipboard(void);
-void winDragDropFromHost_Drop(int, char *); // lib_surfaces.cpp
-void win_clipboard_updated(void); // class_clipboard.cpp
-void winTerminateClipboard(void);
-
-#ifdef __cplusplus
-} // extern C
-#endif
 
 #ifdef __cplusplus
 namespace display {
-
-extern "C" int winAddClip(int, const void *, int, int);
-extern "C" int winAddFileClip(const char16_t *, int, int);
-extern "C" void winClearClipboard(void);
-extern "C" void winCopyClipboard(void);
-extern "C" int winExtractFile(void *, int, char *, int);
-extern "C" void winGetClip(int);
-extern "C" int winInitDragDrop(HWND);
-extern "C" int winCurrentClipboardID(void);
-extern "C" int winGetData(char *, struct WinDT **, int *);
 
 extern void winTerminate(void);
 extern HDC winGetDC(HWND);
@@ -112,6 +80,9 @@ extern void MsgFocusState(int SurfaceID, int State);
 extern void MsgTotalControllerPorts(int, int);
 extern void MsgControllerPorts(int Port, bool Connected, int Total);
 extern void MsgControllerLog(bool Warning, const char *Message);
+extern void MsgClipboardUpdated(void);
+extern void MsgEnableDragDrop(HWND Window);
+extern void MsgDisableDragDrop(HWND Window);
 extern void MsgResizedWindow(int, int, int, int, int, int, int, int, int);
 extern void MsgDPIChanged(int SurfaceID);
 extern void MsgSetFocus(int SurfaceID);
@@ -130,8 +101,15 @@ void Win32ManagerLoop(void);
 
 extern void winGetDPI(int *, int *);
 extern HWND winCreateChild(HWND, int, int, int, int);
-extern HWND winCreateScreen(HWND, int *, int *, int *, int *, char, char, const char *, char, double, char);
-extern int winCreateScreenClass(void);
+struct Win32HostOptions {
+   uint8_t TrayIcon = 0;
+   uint8_t TaskBar = 0;
+   uint8_t StickToFront = 0;
+};
+
+extern HWND winCreateScreen(HWND, int *, int *, int *, int *, char, char, const char *, char, double, char,
+   Win32HostOptions *);
+extern int winCreateScreenClass(int16_t ApplicationIcon);
 extern void winDisableBatching(void);
 extern void winRemoveWindowClass(const char *);
 extern int winProcessMessage(void *);

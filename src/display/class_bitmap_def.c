@@ -27,9 +27,8 @@ static const struct FieldDef clBitmapFlags[] = {
    { "Accelerated3D", 0x00000400 },
    { "AlphaChannel", 0x00000800 },
    { "NeverShrink", 0x00001000 },
-   { "X11DGA", 0x00002000 },
-   { "FixedDepth", 0x00004000 },
-   { "Premul", 0x00008000 },
+   { "FixedDepth", 0x00002000 },
+   { "Premul", 0x00004000 },
    { nullptr, 0 }
 };
 

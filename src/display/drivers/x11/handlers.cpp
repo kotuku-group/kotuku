@@ -1,22 +1,38 @@
+#include "x11_native.h"
+
+namespace display {
+
+static X11Driver::State *glEventState = nullptr;
+
+#define XDisplay (glEventState->Connection)
+#define atomSurfaceID (glEventState->SurfaceAtom)
+#define XWADeleteWindow (glEventState->DeleteAtom)
+#define XWATakeFocus (glEventState->TakeFocusAtom)
+#define KeyHeld (glEventState->KeyHeld)
+#define glKeyFlags (glEventState->KeyFlags)
+#define glDriverCallbacks (*glEventState->Callbacks)
 
 void process_movement(Window Window, int X, int Y);
 
-static inline OBJECTID get_display(Window Window)
+static inline OBJECTID resolve_surface(Window Window)
 {
-   OBJECTID *data, display_id;
-   unsigned long nitems, nbytes;
-   int format;
-   Atom atom;
+   const std::lock_guard lock(glEventState->NativeLock);
+   if (auto it = glEventState->Windows.find(Window); it != glEventState->Windows.end()) {
+      if (it->second->SurfaceID) return it->second->SurfaceID;
 
-   if (!XDisplay) return 0;
+      // The fallback matches against Surface.DisplayWindow, which records the native window handle rather than
+      // the driver's opaque HOSTWINDOW.
 
-   if (XGetWindowProperty(XDisplay, Window, atomSurfaceID, 0, 1, False, AnyPropertyType, &atom, &format, &nitems,
-         &nbytes, (uint8_t **)&data) IS Success) {
-      display_id = data[0];
-      XFree(data);
-      return display_id;
+      return glDriverCallbacks.ResolveSurface((APTR)(uintptr_t)it->second->Native);
    }
    return 0;
+}
+
+static inline bool adopted_window(Window Window)
+{
+   const std::lock_guard lock(glEventState->NativeLock);
+   auto it = glEventState->Windows.find(Window);
+   return (it != glEventState->Windows.end()) and it->second->Adopted;
 }
 
 //********************************************************************************************************************
@@ -29,7 +45,7 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
    bool processed_events = false;
    last_motion.xany.window = 0;
 
-   if (!XDisplay) return;
+   if (not XDisplay) return;
 
    while (XPending(XDisplay)) {
       processed_events = true;
@@ -44,7 +60,8 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
          case ButtonPress:      handle_button_press(&xevent); break;
          case ButtonRelease:    handle_button_release(&xevent); break;
          case ConfigureNotify:  handle_configure_notify(&xevent.xconfigure); break;
-         case EnterNotify:      handle_enter_notify(&xevent.xcrossing); break;
+         case EnterNotify:
+         case LeaveNotify:      handle_crossing_notify(&xevent.xcrossing); break;
          //case Expose:           handle_exposure(&xevent.xexpose); break;
          case KeyPress:         handle_key_press(&xevent); break;
          case KeyRelease:       handle_key_release(&xevent); break;
@@ -58,37 +75,19 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
          case FocusIn: {
             kt::Log log("X11Mgr");
-            if (auto display_id = get_display(xevent.xany.window)) {
-               auto surface_id = GetOwnerID(display_id);
+            if (auto surface_id = resolve_surface(xevent.xany.window)) {
                log.traceBranch("XFocusIn surface #%d", surface_id);
-               kt::ScopedObjectLock<objSurface> surface(surface_id);
-               if (surface.granted()) surface->focus();
+               glDriverCallbacks.FocusState(surface_id, true);
             }
-            else log.trace("XFocusIn Failed to get window display ID.");
+            else log.trace("XFocusIn failed to resolve the window surface.");
             break;
          }
 
          case FocusOut: {
             kt::Log log("X11Mgr");
-            if (auto display_id = get_display(xevent.xany.window)) {
-               auto surface_id = GetOwnerID(display_id);
+            if (auto surface_id = resolve_surface(xevent.xany.window)) {
                log.traceBranch("XFocusOut surface #%d", surface_id);
-
-               std::vector<OBJECTID> list;
-               { // Make a local copy of the focus list
-                  const std::lock_guard<std::recursive_mutex> lock(glFocusLock);
-                  list = glFocusList;
-               }
-
-               if (!list.empty()) {
-                  bool in_focus = false;
-                  for (auto &id : list) {
-                     if ((!in_focus) and (id != surface_id)) continue;
-                     in_focus = true;
-                     kt::ScopedObjectLock<objSurface> surface(id);
-                     if (surface.granted()) surface->lostFocus();
-                  }
-               }
+               glDriverCallbacks.FocusState(surface_id, false);
             }
 
             break;
@@ -96,63 +95,8 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
          case ClientMessage:
             if (Atom(xevent.xclient.data.l[0]) IS XWADeleteWindow) {
-               if (auto display_id = get_display(xevent.xany.window)) {
-                  auto surface_id = GetOwnerID(display_id);
-                  const WinHook hook(surface_id, WH::CLOSE);
-                  FUNCTION func;
-                  bool has_hook = false;
-
-                  {
-                     const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
-                     if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
-                        if (it->second.stale()) {
-                           release_display_callback(it->second);
-                           glWindowHooks.erase(it);
-                        }
-                        else {
-                           func = it->second;
-                           func.pin();
-                           has_hook = true;
-                        }
-                     }
-                  }
-
-                  if (has_hook) {
-                     ERR result;
-
-                     if (func.isC()) {
-                        kt::SwitchContext ctx(func.Context);
-                        auto callback = (ERR (*)(OBJECTID, APTR))func.Routine;
-                        result = callback(surface_id, func.Meta);
-                     }
-                     else if (func.isScript()) {
-                        sc::Call(func, std::to_array<ScriptArg>({ { "SurfaceID", surface_id, FDF_OBJECTID } }), result);
-                     }
-                     else result = ERR::Okay;
-
-                     if (result IS ERR::Terminate) {
-                        const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
-                        if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
-                           release_display_callback(it->second);
-                           glWindowHooks.erase(it);
-                        }
-                     }
-                     else if (result IS ERR::Cancelled) {
-                        log.msg("Window closure cancelled by client.");
-                        if (func.defined()) func.unpin();
-                        break;
-                     }
-
-                     if (func.defined()) func.unpin();
-                  }
-
-                  log.msg("Freeing surface %d from display %d.", surface_id, display_id);
-                  FreeObject(surface_id);
-               }
-               else {
-                  log.msg("Failed to retrieve display ID for window $%x.", (unsigned int)xevent.xany.window);
-                  XDestroyWindow(XDisplay, (Window)xevent.xany.window);
-               }
+               auto surface_id = resolve_surface(xevent.xany.window);
+               if (glDriverCallbacks.WindowClose(surface_id) IS ERR::Cancelled) break;
             }
             else if (Atom(xevent.xclient.data.l[0]) IS XWATakeFocus) {
                XSetInputFocus(XDisplay, xevent.xclient.window, RevertToParent, Time(xevent.xclient.data.l[1]));
@@ -160,34 +104,26 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
             break;
 
          case DestroyNotify:
-            if (glPlugin) {
-               if (auto display_id = get_display(xevent.xany.window)) {
-                  auto surface_id = GetOwnerID(display_id);
-                  FreeObject(surface_id);
-               }
+            // Only adopted windows are torn down here, because the client owns the parent and its destruction is the
+            // sole notification that the display has gone away.  Windows created by this driver are erased from the
+            // window table before XDestroyWindow() is issued, so this path must not be relied upon for them.
+
+            if (adopted_window(xevent.xany.window)) {
+               glDriverCallbacks.WindowDestroyed(resolve_surface(xevent.xany.window));
             }
             break;
       }
 
       #ifdef XRANDR_ENABLED
-      if ((glXRRAvailable) and (XRRUpdateConfiguration(&xevent))) {
+      if ((glEventState->RandR) and (XRRUpdateConfiguration(&xevent))) {
          // If randr indicates that the display has been resized, we must adjust the system display to match.  Refer to
          // SetDisplay() for more information.
 
          auto notify = (XRRScreenChangeNotifyEvent *)&xevent;
 
-         if (auto display_id = get_display(xevent.xany.window)) {
-            if (ScopedObjectLock<objSurface> surface(GetOwnerID(display_id), 5000); surface.granted()) {
-               // Update the display width/height so that we don't recursively post further display mode updates to the
-               // X server.
-
-               if (ScopedObjectLock<extDisplay> display(display_id, 5000); display.granted()) {
-                  display->Width  = notify->width;
-                  display->Height = notify->height;
-                  acResize(*surface, notify->width, notify->height, 0);
-               }
-            }
-         }
+         auto surface_id = resolve_surface(xevent.xany.window);
+         glDriverCallbacks.WindowResized(surface_id, 0, 0, notify->width, notify->height,
+            0, 0, notify->width, notify->height);
       }
       #endif
    }
@@ -202,52 +138,25 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
    }
 }
 
+void x11_process_events(X11Driver::State *State)
+{
+   if ((not State) or (not State->Callbacks) or State->Closing) return;
+   glEventState = State;
+   X11ManagerLoop(State->ConnectionFD, State);
+   glEventState = nullptr;
+}
+
 //********************************************************************************************************************
 
 void handle_button_press(XEvent *xevent)
 {
-   if (auto pointer = gfx::AccessPointer()) {
-      if ((xevent->xbutton.button IS 4) or (xevent->xbutton.button IS 5)) {
-         // Mouse wheel movement
+   auto surface_id = resolve_surface(xevent->xbutton.window);
 
-         struct dcDeviceInput input = {
-            .Values    = { (xevent->xbutton.button IS 4) ? -9.0 : 9.0, 0 },
-            .Timestamp = PreciseTime(),
-            .Flags     = JTYPE::EXT_MOVEMENT|JTYPE::DIGITAL,
-            .Type      = JET::WHEEL
-         };
-
-         acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
-            std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
-      }
-      else {
-         struct dcDeviceInput input;
-         input.Type = JET::NIL;
-
-         if (xevent->xbutton.button IS 1) {
-            input.Type  = JET::BUTTON_1;
-            input.Values[0] = 1;
-         }
-         else if (xevent->xbutton.button IS 2) {
-            input.Type  = JET::BUTTON_3;
-            input.Values[0] = 1;
-         }
-         else if (xevent->xbutton.button IS 3) {
-            input.Type  = JET::BUTTON_2;
-            input.Values[0] = 1;
-         }
-
-         if (input.Type != JET::NIL) {
-            input.Flags = glInputType[int(input.Type)].Flags;
-            input.Timestamp = PreciseTime();
-
-            acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
-               std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
-         }
-      }
-
-      ReleaseObject(pointer);
-   }
+   if (xevent->xbutton.button IS 4) glDriverCallbacks.WheelMovement(surface_id, -9.0);
+   else if (xevent->xbutton.button IS 5) glDriverCallbacks.WheelMovement(surface_id, 9.0);
+   else if (xevent->xbutton.button IS 1) glDriverCallbacks.ButtonInput(0x0001, true);
+   else if (xevent->xbutton.button IS 2) glDriverCallbacks.ButtonInput(0x0004, true);
+   else if (xevent->xbutton.button IS 3) glDriverCallbacks.ButtonInput(0x0002, true);
 
    XFlush(XDisplay);
 }
@@ -256,24 +165,9 @@ void handle_button_press(XEvent *xevent)
 
 void handle_button_release(XEvent *xevent)
 {
-   if (auto pointer = gfx::AccessPointer()) {
-      struct dcDeviceInput input = {
-         .Values    = { 0, 0 },
-         .Timestamp = PreciseTime(),
-         .Flags     = JTYPE::NIL,
-         .Type      = JET::NIL
-      };
-
-      if (xevent->xbutton.button IS 1) input.Type  = JET::BUTTON_1;
-      else if (xevent->xbutton.button IS 2) input.Type  = JET::BUTTON_3;
-      else if (xevent->xbutton.button IS 3) input.Type  = JET::BUTTON_2;
-
-      if (input.Type != JET::NIL) {
-         acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
-            std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
-      }
-      ReleaseObject(pointer);
-   }
+   if (xevent->xbutton.button IS 1) glDriverCallbacks.ButtonInput(0x0001, false);
+   else if (xevent->xbutton.button IS 2) glDriverCallbacks.ButtonInput(0x0004, false);
+   else if (xevent->xbutton.button IS 3) glDriverCallbacks.ButtonInput(0x0002, false);
 
    XFlush(XDisplay);
 
@@ -313,41 +207,11 @@ void handle_configure_notify(XConfigureEvent *xevent)
 
    log.traceBranch("Win: %d, Pos: %dx%d,%dx%d", (int)xevent->window, x, y, width, height);
 
-   FUNCTION feedback;
-   OBJECTID display_id;
    int absx, absy;
-   if ((display_id = get_display(xevent->window))) {
-      if (ScopedObjectLock<extDisplay> display(display_id, 3000); display.granted()) {
-         Window childwin;
-
-         XTranslateCoordinates(XDisplay, (Window)display->WindowHandle, DefaultRootWindow(XDisplay),
-            0, 0, &absx, &absy, &childwin);
-
-         display->X = absx;
-         display->Y = absy;
-         display->Width  = width;
-         display->Height = height;
-         resize_pixmap(*display, width, height);
-         acResize(display->Bitmap, width, height, 0.0);
-
-         release_stale_resize_feedback(*display);
-         feedback = display->ResizeFeedback;
-      }
-      else {
-         log.warning("Failed to get display ID for window %u.", (uint32_t)xevent->window);
-         return;
-      }
-   }
-   else {
-      log.warning("Failed to retrieve Display from X window.");
-      return;
-   }
-
-   // Notify with the display and surface unlocked, this reduces the potential for dead-locking.
-
-   log.trace("Sending redimension notification: %dx%d,%dx%d", absx, absy, width, height);
-
-   resize_feedback(&feedback, display_id, absx, absy, width, height);
+   Window child;
+   XTranslateCoordinates(XDisplay, xevent->window, DefaultRootWindow(XDisplay), 0, 0, &absx, &absy, &child);
+   glDriverCallbacks.WindowResized(resolve_surface(xevent->window), absx, absy, width, height,
+      absx, absy, width, height);
 }
 
 //********************************************************************************************************************
@@ -355,18 +219,9 @@ void handle_configure_notify(XConfigureEvent *xevent)
 void handle_exposure(XExposeEvent *event)
 {
    kt::Log log(__FUNCTION__);
-   OBJECTID display_id;
-
-   if ((display_id = get_display(event->window))) {
-      OBJECTID surface_id = GetOwnerID(display_id);
-
-      XEvent xevent;
-      while (XCheckWindowEvent(XDisplay, event->window, ExposureMask, &xevent) IS True);
-
-      struct drw::ExposeToDisplay region = { .X = 0, .Y = 0, .Width = 20000, .Height = 20000, .Flags = EXF::CHILDREN };
-      QueueAction(drw::ExposeToDisplay::id, surface_id, &region); // Redraw everything
-   }
-   else log.warning("XEvent.Expose: Failed to find a Surface ID for window %u.", (uint32_t)event->window);
+   XEvent xevent;
+   while (XCheckWindowEvent(XDisplay, event->window, ExposureMask, &xevent) IS True);
+   glDriverCallbacks.ExposeRegion(resolve_surface(event->window), event->x, event->y, event->width, event->height);
 }
 
 //********************************************************************************************************************
@@ -579,7 +434,8 @@ void handle_key_press(XEvent *xevent)
          unicode = UTF8ReadValue(buffer, nullptr);
       }
    }
-   else if ((mod_sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0, xevent->xkey.state & ShiftMask ? 1 : 0)) != NoSymbol) {
+   else if ((mod_sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0,
+         xevent->xkey.state & ShiftMask ? 1 : 0)) != NoSymbol) {
    }
    else {
       log.trace("Failed to convert keycode to keysym.");
@@ -588,7 +444,8 @@ void handle_key_press(XEvent *xevent)
 
    KeySym sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0, 0);
 
-   log.traceBranch("XCode: $%x, XSym: $%x, ModSym: $%x, XState: $%x", xevent->xkey.keycode, (int)sym, (int)mod_sym, xevent->xkey.state);
+   log.traceBranch("XCode: $%x, XSym: $%x, ModSym: $%x, XState: $%x", xevent->xkey.keycode, (int)sym,
+      (int)mod_sym, xevent->xkey.state);
 
    auto value = xkeysym_to_pkey(sym);
    auto flags = KQ::PRESSED;
@@ -614,13 +471,7 @@ void handle_key_press(XEvent *xevent)
 
    if ((value != KEY::NIL) or (unicode != 0xffffffff)) {
      if ((unicode < 0x20) or (unicode IS 127)) flags |= KQ::NOT_PRINTABLE;
-      evKey key = {
-         .EventID    = EVID_IO_KEYBOARD_KEYPRESS,
-         .Qualifiers = glKeyFlags|flags,
-         .Code       = value,
-         .Unicode    = (int)unicode
-      };
-      BroadcastEvent(&key, sizeof(key));
+      glDriverCallbacks.KeyPressed(glKeyFlags|flags, value, int(unicode));
    }
 }
 
@@ -656,7 +507,8 @@ void handle_key_release(XEvent *xevent)
       buf[out] = 0;
       unicode = UTF8ReadValue(buf, nullptr);
    }
-   else if ((mod_sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0, xevent->xkey.state & ShiftMask ? 1 : 0)) != NoSymbol) {
+   else if ((mod_sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0,
+         xevent->xkey.state & ShiftMask ? 1 : 0)) != NoSymbol) {
    }
    else {
       log.trace("XLookupString() failed to convert keycode to keysym.");
@@ -683,48 +535,25 @@ void handle_key_release(XEvent *xevent)
 
   if ((value != KEY::NIL) or (unicode != 0xffffffff)) {
      if ((unicode < 0x20) or (unicode IS 127)) flags |= KQ::NOT_PRINTABLE;
-      evKey key = {
-         .EventID    = EVID_IO_KEYBOARD_KEYPRESS,
-         .Qualifiers = glKeyFlags|flags,
-         .Code       = value,
-         .Unicode    = (int)unicode
-      };
-      BroadcastEvent(&key, sizeof(key));
+      glDriverCallbacks.KeyReleased(glKeyFlags|flags, value);
    }
 }
 
 //********************************************************************************************************************
 
-void handle_enter_notify(XCrossingEvent *xevent)
+void handle_crossing_notify(XCrossingEvent *xevent)
 {
-   process_movement(xevent->window, xevent->x_root, xevent->y_root);
+   auto surface_id = resolve_surface(xevent->window);
+   bool entered = xevent->type IS EnterNotify;
+   glDriverCallbacks.Crossing(surface_id, entered, xevent->x_root, xevent->y_root);
+   if (entered) glDriverCallbacks.Movement(surface_id, xevent->x_root, xevent->y_root, false);
 }
 
 //********************************************************************************************************************
 
 void process_movement(Window Window, int X, int Y)
 {
-   if (auto pointer = gfx::AccessPointer()) {
-      // Refer to the Pointer class to see how this works
-      pointer->HostX = X;
-      pointer->HostY = Y;
-
-      OBJECTID display_id;
-      if ((display_id = get_display(Window))) {
-         pointer->setSurface(GetOwnerID(display_id)); // Alter the surface of the pointer so that it refers to the correct root window
-      }
-
-      // Refer to the handler code in the Display class to see how the HostX and HostY fields are updated from afar.
-
-      struct dcDeviceInput input;
-      input.Type      = JET::ABS_XY;
-      input.Flags     = JTYPE::NIL;
-      input.Values[0] = X;
-      input.Values[1] = Y;
-      input.Timestamp = PreciseTime();
-      acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
-         std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
-
-      ReleaseObject(pointer);
-   }
+   glDriverCallbacks.Movement(resolve_surface(Window), X, Y, false);
 }
+
+} // namespace display

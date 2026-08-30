@@ -309,17 +309,23 @@ public:
       return error;
    }
 
-   ERR total(int &Value, Notifications &Changes)
+   ERR total(int &Value)
    {
-      {
-         std::lock_guard lock(Lock);
-         if (not CooperativeWindow) {
+      std::unique_lock lock(Lock);
+      if ((not CooperativeWindow) or Stopping) {
+         Value = 0;
+         return ERR::NotInitialised;
+      }
+
+      if (Dirty) {
+         request_refresh();
+         RefreshComplete.wait(lock, [this]() { return (not Dirty) or (not CooperativeWindow) or Stopping; });
+         if ((not CooperativeWindow) or Stopping) {
             Value = 0;
             return ERR::NotInitialised;
          }
       }
-      refresh(Changes);
-      std::lock_guard lock(Lock);
+
       Value = controller::totalPorts(occupied());
       return ERR::Okay;
    }
@@ -392,6 +398,7 @@ public:
          std::lock_guard lock(Lock);
          Stopping = true;
          WorkerSignal.notify_all();
+         RefreshComplete.notify_all();
       }
       if (Worker.joinable()) Worker.join();
 
@@ -415,6 +422,10 @@ public:
 private:
    void request_refresh()
    {
+      // A shutdown releases the lock while joining the worker, so a request arriving in that window would otherwise
+      // start a replacement thread that nothing joins.  Its destructor would then call std::terminate().
+
+      if (Stopping) return;
       RefreshRequested = true;
       if (not Worker.joinable()) Worker = std::thread([this]() { worker_loop(); });
       WorkerSignal.notify_one();
@@ -422,16 +433,30 @@ private:
 
    void worker_loop()
    {
+      // DirectInput requires COM to remain initialised until its interfaces have been released.
+      const auto init_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+      const bool uninitialise = SUCCEEDED(init_result);
+
       while (true) {
          {
             std::unique_lock lock(Lock);
             WorkerSignal.wait(lock, [this]() { return RefreshRequested or Stopping; });
-            if (Stopping) return;
+            if (Stopping) {
+               for (auto &device : DirectDevices) device.release();
+               if (DirectInput) {
+                  DirectInput->Release();
+                  DirectInput = nullptr;
+               }
+               lock.unlock();
+               if (uninitialise) CoUninitialize();
+               return;
+            }
             RefreshRequested = false;
          }
 
          Notifications changes;
          refresh(changes);
+         RefreshComplete.notify_all();
          publish_notifications(changes);
       }
    }
@@ -667,6 +692,7 @@ private:
 
    std::mutex Lock;
    std::condition_variable WorkerSignal;
+   std::condition_variable RefreshComplete;
    std::thread Worker;
    std::vector<HWND> Windows;
    HWND CooperativeWindow = nullptr;
@@ -705,10 +731,7 @@ ERR winReadController(int Port, double *Values, CON &Buttons)
 
 ERR winGetControllerPorts(int &Value)
 {
-   Notifications changes;
-   const auto error = glControllerManager.total(Value, changes);
-   publish_notifications(changes);
-   return error;
+   return glControllerManager.total(Value);
 }
 
 void winControllerSetWindow(HWND Window, bool Enabled)

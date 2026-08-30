@@ -21,6 +21,8 @@
 #include <stdio.h>
 #endif
 
+#include <algorithm>
+#include <iterator>
 #include <unordered_set>
 #include <mutex>
 #include <atomic>
@@ -45,45 +47,6 @@
  #include <errno.h>
 #endif
 
-#ifdef __xwindows__
- #include <X11/Xlib.h>
- #include <X11/Xos.h>
- #include <X11/keysym.h>
- #include <X11/XKBlib.h>
- #include <X11/keysymdef.h>
- #include <X11/Xproto.h>
- #include <X11/extensions/XShm.h>
- #include <X11/cursorfont.h>
- #include <stdlib.h>
- #include <X11/Xlib.h>
- #include <X11/Xos.h>
- #include <X11/Xutil.h>
- #include <sys/shm.h>
- #include <stdio.h>
-
- #ifdef XDGA_ENABLED
-  #include <X11/extensions/Xxf86dga.h> // Requires libxxf86dga-dev
- #endif
-
- #ifdef XRANDR_ENABLED
-  #include <X11/extensions/Xrandr.h> // Requires libxrandr-dev
- #endif
-#endif
-
-#ifdef _GLES_
-#define GL_GLEXT_PROTOTYPES 1
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <EGL/eglplatform.h>
-#include <GLES/gl.h>
-#include <GLES/glext.h>
-#endif
-
-#ifdef __ANDROID__
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
-#include <android/configuration.h>
-#endif
 
 #define USE_XIMAGE 1
 
@@ -98,6 +61,7 @@ constexpr int DRAG_YOFFSET       = 12;
 
 constexpr uint8_t BF_DATA     = 0x01;
 constexpr uint8_t BF_WINVIDEO = 0x02;
+constexpr uint8_t BF_DRIVER_DATA = 0x04;
 
 constexpr int BLEND_MAX_THRESHOLD = 255;
 constexpr int BLEND_MIN_THRESHOLD = 1;
@@ -235,10 +199,6 @@ inline ERR ptrGrabX11Pointer(OBJECTPTR Ob, OBJECTID SurfaceID) {
 }
 
 #include "idl.h"
-
-#ifdef __ANDROID__
-#include <kotuku/modules/android.h>
-#endif
 
 struct resolution {
    int16_t width;
@@ -412,6 +372,8 @@ class extSurface : public objSurface {
    }
 };
 
+extern DisplayDriver *glDriver;
+
 class extDisplay : public objDisplay {
    public:
    using create = kt::Create<extDisplay>;
@@ -428,17 +390,8 @@ class extDisplay : public objDisplay {
    int  ControllerPorts;
    int  VDensity;          // Cached DPI value, if calculable.
    int  HDensity;
-   #ifdef __xwindows__
-   union {
-      APTR   WindowHandle;
-      Window XWindowHandle;
-   };
-   Pixmap XPixmap;
-   #elif __ANDROID__
-      ANativeWindow *WindowHandle;
-   #else
-      APTR   WindowHandle;
-   #endif
+   HOSTWINDOW WindowHandle;
+   APTR PendingNativeWindow;
 
    extDisplay(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDisplay(ClassPtr, ObjectID) {
       if (NewLocalObject(CLASSID::BITMAP, &Bitmap) != ERR::Okay) {
@@ -452,33 +405,26 @@ class extDisplay : public objDisplay {
          if (FindObject("SystemDisplay", CLASSID::NIL, &id) != ERR::Okay) SetName(this, "SystemDisplay");
       }
 
-      #ifdef __xwindows__
-
-         Chipset      = "X11";
-         Display      = "X Windows";
-         DisplayMfr   = "N/A";
-         Manufacturer = "N/A";
-
-      #elif _WIN32
+      #if   _WIN32
 
          Chipset      = "Windows";
          Display      = "Windows";
          DisplayMfr   = "N/A";
          Manufacturer = "N/A";
 
-      #elif _GLES_
-
-         Chipset      = "OpenGLES";
-         Display      = "OpenGL";
-         DisplayMfr   = "N/A";
-         Manufacturer = "N/A";
-
       #else
-
-         Chipset      = "Unknown";
-         Display      = "Unknown";
-         DisplayMfr   = "Unknown";
-         Manufacturer = "Unknown";
+         if ((glDriver) and (glDriver->displayType() IS DT::X11)) {
+            Chipset = "X11";
+            Display = "X Windows";
+            DisplayMfr = "N/A";
+            Manufacturer = "N/A";
+         }
+         else {
+            Chipset = "Unknown";
+            Display = "Unknown";
+            DisplayMfr = "Unknown";
+            Manufacturer = "Unknown";
+         }
 
       #endif
 
@@ -490,14 +436,10 @@ class extDisplay : public objDisplay {
       Gamma[2]    = 1.0;
       Opacity     = 1.0;
 
-      #ifdef __xwindows__
-         DisplayType = DT::X11;
-      #elif _WIN32
+      #if   _WIN32
          DisplayType = DT::WINGDI;
-      #elif _GLES_
-         DisplayType = DT::GLES;
       #else
-         DisplayType = DT::NATIVE;
+         DisplayType = glDriver ? glDriver->displayType() : DT::NATIVE;
       #endif
    }
 
@@ -515,6 +457,7 @@ extern ERR  get_surface_abs(OBJECTID, int *, int *, int *, int *);
 extern void input_event_loop(HOSTHANDLE, APTR);
 extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);
+extern ERR  pointer_window(OBJECTID, HOSTWINDOW &);
 extern ERR  get_display_info(OBJECTID, DisplayInfo *);
 extern void resize_feedback(FUNCTION *, OBJECTID, int X, int Y, int Width, int Height);
 
@@ -605,15 +548,6 @@ extern const CSTRING glInputNames[int(JET::END)];
 
 //********************************************************************************************************************
 
-#ifdef _GLES_ // OpenGL related prototypes
-GLenum alloc_texture(int Width, int Height, GLuint *TextureID);
-void refresh_display_from_egl(objDisplay *Self);
-ERR init_egl(void);
-void free_egl(void);
-#endif
-
-extern uint8_t glTrayIcon, glTaskBar, glStickToFront;
-
 #ifdef _WIN32
 
 #define DLLCALL // __declspec(dllimport)
@@ -625,59 +559,11 @@ DLLCALL int WINAPI SetPixel(APTR, int, int, int);
 DLLCALL int WINAPI GetPixel(APTR, int, int);
 }
 
-#include "win32/windows.h"
-
-HCURSOR GetWinCursor(PTC CursorID);
-
-extern WinCursor winCursors[24];
+#include "drivers/win32/windows.h"
+#include "win32/clipboard.h"
 
 #endif // _WIN32
 
-#ifdef __xwindows__
-
-struct X11Globals {
-   bool Manager;
-   bool WSLg;
-   int PixelsPerLine; // Defined by DGA
-   int BankSize; // Definfed by DGA
-};
-
-extern void X11ManagerLoop(HOSTHANDLE, APTR);
-extern void handle_button_press(XEvent *);
-extern void handle_button_release(XEvent *);
-extern void handle_configure_notify(XConfigureEvent *);
-extern void handle_enter_notify(XCrossingEvent *);
-extern void handle_exposure(XExposeEvent *);
-extern void handle_key_press(XEvent *);
-extern void handle_key_release(XEvent *);
-extern void handle_motion_notify(XMotionEvent *);
-extern void handle_stack_change(XCirculateEvent *);
-extern void init_xcursors(void);
-extern void free_xcursors(void);
-extern ERR resize_pixmap(extDisplay *, int, int);
-extern ERR xr_set_display_mode(int *, int *);
-
-extern int16_t glDGAAvailable;
-extern APTR glDGAMemory;
-extern XVisualInfo glXInfoAlpha;
-extern X11Globals glX11;
-extern _XDisplay *XDisplay;
-extern bool glX11ShmImage;
-extern bool glXCompositeSupported;
-extern uint8_t KeyHeld[int(KEY::LIST_END)];
-extern KQ glKeyFlags;
-extern int glXFD, glDGAPixelsPerLine, glDGABankSize;
-extern Atom atomSurfaceID, XWADeleteWindow, XWATakeFocus;
-extern GC glXGC, glClipXGC;
-extern XWindowAttributes glRootWindow;
-extern Window glDisplayWindow;
-extern Cursor C_Default;
-extern OBJECTPTR modXRR;
-extern int16_t glPlugin;
-extern APTR glDGAVideo;
-extern bool glXRRAvailable;
-
-#endif
 
 #include "prototypes.h"
 
@@ -781,34 +667,8 @@ class extBitmap : public objBitmap {
    RGBPalette prvPaletteArray;
    struct ColourFormat prvColourFormat;
    uint8_t *prvCompress;
+   APTR DriverData;                  // Opaque display-driver bitmap backing.
    int   prvAFlags;                  // Private allocation flags
-   #ifdef __xwindows__
-      struct {
-         Window window;
-         XImage   ximage;
-         Drawable drawable;
-         XImage   *readable;
-         XShmSegmentInfo ShmInfo;
-         GC gc;
-         int pix_width, pix_height;
-         bool XShmImage;
-      } x11;
-
-      inline GC getGC() {
-         if (x11.gc) return x11.gc;
-         else return glXGC;
-      }
-
-   #elif _WIN32
-      struct {
-         APTR Drawable;  // HDC for the Bitmap
-      } win;
-   #elif _GLES_
-      uint32_t prvWriteBackBuffer:1;  // For OpenGL surface locking.
-      int prvGLPixel;
-      int prvGLFormat;
-   #endif
-
    extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID);
    ~extBitmap();
 };

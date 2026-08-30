@@ -27,6 +27,12 @@ int main()
    failures += check(driver.nativeWindowHandle(nullptr, native_handle) IS ERR::NoSupport);
    failures += check(driver.present(nullptr, nullptr, 0, 0, 1, 1, 0, 0) IS ERR::NoSupport);
    failures += check(driver.allocBitmap(nullptr) IS ERR::NoSupport);
+   failures += check(driver.setCursor(nullptr, PTC::DEFAULT) IS ERR::NoSupport);
+   failures += check(driver.setCustomCursor(nullptr, nullptr, 0, 0) IS ERR::NoSupport);
+   failures += check(driver.showCursor(nullptr, true) IS ERR::NoSupport);
+   failures += check(driver.warpPointer(nullptr, 0, 0) IS ERR::NoSupport);
+   failures += check(driver.grabPointer(nullptr) IS ERR::NoSupport);
+   failures += check(driver.ungrabPointer() IS ERR::NoSupport);
    failures += check(driver.pointerPosition(pointer_x, pointer_y) IS ERR::NoSupport);
    failures += check(driver.close() IS ERR::Okay);
    failures += check(driver.close() IS ERR::Okay);

@@ -69,30 +69,7 @@ if (KOTUKU_DEFS_AVAILABLE) # Customised idl_c() equivalent, this is for defining
    register_generated_header_target (display_defs)
 endif ()
 
-if (NOT WIN32)
-   CHECK_C_SOURCE_COMPILES ("
-#include <X11/Xlib.h>
-#include <X11/extensions/Xxf86dga.h>
-int main() {
-   return 0;
-}"
-   XDGA_INSTALLED)
-endif ()
-
 add_library (${MOD})
-
-if (X11_FOUND)
-   target_compile_definitions (${MOD} PRIVATE "X11_ENABLED")
-   if (X11_Xrandr_FOUND)
-      target_compile_definitions (${MOD} PRIVATE "XRANDR_ENABLED")
-   else ()
-      message (STATUS "XRandR headers unavailable; building without XRandR support")
-   endif ()
-
-   if (XDGA_INSTALLED)
-      target_compile_definitions (${MOD} PRIVATE "XDGA_ENABLED")
-   endif ()
-endif ()
 
 set_module_defaults (${MOD} "Gfx")
 
@@ -101,6 +78,7 @@ target_include_directories (${MOD} PRIVATE
 
 target_link_libraries (${MOD} PUBLIC unicode)
 target_link_libraries (${MOD} PUBLIC linear_rgb)
+target_link_libraries (${MOD} PRIVATE ${MATH_LINK})
 
 if (UNIT_TESTS)
    add_executable (test_display_headless "tests/test_headless_driver.cpp" ${DISPLAY_DRIVERS})
@@ -110,24 +88,93 @@ if (UNIT_TESTS)
 endif ()
 
 if (WIN32)
-   target_link_libraries (${MOD} PRIVATE ole32 oleaut32 gdi32 setupapi uuid xinput dinput8 dxguid wbemuuid ${MATH_LINK})
-   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "win32/windows.cpp" "win32/controller.cpp"
-      "win32/controller_mapping.cpp" "win32/clipboard.c" ${CLASSES})
-   target_compile_definitions (${MOD} PRIVATE "WIN_DRAGDROP")
+   target_compile_definitions (${MOD} PRIVATE DISPLAY_WINDOWS_DRIVER WIN_DRAGDROP)
+   target_link_libraries (${MOD} PRIVATE ole32 oleaut32 uuid)
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "win32/clipboard.c" ${CLASSES})
+
+   add_library (display-windows)
+   target_include_directories (display-windows PRIVATE "${PROJECT_SOURCE_DIR}/include")
+   set_target_properties (display-windows PROPERTIES CXX_STANDARD 20)
+   add_dependencies (display-windows ${REQUIRED_MODS})
+   target_sources (display-windows PRIVATE
+      "drivers/win32/module.cpp"
+      "drivers/win32/win32_driver.cpp"
+      "drivers/win32/windows.cpp"
+      "drivers/win32/handlers.cpp"
+      "drivers/win32/controller.cpp"
+      "drivers/win32/controller_mapping.cpp")
+   target_link_libraries (display-windows PRIVATE unicode gdi32 setupapi uuid xinput dinput8 dxguid wbemuuid ole32
+      oleaut32 ${MATH_LINK})
+
+   if (KOTUKU_STATIC)
+      target_link_libraries (${MOD} PRIVATE display-windows)
+   else ()
+      target_sources (display-windows PRIVATE "drivers/win32/exports.def")
+      set_target_properties (display-windows PROPERTIES
+         PREFIX ""
+         POSITION_INDEPENDENT_CODE ON
+         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
+         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
+         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib")
+      if (KOTUKU_INSTALL)
+         install (TARGETS display-windows
+            RUNTIME DESTINATION "${LIB_TARGET}"
+            ARCHIVE DESTINATION "${LIB_TARGET}"
+            LIBRARY DESTINATION "${LIB_TARGET}")
+      endif ()
+   endif ()
 
    if (UNIT_TESTS)
       add_executable (test_display_windows_controller "tests/test_windows_controller.cpp"
-         "win32/controller_mapping.cpp")
+         "drivers/win32/controller_mapping.cpp")
       set_target_properties (test_display_windows_controller PROPERTIES CXX_STANDARD 20)
       add_test (NAME display_windows_controller COMMAND test_display_windows_controller)
       set_tests_properties (display_windows_controller PROPERTIES LABELS display)
+
+      add_executable (test_display_windows_driver "tests/test_windows_driver.cpp")
+      target_link_libraries (test_display_windows_driver PRIVATE display-windows)
+      if (KOTUKU_STATIC)
+         target_link_libraries (test_display_windows_driver PRIVATE kotuku_static)
+      endif ()
+      set_target_properties (test_display_windows_driver PROPERTIES CXX_STANDARD 20)
+      if (NOT KOTUKU_STATIC)
+         add_custom_command (TARGET test_display_windows_driver POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:display-windows>"
+               "$<TARGET_FILE_DIR:test_display_windows_driver>")
+      endif ()
+      add_test (NAME display_windows_driver COMMAND test_display_windows_driver)
+      set_tests_properties (display_windows_driver PROPERTIES LABELS display)
    endif ()
 elseif (ANDROID)
-   # Android uses OpenGL.  A separate driver library is compiled for this purpose.
-   add_library (display-gles1 SHARED)
-   target_sources (display-gles1 PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "android/android.cpp" ${CLASSES})
-   target_compile_definitions (display-gles1 PRIVATE "_GLES_" "_GLES1_")
-   target_link_libraries (display-gles1 PRIVATE ${MATH_LINK} android EGL GLESv1_CM)
+   target_compile_definitions (${MOD} PRIVATE DISPLAY_ANDROID_DRIVER)
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES})
+
+   add_library (display-android)
+   target_include_directories (display-android PRIVATE "${PROJECT_SOURCE_DIR}/include")
+   set_target_properties (display-android PROPERTIES CXX_STANDARD 20)
+   set_target_properties (display-android PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+   add_dependencies (display-android ${REQUIRED_MODS})
+   target_sources (display-android PRIVATE
+      "drivers/android/module.cpp"
+      "drivers/android/android_driver.cpp"
+      "drivers/android/lib_pixels.cpp")
+   target_link_libraries (display-android PRIVATE unicode android EGL GLESv1_CM ${MATH_LINK})
+
+   if (KOTUKU_STATIC)
+      target_link_libraries (${MOD} PRIVATE display-android)
+   else ()
+      set_target_properties (display-android PROPERTIES
+         PREFIX ""
+         POSITION_INDEPENDENT_CODE ON
+         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
+         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib")
+      if (KOTUKU_INSTALL)
+         install (TARGETS display-android
+            RUNTIME DESTINATION "${LIB_TARGET}"
+            ARCHIVE DESTINATION "${LIB_TARGET}"
+            LIBRARY DESTINATION "${LIB_TARGET}")
+      endif ()
+   endif ()
    # GL2 Link: -ljnigraphics -lEGL -lGLESv2 -DGLES2
    # GL3 Link: -ljnigraphics -lEGL -lGLESv3 -DGLES3
 else ()
@@ -136,17 +183,58 @@ else ()
 
    target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES} "linux/controller.cpp")
 
-   set (DISPLAY_PRIVATE_LIBS ${MATH_LINK})
-
    if (X11_FOUND)
-      # Apt package requirements: libxrandr-dev libxxf86vm-dev libxxf86dga-dev
+      # Apt package requirements: libxrandr-dev libxxf86vm-dev
 
-      list (APPEND DISPLAY_PRIVATE_LIBS Xrender Xext X11)
-      if (X11_Xrandr_FOUND)
-         list (APPEND DISPLAY_PRIVATE_LIBS Xrandr)
+      target_compile_definitions (${MOD} PRIVATE DISPLAY_X11_DRIVER)
+      add_library (display-x11)
+      target_include_directories (display-x11 PRIVATE "${PROJECT_SOURCE_DIR}/include")
+      set_target_properties (display-x11 PROPERTIES CXX_STANDARD 20)
+      set_target_properties (display-x11 PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+      if (NOT KOTUKU_STATIC)
+         target_link_options (display-x11 PRIVATE
+            "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/drivers/x11/exports.map")
+         set_target_properties (display-x11 PROPERTIES
+            PREFIX ""
+            POSITION_INDEPENDENT_CODE ON
+            LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib")
+         if (KOTUKU_INSTALL)
+            install (TARGETS display-x11
+               RUNTIME DESTINATION "${LIB_TARGET}"
+               ARCHIVE DESTINATION "${LIB_TARGET}"
+               LIBRARY DESTINATION "${LIB_TARGET}")
+         endif ()
       endif ()
-      target_link_libraries (${MOD} PRIVATE ${DISPLAY_PRIVATE_LIBS}) # x11/libXxf86dga.a
+      add_dependencies (display-x11 ${REQUIRED_MODS})
+      target_sources (display-x11 PRIVATE
+         "drivers/x11/module.cpp"
+         "drivers/x11/x11_driver.cpp"
+         "drivers/x11/handlers.cpp"
+         "drivers/x11/lib_pixels.cpp")
+      target_link_libraries (display-x11 PRIVATE unicode Xrender Xext X11)
+      set (X11_DRIVER_DEFINITIONS)
+      if (X11_Xrandr_FOUND)
+         target_link_libraries (display-x11 PRIVATE Xrandr)
+         list (APPEND X11_DRIVER_DEFINITIONS XRANDR_ENABLED)
+      endif ()
+      # Applied at target level because x11_native.h guards its extension headers on these definitions, and every
+      # file that includes it must agree on the layout of the structures that the header declares.
 
-      target_compile_definitions (${MOD} PRIVATE "__X11DGA__" "__xwindows__")
+      if (X11_DRIVER_DEFINITIONS)
+         target_compile_definitions (display-x11 PRIVATE ${X11_DRIVER_DEFINITIONS})
+      endif ()
+
+      if (KOTUKU_STATIC)
+         target_link_libraries (${MOD} PRIVATE display-x11)
+      endif ()
+
+      if (UNIT_TESTS AND NOT KOTUKU_STATIC)
+         add_executable (test_display_x11_driver "tests/test_x11_driver.cpp")
+         target_link_libraries (test_display_x11_driver PRIVATE display-x11)
+         set_target_properties (test_display_x11_driver PROPERTIES CXX_STANDARD 20)
+         add_test (NAME display_x11_driver COMMAND test_display_x11_driver)
+         set_tests_properties (display_x11_driver PROPERTIES LABELS display)
+      endif ()
    endif ()
 endif ()

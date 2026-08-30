@@ -21,8 +21,23 @@ enum class PTC : int;
 struct ColourFormat;
 struct DisplayInfo;
 struct resolution;
+class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 1;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 5;
+
+using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
+using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
+
+#ifndef KOTUKU_STATIC
+ #if defined(__GNUC__)
+  #define DISPLAY_DRIVER_EXPORT __attribute__((visibility("default")))
+ #else
+  #define DISPLAY_DRIVER_EXPORT
+ #endif
+extern "C" DISPLAY_DRIVER_EXPORT DisplayDriver * create_display_driver(uint32_t InterfaceVersion,
+   struct CoreBase *Core);
+extern "C" DISPLAY_DRIVER_EXPORT void destroy_display_driver(DisplayDriver *Driver);
+#endif
 
 enum class DCAP : uint64_t {
    NIL             = 0,
@@ -60,6 +75,7 @@ struct DriverCallbacks {
    void (*Movement)(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
    void (*WheelMovement)(OBJECTID SurfaceID, float Delta);
    void (*ButtonInput)(int Buttons, bool Pressed);
+   void (*Crossing)(OBJECTID SurfaceID, bool Entered, double AbsX, double AbsY);
    void (*FocusState)(OBJECTID SurfaceID, bool Focused);
    void (*WindowResized)(OBJECTID SurfaceID, int WindowX, int WindowY, int WindowWidth, int WindowHeight,
       int ClientX, int ClientY, int ClientWidth, int ClientHeight);
@@ -69,9 +85,14 @@ struct DriverCallbacks {
    void (*DPIChanged)(OBJECTID SurfaceID);
    void (*SetFocus)(OBJECTID SurfaceID);
    void (*ClipboardUpdated)();
+   ERR (*EnableDragDrop)(APTR HostHandle);
+   void (*DisableDragDrop)(APTR HostHandle);
    void (*DragDropped)(OBJECTID SurfaceID, CSTRING Datatypes);
    void (*ControllerPorts)(int Port, bool Connected, int Total);
    OBJECTID (*ResolveSurface)(APTR HostHandle);
+   void (*ConstrainWindowSize)(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
+      int Axis);
+   void (*ProcessMessages)();
 };
 
 class DisplayDriver {
@@ -102,6 +123,16 @@ public:
    virtual ERR windowCoords(HOSTWINDOW Window, int &X, int &Y, int &Width, int &Height) = 0;
    virtual ERR frameMargins(HOSTWINDOW Window, int &Left, int &Top, int &Right, int &Bottom) = 0;
 
+   // Transitional helpers used while the platform drivers are extracted from the common Surface and Display code.
+   // They keep native host operations behind the driver without exposing native types in this contract.
+
+   virtual ERR windowTitle(HOSTWINDOW Window, std::string &Title) { return ERR::NoSupport; }
+   virtual ERR setWindowSurface(HOSTWINDOW Window, OBJECTID SurfaceID) { return ERR::NoSupport; }
+   virtual ERR windowSurface(HOSTWINDOW Window, OBJECTID &SurfaceID) { return ERR::NoSupport; }
+   virtual ERR setWindowControllers(HOSTWINDOW Window, bool Enabled) { return ERR::NoSupport; }
+   virtual ERR acquireWindowBitmap(HOSTWINDOW Window, extBitmap *Bitmap) { return ERR::NoSupport; }
+   virtual ERR releaseWindowBitmap(HOSTWINDOW Window, extBitmap *Bitmap) { return ERR::NoSupport; }
+
    virtual ERR displayInfo(DisplayInfo &Info) = 0;
    virtual ERR density(HOSTWINDOW Window, int &Horizontal, int &Vertical) = 0;
    virtual ERR resolutions(std::vector<resolution> &List) = 0;
@@ -120,15 +151,27 @@ public:
    virtual ERR allocBitmap(extBitmap *Bitmap) = 0;
    virtual ERR freeBitmap(extBitmap *Bitmap) = 0;
    virtual ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) = 0;
-   virtual ERR lockBitmap(extBitmap *Bitmap) = 0;
+
+   // Access is a mask of SURFACE_READ and SURFACE_WRITE.  Drivers must copy the host surface into the bitmap's
+   // data area only when SURFACE_READ is requested, because the read-back is expensive and the caller may intend
+   // to overwrite the content in full.
+
+   virtual ERR lockBitmap(extBitmap *Bitmap, int16_t Access) = 0;
    virtual ERR unlockBitmap(extBitmap *Bitmap) = 0;
    virtual ERR bitmapRoutines(extBitmap *Bitmap) = 0;
 
-   virtual ERR setCursor(PTC CursorID) = 0;
-   virtual ERR setCustomCursor(extBitmap *Image, int HotX, int HotY) = 0;
-   virtual ERR showCursor(bool Visible) = 0;
-   virtual ERR warpPointer(int X, int Y) = 0;
+   // The cursor image is not always attributable to a single window.  A null Window is therefore a valid request for
+   // the change to be applied to every window under the driver's management, which matches the process-wide cursor
+   // model used by Windows.  Drivers must return an error if they cannot satisfy the request at all, because the
+   // caller relies on that to decide whether the recorded cursor state can be updated.
+
+   virtual ERR setCursor(HOSTWINDOW Window, PTC CursorID) = 0;
+   virtual ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) = 0;
+   virtual ERR showCursor(HOSTWINDOW Window, bool Visible) = 0;
+   virtual ERR warpPointer(HOSTWINDOW Window, int X, int Y) = 0;
    virtual ERR pointerPosition(double &X, double &Y) = 0;
+   virtual ERR grabPointer(HOSTWINDOW Window) { return ERR::NoSupport; }
+   virtual ERR ungrabPointer() { return ERR::NoSupport; }
 
    virtual ERR setHostOption(HOST Option, int64_t Value) { return ERR::NoSupport; }
    virtual ERR readController(int Port, double *Axes, CON &Buttons) { return ERR::NoSupport; }
@@ -141,7 +184,7 @@ public:
    virtual ERR clipboardRead() { return ERR::NoSupport; }
 };
 
-class HeadlessDriver final : public DisplayDriver {
+class HeadlessDriver : public DisplayDriver {
 public:
    CSTRING name() const override;
    DT displayType() const override;
@@ -182,15 +225,32 @@ public:
    ERR allocBitmap(extBitmap *Bitmap) override;
    ERR freeBitmap(extBitmap *Bitmap) override;
    ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) override;
-   ERR lockBitmap(extBitmap *Bitmap) override;
+   ERR lockBitmap(extBitmap *Bitmap, int16_t Access) override;
    ERR unlockBitmap(extBitmap *Bitmap) override;
    ERR bitmapRoutines(extBitmap *Bitmap) override;
-   ERR setCursor(PTC CursorID) override;
-   ERR setCustomCursor(extBitmap *Image, int HotX, int HotY) override;
-   ERR showCursor(bool Visible) override;
-   ERR warpPointer(int X, int Y) override;
+   ERR setCursor(HOSTWINDOW Window, PTC CursorID) override;
+   ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) override;
+   ERR showCursor(HOSTWINDOW Window, bool Visible) override;
+   ERR warpPointer(HOSTWINDOW Window, int X, int Y) override;
    ERR pointerPosition(double &X, double &Y) override;
 
 private:
    bool Open = false;
 };
+
+namespace display {
+#ifdef _WIN32
+DisplayDriver * create_win32_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
+void destroy_win32_display_driver(DisplayDriver *Driver);
+#endif
+
+#ifdef __linux__
+DisplayDriver * create_x11_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
+void destroy_x11_display_driver(DisplayDriver *Driver);
+#endif
+
+#ifdef __ANDROID__
+DisplayDriver * create_android_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
+void destroy_android_display_driver(DisplayDriver *Driver);
+#endif
+}

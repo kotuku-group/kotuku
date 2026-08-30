@@ -29,12 +29,15 @@
       <prototype>ERR acQuery(*Object)</prototype>
       <tiriPrototype>err = Object.acQuery()</tiriPrototype>
       <description>
-<p>Query will update the controller field values with the state of the controller connected to the specified port. The most likely failure is a disconnection - if this occurs the port number will be set to <code>-1</code> and <code>ERR::Disconnected</code> is returned.  Repeated calls to Query() will return the same error until a controller is connected to any port.</p>
+<p>Query will update the controller field values with the state of the controller connected to the specified port. On failure, all axis and button fields are cleared while <fl>Port</fl> is preserved.  Repeated calls to Query() return <code>ERR::Disconnected</code> until a controller is connected to the selected port, or any port when <fl>Port</fl> is <code>-1</code>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">The host does not support controller input.</error>
         <error code="OutOfRange">The port number is outside of acceptable range.</error>
+        <error code="AccessObject">Attempting to lock an object failed</error>
+        <error code="NotInitialised">Controller access is not enabled on a suitable display.</error>
         <error code="SystemCall">A call to the host system failed.</error>
         <error code="Disconnected">No controller is connected to the specified port.</error>
       </result>
@@ -81,6 +84,7 @@
       <type>INT</type>
       <description>
 <p>Set the port number to choose the controller that will be queried for state changes.  The default of -1 is used to indicate the primary (first available) controller.  Fixed port numbers start from zero.  There is no guarantee that the existence of a port means that a controller is connected to it.</p>
+<p>On Windows, XInput user indices occupy ports zero through three.  DirectInput controllers use stable slots from four through 31 while connected.  This reservation means that a DirectInput-only controller can produce a <fl>TotalPorts</fl> value of five while ports zero through three remain disconnected.</p>
 <p>It is acceptable to set the port number post-initialisation, so multiple controllers can be queried through one interface at the cost of overwriting the previous state.  Enumeration for the discovery of controllers can be achieved by calling <action>Query</action> for each port and checking for <code>ERR::Okay</code>.</p>
 <p>Read <fl>TotalPorts</fl> to get the maximum number of controller ports.</p>
       </description>
@@ -113,7 +117,7 @@
       <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>Port values range from zero to <code>TotalPorts - 1</code>.  Some platforms, including Linux, may expose sparse controller indices, so an individual port in that range can fail to query if its device is not currently connected.</p>
+<p>Port values range from zero to <code>TotalPorts - 1</code>.  Some platforms, including Linux and Windows, may expose sparse controller indices, so an individual port in that range can fail to query if its device is not currently connected. Windows DirectInput mappings support two sticks, two triggers, the first POV hat and the first 12 common gamepad buttons.  Additional or specialist controls are ignored.</p>
       </description>
     </field>
 

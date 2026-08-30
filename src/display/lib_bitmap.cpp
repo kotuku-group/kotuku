@@ -12,10 +12,6 @@ Name: Bitmap
 #include <algorithm>
 #include <cstring>
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
 #ifdef KOTUKU_SSE2
 
 // SIMD helpers for the 32-bit blitting routines.  All arithmetic is performed on 16-bit lanes so that the
@@ -479,223 +475,10 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
    if (Width < 1) return ERR::Okay;
    if (Height < 1) return ERR::Okay;
 
-#ifdef _WIN32
-   if (dest->win.Drawable) { // Destination is a window
-
-      if (src->win.Drawable) { // Both the source and destination are window areas
-         int error;
-         if ((error = winBlit(dest->win.Drawable, DestX, DestY, Width, Height, src->win.Drawable, X, Y))) {
-            char buffer[80];
-            buffer[0] = 0;
-            winGetError(error, buffer, sizeof(buffer));
-            log.warning("BitBlt(): %s", buffer);
-         }
-      }
-      else { // The source is a software image
-         if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-            uint32_t *srcdata;
-            uint8_t destred, destgreen, destblue, red, green, blue, alpha;
-
-            // 32-bit alpha blending is enabled
-
-            srcdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
-
-            while (Height > 0) {
-               for (i=0; i < Width; i++) {
-                  alpha = 255 - CFUnpackAlpha(&src->prvColourFormat, srcdata[i]);
-
-                  if (alpha >= BLEND_MAX_THRESHOLD) {
-                     red   = srcdata[i] >> src->prvColourFormat.RedPos;
-                     green = srcdata[i] >> src->prvColourFormat.GreenPos;
-                     blue  = srcdata[i] >> src->prvColourFormat.BluePos;
-                     SetPixelV(dest->win.Drawable, DestX+i, DestY, (blue<<16) | (green<<8) | red);
-                  }
-                  else if (alpha >= BLEND_MIN_THRESHOLD) {
-                     colour = GetPixel(dest->win.Drawable, DestX+i, DestY);
-                     destred   = colour & 0xff;
-                     destgreen = (colour>>8) & 0xff;
-                     destblue  = (colour>>16) & 0xff;
-                     red   = srcdata[i] >> src->prvColourFormat.RedPos;
-                     green = srcdata[i] >> src->prvColourFormat.GreenPos;
-                     blue  = srcdata[i] >> src->prvColourFormat.BluePos;
-                     red   = destred   + (((red   - destred)   * alpha)>>8);
-                     green = destgreen + (((green - destgreen) * alpha)>>8);
-                     blue  = destblue  + (((blue  - destblue)  * alpha)>>8);
-                     SetPixelV(dest->win.Drawable, DestX+i, DestY, (blue<<16) | (green<<8) | red);
-                  }
-               }
-               srcdata = (uint32_t *)(((uint8_t *)srcdata) + src->LineWidth);
-               DestY++;
-               Height--;
-            }
-         }
-         else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
-            uint32_t wincolour;
-            while (Height > 0) {
-               for (i=0; i < Width; i++) {
-                  colour = src->ReadUCPixel(src, X + i, Y);
-                  if (colour != (uint32_t)src->TransIndex) {
-                     wincolour = src->unpackRed(colour);
-                     wincolour |= src->unpackGreen(colour)<<8;
-                     wincolour |= src->unpackBlue(colour)<<16;
-                     SetPixelV(dest->win.Drawable, DestX + i, DestY, wincolour);
-                  }
-               }
-               Y++; DestY++;
-               Height--;
-            }
-         }
-         else  {
-            winSetDIBitsToDevice(dest->win.Drawable, DestX, DestY, Width, Height, X, Y,
-               src->Width, src->Height, src->BitsPerPixel, src->Data,
-               src->ColourFormat->RedMask   << src->ColourFormat->RedPos,
-               src->ColourFormat->GreenMask << src->ColourFormat->GreenPos,
-               src->ColourFormat->BlueMask  << src->ColourFormat->BluePos);
-         }
-      }
-
-      return ERR::Okay;
+   if (glDriver) {
+      if (auto error = glDriver->blitBitmap(dest, src, Flags, X, Y, Width, Height, DestX, DestY);
+            error != ERR::NoSupport) return error;
    }
-
-#elif __xwindows__
-
-   // Use this routine if the destination is a pixmap (write only memory).  X11 windows are always represented as pixmaps.
-
-   if (((Dest->Flags & BMF::X11_DGA) != BMF::NIL) and (glDGAAvailable) and (Dest != Source)) {
-      // We have direct access to the graphics address, so drop through to the software routine
-      Dest->Data = (uint8_t *)glDGAVideo;
-   }
-   else if (dest->x11.drawable) {
-      if (!src->x11.drawable) {
-         if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-            auto save_clip = dest->Clip;
-            Dest->Clip.Left   = DestX;
-            Dest->Clip.Right  = DestX + Width;
-            Dest->Clip.Top    = DestY;
-            Dest->Clip.Bottom = DestY + Height;
-            if (!lock_surface(dest, SURFACE_READ|SURFACE_WRITE)) {
-               auto srcdata = (uint32_t *)(src->Data + (Y * src->LineWidth) + (X<<2));
-
-               while (Height > 0) {
-                  for (i=0; i < Width; i++) {
-                     uint8_t alpha = 255 - src->unpackAlpha(srcdata[i]);
-
-                     if (alpha >= BLEND_MAX_THRESHOLD) {
-                        pixel.Red   = (uint8_t)(srcdata[i] >> src->prvColourFormat.RedPos);
-                        pixel.Green = (uint8_t)(srcdata[i] >> src->prvColourFormat.GreenPos);
-                        pixel.Blue  = (uint8_t)(srcdata[i] >> src->prvColourFormat.BluePos);
-                        dest->DrawUCRPixel(dest, DestX+i, DestY, &pixel);
-                     }
-                     else if (alpha >= BLEND_MIN_THRESHOLD) {
-                        dest->ReadUCRPixel(dest, DestX+i, DestY, &pixel);
-                        pixel.Red   += ((((uint8_t)(srcdata[i] >> src->prvColourFormat.RedPos)   - pixel.Red)   * alpha)>>8);
-                        pixel.Green += ((((uint8_t)(srcdata[i] >> src->prvColourFormat.GreenPos) - pixel.Green) * alpha)>>8);
-                        pixel.Blue  += ((((uint8_t)(srcdata[i] >> src->prvColourFormat.BluePos)  - pixel.Blue)  * alpha)>>8);
-                        dest->DrawUCRPixel(dest, DestX+i, DestY, &pixel);
-                     }
-                  }
-                  srcdata = (uint32_t *)(((uint8_t *)srcdata) + src->LineWidth);
-                  DestY++;
-                  Height--;
-               }
-               unlock_surface(dest);
-            }
-            dest->Clip = save_clip;
-         }
-         else if ((src->Flags & BMF::TRANSPARENT) != BMF::NIL) {
-            while (Height > 0) {
-               for (auto i=0; i < Width; i++) {
-                  colour = src->ReadUCPixel(src, X + i, Y);
-                  if (colour != (uint32_t)src->TransIndex) dest->DrawUCPixel(dest, DestX + i, DestY, colour);
-               }
-               Y++; DestY++;
-               Height--;
-            }
-         }
-         else { // Source is an ximage, destination is a pixmap
-            if ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) src->premultiply();
-
-            if (src->x11.XShmImage IS true)  {
-               XShmPutImage(XDisplay, dest->x11.drawable, dest->getGC(), &src->x11.ximage, X, Y, DestX, DestY, Width, Height, False);
-            }
-            else XPutImage(XDisplay, dest->x11.drawable, dest->getGC(), &src->x11.ximage, X, Y, DestX, DestY, Width, Height);
-
-            if ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) { // Composite window
-               XSync(XDisplay, False);
-            }
-            else XClearWindow(XDisplay, dest->x11.window); // 'Clear' the window to the pixmap background
-
-            if ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) src->demultiply();
-         }
-      }
-      else { // Both the source and the destination are pixmaps
-         XCopyArea(XDisplay, src->x11.drawable, dest->x11.drawable, dest->getGC(), X, Y, Width, Height, DestX, DestY);
-      }
-
-      return ERR::Okay;
-   }
-
-#elif _GLES_
-
-   if (dest->MemType IS BMT::VIDEO) { // Destination is the video display.
-      if (src->MemType IS BMT::VIDEO) { // Source is the video display.
-         // No simple way to support this in OpenGL - we have to copy the display into a texture buffer, then copy the texture back to the display.
-
-         ERR error;
-         if (!lock_graphics_active(__func__)) {
-            GLuint texture;
-            if (alloc_texture(src->Width, src->Height, &texture) IS GL_NO_ERROR) {
-               //glViewport(0, 0, src->Width, src->Height);  // Set viewport so it matches texture size of ^2
-               glCopyTexImage2D(GL_TEXTURE_2D, 0, src->prvGLPixel, 0, 0, src->Width, src->Height, 0); // Copy screen to texture
-               //glViewport(0, 0, src->Width, src->Height);  // Restore viewport to display size
-               glDrawTexiOES(DestX, -DestY, 1, src->Width, src->Height);
-               glBindTexture(GL_TEXTURE_2D, 0);
-               eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               glDeleteTextures(1, &texture);
-               error = ERR::Okay;
-            }
-            else error = log.warning(ERR::OpenGL);
-
-            unlock_graphics();
-         }
-         else error = ERR::LockFailed;
-
-         return error;
-      }
-      else if (src->MemType IS BMT::TEXTURE) {
-         // Texture-to-video blitting (
-
-
-      }
-      else {
-         // RAM-to-video blitting.  We have to allocate a temporary texture, copy the data to it and then blit that to the display.
-
-         ERR error;
-         if (!lock_graphics_active(__func__)) {
-            GLuint texture;
-            if (alloc_texture(src->Width, src->Height, &texture) IS GL_NO_ERROR) {
-               glTexImage2D(GL_TEXTURE_2D, 0, src->prvGLPixel, src->Width, src->Height, 0, src->prvGLPixel, src->prvGLFormat, src->Data); // Copy the bitmap content to the texture.
-               if (glGetError() IS GL_NO_ERROR) {
-                  glDrawTexiOES(0, 0, 1, src->Width, src->Height);
-                  glBindTexture(GL_TEXTURE_2D, 0);
-                  eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               }
-               else error = ERR::OpenGL;
-
-               glDeleteTextures(1, &texture);
-               error = ERR::Okay;
-            }
-            else error = log.warning(ERR::OpenGL);
-
-            unlock_graphics();
-         }
-         else error = ERR::LockFailed;
-
-         return error;
-      }
-   }
-
-#endif
 
    // GENERIC SOFTWARE BLITTING ROUTINES
 
@@ -1417,46 +1200,6 @@ ERR CopyRawBitmap(BITMAPSURFACE *Surface, objBitmap *Bitmap, CSRF Flags, int X, 
       default: return log.warning(ERR::Args);
    }
 
-#ifdef __xwindows__
-
-   // Use this routine if the destination is a pixmap (write only memory).  X11 windows are always represented as pixmaps.
-
-   if (dest->x11.drawable) {
-      // Source is an ximage, destination is a pixmap.  NB: If DGA is enabled, we will avoid using these routines because mem-copying from software
-      // straight to video RAM is a lot faster.
-
-      int16_t alignment;
-
-      if (dest->LineWidth & 0x0001) alignment = 8;
-      else if (dest->LineWidth & 0x0002) alignment = 16;
-      else alignment = 32;
-
-      XImage ximage;
-      ximage.width            = Surface->LineWidth / Surface->BytesPerPixel;
-      ximage.height           = Surface->Height;
-      ximage.xoffset          = 0;               // Number of pixels offset in X direction
-      ximage.format           = ZPixmap;         // XYBitmap, XYPixmap, ZPixmap
-      ximage.data             = (char *)Surface->Data;
-      ximage.byte_order       = LSBFirst;        // LSBFirst / MSBFirst
-      ximage.bitmap_unit      = alignment;       // Quant. of scanline - 8, 16, 32
-      ximage.bitmap_bit_order = LSBFirst;        // LSBFirst / MSBFirst
-      ximage.bitmap_pad       = alignment;       // 8, 16, 32, either XY or Zpixmap
-      if ((Surface->BitsPerPixel IS 32) and ((dest->Flags & BMF::ALPHA_CHANNEL) IS BMF::NIL)) ximage.depth = 24;
-      else ximage.depth = Surface->BitsPerPixel;
-      ximage.bytes_per_line   = Surface->LineWidth;
-      ximage.bits_per_pixel   = Surface->BytesPerPixel * 8;
-      ximage.red_mask         = 0;
-      ximage.green_mask       = 0;
-      ximage.blue_mask        = 0;
-      XInitImage(&ximage);
-
-      XPutImage(XDisplay, dest->x11.drawable, dest->getGC(),
-         &ximage, X, Y, XDest, YDest, Width, Height);
-
-      return ERR::Okay;
-   }
-
-#endif // __xwindows__
 
    if (!lock_surface((extBitmap *)Bitmap, SURFACE_WRITE)) {
       if (((Flags & CSRF::ALPHA) != CSRF::NIL) and (Surface->BitsPerPixel IS 32)) { // 32-bit alpha blending support
@@ -1862,29 +1605,8 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
 
    // Standard rectangle (no translucency) video support
 
-   #ifdef _GLES_
-      if (Bitmap->MemType IS BMT::VIDEO) {
-      log.warning("TODO: Draw rectangles to opengl");
-         glClearColor(0.5, 0.5, 0.5, 1.0);
-         glClear(GL_COLOR_BUFFER_BIT);
-         return;
-      }
-   #endif
+   if ((glDriver) and (glDriver->fillBitmap(Bitmap, X, Y, w, h, Colour) IS ERR::Okay)) return;
 
-   #ifdef _WIN32
-      if (Bitmap->win.Drawable) {
-         winDrawRectangle(Bitmap->win.Drawable, X, Y, w, h, red, green, blue);
-         return;
-      }
-   #endif
-
-   #ifdef __xwindows__
-      if (Bitmap->MemType != BMT::DATA) {
-         XSetForeground(XDisplay, Bitmap->getGC(), Colour);
-         XFillRectangle(XDisplay, Bitmap->x11.drawable, Bitmap->getGC(), X, Y, w, h);
-         return;
-      }
-   #endif
 
    // Standard rectangle data support
 

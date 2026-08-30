@@ -22,11 +22,6 @@ so may mean that the Controller object works inconsistently across different sys
 
 #include "defs.h"
 
-#ifdef _WIN32
-#include "win32/controller.h"
-using namespace display;
-#endif
-
 #ifdef __linux__
 extern ERR linuxReadController(int Port, double *Values, CON &Buttons);
 extern ERR linuxGetControllerPorts(int &Value);
@@ -54,11 +49,10 @@ SystemCall: A call to the host system failed.
 
 static ERR CONTROLLER_Query(objController *Self)
 {
-#ifdef _WIN32
-   return winReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons);
-#elif defined(__linux__)
+#ifdef __linux__
    return linuxReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons);
 #else
+   if (glDriver) return glDriver->readController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons);
    return ERR::NoSupport;
 #endif
 }
@@ -115,10 +109,10 @@ buttons.  Additional or specialist controls are ignored.
 
 static ERR CONTROLLER_GET_TotalPorts(extSurface *Self, int &Value)
 {
-#ifdef _WIN32
-   return winGetControllerPorts(Value);
-#elif defined(__linux__)
+#ifdef __linux__
    return linuxGetControllerPorts(Value);
+#else
+   if (glDriver) return glDriver->totalControllerPorts(Value);
 #endif
 
    return ERR::NoSupport;

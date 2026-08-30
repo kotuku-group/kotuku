@@ -33,19 +33,6 @@ data to a destination object that supports writing.
 
 #include "defs.h"
 
-#ifdef _WIN32
-using namespace display;
-#endif
-
-#ifdef _WIN32
-#define DLLCALL // __declspec(dllimport)
-#define WINAPI  __stdcall
-
-DLLCALL int WINAPI SetPixelV(APTR, int, int, int);
-DLLCALL int WINAPI SetPixel(APTR, int, int, int);
-DLLCALL int WINAPI GetPixel(APTR, int, int);
-#endif
-
 static ERR calc_pixel_routines(extBitmap *);
 
 //********************************************************************************************************************
@@ -53,48 +40,6 @@ static ERR calc_pixel_routines(extBitmap *);
 
 // Video Pixel Routines
 
-#ifdef _WIN32
-
-static void  VideoDrawPixel(objBitmap *, int, int, uint32_t);
-static void  VideoDrawRGBPixel(objBitmap *, int, int, RGB8 *);
-static void  VideoDrawRGBIndex(objBitmap *, uint8_t *, RGB8 *);
-static uint32_t VideoReadPixel(objBitmap *, int, int);
-static void  VideoReadRGBPixel(objBitmap *, int, int, RGB8 *);
-static void  VideoReadRGBIndex(objBitmap *, uint8_t *, RGB8 *);
-
-#elif defined(__xwindows__) or defined(__ANDROID__) or defined(_GLES_)
-
-static void VideoDrawPixel32(objBitmap *, int, int, uint32_t);
-static void VideoDrawPixel24(objBitmap *, int, int, uint32_t);
-static void VideoDrawPixel16(objBitmap *, int, int, uint32_t);
-static void VideoDrawPixel8(objBitmap *,  int, int, uint32_t);
-
-static void VideoDrawRGBPixel32(objBitmap *, int, int, RGB8 *);
-static void VideoDrawRGBPixel24(objBitmap *, int, int, RGB8 *);
-static void VideoDrawRGBPixel16(objBitmap *, int, int, RGB8 *);
-static void VideoDrawRGBPixel8(objBitmap *,  int, int, RGB8 *);
-
-static void VideoDrawRGBIndex32(objBitmap *, uint32_t *, RGB8 *);
-static void VideoDrawRGBIndex24(objBitmap *, uint8_t *, RGB8 *);
-static void VideoDrawRGBIndex16(objBitmap *, uint16_t *, RGB8 *);
-static void VideoDrawRGBIndex8(objBitmap *,  uint8_t *, RGB8 *);
-
-static uint32_t VideoReadPixel32(objBitmap *, int, int);
-static uint32_t VideoReadPixel24(objBitmap *, int, int);
-static uint32_t VideoReadPixel16(objBitmap *, int, int);
-static uint32_t VideoReadPixel8(objBitmap *,  int, int);
-
-static void VideoReadRGBPixel32(objBitmap *, int, int, RGB8 *);
-static void VideoReadRGBPixel24(objBitmap *, int, int, RGB8 *);
-static void VideoReadRGBPixel16(objBitmap *, int, int, RGB8 *);
-static void VideoReadRGBPixel8(objBitmap *,  int, int, RGB8 *);
-
-static void VideoReadRGBIndex32(objBitmap *, uint32_t *, RGB8 *);
-static void VideoReadRGBIndex24(objBitmap *, uint8_t *, RGB8 *);
-static void VideoReadRGBIndex16(objBitmap *, uint16_t *, RGB8 *);
-static void VideoReadRGBIndex8(objBitmap *,  uint8_t *, RGB8 *);
-
-#endif
 
 // Memory Pixel Routines
 
@@ -168,263 +113,28 @@ static const FieldDef clMemType[] = {
 // If you do not need this overhead because the bitmap content is going to be refreshed, then specify SURFACE_WRITE
 // only.  You will still be able to read the bitmap content with the CPU, it just avoids the copy overhead.
 
-#ifdef _WIN32
-
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
-   if (not Bitmap->Data) {
-      kt::Log log(__FUNCTION__);
-      log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
-      return ERR::FieldNotSet;
+   // A driver reports NoSupport when it has no host drawable standing behind the bitmap.  CPU access to such a
+   // bitmap only requires a data area, so the request falls through to the data check rather than failing.
+
+   if (glDriver) {
+      if (auto error = glDriver->lockBitmap(Bitmap, Access); error != ERR::NoSupport) return error;
    }
+
+   if (not Bitmap->Data) return kt::Log(__FUNCTION__).warning(ERR::FieldNotSet);
 
    return ERR::Okay;
 }
 
 ERR unlock_surface(extBitmap *Bitmap)
 {
+   if (glDriver) glDriver->unlockBitmap(Bitmap);
    return ERR::Okay;
 }
-
-#elif __xwindows__
-
-ERR lock_surface(extBitmap *Bitmap, int16_t Access)
-{
-   int size;
-   int16_t alignment;
-
-   if (((Bitmap->Flags & BMF::X11_DGA) != BMF::NIL) and (glDGAAvailable)) {
-      return ERR::Okay;
-   }
-   else if ((Bitmap->x11.drawable) and (Access & SURFACE_READ)) {
-      // If there is an existing readable area, try to reuse it if possible
-      if (Bitmap->x11.readable) {
-         if ((Bitmap->x11.readable->width >= Bitmap->Width) and (Bitmap->x11.readable->height >= Bitmap->Height)) {
-            if (Access & SURFACE_READ) {
-               XGetSubImage(XDisplay, Bitmap->x11.drawable, Bitmap->Clip.Left,
-                  Bitmap->Clip.Top, Bitmap->Clip.Right - Bitmap->Clip.Left,
-                  Bitmap->Clip.Bottom - Bitmap->Clip.Top, 0xffffffff, ZPixmap, Bitmap->x11.readable,
-                  Bitmap->Clip.Left, Bitmap->Clip.Top);
-            }
-            return ERR::Okay;
-         }
-         else {
-            XDestroyImage(Bitmap->x11.readable);
-            Bitmap->x11.readable = nullptr;
-            Bitmap->Data = nullptr;
-         }
-      }
-
-      // Generate a fresh XImage from the current drawable
-
-      if (Bitmap->LineWidth & 0x0001) alignment = 8;
-      else if (Bitmap->LineWidth & 0x0002) alignment = 16;
-      else alignment = 32;
-
-      if (Bitmap->Type IS BMP::PLANAR) {
-         size = Bitmap->LineWidth * Bitmap->Height * Bitmap->BitsPerPixel;
-      }
-      else size = Bitmap->LineWidth * Bitmap->Height;
-
-      Bitmap->Data = (uint8_t *)malloc(size);
-      if (not Bitmap->Data) return ERR::AllocMemory;
-
-      if ((Bitmap->x11.readable = XCreateImage(XDisplay, CopyFromParent, Bitmap->BitsPerPixel,
-           ZPixmap, 0, (char *)Bitmap->Data, Bitmap->Width, Bitmap->Height, alignment, Bitmap->LineWidth))) {
-         if (Access & SURFACE_READ) {
-            XGetSubImage(XDisplay, Bitmap->x11.drawable, Bitmap->Clip.Left,
-               Bitmap->Clip.Top, Bitmap->Clip.Right - Bitmap->Clip.Left,
-               Bitmap->Clip.Bottom - Bitmap->Clip.Top, 0xffffffff, ZPixmap, Bitmap->x11.readable,
-               Bitmap->Clip.Left, Bitmap->Clip.Top);
-         }
-         return ERR::Okay;
-      }
-      else {
-         free(Bitmap->Data);
-         Bitmap->Data = nullptr;
-         return ERR::CreateResource;
-      }
-   }
-   return ERR::Okay;
-}
-
-ERR unlock_surface(extBitmap *Bitmap)
-{
-   return ERR::Okay;
-}
-
-#elif _GLES_
-
-ERR lock_surface(extBitmap *Bitmap, int16_t Access)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (Bitmap->MemType IS BMT::VIDEO) {
-      // BMT::VIDEO represents the video display in OpenGL.  Read/write CPU access is not available to this area but
-      // we can use glReadPixels() to get a copy of the framebuffer and then write changes back.  Because this is
-      // extremely bad practice (slow), a debug message is printed to warn the developer to use a different code path.
-      //
-      // Practically the only reason why we allow this is for unusual measures like taking screenshots, grabbing the display for debugging, development testing etc.
-
-      log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice "
-         "(bitmap: #%d, memory type: %d)", Bitmap->UID, int(Bitmap->MemType));
-
-      if (not Bitmap->Data) {
-         Bitmap->Data = (uint8_t *)malloc(Bitmap->Size);
-         if (not Bitmap->Data) return log.warning(ERR::AllocMemory);
-         Bitmap->prvAFlags |= BF_DATA;
-      }
-
-      if (!lock_graphics_active(__func__)) {
-         if (Access & SURFACE_READ) {
-            //glPixelStorei(GL_PACK_ALIGNMENT, 1); Might be required if width is not 32-bit aligned (i.e. 16 bit uneven width?)
-            glReadPixels(0, 0, Bitmap->Width, Bitmap->Height, Bitmap->prvGLPixel, Bitmap->prvGLFormat, Bitmap->Data);
-         }
-
-         if (Access & SURFACE_WRITE) Bitmap->prvWriteBackBuffer = TRUE;
-         else Bitmap->prvWriteBackBuffer = FALSE;
-
-         unlock_graphics();
-      }
-
-      return ERR::Okay;
-   }
-   else if (Bitmap->MemType IS BMT::TEXTURE) {
-      // Using the CPU on TEXTURE bitmaps is banned (anti-pattern)
-      return log.warning(ERR::NoSupport);
-   }
-
-   if (not Bitmap->Data) {
-      log.warning("[Bitmap:%d] Bitmap is missing the Data field", Bitmap->UID);
-      return ERR::FieldNotSet;
-   }
-
-   return ERR::Okay;
-}
-
-ERR unlock_surface(extBitmap *Bitmap)
-{
-   if ((Bitmap->MemType IS BMT::VIDEO) and (Bitmap->prvWriteBackBuffer)) {
-      if (!lock_graphics_active(__func__)) {
-         #ifdef GL_DRAW_PIXELS
-            glDrawPixels(Bitmap->Width, Bitmap->Height, pixel_type, format, Bitmap->Data);
-         #else
-            GLenum glerror;
-            GLuint texture_id;
-            if ((glerror = alloc_texture(Bitmap->Width, Bitmap->Height, &texture_id)) IS GL_NO_ERROR) { // Create a new texture space and bind it.
-               //(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
-               glTexImage2D(GL_TEXTURE_2D, 0, Bitmap->prvGLPixel, Bitmap->Width, Bitmap->Height, 0, Bitmap->prvGLPixel, Bitmap->prvGLFormat, Bitmap->Data); // Copy the bitmap content to the texture. (Target, Level, Bitmap, Border)
-               if ((glerror = glGetError()) IS GL_NO_ERROR) {
-                  // Copy graphics to the frame buffer.
-
-                  glClearColor(0, 0, 0, 1.0);
-                  glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-                  glColor4f(1.0f, 1.0f, 1.0f, 1.0f);    // Ensure colour is reset.
-                  glDrawTexiOES(0, 0, 1, Bitmap->Width, Bitmap->Height);
-                  glBindTexture(GL_TEXTURE_2D, 0);
-                  eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               }
-               else log.warning(ERR::OpenGL);
-
-               glDeleteTextures(1, &texture_id);
-            }
-            else log.warning(ERR::OpenGL);
-         #endif
-
-         unlock_graphics();
-      }
-
-      Bitmap->prvWriteBackBuffer = FALSE;
-   }
-
-   return ERR::Okay;
-}
-
-#else
-
-ERR lock_surface(extBitmap *Bitmap, int16_t Access)
-{
-   if (not Bitmap->Data) {
-      kt::Log log(__FUNCTION__);
-      log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
-      return ERR::FieldNotSet;
-   }
-
-   return ERR::Okay;
-}
-
-ERR unlock_surface(extBitmap *Bitmap)
-{
-   return ERR::Okay;
-}
-
-#endif
 
 //********************************************************************************************************************
 
-#ifdef __xwindows__
-static ERR alloc_shm(int Size, uint8_t **Data, int *ID)
-{
-   kt::Log log(__FUNCTION__);
-
-   auto id = shmget(IPC_PRIVATE, Size, IPC_CREAT|IPC_EXCL|S_IRWXO|S_IRWXG|S_IRWXU);
-   if (id IS -1) {
-      log.warning("shmget() returned: %s", strerror(errno));
-      return ERR::Memory;
-   }
-
-   auto addr = shmat(id, nullptr, 0);
-   if ((addr != (APTR)-1) and (addr != nullptr)) {
-      *Data = (uint8_t *)addr;
-      *ID = id;
-      return ERR::Okay;
-   }
-   else {
-      log.warning("shmat() returned: %s", strerror(errno));
-      shmctl(id, IPC_RMID, nullptr);
-      return ERR::LockFailed;
-   }
-}
-
-static void free_shm(APTR Address, int ID)
-{
-   shmdt(Address);
-   shmctl(ID, IPC_RMID, nullptr);
-}
-
-//********************************************************************************************************************
-// Initialises fields shared by standard XImage and XShm image paths.
-
-static void init_x11_image(extBitmap *Self, bool UseShm)
-{
-   int16_t alignment;
-   if (Self->LineWidth & 0x0001) alignment = 8;
-   else if (Self->LineWidth & 0x0002) alignment = 16;
-   else alignment = 32;
-
-   clearmem(&Self->x11.ximage, sizeof(Self->x11.ximage));
-
-   Self->x11.ximage.width            = Self->Width;
-   Self->x11.ximage.height           = Self->Height;
-   Self->x11.ximage.xoffset          = 0;
-   Self->x11.ximage.format           = ZPixmap;      // XYBitmap, XYPixmap, ZPixmap
-   Self->x11.ximage.data             = (char *)Self->Data;
-   if (UseShm) Self->x11.ximage.obdata = (char *)&Self->x11.ShmInfo;
-   Self->x11.ximage.byte_order       = LSBFirst;     // LSBFirst / MSBFirst
-   Self->x11.ximage.bitmap_unit      = alignment;    // Quant. of scanline - 8, 16, 32
-   Self->x11.ximage.bitmap_bit_order = LSBFirst;     // LSBFirst / MSBFirst
-   Self->x11.ximage.bitmap_pad       = alignment;    // 8, 16, 32, either XY or Zpixmap
-   if ((Self->BitsPerPixel IS 32) and ((Self->Flags & BMF::ALPHA_CHANNEL) IS BMF::NIL)) Self->x11.ximage.depth = 24;
-   else Self->x11.ximage.depth       = Self->BitsPerPixel;
-   Self->x11.ximage.bytes_per_line   = Self->LineWidth;         // Accelerator to next line
-   Self->x11.ximage.bits_per_pixel   = Self->BytesPerPixel * 8; // Bits per pixel-group
-   Self->x11.ximage.red_mask         = 0;
-   Self->x11.ximage.green_mask       = 0;
-   Self->x11.ximage.blue_mask        = 0;
-
-   XInitImage(&Self->x11.ximage);
-}
-#endif
 
 //********************************************************************************************************************
 // Score = Abs(BB1 - BB2) + Abs(GG1 - GG2) + Abs(RR1 - RR2)
@@ -478,17 +188,6 @@ LockFailed
 
 static ERR BITMAP_Clear(extBitmap *Self)
 {
-#ifdef _GLES_
-   if (Self->MemType IS BMT::VIDEO) {
-      if (!lock_graphics_active(__func__)) {
-         glClearColorx(Self->Bkgd.Red, Self->Bkgd.Green, Self->Bkgd.Blue, 255);
-         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-         unlock_graphics();
-         return ERR::Okay;
-      }
-      else return ERR::LockFailed;
-   }
-#endif
 
    // Clear any alignment padding first - some clients may expect the Data to be completely clear.
 
@@ -899,12 +598,6 @@ Clients do not need to call this function if solely using the graphics methods p
 
 static ERR BITMAP_Flush(extBitmap *Self)
 {
-#ifdef _GLES_
-   if (!lock_graphics_active(__func__)) {
-      glFlush();
-      unlock_graphics();
-   }
-#endif
    return ERR::Okay;
 }
 
@@ -1006,105 +699,28 @@ static ERR BITMAP_Init(extBitmap *Self)
       Self->Bkgd.Blue  &= 0xf8;
    }
 
-#ifdef __xwindows__
+   if ((glDriver) and (not glHeadless)) {
+      if (auto error = glDriver->allocBitmap(Self); (error != ERR::Okay) and (error != ERR::NoSupport)) {
+         return log.warning(error);
+      }
 
-   if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Blitter memory not available in X11
-
-   if (not Self->Data) {
-      if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
-         Self->MemType = BMT::DATA; // Video memory not available for allocation in X11 (may be set to identify X11 windows only)
-
+      if ((Self->MemType IS BMT::DATA) and (not Self->Data) and ((Self->Flags & BMF::NO_DATA) IS BMF::NIL)) {
          if (not Self->Size) return log.warning(ERR::FieldNotSet);
-
-         if (glHeadless) {
-            Self->Data = (uint8_t *)malloc(Self->Size);
-            if (not Self->Data) return log.warning(ERR::AllocMemory);
-            Self->prvAFlags |= BF_DATA;
-         }
-         else if (not Self->x11.XShmImage) {
-            log.detail("Allocating a memory based XImage.");
-            if (!alloc_shm(Self->Size, &Self->Data, &Self->x11.ShmInfo.shmid)) {
-               Self->prvAFlags |= BF_DATA;
-
-               init_x11_image(Self, glX11ShmImage);
-
-               // If the XShm extension is available, try using it.  Using XShm allows the
-               // X11 server to copy image memory straight to the display rather than
-               // having it messaged.
-
-               if (glX11ShmImage) {
-                  Self->x11.ShmInfo.readOnly = False;
-                  Self->x11.ShmInfo.shmaddr  = (char *)Self->Data;
-
-                  // Attach the memory block to the X11 server
-
-                  if (XShmAttach(XDisplay, &Self->x11.ShmInfo)) {
-                     Self->x11.XShmImage = true;
-                  }
-                  else log.warning(ERR::SystemCall);
-               }
-            }
-            else return log.warning(ERR::AllocMemory);
-         }
+         Self->Data = (uint8_t *)malloc(Self->Size);
+         if (not Self->Data) return log.warning(ERR::AllocMemory);
+         Self->prvAFlags |= BF_DATA;
       }
    }
-
-   if (not glHeadless) XSync(XDisplay, False);
-
-#elif _WIN32
-
-   if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Video buffer memory not available in Win32
-
-   if (not Self->Data) {
-      if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
+   else if (glHeadless) {
+      Self->MemType = BMT::DATA;
+      if ((not Self->Data) and ((Self->Flags & BMF::NO_DATA) IS BMF::NIL)) {
          if (not Self->Size) return log.warning(ERR::FieldNotSet);
-
-         if (Self->MemType IS BMT::VIDEO) {
-            Self->prvAFlags |= BF_WINVIDEO;
-            if (not (Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
-         }
-         else {
-            Self->Data = (uint8_t *)malloc(Self->Size);
-            if (not Self->Data) return log.warning(ERR::AllocMemory);
-            Self->prvAFlags |= BF_DATA;
-         }
-      }
-      else if (Self->MemType IS BMT::VIDEO) Self->prvAFlags |= BF_WINVIDEO;
-   }
-
-#elif _GLES_
-   // BMT::VIDEO + BMF::NO_DATA: The bitmap represents the OpenGL display.  No data area will be allocated because
-   // direct access to the OpenGL video frame buffer is not possible.
-   // BMT::VIDEO: Not currently used as a means of allocating a particular type of OpenGL buffer.
-   // BMT::TEXTURE: The bitmap is to be used as an OpenGL texture or off-screen buffer.  Its content is temporary and
-   // can be discarded by the graphics driver if the video display changes.
-   // BMT::DATA: The bitmap resides in regular CPU-accessible memory.
-
-   if (not Self->Data) {
-      if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
-         if (Self->Size <= 0) log.warning(ERR::FieldNotSet);
-
-         if (Self->MemType IS BMT::VIDEO) {
-            // Do nothing - the bitmap merely represents the video display and does not hold content.
-         }
-         else if (Self->MemType IS BMT::TEXTURE) {
-            // Blittable bitmaps are fast, but their content is temporary.  It is not possible to use the CPU on this
-            // bitmap type (anti-pattern).
-
-            log.warning("Support for BMT::TEXTURE not included yet.");
-            return ERR::NoSupport;
-         }
-         else {
-            Self->Data = (uint8_t *)malloc(Self->Size);
-            if (not Self->Data) return ERR::AllocMemory;
-            Self->prvAFlags |= BF_DATA;
-         }
+         Self->Data = (uint8_t *)malloc(Self->Size);
+         if (not Self->Data) return log.warning(ERR::AllocMemory);
+         Self->prvAFlags |= BF_DATA;
       }
    }
-
-   if (Self->MemType != BMT::DATA) Self->Flags |= BMF::2DACCELERATED;
-
-#else // Software rendering only
+   else {
    Self->MemType = BMT::DATA;
 
    if (not Self->Data) {
@@ -1115,51 +731,17 @@ static ERR BITMAP_Init(extBitmap *Self)
          Self->prvAFlags |= BF_DATA;
       }
    }
-#endif
+   }
 
    // Determine the correct pixel format for the bitmap
 
-#ifdef __xwindows__
-
-   if (not glHeadless) {
-      if (Self->x11.drawable) {
-         XVisualInfo visual, *info;
-         int items;
-         visual.bits_per_rgb = Self->BytesPerPixel * 8;
-         if ((info = XGetVisualInfo(XDisplay, VisualBitsPerRGBMask, &visual, &items))) {
-            gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, info->red_mask, info->green_mask, info->blue_mask, 0xff000000);
-            XFree(info);
-         }
-         else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
+   if ((glDriver) and (Self->MemType IS BMT::VIDEO)) {
+      if (glDriver->pixelFormat(*Self->ColourFormat) != ERR::Okay) {
+         gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
       }
-      else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, Self->x11.ximage.red_mask, Self->x11.ximage.green_mask, Self->x11.ximage.blue_mask, 0xff000000);
    }
    else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
 
-#elif _WIN32
-
-   if (Self->MemType IS BMT::VIDEO) {
-      int red, green, blue, alpha;
-
-      if (not winGetPixelFormat(&red, &green, &blue, &alpha)) {
-         gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, red, green, blue, alpha);
-      }
-      else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
-   }
-   else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
-
-#elif _GLES_
-
-   if (Self->BitsPerPixel >= 24) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0x0000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
-   else if (Self->BitsPerPixel IS 16) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0xf800, 0x07e0, 0x001f, 0x0000);
-   else if (Self->BitsPerPixel IS 15) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0x7c00, 0x03e0, 0x001f, 0x0000);
-   else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
-
-#else
-
-   gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
-
-#endif
 
    if (auto error = calc_pixel_routines(Self); error != ERR::Okay) return error;
 
@@ -1208,65 +790,9 @@ NoSupport
 
 static ERR BITMAP_Lock(extBitmap *Self)
 {
-#ifdef __xwindows__
-   if (Self->x11.drawable) {
-      int16_t alignment;
-      int size, bpp;
-
-      // If there is an existing readable area, try to reuse it if possible
-
-      if (Self->x11.readable) {
-         if ((Self->x11.readable->width >= Self->Width) and (Self->x11.readable->height >= Self->Height)) {
-            XGetSubImage(XDisplay, Self->x11.drawable, Self->Clip.Left,
-               Self->Clip.Top, Self->Clip.Right - Self->Clip.Left,
-               Self->Clip.Bottom - Self->Clip.Top, 0xffffffff, ZPixmap, Self->x11.readable,
-               Self->Clip.Left, Self->Clip.Top);
-            return ERR::Okay;
-         }
-         else {
-            XDestroyImage(Self->x11.readable);
-            Self->x11.readable = nullptr;
-            Self->Data = nullptr;
-         }
-      }
-
-      // Generate a fresh XImage from the current drawable
-
-      if (Self->LineWidth & 0x0001) alignment = 8;
-      else if (Self->LineWidth & 0x0002) alignment = 16;
-      else alignment = 32;
-
-      if (Self->Type IS BMP::PLANAR) {
-         size = Self->ByteWidth * Self->Height * Self->BitsPerPixel;
-      }
-      else size = Self->ByteWidth * Self->Height;
-
-      Self->Data = (uint8_t *)malloc(size);
-      if (not Self->Data) return ERR::AllocMemory;
-
-      if ((bpp = Self->BitsPerPixel) IS 32) bpp = 24;
-
-      if ((Self->x11.readable = XCreateImage(XDisplay, CopyFromParent, bpp,
-           ZPixmap, 0, (char *)Self->Data, Self->Width, Self->Height, alignment, Self->ByteWidth))) {
-         XGetSubImage(XDisplay, Self->x11.drawable, Self->Clip.Left,
-            Self->Clip.Top, Self->Clip.Right - Self->Clip.Left,
-            Self->Clip.Bottom - Self->Clip.Top, 0xffffffff, ZPixmap, Self->x11.readable,
-            Self->Clip.Left, Self->Clip.Top);
-      }
-      else {
-         free(Self->Data);
-         Self->Data = nullptr;
-         return ERR::CreateResource;
-      }
-   }
-
-   return ERR::Okay;
-
-#else
 
    return lock_surface(Self, SURFACE_READWRITE);
 
-#endif
 }
 
 /*********************************************************************************************************************
@@ -1367,24 +893,6 @@ static ERR BITMAP_Query(extBitmap *Self)
       return log.warning(ERR::InvalidDimension);
    }
 
-   #ifdef _GLES_
-      if (Self->MemType IS BMT::TEXTURE) {
-         // OpenGL requires bitmap textures to be a power of 2.
-
-         int new_width = nearestPower(Self->Width);
-         int new_height = nearestPower(Self->Height);
-
-         if (new_width != Self->Width) {
-            log.msg("Extending bitmap width from %d to %d for OpenGL.", Self->Width, new_width);
-            Self->Width = new_width;
-         }
-
-         if (new_height != Self->Height) {
-            log.msg("Extending bitmap height from %d to %d for OpenGL.", Self->Height, new_height);
-            Self->Height = new_height;
-         }
-      }
-   #endif
 
    // If the BMF::MASK flag is set then the programmer wants to use the Bitmap object as a 1 or 8-bit mask.
 
@@ -1483,30 +991,7 @@ static ERR BITMAP_Query(extBitmap *Self)
    Self->LineWidth = ALIGN32(Self->LineWidth);
    Self->PlaneMod = Self->LineWidth * Self->Height;
 
-#ifdef __xwindows__
 
-   // If we have Direct Graphics Access, use the DGA values rather than our generic calculations for bitmap parameters.
-
-   if ((Self->MemType IS BMT::VIDEO) and (Self->x11.drawable)) {
-      log.trace("LineWidth: %d, PixelLine: %d, BankSize: %d", Self->LineWidth, glDGAPixelsPerLine, glDGABankSize);
-      if ((glDGAAvailable) and (glDGAPixelsPerLine)) {
-         Self->LineWidth = glDGAPixelsPerLine * Self->BytesPerPixel;
-         Self->PlaneMod = Self->LineWidth;
-      }
-   }
-
-#endif
-
-#ifdef _GLES_
-   if ((Self->BitsPerPixel IS 8) and ((Self->Flags & BMF::MASK) != BMF::NIL)) Self->prvGLPixel = GL_ALPHA;
-   else if (Self->BitsPerPixel <= 24) Self->prvGLPixel = GL_RGB;
-   else Self->prvGLPixel = GL_RGBA;
-
-   if (Self->BitsPerPixel IS 32) Self->prvGLFormat = GL_UNSIGNED_BYTE;
-   else if (Self->BitsPerPixel IS 24) Self->prvGLFormat = GL_UNSIGNED_BYTE;
-   else if (Self->BitsPerPixel <= 16) Self->prvGLFormat = GL_UNSIGNED_SHORT_5_6_5;
-   else Self->prvGLFormat = GL_UNSIGNED_BYTE;
-#endif
 
    // Calculate the total size of the bitmap
 
@@ -1625,28 +1110,24 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
    if (Self->Type IS BMP::PLANAR) size = linewidth * height * bpp;
    else size = linewidth * height;
 
-   if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::DISPLAY)) goto setfields;
+   if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::DISPLAY)) {
+      // A display's bitmap is backed by a host surface, so the driver is given the opportunity to resize its own
+      // storage (e.g. the X11 background pixmap).  Drivers that do not support the operation are ignored because
+      // the field values below are recalculated regardless.
 
-#ifdef __xwindows__
+      if ((glDriver) and (Self->prvAFlags & (BF_WINVIDEO|BF_DRIVER_DATA))) {
+         glDriver->resizeBitmap(Self, width, height);
+      }
+      goto setfields;
+   }
 
-   //if (Self->x11.drawable) {
-   //   if ((drawable = XCreatePixmap(XDisplay, DefaultRootWindow(XDisplay), width, height, bpp))) {
-   //      XCopyArea(XDisplay, Self->x11.drawable, drawable, Self->getGC(), 0, 0, Self->Width, Self->Height, 0, 0);
-   //      XFreePixmap(XDisplay, Self->x11.drawable);
-   //      Self->x11.drawable = drawable;
-   //   }
-   //   else return log.warning(ERR::AllocMemory);
-   //   goto setfields;
-   //}
+   if ((Self->prvAFlags & (BF_WINVIDEO|BF_DRIVER_DATA)) and (glDriver)) {
+      if (auto error = glDriver->resizeBitmap(Self, width, height); error != ERR::NoSupport) return error;
+      return ERR::NoSupport;
+   }
 
-#elif _WIN32
-   if (Self->prvAFlags & BF_WINVIDEO) return ERR::NoSupport;
-#endif
 
    if ((Self->Flags & BMF::NO_DATA) != BMF::NIL);
-   #ifdef __xwindows__
-   else if (Self->x11.XShmImage);
-   #endif
    else if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
       uint8_t *data;
       if ((size <= Self->Size) and (size / Self->Size > 0.5)) { // Do nothing when shrinking unless able to save considerable resources
@@ -1675,32 +1156,6 @@ setfields:
    Self->Clip.Right     = width;
    Self->Clip.Bottom    = height;
 
-#ifdef __xwindows__
-   if (Self->x11.XShmImage) {
-      Self->x11.XShmImage = false; // Set to FALSE in case we fail (will drop through to standard XImage support)
-      XShmDetach(XDisplay, &Self->x11.ShmInfo);  // Remove the previous attachment
-      XSync(XDisplay, False);
-
-      free_shm(Self->Data, Self->x11.ShmInfo.shmid);
-      Self->Data = nullptr;
-
-      if (alloc_shm(size, &Self->Data, &Self->x11.ShmInfo.shmid) != ERR::Okay) {
-         return log.warning(ERR::AllocMemory);
-      }
-
-      Self->x11.ShmInfo.readOnly = False;
-      Self->x11.ShmInfo.shmaddr  = (char *)Self->Data;
-      if (XShmAttach(XDisplay, &Self->x11.ShmInfo)) {
-         init_x11_image(Self, true);
-         Self->x11.XShmImage = TRUE;
-      }
-   }
-
-   if ((not Self->x11.drawable) and (Self->x11.XShmImage != TRUE)) {
-      init_x11_image(Self, false);
-   }
-
-#endif
 
    if (origbpp != Self->BitsPerPixel) {
       gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
@@ -1729,6 +1184,8 @@ Errors returned by the destination object's Write action are propagated to the c
 Okay
 NullArgs
 BufferOverflow
+AllocMemory: The read buffer for a host drawable could not be allocated.
+NoSupport: The bitmap surface cannot be read by the CPU.
 *********************************************************************************************************************/
 
 static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
@@ -1782,7 +1239,12 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    if (Self->AmtColours <= 256) pcx.NumPlanes = 1;
    else pcx.NumPlanes = 3;
 
-   {
+   // The bitmap may be backed by a host drawable with no CPU accessible data area, so a read lock is required
+   // before the pixel readers can be used.
+
+   if (auto error = lock_surface(Self, SURFACE_READ); error != ERR::Okay) return log.warning(error);
+
+   auto error = [&]() -> ERR {
       const auto buffer_size = size_t(width) * size_t(height) * size_t(pcx.NumPlanes) * 2;
       std::vector<uint8_t> buffer(buffer_size);
       auto write_error = acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)&pcx, sizeof(pcx)));
@@ -1901,7 +1363,10 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
       }
 
       return ERR::Okay;
-   }
+   }();
+
+   unlock_surface(Self);
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -1979,9 +1444,7 @@ Okay
 
 static ERR BITMAP_Unlock(extBitmap *Self)
 {
-#ifndef __xwindows__
    unlock_surface(Self);
-#endif
    return ERR::Okay;
 }
 
@@ -2212,9 +1675,6 @@ static ERR GET_Data(extBitmap *Self, std::span<uint8_t> &Value)
 
 static ERR SET_Data(extBitmap *Self, std::span<const uint8_t> &Value)
 {
-#ifdef __xwindows__
-   if (Self->x11.XShmImage) return ERR::NotPossible;
-#endif
 
    Self->Data = const_cast<uint8_t *>(Value.data());
    return ERR::Okay;
@@ -2266,30 +1726,22 @@ Handle: Platform-dependent field for referencing video memory.
 
 static ERR GET_Handle(extBitmap *Self, APTR *Value)
 {
-#ifdef _WIN32
-   *Value = (APTR)Self->win.Drawable;
-   return ERR::Okay;
-#elif __xwindows__
-   *Value = (APTR)Self->x11.drawable;
-   return ERR::Okay;
-#else
+   if (glDriver) {
+      *Value = Self->DriverData;
+      return ERR::Okay;
+   }
    return ERR::NoSupport;
-#endif
 }
 
 static ERR SET_Handle(extBitmap *Self, APTR Value)
 {
    // Note: The only area of the system allowed to set this field are the Display/Surface classes for video management.
 
-#ifdef _WIN32
-   Self->win.Drawable = Value;
-   return ERR::Okay;
-#elif __xwindows__
-   Self->x11.drawable = (MAXINT)Value;
-   return ERR::Okay;
-#else
+   if (glDriver) {
+      Self->DriverData = Value;
+      return ERR::Okay;
+   }
    return ERR::NoSupport;
-#endif
 }
 
 /*********************************************************************************************************************
@@ -2504,65 +1956,10 @@ static ERR calc_pixel_routines(extBitmap *Self)
       return ERR::NoSupport;
    }
 
-#ifdef _WIN32
-
-   if (Self->prvAFlags & BF_WINVIDEO) {
-      Self->ReadUCPixel  = &VideoReadPixel;
-      Self->ReadUCRPixel = &VideoReadRGBPixel;
-      Self->ReadUCRIndex = &VideoReadRGBIndex;
-      Self->DrawUCPixel  = &VideoDrawPixel;
-      Self->DrawUCRPixel = &VideoDrawRGBPixel;
-      Self->DrawUCRIndex = &VideoDrawRGBIndex;
-      return ERR::Okay;
+   if ((glDriver) and (Self->prvAFlags & (BF_WINVIDEO|BF_DRIVER_DATA))) {
+      return glDriver ? glDriver->bitmapRoutines(Self) : ERR::NoSupport;
    }
 
-#elif defined(__xwindows__) or defined(__ANDROID__) or defined(_GLES_)
-
-   if ((Self->MemType IS BMT::VIDEO) or (Self->MemType IS BMT::TEXTURE)) {
-      switch(Self->BytesPerPixel) {
-         case 1:
-            Self->ReadUCPixel  = &VideoReadPixel8;
-            Self->ReadUCRPixel = &VideoReadRGBPixel8;
-            Self->ReadUCRIndex = &VideoReadRGBIndex8;
-            Self->DrawUCPixel  = &VideoDrawPixel8;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel8;
-            Self->DrawUCRIndex = &VideoDrawRGBIndex8;
-            break;
-
-         case 2:
-            Self->ReadUCPixel  = &VideoReadPixel16;
-            Self->ReadUCRPixel = &VideoReadRGBPixel16;
-            Self->ReadUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoReadRGBIndex16;
-            Self->DrawUCPixel  = &VideoDrawPixel16;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel16;
-            Self->DrawUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoDrawRGBIndex16;
-            break;
-
-         case 3:
-            Self->ReadUCPixel  = &VideoReadPixel24;
-            Self->ReadUCRPixel = &VideoReadRGBPixel24;
-            Self->ReadUCRIndex = &VideoReadRGBIndex24;
-            Self->DrawUCPixel  = &VideoDrawPixel24;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel24;
-            Self->DrawUCRIndex = &VideoDrawRGBIndex24;
-            break;
-
-         case 4:
-            Self->ReadUCPixel  = &VideoReadPixel32;
-            Self->ReadUCRPixel = &VideoReadRGBPixel32;
-            Self->ReadUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoReadRGBIndex32;
-            Self->DrawUCPixel  = &VideoDrawPixel32;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel32;
-            Self->DrawUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoDrawRGBIndex32;
-            break;
-
-         default:
-            log.warning("Unsupported Bitmap->BytesPerPixel %d.", Self->BytesPerPixel);
-            return ERR::NoSupport;
-      }
-      return ERR::Okay;
-   }
-#endif
 
    switch(Self->BytesPerPixel) {
       case 1:
@@ -2632,6 +2029,7 @@ extBitmap::extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID) : objBitmap(Clas
    ColourSpace  = CS::SRGB;
    BlendMode    = BLM::AUTO;
    Opacity      = 255;
+   DriverData   = nullptr;
 
    // Generate the standard colour palette
 
@@ -2694,49 +2092,18 @@ extBitmap::extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID) : objBitmap(Clas
 
 extBitmap::~extBitmap()
 {
-#ifdef __xwindows__
-   if (x11.XShmImage) {
-      // Tell the X11 server to detach from the memory block
-      XShmDetach(XDisplay, &x11.ShmInfo);
-      x11.XShmImage = false;
-      free_shm(Data, x11.ShmInfo.shmid);
-      Data = nullptr;
-   }
-
-   if (x11.gc) XFreeGC(XDisplay, x11.gc);
-#endif
+   if (glDriver) glDriver->freeBitmap(this);
 
    if ((Data) and (prvAFlags & BF_DATA)) free(Data);
    if (ResolutionChangeHandle) UnsubscribeEvent(ResolutionChangeHandle);
 
-#ifdef __xwindows__
-   if ((x11.drawable) and (x11.window != x11.drawable)) {
-      if (XDisplay) XFreePixmap(XDisplay, x11.drawable);
-   }
-
-   if (x11.readable) XDestroyImage(x11.readable);
-#endif
-
-#ifdef _WIN32
-   if (win.Drawable) winDeleteDC(win.Drawable);
-#endif
 }
 
 //********************************************************************************************************************
 
 #include "lib_mempixels.cpp"
 
-#ifdef __xwindows__
-#include "x11/lib_pixels.cpp"
-#endif
 
-#ifdef _WIN32
-#include "win32/lib_pixels.cpp"
-#endif
-
-#ifdef __ANDROID__
-#include "android/lib_pixels.cpp"
-#endif
 
 #include "class_bitmap_def.c"
 

@@ -813,9 +813,9 @@
       <const name="SUSPEND">Puts the display into suspend mode (blanks the display output while maintaining normal power levels).</const>
     </constants>
 
-    <constants lookup="DT" comment="Flags for GetDisplayType().">
-      <const name="GLES">The display is driven by OpenGLES.</const>
-      <const name="NATIVE">The display is native (supported by internal drivers).</const>
+    <constants lookup="DT" comment="Display backend identities returned by GetDisplayType().">
+      <const name="GLES">The selected display driver uses OpenGL ES.</const>
+      <const name="NATIVE">The selected display driver uses no platform-specific hosted backend.</const>
       <const name="WINGDI">The display is driven by Microsoft Windows drivers.</const>
       <const name="X11">The display is driven by the X Window System (X11, X.Org, XFree86)</const>
     </constants>

@@ -63,9 +63,10 @@ ERR GetDisplayInfo(OBJECTID DisplayID, DisplayInfo **Result)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetDisplayType: Returns the type of display supported.
+GetDisplayType: Returns the selected display driver's backend type.
 
-This function returns the type of display supported by the loaded Display module.  Current return values are:
+This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and
+automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:
 
 <types lookup="DT"/>
 
@@ -79,12 +80,9 @@ pure-query
 
 DT GetDisplayType(void)
 {
+   if ((glDriver) and (not glHeadless)) return glDriver->displayType();
 #ifdef _WIN32
    return DT::WINGDI;
-#elif __xwindows__
-   return DT::X11;
-#elif _GLES_
-   return DT::GLES;
 #else
    return DT::NATIVE;
 #endif
@@ -140,28 +138,7 @@ Okay
 
 ERR SetHostOption(HOST Option, int64_t Value)
 {
-#if defined(_WIN32) || defined(__xwindows__)
-   kt::Log log(__FUNCTION__);
-
-   switch (Option) {
-      case HOST::TRAY_ICON:
-         glTrayIcon = Value;
-         if (glTrayIcon) glTaskBar = 0;
-         break;
-
-      case HOST::TASKBAR:
-         glTaskBar = Value;
-         if (glTaskBar) glTrayIcon = 0;
-         break;
-
-      case HOST::STICK_TO_FRONT:
-         glStickToFront = Value;
-         break;
-
-      default:
-         log.warning("Invalid option %d, Data %" PF64, int(Option), (long long)Value);
-   }
-#endif
+   if (glDriver) return glDriver->setHostOption(Option, Value);
 
    return ERR::Okay;
 }

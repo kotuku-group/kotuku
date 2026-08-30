@@ -53,6 +53,11 @@ void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient
    if (auto pointer = gfx::AccessPointer(); pointer) {
       pointer->setSurface(SurfaceID);  // Alter the surface of the pointer so that it refers to the correct root window
 
+      // Record the host cursor position, which the Pointer class reports through its HostX and HostY fields.
+
+      pointer->HostX = AbsX;
+      pointer->HostY = AbsY;
+
       struct dcDeviceInput joy = {
          .Values = { AbsX, AbsY },
          .Timestamp = PreciseTime(),
@@ -91,15 +96,35 @@ void DriverWheelMovement(OBJECTID SurfaceID, float Wheel)
 
 void DriverFocusState(OBJECTID SurfaceID, bool State)
 {
-   //log.msg("Windows focus state for surface #%d: %d", SurfaceID, State);
+   //log.msg("Host focus state for surface #%d: %d", SurfaceID, State);
 
-   kt::ScopedObjectLock surface(SurfaceID);
-   if (surface.granted()) {
-      if (State) acFocus(*surface);
-      else {
-         acLostFocus(*surface);
-         // for (auto &id : glFocusList) acLostFocus(id);
-      }
+   if (State) {
+      kt::ScopedObjectLock surface(SurfaceID);
+      if (surface.granted()) acFocus(*surface);
+      return;
+   }
+
+   std::vector<OBJECTID> list;
+   {
+      const std::lock_guard<std::recursive_mutex> lock(glFocusLock);
+      list = glFocusList;
+   }
+
+   // glFocusList is ordered with the most deeply focused surface first, followed by each of its ancestors.  The
+   // surface named by a host window therefore sits at the end of the chain, and every entry preceding it is a
+   // descendant that must also lose the focus.
+
+   auto pos = std::find(list.begin(), list.end(), SurfaceID);
+
+   if (pos IS list.end()) { // Not part of the focus chain, so the window surface is the only one affected
+      kt::ScopedObjectLock surface(SurfaceID);
+      if (surface.granted()) acLostFocus(*surface);
+      return;
+   }
+
+   for (auto it = list.begin(); it != std::next(pos); it++) {
+      kt::ScopedObjectLock surface(*it);
+      if (surface.granted()) acLostFocus(*surface);
    }
 }
 
@@ -164,6 +189,22 @@ void DriverButtonInput(int Buttons, bool State)
 
 //********************************************************************************************************************
 
+void DriverCrossing(OBJECTID SurfaceID, bool Entered, double AbsX, double AbsY)
+{
+   if (not SurfaceID) return;
+
+   if (auto pointer = gfx::AccessPointer(); pointer) {
+      if (Entered) pointer->setSurface(SurfaceID);
+      else if (pointer->SurfaceID IS SurfaceID) pointer->setSurface(0);
+
+      pointer->HostX = AbsX;
+      pointer->HostY = AbsY;
+      ReleaseObject(pointer);
+   }
+}
+
+//********************************************************************************************************************
+
 void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, int WinHeight,
    int ClientX, int ClientY, int ClientWidth, int ClientHeight)
 {
@@ -179,12 +220,12 @@ void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, i
       display_id = surface->DisplayID;
       if (ScopedObjectLock<extDisplay> display(display_id, 3000); display.granted()) {
          release_stale_resize_feedback(*display);
-         if (!display->ResizeFeedback.defined()) return;
-         feedback = display->ResizeFeedback;
          display->X = WinX;
          display->Y = WinY;
          display->Width  = WinWidth;
          display->Height = WinHeight;
+         acResize(display->Bitmap, ClientWidth, ClientHeight, 0);
+         if (display->ResizeFeedback.defined()) feedback = display->ResizeFeedback;
       }
       else return;
    }
@@ -192,7 +233,7 @@ void DriverWindowResized(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, i
 
    // Notification occurs with the display and surface released so as to reduce the potential for dead-locking.
 
-   resize_feedback(&feedback, display_id, ClientX, ClientY, ClientWidth, ClientHeight);
+   if (feedback.defined()) resize_feedback(&feedback, display_id, ClientX, ClientY, ClientWidth, ClientHeight);
 }
 
 //********************************************************************************************************************
@@ -236,7 +277,8 @@ void DriverDPIChanged(OBJECTID SurfaceID)
 // Called from WM_SIZE and WM_SIZING events to confirm that the requested window size is within the limits set by the
 // surface object.
 
-void CheckWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight, int Axis)
+void DriverConstrainWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
+   int Axis)
 {
    if (!SurfaceID) return;
    if ((Width IS CurrentWidth) and (Height IS CurrentHeight)) return;
@@ -290,7 +332,7 @@ void DriverExposeRegion(OBJECTID SurfaceID, int X, int Y, int Width, int Height)
 
 //********************************************************************************************************************
 
-void MsgTimer(void)
+void DriverProcessMessages()
 {
    ProcessMessages(PMF::NIL, 0);
 }
@@ -383,9 +425,38 @@ void MsgShowObject(OBJECTID ObjectID)
 void DriverClipboardUpdated()
 {
    #ifdef _WIN32
-      win_clipboard_updated();
+      if (winClipboardChanged()) win_clipboard_updated();
    #endif
 }
+
+//********************************************************************************************************************
+
+ERR DriverEnableDragDrop(APTR HostHandle)
+{
+   #ifdef _WIN32
+      return ERR(winInitDragDrop(HWND(HostHandle)));
+   #else
+      return ERR::NoSupport;
+   #endif
+}
+
+//********************************************************************************************************************
+
+void DriverDisableDragDrop(APTR HostHandle)
+{
+   #ifdef _WIN32
+      winDisableDragDrop(HWND(HostHandle));
+   #endif
+}
+
+//********************************************************************************************************************
+
+#ifdef _WIN32
+extern "C" int winResolveSurfaceID(HWND Window)
+{
+   return int(DriverResolveSurface(Window));
+}
+#endif
 
 //********************************************************************************************************************
 
