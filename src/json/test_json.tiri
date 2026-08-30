@@ -2,6 +2,7 @@
 -- Alternatively the native JSON library can be used by Tiri programs.
 
    include 'xml'
+   module core as mCore
    module json as mJson
    import 'json'
 
@@ -54,6 +55,23 @@ function expect_native_failure(Source:str, Description:str)
    end
 
    error(Description .. ' was accepted by the native JSON parser: ' .. Source)
+end
+
+function save_as_json(Source:obj, ClassID:num):str
+   local destination = obj.new('file', { flags=FL_BUFFER|FL_READ|FL_WRITE })
+   local err = Source.acSaveToObject(destination, ClassID)
+   assert(err is ERR_Okay, 'SaveToObject failed: ' .. mSys.GetErrorMsg(err))
+   return destination.buffer.getString()
+end
+
+function expect_save_failure(Source:obj, Description:str)
+   local destination = obj.new('file', { flags=FL_BUFFER|FL_READ|FL_WRITE })
+   local err, written = destination.acWrite('unchanged')
+   assert(err is ERR_Okay and written is 9, 'Failed to seed the atomic-write destination.')
+
+   err = Source.acSaveToObject(destination, 0)
+   assert(err is ERR_InvalidData, Description .. ' should return ERR_InvalidData.')
+   assert(destination.buffer.getString() is 'unchanged', Description .. ' should not modify the destination.')
 end
 
 @Test function LoadJSON()
@@ -234,4 +252,128 @@ end
    for _, fixture in ipairs(fixtures) do
       expect_native_failure(fixture.source, fixture.description)
    end
+end
+
+@Test function SaveNativeCompactRoundTrip()
+   local source = [[{ "string":"text", "integer":-12, "number":6.02e23, "enabled":true, "nothing":null,
+      "empty":[], "mixed":[1,"two",false,null,[],{"nested":0xAf}] }]]
+   local json_object = obj.new('json', { statement=source })
+   local output = save_as_json(json_object, 0)
+   local expected = '{"string":"text","integer":-12,"number":6.02e23,"enabled":true,"nothing":null,' ..
+      '"empty":[],"mixed":[1,"two",false,null,[],{"nested":0xAf}]}'
+   assert(output is expected, 'Compact native JSON output did not preserve types, order, or number lexemes.')
+
+   local reloaded = obj.new('json', { statement=output })
+   local original_err, original_xml = json_object.mtSerialise(0, 0)
+   local reloaded_err, reloaded_xml = reloaded.mtSerialise(0, 0)
+   assert(original_err is ERR_Okay and reloaded_err is ERR_Okay, 'Round-trip XML serialisation failed.')
+   assert(reloaded_xml is original_xml, 'Saving and reloading should preserve the typed native JSON tree.')
+end
+
+@Test function SaveNativeReadable()
+   local json_object = obj.new('json', { statement='{ "a":1, "b":["x",false] }', flags=XMF_READABLE })
+   local output = save_as_json(json_object, 0)
+   local expected = '{\n   "a": 1,\n   "b": [\n      "x",\n      false\n   ]\n}\n'
+   assert(output is expected, 'Readable JSON should use three-space indentation and one final LF.')
+end
+
+@Test function SaveNativeEscaping()
+   local source = [[{ "quote\"\\key":"line\ntab\tbackslash\\quote\"", "utf8":"£雪𝄞" }]]
+   local json_object = obj.new('json', { statement=source })
+   local output = save_as_json(json_object, 0)
+   local expected = '{"quote\\"\\\\key":"line\\ntab\\tbackslash\\\\quote\\"","utf8":"£雪𝄞"}'
+   assert(output is expected, 'Member names and string values should share JSON escaping while preserving UTF-8.')
+   obj.new('json', { statement=output })
+end
+
+@Test function SaveNativeEmptyMemberName()
+   local json_object = obj.new('json', { statement='{ "":1 }' })
+   local output = save_as_json(json_object, 0)
+   assert(output is '{"":1}', 'An empty JSON object member name should remain valid during serialisation.')
+   obj.new('json', { statement=output })
+end
+
+@Test function SaveNativeRejectsMalformedTrees()
+   local missing_name = obj.new('json', { statement='{ "value":1 }' })
+   local err = missing_name.mtRemoveXPath('/item/item/@name', 0)
+   assert(err is ERR_Okay, 'Failed to prepare the missing-name fixture.')
+   expect_save_failure(missing_name, 'A native object member without a name')
+
+   local missing_type = obj.new('json', { statement='{ "value":1 }' })
+   err = missing_type.mtRemoveXPath('/item/item/@type', 0)
+   assert(err is ERR_Okay, 'Failed to prepare the missing-type fixture.')
+   expect_save_failure(missing_type, 'A native scalar without a type')
+
+   local invalid_number = obj.new('json', { statement='{ "value":1 }' })
+   local number_id = invalid_number.tags[0].children[0].id
+   err = invalid_number.mtSetAttrib(number_id, XMS_REMOVE, '', '')
+   assert(err is ERR_Okay, 'Failed to clear the number fixture content.')
+   err = invalid_number.mtInsertContent(number_id, XMI_CHILD, '01')
+   assert(err is ERR_Okay, 'Failed to insert the invalid number fixture content.')
+   expect_save_failure(invalid_number, 'A native integer with a leading zero')
+
+   local null_content = obj.new('json', { statement='{ "value":null }' })
+   local null_id = null_content.tags[0].children[0].id
+   err = null_content.mtInsertContent(null_id, XMI_CHILD, 'content')
+   assert(err is ERR_Okay, 'Failed to prepare the null-content fixture.')
+   expect_save_failure(null_content, 'A native null with content')
+
+   local scalar_child = obj.new('json', { statement='{ "value":"text" }' })
+   local scalar_id = scalar_child.tags[0].children[0].id
+   local child_id
+   err, child_id = scalar_child.mtInsertXML(scalar_id, XMI_CHILD_END, '<nested/>')
+   assert(err is ERR_Okay and child_id > 0, 'Failed to prepare the scalar-child fixture.')
+   expect_save_failure(scalar_child, 'A native scalar with an element child')
+end
+
+@Test function SaveXMLTranscriptionCompact()
+   local source = '<?xml version="1.0"?>\n' ..
+      '<catalog version="001"><book id="a">First</book><book id="b"><title>Second</title></book>' ..
+      '<enabled>true</enabled><nothing>null</nothing><empty/></catalog><other><![CDATA[tail]]></other>'
+   local xml_object = obj.new('xml', { statement=source, flags=XMF_INCLUDE_COMMENTS })
+   local output = save_as_json(xml_object, mCore.ResolveClassName('JSON'))
+   local expected = '{"catalog":{"@version":"001","book":[{"@id":"a","#text":"First"},' ..
+      '{"@id":"b","title":"Second"}],"enabled":"true","nothing":"null","empty":""},"other":"tail"}'
+   assert(output is expected, 'XML transcription should preserve strings, grouping, and deterministic property order.')
+   obj.new('json', { statement=output })
+end
+
+@Test function SaveXMLTranscriptionMixedAndQualified()
+   local source = [[<!-- ignored --><ns:root xmlns:ns="urn:test"><mixed>before<part>x</part>after</mixed>
+      <item>one</item><item>two</item></ns:root><second>001</second>]]
+   local xml_object = obj.new('xml', { statement=source, flags=XMF_INCLUDE_COMMENTS|XMF_READABLE })
+   local output = save_as_json(xml_object, mCore.ResolveClassName('JSON'))
+   local expected = [[{
+   "ns:root": {
+      "@xmlns:ns": "urn:test",
+      "mixed": {
+         "#text": "beforeafter",
+         "part": "x"
+      },
+      "item": [
+         "one",
+         "two"
+      ]
+   },
+   "second": "001"
+}
+]]
+   assert(output is expected, 'Readable XML transcription should preserve qualified names and meaningful mixed text.')
+   obj.new('json', { statement=output })
+end
+
+@Test function SaveDestinationErrors()
+   local json_object = obj.new('json', { statement='{ "value":1 }' })
+   assert(json_object.acSaveToObject(nil, 0) is ERR_NullArgs, 'A null destination should return ERR_NullArgs.')
+
+   local unsupported_destination = obj.new('xml', { statement='<destination/>' })
+   assert(json_object.acSaveToObject(unsupported_destination, 0) is ERR_Write,
+      'A destination without Write support should return ERR_Write.')
+
+   local xml_object = obj.new('xml', { statement='<source/>' })
+   local destination = obj.new('file', { flags=FL_BUFFER|FL_READ|FL_WRITE })
+   local config_class = mCore.ResolveClassName('Config')
+   assert(xml_object.acSaveToObject(destination, config_class) is ERR_NoSupport,
+      'XML should reject encoders that are not derived from the XML class.')
+   assert(destination.buffer.getString() is '', 'A rejected encoder should not modify the destination.')
 end

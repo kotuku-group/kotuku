@@ -1344,7 +1344,10 @@ static ERR XML_ResolvePrefix(extXML *Self, struct xml::ResolvePrefix *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-SaveToObject: Saves XML data to a storage object (e.g. @File).
+SaveToObject: Saves XML data to a storage object (e.g. @File), optionally using another format encoder.
+
+Set `ClassID` to `NIL` or `XML` to write XML.  Another XML-derived class ID delegates the action to that class's
+distinct `SaveToObject` implementation, allowing XML-backed data to be exported in formats such as JSON.
 -END-
 *********************************************************************************************************************/
 
@@ -1353,6 +1356,21 @@ static ERR XML_SaveToObject(extXML *Self, struct acSaveToObject *Args)
    kt::Log log;
 
    if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
+
+   if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::XML)) {
+      auto mc = (objMetaClass *)FindClass(Args->ClassID);
+      if (not mc) return log.warning(ERR::NoSupport);
+      if (mc->BaseClassID != CLASSID::XML) return log.warning(ERR::NoSupport);
+
+      std::span<ActionEntry> actions;
+      if (auto error = mc->getActionTable(actions); error != ERR::Okay) return log.warning(error);
+      if (actions.empty()) return log.warning(ERR::NoSupport);
+
+      auto encoder = actions[int(AC::SaveToObject)].PerformAction;
+      if ((not encoder) or (encoder IS (APTR)XML_SaveToObject)) return log.warning(ERR::NoSupport);
+      return encoder(Self, Args);
+   }
+
    if (Self->Tags.size() <= 0) return ERR::Okay;
 
    log.traceBranch("To: %d", Args->Dest->UID);
