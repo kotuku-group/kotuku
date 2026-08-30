@@ -966,7 +966,7 @@ The file index can be reset by calling the #Reset() action.
 Okay
 Args
 NullArgs
-DirEmpty: The index has reached the end of the file list.
+EndOfSequence: The index has reached the end of the file list.
 ExpectedFolder
 CreateObject
 

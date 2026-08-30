@@ -2106,7 +2106,7 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
       Dest.resize(dest_len);
       return error;
    }
-   else if (error IS ERR::DirEmpty) return ERR::Okay;
+   else if (error IS ERR::EndOfSequence) return ERR::Okay;
    else {
       log.msg("Folder list failed for \"%s\"", Source.c_str());
       return error;
@@ -2311,7 +2311,7 @@ ERR fs_scandir(DirInfo *Dir)
    #error Platform requires support for ScanDir();
 #endif
 
-   return ERR::DirEmpty;
+   return ERR::EndOfSequence;
 }
 
 //********************************************************************************************************************

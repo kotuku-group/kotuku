@@ -127,7 +127,7 @@ static ERR SET_CurrentState(extHTTP *Self, HGS Value)
       }
       else error = ERR::Okay;
 
-      if (error > ERR::ExceptionThreshold) Self->Error = error;
+      if (error > ERR::ExceptionThreshold) Self->Error = error; // ERR:Terminate excluded
 
       if (error IS ERR::Terminate) {
          if (Self->CurrentState IS HGS::SENDING_CONTENT) {

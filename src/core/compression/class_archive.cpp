@@ -565,7 +565,7 @@ static ERR scan_folder(DirInfo *Dir)
       }
    }
 
-   return ERR::DirEmpty;
+   return ERR::EndOfSequence;
 }
 
 //********************************************************************************************************************

@@ -280,7 +280,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="DirEmpty">The index has reached the end of the file list.</error>
+        <error code="EndOfSequence">The index has reached the end of the file list.</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="CreateObject">A call to CreateObject() failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>

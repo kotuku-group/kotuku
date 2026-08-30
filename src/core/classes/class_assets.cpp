@@ -465,7 +465,7 @@ static ERR scan_dir(DirInfo *Dir)
       }
    }
 
-   return ERR::DirEmpty;
+   return ERR::EndOfSequence;
 }
 
 //********************************************************************************************************************

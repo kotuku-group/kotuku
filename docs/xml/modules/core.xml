@@ -1227,7 +1227,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="DirEmpty">The folder is empty</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="ResolvePath">A volume could not be resolved</error>
@@ -1555,7 +1554,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </description>
     <result type="ERR">
       <error code="Okay">An item was successfully scanned from the folder.</error>
-      <error code="DirEmpty">There are no more items to scan.</error>
       <error code="InvalidData">There is an error in the provided data</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="NoSupport">Operation not supported</error>

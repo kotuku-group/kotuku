@@ -879,7 +879,7 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       }
       else error = ERR::InvalidValue;
 
-      if (error > ERR::ExceptionThreshold) Self->Error = error;
+      if (error > ERR::ExceptionThreshold) Self->Error = error; // ERR::Terminate excluded
 
       if (error IS ERR::Terminate) {
          kt::Log log(__FUNCTION__);

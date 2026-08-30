@@ -131,7 +131,7 @@ int(RDF) Flags: Optional flags.
 Okay
 Args
 NullArgs
-DirEmpty
+EndOfSequence
 AllocMemory
 ResolvePath
 
@@ -170,7 +170,7 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
       if ((Path.starts_with(':')) or (Path.empty())) {
          if ((Flags & RDF::FOLDER) IS RDF::NIL) {
             FreeResource(dir);
-            return ERR::DirEmpty;
+            return ERR::EndOfSequence;
          }
          *Result = dir;
          return ERR::Okay;
@@ -178,7 +178,7 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
 
       if (not vd.OpenDir) {
          FreeResource(dir);
-         return ERR::DirEmpty;
+         return ERR::EndOfSequence;
       }
 
       if (!(error = vd.OpenDir(dir))) {
@@ -226,7 +226,7 @@ resource(DirInfo) Info: Pointer to a !DirInfo structure for storing scan results
 Okay: An item was successfully scanned from the folder.
 Args
 NullArgs
-DirEmpty: There are no more items to scan.
+EndOfSequence: There are no more items to scan.
 InvalidData
 NoSupport
 SystemLocked
@@ -281,7 +281,7 @@ ERR ScanDir(DirInfo *Dir)
             else count++;
          }
 
-         return ERR::DirEmpty;
+         return ERR::EndOfSequence;
       }
       else return log.warning(ERR::SystemLocked);
    }

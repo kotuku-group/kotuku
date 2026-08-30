@@ -15,7 +15,7 @@
 #define ERR_Continue 5
 #define ERR_Skip 6
 #define ERR_Retry 7
-#define ERR_DirEmpty 8
+#define ERR_EndOfSequence 8
 #define ERR_Terminate 9
 #define ERR_ExceptionThreshold 9
 #define ERR_NoMemory 10

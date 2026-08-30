@@ -21,7 +21,7 @@ enum class ERR : int32_t {
    Continue = 5,
    Skip = 6,
    Retry = 7,
-   DirEmpty = 8,
+   EndOfSequence = 8,
    Terminate = 9,
    ExceptionThreshold = 9,
    NoMemory = 10,
