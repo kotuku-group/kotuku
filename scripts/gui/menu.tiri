@@ -375,7 +375,7 @@ gui.menu = function(Options)
          gui.tooltip({ text=&hItem.tip })
       end
       &tipTimer = nil
-      check ERR_Terminate
+      raise ERR_Terminate
    end
 
    -- Main entry point --
@@ -426,7 +426,7 @@ gui.menu = function(Options)
             if &client.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode:num!)
                if not &visible then
                   &_subscribedKb = false
-                  check ERR_Terminate
+                  raise ERR_Terminate
                end
 
                if not (Qualifiers has KQ_PRESSED) then return end

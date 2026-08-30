@@ -180,7 +180,7 @@ end
          -- The server will send malformed chunked data in response
          HTTP.acWrite('test data for malformed chunks')
          testCompleted = true
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -314,7 +314,7 @@ end
          content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then

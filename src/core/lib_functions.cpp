@@ -893,7 +893,7 @@ A callback function must be provided that follows this prototype: `ERR Function(
 The `Elapsed` parameter is the total number of microseconds that have elapsed since the last call.  The `CurrentTime`
 parameter is set to the ~PreciseTime() value just prior to the `Callback` being called.  The callback function
 can return `ERR::Terminate` at any time to cancel the subscription.  All other error codes are ignored.  Tiri callbacks
-should call `check(ERR::Terminate)` to perform the equivalent of this behaviour.
+should use `raise ERR_Terminate` to perform the equivalent of this behaviour.
 
 To change the interval, call ~UpdateTimer() with the new value.  To release a timer subscription, call
 ~UpdateTimer() with the resulting `Subscription` handle and an `Interval` of zero.

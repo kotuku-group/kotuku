@@ -113,7 +113,7 @@ end
          print('Sending large chunked body (' .. largeBody.len() .. ' bytes)')
          HTTP.acWrite(largeBody)
          testPostCompleted = true
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -244,7 +244,7 @@ end
          print('Sending very large body (' .. veryLargeBody.len() .. ' bytes)')
          HTTP.acWrite(veryLargeBody)
          testPostCompleted = true
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
