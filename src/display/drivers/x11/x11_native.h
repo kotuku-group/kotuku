@@ -8,9 +8,6 @@
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
 #include <X11/extensions/XShm.h>
-#ifdef XDGA_ENABLED
-#include <X11/extensions/Xxf86dga.h>
-#endif
 #ifdef XRANDR_ENABLED
 #include <X11/extensions/Xrandr.h>
 #endif
@@ -76,13 +73,9 @@ struct X11Driver::State {
    bool Composite = false;
    bool RandR = false;
    bool Closing = false;
-   bool DGA = false;
    bool TrayIcon = false;
    bool TaskBar = false;
    int StickToFront = 0;
-   APTR DGAMemory = nullptr;
-   int DGAPixelsPerLine = 0;
-   int DGABankSize = 0;
 };
 
 X11WindowRecord * x11_window(X11Driver::State *State, HOSTWINDOW Window);

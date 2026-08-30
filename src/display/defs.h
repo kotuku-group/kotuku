@@ -48,21 +48,6 @@
 #endif
 
 
-#ifdef _GLES_
-#define GL_GLEXT_PROTOTYPES 1
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <EGL/eglplatform.h>
-#include <GLES/gl.h>
-#include <GLES/glext.h>
-#endif
-
-#ifdef __ANDROID__
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
-#include <android/configuration.h>
-#endif
-
 #define USE_XIMAGE 1
 
 constexpr bool REPEAT_BUTTONS    = true;
@@ -214,10 +199,6 @@ inline ERR ptrGrabX11Pointer(OBJECTPTR Ob, OBJECTID SurfaceID) {
 }
 
 #include "idl.h"
-
-#ifdef __ANDROID__
-#include <kotuku/modules/android.h>
-#endif
 
 struct resolution {
    int16_t width;
@@ -409,11 +390,7 @@ class extDisplay : public objDisplay {
    int  ControllerPorts;
    int  VDensity;          // Cached DPI value, if calculable.
    int  HDensity;
-   #ifdef __ANDROID__
-      ANativeWindow *WindowHandle;
-   #else
-      APTR   WindowHandle;
-   #endif
+   HOSTWINDOW WindowHandle;
    APTR PendingNativeWindow;
 
    extDisplay(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDisplay(ClassPtr, ObjectID) {
@@ -432,13 +409,6 @@ class extDisplay : public objDisplay {
 
          Chipset      = "Windows";
          Display      = "Windows";
-         DisplayMfr   = "N/A";
-         Manufacturer = "N/A";
-
-      #elif _GLES_
-
-         Chipset      = "OpenGLES";
-         Display      = "OpenGL";
          DisplayMfr   = "N/A";
          Manufacturer = "N/A";
 
@@ -468,8 +438,6 @@ class extDisplay : public objDisplay {
 
       #if   _WIN32
          DisplayType = DT::WINGDI;
-      #elif _GLES_
-         DisplayType = DT::GLES;
       #else
          DisplayType = glDriver ? glDriver->displayType() : DT::NATIVE;
       #endif
@@ -579,13 +547,6 @@ extern const InputType glInputType[int(JET::END)];
 extern const CSTRING glInputNames[int(JET::END)];
 
 //********************************************************************************************************************
-
-#ifdef _GLES_ // OpenGL related prototypes
-GLenum alloc_texture(int Width, int Height, GLuint *TextureID);
-void refresh_display_from_egl(objDisplay *Self);
-ERR init_egl(void);
-void free_egl(void);
-#endif
 
 #ifdef _WIN32
 
@@ -708,12 +669,6 @@ class extBitmap : public objBitmap {
    uint8_t *prvCompress;
    APTR DriverData;                  // Opaque display-driver bitmap backing.
    int   prvAFlags;                  // Private allocation flags
-   #if defined(_GLES_)
-      uint32_t prvWriteBackBuffer:1;  // For OpenGL surface locking.
-      int prvGLPixel;
-      int prvGLFormat;
-   #endif
-
    extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID);
    ~extBitmap();
 };

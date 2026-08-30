@@ -480,68 +480,6 @@ ERR CopyArea(objBitmap *Source, objBitmap *Dest, BAF Flags, int X, int Y, int Wi
             error != ERR::NoSupport) return error;
    }
 
-#if   _GLES_
-
-   if (dest->MemType IS BMT::VIDEO) { // Destination is the video display.
-      if (src->MemType IS BMT::VIDEO) { // Source is the video display.
-         // No simple way to support this in OpenGL - we have to copy the display into a texture buffer, then copy the texture back to the display.
-
-         ERR error;
-         if (!lock_graphics_active(__func__)) {
-            GLuint texture;
-            if (alloc_texture(src->Width, src->Height, &texture) IS GL_NO_ERROR) {
-               //glViewport(0, 0, src->Width, src->Height);  // Set viewport so it matches texture size of ^2
-               glCopyTexImage2D(GL_TEXTURE_2D, 0, src->prvGLPixel, 0, 0, src->Width, src->Height, 0); // Copy screen to texture
-               //glViewport(0, 0, src->Width, src->Height);  // Restore viewport to display size
-               glDrawTexiOES(DestX, -DestY, 1, src->Width, src->Height);
-               glBindTexture(GL_TEXTURE_2D, 0);
-               eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               glDeleteTextures(1, &texture);
-               error = ERR::Okay;
-            }
-            else error = log.warning(ERR::OpenGL);
-
-            unlock_graphics();
-         }
-         else error = ERR::LockFailed;
-
-         return error;
-      }
-      else if (src->MemType IS BMT::TEXTURE) {
-         // Texture-to-video blitting (
-
-
-      }
-      else {
-         // RAM-to-video blitting.  We have to allocate a temporary texture, copy the data to it and then blit that to the display.
-
-         ERR error;
-         if (!lock_graphics_active(__func__)) {
-            GLuint texture;
-            if (alloc_texture(src->Width, src->Height, &texture) IS GL_NO_ERROR) {
-               glTexImage2D(GL_TEXTURE_2D, 0, src->prvGLPixel, src->Width, src->Height, 0, src->prvGLPixel, src->prvGLFormat, src->Data); // Copy the bitmap content to the texture.
-               if (glGetError() IS GL_NO_ERROR) {
-                  glDrawTexiOES(0, 0, 1, src->Width, src->Height);
-                  glBindTexture(GL_TEXTURE_2D, 0);
-                  eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               }
-               else error = ERR::OpenGL;
-
-               glDeleteTextures(1, &texture);
-               error = ERR::Okay;
-            }
-            else error = log.warning(ERR::OpenGL);
-
-            unlock_graphics();
-         }
-         else error = ERR::LockFailed;
-
-         return error;
-      }
-   }
-
-#endif
-
    // GENERIC SOFTWARE BLITTING ROUTINES
 
    if (((Flags & BAF::BLEND) != BAF::NIL) and (src->BitsPerPixel IS 32) and ((src->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
@@ -1666,15 +1604,6 @@ void DrawRectangle(objBitmap *Target, int X, int Y, const int Width, const int H
    // Translucent rectangle support
 
    // Standard rectangle (no translucency) video support
-
-   #ifdef _GLES_
-      if (Bitmap->MemType IS BMT::VIDEO) {
-      log.warning("TODO: Draw rectangles to opengl");
-         glClearColor(0.5, 0.5, 0.5, 1.0);
-         glClear(GL_COLOR_BUFFER_BIT);
-         return;
-      }
-   #endif
 
    if ((glDriver) and (glDriver->fillBitmap(Bitmap, X, Y, w, h, Colour) IS ERR::Okay)) return;
 

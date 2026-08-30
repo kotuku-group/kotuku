@@ -248,4 +248,9 @@ void destroy_win32_display_driver(DisplayDriver *Driver);
 DisplayDriver * create_x11_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
 void destroy_x11_display_driver(DisplayDriver *Driver);
 #endif
+
+#ifdef __ANDROID__
+DisplayDriver * create_android_display_driver(uint32_t InterfaceVersion, struct CoreBase *Core);
+void destroy_android_display_driver(DisplayDriver *Driver);
+#endif
 }

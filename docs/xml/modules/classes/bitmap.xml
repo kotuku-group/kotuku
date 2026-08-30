@@ -201,6 +201,8 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">The bitmap surface cannot be read by the CPU.</error>
+        <error code="AllocMemory">The read buffer for a host drawable could not be allocated.</error>
         <error code="BufferOverflow">A buffer overflow has occurred</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

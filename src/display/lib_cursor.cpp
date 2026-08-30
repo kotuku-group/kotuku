@@ -82,17 +82,16 @@ ERR GetCursorInfo(CursorInfo *Info)
 {
    if (!Info) return ERR::NullArgs;
 
-#ifdef __ANDROID__
-   // TODO: Some Android devices probably do support a mouse or similar input device.
+   if ((not glDriver) or ((glDriver->capabilities() & DCAP::CUSTOM_CURSORS) IS DCAP::NIL)) {
    clearmem(Info, sizeof(CursorInfo));
    return ERR::NoSupport;
-#else
+   }
+
    Info->Width  = 32;
    Info->Height = 32;
    Info->BitsPerPixel = 1;
    Info->Flags = 0;
    return ERR::Okay;
-#endif
 }
 
 /*********************************************************************************************************************

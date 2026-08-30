@@ -162,7 +162,6 @@ module({
     "ACCELERATED_3D: 3D video acceleration is available.",
     "ALPHA_CHANNEL: For 32-bit images, indicates that an alpha channel is present.",
     "NEVER_SHRINK: Ignore resize requests that would shrink the size of the bitmap.",
-    "X11_DGA: Private DGA indicator.",
     "FIXED_DEPTH: Prevent changing of bitmap depth after initialisation (e.g. via `Resize()`).",
     "PREMUL: The RGB values are premultiplied (32-bit only)."
   )
@@ -219,11 +218,11 @@ module({
   flags("GMF", { comment="Flags for gamma operations." },
      "SAVE: Save the provided settings permanently.")
 
-  enums("DT", { type="int", start=1, comment="Flags for GetDisplayType()." },
-    "NATIVE: The display is native (supported by internal drivers).",
+  enums("DT", { type="int", start=1, comment="Display backend identities returned by GetDisplayType()." },
+    "NATIVE: The selected display driver uses no platform-specific hosted backend.",
     "X11: The display is driven by the X Window System (X11, X.Org, XFree86)",
     "WINGDI: The display is driven by Microsoft Windows drivers.",
-    "GLES: The display is driven by OpenGLES.")
+    "GLES: The selected display driver uses OpenGL ES.")
 
   enums("DPMS", { type="int", start=0, comment="Possible modes for the Display class' PowerMode field." },
     "DEFAULT: Use the default DPMS mode as defined by the display driver.",

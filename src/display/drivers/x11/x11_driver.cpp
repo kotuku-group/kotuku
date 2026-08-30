@@ -181,25 +181,6 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
    XGetWindowAttributes(Data->Connection, root, &Data->RootAttributes);
    Data->Composite = XMatchVisualInfo(Data->Connection, DefaultScreen(Data->Connection), 32, TrueColor,
       &Data->AlphaVisual) != 0;
-#ifdef XDGA_ENABLED
-   if ((not Data->WSLg) and ((display_name[0] IS ':') or startswith(display_name, "unix:"))) {
-      int events, errors, dga_major, dga_minor;
-      if (XDGAQueryExtension(Data->Connection, &events, &errors) and
-            XDGAQueryVersion(Data->Connection, &dga_major, &dga_minor) and (dga_major >= 2) and
-            (not SetResource(RES::PRIVILEGED_USER, TRUE))) {
-         auto screen = DefaultScreen(Data->Connection);
-         if (XDGAOpenFramebuffer(Data->Connection, screen)) {
-            int memory_size;
-            XF86DGAGetVideo(Data->Connection, screen, (char **)&Data->DGAMemory, &Data->DGAPixelsPerLine,
-               &Data->DGABankSize, &memory_size);
-            XDGACloseFramebuffer(Data->Connection, screen);
-            Data->DGA = Data->DGAMemory != nullptr;
-         }
-         SetResource(RES::PRIVILEGED_USER, FALSE);
-         if (GetResource(RES::PRIVILEGED) IS FALSE) setuid(getuid());
-      }
-   }
-#endif
 #ifdef XRANDR_ENABLED
    Data->RandR = XRRQueryExtension(Data->Connection, &event_base, &error_base) != 0;
 #endif
@@ -246,9 +227,6 @@ ERR X11Driver::close()
    Data->Connection = nullptr;
    Data->GraphicsContext = Data->ClipGraphicsContext = 0;
    Data->Open = Data->Closing = Data->WSLg = Data->SharedImages = Data->Composite = Data->RandR = false;
-   Data->DGA = false;
-   Data->DGAMemory = nullptr;
-   Data->DGAPixelsPerLine = Data->DGABankSize = 0;
    Data->Manager = true;
    return was_open ? ERR::DoNotExpunge : ERR::Okay;
 }
@@ -381,11 +359,6 @@ ERR X11Driver::createWindow(extDisplay *DisplayObject, HOSTWINDOW &Handle)
          bitmap->DrawableID = record->Background;
          XSetWindowBackgroundPixmap(Data->Connection, record->Native, record->Background);
       }
-   }
-   if (record->Root and Data->DGA) {
-      DisplayObject->Bitmap->Flags |= BMF::X11_DGA;
-      DisplayObject->Bitmap->Data = (uint8_t *)Data->DGAMemory;
-      DisplayObject->Bitmap->LineWidth = Data->DGAPixelsPerLine * DisplayObject->Bitmap->BytesPerPixel;
    }
    return ERR::Okay;
 }
@@ -929,10 +902,6 @@ ERR X11Driver::lockBitmap(extBitmap *Bitmap, int16_t Access)
    auto record = x11_bitmap(Bitmap);
    if ((not record) or (not record->DrawableID)) return Bitmap->Data ? ERR::Okay : ERR::NoSupport;
 
-   // DGA maps the framebuffer directly, so no read-back is required.
-
-   if (((Bitmap->Flags & BMF::X11_DGA) != BMF::NIL) and Data->DGA) return ERR::Okay;
-
    // A host-side copy is required only for readers.  Write-only callers reach the drawable through the pixel
    // routines, so allocating and populating a readable image for them would be wasted effort.
 
@@ -1050,4 +1019,4 @@ ERR X11Driver::setHostOption(HOST Option, int64_t Value)
    return ERR::Okay;
 }
 
-}
+} // namespace

@@ -341,12 +341,12 @@ Alpha  = CFUnpackAlpha(Format,Colour)
   <function>
     <name>GetDisplayType</name>
     <category>Display</category>
-    <comment>Returns the type of display supported.</comment>
+    <comment>Returns the selected display driver's backend type.</comment>
     <prototype>DT gfx::GetDisplayType()</prototype>
     <tiriPrototype>num = GetDisplayType()</tiriPrototype>
     <tags>pure-query</tags>
     <description>
-<p>This function returns the type of display supported by the loaded Display module.  Current return values are:</p>
+<p>This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:</p>
 <types lookup="DT"/>
     </description>
     <result type="DT" lookup="DT">Returns an integer indicating the display type.</result>

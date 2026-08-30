@@ -69,16 +69,6 @@ if (KOTUKU_DEFS_AVAILABLE) # Customised idl_c() equivalent, this is for defining
    register_generated_header_target (display_defs)
 endif ()
 
-if (NOT WIN32)
-   CHECK_C_SOURCE_COMPILES ("
-#include <X11/Xlib.h>
-#include <X11/extensions/Xxf86dga.h>
-int main() {
-   return 0;
-}"
-   XDGA_INSTALLED)
-endif ()
-
 add_library (${MOD})
 
 set_module_defaults (${MOD} "Gfx")
@@ -156,11 +146,35 @@ if (WIN32)
       set_tests_properties (display_windows_driver PROPERTIES LABELS display)
    endif ()
 elseif (ANDROID)
-   # Android uses OpenGL.  A separate driver library is compiled for this purpose.
-   add_library (display-gles1 SHARED)
-   target_sources (display-gles1 PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} "android/android.cpp" ${CLASSES})
-   target_compile_definitions (display-gles1 PRIVATE "_GLES_" "_GLES1_")
-   target_link_libraries (display-gles1 PRIVATE ${MATH_LINK} android EGL GLESv1_CM)
+   target_compile_definitions (${MOD} PRIVATE DISPLAY_ANDROID_DRIVER)
+   target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES})
+
+   add_library (display-android)
+   target_include_directories (display-android PRIVATE "${PROJECT_SOURCE_DIR}/include")
+   set_target_properties (display-android PROPERTIES CXX_STANDARD 20)
+   set_target_properties (display-android PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+   add_dependencies (display-android ${REQUIRED_MODS})
+   target_sources (display-android PRIVATE
+      "drivers/android/module.cpp"
+      "drivers/android/android_driver.cpp"
+      "drivers/android/lib_pixels.cpp")
+   target_link_libraries (display-android PRIVATE unicode android EGL GLESv1_CM ${MATH_LINK})
+
+   if (KOTUKU_STATIC)
+      target_link_libraries (${MOD} PRIVATE display-android)
+   else ()
+      set_target_properties (display-android PROPERTIES
+         PREFIX ""
+         POSITION_INDEPENDENT_CODE ON
+         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
+         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib")
+      if (KOTUKU_INSTALL)
+         install (TARGETS display-android
+            RUNTIME DESTINATION "${LIB_TARGET}"
+            ARCHIVE DESTINATION "${LIB_TARGET}"
+            LIBRARY DESTINATION "${LIB_TARGET}")
+      endif ()
+   endif ()
    # GL2 Link: -ljnigraphics -lEGL -lGLESv2 -DGLES2
    # GL3 Link: -ljnigraphics -lEGL -lGLESv3 -DGLES3
 else ()
@@ -170,7 +184,7 @@ else ()
    target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES} "linux/controller.cpp")
 
    if (X11_FOUND)
-      # Apt package requirements: libxrandr-dev libxxf86vm-dev libxxf86dga-dev
+      # Apt package requirements: libxrandr-dev libxxf86vm-dev
 
       target_compile_definitions (${MOD} PRIVATE DISPLAY_X11_DRIVER)
       add_library (display-x11)
@@ -204,11 +218,6 @@ else ()
          target_link_libraries (display-x11 PRIVATE Xrandr)
          list (APPEND X11_DRIVER_DEFINITIONS XRANDR_ENABLED)
       endif ()
-      if (XDGA_INSTALLED)
-         target_link_libraries (display-x11 PRIVATE Xxf86dga)
-         list (APPEND X11_DRIVER_DEFINITIONS XDGA_ENABLED)
-      endif ()
-
       # Applied at target level because x11_native.h guards its extension headers on these definitions, and every
       # file that includes it must agree on the layout of the structures that the header declares.
 

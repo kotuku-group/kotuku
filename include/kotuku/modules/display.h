@@ -266,9 +266,8 @@ enum class BMF : uint32_t {
    ACCELERATED_3D = 0x00000400,
    ALPHA_CHANNEL = 0x00000800,
    NEVER_SHRINK = 0x00001000,
-   X11_DGA = 0x00002000,
-   FIXED_DEPTH = 0x00004000,
-   PREMUL = 0x00008000,
+   FIXED_DEPTH = 0x00002000,
+   PREMUL = 0x00004000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(BMF)
@@ -348,7 +347,7 @@ enum class GMF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(GMF)
 
-// Flags for GetDisplayType().
+// Display backend identities returned by GetDisplayType().
 
 enum class DT : int {
    NIL = 0,

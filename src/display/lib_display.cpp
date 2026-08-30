@@ -63,9 +63,10 @@ ERR GetDisplayInfo(OBJECTID DisplayID, DisplayInfo **Result)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetDisplayType: Returns the type of display supported.
+GetDisplayType: Returns the selected display driver's backend type.
 
-This function returns the type of display supported by the loaded Display module.  Current return values are:
+This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and
+automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:
 
 <types lookup="DT"/>
 
@@ -82,8 +83,6 @@ DT GetDisplayType(void)
    if ((glDriver) and (not glHeadless)) return glDriver->displayType();
 #ifdef _WIN32
    return DT::WINGDI;
-#elif _GLES_
-   return DT::GLES;
 #else
    return DT::NATIVE;
 #endif

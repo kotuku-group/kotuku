@@ -26,74 +26,6 @@ static ERR DISPLAY_Resize(extDisplay *, struct acResize *);
 static void alloc_display_buffer(extDisplay *Self);
 
 
-#ifdef _GLES_
-static const int attributes[] = {
-   EGL_BUFFER_SIZE,
-   EGL_ALPHA_SIZE,
-   EGL_BLUE_SIZE,
-   EGL_GREEN_SIZE,
-   EGL_RED_SIZE,
-   EGL_DEPTH_SIZE,
-   EGL_STENCIL_SIZE,
-   EGL_CONFIG_CAVEAT,
-   EGL_CONFIG_ID,
-   EGL_LEVEL,
-   EGL_MAX_PBUFFER_HEIGHT,
-   EGL_MAX_PBUFFER_PIXELS,
-   EGL_MAX_PBUFFER_WIDTH,
-   EGL_NATIVE_RENDERABLE,
-   EGL_NATIVE_VISUAL_ID,
-   EGL_NATIVE_VISUAL_TYPE,
-   0x3030, // EGL10.EGL_PRESERVED_RESOURCES,
-   EGL_SAMPLES,
-   EGL_SAMPLE_BUFFERS,
-   EGL_SURFACE_TYPE,
-   EGL_TRANSPARENT_TYPE,
-   EGL_TRANSPARENT_RED_VALUE,
-   EGL_TRANSPARENT_GREEN_VALUE,
-   EGL_TRANSPARENT_BLUE_VALUE,
-   0x3039, // EGL10.EGL_BIND_TO_TEXTURE_RGB,
-   0x303A, // EGL10.EGL_BIND_TO_TEXTURE_RGBA,
-   0x303B, // EGL10.EGL_MIN_SWAP_INTERVAL,
-   0x303C, // EGL10.EGL_MAX_SWAP_INTERVAL,
-   EGL_LUMINANCE_SIZE,
-   EGL_ALPHA_MASK_SIZE,
-   EGL_COLOR_BUFFER_TYPE,
-   EGL_RENDERABLE_TYPE,
-   0x3042 // EGL10.EGL_CONFORMANT
-};
-
-static const CSTRING names[] = {
-  "EGL_BUFFER_SIZE",         "EGL_ALPHA_SIZE",            "EGL_BLUE_SIZE",               "EGL_GREEN_SIZE",
-  "EGL_RED_SIZE",            "EGL_DEPTH_SIZE",            "EGL_STENCIL_SIZE",            "EGL_CONFIG_CAVEAT",
-  "EGL_CONFIG_ID",           "EGL_LEVEL",                 "EGL_MAX_PBUFFER_HEIGHT",      "EGL_MAX_PBUFFER_PIXELS",
-  "EGL_MAX_PBUFFER_WIDTH",   "EGL_NATIVE_RENDERABLE",     "EGL_NATIVE_VISUAL_ID",        "EGL_NATIVE_VISUAL_TYPE",
-  "EGL_PRESERVED_RESOURCES", "EGL_SAMPLES",               "EGL_SAMPLE_BUFFERS",          "EGL_SURFACE_TYPE",
-  "EGL_TRANSPARENT_TYPE",    "EGL_TRANSPARENT_RED_VALUE", "EGL_TRANSPARENT_GREEN_VALUE", "EGL_TRANSPARENT_BLUE_VALUE",
-  "EGL_BIND_TO_TEXTURE_RGB", "EGL_BIND_TO_TEXTURE_RGBA",  "EGL_MIN_SWAP_INTERVAL",       "EGL_MAX_SWAP_INTERVAL",
-  "EGL_LUMINANCE_SIZE",      "EGL_ALPHA_MASK_SIZE",       "EGL_COLOR_BUFFER_TYPE",       "EGL_RENDERABLE_TYPE",
-  "EGL_CONFORMANT"
-};
-
-[[maybe_unused]] static void printConfig(EGLDisplay display, EGLConfig config) {
-   kt::Log log(__FUNCTION__);
-   int value[1];
-
-   log.branch();
-
-   for (int i=0; i < std::ssize(attributes); i++) {
-      int attribute = attributes[i];
-      CSTRING name = names[i];
-      if (eglGetConfigAttrib(display, config, attribute, value)) {
-         log.msg("%d: %s: %d", i, name, value[0]);
-      }
-      else {
-         while (eglGetError() != EGL_SUCCESS);
-      }
-   }
-}
-
-#endif
 
 //********************************************************************************************************************
 
@@ -184,17 +116,7 @@ Clear: Clears the display's drawable image data.
 
 static ERR DISPLAY_Clear(extDisplay *Self)
 {
-#ifdef _GLES_
-   if (not lock_graphics_active(__func__)) {
-      glClearColorx(Self->Bitmap->BkgdRGB.Red, Self->Bitmap->BkgdRGB.Green, Self->Bitmap->BkgdRGB.Blue, 255);
-      glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-      unlock_graphics();
-      return ERR::Okay;
-   }
-   else return ERR::LockFailed;
-#else
    return acClear(Self->Bitmap);
-#endif
 }
 
 /*********************************************************************************************************************
@@ -307,12 +229,6 @@ drivers it is a harmless no-op.
 static ERR DISPLAY_Flush(extDisplay *Self)
 {
    if (glDriver) return glDriver->flush();
-#if   _GLES_
-   if (not lock_graphics_active(__func__)) {
-      glFlush();
-      unlock_graphics();
-   }
-#endif
    return ERR::Okay;
 }
 
@@ -347,9 +263,6 @@ extDisplay::~extDisplay()
 
    if ((glDriver) and (WindowHandle)) glDriver->destroyWindow(WindowHandle);
 
-#ifdef _GLES_
-   glActiveDisplayID = 0;
-#endif
 
    acHide(this);  // Hide the display.  In OpenGL this will remove the display resources.
 
@@ -435,10 +348,6 @@ static ERR DISPLAY_Hide(extDisplay *Self)
    }
    else sciCloseVideoMode(Self->VideoHandle);
 
-#elif _GLES_
-   if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
-      adHideDisplay(Self->UID);
-   }
 #endif
 
    Self->Flags &= ~SCR::VISIBLE;
@@ -533,34 +442,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       glDriver->frameMargins(Self->WindowHandle, Self->LeftMargin, Self->TopMargin,
          Self->RightMargin, Self->BottomMargin);
    }
-   #if   _GLES_
-   else {
-      ERR error;
-
-      if (Self->Bitmap->BitsPerPixel) glEGLPreferredDepth = Self->Bitmap->BitsPerPixel;
-      else glEGLPreferredDepth = 0;
-
-      if (not pthread_mutex_lock(&glGraphicsMutex)) {
-         error = init_egl();
-         eglMakeCurrent(glEGLDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT); // Give up our access to EGL because we're releasing the graphics mutex.
-         pthread_mutex_unlock(&glGraphicsMutex);
-      }
-      if (error) return error;
-
-      refresh_display_from_egl(Self);
-
-      // Initialise the video bitmap that will represent the OpenGL surface
-
-      bmp->Flags |= BMF::NO_DATA;
-      bmp->MemType = BMT::VIDEO;
-      if (InitObject(bmp) != ERR::Okay) {
-         return log.warning(ERR::Init);
-      }
-   }
-
-   #else
-      if (not glDriver) return log.warning(ERR::NoSupport);
-   #endif
+   if (not glDriver) return log.warning(ERR::NoSupport);
 
    if ((Self->Flags & SCR::BUFFER) != SCR::NIL) alloc_display_buffer(Self);
 
@@ -1360,14 +1242,6 @@ ERR DISPLAY_Show(extDisplay *Self)
       gfxSetGamma(Self, Self->Gamma[0], Self->Gamma[1], Self->Gamma[2]);
    }
 
-   #elif _GLES_
-   else {
-
-      #warning TODO: Bring back the native window if it is hidden.
-      glActiveDisplayID = Self->UID;
-      Self->Flags &= ~SCR::NOACCELERATION;
-   }
-
    #else
       if (not glDriver) return log.warning(ERR::NoSupport);
    #endif
@@ -1381,15 +1255,6 @@ ERR DISPLAY_Show(extDisplay *Self)
          SetName(pointer, "SystemPointer");
          if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::SURFACE)) pointer->setSurface(Self->Owner->UID);
 
-         #ifdef __ANDROID__
-            AConfiguration *config;
-            if (not adGetConfig(&config)) {
-               double dp_factor = 160.0 / AConfiguration_getDensity(config);
-               pointer->ClickSlop = F2I(8.0 * dp_factor);
-               log.trace("Click-slop calculated as %d.", pointer->ClickSlop);
-            }
-            else log.warning("Failed to get Android Config object.");
-         #endif
 
          if (InitObject(pointer) != ERR::Okay) FreeResource(pointer);
          else acShow(pointer);
@@ -1516,11 +1381,7 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
       return ERR::Okay;
    }
 
-   #ifdef __ANDROID__
-      Self->HDensity = 160; // Android devices tend to have a high DPI by default (compared to monitors)
-   #else
       Self->HDensity = 96; // Standard PC DPI, matches Windows
-   #endif
 
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
@@ -1538,16 +1399,6 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
       }
    }
 
-   #ifdef __ANDROID__
-      AConfiguration *config;
-      if (not adGetConfig(&config)) {
-         int density = AConfiguration_getDensity(config);
-         if ((density > 60) and (density < 20000)) {
-            Self->HDensity = density;
-            Self->VDensity = density;
-         }
-      }
-   #endif
 
    if (glDriver) glDriver->density(Self->WindowHandle, Self->HDensity, Self->VDensity);
 
@@ -1584,11 +1435,7 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
       return ERR::Okay;
    }
 
-   #ifdef __ANDROID__
-      Self->VDensity = 160; // Android devices tend to have a high DPI by default (compared to monitors)
-   #else
       Self->VDensity = 96; // Standard PC DPI, matches Windows
-   #endif
 
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
@@ -1606,16 +1453,6 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
       }
    }
 
-   #ifdef __ANDROID__
-      AConfiguration *config;
-      if (not adGetConfig(&config)) {
-         int density = AConfiguration_getDensity(config);
-         if ((density > 60) and (density < 20000)) {
-            Self->HDensity = density;
-            Self->VDensity = density;
-         }
-      }
-   #endif
 
    if (glDriver) glDriver->density(Self->WindowHandle, Self->HDensity, Self->VDensity);
 

@@ -40,39 +40,6 @@ static ERR calc_pixel_routines(extBitmap *);
 
 // Video Pixel Routines
 
-#if defined(__ANDROID__) or defined(_GLES_)
-
-static void VideoDrawPixel32(objBitmap *, int, int, uint32_t);
-static void VideoDrawPixel24(objBitmap *, int, int, uint32_t);
-static void VideoDrawPixel16(objBitmap *, int, int, uint32_t);
-static void VideoDrawPixel8(objBitmap *,  int, int, uint32_t);
-
-static void VideoDrawRGBPixel32(objBitmap *, int, int, RGB8 *);
-static void VideoDrawRGBPixel24(objBitmap *, int, int, RGB8 *);
-static void VideoDrawRGBPixel16(objBitmap *, int, int, RGB8 *);
-static void VideoDrawRGBPixel8(objBitmap *,  int, int, RGB8 *);
-
-static void VideoDrawRGBIndex32(objBitmap *, uint32_t *, RGB8 *);
-static void VideoDrawRGBIndex24(objBitmap *, uint8_t *, RGB8 *);
-static void VideoDrawRGBIndex16(objBitmap *, uint16_t *, RGB8 *);
-static void VideoDrawRGBIndex8(objBitmap *,  uint8_t *, RGB8 *);
-
-static uint32_t VideoReadPixel32(objBitmap *, int, int);
-static uint32_t VideoReadPixel24(objBitmap *, int, int);
-static uint32_t VideoReadPixel16(objBitmap *, int, int);
-static uint32_t VideoReadPixel8(objBitmap *,  int, int);
-
-static void VideoReadRGBPixel32(objBitmap *, int, int, RGB8 *);
-static void VideoReadRGBPixel24(objBitmap *, int, int, RGB8 *);
-static void VideoReadRGBPixel16(objBitmap *, int, int, RGB8 *);
-static void VideoReadRGBPixel8(objBitmap *,  int, int, RGB8 *);
-
-static void VideoReadRGBIndex32(objBitmap *, uint32_t *, RGB8 *);
-static void VideoReadRGBIndex24(objBitmap *, uint8_t *, RGB8 *);
-static void VideoReadRGBIndex16(objBitmap *, uint16_t *, RGB8 *);
-static void VideoReadRGBIndex8(objBitmap *,  uint8_t *, RGB8 *);
-
-#endif
 
 // Memory Pixel Routines
 
@@ -146,95 +113,6 @@ static const FieldDef clMemType[] = {
 // If you do not need this overhead because the bitmap content is going to be refreshed, then specify SURFACE_WRITE
 // only.  You will still be able to read the bitmap content with the CPU, it just avoids the copy overhead.
 
-#if   _GLES_
-
-ERR lock_surface(extBitmap *Bitmap, int16_t Access)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (Bitmap->MemType IS BMT::VIDEO) {
-      // BMT::VIDEO represents the video display in OpenGL.  Read/write CPU access is not available to this area but
-      // we can use glReadPixels() to get a copy of the framebuffer and then write changes back.  Because this is
-      // extremely bad practice (slow), a debug message is printed to warn the developer to use a different code path.
-      //
-      // Practically the only reason why we allow this is for unusual measures like taking screenshots, grabbing the display for debugging, development testing etc.
-
-      log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice "
-         "(bitmap: #%d, memory type: %d)", Bitmap->UID, int(Bitmap->MemType));
-
-      if (not Bitmap->Data) {
-         Bitmap->Data = (uint8_t *)malloc(Bitmap->Size);
-         if (not Bitmap->Data) return log.warning(ERR::AllocMemory);
-         Bitmap->prvAFlags |= BF_DATA;
-      }
-
-      if (!lock_graphics_active(__func__)) {
-         if (Access & SURFACE_READ) {
-            //glPixelStorei(GL_PACK_ALIGNMENT, 1); Might be required if width is not 32-bit aligned (i.e. 16 bit uneven width?)
-            glReadPixels(0, 0, Bitmap->Width, Bitmap->Height, Bitmap->prvGLPixel, Bitmap->prvGLFormat, Bitmap->Data);
-         }
-
-         if (Access & SURFACE_WRITE) Bitmap->prvWriteBackBuffer = TRUE;
-         else Bitmap->prvWriteBackBuffer = FALSE;
-
-         unlock_graphics();
-      }
-
-      return ERR::Okay;
-   }
-   else if (Bitmap->MemType IS BMT::TEXTURE) {
-      // Using the CPU on TEXTURE bitmaps is banned (anti-pattern)
-      return log.warning(ERR::NoSupport);
-   }
-
-   if (not Bitmap->Data) {
-      log.warning("[Bitmap:%d] Bitmap is missing the Data field", Bitmap->UID);
-      return ERR::FieldNotSet;
-   }
-
-   return ERR::Okay;
-}
-
-ERR unlock_surface(extBitmap *Bitmap)
-{
-   if ((Bitmap->MemType IS BMT::VIDEO) and (Bitmap->prvWriteBackBuffer)) {
-      if (!lock_graphics_active(__func__)) {
-         #ifdef GL_DRAW_PIXELS
-            glDrawPixels(Bitmap->Width, Bitmap->Height, pixel_type, format, Bitmap->Data);
-         #else
-            GLenum glerror;
-            GLuint texture_id;
-            if ((glerror = alloc_texture(Bitmap->Width, Bitmap->Height, &texture_id)) IS GL_NO_ERROR) { // Create a new texture space and bind it.
-               //(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
-               glTexImage2D(GL_TEXTURE_2D, 0, Bitmap->prvGLPixel, Bitmap->Width, Bitmap->Height, 0, Bitmap->prvGLPixel, Bitmap->prvGLFormat, Bitmap->Data); // Copy the bitmap content to the texture. (Target, Level, Bitmap, Border)
-               if ((glerror = glGetError()) IS GL_NO_ERROR) {
-                  // Copy graphics to the frame buffer.
-
-                  glClearColor(0, 0, 0, 1.0);
-                  glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-                  glColor4f(1.0f, 1.0f, 1.0f, 1.0f);    // Ensure colour is reset.
-                  glDrawTexiOES(0, 0, 1, Bitmap->Width, Bitmap->Height);
-                  glBindTexture(GL_TEXTURE_2D, 0);
-                  eglSwapBuffers(glEGLDisplay, glEGLSurface);
-               }
-               else log.warning(ERR::OpenGL);
-
-               glDeleteTextures(1, &texture_id);
-            }
-            else log.warning(ERR::OpenGL);
-         #endif
-
-         unlock_graphics();
-      }
-
-      Bitmap->prvWriteBackBuffer = FALSE;
-   }
-
-   return ERR::Okay;
-}
-
-#else
-
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
    // A driver reports NoSupport when it has no host drawable standing behind the bitmap.  CPU access to such a
@@ -254,8 +132,6 @@ ERR unlock_surface(extBitmap *Bitmap)
    if (glDriver) glDriver->unlockBitmap(Bitmap);
    return ERR::Okay;
 }
-
-#endif
 
 //********************************************************************************************************************
 
@@ -312,17 +188,6 @@ LockFailed
 
 static ERR BITMAP_Clear(extBitmap *Self)
 {
-#ifdef _GLES_
-   if (Self->MemType IS BMT::VIDEO) {
-      if (!lock_graphics_active(__func__)) {
-         glClearColorx(Self->Bkgd.Red, Self->Bkgd.Green, Self->Bkgd.Blue, 255);
-         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-         unlock_graphics();
-         return ERR::Okay;
-      }
-      else return ERR::LockFailed;
-   }
-#endif
 
    // Clear any alignment padding first - some clients may expect the Data to be completely clear.
 
@@ -733,12 +598,6 @@ Clients do not need to call this function if solely using the graphics methods p
 
 static ERR BITMAP_Flush(extBitmap *Self)
 {
-#ifdef _GLES_
-   if (!lock_graphics_active(__func__)) {
-      glFlush();
-      unlock_graphics();
-   }
-#endif
    return ERR::Okay;
 }
 
@@ -861,41 +720,6 @@ static ERR BITMAP_Init(extBitmap *Self)
          Self->prvAFlags |= BF_DATA;
       }
    }
-#if   _GLES_
-   else {
-   // BMT::VIDEO + BMF::NO_DATA: The bitmap represents the OpenGL display.  No data area will be allocated because
-   // direct access to the OpenGL video frame buffer is not possible.
-   // BMT::VIDEO: Not currently used as a means of allocating a particular type of OpenGL buffer.
-   // BMT::TEXTURE: The bitmap is to be used as an OpenGL texture or off-screen buffer.  Its content is temporary and
-   // can be discarded by the graphics driver if the video display changes.
-   // BMT::DATA: The bitmap resides in regular CPU-accessible memory.
-
-   if (not Self->Data) {
-      if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
-         if (Self->Size <= 0) log.warning(ERR::FieldNotSet);
-
-         if (Self->MemType IS BMT::VIDEO) {
-            // Do nothing - the bitmap merely represents the video display and does not hold content.
-         }
-         else if (Self->MemType IS BMT::TEXTURE) {
-            // Blittable bitmaps are fast, but their content is temporary.  It is not possible to use the CPU on this
-            // bitmap type (anti-pattern).
-
-            log.warning("Support for BMT::TEXTURE not included yet.");
-            return ERR::NoSupport;
-         }
-         else {
-            Self->Data = (uint8_t *)malloc(Self->Size);
-            if (not Self->Data) return ERR::AllocMemory;
-            Self->prvAFlags |= BF_DATA;
-         }
-      }
-   }
-
-   if (Self->MemType != BMT::DATA) Self->Flags |= BMF::2DACCELERATED;
-   }
-
-#else // Software rendering only
    else {
    Self->MemType = BMT::DATA;
 
@@ -908,7 +732,6 @@ static ERR BITMAP_Init(extBitmap *Self)
       }
    }
    }
-#endif
 
    // Determine the correct pixel format for the bitmap
 
@@ -917,19 +740,8 @@ static ERR BITMAP_Init(extBitmap *Self)
          gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
       }
    }
-#if   _GLES_
-   else {
-
-   if (Self->BitsPerPixel >= 24) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0x0000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
-   else if (Self->BitsPerPixel IS 16) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0xf800, 0x07e0, 0x001f, 0x0000);
-   else if (Self->BitsPerPixel IS 15) gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0x7c00, 0x03e0, 0x001f, 0x0000);
-   else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
-   }
-
-#else
    else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
 
-#endif
 
    if (auto error = calc_pixel_routines(Self); error != ERR::Okay) return error;
 
@@ -1081,24 +893,6 @@ static ERR BITMAP_Query(extBitmap *Self)
       return log.warning(ERR::InvalidDimension);
    }
 
-   #ifdef _GLES_
-      if (Self->MemType IS BMT::TEXTURE) {
-         // OpenGL requires bitmap textures to be a power of 2.
-
-         int new_width = nearestPower(Self->Width);
-         int new_height = nearestPower(Self->Height);
-
-         if (new_width != Self->Width) {
-            log.msg("Extending bitmap width from %d to %d for OpenGL.", Self->Width, new_width);
-            Self->Width = new_width;
-         }
-
-         if (new_height != Self->Height) {
-            log.msg("Extending bitmap height from %d to %d for OpenGL.", Self->Height, new_height);
-            Self->Height = new_height;
-         }
-      }
-   #endif
 
    // If the BMF::MASK flag is set then the programmer wants to use the Bitmap object as a 1 or 8-bit mask.
 
@@ -1198,16 +992,6 @@ static ERR BITMAP_Query(extBitmap *Self)
    Self->PlaneMod = Self->LineWidth * Self->Height;
 
 
-#ifdef _GLES_
-   if ((Self->BitsPerPixel IS 8) and ((Self->Flags & BMF::MASK) != BMF::NIL)) Self->prvGLPixel = GL_ALPHA;
-   else if (Self->BitsPerPixel <= 24) Self->prvGLPixel = GL_RGB;
-   else Self->prvGLPixel = GL_RGBA;
-
-   if (Self->BitsPerPixel IS 32) Self->prvGLFormat = GL_UNSIGNED_BYTE;
-   else if (Self->BitsPerPixel IS 24) Self->prvGLFormat = GL_UNSIGNED_BYTE;
-   else if (Self->BitsPerPixel <= 16) Self->prvGLFormat = GL_UNSIGNED_SHORT_5_6_5;
-   else Self->prvGLFormat = GL_UNSIGNED_BYTE;
-#endif
 
    // Calculate the total size of the bitmap
 
@@ -2172,57 +1956,10 @@ static ERR calc_pixel_routines(extBitmap *Self)
       return ERR::NoSupport;
    }
 
-   if ((glDriver) and (Self->prvAFlags & BF_WINVIDEO)) {
+   if ((glDriver) and (Self->prvAFlags & (BF_WINVIDEO|BF_DRIVER_DATA))) {
       return glDriver ? glDriver->bitmapRoutines(Self) : ERR::NoSupport;
    }
 
-#if defined(__ANDROID__) or defined(_GLES_)
-
-   if ((Self->MemType IS BMT::VIDEO) or (Self->MemType IS BMT::TEXTURE)) {
-      switch(Self->BytesPerPixel) {
-         case 1:
-            Self->ReadUCPixel  = &VideoReadPixel8;
-            Self->ReadUCRPixel = &VideoReadRGBPixel8;
-            Self->ReadUCRIndex = &VideoReadRGBIndex8;
-            Self->DrawUCPixel  = &VideoDrawPixel8;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel8;
-            Self->DrawUCRIndex = &VideoDrawRGBIndex8;
-            break;
-
-         case 2:
-            Self->ReadUCPixel  = &VideoReadPixel16;
-            Self->ReadUCRPixel = &VideoReadRGBPixel16;
-            Self->ReadUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoReadRGBIndex16;
-            Self->DrawUCPixel  = &VideoDrawPixel16;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel16;
-            Self->DrawUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoDrawRGBIndex16;
-            break;
-
-         case 3:
-            Self->ReadUCPixel  = &VideoReadPixel24;
-            Self->ReadUCRPixel = &VideoReadRGBPixel24;
-            Self->ReadUCRIndex = &VideoReadRGBIndex24;
-            Self->DrawUCPixel  = &VideoDrawPixel24;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel24;
-            Self->DrawUCRIndex = &VideoDrawRGBIndex24;
-            break;
-
-         case 4:
-            Self->ReadUCPixel  = &VideoReadPixel32;
-            Self->ReadUCRPixel = &VideoReadRGBPixel32;
-            Self->ReadUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoReadRGBIndex32;
-            Self->DrawUCPixel  = &VideoDrawPixel32;
-            Self->DrawUCRPixel = &VideoDrawRGBPixel32;
-            Self->DrawUCRIndex = (void (*)(objBitmap *, uint8_t *, RGB8 *))&VideoDrawRGBIndex32;
-            break;
-
-         default:
-            log.warning("Unsupported Bitmap->BytesPerPixel %d.", Self->BytesPerPixel);
-            return ERR::NoSupport;
-      }
-      return ERR::Okay;
-   }
-#endif
 
    switch(Self->BytesPerPixel) {
       case 1:
@@ -2367,9 +2104,6 @@ extBitmap::~extBitmap()
 #include "lib_mempixels.cpp"
 
 
-#ifdef __ANDROID__
-#include "android/lib_pixels.cpp"
-#endif
 
 #include "class_bitmap_def.c"
 
