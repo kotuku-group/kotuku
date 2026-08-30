@@ -257,34 +257,35 @@ ERR get_display_info(OBJECTID DisplayID, DisplayInfo *Info)
 
       if (glDriver) {
          if (auto error = glDriver->displayInfo(*Info); error IS ERR::NoSupport) {
-            Info->Width = 1024;
-            Info->Height = 768;
-            Info->BitsPerPixel = 32;
+            Info->Width         = 1024;
+            Info->Height        = 768;
+            Info->BitsPerPixel  = 32;
             Info->BytesPerPixel = 4;
-            Info->AccelFlags = ACF::NIL;
-            Info->HDensity = 96;
-            Info->VDensity = 96;
-            Info->MonitorWidth = Info->Width;
+            Info->AccelFlags    = ACF::NIL;
+            Info->HDensity      = 96;
+            Info->VDensity      = 96;
+            Info->MonitorWidth  = Info->Width;
             Info->MonitorHeight = Info->Height;
-            Info->VirtualWidth = Info->Width;
+            Info->VirtualWidth  = Info->Width;
             Info->VirtualHeight = Info->Height;
          }
+         else if (error != ERR::Okay) return log.warning(error);
       }
 
       if (not glDriver) {
-      if (glDisplayInfo.DisplayID) {
-         kt::copymem(&glDisplayInfo, Info, sizeof(DisplayInfo));
-         return ERR::Okay;
-      }
-      else {
-         Info->Width         = 1024;
-         Info->Height        = 768;
-         Info->BitsPerPixel  = 32;
-         Info->BytesPerPixel = 4;
-         Info->AccelFlags = ACF::SOFTWARE_BLIT;
-         Info->HDensity = 96;
-         Info->VDensity = 96;
-      }
+         if (glDisplayInfo.DisplayID) {
+            kt::copymem(&glDisplayInfo, Info, sizeof(DisplayInfo));
+            return ERR::Okay;
+         }
+         else {
+            Info->Width         = 1024;
+            Info->Height        = 768;
+            Info->BitsPerPixel  = 32;
+            Info->BytesPerPixel = 4;
+            Info->AccelFlags    = ACF::SOFTWARE_BLIT;
+            Info->HDensity      = 96;
+            Info->VDensity      = 96;
+         }
       }
 
       Info->PixelFormat.RedShift   = glColourFormat.RedShift;
@@ -362,8 +363,9 @@ static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit
 {
    kt::Log log(__FUNCTION__);
    DriverOwnership pending;
+
    pending.CanonicalName = Candidate.CanonicalName;
-   log.msg("Considering display driver '%s'.", Candidate.CanonicalName);
+   log.traceBranch("Considering display driver '%s'.", Candidate.CanonicalName);
 
    if (iequals(Candidate.CanonicalName, "headless")) {
       pending.Driver = &glHeadlessDriver;
@@ -379,18 +381,15 @@ static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit
 #else
       pending.Source = DriverSource::MODULE;
       auto error = objModule::load(Candidate.ModuleName, &pending.Module);
-      if (error != ERR::Okay) {
-         log.warning("Failed to load display driver module '%s': %s.", Candidate.ModuleName, GetErrorMsg(error));
-         return error;
-      }
+      if (error != ERR::Okay) return error;
+
       APTR create_address = nullptr;
       APTR destroy_address = nullptr;
       if ((((objModule *)pending.Module)->resolveSymbol("create_display_driver", &create_address) != ERR::Okay) or
             (((objModule *)pending.Module)->resolveSymbol("destroy_display_driver", &destroy_address) != ERR::Okay) or
             (not create_address) or (not destroy_address)) {
-         log.warning("Display driver module '%s' does not export the required factory ABI.", Candidate.ModuleName);
          FreeResource(pending.Module);
-         return ERR::ResolveSymbol;
+         return log.warning(ERR::ResolveSymbol);
       }
       auto create = CreateDisplayDriver(create_address);
       pending.Destroy = DestroyDisplayDriver(destroy_address);
@@ -403,14 +402,12 @@ static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit
    }
 
    if (not iequals(pending.Driver->name(), Candidate.CanonicalName)) {
-      log.warning("Display driver identity does not match candidate '%s'.", Candidate.CanonicalName);
       if (pending.Destroy) pending.Destroy(pending.Driver);
       if (pending.Module) FreeResource(pending.Module);
-      return ERR::InvalidData;
+      return log.warning(ERR::InvalidData);
    }
 
    auto available = pending.Driver->isAvailable();
-   log.msg("Display driver '%s' availability result: %s.", Candidate.CanonicalName, GetErrorMsg(available));
    if ((not Explicit) and (available != ERR::Okay)) {
       if (pending.Destroy) pending.Destroy(pending.Driver);
       if (pending.Module) FreeResource(pending.Module);
@@ -418,7 +415,6 @@ static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit
    }
 
    auto error = pending.Driver->open(glDriverCallbacks);
-   log.msg("Display driver '%s' open result: %s.", Candidate.CanonicalName, GetErrorMsg(error));
    if (error != ERR::Okay) {
       if (pending.Destroy) pending.Destroy(pending.Driver);
       if (pending.Module) FreeResource(pending.Module);
@@ -429,7 +425,7 @@ static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit
    glDriverOwnership = std::move(pending);
    glDriver = glDriverOwnership.Driver;
    glHeadless = glDriverOwnership.Source IS DriverSource::BUILT_IN;
-   log.msg("Selected display driver '%s' from %s.", glDriverOwnership.CanonicalName.c_str(),
+   log.detail("Selected display driver '%s' from %s.", glDriverOwnership.CanonicalName.c_str(),
       driver_source_name(glDriverOwnership.Source));
    return ERR::Okay;
 }
@@ -685,15 +681,13 @@ static ERR MODOpen(OBJECTPTR Module)
 
 static ERR MODExpunge(void)
 {
-   kt::Log log(__FUNCTION__);
    ERR error = release_driver(true);
 
    if (clDisplay) {
       clean_clipboard();
-      {
-         const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
-         glClips.clear();
-      }
+
+      const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+      glClips.clear();
    }
 
    if (glRefreshPointerTimer) { UpdateTimer(glRefreshPointerTimer, 0); glRefreshPointerTimer = 0; }
