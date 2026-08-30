@@ -548,10 +548,10 @@ ERR X11Driver::acquireWindowBitmap(HOSTWINDOW WindowHandle, extBitmap *Bitmap)
 ERR X11Driver::displayInfo(DisplayInfo &Info)
 {
    if (not Data->Open) return ERR::NotInitialised;
-   Info.Width = Data->RootAttributes.width;
-   Info.Height = Data->RootAttributes.height;
-   Info.MonitorWidth = Info.VirtualWidth = Info.Width;
-   Info.MonitorHeight = Info.VirtualHeight = Info.Height;
+   if (not Info.Width) Info.Width = Data->RootAttributes.width;
+   if (not Info.Height) Info.Height = Data->RootAttributes.height;
+   Info.MonitorWidth = Info.VirtualWidth = Data->RootAttributes.width;
+   Info.MonitorHeight = Info.VirtualHeight = Data->RootAttributes.height;
    Info.PhysicalWidth = DisplayWidthMM(Data->Connection, DefaultScreen(Data->Connection));
    Info.PhysicalHeight = DisplayHeightMM(Data->Connection, DefaultScreen(Data->Connection));
    Info.HDensity = Info.VDensity = 96;
@@ -715,18 +715,22 @@ ERR X11Driver::present(HOSTWINDOW WindowHandle, extBitmap *Source, int X, int Y,
    return ERR::Okay;
 }
 
-ERR X11Driver::blitBitmap(extBitmap *Destination, extBitmap *Source, BAF, int X, int Y, int Width, int Height,
+ERR X11Driver::blitBitmap(extBitmap *Destination, extBitmap *Source, BAF Flags, int X, int Y, int Width, int Height,
    int XDest, int YDest)
 {
+   if ((not Destination) or (not Source)) return ERR::NullArgs;
    auto destination = x11_bitmap(Destination);
    auto source = x11_bitmap(Source);
    if ((not destination) or (not destination->DrawableID)) return ERR::NoSupport;
+   if (((Flags & BAF::BLEND) != BAF::NIL) or ((Source->Flags & BMF::TRANSPARENT) != BMF::NIL)) {
+      return ERR::NoSupport;
+   }
    auto gc = destination->WindowGraphicsContext ? destination->WindowGraphicsContext : Data->GraphicsContext;
    if (source and source->DrawableID) {
       XCopyArea(Data->Connection, source->DrawableID, destination->DrawableID, gc, X, Y, Width, Height, XDest, YDest);
       return ERR::Okay;
    }
-   if (Source and Source->Data) {
+   if (Source->Data) {
       if (not source) {
          source = new(std::nothrow) X11BitmapRecord;
          if (not source) return ERR::AllocMemory;
@@ -762,6 +766,10 @@ ERR X11Driver::allocBitmap(extBitmap *Bitmap)
    const std::lock_guard lock(Data->NativeLock);
    if (not Bitmap) return ERR::NullArgs;
    if (Bitmap->DriverData) return ERR::Okay;
+   if ((Bitmap->MemType IS BMT::TEXTURE) or
+         ((Bitmap->MemType IS BMT::VIDEO) and ((Bitmap->Flags & BMF::NO_DATA) IS BMF::NIL))) {
+      Bitmap->MemType = BMT::DATA;
+   }
    auto record = new(std::nothrow) X11BitmapRecord;
    if (not record) return ERR::AllocMemory;
    record->Connection = Data->Connection;
@@ -849,8 +857,10 @@ ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
       return ERR::Okay;
    }
    if (not record->SharedImage) return ERR::NoSupport;
-   const int line_width = ALIGN32(Width * Bitmap->BytesPerPixel);
-   const int size = line_width * Height;
+   const int byte_width = Bitmap->Type IS BMP::PLANAR ? (Width + 7) / 8 : Width * Bitmap->BytesPerPixel;
+   const int line_width = ALIGN32(byte_width);
+   const int plane_mod = line_width * Height;
+   const int size = Bitmap->Type IS BMP::PLANAR ? plane_mod * Bitmap->BitsPerPixel : plane_mod;
    XShmSegmentInfo next = {};
    next.shmid = shmget(IPC_PRIVATE, size, IPC_CREAT|IPC_EXCL|0600);
    if (next.shmid IS -1) return ERR::Memory;
@@ -874,10 +884,10 @@ ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
    Bitmap->Data = (uint8_t *)next.shmaddr;
    Bitmap->Width = Width;
    Bitmap->Height = Height;
-   Bitmap->ByteWidth = Width * Bitmap->BytesPerPixel;
+   Bitmap->ByteWidth = byte_width;
    Bitmap->LineWidth = line_width;
    Bitmap->Size = size;
-   Bitmap->PlaneMod = Bitmap->ByteWidth * Height;
+   Bitmap->PlaneMod = plane_mod;
    Bitmap->Clip = { 0, 0, Width, Height };
    initialise_image(Bitmap, record);
    record->Image.obdata = (char *)&record->Shm;

@@ -28,27 +28,27 @@ std::array<uint8_t, 256 * 256> glAlphaLookup;
 // Note: These values are used as the input masks
 
 const InputType glInputType[int(JET::END)] = {
-   { JTYPE::NIL, JTYPE::NIL },                                         // UNUSED
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_1
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_2
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_3
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_4
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_5
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_6
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_7
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_8
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_9
-   { JTYPE::BUTTON,                 JTYPE::BUTTON },   // JET::BUTTON_10
-   { JTYPE::EXT_MOVEMENT,           JTYPE::EXT_MOVEMENT }, // JET::WHEEL
-   { JTYPE::EXT_MOVEMENT,           JTYPE::EXT_MOVEMENT }, // JET::WHEEL_TILT
-   { JTYPE::EXT_MOVEMENT,           JTYPE::EXT_MOVEMENT }, // JET::PEN_TILT_XY
-   { JTYPE::MOVEMENT,               JTYPE::MOVEMENT },     // JET::ABS_XY
-   { JTYPE::CROSSING,               JTYPE::CROSSING },     // JET::CROSSING_IN
-   { JTYPE::CROSSING,               JTYPE::CROSSING },     // JET::CROSSING_OUT
-   { JTYPE::EXT_MOVEMENT,           JTYPE::EXT_MOVEMENT }, // JET::PRESSURE
-   { JTYPE::EXT_MOVEMENT,           JTYPE::EXT_MOVEMENT }, // JET::DEVICE_TILT_XY
-   { JTYPE::EXT_MOVEMENT,           JTYPE::EXT_MOVEMENT }, // JET::DEVICE_TILT_Z
-   { JTYPE::EXT_MOVEMENT,           JTYPE::EXT_MOVEMENT }  // JET::DISPLAY_EDGE
+   { JTYPE::NIL, JTYPE::NIL },               // UNUSED
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_1
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_2
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_3
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_4
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_5
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_6
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_7
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_8
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_9
+   { JTYPE::BUTTON,       JTYPE::BUTTON },   // JET::BUTTON_10
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::WHEEL
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::WHEEL_TILT
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::PEN_TILT_XY
+   { JTYPE::MOVEMENT,     JTYPE::MOVEMENT },     // JET::ABS_XY
+   { JTYPE::CROSSING,     JTYPE::CROSSING },     // JET::CROSSING_IN
+   { JTYPE::CROSSING,     JTYPE::CROSSING },     // JET::CROSSING_OUT
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::PRESSURE
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::DEVICE_TILT_XY
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }, // JET::DEVICE_TILT_Z
+   { JTYPE::EXT_MOVEMENT, JTYPE::EXT_MOVEMENT }  // JET::DISPLAY_EDGE
 };
 
 const CSTRING glInputNames[int(JET::END)] = {
@@ -171,6 +171,15 @@ const DriverCallbacks glDriverCallbacks = {
 
 thread_local int16_t tlNoDrawing = 0, tlNoExpose = 0, tlVolatileIndex = 0;
 thread_local OBJECTID tlFreeExpose = 0;
+
+struct DriverCandidate {
+   CSTRING CanonicalName;
+   CSTRING ModuleName;
+#ifdef KOTUKU_STATIC
+   CreateDisplayDriver Create;
+   DestroyDisplayDriver Destroy;
+#endif
+};
 
 //********************************************************************************************************************
 // Alpha blending data.
@@ -315,6 +324,8 @@ static CSTRING driver_source_name(DriverSource Source)
    return "none";
 }
 
+//********************************************************************************************************************
+
 static ERR release_driver(bool Expunging)
 {
    auto close_error = ERR::Okay;
@@ -345,14 +356,7 @@ static ERR release_driver(bool Expunging)
    return close_error;
 }
 
-struct DriverCandidate {
-   CSTRING CanonicalName;
-   CSTRING ModuleName;
-#ifdef KOTUKU_STATIC
-   CreateDisplayDriver Create;
-   DestroyDisplayDriver Destroy;
-#endif
-};
+//********************************************************************************************************************
 
 static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit)
 {
@@ -429,6 +433,8 @@ static ERR open_driver_candidate(const DriverCandidate &Candidate, bool Explicit
       driver_source_name(glDriverOwnership.Source));
    return ERR::Okay;
 }
+
+//********************************************************************************************************************
 
 static ERR select_display_driver(CSTRING RequestedName)
 {
@@ -699,7 +705,6 @@ static ERR MODExpunge(void)
 
 #if _WIN32
    winTerminateClipboard();
-
 #endif
 
    if (glIconArchive) { FreeResource(glIconArchive); glIconArchive = nullptr; }

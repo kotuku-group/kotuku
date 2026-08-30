@@ -368,6 +368,16 @@ static ERR DISPLAY_Init(extDisplay *Self)
    DisplayInfo info;
    if (get_display_info(0, &info) != ERR::Okay) return log.warning(ERR::SystemCall);
 
+   // X11 desktop-manager and maximised windows use the root-window dimensions.  Resolve those dimensions before the
+   // display bitmap is initialised so that its storage, clipping region and pixel routines describe the actual window.
+
+   if ((glDriver) and (glDriver->displayType() IS DT::X11) and
+         (((glDriver->capabilities() & DCAP::DESKTOP_MANAGER) != DCAP::NIL) or
+            ((Self->Flags & SCR::MAXIMISE) != SCR::NIL))) {
+      Self->Width = info.Width;
+      Self->Height = info.Height;
+   }
+
    if (not Self->Width) {
       Self->Width = info.Width;
       if ((glDriver) and (glDriver->displayType() IS DT::WINGDI)) Self->Width -= 60;
