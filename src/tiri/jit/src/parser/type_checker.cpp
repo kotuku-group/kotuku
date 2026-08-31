@@ -41,6 +41,16 @@ void TypeCheckScope::declare_function(GCstr *Name, const FunctionExprPayload *Fu
    this->variables_.push_back(info);
 }
 
+void TypeCheckScope::update_local_type(GCstr *Name, const InferredType &Type)
+{
+   for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
+      if (it->name IS Name and not it->is_parameter) {
+         it->type = Type;
+         return;
+      }
+   }
+}
+
 std::optional<InferredType> TypeCheckScope::lookup_parameter_type(GCstr *Name) const
 {
    for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {

@@ -456,10 +456,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &
 }
 
 //********************************************************************************************************************
-// Emit a namespace declaration.  Creation evaluates its literal once, stores that value in the registry and then
-// promotes the same register to a const local.  A join loads the registry value and rejects a missing entry before
-// publishing the local.  Joins following an import already have the correct binding and only validate that its
-// registry value is present.
+// Emit a namespace declaration.  Creation publishes its const local before evaluating the literal so closures can
+// capture their owning namespace, then stores the completed value in the registry.  A join loads the registry value
+// and rejects a missing entry before publishing the local.  Joins following an import already have the correct
+// binding and only validate that its registry value is present.
 
 ParserResult<IrEmitUnit> IrEmitter::emit_namespace_stmt(const NamespaceStmtPayload &Payload)
 {
@@ -484,11 +484,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_namespace_stmt(const NamespaceStmtPaylo
             ParserErrorCode::InternalInvariant, "Creating namespace has no initialiser"));
       }
 
+      bcreg_reserve(fs, BCReg(1));
+      this->publish_namespace_local(Payload.name, value_reg);
+
       auto emitted = this->emit_expression(*Payload.initialiser);
       if (not emitted.ok()) return ParserResult<IrEmitUnit>::failure(emitted.error_ref());
       ExpDesc value = emitted.value_ref();
       this->materialise_to_reg(value, value_reg, "namespace initialiser");
-      bcreg_reserve(fs, BCReg(1));
 
       BCReg registry_reg = fs->free_reg();
       bcreg_reserve(fs, BCReg(1));
@@ -503,9 +505,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_namespace_stmt(const NamespaceStmtPaylo
       bcreg_reserve(fs, BCReg(1));
       this->emit_namespace_registry_load(namespace_name, value_reg);
       this->emit_namespace_missing_guard(namespace_name, value_reg);
+      this->publish_namespace_local(Payload.name, value_reg);
    }
 
-   this->publish_namespace_local(Payload.name, value_reg);
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }
 

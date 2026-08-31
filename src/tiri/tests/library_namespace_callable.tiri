@@ -1,3 +1,4 @@
 namespace library_namespace_callable function(Value:num):num
-   return Value + 1
+   if Value <= 1 then return 1 end
+   return Value * library_namespace_callable(Value - 1)
 end

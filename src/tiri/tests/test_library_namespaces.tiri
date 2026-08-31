@@ -16,6 +16,8 @@ end
    assert(_LIB.library_namespace is library_namespace, 'Namespace local and registry entry should be identical')
    assert(library_namespace.root is true, 'Table initialiser fields should be retained')
    assert(library_namespace.initialisations is 1, 'Namespace initialiser should execute exactly once')
+   assert(library_namespace.owns_root() is true,
+      'A table namespace closure should capture its owning namespace binding')
 end
 
 @Test function ComponentsJoinOneNamespace()
@@ -24,7 +26,8 @@ end
 end
 
 @Test function FunctionNamespaceIsCallable()
-   assert(library_namespace_callable(4) is 5, 'Function-valued namespace should be directly callable')
+   assert(library_namespace_callable(5) is 120,
+      'Function-valued namespace should be directly callable and recursive')
    assert(_LIB.library_namespace_callable is library_namespace_callable,
       'Function namespace should retain registry identity')
 end

@@ -99,6 +99,7 @@ public:
       GCstr *, TiriType Type, struct_record *StructDef, bool Required, SourceSpan Location = {});
    void declare_local(GCstr *, const InferredType &, SourceSpan Location = {}, bool IsConst = false);
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
+   void update_local_type(GCstr *, const InferredType &);
    void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
       struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
    void mark_dynamic_ingress(GCstr *, bool RequiresDestination);

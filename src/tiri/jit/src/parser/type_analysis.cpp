@@ -1516,9 +1516,18 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
          auto *payload = std::get_if<NamespaceStmtPayload>(&Statement.data);
          if (not payload) break;
 
+         if (not payload->reuses_import_binding) {
+            this->current_scope().declare_local(
+               payload->name.symbol, InferredType(TiriType::Any), payload->name.span, true);
+         }
+
          InferredType inferred(TiriType::Any);
          if (payload->initialiser) {
-            this->analyse_expression(*payload->initialiser);
+            if (payload->initialiser->kind IS AstNodeKind::FunctionExpr) {
+               this->analyse_function_payload(
+                  std::get<FunctionExprPayload>(payload->initialiser->data), payload->name.symbol);
+            }
+            else this->analyse_expression(*payload->initialiser);
             inferred = this->infer_expression_type(*payload->initialiser);
             inferred = this->refine_static_expression_type(*payload->initialiser, inferred);
             if (inferred.primary != TiriType::Any and inferred.primary != TiriType::Unknown) {
@@ -1527,8 +1536,7 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
          }
 
          if (not payload->reuses_import_binding) {
-            this->current_scope().declare_local(
-               payload->name.symbol, inferred, payload->name.span, true);
+            this->current_scope().update_local_type(payload->name.symbol, inferred);
             this->publish_binding_type(payload->name.binding_id, inferred);
          }
          break;

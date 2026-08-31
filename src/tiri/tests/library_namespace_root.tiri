@@ -2,5 +2,6 @@ global library_namespace_initialisations = (library_namespace_initialisations ??
 
 namespace library_namespace {
    initialisations = library_namespace_initialisations,
-   root = true
+   root = true,
+   owns_root = function():bool return library_namespace.root end
 }

@@ -508,8 +508,6 @@ private:
             break;
          case AstNodeKind::NamespaceStmt: {
             auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
-            if (payload.initialiser) this->resolve_expression(*payload.initialiser);
-
             const AssignmentBinding *existing = this->find_binding(payload.name.symbol);
             if (payload.mode IS NamespaceDeclarationMode::Join and existing and existing->is_import_namespace and
                 existing->function_depth IS this->function_depth_) {
@@ -521,6 +519,8 @@ private:
                payload.reuses_import_binding = true;  // Suppress invalid downstream redeclaration after the error.
             }
             else this->declare(payload.name);
+
+            if (payload.initialiser) this->resolve_expression(*payload.initialiser);
             break;
          }
          case AstNodeKind::WithStmt: {

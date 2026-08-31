@@ -621,13 +621,13 @@ private:
          }
          case AstNodeKind::NamespaceStmt: {
             auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
-            if (payload.initialiser) this->discover_expression(*payload.initialiser);
             if (not payload.reuses_import_binding) {
                const FunctionExprPayload *function = payload.initialiser and
                   payload.initialiser->kind IS AstNodeKind::FunctionExpr ?
                   &std::get<FunctionExprPayload>(payload.initialiser->data) : nullptr;
                this->declare(payload.name, payload.initialiser.get(), 0, function);
             }
+            if (payload.initialiser) this->discover_expression(*payload.initialiser);
             break;
          }
          case AstNodeKind::WithStmt: {

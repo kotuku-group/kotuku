@@ -2047,7 +2047,8 @@ static bool test_library_namespace_declarations(kt::Log &Log)
    }
 
    auto callable = discover_bindings_from_source(
-      "namespace callable function(Value:num):num return Value + 1 end\n");
+      "namespace callable function(Value:num):num "
+      "if Value <= 1 then return 1 end return Value * callable(Value - 1) end\n");
    const NamespaceStmtPayload *callable_payload = callable.chunk.ok() and
       not callable.chunk.value_ref()->statements.empty() ?
       std::get_if<NamespaceStmtPayload>(&callable.chunk.value_ref()->statements[0]->data) : nullptr;
@@ -2055,6 +2056,14 @@ static bool test_library_namespace_declarations(kt::Log &Log)
        callable_payload->initialiser->kind != AstNodeKind::FunctionExpr or not callable.diagnostics.empty()) {
       Log.error("a function namespace declaration did not retain its function literal");
       log_diagnostics(callable.diagnostics, Log);
+      return false;
+   }
+
+   auto self_capturing_table = discover_bindings_from_source(
+      "namespace owner { value=1, read=function():num return owner.value end }\n");
+   if (not self_capturing_table.chunk.ok() or not self_capturing_table.diagnostics.empty()) {
+      Log.error("a table namespace closure could not capture its owning namespace binding");
+      log_diagnostics(self_capturing_table.diagnostics, Log);
       return false;
    }
 
