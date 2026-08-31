@@ -1,0 +1,6 @@
+global library_namespace_initialisations = (library_namespace_initialisations ?? 0) + 1
+
+namespace library_namespace {
+   initialisations = library_namespace_initialisations,
+   root = true
+}

@@ -1,0 +1,4 @@
+import './library_namespace_root'
+namespace library_namespace
+
+library_namespace.component_a = true
