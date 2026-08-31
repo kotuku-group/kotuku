@@ -895,6 +895,41 @@ void lj_array_copy_unchecked(
    }
 }
 
+void lj_array_copy_strided_unchecked(lua_State *L, GCarray *Dest, uint32_t DstIdx, const GCarray *Src,
+   uint32_t SrcIdx, int32_t SrcStride, uint32_t Count)
+{
+   if (Count IS 0) return;
+
+   if (Dest->elemtype IS AET::ANY) {
+      auto dst_slots = &Dest->get<TValue>()[DstIdx];
+      auto src_slot = &Src->get<TValue>()[SrcIdx];
+      for (MSize i = 0; i < Count; i++) {
+         copyTV(L, &dst_slots[i], src_slot);
+         if (tvisgcv(&dst_slots[i])) lj_gc_objbarrier(L, Dest, gcV(&dst_slots[i]));
+         if (i + 1 < Count) src_slot += SrcStride;
+      }
+   }
+   else if (array_is_gc_ref_type(Dest->elemtype)) {
+      auto dst_refs = &Dest->get<GCRef>()[DstIdx];
+      auto src_ref = &Src->get<GCRef>()[SrcIdx];
+      for (MSize i = 0; i < Count; i++) {
+         setgcrefr(dst_refs[i], *src_ref);
+         if (gcref(dst_refs[i])) lj_gc_objbarrier(L, Dest, gcref(dst_refs[i]));
+         if (i + 1 < Count) src_ref += SrcStride;
+      }
+   }
+   else {
+      auto dst_ptr = (uint8_t *)lj_array_index(Dest, DstIdx);
+      auto src_ptr = (const uint8_t *)lj_array_index(Src, SrcIdx);
+      ptrdiff_t src_byte_stride = ptrdiff_t(SrcStride) * Src->elemsize;
+      for (MSize i = 0; i < Count; i++) {
+         std::memcpy(dst_ptr, src_ptr, Dest->elemsize);
+         dst_ptr += Dest->elemsize;
+         if (i + 1 < Count) src_ptr += src_byte_stride;
+      }
+   }
+}
+
 void lj_array_copy(lua_State *L, GCarray *Dest, uint32_t DstIdx, GCarray *Src, uint32_t SrcIdx, uint32_t Count)
 {
    if (SrcIdx > Src->len or Count > Src->len - SrcIdx or DstIdx > Dest->len or Count > Dest->len - DstIdx) {

@@ -10,9 +10,9 @@ function declareErrors()
     "False",            -- Non-fatal
     "LimitedSuccess",   -- Limited success
     "Cancelled",        -- Operation cancelled
-    "NothingDone",      -- Operation did not perform any activity (non-fatal)
+    "NothingDone",      -- Nothing to do for the requested operation
     "Continue",         -- Please continue processing
-    "Skip",             -- Skip this operation (do not raise an error)
+    "Skip",             -- Skipped the requested operation
     "Retry",            -- Retry the operation (could not succeed at this time)
     "EndOfSequence",    -- End of sequence reached
     -- Anything above this point is considered non-fatal for exception reporting purposes
