@@ -365,6 +365,14 @@ function symbolAddStructFields(Symbol:table, LineCode:str, LineText:str, LineNo:
    end
 end
 
+-- Keywords that open an anonymous frame terminated by `end`.  A `do` opens exactly one frame whether it stands
+-- alone or closes a `for`, `while` or `with` header, so counting `do` is both simpler and more reliable than
+-- pairing it with the loop keyword that introduced it.  Every entry here must be balanced by an `end` or `until`,
+-- otherwise symbolCloseBlockFrames() will pop an enclosing function frame and truncate its range.
+-- `struct` is deliberately absent because extractDocumentSymbols() pushes that frame itself.
+
+symbol_block_openers = array<str> { 'do', 'defer', 'try', 'choose', 'checkall', 'checkup' }
+
 function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:table)
    function_count = symbolCountBlockKeyword(LineCode, 'function') + symbolCountBlockKeyword(LineCode, 'thunk')
    if FunctionFrame and function_count > 0 then function_count -= 1 end
@@ -373,6 +381,8 @@ function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:t
       Stack.push({ kind = 'function' })
    end
 
+   -- `elseif` continues the frame opened by its `if`, so only leading `if` keywords open a new one.
+
    if symbolCountBlockKeyword(LineCode, 'then') > 0 then
       if_count = symbolCountBlockKeyword(LineCode, 'if')
       for i in {1 to if_count+1} do
@@ -380,13 +390,9 @@ function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:t
       end
    end
 
-   if symbolCountBlockKeyword(LineCode, 'do') > 0 then
-      for_count = symbolCountBlockKeyword(LineCode, 'for')
-      while_count = symbolCountBlockKeyword(LineCode, 'while')
-      for i in {1 to for_count+1} do
-         Stack.push({ kind = 'block' })
-      end
-      for i in {1 to while_count+1} do
+   for keyword in values(symbol_block_openers) do
+      open_count = symbolCountBlockKeyword(LineCode, keyword)
+      for i in {1 to open_count+1} do
          Stack.push({ kind = 'block' })
       end
    end
@@ -394,11 +400,6 @@ function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:t
    repeat_count = symbolCountBlockKeyword(LineCode, 'repeat')
    for i in {1 to repeat_count+1} do
       Stack.push({ kind = 'repeat' })
-   end
-
-   defer_count = symbolCountBlockKeyword(LineCode, 'defer')
-   for i in {1 to defer_count+1} do
-      Stack.push({ kind = 'block' })
    end
 end
 
@@ -540,4 +541,121 @@ global function extractDocumentSymbols(Doc:table):array<table>
    end
 
    return symbols
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Lexical Scope Extraction
+--
+-- Document symbols describe named declarations only, so they cannot decide whether a local binding is still live at
+-- a later position.  Rename resolution needs the complete lexical picture, including the anonymous do, conditional,
+-- loop and exception blocks that carry no symbol of their own.  The scanner below records every block terminated by
+-- `end` or `until`, nested to mirror the source.
+
+-- Keywords that open a block.  `then` and `do` stand in for `if`, `for`, `while` and `with` because the body always
+-- begins at those keywords, which keeps loop and condition expressions in the enclosing scope where they belong.
+
+scope_openers = {
+   ['function'] = true, ['thunk'] = true, ['do'] = true, ['then'] = true, ['repeat'] = true,
+   ['defer'] = true, ['try'] = true, ['choose'] = true, ['checkall'] = true, ['checkup'] = true
+}
+
+-- Keywords that terminate the enclosing block and immediately open a sibling.
+
+scope_dividers = { ['else'] = true, ['except'] = true, ['success'] = true }
+
+-- Keywords that terminate the enclosing block.  `elseif` belongs here rather than with the dividers because its own
+-- `then` re-opens the scope.
+
+scope_closers = { ['end'] = true, ['until'] = true, ['elseif'] = true }
+
+-- Split a masked code line into its identifier-like words.  Each entry records the word, its byte column and the
+-- character that follows it, which is enough to distinguish a `struct Name` declaration from a `struct.new()` call.
+
+function scopeLineWords(LineCode:str):array<table>
+   words = array<table>
+   pos = 0
+   len = #LineCode
+
+   while pos < len do
+      if symbolIsBlockTokenChar(LineCode.sub(pos, pos + 1)) then
+         word_start = pos
+         pos++
+         while pos < len and symbolIsBlockTokenChar(LineCode.sub(pos, pos + 1)) do pos++ end
+         words.push({ text = LineCode.sub(word_start, pos), column = word_start,
+            following = LineCode.sub(pos, pos + 1) })
+      else
+         pos++
+      end
+   end
+
+   return words
+end
+
+function scopeOpen(Roots:array<table>, Stack:array<table>, LineNo:num, Column:num)
+   scope = {
+      range = {
+         start = { line = LineNo, character = Column },
+         ['end'] = { line = LineNo, character = Column }
+      },
+      children = array<table>
+   }
+
+   if #Stack > 0 then
+      Stack[#Stack - 1].children.push(scope)
+   else
+      Roots.push(scope)
+   end
+   Stack.push(scope)
+end
+
+function scopeClose(Stack:array<table>, LineNo:num, Column:num)
+   if #Stack is 0 then return end
+   scope = Stack.pop()
+   scope.range['end'].line = LineNo
+   scope.range['end'].character = Column
+end
+
+-- `struct` doubles as the declaration keyword and as a library namespace, so only accept it as a block opener when
+-- it leads the line and is followed by whitespace, matching symbolDetectStruct().
+
+function scopeOpensStruct(Word:table, Index:num):bool
+   if Word.text != 'struct' or Index != 0 then return false end
+   return Word.following is ' ' or Word.following is '\t'
+end
+
+@Doc(text="Extract the nested lexical block scopes of a document as { range, children } nodes.")
+
+global function extractLexicalScopes(Doc:table):array<table>
+   roots = array<table>
+   stack = array<table>
+   in_block_comment = false
+   total_lines = getTotalLines(Doc)
+
+   for line_num in {0 to total_lines} do
+      line_code, in_block_comment = maskNonCode(getLine(Doc, line_num), in_block_comment)
+      words = scopeLineWords(line_code)
+
+      for i in {0 to #words} do
+         word = words[i]
+         if scope_closers[word.text] then
+            scopeClose(stack, line_num, word.column + #word.text)
+         elseif scope_dividers[word.text] then
+            scopeClose(stack, line_num, word.column)
+            scopeOpen(roots, stack, line_num, word.column)
+         elseif scope_openers[word.text] or scopeOpensStruct(word, i) then
+            scopeOpen(roots, stack, line_num, word.column)
+         end
+      end
+   end
+
+   -- Unterminated blocks (an incomplete edit, or source that the masker mis-read) extend to the last content line
+   -- so that trailing references still resolve against them.
+
+   last_line = symbolLastContentLine(Doc, total_lines)
+   last_char = #getLine(Doc, last_line)
+   while #stack > 0 do
+      scopeClose(stack, last_line, last_char)
+   end
+
+   return roots
 end
