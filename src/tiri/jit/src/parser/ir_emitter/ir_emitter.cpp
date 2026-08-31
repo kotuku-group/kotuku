@@ -911,6 +911,8 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::RaiseStmt:     return "RaiseStmt";
       case AstNodeKind::CheckStmt:     return "CheckStmt";
       case AstNodeKind::ExternStmt:    return "ExternStmt";
+      case AstNodeKind::ImportStmt:    return "ImportStmt";
+      case AstNodeKind::NamespaceStmt: return "NamespaceStmt";
       case AstNodeKind::WithStmt:      return "WithStmt";
       case AstNodeKind::ExpressionStmt: return "ExpressionStmt";
       default: return "Unknown";

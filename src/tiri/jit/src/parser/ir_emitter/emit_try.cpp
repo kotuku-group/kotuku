@@ -491,6 +491,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_namespace_stmt(const NamespaceStmtPaylo
       if (not emitted.ok()) return ParserResult<IrEmitUnit>::failure(emitted.error_ref());
       ExpDesc value = emitted.value_ref();
       this->materialise_to_reg(value, value_reg, "namespace initialiser");
+      fs->reset_freereg();
 
       BCReg registry_reg = fs->free_reg();
       bcreg_reserve(fs, BCReg(1));
@@ -499,7 +500,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_namespace_stmt(const NamespaceStmtPaylo
       };
       bcemit_AD(fs, BC_GGET, registry_reg.raw(), str_const(lj_str_newlit(L, "_LIB")));
       bcemit_tsets(fs, value_reg.raw(), registry_reg.raw(), str_const(Payload.name.symbol));
-      fs->freereg = registry_reg.raw();
+      fs->reset_freereg();
    }
    else {
       bcreg_reserve(fs, BCReg(1));
