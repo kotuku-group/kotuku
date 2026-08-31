@@ -4,10 +4,7 @@
 --   import 'net/url'
 --   parts = url.parse('https://example.com/path?query=value')
 
-   namespace 'url'
-
-   _LIB[_NS] = { }
-   url = _LIB[_NS]
+   namespace url { }
 
 DEFAULT_PORTS <const> = {
    http = 80,

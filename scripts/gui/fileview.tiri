@@ -15,7 +15,7 @@ Documentation is available in the Kotuku Wiki.
    import 'json'
    include 'vector'
 
-   namespace 'gui'
+   namespace gui
 
 glState <const> = mSys.GetSystemState()
 

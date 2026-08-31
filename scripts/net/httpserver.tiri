@@ -8,9 +8,7 @@
    import 'tempus'
    import 'json'
 
-   namespace 'hslib'
-   _LIB[_NS] = { }
-   hslib = _LIB[_NS]
+   namespace hslib { }
 
    module network as mNet
 

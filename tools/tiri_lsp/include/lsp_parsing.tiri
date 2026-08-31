@@ -41,6 +41,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    pos = 0
    len = #Source
    module_prefixes = ModulePrefixes or modulePrefixesForDocument({ content=Source, lineIndex=nil })
+   library_namespaces = { }
 
    -- Helper to add a token (skips zero-length tokens)
    function addToken(TokenLine, TokenCol, TokenLen, TokenType, TokenMod)
@@ -850,6 +851,31 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
                line = sk_line
                addToken(sk_line, ident_start, ident_len, 10, 0)  -- namespace ('struct' library)
             end
+         elseif ident is 'namespace' then
+            after_keyword_pos = pos
+            after_keyword_col = col
+            after_keyword_line = line
+            while pos < len and (Source.sub(pos, pos + 1) is ' ' or Source.sub(pos, pos + 1) is '\t') do
+               pos++
+               col++
+            end
+
+            namespace_line = line
+            namespace_col = col
+            namespace_start = pos
+            if line is after_keyword_line and pos < len and isIdentStart(Source.sub(pos, pos + 1)) then
+               while pos < len and isIdentChar(Source.sub(pos, pos + 1)) do pos++; col++ end
+               namespace_name = Source.sub(namespace_start, pos)
+               library_namespaces[namespace_name] = true
+               addToken(after_keyword_line, ident_start, ident_len, 0, 0)
+               addToken(namespace_line, namespace_col, #namespace_name, 10, 5)
+               continue
+            end
+
+            pos = after_keyword_pos
+            col = after_keyword_col
+            line = after_keyword_line
+            addToken(line, ident_start, ident_len, 0, 0)
          elseif ident is 'module' then
             -- 'module' remains contextual so existing module(...) functions keep function highlighting.
             after_keyword_pos = pos
@@ -939,7 +965,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly
          elseif FLUID_BUILTINS[ident] then
             addToken(line, ident_start, ident_len, 3, 128)  -- function + defaultLibrary
-         elseif FLUID_MODULES[ident] or module_prefixes[ident] then
+         elseif FLUID_MODULES[ident] or module_prefixes[ident] or library_namespaces[ident] then
             addToken(line, ident_start, ident_len, 10, 0)  -- namespace
          elseif ident.startsWith('ERR_') then
             addToken(line, ident_start, ident_len, 12, 4)  -- macro + readonly (error constants)

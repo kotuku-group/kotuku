@@ -5,7 +5,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui'
    include 'vector'
 
-   namespace 'gui'
+   namespace gui
 
    module display as mGfx
 

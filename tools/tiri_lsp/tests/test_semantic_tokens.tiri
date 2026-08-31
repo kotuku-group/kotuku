@@ -129,6 +129,22 @@ end
       'Existing module(...) identifiers should retain function highlighting.')
 end
 
+@Test function LibraryNamespacesReceiveSemanticTokens()
+   source = 'namespace toolkit { version = "1.0" }\n' ..
+      'toolkit.version = "2.0"\n' ..
+      'namespaceOnly(toolkit)\n'
+   tokens = tokenizeTiri(source)
+
+   keyword = findToken(tokens, 0, 0, 'namespace')
+   declaration = findToken(tokens, 0, 10, 'toolkit')
+   reference = findToken(tokens, 1, 0, 'toolkit')
+
+   assert(keyword and keyword.type is 0, 'Library namespace keyword should receive keyword highlighting.')
+   assert(declaration and declaration.type is 10 and (declaration.modifiers & 5) is 5,
+      'Library namespace declarations should be readonly declaration namespace tokens.')
+   assert(reference and reference.type is 10, 'Library namespace references should retain namespace highlighting.')
+end
+
 @Test function ImportListPathsReceiveSemanticTokens()
    source = "import 'json',\n   'options'\n"
 

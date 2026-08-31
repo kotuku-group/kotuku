@@ -3,7 +3,7 @@
    import 'gui'
    import 'gui/scrollbar'
 
-   namespace 'gui'
+   namespace gui
 
    module display as mGfx
 

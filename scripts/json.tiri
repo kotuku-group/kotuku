@@ -1,18 +1,13 @@
 -- A compact pure-Lua JSON library originally written by @tylerneylon for the public domain.
 
-   namespace 'json'
-
-   _LIB[_NS] = {
+   namespace json {
       ['null'] = {}
    }
 
-   json = _LIB[_NS]
-
-   in_char  = array<str> { '\\', '"', '/', '\b', '\f', '\n', '\r', '\t' }
-   out_char = array<str> { '\\', '"', '/',  'b',  'f',  'n',  'r',  't' }
-
-local num_regex = regex.new([[^-?[0-9]+\.?[0-9]*[eE]?[+\-]?[0-9]*]])
-local rx_whitespace = regex.new("[^ \\t\\n\\r\\f\\v]")
+in_char  = array<str> { '\\', '"', '/', '\b', '\f', '\n', '\r', '\t' }
+out_char = array<str> { '\\', '"', '/',  'b',  'f',  'n',  'r',  't' }
+num_regex = r[[^-?[0-9]+\.?[0-9]*[eE]?[+\-]?[0-9]*]]
+rx_whitespace = r"[^ \t\n\r\f\v]"
 
 function escape_str(String:str!):str
    for i, c in in_char do
@@ -31,7 +26,7 @@ function skip_delim(String:str!, Pos:num, Delimiter:str!, ThrowIfMissing:bool):<
    Pos ?= #String
    if String.sub(Pos, Pos+1) != Delimiter then
       if ThrowIfMissing then
-         error('Expected ' .. Delimiter .. ' near position ' .. Pos)
+         raise ERR_Syntax, 'Expected ' .. Delimiter .. ' near position ' .. Pos
       end
       return Pos, false
    end
@@ -69,7 +64,7 @@ function decode_num_val(String:str!, pos:num!):<any, num>
       return val, pos + #num_str
    end
 
-   error(f'Error parsing number at position {pos} for "{substr}"')
+   raise ERR_InvalidValue, f'Error parsing number at position {pos} for "{substr}"'
 end
 
 -- Public values and functions.
@@ -162,7 +157,7 @@ num: position after the final parsed character
 ]])
 json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
    Pos ?= 0
-   if Pos >= #String then error('Reached unexpected end of input.') end
+   if Pos >= #String then raise ERR_Syntax, 'Reached unexpected end of input.' end
    Pos = rx_whitespace.findFirst(String, Pos)  -- Skip whitespace
    Pos ?= #String
    first = String.sub(Pos, Pos+1)
@@ -172,7 +167,7 @@ json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
       while true do
          key, Pos = json.decode(String, Pos, '}')
          if not key then return map, Pos end
-         if not delim_found then error('Comma missing between object items.') end
+         if not delim_found then raise ERR_Syntax, 'Comma missing between object items.' end
          Pos = skip_delim(String, Pos, ':', true)  -- true -> error if missing.
          map[key], Pos = json.decode(String, Pos)
          Pos, delim_found = skip_delim(String, Pos, ',')
@@ -183,7 +178,7 @@ json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
       while true do
          val, Pos = json.decode(String, Pos, ']')
          if val is nil then return arr, Pos end
-         if not delim_found then error('Comma missing between array items.') end
+         if not delim_found then raise ERR_Syntax, 'Comma missing between array items.' end
          arr.push(val)
          Pos, delim_found = skip_delim(String, Pos, ',')
       end
@@ -199,6 +194,6 @@ json.decode = function(String:str!, Pos:num, EndToken:str):<any, num>
          lit_end = Pos + #lit_str
          if String.sub(Pos, lit_end) is lit_str then return lit_val, lit_end end
       end
-      error('Invalid json syntax starting at position ' .. Pos .. ': ' .. String.sub(Pos, Pos + 11))
+      raise ERR_Syntax, 'Invalid json syntax starting at position ' .. Pos .. ': ' .. String.sub(Pos, Pos + 11)
    end
 end

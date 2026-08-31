@@ -1,0 +1,98 @@
+import './library_namespace_component_a', './library_namespace_component_b', './library_namespace_callable',
+   './library_namespace_thunk'
+
+global glLibraryNamespaceValidationPath
+
+@BeforeAll function SetupLibraryNamespaceTests(State)
+   glLibraryNamespaceValidationPath = State.folder .. 'namespace_validation.tiri'
+end
+
+function assert_invalid(Source:str, ExpectedMessage:str, Context:str, Options:table)
+   local result = debug.validate(Source, Options)
+
+   assert(result.success is false, Context .. ': source should fail validation')
+   assert(#result.diagnostics > 0, Context .. ': expected at least one diagnostic')
+   assert(result.diagnostics[0].message.find(ExpectedMessage, 0, true) != nil,
+      Context .. ': expected diagnostic containing "' .. ExpectedMessage .. '", got: ' ..
+      tostring(result.diagnostics[0].message))
+end
+
+@Test function CreatedNamespaceHasRegistryIdentity()
+   assert(type(library_namespace) is 'table', 'Created namespace should expose its table value')
+   assert(_LIB.library_namespace is library_namespace, 'Namespace local and registry entry should be identical')
+   assert(library_namespace.root is true, 'Table initialiser fields should be retained')
+   assert(library_namespace.initialisations is 1, 'Namespace initialiser should execute exactly once')
+   assert(library_namespace.owns_root() is true,
+      'A table namespace closure should capture its owning namespace binding')
+end
+
+@Test function ComponentsJoinOneNamespace()
+   assert(library_namespace.component_a is true, 'First component should extend the shared namespace')
+   assert(library_namespace.component_b is true, 'Second component should extend the shared namespace')
+end
+
+@Test function FunctionNamespaceIsCallable()
+   assert(library_namespace_callable(5) is 120,
+      'Function-valued namespace should be directly callable and recursive')
+   assert(_LIB.library_namespace_callable is library_namespace_callable,
+      'Function namespace should retain registry identity')
+end
+
+@Test function ThunkNamespaceRetainsLazyValue()
+   assert(isthunk(library_namespace_thunk), 'Parameterless thunk namespace should expose thunk userdata')
+   assert(library_namespace_thunk + 0 is 7, 'Thunk namespace should resolve through normal thunk semantics')
+end
+
+@Test function NamespaceMetadataIsRecordedPerSource()
+   local sources = debug.fileSources()
+   local namespace_sources = 0
+
+   for _, source in sources do
+      if source.namespace is 'library_namespace' then namespace_sources++ end
+   end
+
+   assert(namespace_sources >= 3, 'Root and both component sources should retain namespace metadata')
+end
+
+@Test function NamespaceDiagnostics()
+   assert_invalid([[namespace 'legacy' { }]], 'Namespace names are identifiers; remove the quotes', 'quoted name')
+   assert_invalid([[namespace]], 'Namespace name must be an identifier', 'missing name')
+   assert_invalid([[namespace invalid 42]], 'Namespace initialisers must be table, function or thunk literals',
+      'unsupported initialiser')
+   assert_invalid([[namespace first { }
+namespace second { }]], 'A source file can only declare one namespace', 'duplicate declaration')
+   assert_invalid([[function nested()
+   namespace invalid { }
+end]], "'namespace' must be at library level", 'nested declaration')
+   assert_invalid([[local conflict = { }
+namespace conflict]], 'conflicts with an existing lexical binding', 'conflicting local')
+   assert_invalid([[namespace locked { }
+locked = { }]], "cannot assign to const local 'locked'", 'const assignment')
+   assert_invalid([[function foreign_table():table return {} end
+local value = {}
+namespace replace_value function() value = foreign_table() end
+replace_value()
+setmetatable(value, { __context = true })]], 'unknown provenance', 'function namespace closure write')
+   assert_invalid([[function foreign_table():table return {} end
+local value = {}
+namespace replace_value thunk():num value = foreign_table(); return 1 end
+local invoked = replace_value + 0
+setmetatable(value, { __context = true })]], 'unknown provenance', 'thunk namespace closure write')
+   assert_invalid([[import './library_namespace_root' as alternate_root; namespace alternate_root]],
+      'conflicts with an existing lexical binding', 'namespace join through differently named import alias',
+      { path=glLibraryNamespaceValidationPath })
+   assert_invalid([[namespace no_legacy_name { }
+local value = _NS]], "Undeclared variable '_NS'", '_NS removal')
+end
+
+@Test function MissingJoinFailsImmediately()
+   try
+      exec('namespace definitely_absent_namespace')
+   except err
+      assert(tostring(err).find("Cannot join namespace 'definitely_absent_namespace'"),
+         'Missing join should report the namespace name')
+      return
+   end
+
+   error('Joining an absent namespace should fail')
+end

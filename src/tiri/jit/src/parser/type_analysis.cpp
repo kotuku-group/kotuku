@@ -1248,6 +1248,11 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::NamespaceStmt: {
+         auto *payload = std::get_if<NamespaceStmtPayload>(&Statement.data);
+         if (payload and payload->initialiser) this->lower_unanalysed_expression(*payload->initialiser);
+         break;
+      }
       case AstNodeKind::WithStmt: {
          auto *payload = std::get_if<WithStmtPayload>(&Statement.data);
          if (payload) {
@@ -1482,10 +1487,16 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
             for (const auto &entry : payload->entries) {
+               std::optional<InferredType> namespace_type;
                if (entry.inlined_body) {
                   ImportGuard guard(*this, entry.file_source_idx);
                   this->push_scope();
                   this->analyse_block(*entry.inlined_body);
+                  if (not entry.default_namespace.empty()) {
+                     GCstr *namespace_symbol = lj_str_new(
+                        &this->ctx_.lua(), entry.default_namespace.data(), entry.default_namespace.size());
+                     namespace_type = this->resolve_identifier(namespace_symbol);
+                  }
                   this->pop_scope();
                }
 
@@ -1495,9 +1506,38 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
                if (entry.namespace_name) {
                   const Identifier &name = *entry.namespace_name;
                   this->current_scope().declare_local(
-                     name.symbol, InferredType(TiriType::Any), name.span, name.has_const);
+                     name.symbol, namespace_type.value_or(InferredType(TiriType::Any)), name.span, name.has_const);
                }
             }
+         }
+         break;
+      }
+      case AstNodeKind::NamespaceStmt: {
+         auto *payload = std::get_if<NamespaceStmtPayload>(&Statement.data);
+         if (not payload) break;
+
+         if (not payload->reuses_import_binding) {
+            this->current_scope().declare_local(
+               payload->name.symbol, InferredType(TiriType::Any), payload->name.span, true);
+         }
+
+         InferredType inferred(TiriType::Any);
+         if (payload->initialiser) {
+            if (payload->initialiser->kind IS AstNodeKind::FunctionExpr) {
+               this->analyse_function_payload(
+                  std::get<FunctionExprPayload>(payload->initialiser->data), payload->name.symbol);
+            }
+            else this->analyse_expression(*payload->initialiser);
+            inferred = this->infer_expression_type(*payload->initialiser);
+            inferred = this->refine_static_expression_type(*payload->initialiser, inferred);
+            if (inferred.primary != TiriType::Any and inferred.primary != TiriType::Unknown) {
+               inferred.is_fixed = true;
+            }
+         }
+
+         if (not payload->reuses_import_binding) {
+            this->current_scope().update_local_type(payload->name.symbol, inferred);
+            this->publish_binding_type(payload->name.binding_id, inferred);
          }
          break;
       }

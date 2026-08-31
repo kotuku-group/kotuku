@@ -1060,6 +1060,26 @@ struct ImportStmtPayload {
    ~ImportStmtPayload();
 };
 
+enum class NamespaceDeclarationMode : uint8_t {
+   Create,
+   Join
+};
+
+struct NamespaceStmtPayload {
+   NamespaceStmtPayload() = default;
+   NamespaceStmtPayload(const NamespaceStmtPayload&) = delete;
+   NamespaceStmtPayload& operator=(const NamespaceStmtPayload&) = delete;
+   NamespaceStmtPayload(NamespaceStmtPayload&&) noexcept = default;
+   NamespaceStmtPayload& operator=(NamespaceStmtPayload&&) noexcept = default;
+
+   Identifier name;
+   ExprNodePtr initialiser;
+   NamespaceDeclarationMode mode = NamespaceDeclarationMode::Join;
+   bool reuses_import_binding = false;
+
+   ~NamespaceStmtPayload();
+};
+
 // With statement payload: with obj1, obj2 do ... end - auto-lock/unlock objects
 struct WithStmtPayload {
    WithStmtPayload(ExprNodeList objects, std::unique_ptr<BlockStmt> block)
@@ -1094,7 +1114,7 @@ struct StmtNode {
       LoopStmtPayload, NumericForStmtPayload, RangeForStmtPayload, GenericForStmtPayload,
       ReturnStmtPayload, BreakStmtPayload, ContinueStmtPayload, DeferStmtPayload,
       DoStmtPayload, ContextStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
-      CheckallStmtPayload, RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, WithStmtPayload,
+      CheckallStmtPayload, RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, NamespaceStmtPayload, WithStmtPayload,
       ExpressionStmtPayload>
       data;
 

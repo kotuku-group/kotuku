@@ -9,6 +9,7 @@ rx_def_assign_func    <const> = <{ regex.new([[\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*
 rx_def_assign         <const> = <{ regex.new([[^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=]]) }>
 rx_def_param          <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)]]) }>
 rx_def_struct         <const> = <{ regex.new([[^\s*struct\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
+rx_def_namespace      <const> = <{ regex.new([[^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
 rx_def_struct_field   <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
 rx_def_end            <const> = <{ regex.new([[\bend\b]]) }>
 rx_def_struct_new     <const> = <{ regex.new([=[([A-Za-z_]\w*)\s*=\s*struct\.new\s*\(\s*['"]([A-Za-z_]\w*)['"]]=]) }>
@@ -373,6 +374,13 @@ global function extractDefinitionSymbols(Doc:table):array<table>
          if not rx_def_end.test(remainder) then struct_frame = struct_name end
          table_depth = updateTableDepth(line_code, table_depth)
          continue
+      end
+
+      namespace_start, _, namespace_cap = rx_def_namespace.findFirst(line_code)
+      if namespace_start then
+         namespace_name = namespace_cap[0]
+         name_start = line_text.find(namespace_name, namespace_start, true) or namespace_start
+         addSymbol(symbols, namespace_name, 'namespace', line_num, name_start, name_start + #namespace_name)
       end
 
       for start, stop, cap in rx_def_func.findAll(line_code) do

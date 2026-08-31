@@ -135,6 +135,105 @@ global function resolveModuleCompletion(Doc:table, Position:table):array<table>
    return items
 end
 
+function renamePositionInRange(Line:num, Character:num, Range:table):bool
+   if Line < Range.start.line or Line > Range['end'].line then return false end
+   if Line is Range.start.line and Character < Range.start.character then return false end
+   if Line is Range['end'].line and Character > Range['end'].character then return false end
+   return true
+end
+
+-- Return the chain of lexical scopes enclosing a position, outermost first.  Scopes nest without overlapping, so
+-- the first candidate that contains the position is the only one worth descending into.
+
+function renameLexicalScopePath(Scopes:array<table>, Line:num, Character:num):array<table>
+   local path = array<table>
+
+   function visit(Candidates:array<table>):bool
+      for scope in values(Candidates or array<table>) do
+         if not renamePositionInRange(Line, Character, scope.range) then continue end
+         path.push(scope)
+         visit(scope.children)
+         return true
+      end
+      return false
+   end
+
+   visit(Scopes)
+   return path
+end
+
+-- A definition is visible from a reference when the definition's scope chain is a prefix of the reference's, i.e.
+-- the reference sits in the declaring block or one nested inside it.  Block scopes matter as much as function
+-- scopes here: a `local` inside `do ... end` dies at the `end`, so it must not shadow anything after it.
+
+function renameScopeIsVisible(DefinitionScope:array<table>, ReferenceScope:array<table>):bool
+   if #DefinitionScope > #ReferenceScope then return false end
+   for i in {0 to #DefinitionScope} do
+      local definition = DefinitionScope[i].range.start
+      local reference = ReferenceScope[i].range.start
+      if definition.line != reference.line or definition.character != reference.character then return false end
+   end
+   return true
+end
+
+function renameTokenIsMemberOrKey(Doc:table, Token:table):bool
+   local line_text = getLine(Doc, Token.line)
+   local before = utf16ColToByteCol(line_text, Token.char)
+   while before > 0 and (line_text.sub(before - 1, before) is ' ' or
+         line_text.sub(before - 1, before) is '\t') do
+      before -= 1
+   end
+   if before > 0 then
+      local prefix = line_text.sub(before - 1, before)
+      if prefix is '.' or prefix is ':' then return true end
+   end
+
+   local after = utf16ColToByteCol(line_text, Token.char + Token.length)
+   while after < #line_text and (line_text.sub(after, after + 1) is ' ' or
+         line_text.sub(after, after + 1) is '\t') do
+      after++
+   end
+   return after < #line_text and line_text.sub(after, after + 1) is '='
+end
+
+function renameDefinitionIsBefore(Definition:table, Position:table):bool
+   if Definition.line < Position.line then return true end
+   return Definition.line is Position.line and Definition.startChar <= Position.character
+end
+
+function renameTokenResolvesToNamespace(Doc:table, Token:table, Definitions:array<table>,
+      DocumentScopes:array<table>):bool
+   if renameTokenIsMemberOrKey(Doc, Token) then return false end
+
+   local line_text = getLine(Doc, Token.line)
+   local token_start = utf16ColToByteCol(line_text, Token.char)
+   local token_end = utf16ColToByteCol(line_text, Token.char + Token.length)
+   local token_text = line_text.sub(token_start, token_end)
+   local reference_position = { line=Token.line, character=token_start }
+   local reference_scope = renameLexicalScopePath(DocumentScopes, Token.line, token_start)
+   local best
+   local best_depth = -1
+
+   for definition in values(Definitions) do
+      if definition.name != token_text or
+            not renameDefinitionIsBefore(definition, reference_position) then continue end
+
+      local definition_scope = renameLexicalScopePath(
+         DocumentScopes, definition.line, definition.startChar)
+      if not renameScopeIsVisible(definition_scope, reference_scope) then continue end
+
+      local depth = #definition_scope
+      if not best or depth > best_depth or (depth is best_depth and
+            (definition.line > best.line or
+            (definition.line is best.line and definition.startChar > best.startChar))) then
+         best = definition
+         best_depth = depth
+      end
+   end
+
+   return best?.kind is 'namespace'
+end
+
 global function resolveModuleRename(Doc:table, Position:table, NewName:str):table
    if not NewName or #NewName is 0 then return nil end
    local first = NewName.sub(0, 1)
@@ -147,17 +246,46 @@ global function resolveModuleRename(Doc:table, Position:table, NewName:str):tabl
 
    local token_info = getTokenAtPosition(Doc, Position.line, Position.character)
    local old_name = token_info?.text
-   if not old_name or not moduleDeclarationsForDocument(Doc)[old_name] then return nil end
+   local is_module_namespace = old_name and moduleDeclarationsForDocument(Doc)[old_name]
+   local is_library_namespace = old_name and libraryNamespaceDeclarationsForDocument(Doc)[old_name]
+   if not is_module_namespace and not is_library_namespace then return nil end
+
+   local definitions = is_library_namespace and extractDefinitionSymbols(Doc) or nil
+   local document_scopes = is_library_namespace and extractLexicalScopes(Doc) or nil
+   local tokens = tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))
+
+   if is_library_namespace then
+      local target_is_namespace = false
+      for token in values(tokens) do
+         if token.line != Position.line then continue end
+         local line_text = getLine(Doc, token.line)
+         local token_start = token.char
+         local token_end = token.char + token.length
+         if Position.character < token_start or Position.character > token_end then continue end
+
+         local token_start_byte = utf16ColToByteCol(line_text, token.char)
+         local token_end_byte = utf16ColToByteCol(line_text, token.char + token.length)
+         local text = line_text.sub(token_start_byte, token_end_byte)
+         if text is old_name then
+            target_is_namespace = renameTokenResolvesToNamespace(Doc, token, definitions, document_scopes)
+            break
+         end
+      end
+      if not target_is_namespace then return nil end
+   end
 
    local edits = array<table>
-   for token in values(tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))) do
+   for token in values(tokens) do
       local line_text = getLine(Doc, token.line)
-      local text = line_text.sub(token.char, token.char + token.length)
-      if token.type is 10 and text is old_name and (token.modifiers & 8) is 0 then
+      local token_start_byte = utf16ColToByteCol(line_text, token.char)
+      local token_end_byte = utf16ColToByteCol(line_text, token.char + token.length)
+      local text = line_text.sub(token_start_byte, token_end_byte)
+      if token.type is 10 and text is old_name and (token.modifiers & 8) is 0 and
+            (is_module_namespace or renameTokenResolvesToNamespace(Doc, token, definitions, document_scopes)) then
          edits.push({
             range = {
-               start = { line=token.line, character=byteColToUtf16Col(line_text, token.char) },
-               ['end'] = { line=token.line, character=byteColToUtf16Col(line_text, token.char + token.length) }
+               start = { line=token.line, character=token.char },
+               ['end'] = { line=token.line, character=token.char + token.length }
             },
             newText = NewName
          })

@@ -2,7 +2,7 @@
 -- both import_type_diamond_a.tiri and import_type_diamond_b.tiri to form a diamond import.
 -- Do not import this file from a compiled test; it is only referenced through debug.validate() buffers.
 
-namespace 'type_probe_diamond'
+namespace type_probe_diamond { }
 
 local mismatch:num = 'str'
 

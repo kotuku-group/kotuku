@@ -10,7 +10,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/input'
    import 'gui/window'
 
-   namespace 'gui'
+   namespace gui
 
    gui.dialog ?= { }
 

@@ -704,7 +704,7 @@ end
    })
 
    assert(head_result.returnCode is 0, 'HEAD should return 0: ' .. head_result.errors)
-   assert(head_result.text.trim() is '200', 'HEAD status should be 200, got ' .. head_result.text)
+   assert(head_result.output.trim() is '200', 'HEAD status should be 200, got ' .. head_result.output)
 
    options_result = runTuku(array<str> {
       f'url=http://127.0.0.1:{SERVER_PORT}/options',
@@ -714,8 +714,8 @@ end
    })
 
    assert(options_result.returnCode is 0, 'OPTIONS should return 0: ' .. options_result.errors)
-   assert(options_result.text.trim() is '200' or options_result.text.trim() is '204',
-      'OPTIONS status should be successful, got ' .. options_result.text)
+   assert(options_result.output.trim() is '200' or options_result.output.trim() is '204',
+      'OPTIONS status should be successful, got ' .. options_result.output)
 end
 
 ----------------------------------------------------------------------------------------------------------------------

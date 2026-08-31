@@ -58,6 +58,92 @@ local text = 'runtimeCore'
       'Every namespace edit should use the requested name.')
 end
 
+@Test function RenamesLibraryNamespaceReferences()
+   local doc = makeDoc([[
+namespace toolkit { version = '1.0' }
+print(toolkit.version)
+function inspect_shadow()
+   local toolkit = { version = 'shadow' }
+   print(toolkit.version)
+end
+print(toolkit.version)
+print('é', toolkit.version)
+local other = { toolkit = toolkit }
+print(other.toolkit.version)
+local text = 'toolkit'
+-- toolkit
+]])
+   local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 5,
+      'Library namespace rename should exclude shadowed bindings, member names, strings and comments.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 1 and
+         edits[2].range.start.line is 6 and edits[3].range.start.line is 7 and
+         edits[4].range.start.line is 8,
+      'Library namespace rename should retain only references to the declared lexical binding.')
+   local unicode_edit = resolveModuleRename(doc, { line=7, character=12 }, 'renamedToolkit')
+   assert(#unicode_edit?.changes?[doc.uri] is 5,
+      'Starting a rename after multibyte text should preserve UTF-16 token coordinates.')
+   assert(not resolveModuleRename(doc, { line=3, character=10 }, 'renamedShadow'),
+      'Starting a rename on a shadowing local should not rename the library namespace.')
+end
+
+@Test function RenamesAcrossBlockScopeBoundaries()
+   local doc = makeDoc([==[
+namespace toolkit { version = '1.0' }
+do
+   local toolkit = { version = 'block' }
+   print(toolkit.version)
+end
+for i in {0 to 3} do
+   local toolkit = { version = 'loop' }
+   print(toolkit.version)
+end
+function scan()
+   do
+      local depth = 0
+   end
+   local toolkit = { version = 'inner' }
+   print(toolkit.version)
+end
+print(toolkit.version)
+]==])
+   local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 2,
+      'Bindings local to a do or loop block should shadow the namespace only inside that block.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 16,
+      'A reference following a closed block should still resolve to the library namespace.')
+end
+
+@Test function RenamesSiblingBranchesIndependently()
+   local doc = makeDoc([==[
+namespace toolkit { version = '1.0' }
+if condition then
+   local toolkit = { version = 'branch' }
+   print(toolkit.version)
+else
+   print(toolkit.version)
+end
+try
+   local toolkit = { version = 'guarded' }
+   print(toolkit.version)
+except e
+   print(toolkit.version)
+end
+print(toolkit.version)
+]==])
+   local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 4, 'Sibling branches should not inherit each other\'s local bindings.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 5 and
+         edits[2].range.start.line is 11 and edits[3].range.start.line is 13,
+      'Only the else, except and trailing references should resolve to the library namespace.')
+end
+
 @Test function RenameRejectsLegacyAndInvalidNames()
    local legacy_doc = makeDoc('mSys.PreciseTime()')
    assert(not resolveModuleRename(legacy_doc, { line=0, character=1 }, 'mClock'),

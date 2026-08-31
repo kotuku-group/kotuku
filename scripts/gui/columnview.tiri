@@ -7,7 +7,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui'
    import 'gui/libview'
 
-   namespace 'gui'
+   namespace gui
 
 lDate = nil
 VSPACING <const> = 2

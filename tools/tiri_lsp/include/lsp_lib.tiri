@@ -364,6 +364,7 @@ global FLUID_MODULES = {
 
 rx_module_namespace_decl = <{ regex.new(
    [[^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*;?\s*$]]) }>
+rx_library_namespace_decl = <{ regex.new([[^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
 
 extern maskNonCode
 
@@ -385,6 +386,20 @@ global function moduleDeclarationsForDocument(Doc:table):table
       if captures then declarations[captures[1]] = captures[0] end
    end
    Doc.moduleDeclarations = declarations
+   return declarations
+end
+
+global function libraryNamespaceDeclarationsForDocument(Doc:table):table
+   local declarations = {}
+   if not Doc?.content then return declarations end
+
+   local in_block_comment = false
+   for line_no in {0 to getTotalLines(Doc)} do
+      local line_code
+      line_code, in_block_comment = maskNonCode(getLine(Doc, line_no), in_block_comment)
+      local _, _, captures = rx_library_namespace_decl.findFirst(line_code)
+      if captures then declarations[captures[0]] = true end
+   end
    return declarations
 end
 

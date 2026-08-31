@@ -4,7 +4,7 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
 
-   namespace 'gui'
+   namespace gui
    module vector as mVec
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.icon)

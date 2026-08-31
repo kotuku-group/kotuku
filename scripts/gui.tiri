@@ -1,20 +1,17 @@
 -- Graphical User Interface functions
 
-   namespace 'gui'
    include 'vector'
 
    module vector as mVec
 
-_LIB[_NS] = {
-   theme = nil,
-   _counter = 0,
-   configureScene = function(Window, Scene)
-      -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
-      -- and patterns for fills.
-   end
-}
-
-gui = _LIB[_NS]
+   namespace gui {
+      theme = nil,
+      _counter = 0,
+      configureScene = function(Window, Scene)
+         -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
+         -- and patterns for fills.
+      end
+   }
 
 rxPixel    <const> = <{ regex.new([[^(\d+)([a-zA-Z]*)$]]) }>
 rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
