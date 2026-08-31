@@ -4,7 +4,7 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
 
-   namespace 'gui'
+   namespace gui
 
    local lStyle
    if mSys.AnalysePath('style:scrollbar.tiri') is ERR_Okay then

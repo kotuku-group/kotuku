@@ -4,15 +4,12 @@ Declarative command-line option parsing for Tiri scripts.  Refer to the Tiri-Opt
 
    include 'core'
    import 'json'
-   namespace 'options'
 
    local create_parser, get_error_instruction, apply_error_instruction, get_help
 
-   _LIB[_NS] = function(Config:table!):table
+   namespace options function(Config:table!):table
       return create_parser(Config)
    end
-   options = _LIB[_NS]
-
 
 help_result_marker = {}
 rx_env_camel <const> = <{ regex.new('([a-z0-9])([A-Z])') }>

@@ -8,7 +8,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/window'
    include 'document', 'xml'
 
-   namespace 'gui'
+   namespace gui
 
 LINE_SPACING, FONT_HEIGHT = gui.getFontHeight(gui.fonts.window)
 MIN_WIDTH <const> = 300

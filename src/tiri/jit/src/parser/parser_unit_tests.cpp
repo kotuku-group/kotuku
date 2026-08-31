@@ -2025,6 +2025,64 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
 
 //********************************************************************************************************************
 
+static bool test_library_namespace_declarations(kt::Log &Log)
+{
+   auto created = discover_bindings_from_source(
+      "namespace sample { value=1 }\n"
+      "local observed = sample.value\n");
+   if (not created.chunk.ok() or not created.diagnostics.empty() or
+       created.chunk.value_ref()->statements.empty() or
+       created.chunk.value_ref()->statements[0]->kind != AstNodeKind::NamespaceStmt) {
+      Log.error("a table namespace declaration did not produce a clean NamespaceStmt AST");
+      log_diagnostics(created.diagnostics, Log);
+      return false;
+   }
+
+   const auto *payload = std::get_if<NamespaceStmtPayload>(&created.chunk.value_ref()->statements[0]->data);
+   if (not payload or payload->mode != NamespaceDeclarationMode::Create or not payload->initialiser or
+       payload->initialiser->kind != AstNodeKind::TableExpr or not payload->name.has_const or
+       not payload->name.binding_id) {
+      Log.error("a table namespace declaration lost its mode, initialiser or const binding metadata");
+      return false;
+   }
+
+   auto callable = discover_bindings_from_source(
+      "namespace callable function(Value:num):num return Value + 1 end\n");
+   const NamespaceStmtPayload *callable_payload = callable.chunk.ok() and
+      not callable.chunk.value_ref()->statements.empty() ?
+      std::get_if<NamespaceStmtPayload>(&callable.chunk.value_ref()->statements[0]->data) : nullptr;
+   if (not callable_payload or not callable_payload->initialiser or
+       callable_payload->initialiser->kind != AstNodeKind::FunctionExpr or not callable.diagnostics.empty()) {
+      Log.error("a function namespace declaration did not retain its function literal");
+      log_diagnostics(callable.diagnostics, Log);
+      return false;
+   }
+
+   constexpr std::array<std::pair<std::string_view, std::string_view>, 5> invalid = { {
+      { "namespace 'legacy' { }", "Namespace names are identifiers; remove the quotes" },
+      { "namespace invalid 42", "Namespace initialisers must be table, function or thunk literals" },
+      { "namespace first { }\nnamespace second { }", "A source file can only declare one namespace" },
+      { "function nested() namespace invalid { } end", "'namespace' must be at library level" },
+      { "local conflict = { }\nnamespace conflict", "conflicts with an existing lexical binding" }
+   } };
+
+   for (const auto &[source, expected] : invalid) {
+      auto result = discover_bindings_from_source(source);
+      bool found = std::ranges::any_of(result.diagnostics, [expected](const ParserDiagnostic &diagnostic) {
+         return diagnostic.message.find(expected) != std::string::npos;
+      });
+      if (not found) {
+         Log.error("namespace diagnostic did not contain '%.*s'", int(expected.size()), expected.data());
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_assignment_target_regressions(kt::Log &Log)
 {
    auto first_target = [](BindingDiscoveryResult &Result, size_t Statement = 0) -> NameRef * {
@@ -10792,7 +10850,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 98> tests = { {
+   constexpr std::array<TestCase, 99> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
@@ -10823,6 +10881,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "typed_assignment_name_resolution", test_typed_assignment_name_resolution },
       { "annotated_local_validation_parity", test_annotated_local_validation_parity },
       { "assignment_target_regressions", test_assignment_target_regressions },
+      { "library_namespace_declarations", test_library_namespace_declarations },
       { "implicit_later_name_attributes", test_implicit_later_name_attributes },
       { "implicit_attribute_shadowing", test_implicit_attribute_shadowing },
       { "ternary_colon_separators", test_ternary_colon_separators },

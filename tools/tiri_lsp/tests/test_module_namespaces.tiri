@@ -58,6 +58,19 @@ local text = 'runtimeCore'
       'Every namespace edit should use the requested name.')
 end
 
+@Test function RenamesLibraryNamespaceReferences()
+   local doc = makeDoc([[
+namespace toolkit { version = '1.0' }
+print(toolkit.version)
+local text = 'toolkit'
+-- toolkit
+]])
+   local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 2, 'Library namespace rename should edit only declaration and code references.')
+end
+
 @Test function RenameRejectsLegacyAndInvalidNames()
    local legacy_doc = makeDoc('mSys.PreciseTime()')
    assert(not resolveModuleRename(legacy_doc, { line=0, character=1 }, 'mClock'),

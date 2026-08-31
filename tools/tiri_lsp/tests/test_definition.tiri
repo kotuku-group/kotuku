@@ -46,6 +46,12 @@ end
    assertLocationLine(locations, 0, 'Variable use should resolve to local declaration')
 end
 
+@Test function CurrentDocumentLibraryNamespace()
+   doc = makeDoc('namespace toolkit { version = "1.0" }\nprint(toolkit.version)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 8 })
+   assertLocationLine(locations, 0, 'Library namespace use should resolve to its declaration')
+end
+
 @Test function CurrentDocumentImplicitVariable()
    doc = makeDoc('win = gui.window({ title = "Test" })\nprint(win)\n')
    locations = resolveDefinition(doc, { line = 1, character = 7 })

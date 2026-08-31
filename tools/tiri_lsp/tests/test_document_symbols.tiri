@@ -92,6 +92,22 @@ end
    assert(namespace_symbol.detail is 'module core', 'Namespace symbol detail should retain the module name.')
 end
 
+@Test function LibraryNamespaceDeclarationSymbols()
+   doc = makeDoc('namespace toolkit { version = "1.0" }\n')
+   symbols = extractDocumentSymbols(doc)
+   namespace_symbol = findSymbol(symbols, 'toolkit')
+
+   assert(namespace_symbol and namespace_symbol.kind is SYMBOL_KIND.NAMESPACE,
+      'A library namespace declaration should create a namespace document symbol.')
+   assert(namespace_symbol.detail is 'readonly namespace',
+      'A created library namespace should be identified as readonly.')
+
+   doc = makeDoc('namespace toolkit\n')
+   namespace_symbol = findSymbol(extractDocumentSymbols(doc), 'toolkit')
+   assert(namespace_symbol and namespace_symbol.detail is 'readonly namespace join',
+      'A joined library namespace should retain readonly namespace detail.')
+end
+
 @Test function ModuleScopeVariablesAndTables()
    doc = makeDoc([[
 local glFolderFill

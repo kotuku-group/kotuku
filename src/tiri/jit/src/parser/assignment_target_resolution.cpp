@@ -3,7 +3,9 @@
 #include "assignment_target_resolution.h"
 
 #include <algorithm>
+#include <format>
 #include <shared_mutex>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -18,6 +20,7 @@ struct AssignmentBinding {
    GCstr *name = nullptr;
    StaticBindingID binding_id{};
    uint16_t function_depth = 0;
+   bool is_import_namespace = false;
 };
 
 struct AssignmentScope {
@@ -109,6 +112,17 @@ private:
    void declare(Identifier &Name)
    {
       this->publish_declaration(this->prepare_declaration(Name));
+   }
+
+   void report_namespace_conflict(const Identifier &Name)
+   {
+      ParserDiagnostic diagnostic;
+      diagnostic.severity = ParserDiagnosticSeverity::Error;
+      diagnostic.code = ParserErrorCode::InvalidAssignment;
+      diagnostic.message = std::format("Namespace '{}' conflicts with an existing lexical binding",
+         std::string_view(strdata(Name.symbol), Name.symbol->len));
+      diagnostic.token = Token::from_span(Name.span, TokenKind::Identifier);
+      this->context_.diagnostics().report(diagnostic);
    }
 
    void resolve_reference(NameRef &Reference)
@@ -485,9 +499,30 @@ private:
          case AstNodeKind::ImportStmt:
             for (ImportEntryPayload &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
                if (entry.inlined_body) this->resolve_block(*entry.inlined_body);
-               if (entry.namespace_name) this->declare(*entry.namespace_name);
+               if (entry.namespace_name) {
+                  AssignmentBinding binding = this->prepare_declaration(*entry.namespace_name);
+                  binding.is_import_namespace = true;
+                  this->publish_declaration(std::move(binding));
+               }
             }
             break;
+         case AstNodeKind::NamespaceStmt: {
+            auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
+            if (payload.initialiser) this->resolve_expression(*payload.initialiser);
+
+            const AssignmentBinding *existing = this->find_binding(payload.name.symbol);
+            if (payload.mode IS NamespaceDeclarationMode::Join and existing and existing->is_import_namespace and
+                existing->function_depth IS this->function_depth_) {
+               payload.name.binding_id = existing->binding_id;
+               payload.reuses_import_binding = true;
+            }
+            else if (existing) {
+               this->report_namespace_conflict(payload.name);
+               payload.reuses_import_binding = true;  // Suppress invalid downstream redeclaration after the error.
+            }
+            else this->declare(payload.name);
+            break;
+         }
          case AstNodeKind::WithStmt: {
             auto &payload = std::get<WithStmtPayload>(Statement.data);
             for (auto &object : payload.objects) if (object) this->resolve_expression(*object);

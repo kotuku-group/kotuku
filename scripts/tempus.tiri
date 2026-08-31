@@ -1,9 +1,6 @@
 -- Tempus value library.
 
-   namespace 'tempus'
-
-   _LIB[_NS] = {}
-   tempus = _LIB[_NS]
+   namespace tempus { }
 
 value_storage = setmetatable({}, { __mode = 'k' })
 metatable_by_type = {}

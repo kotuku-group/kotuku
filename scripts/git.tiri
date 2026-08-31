@@ -1,12 +1,6 @@
 -- Common interface for querying git repositories
 
-   namespace 'git'
-
-   _LIB[_NS] = {
-      ['null'] = {}
-   }
-
-   git = _LIB[_NS]
+   namespace git { }
 
 local rx_head = <{ regex.new('ref: refs/heads/(.+)') }>
 

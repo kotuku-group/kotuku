@@ -130,6 +130,7 @@ enum class AstNodeKind : uint16_t {
    RaiseStmt,      // raise error_code [, message] or raise message
    CheckStmt,      // check expression
    ImportStmt,     // import 'module' statement
+   NamespaceStmt,  // namespace name [literal] statement
    ExternStmt,     // extern symbol declarations for cross-file references
    WithStmt,       // with obj1, obj2 do ... end
    ExpressionStmt

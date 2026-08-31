@@ -556,6 +556,11 @@ struct StatementChildCounter {
       return total;
    }
 
+   [[nodiscard]] inline size_t operator()(const NamespaceStmtPayload &Payload) const
+   {
+      return Payload.initialiser ? 1 : 0;
+   }
+
    [[nodiscard]] inline size_t operator()(const WithStmtPayload &Payload) const
    {
       return Payload.objects.size() + block_child_count(Payload.block);
@@ -616,6 +621,7 @@ RaiseStmtPayload::~RaiseStmtPayload() = default;
 CheckStmtPayload::~CheckStmtPayload() = default;
 ImportEntryPayload::~ImportEntryPayload() = default;
 ImportStmtPayload::~ImportStmtPayload() = default;
+NamespaceStmtPayload::~NamespaceStmtPayload() = default;
 WithStmtPayload::~WithStmtPayload() = default;
 BlockStmt::~BlockStmt() = default;
 

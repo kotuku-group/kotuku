@@ -221,6 +221,10 @@ private:
    ParserResult<IrEmitUnit> emit_check_stmt(const CheckStmtPayload& payload, const SourceSpan& span);
    ParserResult<IrEmitUnit> emit_import_entry(const ImportEntryPayload& entry);
    ParserResult<IrEmitUnit> emit_import_stmt(const ImportStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_namespace_stmt(const NamespaceStmtPayload& payload);
+   void emit_namespace_registry_load(std::string_view name, BCReg destination);
+   void emit_namespace_missing_guard(std::string_view name, BCReg value);
+   void publish_namespace_local(const Identifier& name, BCReg slot);
    ParserResult<IrEmitUnit> emit_with_stmt(const WithStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_context_stmt(const ContextStmtPayload& Payload);
    ParserResult<IrEmitUnit> emit_assignment_stmt(const AssignmentStmtPayload& payload);

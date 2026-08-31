@@ -46,6 +46,7 @@ private:
    int function_depth = 0;           // Tracks nesting depth inside function bodies
    int block_depth = 0;              // Tracks nested statement blocks below chunk scope
    bool enum_constants_committed = false;
+   bool source_namespace_declared = false;
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;

@@ -2,13 +2,7 @@
 
    import 'json'
 
-   namespace 'bmark'
-
-   _LIB[_NS] = {
-      ['null'] = {}
-   }
-
-   bmark = _LIB[_NS]
+   namespace bmark { }
 
 bmark.save = function(Results:table!, Path:str!)
    local file = io.open(Path, 'w')

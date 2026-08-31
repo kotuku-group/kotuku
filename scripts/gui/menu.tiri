@@ -6,7 +6,7 @@ To be used in conjunction with the gui.menubar or as an independent pop-up only.
    import 'gui'
    include 'display'
 
-   namespace 'gui'
+   namespace gui
 
    module display as mGfx
 

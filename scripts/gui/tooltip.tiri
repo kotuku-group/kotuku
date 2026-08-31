@@ -2,9 +2,10 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
+   import 'gui'
    include 'display', 'vector'
 
-   namespace 'gui'
+   namespace gui
 
 gui.tooltip = function(Options)
    local self = { } -- Public variables

@@ -234,6 +234,10 @@ private:
             }
             return false;
          }
+         case AstNodeKind::NamespaceStmt: {
+            const auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
+            return payload.initialiser and this->expression_uses_context_impl(*payload.initialiser);
+         }
          case AstNodeKind::WithStmt: {
             const auto &payload = std::get<WithStmtPayload>(Statement.data);
             return this->expressions_use_context(payload.objects) or this->block_uses_context(payload.block);
@@ -1445,6 +1449,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
    case AstNodeKind::ImportStmt: {
       const auto &payload = std::get<ImportStmtPayload>(stmt.data);
       return this->emit_import_stmt(payload);
+   }
+   case AstNodeKind::NamespaceStmt: {
+      const auto &payload = std::get<NamespaceStmtPayload>(stmt.data);
+      return this->emit_namespace_stmt(payload);
    }
    case AstNodeKind::WithStmt: {
       const auto &payload = std::get<WithStmtPayload>(stmt.data);

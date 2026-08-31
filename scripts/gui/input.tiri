@@ -4,7 +4,7 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
 
-   namespace 'gui'
+   namespace gui
 
 function reportActivate(self:table!, State:str!, Force:bool!)
    self.events.activate ?! return

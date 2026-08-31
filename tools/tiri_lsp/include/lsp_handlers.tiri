@@ -147,7 +147,8 @@ global function resolveModuleRename(Doc:table, Position:table, NewName:str):tabl
 
    local token_info = getTokenAtPosition(Doc, Position.line, Position.character)
    local old_name = token_info?.text
-   if not old_name or not moduleDeclarationsForDocument(Doc)[old_name] then return nil end
+   if not old_name or (not moduleDeclarationsForDocument(Doc)[old_name] and
+         not libraryNamespaceDeclarationsForDocument(Doc)[old_name]) then return nil end
 
    local edits = array<table>
    for token in values(tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))) do

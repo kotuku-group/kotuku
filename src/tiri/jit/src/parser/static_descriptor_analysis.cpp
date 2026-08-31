@@ -600,7 +600,33 @@ private:
          case AstNodeKind::ImportStmt: {
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
                if (entry.inlined_body) this->discover_block(*entry.inlined_body);
-               if (entry.namespace_name) this->declare(*entry.namespace_name, nullptr, 0);
+               if (entry.namespace_name) {
+                  const ExprNode *initialiser = nullptr;
+                  const FunctionExprPayload *function = nullptr;
+                  if (entry.inlined_body) {
+                     for (const auto &statement : entry.inlined_body->statements) {
+                        if (not statement or statement->kind != AstNodeKind::NamespaceStmt) continue;
+                        const auto &namespace_payload = std::get<NamespaceStmtPayload>(statement->data);
+                        StaticBindingID binding_id = namespace_payload.name.binding_id;
+                        if (not binding_id or binding_id.raw() >= this->catalogue_.binding_count()) continue;
+                        const StaticBindingDescriptor &binding = this->catalogue_.binding(binding_id);
+                        initialiser = binding.initialiser;
+                        function = binding.function;
+                     }
+                  }
+                  this->declare(*entry.namespace_name, initialiser, 0, function);
+               }
+            }
+            break;
+         }
+         case AstNodeKind::NamespaceStmt: {
+            auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
+            if (payload.initialiser) this->discover_expression(*payload.initialiser);
+            if (not payload.reuses_import_binding) {
+               const FunctionExprPayload *function = payload.initialiser and
+                  payload.initialiser->kind IS AstNodeKind::FunctionExpr ?
+                  &std::get<FunctionExprPayload>(payload.initialiser->data) : nullptr;
+               this->declare(payload.name, payload.initialiser.get(), 0, function);
             }
             break;
          }
@@ -2563,6 +2589,9 @@ private:
             auto &p = std::get<RaiseStmtPayload>(Statement.data); visit(p.error_code); visit(p.message); break;
          }
          case AstNodeKind::CheckStmt: visit(std::get<CheckStmtPayload>(Statement.data).error_code); break;
+         case AstNodeKind::NamespaceStmt:
+            visit(std::get<NamespaceStmtPayload>(Statement.data).initialiser);
+            break;
          case AstNodeKind::WithStmt:
             for (auto &v : std::get<WithStmtPayload>(Statement.data).objects) visit(v);
             break;

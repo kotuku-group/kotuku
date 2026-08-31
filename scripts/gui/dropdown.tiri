@@ -5,7 +5,7 @@ Internal script for combobox drop-down menus.
    import 'gui'
    include 'display'
 
-   namespace 'gui'
+   namespace gui
 
    module display as mGfx
 

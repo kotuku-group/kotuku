@@ -13,6 +13,7 @@ rx_symbol_struct_field    = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
 rx_symbol_struct_end      = <{ regex.new([[\s+end\s*$]]) }>
 rx_symbol_module_decl = <{ regex.new(
    [[^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)\s*$]]) }>
+rx_symbol_namespace_decl = <{ regex.new([[^\s*namespace\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -270,6 +271,16 @@ function symbolDetectFunction(LineCode:str, LineText:str, LineNo:num, Annotation
 end
 
 function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
+   local namespace_start, namespace_stop, namespace_cap = rx_symbol_namespace_decl.findFirst(LineCode)
+   if namespace_start then
+      local namespace_name = namespace_cap[0]
+      local name_start = LineText.find(namespace_name, namespace_start, true) or namespace_start
+      local remainder = LineCode.sub(namespace_stop).trim()
+      local detail = remainder is '' and 'readonly namespace join' or 'readonly namespace'
+      return symbolMakeDocumentSymbol(namespace_name, SYMBOL_KIND.NAMESPACE, LineNo, LineText, name_start,
+         detail, nil)
+   end
+
    local decl_start, _, decl_cap = rx_symbol_module_decl.findFirst(LineCode)
    if decl_start then
       local module_name = decl_cap[0]
@@ -502,7 +513,8 @@ global function extractDocumentSymbols(Doc:table):array<table>
                symbolAddChild(symbols, stack, module_symbol)
                open_count = symbolCountChar(symbol_code, '{')
                close_count = symbolCountChar(symbol_code, '}')
-               if module_symbol.kind is SYMBOL_KIND.OBJECT and open_count > close_count then
+               if (module_symbol.kind is SYMBOL_KIND.OBJECT or module_symbol.kind is SYMBOL_KIND.NAMESPACE) and
+                     open_count > close_count then
                   stack.push({ kind = 'table', symbol = module_symbol, brace_depth = 0 })
                end
             end

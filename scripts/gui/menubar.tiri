@@ -6,7 +6,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/menu'
    include 'vector'
 
-   namespace 'gui'
+   namespace gui
 
 VMARGIN   = gui.sizing.widget.margin
 GAP       <const> = 26

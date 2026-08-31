@@ -9,7 +9,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/button'
    import 'gui/input'
 
-   namespace 'gui'
+   namespace gui
 
    module display as mGfx
 

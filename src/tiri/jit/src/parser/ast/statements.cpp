@@ -1789,13 +1789,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_import()
 }
 
 //********************************************************************************************************************
-// Parses namespace statements: namespace 'name'
-//
-// The namespace statement declares a default namespace for a library. When this library is imported, the
-// importing file can reference the library exports via `_LIB['name']`. This statement generates:
-//   local _NS <const> = 'name'
-//
-// The namespace is stored in the current file's FileSource entry for lookup by the importing statement.
+// Parses namespace statements: namespace name [{ ... } | function ... end | thunk ... end]
 
 ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
 {
@@ -1810,21 +1804,30 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
 
    this->ctx.tokens().advance();  // consume 'namespace'
 
-   // Require string literal for namespace name
    Token name_token = this->ctx.tokens().current();
-   if (not name_token.is(TokenKind::String)) {
-      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, name_token,
-         "Namespace name must be a string literal");
+   if (name_token.is(TokenKind::String)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier, name_token,
+         "Namespace names are identifiers; remove the quotes");
+   }
+   if (name_token.kind() != TokenKind::Identifier or not name_token.identifier()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier, name_token,
+         "Namespace name must be an identifier");
    }
 
-   GCstr *name_str = name_token.payload().as_string();
+   GCstr *name_str = name_token.identifier();
    std::string_view ns_name(strdata(name_str), name_str->len);
-   this->ctx.tokens().advance();  // consume string
+   this->ctx.tokens().advance();  // consume identifier
 
    log.detail("Namespace: %.*s", int(ns_name.size()), ns_name.data());
 
    lua_State *L = &this->ctx.lua();
    uint8_t current_file_index = this->ctx.lex().current_file_index;
+
+   if (this->source_namespace_declared) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
+         "A source file can only declare one namespace");
+   }
+   this->source_namespace_declared = true;
 
    // Namespace conflicts are permitted - common namespaces like gui have many interlinking parts.
    auto existing_file = find_file_source_by_namespace(L, std::string(ns_name));
@@ -1835,26 +1838,44 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
    // Record the namespace in the current file's FileSource entry
    set_file_source_namespace(L, current_file_index, std::string(ns_name));
 
-   // Transform to: local _NS <const> = 'name'
-   Identifier id;
-   id.symbol = lj_str_new(L, "_NS", 3);
-   id.span = ns_token.span();
-   id.has_const = true;
+   NamespaceStmtPayload payload;
+   payload.name = make_identifier(name_token);
+   payload.name.has_const = true;
 
-   std::vector<Identifier> names;
-   names.push_back(std::move(id));
+   Token initialiser_token = this->ctx.tokens().current();
+   if (initialiser_token.span().line IS name_token.span().line) {
+      if (initialiser_token.kind() IS TokenKind::LeftBrace) {
+         auto initialiser = this->parse_table_literal(false);
+         if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
+         payload.initialiser = std::move(initialiser.value_ref());
+      }
+      else if (initialiser_token.kind() IS TokenKind::Function or
+               initialiser_token.kind() IS TokenKind::ThunkToken) {
+         bool is_thunk = initialiser_token.kind() IS TokenKind::ThunkToken;
+         this->ctx.tokens().advance();
+         auto initialiser = this->parse_function_literal(initialiser_token, is_thunk, name_str);
+         if (not initialiser.ok()) return ParserResult<StmtNodePtr>::failure(initialiser.error_ref());
+         if (is_thunk) {
+            auto *function = std::get_if<FunctionExprPayload>(&initialiser.value_ref()->data);
+            if (function and function->parameters.empty()) {
+               SourceSpan span = initialiser.value_ref()->span;
+               ExprNodeList arguments;
+               initialiser.value_ref() = make_call_expr(
+                  span, std::move(initialiser.value_ref()), std::move(arguments), false);
+            }
+         }
+         payload.initialiser = std::move(initialiser.value_ref());
+      }
+      else if (initialiser_token.kind() != TokenKind::Semicolon and
+               initialiser_token.kind() != TokenKind::EndOfFile) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, initialiser_token,
+            "Namespace initialisers must be table, function or thunk literals");
+      }
+   }
 
-   ExprNodeList values;
-   auto str_expr = std::make_unique<ExprNode>(AstNodeKind::LiteralExpr, name_token.span());
-   LiteralValue lit;
-   lit.kind = LiteralKind::String;
-   lit.string_value = name_str;
-   str_expr->data = lit;
-   values.push_back(std::move(str_expr));
-
-   auto stmt = std::make_unique<StmtNode>(AstNodeKind::LocalDeclStmt, ns_token.span());
-   stmt->data.emplace<LocalDeclStmtPayload>(AssignmentOperator::Plain,
-      std::move(names), std::move(values));
+   payload.mode = payload.initialiser ? NamespaceDeclarationMode::Create : NamespaceDeclarationMode::Join;
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::NamespaceStmt, ns_token.span());
+   stmt->data = std::move(payload);
 
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }

@@ -9,7 +9,7 @@ Documentation is available in the Kotuku Wiki.
    import 'config'
    include 'display', 'font'
 
-   namespace 'gui'
+   namespace gui
    module font as mFont
 
    gui.dialog ?= { }

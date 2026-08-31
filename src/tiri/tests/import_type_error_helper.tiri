@@ -1,7 +1,7 @@
 -- Helper library for test_import_type_analysis.tiri containing a deliberate type error.
 -- Do not import this file from a compiled test; it is only referenced through debug.validate() buffers.
 
-namespace 'type_probe_err'
+namespace type_probe_err { }
 
 local mismatch:num = 'str'
 

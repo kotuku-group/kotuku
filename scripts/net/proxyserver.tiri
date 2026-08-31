@@ -9,10 +9,7 @@
    import 'tempus'
    import 'json'
 
-   namespace 'proxylib'
-
-   _LIB[_NS] = { }
-   proxylib = _LIB[_NS]
+   namespace proxylib { }
 
    module network as mNet
 

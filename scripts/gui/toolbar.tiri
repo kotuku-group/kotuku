@@ -6,7 +6,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/tooltip'
    include 'vector'
 
-   namespace 'gui'
+   namespace gui
 
 local lClickX, lClickY
 lCounter = 0

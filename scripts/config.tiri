@@ -9,10 +9,7 @@
 --
 -- Decoded values are always strings.  Comments, source ordering and formatting are not preserved.
 
-   namespace 'config'
-
-   _LIB[_NS] = { }
-   config = _LIB[_NS]
+   namespace config { }
 
 local rx_non_space = regex.new('[^ \\t]')
 
