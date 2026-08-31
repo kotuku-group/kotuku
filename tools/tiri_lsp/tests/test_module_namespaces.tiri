@@ -62,13 +62,31 @@ end
    local doc = makeDoc([[
 namespace toolkit { version = '1.0' }
 print(toolkit.version)
+function inspect_shadow()
+   local toolkit = { version = 'shadow' }
+   print(toolkit.version)
+end
+print(toolkit.version)
+print('é', toolkit.version)
+local other = { toolkit = toolkit }
+print(other.toolkit.version)
 local text = 'toolkit'
 -- toolkit
 ]])
    local edit = resolveModuleRename(doc, { line=0, character=12 }, 'renamedToolkit')
    local edits = edit?.changes?[doc.uri]
 
-   assert(edits and #edits is 2, 'Library namespace rename should edit only declaration and code references.')
+   assert(edits and #edits is 5,
+      'Library namespace rename should exclude shadowed bindings, member names, strings and comments.')
+   assert(edits[0].range.start.line is 0 and edits[1].range.start.line is 1 and
+         edits[2].range.start.line is 6 and edits[3].range.start.line is 7 and
+         edits[4].range.start.line is 8,
+      'Library namespace rename should retain only references to the declared lexical binding.')
+   local unicode_edit = resolveModuleRename(doc, { line=7, character=12 }, 'renamedToolkit')
+   assert(#unicode_edit?.changes?[doc.uri] is 5,
+      'Starting a rename after multibyte text should preserve UTF-16 token coordinates.')
+   assert(not resolveModuleRename(doc, { line=3, character=10 }, 'renamedShadow'),
+      'Starting a rename on a shadowing local should not rename the library namespace.')
 end
 
 @Test function RenameRejectsLegacyAndInvalidNames()

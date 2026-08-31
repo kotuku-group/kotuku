@@ -100,6 +100,21 @@ void collect_assignments(
             if (block_writes(entry.inlined_body, InspectAssignments)) return true;
          }
          return false;
+      case AstNodeKind::NamespaceStmt: {
+         const auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
+         if (not payload.initialiser) return false;
+
+         const FunctionExprPayload *function = std::get_if<FunctionExprPayload>(&payload.initialiser->data);
+         if (not function and payload.initialiser->kind IS AstNodeKind::CallExpr) {
+            const auto &call = std::get<CallExprPayload>(payload.initialiser->data);
+            const auto *direct = std::get_if<DirectCallTarget>(&call.target);
+            if (direct and direct->callable and direct->callable->kind IS AstNodeKind::FunctionExpr) {
+               const auto *candidate = std::get_if<FunctionExprPayload>(&direct->callable->data);
+               if (candidate and candidate->is_thunk) function = candidate;
+            }
+         }
+         return function and block_writes(function->body, true);
+      }
       default:
          return false;
    }

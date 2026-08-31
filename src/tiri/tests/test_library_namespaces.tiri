@@ -1,8 +1,14 @@
 import './library_namespace_component_a', './library_namespace_component_b', './library_namespace_callable',
    './library_namespace_thunk'
 
-function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
-   local result = debug.validate(Source)
+global glLibraryNamespaceValidationPath
+
+@BeforeAll function SetupLibraryNamespaceTests(State)
+   glLibraryNamespaceValidationPath = State.folder .. 'namespace_validation.tiri'
+end
+
+function assert_invalid(Source:str, ExpectedMessage:str, Context:str, Options:table)
+   local result = debug.validate(Source, Options)
 
    assert(result.success is false, Context .. ': source should fail validation')
    assert(#result.diagnostics > 0, Context .. ': expected at least one diagnostic')
@@ -62,6 +68,19 @@ end]], "'namespace' must be at library level", 'nested declaration')
 namespace conflict]], 'conflicts with an existing lexical binding', 'conflicting local')
    assert_invalid([[namespace locked { }
 locked = { }]], "cannot assign to const local 'locked'", 'const assignment')
+   assert_invalid([[function foreign_table():table return {} end
+local value = {}
+namespace replace_value function() value = foreign_table() end
+replace_value()
+setmetatable(value, { __context = true })]], 'unknown provenance', 'function namespace closure write')
+   assert_invalid([[function foreign_table():table return {} end
+local value = {}
+namespace replace_value thunk():num value = foreign_table(); return 1 end
+local invoked = replace_value + 0
+setmetatable(value, { __context = true })]], 'unknown provenance', 'thunk namespace closure write')
+   assert_invalid([[import './library_namespace_root' as alternate_root; namespace alternate_root]],
+      'conflicts with an existing lexical binding', 'namespace join through differently named import alias',
+      { path=glLibraryNamespaceValidationPath })
    assert_invalid([[namespace no_legacy_name { }
 local value = _NS]], "Undeclared variable '_NS'", '_NS removal')
 end

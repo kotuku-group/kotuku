@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <format>
 #include <shared_mutex>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -21,6 +22,7 @@ struct AssignmentBinding {
    StaticBindingID binding_id{};
    uint16_t function_depth = 0;
    bool is_import_namespace = false;
+   std::string import_registry_namespace;
 };
 
 struct AssignmentScope {
@@ -502,6 +504,7 @@ private:
                if (entry.namespace_name) {
                   AssignmentBinding binding = this->prepare_declaration(*entry.namespace_name);
                   binding.is_import_namespace = true;
+                  binding.import_registry_namespace = entry.default_namespace;
                   this->publish_declaration(std::move(binding));
                }
             }
@@ -509,8 +512,10 @@ private:
          case AstNodeKind::NamespaceStmt: {
             auto &payload = std::get<NamespaceStmtPayload>(Statement.data);
             const AssignmentBinding *existing = this->find_binding(payload.name.symbol);
+            std::string_view namespace_name(strdata(payload.name.symbol), payload.name.symbol->len);
             if (payload.mode IS NamespaceDeclarationMode::Join and existing and existing->is_import_namespace and
-                existing->function_depth IS this->function_depth_) {
+                existing->function_depth IS this->function_depth_ and
+                existing->import_registry_namespace.compare(namespace_name) IS 0) {
                payload.name.binding_id = existing->binding_id;
                payload.reuses_import_binding = true;
             }
