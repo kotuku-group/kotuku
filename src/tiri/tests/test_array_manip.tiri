@@ -1542,10 +1542,15 @@ end
    local contiguous = integers.slice({1 into 3})
    local stepped = integers.slice({0 into 4 by 2})
    local descending = integers.slice({4 into 0 by -2})
+   local clipped = integers.slice({-100 into 100 by 2})
    assert(#empty is 0 and rawtype(empty) is 'array<int>', 'an empty primitive slice lost its type')
    assert(contiguous[0] is 1 and contiguous[2] is 3, 'a contiguous primitive slice lost values')
    assert(stepped[0] is 0 and stepped[2] is 4, 'a stepped primitive slice lost values')
    assert(descending[0] is 4 and descending[2] is 0, 'a descending primitive slice lost values')
+   assert(clipped[0] is 0 and clipped[2] is 4, 'a clipped stepped primitive slice lost values')
+   assert(rawtype(contiguous) is 'array<int>' and rawtype(stepped) is 'array<int>' and
+      rawtype(descending) is 'array<int>' and rawtype(clipped) is 'array<int>',
+      'a primitive slice lost its exact type')
 
    local string_slice = strings.slice({4 into 0 by -2})
    local mixed_slice = mixed.slice({0 into 4 by 2})
@@ -1558,4 +1563,19 @@ end
       'an any slice lost values after collection')
    assert(rawtype(string_slice) is 'array<str>' and rawtype(mixed_slice) is 'array<any>',
       'an ordinary reference slice lost its implicit identity')
+
+   local object_value = obj.new('time')
+   local nested_value = array<int> { 23 }
+   local table_value = { answer=42 }
+   local references = array<any> { 'text', 0, object_value, 0, table_value, 0, nested_value }
+   local reference_slice = references.slice({0 into 6 by 2})
+   object_value = nil
+   nested_value = nil
+   table_value = nil
+   references = nil
+   processing.collect('full')
+   assert(reference_slice[0] is 'text', 'a strided any slice lost a string after collection')
+   assert(rawtype(reference_slice[1]) is 'obj<Time>', 'a strided any slice lost an object after collection')
+   assert(reference_slice[2].answer is 42, 'a strided any slice lost a table after collection')
+   assert(reference_slice[3][0] is 23, 'a strided any slice lost a nested array after collection')
 end

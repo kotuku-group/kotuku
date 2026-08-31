@@ -319,6 +319,91 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Focused strided-slice cases.  Keep each storage, stride and result-size combination separate so that dispatch
+-- overhead, reference barriers and memory throughput remain distinguishable in benchmark reports.
+
+local glSliceIntegers = array<int, 8192>
+local glSliceStrings = array<str, 8192>
+local glSliceAny = array<any, 8192>
+local glSliceRecursive = array<array<int>, 8192>
+local glSliceRecursiveValue = array<int> { 17 }
+
+for i in {0 to 8192} do
+   glSliceIntegers[i] = i
+   glSliceStrings[i] = f'value_{i}'
+   glSliceAny[i] = (i % 2 is 0) ? i : glSliceStrings[i]
+   glSliceRecursive[i] = glSliceRecursiveValue
+end
+
+@Test function ArraySliceStridedInt()
+   for {0 to 1000} do
+      glSliceIntegers.slice({0 to 16 by 2})
+      glSliceIntegers.slice({0 to 256 by 2})
+      glSliceIntegers.slice({0 to 4096 by 2})
+      glSliceIntegers.slice({0 to 32 by 4})
+      glSliceIntegers.slice({0 to 512 by 4})
+      glSliceIntegers.slice({0 to 8192 by 4})
+      glSliceIntegers.slice({7 into 0 by -1})
+      glSliceIntegers.slice({127 into 0 by -1})
+      glSliceIntegers.slice({2047 into 0 by -1})
+      glSliceIntegers.slice({15 into 0 by -2})
+      glSliceIntegers.slice({255 into 0 by -2})
+      glSliceIntegers.slice({4095 into 0 by -2})
+   end
+end
+
+@Test function ArraySliceStridedStr()
+   for {0 to 1000} do
+      glSliceStrings.slice({0 to 16 by 2})
+      glSliceStrings.slice({0 to 256 by 2})
+      glSliceStrings.slice({0 to 4096 by 2})
+      glSliceStrings.slice({0 to 32 by 4})
+      glSliceStrings.slice({0 to 512 by 4})
+      glSliceStrings.slice({0 to 8192 by 4})
+      glSliceStrings.slice({7 into 0 by -1})
+      glSliceStrings.slice({127 into 0 by -1})
+      glSliceStrings.slice({2047 into 0 by -1})
+      glSliceStrings.slice({15 into 0 by -2})
+      glSliceStrings.slice({255 into 0 by -2})
+      glSliceStrings.slice({4095 into 0 by -2})
+   end
+end
+
+@Test function ArraySliceStridedAny()
+   for {0 to 1000} do
+      glSliceAny.slice({0 to 16 by 2})
+      glSliceAny.slice({0 to 256 by 2})
+      glSliceAny.slice({0 to 4096 by 2})
+      glSliceAny.slice({0 to 32 by 4})
+      glSliceAny.slice({0 to 512 by 4})
+      glSliceAny.slice({0 to 8192 by 4})
+      glSliceAny.slice({7 into 0 by -1})
+      glSliceAny.slice({127 into 0 by -1})
+      glSliceAny.slice({2047 into 0 by -1})
+      glSliceAny.slice({15 into 0 by -2})
+      glSliceAny.slice({255 into 0 by -2})
+      glSliceAny.slice({4095 into 0 by -2})
+   end
+end
+
+@Test function ArraySliceStridedRecursive()
+   for {0 to 1000} do
+      glSliceRecursive.slice({0 to 16 by 2})
+      glSliceRecursive.slice({0 to 256 by 2})
+      glSliceRecursive.slice({0 to 4096 by 2})
+      glSliceRecursive.slice({0 to 32 by 4})
+      glSliceRecursive.slice({0 to 512 by 4})
+      glSliceRecursive.slice({0 to 8192 by 4})
+      glSliceRecursive.slice({7 into 0 by -1})
+      glSliceRecursive.slice({127 into 0 by -1})
+      glSliceRecursive.slice({2047 into 0 by -1})
+      glSliceRecursive.slice({15 into 0 by -2})
+      glSliceRecursive.slice({255 into 0 by -2})
+      glSliceRecursive.slice({4095 into 0 by -2})
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Goal: Fill an array with a specific value
 
 @Test function ArrayFillWithValue()

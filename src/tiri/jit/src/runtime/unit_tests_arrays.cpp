@@ -280,6 +280,81 @@ static bool test_array_recursive_identity(kt::Log &Log)
    return true;
 }
 
+static bool test_array_strided_copy(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+
+   GCarray *source = lj_array_new(lua, 9, AET::INT32);
+   setarrayV(lua, lua->top++, source);
+   GCarray *destination = lj_array_new_like(lua, source, 6);
+   setarrayV(lua, lua->top++, destination);
+   for (MSize i = 0; i < source->len; i++) source->get<int32_t>()[i] = int32_t(i);
+
+   lj_array_copy_strided_unchecked(lua, destination, 1, source, 8, -2, 4);
+   const int32_t expected[] = { 8, 6, 4, 2 };
+   for (MSize i = 0; i < std::size(expected); i++) {
+      if (destination->get<int32_t>()[i + 1] != expected[i]) {
+         Log.error("a descending strided copy lost a primitive value at slot %d", int(i));
+         return false;
+      }
+   }
+
+   GCarray *strings = lj_array_new(lua, 5, AET::STR_GC);
+   setarrayV(lua, lua->top++, strings);
+   GCarray *string_copy = lj_array_new_like(lua, strings, 3);
+   setarrayV(lua, lua->top++, string_copy);
+   for (MSize i = 0; i < strings->len; i++) {
+      std::string value = std::to_string(i);
+      GCstr *string = lj_str_new(lua, value.data(), value.size());
+      setgcref(strings->get<GCRef>()[i], obj2gco(string));
+      lj_gc_objbarrier(lua, strings, string);
+   }
+   lj_array_copy_strided_unchecked(lua, string_copy, 0, strings, 0, 2, 3);
+   for (MSize i = 0; i < string_copy->len; i++) {
+      GCstr *string = strref(string_copy->get<GCRef>()[i]);
+      if (string->len != 1 or strdata(string)[0] != char('0' + (i * 2))) {
+         Log.error("a forward strided copy lost a string reference at slot %d", int(i));
+         return false;
+      }
+   }
+
+   struct_record structure("StridedCopyStructure");
+   structure.Size = sizeof(uint64_t);
+   GCarray *structures = lj_array_new(lua, 5, AET::STRUCT, nullptr, 0, structure.Name, &structure);
+   setarrayV(lua, lua->top++, structures);
+   GCarray *structure_copy = lj_array_new_like(lua, structures, 3);
+   setarrayV(lua, lua->top++, structure_copy);
+   for (MSize i = 0; i < structures->len; i++) structures->get<uint64_t>()[i] = uint64_t(i + 100);
+   lj_array_copy_strided_unchecked(lua, structure_copy, 0, structures, 4, -2, 3);
+   if (structure_copy->get<uint64_t>()[0] != 104 or structure_copy->get<uint64_t>()[1] != 102 or
+       structure_copy->get<uint64_t>()[2] != 100) {
+      Log.error("a descending strided copy lost structure storage");
+      return false;
+   }
+
+   GCarray *any = lj_array_new(lua, 5, AET::ANY);
+   setarrayV(lua, lua->top++, any);
+   GCarray *any_copy = lj_array_new_like(lua, any, 3);
+   setarrayV(lua, lua->top++, any_copy);
+   for (MSize i = 0; i < any->len; i++) setintV(&any->get<TValue>()[i], int32_t(i * 10));
+   lj_array_copy_strided_unchecked(lua, any_copy, 0, any, 4, -2, 3);
+   for (MSize i = 0; i < any_copy->len; i++) {
+      cTValue *value = &any_copy->get<TValue>()[i];
+      int32_t expected_value = int32_t(40 - int32_t(i * 20));
+      bool matches = (tvisint(value) and intV(value) IS expected_value) or
+         (tvisnum(value) and numberVint(value) IS expected_value);
+      if (not matches) {
+         Log.error("a descending strided copy lost an any value at slot %d", int(i));
+         return false;
+      }
+   }
+
+   lj_array_copy_strided_unchecked(lua, destination, destination->len, source, source->len, -1, 0);
+   return true;
+}
+
 //********************************************************************************************************************
 
 static bool test_unsigned_array_types(kt::Log &Log)
@@ -1882,11 +1957,12 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 41> Tests = { {
+   constexpr std::array<TestCase, 42> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
       { "array_recursive_identity", test_array_recursive_identity },
+      { "array_strided_copy", test_array_strided_copy },
       { "unsigned_array_types", test_unsigned_array_types },
       { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
       { "struct_to_table_string_vector", test_struct_to_table_string_vector },

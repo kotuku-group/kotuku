@@ -1004,19 +1004,7 @@ static int range_slice_impl(lua_State *L)
       }
       else {
          lj_array_copy(L, new_arr, 0, arr, MSize(start), 0);
-         int32_t dst_idx = 0;
-         if (forward) {
-            for (int32_t i = start; i <= effective_stop; i += step) {
-               lj_array_copy_unchecked(L, new_arr, MSize(dst_idx), arr, MSize(i), 1);
-               dst_idx++;
-            }
-         }
-         else {
-            for (int32_t i = start; i >= effective_stop; i += step) {
-               lj_array_copy_unchecked(L, new_arr, MSize(dst_idx), arr, MSize(i), 1);
-               dst_idx++;
-            }
-         }
+         lj_array_copy_strided_unchecked(L, new_arr, 0, arr, MSize(start), step, MSize(result_size));
       }
 
       setarrayV(L, L->top++, new_arr); // Push array onto the stack
