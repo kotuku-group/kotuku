@@ -182,7 +182,7 @@ extern int lua_checkstack(lua_State *L, int size)
 
 extern void luaL_checkstack(lua_State *L, int size, CSTRING msg)
 {
-   if (!lua_checkstack(L, size)) lj_err_callerv(L, ErrMsg::STKOVM, msg);
+   if (!lua_checkstack(L, size)) luaL_error(L, ErrMsg::STKOVM, msg);
 }
 
 //********************************************************************************************************************
@@ -1346,7 +1346,7 @@ extern int lua_setmetatable(lua_State *L, int idx)
    }
    else {
       // Flush cache, since traces specialize to basemt. But not during __gc.
-      if (lj_trace_flushall(L)) lj_err_caller(L, ErrMsg::NOGCMM);
+      if (lj_trace_flushall(L)) luaL_error(L, ErrMsg::NOGCMM);
       if (tvisbool(o)) {
          // NOBARRIER: basemt is a GC root.
          setgcref(basemt_it(g, LJ_TTRUE), obj2gco(mt));
@@ -1382,7 +1382,7 @@ extern void lua_setbasemetatable(lua_State *L, uint32_t itype)
    auto mt = tabV(L->top - 1);
    auto g = G(L);
 
-   if (lj_trace_flushall(L)) lj_err_caller(L, ErrMsg::NOGCMM);
+   if (lj_trace_flushall(L)) luaL_error(L, ErrMsg::NOGCMM);
 
    // NOBARRIER: basemt is a GC root.
    setgcref(basemt_it(g, itype), obj2gco(mt));

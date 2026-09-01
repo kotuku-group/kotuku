@@ -1505,14 +1505,14 @@ LJ_NOINLINE void lj_err_currentmsg(lua_State *L, ERR ErrorCode, CSTRING Message)
 // Do NOT use for VM helper functions called from assembler - use lj_err_msgv() instead, which adjusts L->top for
 // proper unwinding.
 
-LJ_NOINLINE void lj_err_callerv(lua_State *L, ErrMsg em, ...)
+LJ_NOINLINE void lj_err_formatcaller(lua_State *L, ErrMsg Message, ...)
 {
    CSTRING msg;
    va_list argp;
-   va_start(argp, em);
-   msg = lj_strfmt_pushvf(L, err2msg(em), argp);
+   va_start(argp, Message);
+   msg = lj_strfmt_pushvf(L, err2msg(Message), argp);
    va_end(argp);
-   lj_err_callermsg(L, err2code(em), msg);
+   lj_err_callermsg(L, err2code(Message), msg);
 }
 
 //********************************************************************************************************************
@@ -1520,9 +1520,9 @@ LJ_NOINLINE void lj_err_callerv(lua_State *L, ErrMsg em, ...)
 // Do NOT use for VM helper functions called from assembler - use lj_err_msgv() instead, which adjusts L->top for
 // proper unwinding.
 
-LJ_NOINLINE void lj_err_caller(lua_State *L, ErrMsg em)
+LJ_NOINLINE void luaL_error(lua_State *L, ErrMsg Message)
 {
-   lj_err_callermsg(L, err2code(em), err2msg(em));
+   lj_err_callermsg(L, err2code(Message), err2msg(Message));
 }
 
 //********************************************************************************************************************

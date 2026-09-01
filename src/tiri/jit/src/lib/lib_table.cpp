@@ -39,14 +39,14 @@ LJLIB_CF(table_insert)      LJLIB_REC(.)
    if (not lj_tab_is_sequence(t)) {
       cTValue* method_field = lj_tab_getstr(t, lj_str_newlit(L, "insert"));
       if (not method_field or tvisnil(method_field)) {
-         lj_err_callerv(L, ErrMsg::TABSEQ, "insert", lj_tab_kind(t));
+         luaL_error(L, ErrMsg::TABSEQ, "insert", lj_tab_kind(t));
       }
    }
    int32_t n, i = (int32_t)lj_tab_len(t);  // 0-based: next index = len
    int nargs = (int)((char*)L->top - (char*)L->base);
    if (nargs != 2 * sizeof(TValue)) {
       if (nargs != 3 * sizeof(TValue))
-         lj_err_caller(L, ErrMsg::TABINS);
+         luaL_error(L, ErrMsg::TABINS);
       // NOBARRIER: This just moves existing elements around.
       for (n = lj_lib_checkint(L, 2); i > n; i--) {
          // The set may invalidate the get pointer, so need to do it first!
@@ -159,7 +159,7 @@ LJLIB_CF(table_concat) LJLIB_REC(.)
    if (not sbx) [[unlikely]] {  // Error: bad element type.
       int32_t idx = (int32_t)(intptr_t)sb->w;
       cTValue* o = lj_tab_getint(t, idx);
-      lj_err_callerv(L, ErrMsg::TABCAT, lj_obj_itypename[o ? itypemap(o) : ~LJ_TNIL], idx);
+      luaL_error(L, ErrMsg::TABCAT, lj_obj_itypename[o ? itypemap(o) : ~LJ_TNIL], idx);
    }
 
    setstrV(L, L->top - 1, lj_buf_str(L, sbx));
@@ -230,12 +230,12 @@ static void auxsort(lua_State *L, int l, int u)
       for (;;) {  // invariant: a[l..i] <= P <= a[j..u]
          // repeat ++i until a[i] >= P
          while (lua_rawgeti(L, 1, ++i), sort_comp(L, -1, -2)) {
-            if (i >= u) lj_err_caller(L, ErrMsg::TABSORT);
+            if (i >= u) luaL_error(L, ErrMsg::TABSORT);
             lua_pop(L, 1);  //  remove a[i]
          }
          // repeat --j until a[j] <= P
          while (lua_rawgeti(L, 1, --j), sort_comp(L, -3, -1)) {
-            if (j <= l) lj_err_caller(L, ErrMsg::TABSORT);
+            if (j <= l) luaL_error(L, ErrMsg::TABSORT);
             lua_pop(L, 1);  //  remove a[j]
          }
          if (j < i) {

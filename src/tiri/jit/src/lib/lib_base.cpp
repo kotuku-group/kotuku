@@ -66,7 +66,7 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
    lj_lib_checkany(L, 1);
    if (L->top IS L->base + 1) {
       // No message provided - use default
-      lj_err_caller(L, ErrMsg::ASSERT);
+      luaL_error(L, ErrMsg::ASSERT);
    }
    else {
       // Check for line/column arguments (args 3 and 4) added by optimise_assert()
@@ -120,7 +120,7 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
          else setstrV(L, L->top++, msg);
       }
       else { // No location info and message is nil or non-string - use default error
-         lj_err_caller(L, ErrMsg::ASSERT);
+         luaL_error(L, ErrMsg::ASSERT);
       }
       lj_err_run(L);
    }
@@ -625,7 +625,7 @@ static int setmetatable_impl(lua_State *L, bool Authorised)
 {
    GCtab *target = lj_lib_checktab(L, 1);
    lj_lib_checktabornil(L, 2);
-   if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) lj_err_caller(L, ErrMsg::PROTMT);
+   if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) luaL_error(L, ErrMsg::PROTMT);
    L->top = L->base + 2;
 
    bool designate = false;
@@ -734,7 +734,7 @@ LJLIB_INTRINSIC LJLIB_CF(__filter)      LJLIB_REC(.)
    // Ensure we have enough stack space
 
    if (out_count > 0 and !lua_checkstack(L, out_count)) {
-      lj_err_caller(L, ErrMsg::STKOV);
+      luaL_error(L, ErrMsg::STKOV);
       return 0;  // StackFrame destructor will restore L->top
    }
 
@@ -1009,7 +1009,7 @@ LJLIB_CF(print)
          L->top += 2;
          lua_call(L, 1, 1);
          str = lua_tolstring(L, -1, &size);
-         if (!str) lj_err_caller(L, ErrMsg::PRTOSTR);  // StackFrame will restore L->top
+         if (!str) luaL_error(L, ErrMsg::PRTOSTR);  // StackFrame will restore L->top
          L->top--;
       }
 
@@ -1122,7 +1122,7 @@ LJLIB_CF(ltr)
 
       if (c IS '%') { // Escape sequence
          if (p >= end) {
-            lj_err_caller(L, ErrMsg::STRPATE);  // Pattern ends with '%'
+            luaL_error(L, ErrMsg::STRPATE);  // Pattern ends with '%'
             return 0;
          }
          int cl = (uint8_t)*p++;
@@ -1224,7 +1224,7 @@ LJLIB_CF(ltr)
             }
             first = false;
          }
-         if (not found_close) lj_err_caller(L, ErrMsg::STRPATM);
+         if (not found_close) luaL_error(L, ErrMsg::STRPATM);
       }
       else if (ltr_is_regex_special(c)) { // Escape regex-special chars that aren't Lua-special
          lj_buf_putchar(sb, '\\');

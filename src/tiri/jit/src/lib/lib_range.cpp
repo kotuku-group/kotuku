@@ -176,23 +176,23 @@ static size_t fp_range_count(lua_State *L, const tiri_range *Range, bool ForAllo
    long double estimate = Range->inclusive ? std::floor(distance) + 1.0L : std::ceil(distance);
    long double maximum = (long double)std::numeric_limits<lua_Integer>::max();
    if (not std::isfinite(estimate) or estimate < 0 or estimate > maximum) {
-      lj_err_caller(L, ErrMsg::NUMRNG);
+      luaL_error(L, ErrMsg::NUMRNG);
    }
 
    size_t count = size_t(estimate);
    while (count > 0 and not fp_range_generated_in_bounds(Range, fp_range_value(Range, count - 1))) count--;
    while (fp_range_generated_in_bounds(Range, fp_range_value(Range, count))) {
       if (count > 0 and fp_range_value(Range, count) IS fp_range_value(Range, count - 1)) {
-         lj_err_caller(L, ErrMsg::NUMRNG);
+         luaL_error(L, ErrMsg::NUMRNG);
       }
-      if (count >= size_t(std::numeric_limits<lua_Integer>::max())) lj_err_caller(L, ErrMsg::NUMRNG);
+      if (count >= size_t(std::numeric_limits<lua_Integer>::max())) luaL_error(L, ErrMsg::NUMRNG);
       count++;
    }
 
-   if (not fp_range_step_representable(Range, count)) lj_err_caller(L, ErrMsg::NUMRNG);
+   if (not fp_range_step_representable(Range, count)) luaL_error(L, ErrMsg::NUMRNG);
 
    if (ForAllocation and count > FP_RANGE_MAX_ARRAY_COUNT) {
-      lj_err_caller(L, ErrMsg::NUMRNG);
+      luaL_error(L, ErrMsg::NUMRNG);
    }
    return count;
 }
@@ -217,10 +217,10 @@ static bool fp_range_integer_array(const tiri_range *Range)
 lua_Number lj_range_prepare_step(
    lua_State *L, lua_Number Start, lua_Number Stop, lua_Number Step, uint32_t Flags)
 {
-   if (not std::isfinite(Start) or not std::isfinite(Stop)) lj_err_caller(L, ErrMsg::NUMRNG);
+   if (not std::isfinite(Start) or not std::isfinite(Stop)) luaL_error(L, ErrMsg::NUMRNG);
 
    lua_Number step = (Flags & RANGE_PREP_HAS_STEP) ? Step : (Start <= Stop ? 1.0 : -1.0);
-   if (not std::isfinite(step) or step IS 0.0) lj_err_caller(L, ErrMsg::NUMRNG);
+   if (not std::isfinite(step) or step IS 0.0) luaL_error(L, ErrMsg::NUMRNG);
    return step;
 }
 
@@ -251,7 +251,7 @@ void lj_range_prepare(lua_State *L, TValue *Base, uint32_t Flags)
 {
    if (not tvisnumber(&Base[0]) or not tvisnumber(&Base[1]) or
        ((Flags & RANGE_PREP_HAS_STEP) and not tvisnumber(&Base[2]))) {
-      lj_err_caller(L, ErrMsg::NUMRNG);
+      luaL_error(L, ErrMsg::NUMRNG);
    }
 
    lua_Number start = numberVnum(&Base[0]);
@@ -316,7 +316,7 @@ static lua_Number fp_range_check_number(lua_State *L, int Argument)
 
 static int fp_range_construct(lua_State *L)
 {
-   if (lua_gettop(L) < 2) lj_err_caller(L, ErrMsg::NUMRNG);
+   if (lua_gettop(L) < 2) luaL_error(L, ErrMsg::NUMRNG);
 
    lua_Number start = fp_range_check_number(L, 1);
    lua_Number stop = fp_range_check_number(L, 2);
@@ -342,7 +342,7 @@ void range_check_index(lua_State *L, const tiri_range *Range, tiri_index_range *
 {
    if (not Range or not Result or not fp_range_is_int32(Range->start) or not fp_range_is_int32(Range->stop) or
        not fp_range_is_int32(Range->step)) {
-      lj_err_caller(L, ErrMsg::IDXRNG);
+      luaL_error(L, ErrMsg::IDXRNG);
    }
    Result->start = int32_t(Range->start);
    Result->stop = int32_t(Range->stop);
@@ -436,7 +436,7 @@ static int fp_range_take(lua_State *L)
    lua_Integer requested = luaL_checkinteger(L, 2);
    if (requested < 0) requested = 0;
    size_t count = std::min(fp_range_count(L, range, false), size_t(requested));
-   if (count > FP_RANGE_MAX_ARRAY_COUNT) lj_err_caller(L, ErrMsg::NUMRNG);
+   if (count > FP_RANGE_MAX_ARRAY_COUNT) luaL_error(L, ErrMsg::NUMRNG);
    GCarray *array = fp_range_materialise(L, range, count);
    setarrayV(L, L->top++, array);
    return 1;
@@ -607,7 +607,7 @@ static int fp_range_index_of(lua_State *L)
 static int fp_range_toarray(lua_State *L)
 {
    auto range = check_range(L, 1);
-   if (not range) lj_err_caller(L, ErrMsg::BADVAL);
+   if (not range) luaL_error(L, ErrMsg::BADVAL);
    size_t count = fp_range_count(L, range, true);
    GCarray *array = fp_range_materialise(L, range, count);
    setarrayV(L, L->top++, array);
@@ -633,12 +633,12 @@ LJLIB_ASM(range_iterator_next) LJLIB_REC(.)
    cTValue *step_value = lj_tab_getint(state, RANGE_ITERATOR_STEP);
    cTValue *count_value = lj_tab_getint(state, RANGE_ITERATOR_COUNT);
    if (not tvisnumber(start_value) or not tvisnumber(step_value) or not tvisnumber(count_value)) {
-      lj_err_caller(L, ErrMsg::BADVAL);
+      luaL_error(L, ErrMsg::BADVAL);
    }
 
    lua_Number ordinal = 0.0;
    if (not lua_isnil(L, 2)) {
-      if (not lua_isnumber(L, 2)) lj_err_caller(L, ErrMsg::BADVAL);
+      if (not lua_isnumber(L, 2)) luaL_error(L, ErrMsg::BADVAL);
       ordinal = lj_range_iterator_next_ordinal(
          lua_tonumber(L, 2), numberVnum(start_value), numberVnum(step_value));
    }
@@ -846,7 +846,7 @@ static int range_slice_impl(lua_State *L)
    // usage history must still be sequence-compatible.
    if (tvistab(o)) {
       GCtab *t = tabV(o);
-      if (not lj_tab_is_sequence(t)) lj_err_callerv(L, ErrMsg::TABSEQ, "slice", lj_tab_kind(t));
+      if (not lj_tab_is_sequence(t)) luaL_error(L, ErrMsg::TABSEQ, "slice", lj_tab_kind(t));
       int32_t len = int32_t(lj_tab_len(t));
       tiri_index_range index_range;
       range_check_index(L, r, &index_range);

@@ -44,12 +44,23 @@ LJ_FUNC_NORET void lj_err_lex(lua_State *L, GCstr *src, const char *tok, BCLine 
 LJ_FUNC_NORET void lj_err_optype(lua_State *L, cTValue *o, ErrMsg opm);
 LJ_FUNC_NORET void lj_err_comp(lua_State *L, cTValue *o1, cTValue *o2);
 LJ_FUNC_NORET void lj_err_optype_call(lua_State *L, TValue *o);
-// These two take a raw message and so cannot derive a code from the catalogue.  The ERR parameter is mandatory: an
-// omitted code would otherwise leave L->CaughtError holding whatever an earlier, unrelated error had set.
+// Raw messages cannot derive a code from the catalogue.  The ERR parameter is mandatory: an omitted code would
+// otherwise leave L->CaughtError holding whatever an earlier, unrelated error had set.
 
 LJ_FUNC_NORET void lj_err_callermsg(lua_State *L, ERR ErrorCode, const char *Message);
-LJ_FUNC_NORET void lj_err_callerv(lua_State *L, ErrMsg em, ...);
-LJ_FUNC_NORET void lj_err_caller(lua_State *L, ErrMsg em);
+LJ_FUNC_NORET void lj_err_formatcaller(lua_State *L, ErrMsg Message, ...);
+
+// Fixed catalogue messages must not pass through the formatter because pushing a message can overwrite active VM
+// registers when L->top has not advanced beyond them.  Formatted calls are routed through the private helper.
+
+[[noreturn]] extern void luaL_error(lua_State *L, ErrMsg Message);
+
+template<typename... Args> requires (sizeof...(Args) > 0)
+[[noreturn]] inline void luaL_error(lua_State *L, ErrMsg Message, Args... Arguments)
+{
+   lj_err_formatcaller(L, Message, Arguments...);
+}
+
 LJ_FUNC_NORET void lj_err_arg(lua_State *L, int narg, ErrMsg em);
 LJ_FUNC_NORET void lj_err_argv(lua_State *L, int narg, ErrMsg em, ...);
 LJ_FUNC_NORET void lj_err_argtype(lua_State *L, int narg, const char *xname);

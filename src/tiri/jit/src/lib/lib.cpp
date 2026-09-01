@@ -72,7 +72,7 @@ static GCtab * lib_create_table(lua_State *L, const char *libname, int hsize)
       lua_getfield(L, -1, libname);
       if (!tvistab(L->top - 1)) {
          L->top--;
-         if (luaL_findtable(L, LUA_GLOBALSINDEX, libname, hsize) != nullptr) lj_err_callerv(L, ErrMsg::BADMODN, libname);
+         if (luaL_findtable(L, LUA_GLOBALSINDEX, libname, hsize) != nullptr) luaL_error(L, ErrMsg::BADMODN, libname);
          settabV(L, L->top, tabV(L->top - 1));
          L->top++;
          lua_setfield(L, -3, libname);  //  _LOADED[libname] = new table
@@ -358,7 +358,7 @@ GCtab * lj_lib_checktab(lua_State *L, int Arg)
 GCtab * lj_lib_checksequence(lua_State *L, int Arg, const char *Function)
 {
    GCtab *t = lj_lib_checktab(L, Arg);
-   if (not lj_tab_is_sequence(t)) lj_err_callerv(L, ErrMsg::TABSEQ, Function, lj_tab_kind(t));
+   if (not lj_tab_is_sequence(t)) luaL_error(L, ErrMsg::TABSEQ, Function, lj_tab_kind(t));
    return t;
 }
 
