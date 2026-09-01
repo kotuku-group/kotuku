@@ -815,6 +815,8 @@ static void build_subroutines(BuildCtx *ctx)
   |->vmeta_agetb:			// RB = array, RC = literal index
   |  // BC_AGETB carries the index as an operand literal rather than a register, so the key must be boxed into the
   |  // scratch TValue.  Reloading it as a register index would pass an unrelated stack slot as the key.
+  |  decode_RB RB, INS
+  |   decode_RC RC, INS
   |  add RC, RC, TISNUM
   |   add CARG2, BASE, RB, lsl #3
   |   add CARG3, sp, TMPDofs
@@ -847,6 +849,8 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |->vmeta_asetb:			// RB = array, RC = literal index
   |  // BC_ASETB carries the index as an operand literal rather than a register.  See ->vmeta_agetb.
+  |  decode_RB RB, INS
+  |   decode_RC RC, INS
   |  add RC, RC, TISNUM
   |   add CARG2, BASE, RB, lsl #3
   |   add CARG3, sp, TMPDofs

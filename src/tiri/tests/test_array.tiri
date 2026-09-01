@@ -445,6 +445,7 @@ end
 -- write reported the wrong index.
 
 @Test function ArrayBoundsFaultReporting()
+   register_sentinel = 'keep array out of register zero'
    arr = array<int> { 10, 20, 30 }
    idx = #arr + 6   -- 9, computed so that the index cannot be folded into an operand literal
 
@@ -493,6 +494,7 @@ end
    assert(arr[1] is 20, 'Literal-index read of a valid element failed')
    arr[1] = 99
    assert(arr[1] is 99, 'Literal-index write of a valid element failed')
+   assert(register_sentinel is 'keep array out of register zero', 'Register sentinel was unexpectedly modified')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
