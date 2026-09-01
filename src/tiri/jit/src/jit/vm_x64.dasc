@@ -1003,6 +1003,20 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-- Array metamethod fallbacks -----------------------------------------
   |
+  |->vmeta_agetb:
+  |  // BC_AGETB carries the index as an operand literal rather than a register, so the key must be boxed into the
+  |  // scratch TValue.  Reloading it as a register index would pass an unrelated stack slot as the key.
+  |  movzx RCd, PC_RC
+  |.if DUALNUM
+  |  setint RC
+  |  mov TMP1, RC
+  |.else
+  |  cvtsi2sd xmm0, RCd
+  |  movsd TMP1, xmm0
+  |.endif
+  |  lea RC, TMP1
+  |  jmp ->vmeta_agetv1
+  |
   |->vmeta_agetv:
   |  movzx RCd, PC_RC         // Reload TValue *k from RC.
   |  lea RC, [BASE+RC*8]
@@ -1033,6 +1047,19 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov LFUNC:RB, [RA-16]    // Guaranteed to be a function here.
   |  cleartp LFUNC:RB
   |  jmp ->vm_call_dispatch_f
+  |
+  |->vmeta_asetb:
+  |  // BC_ASETB carries the index as an operand literal rather than a register.  See ->vmeta_agetb.
+  |  movzx RCd, PC_RC
+  |.if DUALNUM
+  |  setint RC
+  |  mov TMP1, RC
+  |.else
+  |  cvtsi2sd xmm0, RCd
+  |  movsd TMP1, xmm0
+  |.endif
+  |  lea RC, TMP1
+  |  jmp ->vmeta_asetv1
   |
   |->vmeta_asetv:
   |  movzx RCd, PC_RC         // Reload TValue *k from RC.
@@ -4558,9 +4585,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_AGETB:
     |  ins_ABC // RA = dst, RB = array, RC = literal index (0-255, 0-based)
     |  mov ARRAY:RB, [BASE+RB*8]
-    |  checkarray ARRAY:RB, ->vmeta_agetv
+    |  checkarray ARRAY:RB, ->vmeta_agetb
     |  cmp RCd, ARRAY:RB->len    // Bounds check.
-    |  jae ->vmeta_agetv      // Out of bounds? Use fallback.
+    |  jae ->vmeta_agetb      // Out of bounds? Use fallback.
     |
     |  // Sync L->base and SAVE_PC before C call (lj_arr_getidx may throw via longjmp on error).
     |  mov TMPR, SAVE_L
@@ -4640,14 +4667,14 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_ASETB:
     |  ins_ABC // RA = src, RB = array, RC = literal index (0-255, 0-based)
     |  mov ARRAY:RB, [BASE+RB*8]
-    |  checkarray ARRAY:RB, ->vmeta_asetv
+    |  checkarray ARRAY:RB, ->vmeta_asetb
     |
     |  // Check read-only flag
     |  test byte ARRAY:RB->flags, ARRAY_READONLY
-    |  jnz ->vmeta_asetv      // Read-only? Use fallback (will error).
+    |  jnz ->vmeta_asetb      // Read-only? Use fallback (will error).
     |
     |  cmp RCd, ARRAY:RB->len    // Bounds check.
-    |  jae ->vmeta_asetv      // Out of bounds? Use fallback.
+    |  jae ->vmeta_asetb      // Out of bounds? Use fallback.
     |
     |  // Sync L->base and SAVE_PC before C call (lj_arr_setidx may throw via longjmp on type mismatch).
     |  mov TMPR, SAVE_L

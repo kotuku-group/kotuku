@@ -812,9 +812,21 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-- Array metamethod fallbacks -----------------------------------------
   |
+  |->vmeta_agetb:			// RB = array, RC = literal index
+  |  // BC_AGETB carries the index as an operand literal rather than a register, so the key must be boxed into the
+  |  // scratch TValue.  Reloading it as a register index would pass an unrelated stack slot as the key.
+  |  decode_RB RB, INS
+  |   decode_RC RC, INS
+  |  add RC, RC, TISNUM
+  |   add CARG2, BASE, RB, lsl #3
+  |   add CARG3, sp, TMPDofs
+  |  str RC, TMPD
+  |  b >1
+  |
   |->vmeta_agetv:
   |  add CARG2, BASE, RB, lsl #3
   |   add CARG3, BASE, RC, lsl #3
+  |1:
   |   str BASE, L->base
   |  mov CARG1, L
   |   str PC, SAVE_PC
@@ -835,9 +847,20 @@ static void build_subroutines(BuildCtx *ctx)
   |  and LFUNC:CARG3, CARG3, #LJ_GCVMASK
   |  b ->vm_call_dispatch_f
   |
+  |->vmeta_asetb:			// RB = array, RC = literal index
+  |  // BC_ASETB carries the index as an operand literal rather than a register.  See ->vmeta_agetb.
+  |  decode_RB RB, INS
+  |   decode_RC RC, INS
+  |  add RC, RC, TISNUM
+  |   add CARG2, BASE, RB, lsl #3
+  |   add CARG3, sp, TMPDofs
+  |  str RC, TMPD
+  |  b >1
+  |
   |->vmeta_asetv:
   |  add CARG2, BASE, RB, lsl #3
   |   add CARG3, BASE, RC, lsl #3
+  |1:
   |   str BASE, L->base
   |  mov CARG1, L
   |   str PC, SAVE_PC
@@ -3752,11 +3775,11 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_AGETB:
     |  // RA = dst, RB = array, RC = literal index (0-255, 0-based)
     |  ldr TMP2, [BASE, RB, lsl #3]	// Load array
-    |  checkarray TMP2, ->vmeta_agetv
+    |  checkarray TMP2, ->vmeta_agetb
     |  // Bounds check
     |   ldr TMP3w, ARRAY:TMP2->len
     |  cmp RCw, TMP3w
-    |  bhs ->vmeta_agetv
+    |  bhs ->vmeta_agetb
     |  // Call helper to get element
     |  mov CARG1, L
     |  mov CARG2, ARRAY:TMP2
@@ -3793,14 +3816,14 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_ASETB:
     |  // RA = src, RB = array, RC = literal index (0-255, 0-based)
     |  ldr TMP2, [BASE, RB, lsl #3]	// Load array
-    |  checkarray TMP2, ->vmeta_asetv
+    |  checkarray TMP2, ->vmeta_asetb
     |  // Check read-only flag
     |  ldrb TMP3w, ARRAY:TMP2->flags
-    |  tbnz TMP3w, #0, ->vmeta_asetv	// ARRAY_READONLY = 0x01
+    |  tbnz TMP3w, #0, ->vmeta_asetb	// ARRAY_READONLY = 0x01
     |  // Bounds check
     |   ldr TMP3w, ARRAY:TMP2->len
     |  cmp RCw, TMP3w
-    |  bhs ->vmeta_asetv
+    |  bhs ->vmeta_asetb
     |  // Call helper to set element
     |  mov CARG1, L
     |  mov CARG2, ARRAY:TMP2
