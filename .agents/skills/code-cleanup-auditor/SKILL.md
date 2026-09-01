@@ -1,6 +1,6 @@
 ---
 name: code-cleanup-auditor
-description: Audit Kotuku C++ modules and related TDL/CMake integration for cleanup opportunities, including dead private functions, stale helpers, duplicated implementation patterns, consolidation candidates, avoidable complexity, and structural anti-patterns. Use when the agent is asked to inspect existing Kotuku module code for maintainability cleanup, refactoring candidates, simplification opportunities, or removal of unused code. This skill is not for primary bug hunting; use bug-sweep for defect discovery and code-quality-reviewer for reviewing concrete changes.
+description: Audit Kotuku C++ modules and related TDL/CMake integration for cleanup opportunities, including dead private functions, stale helpers, duplicated implementation patterns, consolidation candidates, avoidable complexity, and structural anti-patterns. Use when the agent is asked to inspect existing Kotuku module code for maintainability cleanup, refactoring candidates, simplification opportunities, or removal of unused code. This skill is not for primary bug hunting.
 argument-hint: "<module-or-file-path>"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "TaskCreate", "TaskUpdate"]
 ---

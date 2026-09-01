@@ -6,8 +6,8 @@
 
 in_char  = array<str> { '\\', '"', '/', '\b', '\f', '\n', '\r', '\t' }
 out_char = array<str> { '\\', '"', '/',  'b',  'f',  'n',  'r',  't' }
-num_regex = r[[^-?[0-9]+\.?[0-9]*[eE]?[+\-]?[0-9]*]]
-rx_whitespace = r"[^ \t\n\r\f\v]"
+num_regex = <{ r"^-?[0-9]+\.?[0-9]*[eE]?[+\-]?[0-9]*" }>
+rx_whitespace = <{ r"[^ \t\n\r\f\v]" }>
 
 function escape_str(String:str!):str
    for i, c in in_char do
