@@ -451,7 +451,7 @@ static int object_get(lua_State *Lua)
       OBJECTPTR target;
       if (fieldname.starts_with('$')) { // Deprecated feature
          release_object(def);
-         luaL_error(Lua, "Invalid field name: %.*s", int(fieldname.size()), fieldname.data());
+         luaL_error(Lua, ERR::Args, "Invalid field name: %.*s", int(fieldname.size()), fieldname.data());
       }
       else if (auto field = FindField(obj, fieldhash(fieldname), &target)) {
          int result = 0;

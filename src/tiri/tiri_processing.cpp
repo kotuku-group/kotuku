@@ -134,7 +134,7 @@ static int processing_new(lua_State *Lua)
 
       return 1;  // new userdatum is already on the stack
    }
-   else luaL_error(Lua, "Failed to create new processing object.");
+   else luaL_error(Lua, ERR::CreateObject, "Failed to create new processing object.");
 
    return 0;
 }
@@ -337,7 +337,10 @@ static int processing_collect(lua_State *Lua)
          lua_pushinteger(Lua, 0);
          return 1;
       }
-      else luaL_error(Lua, "Invalid mode '%.*s'. Use 'full', 'step', 'defer'.", (int)mode_str.size(), mode_str.data());
+      else {
+         luaL_error(Lua, ERR::Args, "Invalid mode '%.*s'. Use 'full', 'step', 'defer'.",
+            (int)mode_str.size(), mode_str.data());
+      }
    }
 
    // Arg 2: Optional options table
@@ -435,7 +438,7 @@ static int processing_get(lua_State *Lua)
          lua_pushcclosure(Lua, &processing_flush, 1);
          return 1;
       }
-      else luaL_error(Lua, "Unrecognised index '%s'", fieldname);
+      else luaL_error(Lua, ERR::UnknownProperty, "Unrecognised index '%s'", fieldname);
    }
 
    return 0;
@@ -475,14 +478,14 @@ static int processing_delayed_call(lua_State *Lua)
    if (lua_type(Lua, 1) IS LUA_TFUNCTION) {
       delay_msg msg = { Lua, FUNCTION() };
       if (capture_tiri_function(Lua, 1, msg.function) != ERR::Okay) {
-         luaL_error(Lua, "Expected a function to register as a message hook.");
+         luaL_error(Lua, ERR::Args, "Expected a function to register as a message hook.");
       }
       if (SendMessage(glDelayedCallMsgID, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg))) != ERR::Okay) {
          release_tiri_function(Lua, &msg.function);
          luaL_error(Lua, ERR::MessageOperation);
       }
    }
-   else luaL_error(Lua, "Expected a function to register as a message hook.");
+   else luaL_error(Lua, ERR::Args, "Expected a function to register as a message hook.");
    return 0;
 }
 

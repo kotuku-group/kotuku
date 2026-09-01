@@ -1048,10 +1048,9 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
 [[noreturn]] static void contract_error(lua_State *L, cTValue *Value, ContractBoundary Boundary,
    const RuntimeContractEntry &Entry, uint32_t Position)
 {
-   // Stamp the error code before raising.  Without this the exception inherits whatever CaughtError was left behind
-   // by an earlier operation, which allows an unrelated 'except when' filter to intercept a type contract failure.
-
-   L->CaughtError = ERR::TypeMismatch;
+   // Every raise below passes ERR::TypeMismatch explicitly.  The code is mandatory on lj_err_callermsg() and
+   // lj_err_currentmsg() precisely so that a contract failure cannot inherit whatever CaughtError an earlier,
+   // unrelated operation left behind and be intercepted by a mismatched 'except when' filter.
 
    char expected[280];
    char actual[280];
@@ -1074,21 +1073,21 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    if (Boundary IS ContractBoundary::Global and contract_entry_retains_value(Entry) and not Entry.label.empty()) {
       CSTRING message = lj_strfmt_pushf(L, "cannot declare global '%.*s' as %s: existing value has type %s",
          int(Entry.label.size()), Entry.label.data(), expected, actual);
-      lj_err_callermsg(L, message);
+      lj_err_callermsg(L, ERR::TypeMismatch, message);
    }
 
    const char *boundary = contract_boundary_name(Boundary);
    if (not Entry.label.empty()) {
       CSTRING message = lj_strfmt_pushf(L, "type contract failed for %s %u ('%.*s'): expected %s, got %s",
          boundary, Position, int(Entry.label.size()), Entry.label.data(), expected, actual);
-      if (Boundary IS ContractBoundary::Local) lj_err_currentmsg(L, message);
-      lj_err_callermsg(L, message);
+      if (Boundary IS ContractBoundary::Local) lj_err_currentmsg(L, ERR::TypeMismatch, message);
+      lj_err_callermsg(L, ERR::TypeMismatch, message);
    }
    else {
       CSTRING message = lj_strfmt_pushf(L, "type contract failed for %s %u: expected %s, got %s",
          boundary, Position, expected, actual);
-      if (Boundary IS ContractBoundary::Local) lj_err_currentmsg(L, message);
-      lj_err_callermsg(L, message);
+      if (Boundary IS ContractBoundary::Local) lj_err_currentmsg(L, ERR::TypeMismatch, message);
+      lj_err_callermsg(L, ERR::TypeMismatch, message);
    }
 }
 
@@ -1098,9 +1097,9 @@ static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeCon
    if (decode_runtime_contract(Descriptor, Result, &decode_error)) return;
 
    if (decode_error IS RuntimeContractDecodeError::Entry) {
-      lj_err_callermsg(L, "invalid runtime type-contract entry");
+      lj_err_callermsg(L, ERR::InvalidData, "invalid runtime type-contract entry");
    }
-   else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
+   else lj_err_callermsg(L, ERR::InvalidData, "invalid runtime type-contract descriptor");
 }
 
 [[nodiscard]] static uint16_t cached_contract_text_offset(
@@ -1193,13 +1192,12 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
 [[noreturn]] static void const_global_error(lua_State *L, const GCstr *Name)
 {
    CSTRING message = lj_strfmt_pushf(L, "cannot assign to const global '%s'", strdata(Name));
-   lj_err_callermsg(L, message);
+   lj_err_callermsg(L, ERR::ReadOnly, message);
 }
 
 [[noreturn]] static void global_contract_redeclaration_error(lua_State *L, const GCstr *Name,
    const RuntimeContractEntry &Existing, const RuntimeContractEntry &Incoming)
 {
-   L->CaughtError = ERR::TypeMismatch;
    char existing[280];
    char incoming[280];
    contract_type_name(existing, sizeof(existing), Existing);
@@ -1208,7 +1206,7 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
       "type contract failed for global '%s': cannot redeclare %s%s as %s%s",
       strdata(Name), contract_entry_is_const(Existing) ? "const " : "", existing,
       contract_entry_is_const(Incoming) ? "const " : "", incoming);
-   lj_err_callermsg(L, message);
+   lj_err_callermsg(L, ERR::TypeMismatch, message);
 }
 
 } // namespace
@@ -1217,7 +1215,7 @@ extern "C" void lj_meta_type_test_pc(lua_State *L, const BCIns *PC)
 {
    GCproto *prototype = funcproto(curr_func(L));
    BCIns instruction = PC[-1];
-   if (bc_op(instruction) != BC_TYPETEST) lj_err_callermsg(L, "invalid type-test resume point");
+   if (bc_op(instruction) != BC_TYPETEST) lj_err_callermsg(L, ERR::SanityCheckFailed, "invalid type-test resume point");
 
    GCstr *encoded = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(instruction)));
    RuntimeContractEntry decoded_entry;
@@ -1244,7 +1242,7 @@ extern "C" void lj_meta_type_test_pc(lua_State *L, const BCIns *PC)
    else {
       RuntimeContractDescriptor descriptor;
       decode_contract_or_error(L, encoded, descriptor);
-      if (descriptor.contract_count != 1) lj_err_callermsg(L, "invalid type-test descriptor");
+      if (descriptor.contract_count != 1) lj_err_callermsg(L, ERR::InvalidData, "invalid type-test descriptor");
       decoded_entry = descriptor.entries[0];
       entry = &decoded_entry;
    }
@@ -1462,7 +1460,7 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
          return;
       }
    }
-   lj_err_callermsg(L, "invalid runtime type-contract resume point");
+   lj_err_callermsg(L, ERR::SanityCheckFailed, "invalid runtime type-contract resume point");
 }
 
 //********************************************************************************************************************
@@ -1479,7 +1477,7 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
       JITStackSync stack_sync(L);
       CSTRING message = lj_strfmt_pushf(L, "cannot override built-in '%s'", strdata(Name));
-      lj_err_callermsg(L, message);
+      lj_err_callermsg(L, ERR::ReadOnly, message);
    }
 
    RuntimeContractEntry cached_entry;

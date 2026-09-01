@@ -358,7 +358,7 @@ static bool prepare_iter_metamethod(lua_State *L, TValue *Target, int TargetInde
    }
 
    if (not lua_isfunction(L, -1)) {
-      luaL_error(L, "__iter must return a function, got %s", luaL_typename(L, -1));
+      luaL_error(L, ERR::TypeMismatch, "__iter must return a function, got %s", luaL_typename(L, -1));
    }
 
    lua_pushnil(L);
@@ -405,7 +405,7 @@ static int prepare_bare_iterator(lua_State *L, int TargetIndex)
    }
 
    const char *type_name = luaL_typename(L, TargetIndex);
-   luaL_error(L, "cannot iterate over a %s value", type_name);
+   luaL_error(L, ERR::TypeMismatch, "cannot iterate over a %s value", type_name);
    return 0;
 }
 
@@ -415,7 +415,7 @@ LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare) LJLIB_REC(.)
    if (value_count >= 2) return value_count;
    if (value_count IS 1) return prepare_bare_iterator(L, 1);
 
-   luaL_error(L, "cannot iterate over a nil value");
+   luaL_error(L, ERR::TypeMismatch, "cannot iterate over a nil value");
    return 0;
 }
 
@@ -427,7 +427,7 @@ LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare) LJLIB_REC(.)
 LJLIB_CF(forEach)
 {
    if (lua_gettop(L) != 2) {
-      luaL_error(L, "forEach expects exactly 2 arguments");
+      luaL_error(L, ERR::Args, "forEach expects exactly 2 arguments");
       return 0;
    }
 
@@ -450,7 +450,7 @@ LJLIB_CF(forEach)
 
    int prepared = prepare_bare_iterator(L, target_index);
    if (prepared != 3) {
-      luaL_error(L, "iterator preparation must return an iterator, state and control value");
+      luaL_error(L, ERR::TypeMismatch, "iterator preparation must return an iterator, state and control value");
       return 0;
    }
 
@@ -633,7 +633,7 @@ static int setmetatable_impl(lua_State *L, bool Authorised)
       cTValue *marker = lj_tab_getstr(tabV(L->base + 1), lj_str_newlit(L, "__context"));
       if (marker and tvistrue(marker)) {
          if (not Authorised and not lj_tab_is_contextual(target)) {
-            lj_err_callermsg(L,
+            lj_err_callermsg(L, ERR::NoPermission,
                "setmetatable() cannot designate a contextual table here; the target must be an allocation owned by "
                "this function and the call must be a direct call to the built-in setmetatable()");
          }
@@ -1130,12 +1130,14 @@ LJLIB_CF(ltr)
          // Check for unsupported patterns
 
          if (cl IS 'b') {
-            lj_err_callermsg(L, "Unsupported Lua pattern: %b (balanced matching) has no regex equivalent");
+            lj_err_callermsg(L, ERR::NoSupport,
+               "Unsupported Lua pattern: %b (balanced matching) has no regex equivalent");
             return 0;
          }
 
          if (cl IS 'f') {
-            lj_err_callermsg(L, "Unsupported Lua pattern: %f (frontier pattern) has no regex equivalent");
+            lj_err_callermsg(L, ERR::NoSupport,
+               "Unsupported Lua pattern: %f (frontier pattern) has no regex equivalent");
             return 0;
          }
 

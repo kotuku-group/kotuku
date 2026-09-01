@@ -36,7 +36,13 @@ extern void luaL_checkany(lua_State *, int);
 extern int  luaL_newmetatable(lua_State *, const char *);
 extern void * luaL_checkudata(lua_State *, int ud, const char *);
 extern void luaL_where(lua_State *, int lvl);
+// Codeless raises.  These cannot describe the fault, so the exception surfaces as a bare ERR::Exception and no
+// 'except when' filter can select it.  Pass an ERR code instead; use ERR::Exception explicitly if no better code
+// applies.
+
+[[deprecated("pass an ERR code: luaL_error(L, ERR::Code, fmt, ...)")]]
 [[noreturn]] extern void luaL_error(lua_State *, const char *fmt, ...);
+[[deprecated("pass an ERR code: luaL_error(L, ERR::Code, std::string)")]]
 [[noreturn]] extern void luaL_error(lua_State *, std::string);
 [[noreturn]] extern void luaL_error(lua_State *, ERR);
 [[noreturn]] extern void luaL_error(lua_State *, ERR, const char *, ...);

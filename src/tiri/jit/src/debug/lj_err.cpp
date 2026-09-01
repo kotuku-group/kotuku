@@ -87,7 +87,7 @@ extern "C" void lj_try_build_exception_table(lua_State *, ERR, GCstr *, GCstr *,
 
 // Error message strings.
 LJ_DATADEF CSTRING lj_err_allmsg =
-#define ERRDEF(name, msg)  msg "\0"
+#define ERRDEF(name, err, msg)  msg "\0"
 #include "lj_errmsg.h"
 ;
 
@@ -1260,6 +1260,7 @@ LJ_NOINLINE void lj_err_mem(lua_State *L)
       lj_vm_unwind_c(L->cframe, LUA_ERRMEM);
    }
    setstrV(L, L->top++, lj_err_str(L, ErrMsg::ERRMEM));
+   L->CaughtError = err2code(ErrMsg::ERRMEM);
    lj_err_throw(L, LUA_ERRMEM);
 }
 
@@ -1322,6 +1323,7 @@ LJ_NOINLINE void lj_err_run(lua_State *L)
       lj_trace_abort(G(L));
       if (!tvisfunc(errfunc) or L->status IS LUA_ERRERR) {
          setstrV(L, top - 1, lj_err_str(L, ErrMsg::ERRERR));
+         L->CaughtError = err2code(ErrMsg::ERRERR);
          lj_err_throw(L, LUA_ERRERR);
       }
       L->status = LUA_ERRERR;
@@ -1347,6 +1349,7 @@ LJ_NORET LJ_NOINLINE static void err_msgv(lua_State *L, ErrMsg em, ...)
 {
    CSTRING msg;
    va_list argp;
+   L->CaughtError = err2code(em);
    va_start(argp, em);
    if (curr_funcisL(L)) L->top = curr_topL(L);
    msg = lj_strfmt_pushvf(L, err2msg(em), argp);
@@ -1370,6 +1373,7 @@ LJ_NOINLINE void lj_err_msg(lua_State *L, ErrMsg em)
 LJ_NOINLINE void lj_err_msgv(lua_State *L, ErrMsg em, ...)
 {
    va_list argp;
+   L->CaughtError = err2code(em);
    va_start(argp, em);
    if (curr_funcisL(L)) L->top = curr_topL(L);
    auto msg = lj_strfmt_pushvf(L, err2msg(em), argp);
@@ -1385,6 +1389,7 @@ LJ_NOINLINE void lj_err_msgv(lua_State *L, ErrMsg em, ...)
 LJ_NOINLINE void lj_err_lex(lua_State *L, GCstr* src, CSTRING tok, BCLine line, ErrMsg em, va_list argp)
 {
    char buff[LUA_IDSIZE];
+   L->CaughtError = err2code(em);
    lj_debug_shortname(buff, src, line);
    auto msg = lj_strfmt_pushvf(L, err2msg(em), argp);
    msg = lj_strfmt_pushf(L, "%s:%d: %s", buff, line.lineNumber(), msg);
@@ -1450,8 +1455,10 @@ LJ_NOINLINE void lj_err_optype_call(lua_State *L, TValue* o)
 //********************************************************************************************************************
 // Error in context of caller.
 
-LJ_NOINLINE void lj_err_callermsg(lua_State *L, CSTRING msg)
+LJ_NOINLINE void lj_err_callermsg(lua_State *L, ERR ErrorCode, CSTRING msg)
 {
+   L->CaughtError = ErrorCode;
+
    TValue* frame = nullptr, * pframe = nullptr;
    if (not tvref(G(L)->jit_base)) {
       frame = L->base - 1;
@@ -1483,8 +1490,10 @@ LJ_NOINLINE void lj_err_callermsg(lua_State *L, CSTRING msg)
 // Error in the context of the active Tiri frame.  VM helpers use this path because they execute C++ code without
 // adding the C frame that lj_err_callermsg() normally skips.
 
-LJ_NOINLINE void lj_err_currentmsg(lua_State *L, CSTRING Message)
+LJ_NOINLINE void lj_err_currentmsg(lua_State *L, ERR ErrorCode, CSTRING Message)
 {
+   L->CaughtError = ErrorCode;
+
    auto frame = L->base - 1;
    err_record_pending_exception(L, Message, frame, nullptr);
    lj_debug_addloc(L, Message, frame, nullptr);
@@ -1503,7 +1512,7 @@ LJ_NOINLINE void lj_err_callerv(lua_State *L, ErrMsg em, ...)
    va_start(argp, em);
    msg = lj_strfmt_pushvf(L, err2msg(em), argp);
    va_end(argp);
-   lj_err_callermsg(L, msg);
+   lj_err_callermsg(L, err2code(em), msg);
 }
 
 //********************************************************************************************************************
@@ -1513,7 +1522,7 @@ LJ_NOINLINE void lj_err_callerv(lua_State *L, ErrMsg em, ...)
 
 LJ_NOINLINE void lj_err_caller(lua_State *L, ErrMsg em)
 {
-   lj_err_callermsg(L, err2msg(em));
+   lj_err_callermsg(L, err2code(em), err2msg(em));
 }
 
 //********************************************************************************************************************
@@ -1521,6 +1530,10 @@ LJ_NOINLINE void lj_err_caller(lua_State *L, ErrMsg em)
 
 LJ_NORET LJ_NOINLINE static void err_argmsg(lua_State *L, int narg, CSTRING msg)
 {
+   // ERR::Args is raised for the whole family rather than a code taken from the message catalogue.  The incoming
+   // message describes the expectation that was violated (e.g. ErrMsg::NOTABLE), not the fault itself, and the fault
+   // here is always a bad argument.
+
    CSTRING fname = "?";
    CSTRING ftype = lj_debug_funcname(L, L->base - 1, &fname);
    if (narg < 0 and narg > LUA_REGISTRYINDEX) narg = (int)(L->top - L->base) + narg + 1;
@@ -1528,7 +1541,7 @@ LJ_NORET LJ_NOINLINE static void err_argmsg(lua_State *L, int narg, CSTRING msg)
       msg = lj_strfmt_pushf(L, err2msg(ErrMsg::BADSELF), fname, msg);
    }
    else msg = lj_strfmt_pushf(L, err2msg(ErrMsg::BADARG), narg, fname, msg);
-   lj_err_callermsg(L, msg);
+   lj_err_callermsg(L, ERR::Args, msg);
 }
 
 //********************************************************************************************************************
@@ -1592,7 +1605,7 @@ LJ_NOINLINE void lj_err_assigntype(lua_State *L, int slot, CSTRING expected_type
    TValue *o = L->base + slot;
    CSTRING actual_type = o < L->top ? lj_meta_display_name(L, o) : lj_obj_typename[0];
    CSTRING msg = lj_strfmt_pushf(L, err2msg(ErrMsg::BADASSIGN), actual_type, expected_type);
-   lj_err_callermsg(L, msg);
+   lj_err_callermsg(L, err2code(ErrMsg::BADASSIGN), msg);
 }
 
 //********************************************************************************************************************
@@ -1619,8 +1632,7 @@ extern lua_CFunction lua_atpanic(lua_State *L, lua_CFunction panicf)
 
 [[noreturn]] extern void luaL_argerror(lua_State *L, int narg, CSTRING msg)
 {
-   L->CaughtError = ERR::Args;
-   err_argmsg(L, narg, msg);
+   err_argmsg(L, narg, msg); // err_argmsg() stamps ERR::Args.
 }
 
 [[noreturn]] extern void luaL_typerror(lua_State *L, int narg, CSTRING xname)
@@ -1646,56 +1658,54 @@ static CSTRING luaL_push_error_string(lua_State *L, std::string &Message)
    return msg;
 }
 
+// These codeless overloads cannot describe the fault, so they raise a plain ERR::Exception.  The assignment is
+// unconditional: testing the current value first would let a code left behind by an earlier, unrelated error survive
+// into this one and be matched by an `except` clause that has nothing to do with it.
+
 [[noreturn]] extern void luaL_error(lua_State *L, CSTRING Format, ...)
 {
-   if (L->CaughtError <= ERR::ExceptionThreshold) L->CaughtError = ERR::Exception;
    va_list argp;
    va_start(argp, Format);
    auto msg = lj_strfmt_pushvf(L, Format, argp);
    va_end(argp);
-   lj_err_callermsg(L, msg);
+   lj_err_callermsg(L, ERR::Exception, msg);
 }
 
 [[noreturn]] extern void luaL_error(lua_State *L, std::string Message)
 {
-   if (L->CaughtError <= ERR::ExceptionThreshold) L->CaughtError = ERR::Exception;
    auto msg = luaL_push_error_string(L, Message);
-   lj_err_callermsg(L, msg);
+   lj_err_callermsg(L, ERR::Exception, msg);
 }
 
 [[noreturn]] extern void luaL_error(lua_State *L, ERR ErrorCode)
 {
-   L->CaughtError = ErrorCode;
-   lj_err_callermsg(L, GetErrorMsg(ErrorCode));
+   lj_err_callermsg(L, ErrorCode, GetErrorMsg(ErrorCode));
 }
 
 // Associates an error code with the formatted error message - allows try-except to catch specific errors.
 
 [[noreturn]] extern void luaL_error(lua_State *L, ERR ErrorCode, CSTRING Format, ...)
 {
-   L->CaughtError = ErrorCode;
    va_list argp;
    va_start(argp, Format);
    auto msg = lj_strfmt_pushvf(L, Format, argp);
    va_end(argp);
-   lj_err_callermsg(L, msg);
+   lj_err_callermsg(L, ErrorCode, msg);
 }
 
 [[noreturn]] extern void luaL_error_current(lua_State *L, ERR ErrorCode, CSTRING Format, ...)
 {
-   L->CaughtError = ErrorCode;
    va_list argp;
    va_start(argp, Format);
    auto msg = lj_strfmt_pushvf(L, Format, argp);
    va_end(argp);
-   lj_err_currentmsg(L, msg);
+   lj_err_currentmsg(L, ErrorCode, msg);
 }
 
 [[noreturn]] extern void luaL_error(lua_State *L, ERR ErrorCode, std::string Message)
 {
-   L->CaughtError = ErrorCode;
    auto msg = luaL_push_error_string(L, Message);
-   lj_err_callermsg(L, msg);
+   lj_err_callermsg(L, ErrorCode, msg);
 }
 
 //********************************************************************************************************************

@@ -140,7 +140,7 @@ static int async_script(lua_State *Lua)
       luaL_unref(Lua, LUA_REGISTRYINDEX, obj_ref);
       release_tiri_function(Lua, &client_callback);
       delete msg;
-      luaL_error(Lua, "Failed to run script in new thread.");
+      luaL_error(Lua, ERR::TaskExecutionFailed, "Failed to run script in new thread.");
    }
 
    return 0;
@@ -187,7 +187,7 @@ static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING N
    if (ArgsSize > 0) {
       if (HasResults) {
          abort();
-         luaL_error(Lua, "%s", ResultError);
+         luaL_error(Lua, ERR::NoSupport, "%s", ResultError);
       }
 
       auto arg_buffer = std::make_unique<int8_t[]>(ArgsSize+8); // +8 for overflow protection in build_args()
@@ -208,7 +208,7 @@ static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING N
             cleanup_argbuffer(Lua, Args, ArgsSize, arg_buffer.get(), true);
             arg_buffer.reset();
             abort();
-            luaL_error(Lua, "%s", ResultError);
+            luaL_error(Lua, ERR::NoSupport, "%s", ResultError);
          }
       }
       else {
@@ -218,7 +218,7 @@ static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING N
             if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
             else luaL_error(Lua, error, "%s", error_msg);
          }
-         else luaL_error(Lua, "Argument build failure for %s.", Name);
+         else luaL_error(Lua, ERR::Args, "Argument build failure for %s.", Name);
       }
    }
    else { // No parameters.

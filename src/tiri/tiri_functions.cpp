@@ -69,13 +69,13 @@ static bool get_caller_src_folder(lua_State *Lua, std::string &Folder)
          if (not msg.empty()) msg += "\n";
          msg += entry.to_string(Lua->script->LineOffset, Lua);
       }
-      luaL_error(Lua, std::move(msg));
+      luaL_error(Lua, ERR::Syntax, std::move(msg));
    }
    else if (auto error_msg = lua_tostring(Lua, -1)) {
       // When not in diagnose mode, errors are thrown via lj_err_lex which pushes the message to the stack
-      luaL_error(Lua, "%s", error_msg);
+      luaL_error(Lua, ERR::Syntax, "%s", error_msg);
    }
-   else luaL_error(Lua, "Parsing failed but no diagnostics are available.");
+   else luaL_error(Lua, ERR::Syntax, "Parsing failed but no diagnostics are available.");
 }
 
 //********************************************************************************************************************
@@ -194,7 +194,7 @@ int fcmd_subscribe_event(lua_State *Lua)
       }
    }
 
-   if (group_id IS EVG::NIL) luaL_error(Lua, "Invalid group name '%s' in event string.", event);
+   if (group_id IS EVG::NIL) luaL_error(Lua, ERR::Args, "Invalid group name '%s' in event string.", event);
 
    EVENTID event_id = GetEventID(group_id, subgroup_str.c_str(), event);
 
@@ -233,7 +233,9 @@ int fcmd_msg(lua_State *Lua)
       lua_pushvalue(Lua, i);   // value to pass to tostring
       lua_call(Lua, 1, 1);
       CSTRING s = lua_tostring(Lua, -1);  // get result
-      if (not s) luaL_error(Lua, LUA_QL("tostring") " must return a string to " LUA_QL("print"));
+      if (not s) {
+         luaL_error(Lua, ERR::TypeMismatch, LUA_QL("tostring") " must return a string to " LUA_QL("print"));
+      }
 
       {
          kt::Log log("Tiri");
@@ -261,7 +263,9 @@ int fcmd_print(lua_State *Lua)
       lua_pushvalue(Lua, i);   // value to print
       lua_call(Lua, 1, 1);
       CSTRING s = lua_tostring(Lua, -1);  // get result
-      if (not s) luaL_error(Lua, LUA_QL("tostring") " must return a string to " LUA_QL("print"));
+      if (not s) {
+         luaL_error(Lua, ERR::TypeMismatch, LUA_QL("tostring") " must return a string to " LUA_QL("print"));
+      }
 
       #ifdef __ANDROID__
          {
@@ -423,7 +427,8 @@ int fcmd_loadfile(lua_State *Lua)
 
    if ((error_msg.empty()) and (error != ERR::Okay)) error_msg = GetErrorMsg(error);
    if (not error_msg.empty()) {
-      luaL_error(Lua, std::format("Failed to load/parse file '{}', error: {}", path, error_msg));
+      luaL_error(Lua, error != ERR::Okay ? error : ERR::Exception,
+         std::format("Failed to load/parse file '{}', error: {}", path, error_msg));
    }
 
    return results;
@@ -468,7 +473,7 @@ int fcmd_exec(lua_State *Lua)
       else { lua_load_failed(Lua); return 0; }
    }
 
-   if (error_msg) luaL_error(Lua, error_msg);
+   if (error_msg) luaL_error(Lua, ERR::Exception, "%s", error_msg);
 
    return results;
 }

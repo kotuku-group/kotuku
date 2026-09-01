@@ -58,7 +58,7 @@ static int shutdown_recording_finaliser(lua_State *Lua)
 static int shutdown_failing_finaliser(lua_State *Lua)
 {
    record_shutdown_finaliser_call(table_identifier(Lua));
-   luaL_error(Lua, "expected shutdown finaliser failure");
+   luaL_error(Lua, ERR::Failed, "expected shutdown finaliser failure");
 }
 
 static bool push_finalisable_table(lua_State *Lua, lua_CFunction Finaliser, int Identifier)

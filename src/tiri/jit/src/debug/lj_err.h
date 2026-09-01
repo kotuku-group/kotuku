@@ -7,7 +7,7 @@
 #include "lj_obj.h"
 
 enum class ErrMsg : unsigned int {
-#define ERRDEF(name, msg) \
+#define ERRDEF(name, err, msg) \
   name, name##_ = name + sizeof(msg)-1,
 #include "lj_errmsg.h"
   _MAX
@@ -19,6 +19,19 @@ LJ_DATA const char *lj_err_allmsg;
    return lj_err_allmsg + int(em);
 }
 
+// Every catalogued message carries the ERR code that best describes it (see lj_errmsg.h).  The raise entry points in
+// lj_err.cpp stamp this into L->CaughtError so that `except` clauses match on a meaningful code instead of the
+// generic ERR::Exception.  ErrMsg enumerators are byte offsets into lj_err_allmsg rather than dense indices, so a
+// switch is used in preference to a lookup table.  This is error-path only; codegen quality is immaterial.
+
+[[nodiscard]] constexpr ERR err2code(ErrMsg Msg) noexcept {
+   switch (Msg) {
+#define ERRDEF(name, err, msg)  case ErrMsg::name: return err;
+#include "lj_errmsg.h"
+      default: return ERR::Exception;
+   }
+}
+
 LJ_FUNC GCstr *lj_err_str(lua_State *L, ErrMsg em);
 LJ_FUNCA_NORET void  lj_err_throw(lua_State *L, int errcode);
 LJ_FUNC_NORET void lj_err_mem(lua_State *L);
@@ -26,12 +39,15 @@ LJ_FUNC_NORET void lj_err_run(lua_State *L);
 LJ_FUNCA_NORET void lj_err_trace(lua_State *L, int errcode);
 LJ_FUNC_NORET void lj_err_msg(lua_State *L, ErrMsg em);
 LJ_FUNC_NORET void lj_err_msgv(lua_State *L, ErrMsg em, ...);
-LJ_FUNC_NORET void lj_err_currentmsg(lua_State *L, const char *);
+LJ_FUNC_NORET void lj_err_currentmsg(lua_State *L, ERR ErrorCode, const char *Message);
 LJ_FUNC_NORET void lj_err_lex(lua_State *L, GCstr *src, const char *tok, BCLine line, ErrMsg em, va_list argp);
 LJ_FUNC_NORET void lj_err_optype(lua_State *L, cTValue *o, ErrMsg opm);
 LJ_FUNC_NORET void lj_err_comp(lua_State *L, cTValue *o1, cTValue *o2);
 LJ_FUNC_NORET void lj_err_optype_call(lua_State *L, TValue *o);
-LJ_FUNC_NORET void lj_err_callermsg(lua_State *L, const char *msg);
+// These two take a raw message and so cannot derive a code from the catalogue.  The ERR parameter is mandatory: an
+// omitted code would otherwise leave L->CaughtError holding whatever an earlier, unrelated error had set.
+
+LJ_FUNC_NORET void lj_err_callermsg(lua_State *L, ERR ErrorCode, const char *Message);
 LJ_FUNC_NORET void lj_err_callerv(lua_State *L, ErrMsg em, ...);
 LJ_FUNC_NORET void lj_err_caller(lua_State *L, ErrMsg em);
 LJ_FUNC_NORET void lj_err_arg(lua_State *L, int narg, ErrMsg em);

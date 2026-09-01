@@ -1667,7 +1667,7 @@ static int array_index_of(lua_State *L)
    if (glArrayConversion[size_t(arr->elemtype)].primitive) {
       int ok;
       lua_Number value = lua_tonumberx(L, 2, &ok);
-      if (not ok) luaL_error(L, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
+      if (not ok) luaL_error(L, ERR::TypeMismatch, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
 
       if (tiri_range *r = check_range(L, 3)) {
          auto span = array_range_to_span(L, r, arr->len);

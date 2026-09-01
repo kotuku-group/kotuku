@@ -31,13 +31,13 @@ void lj_builtin_register(lua_State *L, BuiltinCallableID Id, GCfunc *Function)
 {
    if (not builtin_callable_valid(Id) or not Function or
        Function->c.ffid != builtin_callable_index(Id)) {
-      lj_err_callermsg(L, "invalid built-in callable registration");
+      lj_err_callermsg(L, ERR::Args, "invalid built-in callable registration");
    }
 
    GCRef &slot = L2GG(L)->builtin_callables[builtin_callable_index(Id)];
    GCobj *existing = gcref(slot);
    if (existing and existing != obj2gco(Function)) {
-      lj_err_callermsg(L, "conflicting built-in callable registration");
+      lj_err_callermsg(L, ERR::AlreadyDefined, "conflicting built-in callable registration");
    }
 
    // NOBARRIER: global_State fields are roots and the slot is immutable after initial library registration.
@@ -54,7 +54,7 @@ GCfunc *lj_builtin_callable(lua_State *L, BuiltinCallableID Id) noexcept
 void lj_builtin_set_context_independent(lua_State *L, BuiltinCallableID Id)
 {
    if (not builtin_callable_valid(Id) or not lj_builtin_callable(L, Id)) {
-      lj_err_callermsg(L, "invalid context-independent built-in registration");
+      lj_err_callermsg(L, ERR::Args, "invalid context-independent built-in registration");
    }
    L2GG(L)->builtin_context_independent[builtin_callable_index(Id)] = 1;
 }

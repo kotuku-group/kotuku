@@ -350,7 +350,7 @@ LJLIB_ASM(table_clear)   LJLIB_REC(.)
 {
    GCtab *table = lj_lib_checktab(L, 1);
    if (lj_tab_is_environment(table)) {
-      lj_err_callermsg(L, "cannot clear a global environment");
+      lj_err_callermsg(L, ERR::ReadOnly, "cannot clear a global environment");
    }
 
    cTValue *metamethod = lj_meta_lookup(L, L->base, MM_clear);
