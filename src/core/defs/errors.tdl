@@ -15,7 +15,7 @@ function declareErrors()
     "Skip",             -- Skipped the requested operation
     "Retry",            -- Retry the operation (could not succeed at this time)
     "EndOfSequence",    -- End of sequence reached
-    -- Anything above this point is considered non-fatal for exception reporting purposes
+    -- Names listed above are non-fatal, those below throw exceptions
     "Terminate|ExceptionThreshold",  -- Operation processed, but do not call again with these parameters
     "NoMemory",                      -- Not enough memory available
     "NoPointer",                     -- Required pointer not present

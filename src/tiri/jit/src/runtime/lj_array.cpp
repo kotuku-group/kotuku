@@ -625,7 +625,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
          elem_size = sdef->Size;
       }
       else {
-         lj_err_callerv(L, ErrMsg::NOSTRUCT, "%.*s", StructName.size(), StructName.data());
+         luaL_error(L, ERR::NotFound, "Unknown struct name '%.*s'", int(StructName.size()), StructName.data());
          return nullptr;
       }
    }
@@ -700,7 +700,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
          }
          else if ((Type IS AET::TABLE) or (Type IS AET::ARRAY)) {
             // Table arrays not supported for caching (not used by the Kōtuku API)
-            lj_err_callerv(L, ErrMsg::BADVAL);
+            luaL_error(L, ErrMsg::BADVAL);
             return nullptr;
          }
          else if (Type IS AET::OBJECT) {
@@ -933,11 +933,11 @@ void lj_array_copy_strided_unchecked(lua_State *L, GCarray *Dest, uint32_t DstId
 void lj_array_copy(lua_State *L, GCarray *Dest, uint32_t DstIdx, GCarray *Src, uint32_t SrcIdx, uint32_t Count)
 {
    if (SrcIdx > Src->len or Count > Src->len - SrcIdx or DstIdx > Dest->len or Count > Dest->len - DstIdx) {
-      lj_err_caller(L, ErrMsg::IDXRNG);
+      luaL_error(L, ErrMsg::IDXRNG);
    }
-   if (Dest->is_readonly()) lj_err_caller(L, ErrMsg::ARRRO);
+   if (Dest->is_readonly()) luaL_error(L, ErrMsg::ARRRO);
    if (not (Dest->elemtype IS Src->elemtype) or not array_copy_identity_compatible(Dest, Src)) {
-      lj_err_caller(L, ErrMsg::ARRTYPE);
+      luaL_error(L, ErrMsg::ARRTYPE);
    }
    lj_array_copy_unchecked(L, Dest, DstIdx, Src, SrcIdx, Count);
 }

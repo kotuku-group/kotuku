@@ -441,7 +441,7 @@ static int32_t array_default_remaining(MSize Length, int32_t Start)
 static array_range_span array_strict_half_open_span(lua_State *L, MSize Length, int32_t Start, int32_t Stop)
 {
    if (Start < 0 or Stop < 0 or MSize(Start) > Length or MSize(Stop) > Length) {
-      lj_err_caller(L, ErrMsg::IDXRNG);
+      luaL_error(L, ErrMsg::IDXRNG);
    }
 
    if (Stop <= Start) return { Start, Stop, 1, true };
@@ -450,17 +450,17 @@ static array_range_span array_strict_half_open_span(lua_State *L, MSize Length, 
 
 static array_count_span array_strict_count_span(lua_State *L, int32_t Start, int32_t Count, MSize Length)
 {
-   if (Start < 0 or Count < 0 or MSize(Start) > Length) lj_err_caller(L, ErrMsg::IDXRNG);
+   if (Start < 0 or Count < 0 or MSize(Start) > Length) luaL_error(L, ErrMsg::IDXRNG);
 
    auto start = MSize(Start);
    auto count = MSize(Count);
-   if (count > Length - start) lj_err_caller(L, ErrMsg::IDXRNG);
+   if (count > Length - start) luaL_error(L, ErrMsg::IDXRNG);
    return { start, count };
 }
 
 static array_count_span array_clamped_count_span(lua_State *L, int32_t Start, int32_t Count, MSize Length)
 {
-   if (Start < 0 or Count < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+   if (Start < 0 or Count < 0) luaL_error(L, ErrMsg::IDXRNG);
 
    auto start = MSize(Start);
    if (start >= Length) return { Length, 0 };
@@ -472,7 +472,7 @@ static array_count_span array_clamped_count_span(lua_State *L, int32_t Start, in
 
 static array_count_span array_clamped_half_open_span(lua_State *L, int32_t Start, int32_t Stop, MSize Length)
 {
-   if (Start < 0 or Stop < 0) lj_err_caller(L, ErrMsg::IDXRNG);
+   if (Start < 0 or Stop < 0) luaL_error(L, ErrMsg::IDXRNG);
 
    auto start = MSize(Start);
    if (start >= Length) return { Length, 0 };
@@ -527,7 +527,7 @@ static array_count_span array_copy_span(lua_State *L, int32_t DestIdx, MSize Des
    int32_t Count, bool ClampSource)
 {
    if (DestIdx < 0 or SrcIdx < 0 or Count < 0 or MSize(DestIdx) > DestLen or MSize(SrcIdx) > SrcLen) {
-      lj_err_caller(L, ErrMsg::IDXRNG);
+      luaL_error(L, ErrMsg::IDXRNG);
    }
 
    auto dest_idx = MSize(DestIdx);
@@ -536,10 +536,10 @@ static array_count_span array_copy_span(lua_State *L, int32_t DestIdx, MSize Des
 
    if (count > SrcLen - src_idx) {
       if (ClampSource) count = SrcLen - src_idx;
-      else lj_err_caller(L, ErrMsg::IDXRNG);
+      else luaL_error(L, ErrMsg::IDXRNG);
    }
 
-   if (count > DestLen - dest_idx) lj_err_caller(L, ErrMsg::IDXRNG);
+   if (count > DestLen - dest_idx) luaL_error(L, ErrMsg::IDXRNG);
    return { dest_idx, count };
 }
 
@@ -957,7 +957,7 @@ LJLIB_CF(array_last)
 LJLIB_CF(array_clear)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    lj_array_clear_range(arr, 0, arr->len);
    arr->len = 0;
@@ -979,7 +979,7 @@ LJLIB_CF(array_clear)      LJLIB_REC(.)
 LJLIB_CF(array_resize)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    auto new_size = lj_lib_checkint(L, 2);
    if (new_size < 0) lj_err_argv(L, 2, ErrMsg::NUMRNG, "non-negative", "negative");
@@ -990,7 +990,7 @@ LJLIB_CF(array_resize)      LJLIB_REC(.)
    if (target_len > old_len) {
       // Growing: ensure capacity and zero-initialize new elements
       if (target_len > arr->capacity) {
-         if (not lj_array_grow(L, arr, target_len)) lj_err_caller(L, ErrMsg::ARREXT);
+         if (not lj_array_grow(L, arr, target_len)) luaL_error(L, ErrMsg::ARREXT);
       }
 
       if (arr->elemtype IS AET::STR_GC or arr->elemtype IS AET::TABLE or arr->elemtype IS AET::ARRAY or
@@ -1029,7 +1029,7 @@ LJLIB_CF(array_resize)      LJLIB_REC(.)
 LJLIB_CF(array_push)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    int num_values = lua_gettop(L) - 1;
    if (num_values < 1) {
@@ -1051,7 +1051,7 @@ LJLIB_CF(array_push)      LJLIB_REC(.)
             value_count = 1;
          }
 
-         if (value_count > (~MSize(0) - append_count)) lj_err_caller(L, ErrMsg::ARREXT);
+         if (value_count > (~MSize(0) - append_count)) luaL_error(L, ErrMsg::ARREXT);
          append_count += value_count;
       }
    }
@@ -1062,11 +1062,11 @@ LJLIB_CF(array_push)      LJLIB_REC(.)
    }
 
    // Ensure we have capacity for the new elements
-   if (append_count > (~MSize(0) - arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
+   if (append_count > (~MSize(0) - arr->len)) luaL_error(L, ErrMsg::ARREXT);
    MSize new_len = arr->len + append_count;
    if (new_len > arr->capacity) {
       if (not lj_array_grow(L, arr, new_len)) {
-         lj_err_caller(L, ErrMsg::ARREXT);
+         luaL_error(L, ErrMsg::ARREXT);
       }
    }
 
@@ -1119,7 +1119,7 @@ LJLIB_CF(array_push)      LJLIB_REC(.)
 LJLIB_CF(array_pop)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    if (arr->len IS 0) {
       lua_pushnil(L);
@@ -1233,7 +1233,7 @@ LJLIB_CF(array_copy)
 {
    GCarray *dest = lj_lib_checkarray(L, 1);
 
-   if (dest->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (dest->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    size_t str_len;
    auto src_type = lua_type(L, 2);
@@ -1248,7 +1248,7 @@ LJLIB_CF(array_copy)
       return 0;
    }
    else if (src_type IS LUA_TSTRING) {
-      if (not (dest->elemtype IS AET::BYTE)) lj_err_caller(L, ErrMsg::ARRTYPE);
+      if (not (dest->elemtype IS AET::BYTE)) luaL_error(L, ErrMsg::ARRTYPE);
       auto str = lua_tolstring(L, 2, &str_len);
       if (not str or str_len < 1) return 0; // Do nothing - no error necessary
 
@@ -1309,7 +1309,7 @@ LJLIB_CF(array_getString)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
-   if (not (arr->elemtype IS AET::BYTE)) lj_err_caller(L, ErrMsg::ARRSTR);
+   if (not (arr->elemtype IS AET::BYTE)) luaL_error(L, ErrMsg::ARRSTR);
 
    auto start = lj_lib_optint(L, 2, 0);
    auto len = lj_lib_optint(L, 3, array_default_remaining(arr->len, start));
@@ -1336,8 +1336,8 @@ LJLIB_CF(array_setString)
    GCarray *arr = lj_lib_checkarray(L, 1);
    GCstr *str = lj_lib_checkstr(L, 2);
 
-   if (not (arr->elemtype IS AET::BYTE)) lj_err_caller(L, ErrMsg::ARRSTR);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (not (arr->elemtype IS AET::BYTE)) luaL_error(L, ErrMsg::ARRSTR);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    auto start = lj_lib_optint(L, 3, 0);
    auto span = array_clamped_count_span(L, start, int32_t(str->len), arr->len);
@@ -1504,7 +1504,7 @@ LJLIB_CF(array_fill)
    // stack slot beyond L->top.  An explicit nil is still passed through to the element validator.
    lj_lib_checkany(L, 2);
 
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    // Check if third argument is a range
    tiri_range *r = check_range(L, 3);
@@ -1667,7 +1667,7 @@ static int array_index_of(lua_State *L)
    if (glArrayConversion[size_t(arr->elemtype)].primitive) {
       int ok;
       lua_Number value = lua_tonumberx(L, 2, &ok);
-      if (not ok) luaL_error(L, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
+      if (not ok) luaL_error(L, ERR::TypeMismatch, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
 
       if (tiri_range *r = check_range(L, 3)) {
          auto span = array_range_to_span(L, r, arr->len);
@@ -1771,7 +1771,7 @@ LJLIB_CF(array_reverse)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
    if (arr->len < 2) return 0;
 
    void *data = arr->arraydata();
@@ -1944,10 +1944,10 @@ static void quicksort_func(lua_State *L, GCarray *Arr, int32_t Left, int32_t Rig
       int32_t j = Right - 1;
       while (true) {
          while (array_sort_comp(L, Arr, ++i, pivot_idx, FnIdx)) {
-            if (i >= Right) lj_err_caller(L, ErrMsg::TABSORT);
+            if (i >= Right) luaL_error(L, ErrMsg::TABSORT);
          }
          while (array_sort_comp(L, Arr, pivot_idx, --j, FnIdx)) {
-            if (j <= Left) lj_err_caller(L, ErrMsg::TABSORT);
+            if (j <= Left) luaL_error(L, ErrMsg::TABSORT);
          }
          if (i >= j) break;
          elem_swap(i, j);
@@ -2004,7 +2004,7 @@ LJLIB_CF(array_sort)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
    if (arr->len < 2) return 0;
 
    // If the second argument is a function, use it as a custom comparator.
@@ -2375,7 +2375,7 @@ LJLIB_CF(array_filter)
          // Grow array to accommodate new element
          MSize new_len = result->len + 1;
          if (not lj_array_grow(L, result, new_len)) {
-            lj_err_caller(L, ErrMsg::ARREXT);
+            luaL_error(L, ErrMsg::ARREXT);
          }
 
          result->len = new_len;
@@ -2516,11 +2516,11 @@ LJLIB_CF(array_all)
 LJLIB_CF(array_insert)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    int32_t index = lj_lib_checkint(L, 2);
    if (index < 0 or MSize(index) > arr->len) {
-      lj_err_callerv(L, ErrMsg::ARROB, index, int(arr->len));
+      luaL_error(L, ErrMsg::ARROB, index, int(arr->len));
    }
 
    int num_values = lua_gettop(L) - 2;
@@ -2532,12 +2532,12 @@ LJLIB_CF(array_insert)
    for (int i = 0; i < num_values; i++) {
       lj_array_check_element(L, arr, L->base + i + 2);
    }
-   if (MSize(num_values) > ~MSize(0) - arr->len) lj_err_caller(L, ErrMsg::ARREXT);
+   if (MSize(num_values) > ~MSize(0) - arr->len) luaL_error(L, ErrMsg::ARREXT);
 
    MSize new_len = arr->len + MSize(num_values);
    if (new_len > arr->capacity) {
       if (not lj_array_grow(L, arr, new_len)) {
-         lj_err_caller(L, ErrMsg::ARREXT);
+         luaL_error(L, ErrMsg::ARREXT);
       }
    }
 
@@ -2578,11 +2578,11 @@ LJLIB_CF(array_insert)
 LJLIB_CF(array_remove)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
-   if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    int32_t index = lj_lib_checkint(L, 2);
    if (index < 0 or MSize(index) >= arr->len) {
-      lj_err_callerv(L, ErrMsg::ARROB, index, int(arr->len));
+      luaL_error(L, ErrMsg::ARROB, index, int(arr->len));
    }
 
    int32_t count = lj_lib_optint(L, 3, 1);
@@ -2662,7 +2662,7 @@ struct ArrayAppendPiece {
 
 static void array_append_add_len(lua_State *L, MSize &Total, MSize Len)
 {
-   if (Len > (~MSize(0) - Total)) lj_err_caller(L, ErrMsg::ARREXT);
+   if (Len > (~MSize(0) - Total)) luaL_error(L, ErrMsg::ARREXT);
    Total += Len;
 }
 
@@ -2718,7 +2718,7 @@ static void array_append_push_piece(lua_State *L, cTValue *Value, ArrayAppendPie
 
 static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
 {
-   if (Arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+   if (Arr->flags & ARRAY_READONLY) luaL_error(L, ErrMsg::ARRRO);
 
    if (PieceCount > max_array_append_stack_pieces) {
       L->top = L->base + 1 + PieceCount;
@@ -2735,10 +2735,10 @@ static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
       array_append_push_piece(L, L->base + i + 1, pieces, piece_count, scratch, append_len);
    }
 
-   if (append_len > (~MSize(0) - Arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
+   if (append_len > (~MSize(0) - Arr->len)) luaL_error(L, ErrMsg::ARREXT);
    MSize old_len = Arr->len;
    MSize new_len = old_len + append_len;
-   if (new_len > Arr->capacity and not lj_array_grow(L, Arr, new_len)) lj_err_caller(L, ErrMsg::ARREXT);
+   if (new_len > Arr->capacity and not lj_array_grow(L, Arr, new_len)) luaL_error(L, ErrMsg::ARREXT);
 
    uint8_t *dest_base = Arr->get<uint8_t>();
    MSize write_pos = old_len;
@@ -2916,7 +2916,7 @@ static int array_eq_meta(lua_State *L)
    else if (left->elemtype IS AET::OBJECT) {
       lua_pushboolean(L, array_object_equal(left, right));
    }
-   else lj_err_caller(L, ErrMsg::ARRTYPE);
+   else luaL_error(L, ErrMsg::ARRTYPE);
 
    return 1;
 }

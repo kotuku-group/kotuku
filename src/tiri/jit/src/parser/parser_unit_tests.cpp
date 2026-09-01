@@ -8026,7 +8026,7 @@ static bool test_contextual_tail_call_bytecode_emission(kt::Log &Log)
 static int test_method_compatible_echo(lua_State *L)
 {
    if (not lua_isuserdata(L, 1) or not lua_isstring(L, 2)) {
-      luaL_error(L, "receiver ABI was not selected");
+      luaL_error(L, ERR::Failed, "receiver ABI was not selected");
       return 0;
    }
    lua_pushvalue(L, 2);
@@ -8036,7 +8036,7 @@ static int test_method_compatible_echo(lua_State *L)
 static int test_ordinary_userdata_echo(lua_State *L)
 {
    if (not lua_isstring(L, 1)) {
-      luaL_error(L, "ordinary field-call ABI was not selected");
+      luaL_error(L, ERR::Failed, "ordinary field-call ABI was not selected");
       return 0;
    }
    lua_pushvalue(L, 1);

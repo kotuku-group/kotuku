@@ -659,8 +659,8 @@ int MAKESTRUCT(lua_State *Lua)
    CSTRING sequence, name;
    if (not (name = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Structure name required.");
    else if (not (sequence = lua_tostring(Lua, 2))) luaL_argerror(Lua, 2, "Structure definition required.");
-   else if (make_struct(Lua, name, sequence) != ERR::Okay) {
-      luaL_error(Lua, "Failed to register structure '%s'.", name);
+   else if (ERR error = make_struct(Lua, name, sequence); error != ERR::Okay) {
+      luaL_error(Lua, error, "Failed to register structure '%s'.", name);
    }
    return 0;
 }

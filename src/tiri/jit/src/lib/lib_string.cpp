@@ -98,7 +98,7 @@ LJLIB_ASM(string_byte)      LJLIB_REC(string_range 0)
    if (stop > len) stop = len;
    if (start >= stop) return FFH_RES(0);  // Empty interval: return no results.
    n = stop - start;
-   if ((uint32_t)n > LUAI_MAXCSTACK) lj_err_caller(L, ErrMsg::STRSLC);
+   if ((uint32_t)n > LUAI_MAXCSTACK) luaL_error(L, ErrMsg::STRSLC);
    lj_state_checkstack(L, (MSize)n);
    p = (const unsigned char*)strdata(s) + start;
    for (i = 0; i < n; i++) setintV(L->base + i - 1 - LJ_FR2, p[i]);
@@ -716,7 +716,7 @@ LJLIB_CF(string_dump)
    int strip = L->base + 1 < L->top and tvistruecond(L->base + 1);
    SBuf* sb = lj_buf_tmp_(L);  //  Assumes lj_bcwrite() doesn't use tmpbuf.
    L->top = L->base + 1;
-   if (not isluafunc(fn) or lj_bcwrite(L, funcproto(fn), writer_buf, sb, strip)) lj_err_caller(L, ErrMsg::STRDUMP);
+   if (not isluafunc(fn) or lj_bcwrite(L, funcproto(fn), writer_buf, sb, strip)) luaL_error(L, ErrMsg::STRDUMP);
    setstrV(L, L->top - 1, lj_buf_str(L, sb));
    lj_gc_check(L);
    return 1;

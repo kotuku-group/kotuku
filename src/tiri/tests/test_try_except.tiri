@@ -662,7 +662,7 @@ end
       x = nil
       y = x.field
    except e
-      assert(e.code is ERR_Exception, "Expected ERR_Exception code, got " .. tostring(e.code))
+      assert(e.code is ERR_TypeMismatch, "Expected ERR_TypeMismatch code, got " .. tostring(e.code))
       assert(e.message.find("nil"), "Should mention nil in message")
    end
 
@@ -1592,4 +1592,164 @@ end
    end
 
    error("Time.DataFeed() should have raised an exception")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Faults raised internally through lj_err_caller(), lj_err_msg() and lj_err_arg() carry no explicit error code at the
+-- call site.  The code is derived from the message catalogue in lj_errmsg.h and stamped into L->CaughtError by the
+-- raise entry points, so an 'except when' filter must be able to match on the specific fault rather than the generic
+-- ERR_Exception that these paths previously reported.
+
+@Test(priority=70) function CatalogueDerivedErrorCodes()
+   local function expect(Code, Name, Fn)
+      try
+         Fn()
+      except e
+         assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
+         return
+      end
+      error(Name .. ": no exception was raised")
+   end
+
+   expect(ERR_OutOfBounds, "array index out of bounds", function()
+      local a = array<int> { 1, 2, 3 }
+      a.remove(99)
+   end)
+
+   expect(ERR_TypeMismatch, "call a nil value", function()
+      local f = nil
+      f()
+   end)
+
+   expect(ERR_TypeMismatch, "arithmetic on a table", function()
+      local x = {} + 1
+   end)
+
+   expect(ERR_TypeMismatch, "compare number with string", function()
+      local x = 1 < 'a'
+   end)
+
+   expect(ERR_Failed, "assertion failure", function()
+      assert(false)
+   end)
+
+   expect(ERR_Args, "bad argument type", function()
+      string.rep({}, 3)
+   end)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A filter must only match the fault actually raised.  Before the codes were catalogued, every one of these faults
+-- reported ERR_Exception, so a filter naming any other code could not select between them.
+
+@Test(priority=71) function ErrorCodeFiltersDiscriminate()
+   matched = false
+
+   try
+      local a = array<int> { 1, 2, 3 }
+      a.remove(99)
+   except e when ERR_Args
+      error("array bounds fault must not be caught by an ERR_Args filter")
+   except e when ERR_TypeMismatch
+      error("array bounds fault must not be caught by an ERR_TypeMismatch filter")
+   except e when ERR_OutOfBounds
+      matched = true
+      assert(e.code is ERR_OutOfBounds, "expected ERR_OutOfBounds, got " .. tostring(e.code))
+   except e
+      error("array bounds fault fell through to the catch-all, code " .. tostring(e.code))
+   end
+
+   assert(matched, "array bounds fault did not match the ERR_OutOfBounds filter")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- lj_err_callermsg() and lj_err_currentmsg() take a raw message and cannot derive a code from the catalogue, so the
+-- ERR code is a mandatory parameter at every call site.  These faults previously reported ERR_Exception.
+
+@Test(priority=72) function RawMessageErrorCodes()
+   local function expect(Code, Name, Fn)
+      try
+         Fn()
+      except e
+         assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
+         return
+      end
+      error(Name .. ": no exception was raised")
+   end
+
+   -- Environment mutation policy (env_check_contract, table_clear).  Computed keys are used so that the store is
+   -- rejected at runtime rather than by the parser.
+
+   expect(ERR_ReadOnly, "override a protected built-in", function()
+      local key = 'to' .. 'string'
+      _G[key] = 42
+   end)
+
+   expect(ERR_ReadOnly, "clear the global environment", function()
+      table.clear(_G)
+   end)
+
+   -- Runtime type contracts.  The local boundary raises through lj_err_currentmsg(), the parameter and result
+   -- boundaries through lj_err_callermsg().
+
+   local function opaque(V):any return V end
+
+   expect(ERR_TypeMismatch, "local type contract", function()
+      local v:str = opaque(42)
+   end)
+
+   local function typed(Value:str):str return Value end
+
+   expect(ERR_TypeMismatch, "parameter type contract", function()
+      typed(opaque(42))
+   end)
+
+   local function typedResult(Value:any):str return Value end
+
+   expect(ERR_TypeMismatch, "result type contract", function()
+      typedResult(opaque(42))
+   end)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- The codeless luaL_error() overloads are deprecated; every raise now names an ERR code.  These faults previously
+-- surfaced as ERR_Exception.
+
+@Test(priority=73) function CodelessRaiseMigration()
+   local function expect(Code, Name, Fn)
+      try
+         Fn()
+      except e
+         assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
+         return
+      end
+      error(Name .. ": no exception was raised")
+   end
+
+   expect(ERR_TypeMismatch, "iterate over a number", function()
+      for k, v in 42 do end
+   end)
+
+   expect(ERR_Args, "forEach arity", function()
+      forEach({ 1, 2, 3 })
+   end)
+
+   expect(ERR_Syntax, "exec() parse failure", function()
+      exec("this is not ++ valid tiri")
+   end)
+
+   expect(ERR_Failed, "exec() runtime failure", function()
+      exec("assert(false)")
+   end)
+
+   -- loadFile() previously discarded the ERR it had already resolved and raised a bare ERR_Exception.  The real
+   -- code now reaches the handler.
+
+   expect(ERR_DoesNotExist, "loadFile() on a missing file", function()
+      loadFile("/nonexistent/definitely_not_here.tiri")
+   end)
+
+   expect(ERR_Failed, "loadFile() runtime failure", function()
+      loadFile("sdk:src/tiri/tests/loadfile_runtime_error_fixture.tiri")
+   end)
 end

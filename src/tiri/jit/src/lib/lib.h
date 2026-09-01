@@ -14,7 +14,7 @@
 // - stack overflow:      recoverable, if stack reallocation succeeds.
 // - extra handling:      recoverable.
 //
-// The unrecoverable cases throw an error with lj_err_arg(), lj_err_argtype(), lj_err_caller() or lj_err_callermsg().
+// The unrecoverable cases throw an error with lj_err_arg(), lj_err_argtype(), luaL_error() or lj_err_callermsg().
 // The recoverable cases return 0 or the number of results + 1.
 // The assembler VM retries the fast path only if 0 is returned.
 // This time the fallback must not be called again or it gets stuck in a loop.
@@ -63,7 +63,12 @@ inline GCobject * lj_get_object_fast(lua_State *L, int Arg) {
 }
 
 #if LJ_TARGET_WINDOWS
-#define lj_lib_checkfpu(L) do { setnumV(L->top++, (lua_Number)1437217655); if (lua_tointeger(L, -1) != 1437217655) lj_err_caller(L, ErrMsg::BADFPU); L->top--; } while (0)
+#define lj_lib_checkfpu(L) \
+   do { \
+      setnumV(L->top++, (lua_Number)1437217655); \
+      if (lua_tointeger(L, -1) != 1437217655) luaL_error(L, ErrMsg::BADFPU); \
+      L->top--; \
+   } while (0)
 #else
 #define lj_lib_checkfpu(L)   UNUSED(L)
 #endif

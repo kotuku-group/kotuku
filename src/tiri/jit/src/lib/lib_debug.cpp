@@ -603,7 +603,7 @@ LJLIB_CF(debug_setEnv)
 {
    lj_lib_checktab(L, 2);
    L->top = L->base + 2;
-   if (not lua_setfenv(L, 1)) lj_err_caller(L, ErrMsg::SETFENV);
+   if (not lua_setfenv(L, 1)) luaL_error(L, ErrMsg::SETFENV);
    return 1;
 }
 

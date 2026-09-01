@@ -741,7 +741,9 @@ static int struct_set(lua_State *L)
    auto *value = lj_lib_checkstruct(L, 1);
    auto field_name = luaL_checkstring(L, 2);
    lj_struct_check_lifecycle(L, value, field_name);
-   if (not value->data) luaL_error(L, "Cannot reference field '%s' because struct address is NULL.", field_name);
+   if (not value->data) {
+      luaL_error(L, ERR::InvalidState, "Cannot reference field '%s' because struct address is NULL.", field_name);
+   }
 
    if (auto field_opt = find_field(value, field_name)) {
       auto &field = field_opt->get();
@@ -750,7 +752,7 @@ static int struct_set(lua_State *L)
       lj_struct_setfield_core(L, value, field, address, false);
       return 0;
    }
-   luaL_error(L, "Invalid field reference '%s'", field_name);
+   luaL_error(L, ERR::FieldNotFound, "Invalid field reference '%s'", field_name);
    return 0;
 }
 

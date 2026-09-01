@@ -390,8 +390,7 @@ int lj_strfmt_putarg(lua_State* L, SBuf* sb, int arg, int retry)
          lj_buf_putmem(sb, fs.str, fs.len);
       }
       else if (sf == STRFMT_ERR) {
-         lj_err_callerv(L, ErrMsg::STRFMT,
-            strdata(lj_str_new(L, fs.str, fs.len)));
+         luaL_error(L, ErrMsg::STRFMT, strdata(lj_str_new(L, fs.str, fs.len)));
       }
       else {
          // Handle dynamic width from argument

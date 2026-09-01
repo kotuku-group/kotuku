@@ -66,7 +66,7 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
    lj_lib_checkany(L, 1);
    if (L->top IS L->base + 1) {
       // No message provided - use default
-      lj_err_caller(L, ErrMsg::ASSERT);
+      luaL_error(L, ErrMsg::ASSERT);
    }
    else {
       // Check for line/column arguments (args 3 and 4) added by optimise_assert()
@@ -120,7 +120,7 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
          else setstrV(L, L->top++, msg);
       }
       else { // No location info and message is nil or non-string - use default error
-         lj_err_caller(L, ErrMsg::ASSERT);
+         luaL_error(L, ErrMsg::ASSERT);
       }
       lj_err_run(L);
    }
@@ -358,7 +358,7 @@ static bool prepare_iter_metamethod(lua_State *L, TValue *Target, int TargetInde
    }
 
    if (not lua_isfunction(L, -1)) {
-      luaL_error(L, "__iter must return a function, got %s", luaL_typename(L, -1));
+      luaL_error(L, ERR::TypeMismatch, "__iter must return a function, got %s", luaL_typename(L, -1));
    }
 
    lua_pushnil(L);
@@ -405,7 +405,7 @@ static int prepare_bare_iterator(lua_State *L, int TargetIndex)
    }
 
    const char *type_name = luaL_typename(L, TargetIndex);
-   luaL_error(L, "cannot iterate over a %s value", type_name);
+   luaL_error(L, ERR::TypeMismatch, "cannot iterate over a %s value", type_name);
    return 0;
 }
 
@@ -415,7 +415,7 @@ LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare) LJLIB_REC(.)
    if (value_count >= 2) return value_count;
    if (value_count IS 1) return prepare_bare_iterator(L, 1);
 
-   luaL_error(L, "cannot iterate over a nil value");
+   luaL_error(L, ERR::TypeMismatch, "cannot iterate over a nil value");
    return 0;
 }
 
@@ -427,7 +427,7 @@ LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare) LJLIB_REC(.)
 LJLIB_CF(forEach)
 {
    if (lua_gettop(L) != 2) {
-      luaL_error(L, "forEach expects exactly 2 arguments");
+      luaL_error(L, ERR::Args, "forEach expects exactly 2 arguments");
       return 0;
    }
 
@@ -450,7 +450,7 @@ LJLIB_CF(forEach)
 
    int prepared = prepare_bare_iterator(L, target_index);
    if (prepared != 3) {
-      luaL_error(L, "iterator preparation must return an iterator, state and control value");
+      luaL_error(L, ERR::TypeMismatch, "iterator preparation must return an iterator, state and control value");
       return 0;
    }
 
@@ -625,7 +625,7 @@ static int setmetatable_impl(lua_State *L, bool Authorised)
 {
    GCtab *target = lj_lib_checktab(L, 1);
    lj_lib_checktabornil(L, 2);
-   if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) lj_err_caller(L, ErrMsg::PROTMT);
+   if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) luaL_error(L, ErrMsg::PROTMT);
    L->top = L->base + 2;
 
    bool designate = false;
@@ -633,7 +633,7 @@ static int setmetatable_impl(lua_State *L, bool Authorised)
       cTValue *marker = lj_tab_getstr(tabV(L->base + 1), lj_str_newlit(L, "__context"));
       if (marker and tvistrue(marker)) {
          if (not Authorised and not lj_tab_is_contextual(target)) {
-            lj_err_callermsg(L,
+            lj_err_callermsg(L, ERR::NoPermission,
                "setmetatable() cannot designate a contextual table here; the target must be an allocation owned by "
                "this function and the call must be a direct call to the built-in setmetatable()");
          }
@@ -734,7 +734,7 @@ LJLIB_INTRINSIC LJLIB_CF(__filter)      LJLIB_REC(.)
    // Ensure we have enough stack space
 
    if (out_count > 0 and !lua_checkstack(L, out_count)) {
-      lj_err_caller(L, ErrMsg::STKOV);
+      luaL_error(L, ErrMsg::STKOV);
       return 0;  // StackFrame destructor will restore L->top
    }
 
@@ -1009,7 +1009,7 @@ LJLIB_CF(print)
          L->top += 2;
          lua_call(L, 1, 1);
          str = lua_tolstring(L, -1, &size);
-         if (!str) lj_err_caller(L, ErrMsg::PRTOSTR);  // StackFrame will restore L->top
+         if (!str) luaL_error(L, ErrMsg::PRTOSTR);  // StackFrame will restore L->top
          L->top--;
       }
 
@@ -1122,7 +1122,7 @@ LJLIB_CF(ltr)
 
       if (c IS '%') { // Escape sequence
          if (p >= end) {
-            lj_err_caller(L, ErrMsg::STRPATE);  // Pattern ends with '%'
+            luaL_error(L, ErrMsg::STRPATE);  // Pattern ends with '%'
             return 0;
          }
          int cl = (uint8_t)*p++;
@@ -1130,12 +1130,14 @@ LJLIB_CF(ltr)
          // Check for unsupported patterns
 
          if (cl IS 'b') {
-            lj_err_callermsg(L, "Unsupported Lua pattern: %b (balanced matching) has no regex equivalent");
+            lj_err_callermsg(L, ERR::NoSupport,
+               "Unsupported Lua pattern: %b (balanced matching) has no regex equivalent");
             return 0;
          }
 
          if (cl IS 'f') {
-            lj_err_callermsg(L, "Unsupported Lua pattern: %f (frontier pattern) has no regex equivalent");
+            lj_err_callermsg(L, ERR::NoSupport,
+               "Unsupported Lua pattern: %f (frontier pattern) has no regex equivalent");
             return 0;
          }
 
@@ -1222,7 +1224,7 @@ LJLIB_CF(ltr)
             }
             first = false;
          }
-         if (not found_close) lj_err_caller(L, ErrMsg::STRPATM);
+         if (not found_close) luaL_error(L, ErrMsg::STRPATM);
       }
       else if (ltr_is_regex_special(c)) { // Escape regex-special chars that aren't Lua-special
          lj_buf_putchar(sb, '\\');

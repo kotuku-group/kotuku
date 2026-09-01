@@ -241,7 +241,7 @@ int luaJIT_setmode(lua_State* L, int idx, int mode)
    int mm = mode & LUAJIT_MODE_MASK;
    lj_trace_abort(g);  //  Abort recording on any state change.
    // Avoid pulling the rug from under our own feet.
-   if ((g->hookmask & HOOK_GC)) lj_err_caller(L, ErrMsg::NOGCMM);
+   if ((g->hookmask & HOOK_GC)) luaL_error(L, ErrMsg::NOGCMM);
    switch (mm) {
    case LUAJIT_MODE_ENGINE:
       if ((mode & LUAJIT_MODE_FLUSH)) lj_trace_flushall(L);

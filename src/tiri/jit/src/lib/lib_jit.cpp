@@ -53,7 +53,7 @@ static int setjitmode(lua_State* L, int mode)
    }
 
    if (luaJIT_setmode(L, idx, mode) != 1) {
-      if ((mode & LUAJIT_MODE_MASK) IS LUAJIT_MODE_ENGINE) lj_err_caller(L, ErrMsg::NOJIT);
+      if ((mode & LUAJIT_MODE_MASK) IS LUAJIT_MODE_ENGINE) luaL_error(L, ErrMsg::NOJIT);
    err:
       lj_err_argt(L, 1, LUA_TFUNCTION);
    }
@@ -621,7 +621,7 @@ LJLIB_CF(jit_opt_start)
       for (int i = 1; i <= nargs; i++) {
          auto str = strdata(lj_lib_checkstr(L, i));
          if (!jitopt_level(J, str) and !jitopt_flag(J, str) and !jitopt_param(J, str)) {
-            lj_err_callerv(L, ErrMsg::JITOPT, str);
+            luaL_error(L, ErrMsg::JITOPT, str);
          }
       }
    }
