@@ -1,0 +1,690 @@
+// VERIFIED: 2026-08-31
+
+[[ch-ranges]]
+== Ranges
+indexterm:[ranges] Ranges are immutable numeric sequences that express intervals over the finite floating-point numbers.  They are primarily used for iteration, slicing, and membership testing.  Two construction styles are supported: a `range()` constructor function and a brace-based literal syntax.
+
+Ranges report their type as `range`.
+
+[source,tiri]
+----
+r = {0 to 5}
+type(r)           -- 'range'
+----
+
+[[sec-range-constructors]]
+=== Range Constructors
+==== Constructor Function
+
+[.api]`r = range(Start, Stop, [Inclusive], [Step])`
+
+indexterm:[ranges, constructors] Creates a range from `Start` to `Stop`.  The `Stop` value is exclusive by default, unless `Inclusive` is `true`.
+
+`Start` and `Stop` must be finite numbers.  Fractional values are preserved exactly as supplied.
+
+If `Step` is omitted, the step is inferred from direction: `1` when `Start` pass:[&lt;=] `Stop`, `-1` when `Start > Stop`.  An explicit `Step` must be a finite, non-zero number.  Both `0` and `-0.0` are rejected.
+
+[%unbreakable]
+[source,tiri]
+----
+range(0, 5)             -- exclusive: 0, 1, 2, 3, 4
+range(0, 5, true)       -- inclusive: 0, 1, 2, 3, 4, 5
+range(0, 10, false, 2)  -- stepped:   0, 2, 4, 6, 8
+range(10, 0)            -- reverse:   10, 9, 8, ..., 1
+range(10, 0, true, -2)  -- reverse stepped: 10, 8, 6, 4, 2, 0
+range(0, 1, false, 0.1) -- fractional: 0, 0.1, 0.2, ..., 0.9
+range(1.5, 5)           -- fractional start: 1.5, 2.5, 3.5, 4.5
+----
+
+==== Literal Syntax
+
+Range literals use braces with the `to` and `into` keywords, and an optional `by` clause for explicit stepping:
+
+- `{Start to Stop}` -- exclusive range (stop not included).
+- `{Start into Stop}` -- inclusive range (stop included).
+- `{Start to Stop by Step}` -- exclusive range with explicit step.
+- `{Start into Stop by Step}` -- inclusive range with explicit step.
+
+[source,tiri]
+----
+{0 to 5}            -- exclusive: 0, 1, 2, 3, 4
+{0 into 5}          -- inclusive: 0, 1, 2, 3, 4, 5
+{10 to 1}           -- reverse exclusive: 10, 9, 8, ..., 2
+{5 into 1}          -- reverse inclusive: 5, 4, 3, 2, 1
+{-5 to -1}          -- negative: -5, -4, -3, -2
+{0 to 10 by 2}      -- stepped exclusive: 0, 2, 4, 6, 8
+{10 into 0 by -2}   -- stepped reverse: 10, 8, 6, 4, 2, 0
+{0 to 1 by 0.25}    -- fractional step: 0, 0.25, 0.5, 0.75
+{1.5 to 5}          -- fractional start: 1.5, 2.5, 3.5, 4.5
+----
+
+Reverse ranges (where `Start > Stop`) automatically infer a negative step when no `by` clause is present.  Variables and expressions are supported in all positions.
+
+[source,tiri]
+----
+a = 3
+b = 8
+r = {a to b}              -- equivalent to range(3, 8)
+r = {a + 1 to b * 2}      -- expressions supported
+r = {a to b by 2}         -- stepped with variables
+----
+
+Literal ranges are fully equivalent to the constructor:
+
+[source,tiri]
+----
+assert({0 to 5} is range(0, 5))
+assert({0 into 5} is range(0, 5, true))
+assert({0 to 10 by 2} is range(0, 10, false, 2))
+assert({0 to 1 by 0.1} is range(0, 1, false, 0.1))
+----
+
+The `by` clause enforces one constraint at runtime: the step must be a finite, non-zero number.  Violating it raises an error.
+
+Invalid literal operands (non-numeric, `nil`, infinite, or NaN) raise an error at runtime.
+
+==== Properties
+
+The following immutable properties are available for reading on all range objects:
+
+[cols="1,3a",options="header"]
+|===
+|Property |Description
+
+|`start`
+|Start value (always included).
+
+|`stop`
+|Stop value (included only when `r.inclusive` is `true`).
+
+|`step`
+|Step increment (positive for forward, negative for reverse).
+
+|`inclusive`
+|`true` if stop is included, `false` otherwise.
+
+|`length`
+|Number of elements.  Equivalent to `#r`.
+|===
+
+[source,tiri]
+----
+r = range(0, 10, false, 2)
+r.start       -- 0
+r.stop        -- 10
+r.step        -- 2
+r.inclusive   -- false
+r.length      -- 5
+#r            -- 5
+----
+
+Reading `length` or applying `#` enumerates the sequence and raises an error under the conditions listed in <<sec-range-enumeration-errors>>.
+
+==== Equality
+
+Two ranges are equal when all four fields (`start`, `stop`, `step`, `inclusive`) match.  The numeric fields are compared exactly; no tolerance is applied:
+
+[source,tiri]
+----
+range(0, 5) is range(0, 5)         -- true
+range(0, 5) is range(0, 5, true)   -- false
+range(0, 10, false, 2) is range(0, 10, false, 3) -- false
+range(0, 1, false, 0.1) is {0 to 1 by 0.1}       -- true
+----
+
+[[sec-range-string-representation]]
+==== String Representation
+
+`tostring()` produces a brace-delimited representation using the `to`/`into` keywords.  Each field is formatted with the standard number-to-string conversion.  A `by` clause is included when the step differs from the inferred default:
+
+[source,tiri]
+----
+tostring({0 to 5})           -- '{0 to 5}'
+tostring({10 into 0 by -2})  -- '{10 into 0 by -2}'
+tostring({0.0 to 1.0 by 0.1})-- '{0 to 1 by 0.1}'
+----
+
+==== range.new()
+
+[.api]`r = range.new(Start, Stop, [Inclusive], [Step])`
+
+Equivalent to the `range()` constructor function.  An error is raised if any of the arguments are invalid for the following reasons:
+
+* `nil` or non-numeric `Start`, `Stop` or `Step`
+* Infinite or NaN `Start`, `Stop` or `Step`
+* `Step` is zero (`0` or `-0.0`)
+
+[[sec-range-numeric-model]]
+=== Numeric Model
+indexterm:[ranges, numeric model] A range stores `start`, `stop` and `step` as 64-bit doubles.  The sequence it denotes is the series of values addressed by ordinals `0, 1, 2, pass:[...]`:
+
+----
+value(n) = start + (n × step)
+----
+
+Each value is computed directly from its ordinal rather than by accumulating the step, so representation error does not compound across the sequence.  Element `n` of a range is identical whether it is reached by iteration, by a functional method, or by materialisation into an array.
+
+A generated value is a member of the sequence when it lies within the bounds implied by the step direction:
+
+* Forward ranges (`step > 0`): `value(n) < stop`, or `value(n)` pass:[&lt;=] `stop` when the range is inclusive.
+* Reverse ranges (`step < 0`): `value(n) > stop`, or `value(n) >= stop` when the range is inclusive.
+
+The length is the count of ordinals beginning at `0` whose values satisfy that condition.  A range whose `start` already falls outside the bounds has a length of zero, which includes ranges whose step points away from the stop.
+
+[source,tiri]
+----
+#range(0, 1, false, -0.1)   -- 0 (step points away from stop)
+#range(0.5, 0.5)            -- 0 (exclusive, start equals stop)
+#range(0.5, 0.5, true)      -- 1 (inclusive)
+#range(1.0, 0.0, false, -0.2)  -- 5
+----
+
+==== Reachability of the Inclusive Stop
+
+An inclusive `stop` is included only when it is exactly reachable from `start` by a whole number of steps.  A stop that the step cannot land on is not forced into the sequence.
+
+[source,tiri]
+----
+#{0 into 1 by 0.25}   -- 5 (0, 0.25, 0.5, 0.75, 1)
+#{0 into 1 by 0.3}    -- 4 (0, 0.3, 0.6, 0.9); 1 is unreachable
+----
+
+==== Element Representation
+
+Each generated value is produced as an integer when it is exactly representable as a signed 32-bit integer, and as a double otherwise.  This applies to iteration, the functional methods, and the `start`, `stop` and `step` properties.
+
+[source,tiri]
+----
+r = {0.0 to 1.0 by 0.1}
+r.start   -- 0 (integer)
+r.step    -- 0.1 (double)
+----
+
+[[sec-range-enumeration-errors]]
+==== Enumeration Errors
+
+Range construction validates only the three numeric fields.  The following conditions are detected when the sequence is enumerated -- by reading `length`, applying `#`, iterating, calling a functional method, or materialising an array -- and raise an error at that point:
+
+* The step magnitude is too small to separate adjacent values at either end of the sequence, so consecutive ordinals would generate identical doubles.
+* The element count exceeds the ordinals that a double can represent exactly (2^53^), or exceeds the maximum integer.
+* Materialisation into an array (`toArray()`, `take()`, `map()`, `filter()`) would exceed the maximum array allocation size.
+
+[%unbreakable]
+[source,tiri]
+----
+range(1e15, 1e15+1, false, 0.1).toArray()  -- error: step too small
+range(0, 1e20).length                      -- error: count unrepresentable
+range(0, 4294967297).toArray()             -- error: allocation too large
+----
+
+[[sec-iteration-with-ranges]]
+=== Iteration with Ranges
+indexterm:[ranges, iteration] Ranges integrate with Tiri's generic `for` loop.  When a range literal appears directly in the loop header, the parser lowers it to an optimised counted loop.  The optimisation applies when every operand is a constant whole number within the signed 32-bit integer bounds; all other range literals, including those with fractional operands, use the generic iterator path.  Both paths generate the same sequence.
+
+[source,tiri]
+----
+for i in {1 to 6} do
+   print(i)            -- 1, 2, 3, 4, 5
+end
+
+for i in {5 into 1} do
+   print(i)            -- 5, 4, 3, 2, 1
+end
+
+for i in {0 to 10 by 2} do
+   print(i)            -- 0, 2, 4, 6, 8
+end
+
+for i in {10 into 0 by -2} do
+   print(i)            -- 10, 8, 6, 4, 2, 0
+end
+
+for i in {0 to 1 by 0.25} do
+   print(i)            -- 0, 0.25, 0.5, 0.75
+end
+----
+
+==== Anonymous Loops
+
+When no loop variable is needed, it can be omitted:
+
+[source,tiri]
+----
+count = 0
+for {0 to 10} do
+   count++
+end
+-- count is 10
+----
+
+==== Variable and Constructor Ranges
+
+A range stored in a variable or produced by the constructor iterates directly, exactly as a literal does:
+
+[source,tiri]
+----
+r = {0 to 5}
+sum = 0
+for i in r do
+   sum += i
+end
+-- sum is 10
+
+for i in range(0, 10, false, 2) do
+   print(i)   -- 0, 2, 4, 6, 8
+end
+----
+
+==== Empty and Single-Element Ranges
+
+An exclusive range where `start` equals `stop` is empty and the loop body does not execute:
+
+[%unbreakable]
+[source,tiri]
+----
+for i in {5 to 5} do
+   print(i)   -- never reached
+end
+----
+
+An inclusive range where `start` equals `stop` iterates once:
+
+[%unbreakable]
+[source,tiri]
+----
+for i in {5 into 5} do
+   print(i)   -- 5
+end
+----
+
+[%breakable]
+[[sec-range-slicing]]
+=== Range Slicing
+[discrete]
+==== range.slice()
+
+[.api]`result = range.slice(Object, Range)`
+
+indexterm:[ranges, slicing] Slices a string, table, or array using `Range` to select elements.  Returns a value of the same type as `Object`.  This function is the underlying implementation for the `obj[{range}]` index syntax.
+
+`Range` must satisfy the integer requirement defined in <<sec-range-index-requirement>>.
+
+[source,tiri]
+----
+-- String slicing
+s = 'Hello, World!'
+range.slice(s, {0 to 5})      -- 'Hello'
+range.slice(s, {-6 into -1})  -- 'World!'
+
+-- Table slicing
+t = {10, 20, 30, 40, 50}
+range.slice(t, {1 to 4})      -- {20, 30, 40}
+
+-- Stepped slicing
+range.slice(t, {0 into 4 by 2})   -- {10, 30, 50}
+
+-- Reverse slicing
+range.slice(t, {4 into 0})    -- {50, 40, 30, 20, 10}
+----
+
+Raises an error if `Object` is not a string, table, or array.
+
+[[sec-range-index-requirement]]
+==== Integer Requirement for Collection Indexing
+
+indexterm:[ranges, integer requirement] Collections are indexed by whole element positions, so any range used as a collection index must have a `start`, `stop` and `step` that are all whole numbers within the signed 32-bit integer bounds.  A range that does not satisfy this raises an error rather than truncating its operands.
+
+The requirement applies to `range.slice()`, the `obj[{range}]` index syntax on strings, tables, and arrays, `arr.slice()`, `arr.fill()`, and `arr.find()`.
+
+A range constructed from whole-valued doubles satisfies the requirement; only a fractional component or an out-of-bounds magnitude fails it.
+
+[%unbreakable]
+[source,tiri]
+----
+'abcdef'[range(0.0, 6.0, false, 2.0)]   -- 'ace' (whole-valued doubles)
+'abcdef'[range(0, 4, false, 0.5)]       -- error: fractional step
+range.slice({10, 20, 30}, range(0.5, 2))-- error: fractional start
+----
+
+[discrete]
+==== range.toArray()
+
+[.api]`arr = r.toArray()`
+
+Returns the range as an array containing all values in the sequence.  The array preserves the range's direction and step.
+
+The element type is `int` when `start`, `stop` and `step` are all whole numbers within the signed 32-bit integer bounds, and `double` otherwise.  The type is determined by those three fields, not by the generated values.
+
+[source,tiri]
+----
+{0 to 5}.toArray()                -- array<int>: {0, 1, 2, 3, 4}
+{0 into 5}.toArray()              -- array<int>: {0, 1, 2, 3, 4, 5}
+range(0, 10, false, 2).toArray()  -- array<int>: {0, 2, 4, 6, 8}
+{5 into 0}.toArray()              -- array<int>: {5, 4, 3, 2, 1, 0}
+{0 to 1 by 0.25}.toArray()        -- array<double>: {0, 0.25, 0.5, 0.75}
+range(0, 5.5).toArray()           -- array<double>: {0, 1, 2, 3, 4, 5}
+----
+
+==== Index Syntax
+
+Strings, tables, and arrays support range objects as indices directly:
+
+[source,tiri]
+----
+s = 'Hello, World!'
+s[{0 to 5}]       -- 'Hello'
+s[{7 to 12}]      -- 'World'
+
+t = {10, 20, 30, 40, 50}
+t[{1 to 4}]       -- {20, 30, 40}
+----
+
+==== Negative Indices
+
+Negative indices count backwards from the end: `-1` is the last element, `-2` the second-to-last.  The exclusive/inclusive semantics of the range operator are preserved with negative indices.  `to` remains exclusive and `into` remains inclusive.
+
+[source,tiri]
+----
+s = 'Hello, World!'
+s[{-6 into -1}]   -- 'World!'  (inclusive)
+s[{-6 to -1}]     -- 'World'   (exclusive)
+
+t = {10, 20, 30, 40, 50}
+t[{-2 into -1}]   -- {40, 50}  (inclusive)
+t[{-2 to -1}]     -- {40}      (exclusive)
+t[{-3 into 4}]    -- {30, 40, 50}
+----
+
+==== Reverse Slicing
+
+Ranges where `start` is greater than `stop` produce reversed results.  The direction is auto-detected.
+
+[source,tiri]
+----
+s = 'abcdef'
+s[{5 into 0}]     -- 'fedcba'
+s[{5 to 0}]       -- 'fedcb'
+
+t = {10, 20, 30, 40, 50}
+t[{4 into 0}]     -- {50, 40, 30, 20, 10}
+t[{3 to 1}]       -- {40, 30}
+----
+
+==== Stepped Slicing
+
+Range literals support an optional `by` clause for stepped slicing:
+
+[source,tiri]
+----
+s = 'abcdef'
+s[{0 to 6 by 2}]       -- 'ace'
+s[{5 into 0 by -2}]    -- 'fdb'
+
+t = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+t[{0 into 9 by 2}]     -- {0, 2, 4, 6, 8}
+t[{9 into 0 by -2}]    -- {9, 7, 5, 3, 1}
+----
+
+==== Edge Cases
+
+- Indices beyond the object length are clamped to valid bounds.
+- Exclusive ranges where `start` equals `stop` return an empty string or empty table.
+- Inclusive single-element ranges return the corresponding character or element.
+- Ranges entirely beyond the object length return an empty string or empty table.
+
+[[sec-membership-testing]]
+=== Membership Testing
+indexterm:[ranges, membership testing] The `in` operator tests whether a value belongs to a range.  The test respects the range's inclusive/exclusive semantics and step alignment.
+
+[source,tiri]
+----
+5 in {0 to 10}         -- true
+10 in {0 to 10}        -- false
+10 in {0 into 10}      -- true
+-1 in {0 to 10}        -- false
+4 in {0 to 10 by 2}    -- true
+0.3 in {0 to 1 by 0.1} -- true
+----
+
+`in` can be used anywhere a boolean expression is expected:
+
+[source,tiri]
+----
+if 5 in {0 to 10} then
+   print('in range')
+end
+----
+
+==== Step Alignment
+
+When a range has a step other than 1, the `in` operator checks that the value falls on a step boundary:
+
+[source,tiri]
+----
+r = range(0, 10, false, 2)   -- 0, 2, 4, 6, 8
+0 in r    -- true
+2 in r    -- true
+3 in r    -- false
+10 in r   -- false (exclusive range)
+----
+
+Alignment is tested by converting the value to its ordinal, `(Value - start) / step`, and requiring that ordinal to be a whole number.  A bounded tolerance is applied in ordinal space so that values carrying the representation error inherent in a fractional sequence are still recognised.  The tolerance scales with the ordinal magnitude and never reaches half a step, so a value lying between two generated values is never admitted.
+
+[source,tiri]
+----
+r = {0 to 1 by 0.1}
+0.3 in r     -- true  (tolerated representation error)
+0.35 in r    -- false (between two generated values)
+
+b = 1e15
+t = range(b, b + 10, false, 1)
+b + 2 in t     -- true
+b + 1.5 in t   -- false
+----
+
+The bounds test is applied before alignment, so an excluded `stop` is never admitted by the tolerance.
+
+==== Non-Accepted Values
+
+`Value in Range` is always `false` for non-numeric, infinite, and NaN values, and for values that do not align.  No error is raised for a value of an unsupported type.
+
+[[sec-functional-iteration]]
+=== Functional Iteration
+indexterm:[ranges, functional iteration] Ranges provide functional programming methods for transforming, filtering, and querying numeric sequences.  All functional methods that accept a callback pass the generated value followed by its zero-based ordinal, `(Value, Ordinal)`.  `reduce()` passes `(Accumulator, Value, Ordinal)`.  The `Ordinal` parameter is optional; callbacks that only need the value can omit it.
+
+The ordinal counts generated values from the start of the range, so it is zero for the first generated value regardless of the range's start, stop, or step.
+
+[discrete]
+==== each()
+
+[.api]`r = r.each(Callback)`
+
+Calls `Callback(Value, Ordinal)` for each value in the range.  Returns the original range for chaining.
+
+[source,tiri]
+----
+sum = 0
+{1 to 6}.each(Value => sum += Value)
+-- sum is 15
+----
+
+The callback can return `false` to terminate early.  Returning `true` or `nil` continues iteration.
+
+[source,tiri]
+----
+sum = 0
+{1 to 100}.each(function(Value, Ordinal)
+   if Value > 5 then return false end
+   sum += Value
+end)
+-- sum is 15
+----
+
+The return value enables chaining:
+
+[%unbreakable]
+[source,tiri]
+----
+{1 to 6}.each(Value => print(Value))
+        .each(Value => process(Value))
+----
+
+[discrete]
+==== filter()
+
+[.api]`arr = r.filter(Predicate)`
+
+Returns an array containing only values for which `Predicate(Value, Ordinal)` returns a truthy value.  Returns an empty array if no values match or the range is empty.  The element type follows the same rule as `toArray()`; `int` for whole-numbered ranges, `double` otherwise.
+
+[%unbreakable]
+[source,tiri]
+----
+evens = {1 to 10}.filter(i => i % 2 is 0)
+-- array<int>: {2, 4, 6, 8}
+
+near = {0 to 1 by 0.2}.filter(v => v >= 0.4)
+-- array<double>: {0.4, 0.6, 0.8}
+----
+
+[discrete]
+==== map()
+
+[.api]`arr = r.map(Transform, [ElementType])`
+
+Returns an array where each element is the result of `Transform(Value, Ordinal)`.  Returns an empty array if the range is empty.
+
+`ElementType` names the element type of the result and accepts the type names listed in <<sec-array-fundamentals>>, including a recursive `array<pass:[...]>` name (<<sec-recursive-array-types>>).  When `ElementType` is omitted or `nil`, the result is an `array<any>` and the transform can return a value of any type.  `ElementType` is validated before the first callback runs: an unrecognised name raises an error and no callback is invoked.  Each transform result must satisfy the element storage contract (<<sec-element-storage-contract>>) for the result element type; a result of another category raises an error.
+
+[source,tiri]
+----
+squares = {1 into 5}.map(i => i * i)
+-- array<any>: {1, 4, 9, 16, 25}
+
+labels = {1 to 4}.map(i => 'Item ' .. tostring(i))
+-- array<any>: {'Item 1', 'Item 2', 'Item 3'}
+
+offsets = {10 to 16 by 2}.map((Value, Ordinal) => Value + Ordinal, 'int')
+-- array<int>: {10, 13, 16}
+----
+
+[discrete]
+==== reduce()
+
+[.api]`result = r.reduce(Initial, Reducer)`
+
+Folds all values into a single accumulated result.  `Reducer(Accumulator, Value, Ordinal)` is called for each value, threading the accumulator from left to right.  Returns `Initial` unchanged if the range is empty.
+
+[source,tiri]
+----
+sum = {1 into 5}.reduce(0, (acc, i) => acc + i)
+-- 15
+
+factorial = {1 into 5}.reduce(1, (acc, i) => acc * i)
+-- 120
+----
+
+[discrete]
+==== take()
+
+[.api]`arr = r.take(Count)`
+
+Returns an array containing the first `Count` values from the range.  If `Count` exceeds the range length, returns all available values.  If `Count` is zero or negative, returns an empty array.  The element type is determined by the same rule as `toArray()`: `int` for whole-numbered ranges, `double` otherwise.
+
+[source,tiri]
+----
+{1 to 100}.take(5)      -- array<int>: {1, 2, 3, 4, 5}
+{10 to 0}.take(3)       -- array<int>: {10, 9, 8}
+{1 to 4}.take(10)       -- array<int>: {1, 2, 3}
+{0 to 1 by 0.2}.take(3) -- array<double>: {0, 0.2, 0.4}
+----
+
+[discrete]
+==== any()
+
+[.api]`result = r.any(Predicate)`
+
+Returns `true` if `Predicate(Value, Ordinal)` returns a truthy value for at least one element.  Short-circuits on the first match.  Returns `false` on an empty range.
+
+[source,tiri]
+----
+{1 to 10}.any(i => i > 5)     -- true
+{1 to 10}.any(i => i > 100)   -- false
+----
+
+[discrete]
+==== all()
+
+[.api]`result = r.all(Predicate)`
+
+Returns `true` if `Predicate(Value, Ordinal)` returns a truthy value for every element.  Short-circuits on the first failure.  Returns `true` on an empty range (vacuous truth).
+
+[source,tiri]
+----
+{1 to 10}.all(i => i > 0)   -- true
+{1 to 10}.all(i => i < 5)   -- false
+----
+
+[discrete]
+==== find()
+
+[.api]`result = r.find(Predicate)`
+
+Returns the first value for which `Predicate(Value, Ordinal)` returns a truthy value, or `nil` if no match is found.  Returns `nil` on an empty range.
+
+[source,tiri]
+----
+{1 to 10}.find(i => i > 5)         -- 6
+{1 to 10}.find(i => i % 2 is 0)    -- 2
+{10 to 0}.find(i => i < 5)         -- 4
+{1 to 10}.find(i => i > 100)       -- nil
+----
+
+[discrete]
+==== findIndex()
+
+[.api]`result = r.findIndex(Predicate)`
+
+Returns the ordinal of the first value for which `Predicate(Value, Ordinal)` returns a truthy value, or `nil` if no match is found.  Returns `nil` on an empty range.
+
+[source,tiri]
+----
+{10 to 20 by 2}.findIndex(v => v > 13)    -- 2
+{10 to 20 by 2}.findIndex(v => v > 100)   -- nil
+----
+
+[discrete]
+==== indexOf()
+
+[.api]`result = r.indexOf(Value)`
+
+Returns the ordinal that generates `Value`, or `nil` if `Value` is not a member of the range.  Membership is decided by the rules defined in <<sec-membership-testing>>, including step alignment and its tolerance, so `r.indexOf(Value)` returns a number exactly when `Value in r` is `true`.  Returns `nil` for non-numeric, infinite, and NaN values without raising an error.
+
+[source,tiri]
+----
+r = {10 to 20 by 2}
+r.indexOf(10)    -- 0
+r.indexOf(16)    -- 3
+r.indexOf(17)    -- nil (not on a step boundary)
+r.indexOf(20)    -- nil (exclusive stop)
+r.indexOf('x')   -- nil (not a number)
+----
+
+==== Method Return Types
+
+[cols="1,5",options="header"]
+|===
+|Method |Returns
+
+|`each()`      |The original range (for chaining).
+|`filter()`    |`array<int>` or `array<double>`, per the range fields.
+|`map()`       |`array<ElementType>` of transformed values, or `array<any>` when `ElementType` is omitted.
+|`reduce()`    |Single value (type determined by reducer).
+|`take()`      |`array<int>` or `array<double>`, per the range fields.
+|`any()`       |Boolean.
+|`all()`       |Boolean.
+|`find()`      |Value or `nil`.
+|`findIndex()` |Ordinal or `nil`.
+|`indexOf()`   |Ordinal or `nil`.
+|===
+
+NOTE: Methods that return arrays (`filter`, `map`, `take`) cannot be chained with range methods, as arrays are not ranges.  Use `reduce()` directly on a range for aggregation that requires a single pass.

@@ -1,0 +1,373 @@
+// VERIFIED: 2026-08-01
+// UPDATED: 2026-08-11 - Removed '?:' from the safe navigation operator list (commit 7e6746950)
+// UPDATED: 2026-08-13 - Noted that a table can be designated an entity without changing its type (commit d3638efc0)
+// UPDATED: 2026-08-16 - The extended ternary is now spelled '?? :' (commit 982d890de)
+// UPDATED: 2026-08-19 - Noted the type-test operator as the boolean companion to type() (commit c70f7542a)
+// UPDATED: 2026-08-22 - Reworked Type Inspection: type() now honours the __name metamethod and is defined as the
+//                       user-facing display name; added rawtype() for the raw runtime type (commits 3acfc4c44,
+//                       179bcc4af)
+// UPDATED: 2026-08-22 - Rewrote tostring(): the default representation no longer embeds a memory address and now
+//                       honours __name; unified the array element alias set with arr.type() (commit 4a06b1a43)
+// UPDATED: 2026-08-24 - rawtype() reports the complete recursive identity of an array of arrays; tostring() still
+//                       reports the immediate element category (commit 8717fde66)
+
+[[ch-types-and-values]]
+== Types & Values
+indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  Variables are constrained through type contracts; see <<ch-type-system>> for type inference, annotations, runtime contracts and `nil` assignment.
+
+Tiri defines the following types: nil, bool, number, string, table, array, function, userdata, object and struct.
+
+[[sec-nil]]
+=== Nil
+indexterm:[nil] The type `nil` has exactly one value, also called `nil`.  It represents the absence of a useful value.
+
+Unassigned variables evaluate to `nil`.  Setting a table field to `nil` removes that field from the table.
+
+`nil` is falsey in all boolean contexts (see <<sec-truthiness>>).
+
+[[sec-booleans]]
+=== Booleans
+indexterm:[booleans] The type `bool` has exactly two values: `true` and `false`.  `bool` is the sole spelling of the type name; it is what `type()` returns and the only form an annotation accepts.
+
+Booleans are the natural result of comparison and logical expressions.  Conditional constructs (`if`, `while`) accept any value, not only booleans; see <<sec-truthiness>> for the evaluation rules.
+
+[[sec-numbers]]
+=== Numbers
+indexterm:[numbers] Tiri uses a dual-number representation.  A single `number` type encompasses both integers and floating-point values.  The `type()` function returns `"number"` for both.
+
+Integers are stored as signed 32-bit values (range: −2,147,483,648 to 2,147,483,647).  Floating-point values are stored as 64-bit IEEE 754 doubles.  The runtime promotes integers to doubles transparently when an operation requires it.
+
+NOTE: The 32-bit integer width is a property of the value representation, not of the host: Tiri targets 64-bit platforms exclusively, and whole numbers beyond the 32-bit range remain exactly representable as doubles up to 2^53^.  Integer width is therefore only significant to the bitwise operators (<<sec-bitwise-operators>>) and to the sized element types offered by arrays and structs.
+
+Numeric literal syntax is defined in <<sec-lexical-conventions>>.
+
+[source,tiri]
+----
+x = 42        -- stored as integer
+y = 3.14      -- stored as double
+z = x + y     -- z is 45.14 (double)
+type(x)       -- 'number'
+type(y)       -- 'number'
+----
+
+Arithmetic operations that produce results outside the 32-bit signed integer range produce double values.
+
+[[sec-strings-overview]]
+=== Strings
+indexterm:[strings] Strings are immutable sequences of bytes.  Identical strings are interned: two strings with the same content share the same internal object.  Comparison with `is` compares content.
+
+Strings have no inherent encoding.  They can hold arbitrary binary data, including embedded zero bytes.  In practice, most strings contain UTF-8 encoded text.
+
+The `#` operator returns the length in bytes.
+
+[source,tiri]
+----
+s = 'hello'
+print(#s)       -- 5
+print(type(s))  -- 'string'
+----
+
+All string indexing and standard library operations use zero-based indices.  See <<ch-strings>> for the complete string library.
+
+[[sec-tables-overview]]
+=== Tables
+indexterm:[tables] Tables are mutable associative key-value stores.  Any value except `nil` and `NaN` can serve as a key; any value can serve as a value.  Assigning to a `nil` or `NaN` key raises an error; reading one returns `nil`.  Tables are the primary compound data structure in Tiri, used to represent records, dictionaries, and ad-hoc objects.  Although tables can be used as arrays, the dedicated `array` type is more efficient for that purpose.
+
+Tables are reference types.  Assigning a table to another variable creates a second reference to the same table, not a copy.  Two distinct tables are never equal under `is`, even if they contain identical entries; `is` compares table identity.
+
+[source,tiri]
+----
+t = { name = 'Alice', age = 30 }
+print(t.name)     -- 'Alice'
+print(type(t))    -- 'table'
+
+a = t
+a.name = 'Bob'
+print(t.name)     -- 'Bob' (same table)
+----
+
+Sequential integer keys use zero-based indexing.  Setting a key's value to `nil` removes that entry from the table.  The `#` operator returns the length of the sequential (integer-keyed) portion.
+
+A table can be designated an __entity__, which allows it to establish itself as the current context of a call made on it (<<sec-table-entities>>).  Designation is opt-in and adds no new type: `type()` returns `'table'` for an entity, and every table operation behaves identically.
+
+Field access is O(1) average case.  The iteration order of `pairs()` over non-integer keys is unspecified and may vary between runs.
+
+See <<ch-tables>> for the complete table library.
+
+[[sec-arrays-overview]]
+=== Arrays
+indexterm:[arrays] Arrays are mutable, typed, contiguous sequences of elements.  Each array holds elements of a single declared type.  Arrays are a distinct type from tables, purpose-built for sequential data storage with efficient memory layout and direct access.
+
+Arrays are reference types, but unlike other reference types, the `is` operator compares arrays by content rather than identity: two arrays are equal if they have the same element type, length, and contents.  This is a deliberate design decision — see <<sec-comparison-operators>> for the rationale and a comparison with table identity semantics.  Elements are stored in sequential order from index 0; iteration order matches storage order.
+
+[source,tiri]
+----
+nums = array<int> { 10, 20, 30 }
+print(nums[0])      -- 10
+print(#nums)        -- 3
+print(type(nums))   -- 'array'
+----
+
+Arrays use zero-based indexing.  The `#` operator returns the element count.  Element access by index is O(1).  The `ipairs()`, `pairs()`, and `values()` functions work identically on arrays and tables.
+
+See <<ch-arrays>> for the complete array library, including supported element types and construction syntax.
+
+[[sec-functions-overview]]
+=== Functions
+indexterm:[functions] Functions are first-class values.  They can be stored in variables, passed as arguments, and returned from other functions.
+
+[source,tiri]
+----
+function add(A, B)
+   return A + B
+end
+
+print(type(add))  -- 'function'
+
+op = add
+print(op(2, 3))   -- 5
+----
+
+Tiri also supports concise arrow function syntax for anonymous functions:
+
+[source,tiri]
+----
+double = n => n * 2
+print(double(5))  -- 10
+----
+
+See <<ch-functions>> for function declarations, closures, and parameter rules.
+
+[[sec-objects]]
+=== Objects
+indexterm:[objects] Kōtuku framework objects are a distinct reference type.  They represent C++ objects exposed through the Kōtuku API and support field access, method calls, and action invocations.
+
+[source,tiri]
+----
+file = obj<File> { src = 'temp:data.txt' }
+print(type(file))  -- 'object'
+----
+
+See <<ch-the-object-system>> for the full object interface.
+
+[[sec-structs-type]]
+=== Structures
+indexterm:[structures] A structure is a first-class value that maps a fixed set of named, typed fields onto memory with a C/C++ compatible layout.  Structures are a distinct reference type: they are not tables, and the `type()` function returns `"struct"` for them.  Definitions are registered with the `struct` declaration statement or by Kōtuku modules; instances are created by calling a declared name or `struct.new()`, iterated with `pairs()`, and formatted with `tostring()`.
+
+Structs provide a compatibility layer between Tiri and compiled programs and a compact data layout for storage.  Accessing a non-existent key raises an error.
+
+[source,tiri]
+----
+include 'vector'
+stop = struct.new('GradientStop')
+print(type(stop))  -- 'struct'
+----
+
+See <<ch-structs>> for the full structure interface.
+
+[[sec-userdata]]
+=== Userdata
+indexterm:[userdata] Userdata values represent opaque C data managed outside the Tiri runtime.  They cannot be created or modified directly from Tiri code; they are produced by C/C++ host functions.
+
+The `type()` function returns `"userdata"` for userdata values.  Ranges are implemented as userdata internally, but `type()` returns `"range"` for them.  See <<ch-ranges>> for range semantics.
+
+[[sec-truthiness]]
+=== Truthiness and Falsiness
+indexterm:[truthiness] indexterm:[falsiness] Tiri defines three sets of falsiness rules.  Each operator states which set it applies.
+
+Standard falsiness::
+The values `nil` and `false` are falsey.  All other values -- including `0`, `""`, and empty collections -- are truthy.  The `and`, `or` and `not` operators, the `if` and `while` statements, `assert()`, and `choose` case guards all use standard falsiness.
+
+Extended falsiness::
+The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are falsey.  All other values are truthy.  Extended falsiness is applied by the `??` binary operator, the postfix `??` operator, the `??=` compound assignment, the `?!` guard operator, and the extended ternary `?? :`.  See <<sec-conditional-operators>>.
+
+Nil-only tests::
+The safe navigation operators (`?.`, `?[]`) and the `?=` compound assignment test for `nil` alone.  See <<sec-safe-navigation>> and <<sec-compound-assignment>>.
+
+NOTE: The sigil identifies the rule for testing.  A single `?` applies the standard test and `??` applies the extended test.
+
+[[sec-type-inspection]]
+=== Type Inspection
+
+indexterm:[type inspection] Two functions report the type of a value, and they serve different purposes.
+
+`type()` produces a __display name__: a name intended for presentation to a user.  It honours the `pass:[__]name` metamethod (<<sec-metamethod-name>>), so the name it returns is chosen by the author of the value and is not required to identify a runtime type.  Use it to compose diagnostic text and log messages.
+
+`rawtype()` produces the __raw type__: the runtime type of the value.  It consults no metamethod, cannot be overridden, and names container types with the type they hold.  Use it whenever a program reports, records or dispatches on what a value actually is.
+
+Neither function is the means of testing a value against a known type.  The type-test operator `value is <type>` is more precise and faster than comparing either result against a string.  See <<sec-type-testing>>.
+
+Both functions raise an error when called with no argument.  Passing `nil` explicitly is valid and reports the nil type.
+
+==== type()
+
+[.api]`result = type(Value)`
+
+Returns the display name of `Value` as a string.  The name is resolved in this order:
+
+. A range reports `"range"`, and a thunk that carries a declared or inferred type reports the name of that type without evaluating the deferred expression (<<sec-deferred-expressions>>).
+. If the metatable of `Value` holds a non-empty string under the key `pass:[__]name`, that string is returned.
+. Otherwise the built-in category name is returned, one of: `"nil"`, `"bool"`, `"number"`, `"string"`, `"table"`, `"array"`, `"function"`, `"userdata"`, `"range"`, `"object"`, `"struct"`.
+
+[source,tiri]
+----
+type(nil)           -- 'nil'
+type(true)          -- 'bool'
+type(42)            -- 'number'
+type(3.14)          -- 'number'
+type('hello')       -- 'string'
+type({})            -- 'table'
+type(array<int> { 1 }) -- 'array'
+type(print)         -- 'function'
+type({0 to 5})      -- 'range'
+type(struct.new('GradientStop')) -- 'struct'
+
+type(setmetatable({}, { __name = 'Vector' }))  -- 'Vector'
+----
+
+Because a display name is arbitrary text, the result of `type()` carries no guarantee about the value's runtime type: a value reporting `"Vector"` is a table, and two values reporting the same name need not share a type.  Code that acts on the result must use `rawtype()` or the type-test operator instead.
+
+NOTE: Compiled code aborts trace recording when `type()` is applied to an object or a struct, because the display-name lookup for those values has no recorded form.  `rawtype()` compiles for every type.  See <<sec-nyi-operations>>.
+
+[[sec-rawtype]]
+==== rawtype()
+
+[.api]`result = rawtype(Value)`
+
+Returns the raw type of `Value` as a string.  Metamethods are never consulted, so `pass:[__]name` has no effect on the result and no handler is invoked.  Names are drawn from the native vocabulary used by type annotations (<<sec-type-vocabularies>>), and container types are parameterised with the type they hold.
+
+[source,tiri]
+----
+rawtype(nil)                  -- 'nil'
+rawtype(true)                 -- 'bool'
+rawtype(42)                   -- 'num'
+rawtype('hello')              -- 'str'
+rawtype({})                   -- 'table'
+rawtype(print)                -- 'func'
+rawtype(array<int> { 1 })     -- 'array<int>'
+rawtype(struct.new('GradientStop')) -- 'struct<GradientStop>'
+rawtype({0 to 5})             -- 'range'
+
+rawtype(setmetatable({}, { __name = 'Vector' }))  -- 'table'
+----
+
+The complete set of results:
+
+[cols="3,5"]
+|===
+|Runtime type |Result
+
+|Nil       |`nil`
+|Boolean   |`bool`
+|Number    |`num` for every numeric representation
+|String    |`str`
+|Table     |`table`
+|Function  |`func`, for Tiri functions and host functions alike
+|Array     |`array<Element>`, naming the element type; an array of structs reports `array<struct<Name>>` and an array of arrays reports its complete recursive name
+|Struct    |`struct<Name>`, naming the registered definition; `struct` when the definition is unresolved
+|Object    |`obj<Class>`, naming the runtime class of the object; `obj` when the object holds no class, which includes an object that has been freed
+|Range     |`range`
+|Thunk     |`thunk`
+|Userdata  |`userdata`
+|===
+
+`rawtype()` reports the container, never its contents.  A thunk reports `thunk` whether or not it declares a type, and the deferred expression is not evaluated; use `type()` for the declared type of a thunk (<<sec-deferred-expressions>>).
+
+The name inside `array<Element>` is the element type recorded by the array, drawn from the storage vocabulary (<<sec-type-vocabularies>>).  It is the same name `arr.type()` reports (<<sec-array-element-type>>); the two interfaces share one alias set.  An element declared `char` is reported under its canonical alias `byte`, and a raw pointer element as `pointer`.
+
+[source,tiri]
+----
+rawtype(array<char> { 65 })   -- 'array<byte>'
+array<char> { 65 }.type()     -- 'byte'
+----
+
+An array of arrays reports its complete recursive identity, naming every level down to the innermost element type.  The identity is canonical: whitespace is discarded and each level is reduced to its canonical spelling.  An unconstrained inner array contributes the bare name `array`.  See <<sec-recursive-array-types>>.
+
+[source,tiri]
+----
+rawtype(array<array<str>> { })          -- 'array<array<str>>'
+rawtype(array<array<array<int>>> { })   -- 'array<array<array<int>>>'
+rawtype(array< array < char > > { })    -- 'array<array<byte>>'
+rawtype(array<array> { })               -- 'array<array>'
+----
+
+`arr.type()` reports the immediate element category alone, so all four arrays above report `array` (<<sec-array-element-type>>).
+
+==== tostring()
+
+`result = tostring(Value)`
+
+Converts `Value` to a string.  The representation is chosen in this order:
+
+. If `Value` has a `pass:[__]tostring` metamethod, calls it and returns the result.
+. If the metatable of `Value` holds a display name under `pass:[__]name`, returns that name (<<sec-metamethod-name>>).
+. Otherwise produces the default representation defined below.
+
+The default representation never contains a memory address.  Numbers yield their decimal form, booleans yield `"true"` or `"false"`, and `nil` yields `"nil"`.  A reference type yields the text listed below.
+
+[cols="3,5"]
+|===
+|Value |Default representation
+
+|Table     |`table`
+|Function  |The name under which the function was declared; `function` when the function is anonymous
+|Userdata  |`userdata`
+|Array     |`array<Element, Length>`, naming the immediate element category only, or the decoded text of a byte array
+|Struct    |The name of the struct definition
+|Object    |`#` followed by the unique identifier of the object
+|Range     |The brace-delimited form described in <<sec-range-string-representation>>
+|===
+
+[source,tiri]
+----
+tostring(42)               -- '42'
+tostring(3.14)             -- '3.14'
+tostring(true)             -- 'true'
+tostring(nil)              -- 'nil'
+tostring({})               -- 'table'
+tostring(function() end)   -- 'function'
+tostring(array<int> { 1 }) -- 'array<int, 1>'
+tostring(array<array<int>> { }) -- 'array<array, 0>'
+
+tostring(setmetatable({}, { __name = 'Vector' }))  -- 'Vector'
+----
+
+A standard library function is a built-in and reports an implementation-defined identifier rather than a declared name.
+
+Numbers are formatted to 14 significant digits.  A value with an integral result is printed without a fractional part, and a value whose magnitude falls outside the range of that precision is printed in exponential notation:
+
+[source,tiri]
+----
+tostring(1.0)       -- '1'      (no fractional part)
+tostring(10 / 5)    -- '2'
+tostring(1 / 3)     -- '0.33333333333333'
+tostring(1e15)      -- '1e+15'  (exponential)
+tostring(1 / 0)     -- 'inf'
+tostring(0 / 0)     -- 'nan'
+----
+
+This formatting is lossy.  Digits beyond the 14th are not shown, so two values that differ only in those digits produce the same string:
+
+[source,tiri]
+----
+tostring(0.1 + 0.2)                   -- '0.3'
+string.format('%.17g', 0.1 + 0.2)     -- '0.30000000000000004'
+----
+
+Use `string.format()` with an explicit precision when an exact representation is required.  Because integers and floating-point values share the `number` type and both print without a fractional part when integral, `tostring()` does not distinguish between them.
+
+==== tonumber()
+
+`result = tonumber(Value, [Base])`
+
+Converts `Value` to a number.  Returns `nil` if the conversion fails.
+
+With the default base (10), accepts strings and numbers.  With an explicit `Base` (2-36), `Value` must be a string and is interpreted in the given base.  Raises an error if `Base` is outside the range 2-36.
+
+[source,tiri]
+----
+tonumber('42')        -- 42
+tonumber('3.14')      -- 3.14
+tonumber('ff', 16)    -- 255
+tonumber('hello')     -- nil
+----

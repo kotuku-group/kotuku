@@ -1,0 +1,908 @@
+// VERIFIED: 2026-08-26
+
+[[ch-resource-management]]
+== Resource Management
+indexterm:[resource management] Tiri provides three complementary mechanisms for managing resource lifetimes and deferred computation: the `defer` statement, to-be-closed variables (`<close>`), and deferred expressions.  Together they ensure deterministic cleanup of acquired resources without relying on garbage collection or explicit `finally` blocks.
+
+The `defer` statement and `<close>` variables share a common execution guarantee: cleanup code runs when the enclosing scope exits via normal completion, `return`, `break`, `continue`, or error unwinding.  When both `<close>` handlers and `defer` blocks exist in the same scope, `<close>` handlers execute first, followed by `defer` blocks, both in LIFO order.  The order is identical on every exit path.
+
+.Cleanup execution order on scope exit
+image::defer_close_order.svg[]
+
+Both mechanisms therefore provide error-safe cleanup.  They differ in what the cleanup code receives: a `pass:[__]close` handler is passed the active error object and can inspect it, whereas a `defer` block receives no indication of why the scope is being left (<<sec-to-be-closed-variables>>).
+
+[[sec-defer-statement]]
+=== Defer Statement
+indexterm:[defer statement] The `defer` statement schedules a block of code to execute when the enclosing scope exits.  The deferred block runs after the scope body completes but before control transfers to the caller or the next enclosing scope.
+
+[discrete]
+==== Syntax
+
+The basic form takes no parameters:
+
+[source,tiri]
+----
+defer
+   -- cleanup code
+end
+----
+
+The parameterised form is documented in <<sec-defer-with-arguments>>.
+
+[discrete]
+==== Semantics
+
+The `defer` keyword creates an anonymous closure from the enclosed block and registers it with the current scope.  When the scope exits, registered closures execute in LIFO order (last registered, first executed).
+
+[source,tiri]
+----
+function demonstrate_lifo()
+   defer
+      print('first registered')
+   end
+   defer
+      print('second registered')
+   end
+   print('body')
+end
+-- Output:
+-- body
+-- second registered
+-- first registered
+----
+
+Without arguments, the deferred block captures variables from the enclosing scope as upvalues.  The block sees the value of each variable at execution time, not at registration time:
+
+[source,tiri]
+----
+function upvalue_capture()
+   status = 'initial'
+   defer
+      print(status)
+   end
+   status = 'final'
+end
+-- Output: final
+----
+
+[discrete]
+==== Scope Boundaries
+
+Each lexical scope (`do ... end`, `if ... end`, loop bodies, function bodies) maintains its own defer list.  Deferred blocks execute when their enclosing scope exits, not when the function returns.
+
+[source,tiri]
+----
+function scoped()
+   defer
+      print('outer')
+   end
+   do
+      defer
+         print('inner')
+      end
+      print('inner body')
+   end -- inner defer executes here
+   print('outer body')
+end -- outer defer executes here
+-- Output:
+-- inner body
+-- inner
+-- outer body
+-- outer
+----
+
+[discrete]
+==== Control Flow Interactions
+
+Deferred blocks execute before control leaves the scope via any path:
+
+`return`:: Deferred blocks in the current scope execute after evaluating the return values but before returning control to the caller.  Modifications to upvalues in the deferred block do not affect the return values.
+
+`break`:: Deferred blocks in the loop body scope execute before the loop terminates.
+
+`continue`:: Deferred blocks in the current loop iteration scope execute before advancing to the next iteration.
+
+[source,tiri]
+----
+function early_return()
+   defer
+      print('cleanup')
+   end
+   return 42 -- defer executes before returning
+end
+
+for i in {1 into 3} do
+   defer
+      print('iter ' .. tostring(i))
+   end
+   if i is 2 then break end
+end
+-- Output:
+-- iter 1
+-- iter 2
+----
+
+[discrete]
+==== Return Value Preservation
+
+Modifications to upvalues in the deferred block do not affect return values.  The runtime evaluates return expressions before executing deferred blocks:
+
+[source,tiri]
+----
+function preserved()
+   value = 'original'
+   defer
+      value = 'mutated'
+   end
+   return value
+end
+print(preserved()) -- Output: original
+----
+
+[discrete]
+==== Recursion
+
+In recursive functions, each invocation has its own scope and defer list.  Deferred blocks execute per-invocation in the reverse order of scope exit:
+
+[source,tiri]
+----
+function recurse(n)
+   defer
+      print('defer ' .. tostring(n))
+   end
+   if n > 1 then recurse(n - 1) end
+end
+recurse(3)
+-- Output:
+-- defer 1
+-- defer 2
+-- defer 3
+----
+
+[discrete]
+==== Error Unwinding
+
+Deferred blocks execute during error unwinding caused by `error()`, by a runtime exception, or by an error code promoted within a `checkall` block (<<sec-the-checkall-statement>>).  Registration order is preserved: the blocks of the failing scope run in LIFO order, then the blocks of each enclosing scope in turn, out to the boundary that catches the error.  Unwinding crosses function frames, so every activation abandoned by the error runs its deferred blocks before the next frame down is processed.
+
+[source,tiri]
+----
+function inner()
+   defer print('inner-function') end
+   do
+      defer print('inner-block') end
+      error('failure')
+   end
+end
+
+function outer()
+   defer print('outer-function') end
+   inner()
+end
+
+try
+   outer()
+except e
+   print('caught')
+end
+-- Output:
+-- inner-block
+-- inner-function
+-- outer-function
+-- caught
+----
+
+Deferred blocks run before the `except` block that handles the error.  An error that reaches no handler runs the deferred blocks of every abandoned scope before the script terminates.
+
+A deferred block registered with arguments retains the values captured at registration time, whichever path leaves the scope (<<sec-defer-with-arguments>>).
+
+[discrete]
+==== Errors Raised by a Deferred Block
+
+Each deferred block is removed from its scope immediately before it is called, on every exit path.  A block therefore executes exactly once, and an error raised by a block on the normal path does not cause that same block to run again during the unwinding it starts.
+
+If a deferred block raises an error, the error replaces the error currently propagating, and the remaining deferred blocks and `pass:[__]close` handlers still execute.  The last error raised becomes the exception delivered to the handler:
+
+[source,tiri]
+----
+function subject()
+   defer print('outer') end
+   defer
+      print('throwing')
+      error('cleanup failure')
+   end
+   defer print('inner') end
+   error('body failure')
+end
+
+try
+   subject()
+except e
+   print(e.message) -- 'cleanup failure' (replaced 'body failure')
+end
+-- Output:
+-- inner
+-- throwing
+-- outer
+-- cleanup failure
+----
+
+To keep a deferred block from replacing the propagating error, wrap the body in a `try` block:
+
+[source,tiri]
+----
+defer
+   try
+      risky_cleanup()
+   end
+end
+----
+
+[[sec-defer-with-arguments]]
+=== Defer with Arguments
+indexterm:[defer statement, arguments] The parameterised form of `defer` captures argument values at registration time rather than at execution time.  This provides value snapshotting for cases where a variable changes between registration and scope exit.
+
+[discrete]
+==== Syntax
+
+[source,tiri]
+----
+defer(Param1, Param2, ...)
+   -- body using Param1, Param2, ...
+end(Expr1, Expr2, ...)
+----
+
+Parameters are declared in the parentheses after `defer`.  Arguments are provided in the parentheses after `end`.  The number of arguments must match the number of parameters.  Each argument expression is evaluated at the point where `defer` is encountered, and the resulting values are bound to the corresponding parameters.
+
+The block is registered only after every argument expression has been evaluated.  An error raised while evaluating an argument propagates unchanged and leaves the block unregistered, so the body does not run on the resulting unwind:
+
+[source,tiri]
+----
+defer(First, Second)
+   print('never reached')
+end(compute(), failing_call())   -- error propagates; block is not registered
+----
+
+[discrete]
+==== Semantics
+
+[source,tiri]
+----
+function snapshot_example()
+   status = 'initial'
+   defer(s)
+      print(s)
+   end(status)
+   status = 'modified'
+end
+-- Output: initial
+----
+
+The argument `s` receives the value of `status` at the time the `defer` statement is reached.  Subsequent modifications to `status` do not affect the captured value.
+
+[discrete]
+==== Multiple Arguments
+
+Multiple arguments are captured independently:
+
+[source,tiri]
+----
+function multi_args()
+   id = 'op-001'
+   start = os.time()
+   defer(op_id, op_start)
+      elapsed = os.time() - op_start
+      print(op_id .. ' completed in ' .. tostring(elapsed) .. 's')
+   end(id, start)
+   id = 'op-002' -- does not affect deferred values
+end
+----
+
+[discrete]
+==== Mixing Capture Modes
+
+A parameterised `defer` can access both its snapshotted parameters and upvalues from the enclosing scope.  Parameters are frozen at registration time; upvalues reflect their value at execution time:
+
+[source,tiri]
+----
+function mixed_capture()
+   label = 'start'
+   counter = 0
+   defer(saved_label)
+      -- saved_label is frozen; counter is an upvalue
+      print(saved_label .. ': ' .. tostring(counter))
+   end(label)
+   label = 'end'
+   counter = 42
+end
+-- Output: start: 42
+----
+
+TIP: Use argument snapshots when a variable is reassigned between registration and scope exit and the original value is needed.  Use upvalue capture (no arguments) when the cleanup needs the latest state of a variable or the variable holds an object reference that does not change.
+
+[[sec-to-be-closed-variables]]
+=== To-Be-Closed Variables
+indexterm:[to-be-closed variables] indexterm:[close variables] The `<close>` attribute marks a local variable for automatic cleanup via the `pass:[__]close` metamethod when the variable's scope exits.  This provides deterministic resource cleanup that is more reliable than garbage collection.  Most crucially, correct use of `pass:[__]close` can ensure that acquired resources and locks are immediately released in the event of an exception.
+
+[discrete]
+==== Syntax
+
+[source,tiri]
+----
+local Name <close> = Expression   -- explicit local
+Name <close> = Expression         -- implicit local (local-by-default)
+----
+
+The `<close>` attribute appears between the variable name and the optional type annotation.  The variable must be initialised at declaration.
+
+Because `<close>` is only meaningful on local variables, the parser treats `Name <close> = Expression` as a local declaration even without the `local` keyword.  The two forms are semantically identical.  The attribute has the same effect on any name in a comma-separated list, and the full rule is defined in <<sec-declarations-without-local>>.
+
+==== The pass:[__]close Metamethod
+
+When a `<close>` variable's scope exits, the runtime invokes the `pass:[__]close` metamethod from the value's metatable.  The value being closed is the subject of the metamethod, which declares one argument:
+
+[cols="1,1,3a",options="header"]
+|===
+|Argument |Type |Description
+
+|`Error`
+|any or nil
+|`nil` for normal scope exit.  The error object if the scope is being unwound due to an exception caught by `try`.
+|===
+
+[source,tiri]
+----
+mt = {
+   __close = function(Error)
+      print(f'Closing: {&name}')
+      if Error then print(f'Error: {Error}') end
+   end
+}
+
+do
+   res <close> = setmetatable({ name = 'resource' }, mt)
+end
+-- Output: Closing: resource
+----
+
+[discrete]
+==== Handler Context
+
+A `pass:[__]close` handler is dispatched as a metamethod, so the value being closed is installed as its current context on both the normal and the error path (<<sec-metamethod-handler-form>>).  The body reaches the closed value through self referencing, and the caller's context is restored when the handler returns (<<sec-context-restoration>>):
+
+[%unbreakable]
+[source,tiri]
+----
+do
+   res <close> = setmetatable({ name = 'resource', open = true }, {
+      __close = function()
+         &open = false          -- clears the field on the closed value
+      end
+   })
+end
+----
+
+A handler that must act on a table other than the value being closed captures that table as an upvalue:
+
+[source,tiri]
+----
+session = entity { name = 'session', open = true }
+
+function session.run()
+   subject = &&
+   res <close> = setmetatable({}, {
+      __close = function()
+         subject.open = false   -- the captured 'session', not the closed value
+      end
+   })
+end
+----
+
+[discrete]
+==== Execution Order
+
+Multiple `<close>` variables in the same scope execute their handlers in LIFO order (last declared, first closed):
+
+[source,tiri]
+----
+do
+   a <close> = setmetatable({}, {
+      __close = function() print('close a') end
+   })
+   b <close> = setmetatable({}, {
+      __close = function() print('close b') end
+   })
+end
+-- Output:
+-- close b
+-- close a
+----
+
+[discrete]
+==== Interaction with Defer
+
+When both `<close>` handlers and `defer` blocks exist in the same scope, `<close>` handlers execute first, followed by `defer` blocks.  Both sets execute in LIFO order independently:
+
+[source,tiri]
+----
+do
+   defer
+      print('defer')
+   end
+   local tab <close> = setmetatable({}, {
+      __close = function() print('close') end
+   })
+end
+-- Output:
+-- close
+-- defer
+----
+
+Error unwinding applies the same order, one scope at a time from the innermost outwards.  Each scope closes its `<close>` variables before running its deferred blocks, and the next enclosing scope is processed only after the current one is complete:
+
+[source,tiri]
+----
+function tracked(Name:str):table
+   return setmetatable({}, {
+      __close = function() print(Name) end
+   })
+end
+
+function subject()
+   defer print('outer-defer') end
+   local outer <close> = tracked('outer-close')
+   do
+      defer print('inner-defer') end
+      local inner <close> = tracked('inner-close')
+      error('failure')
+   end
+end
+
+try
+   subject()
+except e
+end
+-- Output:
+-- inner-close
+-- inner-defer
+-- outer-close
+-- outer-defer
+----
+
+[discrete]
+==== Safe Values
+
+Values without metatables are safely ignored.  Assigning `nil`, `false`, a string, a number, or a table without a `pass:[__]close` metamethod to a `<close>` variable does not produce an error:
+
+[source,tiri]
+----
+do
+   a <close> = nil    -- no action
+   b <close> = false  -- no action
+   c <close> = 42     -- no action
+   d <close> = {}     -- no action (no metatable)
+end
+----
+
+A value with a metatable that does not define `pass:[__]close` is also safely ignored.
+
+[discrete]
+==== Native Objects
+
+indexterm:[objects, close] indexterm:[close variables, objects] Kōtuku object interfaces (<<ch-the-object-system>>) define `pass:[__]close` natively.  Binding an object to a `<close>` variable destroys the underlying object when the scope exits, with the same effect as calling `free()`:
+
+[source,tiri]
+----
+do
+   file <close> = obj<File> { path = Path, flags = FL_READ }
+   content = file.acRead()
+end
+-- The object is destroyed here.
+----
+
+Termination is unconditional.  It applies to weakly referenced wrappers returned by `obj.find()` as well as to strongly referenced objects, and it destroys the object even when other references to it remain.  Those references become stale and return `false` from `exists()`.
+
+Termination is idempotent.  Calling `free()` before the scope exits, or closing a wrapper whose object has already been destroyed, performs no further action and raises no error.  If the object cannot be destroyed immediately because a lock or pin is outstanding, it is marked for termination and destroyed when the last of those references is released.
+
+Closing an `array<obj>` closes the array storage only.  Object elements are references and are not terminated:
+
+[source,tiri]
+----
+do
+   local resources <close> = array<obj> { target }
+end
+-- target remains alive.
+----
+
+[discrete]
+==== Control Flow
+
+`<close>` handlers execute on all scope exit paths:
+
+[source,tiri]
+----
+mt = { __close = function() print('closed') end }
+
+-- On return
+function on_return()
+   r <close> = setmetatable({}, mt)
+   return 'value'
+end
+
+-- On break
+for i in {1 into 10} do
+   r <close> = setmetatable({}, mt)
+   if i is 3 then break end
+end
+
+-- On continue
+for i in {1 into 3} do
+   r <close> = setmetatable({}, mt)
+   if i is 2 then continue end
+end
+
+-- Per iteration
+for i in {1 into 3} do
+   r <close> = setmetatable({}, mt)
+end -- closed three times, once per iteration
+----
+
+[discrete]
+==== Error Path Behaviour
+
+`<close>` handlers participate in error unwinding.  When an exception is caught by a `try` block, all `<close>` handlers in the unwound scopes are called with the error as their declared argument:
+
+[source,tiri]
+----
+mt = {
+   __close = function(Error)
+      if Error then print(f'Error during close: {Error}') end
+   end
+}
+
+try
+   res <close> = setmetatable({}, mt)
+   error('something failed')
+except e
+   print('Caught: ' .. e.message)
+end
+-- Output:
+-- Error during close: ...something failed...
+-- Caught: something failed
+----
+
+If a `pass:[__]close` handler raises an error, it replaces the original exception.  All remaining `<close>` handlers still execute.  The last error raised by a `pass:[__]close` handler becomes the final exception:
+
+[source,tiri]
+----
+mt1 = { __close = function() error('close error') end }
+mt2 = { __close = function() print('still runs') end }
+
+try
+   b <close> = setmetatable({}, mt2)
+   a <close> = setmetatable({}, mt1) -- LIFO: a closes first
+   error('original')
+except e
+   print(e.message) -- 'close error' (replaced original)
+end
+-- Output:
+-- still runs
+-- close error
+----
+
+[[sec-deferred-expressions]]
+=== Deferred Expressions (Thunks)
+indexterm:[deferred expressions] indexterm:[thunks] Deferred expressions provide lazy evaluation: an expression is not computed until its value is accessed.  This avoids unnecessary work for values that may never be used.
+
+[discrete]
+==== Syntax
+
+[source,tiri]
+----
+<{ expression }>           -- type inferred
+<type{ expression }>       -- explicit type annotation
+----
+
+The inferred form omits the type name:
+
+[source,tiri]
+----
+x = <{ 'hello' }>
+y = <{ 42 + 8 }>
+----
+
+The explicitly typed form includes a type name before the opening brace:
+
+[source,tiri]
+----
+x = <str{ getValue() }>
+y = <num{ compute() }>
+----
+
+The type name is drawn from the native vocabulary and accepts every name listed in <<sec-native-type-names>>, with the exception of the constrained forms `array<element>` and `struct<Name>`: the deferred form takes a bare name, so `array` and `struct` impose no element or layout constraint.  Any other name raises a parse-time error.
+
+[discrete]
+==== Semantics
+
+The expression inside `<{ }>` is wrapped in a closure but not evaluated.  The closure captures upvalues from the enclosing scope.  Evaluation occurs on first access through one of the following:
+
+* An explicit call to `resolve()`.
+* An operation that requires the underlying value (field access, arithmetic, comparison, concatenation).
+* Passing the value to a Kotuku API function.
+
+Once evaluated, the result is cached.  Subsequent accesses return the cached value without re-evaluation:
+
+[source,tiri]
+----
+count = 0
+x = <{ count++; count }>
+print(resolve(x))  -- 1 (evaluates, caches)
+print(resolve(x))  -- 1 (returns cached value)
+----
+
+[discrete]
+==== Type Inference
+
+For literal values and simple expressions, the type is inferred automatically:
+
+[cols="1,1a",options="header"]
+|===
+|Expression |Inferred Type
+
+|`<{ 'text' }>`
+|string
+
+|`<{ 42 }>`
+|number
+
+|`<{ true }>`
+|bool
+
+|`<{ {} }>`
+|table
+
+|`<{ a + b }>`
+|number
+
+|`<{ s .. t }>`
+|string
+
+|`<{ a < b }>`
+|bool
+|===
+
+When the expression is a function call or otherwise ambiguous, use an explicit type annotation to ensure correct behaviour with type-checking code.
+
+[discrete]
+==== Type Inspection
+
+Calling `type()` on an unresolved deferred expression returns the declared or inferred type without triggering evaluation.  `rawtype()` reports the thunk container itself, also without triggering evaluation:
+
+[source,tiri]
+----
+x = <{ 'hello' }>
+print(type(x))     -- 'string' (no evaluation)
+print(rawtype(x))  -- 'thunk'  (no evaluation)
+----
+
+`rawtype()` reports `'thunk'` for every deferred expression, including one that declares no type.  See <<sec-type-inspection>>.
+
+==== resolve()
+
+[.api]`Value = resolve(Input)`
+
+Use `resolve()` to evaluate a deferred expression and acquire the result.  If `Input` is not a deferred expression, it is passed through unchanged.
+
+[source,tiri]
+----
+lazy = <{ expensive_computation() }>
+value = resolve(lazy) -- evaluates and caches
+
+plain = 42
+same = resolve(plain) -- returns 42 unchanged
+----
+
+==== isthunk()
+
+[.api]`result = isthunk(Value)`
+
+Returns `true` if `Value` is an unresolved deferred expression, `false` otherwise.  `type()` reports the declared or inferred type of a thunk rather than identifying it as one, so it cannot make the distinction; `rawtype()` reports `'thunk'` and is equivalent to `isthunk()` for this purpose.  See <<sec-type-inspection>>.
+
+[source,tiri]
+----
+lazy = <{ 'hello' }>
+type(lazy)      -- 'string' (no evaluation)
+isthunk(lazy)   -- true
+
+plain = 'hello'
+isthunk(plain)  -- false
+----
+
+==== Deferred Parameters
+
+A deferred parameter avoids computation until the function uses its value.  For example, `assert()` evaluates its message only when the assertion fails:
+
+[source,tiri]
+----
+assert(condition, <str{ 'Failure details: ' .. expensive_debug_info() }>)
+-- expensive_debug_info() runs only if condition is false
+----
+
+NOTE: Due to this pattern being extremely common, the Tiri parser automatically encapsulates the assert message in a deferred expression, making explicit wrapping unnecessary.
+
+==== Thunk Keyword
+
+The `thunk` keyword declares a function that returns a deferred value.  When called, the function captures its arguments but does not execute the body.  The body executes on first access to the returned value.
+
+[source,tiri]
+----
+thunk Name(Params):type
+   block
+end
+----
+
+[source,tiri]
+----
+thunk fetch_user(Id:num):table
+   return database.query('SELECT * FROM users WHERE id = ?', Id)
+end
+
+user[123] = fetch_user(123)  -- captures Id=123, body not executed
+print(user[123].name)        -- executes body, caches result
+print(user[123].email)       -- uses cached result
+----
+
+Parameters are captured at call time.  The body executes once on first access; the result is cached.  `type()` returns the declared type without executing the body.
+
+Anonymous thunks without parameters are assigned directly and auto-resolve on first access without requiring an invocation step:
+
+[source,tiri]
+----
+available = thunk():bool
+   return check_availability()
+end
+
+print(available) -- resolves and caches on first access
+----
+
+[[sec-finalisers-and-scope-cleanup]]
+=== Finalisers and Scope-Based Cleanup
+
+indexterm:[finalisers] indexterm:[garbage collection, finalisers] The `pass:[__]gc` metamethod registers a _finaliser_ on a table or full userdata, which the garbage collector invokes before the object is reclaimed (see <<sec-garbage-collection>>).  A finaliser is not a substitute for `<close>` or `defer`.  The three mechanisms differ in when they run and in whether they run at all:
+
+[cols="1,2a,1,1",options="header"]
+|===
+|Mechanism |Runs |Error unwinding |Timing
+
+|`defer`
+|On normal exit from the enclosing scope
+|No
+|Deterministic
+
+|`<close>`
+|On any exit from the enclosing scope
+|Yes
+|Deterministic
+
+|`pass:[__]gc`
+|When the collector reclaims an unreachable object, or at interpreter shutdown
+|Not applicable
+|Nondeterministic
+|===
+
+A `defer` block or `<close>` handler runs at a point that is visible in the source code.  A finaliser runs at an unspecified point after the last reference to the object is released.  The interval between those two events is unbounded: it depends on collector scheduling, and an object that remains reachable is not finalised until shutdown.
+
+Scarce resources must therefore not depend on `pass:[__]gc` for release.  File handles, sockets, locks, and device handles are limited in number, and a program that relies on finalisation to return them exhausts the supply before the collector reacts.  Release such resources explicitly, or wrap them in a value carrying a `pass:[__]close` metamethod where the resource's lifetime matches a lexical scope:
+
+[source,tiri]
+----
+handle_mt = {
+   __close = function(Error)
+      &file.close()
+   end
+}
+
+-- Deterministic: the file is closed when the scope exits, including on error.
+do
+   local resource <close> = setmetatable(
+      { file = io.open('temp:data.txt', 'r') }, handle_mt
+   )
+   process(resource.file.read('*a'))
+end
+----
+
+Reserve `pass:[__]gc` for cleanup that is not time-critical, such as releasing memory owned outside the collector, and for use as a backstop that reports or recovers from a resource that was not released explicitly.  Because a finaliser runs at most once and its errors are contained by the collector rather than raised to the program, it cannot be used to signal failure to the caller.
+
+[[sec-patterns-and-idioms]]
+=== Patterns and Idioms
+
+The following patterns demonstrate common resource management techniques.
+
+[discrete]
+==== Resource Acquisition and Cleanup
+
+Place `defer` immediately after acquiring a resource to guarantee cleanup on normal exit paths:
+
+[source,tiri]
+----
+function process_file(Path:str)
+   file = obj<File> { path = Path }
+   defer
+      file.acFree()
+   end
+   content = file.acRead()
+   return content
+end
+----
+
+[discrete]
+==== Ordered Resource Release
+
+When multiple resources have dependencies, use multiple `defer` blocks.  LIFO ordering ensures dependent resources are released in the correct order:
+
+[source,tiri]
+----
+function transfer(SourcePath:str, DestPath:str)
+   source = obj<File> { path = SourcePath, flags = FL_READ }
+   defer
+      source.acFree()
+   end
+   dest = obj<File> { path = DestPath, flags = FL_WRITE|FL_NEW }
+   defer
+      dest.acFree()
+   end
+   -- dest is freed before source (LIFO)
+end
+----
+
+[discrete]
+==== Transaction Rollback
+
+Use an upvalue flag to conditionally execute cleanup:
+
+[source,tiri]
+----
+function perform_transaction(Operations:table)
+   txn = db.begin()
+   committed = false
+   defer
+      if not committed then
+         txn.rollback()
+      end
+   end
+   for _, op in pairs(Operations) do
+      txn.execute(op)
+   end
+   txn.commit()
+   committed = true
+end
+----
+
+[discrete]
+==== State Restoration
+
+Use argument snapshots to capture and restore original state:
+
+[source,tiri]
+----
+function with_temp_state(Obj:table, NewState:str)
+   defer(prev)
+      Obj.state = prev
+   end(Obj.state)
+   Obj.state = NewState
+   process(Obj)
+end
+----
+
+[discrete]
+==== Lazy Initialisation with Deferred Expressions
+
+Use deferred expressions to delay expensive initialisation until first use:
+
+[source,tiri]
+----
+config = <table{ load_config_from_disk() }>
+-- config is loaded only when first accessed
+if needs_config then
+   print(config.setting)
+end
+----

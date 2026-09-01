@@ -1,0 +1,139 @@
+// UPDATED: 2026-07-06 -- Added the `extern` keyword.
+// UPDATED: 2026-04-03 -- Clarified `is not` as an inequality form using reserved words.
+// CHANGED: 2026-08-07 -- Documented the contextual keywords `module` and `struct`, and `as` in its module-declaration role (commit 45b671b20).
+// UPDATED: 2026-08-13 -- Added the reserved word `using` and the contextual keyword `entity` (commit d3638efc0).
+// UPDATED: 2026-08-15 -- Added the reserved word `method` and the positions in which it stays available as an
+//                        identifier (commit ac4f30a67).
+// UPDATED: 2026-08-16 -- Renamed the reserved word `method` to `metamethod`; `method` is now an ordinary identifier
+//                        (commit 5c92d652a).
+// UPDATED: 2026-08-19 -- Removed the reserved word `metamethod`; it is now an ordinary identifier and metatable
+//                        handlers are ordinary functions (commit 81aa5f3).
+// UPDATED: 2026-08-23 - Added the reserved word `checkall` (commit 136e79469).
+// CHANGED: 2026-08-31 - `namespace` takes an identifier and binds it as a constant local; the reference now
+//                       points at the namespace declaration section (commit 4a0d907ae)
+[[appendix-reserved-words]]
+[appendix]
+== Reserved Words & Keywords
+indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-reference for all reserved words in Tiri.  Reserved words cannot be used as identifiers.  All reserved words are case-sensitive; `and` is reserved but `And` and `AND` are valid identifiers.  See <<sec-keywords>> for the normative definition.
+
+=== Reserved Word List
+
+[cols="6*"]
+|===
+|`and`      |`as`      |`break`   |`check`    |`checkall` |`choose`
+|`continue` |`defer`   |`do`      |`else`     |`elseif`   |`end`
+|`enum`     |`except`  |`extern`  |`false`    |`for`      |`from`
+|`function` |`global`  |`has`     |`if`       |`import`   |`in`
+|`is`       |`local`   |`namespace`|`nil`     |`not`      |`or`
+|`raise`    |`repeat`  |`return`  |`success`  |`then`     |`thunk`
+|`true`     |`try`     |`until`   |`using`    |`when`     |`while`
+|`with`     |          |          |           |           |
+|===
+
+A reserved word remains available as a table member name, so `t.using` and `t.with` are valid field accesses.
+
+=== Reference by Category
+
+==== Literals
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`nil`   |The nil value.  Represents the absence of a value.
+|`true`  |Boolean true literal.
+|`false` |Boolean false literal.
+|===
+
+==== Variable and Function Declaration
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`local`    |Declares a variable or function with local scope.  See <<ch-variables-and-scoping>>.
+|`global`   |Declares a variable or function with global scope.  See <<ch-variables-and-scoping>>.
+|`extern`   |Declares that a symbol is supplied externally and resolves as a global reference.  See <<sec-the-extern-keyword>>.
+|`enum`     |Declares a group of named integer constants.  See <<sec-enum-declarations>>.
+|`function` |Declares a named or anonymous function.  See <<ch-functions>>.
+|`return`   |Returns values from a function.  See <<ch-functions>>.
+|`thunk`    |Declares a lazily evaluated expression.
+|===
+
+==== Control Flow
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`if`       |Begins a conditional statement.  See <<ch-control-flow>>.
+|`then`     |Separates the condition from the body in `if` and `elseif` clauses.
+|`else`     |Introduces the alternative branch of an `if` statement.
+|`elseif`   |Introduces an additional condition in an `if` chain.
+|`end`      |Terminates a block (`if`, `for`, `while`, `do`, `function`, `try`, `choose`, `with`).
+|`do`       |Introduces an anonymous block or the body of a `for`/`while` loop.
+|`for`      |Begins a loop.  See <<ch-control-flow>>.
+|`in`       |Separates the iterator variable from the iterator expression in a `for` loop.  Also the membership operator (see <<sec-membership-operator>>).
+|`while`    |Begins a condition-tested loop.  See <<ch-control-flow>>.
+|`repeat`   |Begins a `repeat`/`until` loop.  See <<ch-control-flow>>.
+|`until`    |Terminates a `repeat` loop and specifies its exit condition.
+|`break`    |Exits the innermost enclosing loop.  See <<ch-control-flow>>.
+|`continue` |Skips to the next iteration of the innermost enclosing loop.  See <<ch-control-flow>>.
+|`choose`   |Begins a pattern-matching statement.  See <<ch-pattern-matching>>.
+|`from`     |Specifies the scrutinee in a `choose` statement.
+|===
+
+==== Logical Operators
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`and` |Logical AND.  Short-circuits; returns the first false operand or the last operand.  See <<sec-logical-operators>>.
+|`or`  |Logical OR.  Short-circuits; returns the first true operand or the last operand.  See <<sec-logical-operators>>.
+|`not` |Logical negation.  Returns `true` if the operand is false; `false` otherwise.  See <<sec-logical-operators>>.
+|`is`  |Equality comparison.  Replaces `==` from standard Lua.  Combines with `not` as `is not` for inequality.  See <<sec-comparison-operators>>.
+|`has` |Bitwise flag testing.  Returns `true` if any flags in the right operand are set in the left operand.  See <<sec-flag-testing-operator>>.
+|===
+
+==== Exception Handling
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`try`      |Begins an exception-handling block.  See <<ch-error-handling>>.
+|`except`   |Catches exceptions raised within a `try` block.
+|`success`  |Executes when a `try` block completes without raising an exception.
+|`when`     |Filters exceptions by error code in an `except` clause.  Also introduces a guard expression on a `choose` case arm (see <<sec-guards>>).
+|`raise`    |Raises an exception with a specific error code and optional message.
+|`check`    |Evaluates an error code and raises an exception if it is at or above the exception threshold.
+|`checkall` |Applies `check` semantics to every Kōtuku API call in the immediate scope of a block.  See <<sec-the-checkall-statement>>.
+|===
+
+==== Scoping and Organisation
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`with`      |Locks one or more Kōtuku objects for the duration of a block, releasing them on every exit path.  See <<sec-object-locking>>.
+|`namespace` |Declares the namespace that owns a library's exports, binding the name as a constant local.  See <<sec-namespace-declarations>>.
+|`import`    |Inlines a Tiri library script at parse time.  See <<sec-the-import-directive>>.
+|`as`        |Provides a namespace alias in an `import` statement, and binds a module namespace in a `module` declaration.  See <<sec-the-import-directive>> and <<sec-module-declarations>>.
+|`defer`     |Registers code to execute when the enclosing scope exits.  See <<ch-resource-management>>.
+|`using`     |Activates a table as the current context for the duration of a block.  See <<sec-context-blocks>>.
+|===
+
+=== Contextual Keywords
+
+indexterm:[contextual keywords] A contextual keyword introduces a declaration only in a specific syntactic position.  It is not reserved, so it remains available as an ordinary identifier everywhere else.
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`module` |Binds a Kōtuku module to a namespace when followed by an identifier, as `module Name as Namespace`.  See <<sec-module-declarations>>.
+|`struct` |Declares a struct layout when followed by an identifier.  See <<sec-struct-declarations>>.
+|`entity` |Designates a table as an entity when followed by a table constructor, as `entity { pass:[...] }`.  The form takes precedence over the same-line table-argument call shorthand, so a callable named `entity` requires parenthesised call syntax.  See <<sec-table-entities>>.
+|===

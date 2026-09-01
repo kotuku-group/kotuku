@@ -1,0 +1,70 @@
+// UPDATED: 2026-04-03 -- Added `is not` to the precedence quick-reference.
+// UPDATED: 2026-05-25 — Added approximate equality operator (≈) to the precedence table.
+// CHANGED: 2026-07-30 — Corrected precedence: `^` and `|` bind tighter than the comparison operators; `**` binds tighter than unary operators; levels renumbered.
+// UPDATED: 2026-08-11 - Removed '?:' from the suffix chain list; the safe method operator no longer exists (commit 7e6746950)
+// UPDATED: 2026-08-13 - Added the Self Referencing section distinguishing '&name' and '&&' from the binary '&'
+//                       (commit d3638efc0)
+// UPDATED: 2026-08-16 - The ternary separator is now ':' rather than ':>' (commit 982d890de)
+
+[[appendix-operator-precedence]]
+[appendix]
+== Operator Precedence
+indexterm:[operators, precedence] This appendix provides a quick-reference for all Tiri operators, ordered from highest to lowest precedence.  Operators on the same row share the same precedence level.  See <<ch-operators>> for full semantics.
+
+=== Precedence Table
+[cols="1,4,2"]
+|===
+|Level |Operators |Associativity
+|13|`pass:[**]`|Right
+|12|`-` (unary), `not`, `#`, `~` (unary)|Unary (right)
+|11|`*`, `/`, `%`|Left
+|10|`+`, `-`|Left
+|9|`<<`, `>>`|Left
+|8|`&`|Left
+|7|`..`|Right
+|6|`^`|Left
+|5|`\|`|Left
+|4|`is`, `is not`, `!=`, `<`, `>`, `\<=`, `>=`, `in`, `has`, `≈` |Left
+|3|`and`|Left
+|2|`\|>`|Left
+|1|`or`, `??`, `?!`, `? :`, `?? :`|Left (ternary forms right)
+|===
+
+=== Postfix and Suffix Operators
+
+Postfix operators (`++`, `??` postfix) and suffix chains (`.field`, `[index]`, `()`, `?.`, `?[]`) bind tighter than all binary operators.  They evaluate immediately after the primary expression, left to right.
+
+=== Self Referencing
+
+`&name` and `+&&+` are primary expressions, not operators, so they carry no precedence of their own and accept the suffix chain above.
+
+The `&` at level 8 is the bitwise AND operator.  The two readings are separated by adjacency: a `&` followed immediately by an identifier is a self reference, and a `&` separated from its operand by whitespace is the binary operator.  A self reference that opens a line also terminates the expression on the preceding line.  See <<sec-self-referencing>>.
+
+=== Compound Assignment Operators
+
+Compound assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`, `..=`, `?=`, `??=`) are statements, not expressions.  They do not participate in precedence evaluation.
+
+=== Parentheses
+
+Parentheses override precedence.  `(a + b) * c` forces addition before multiplication.
+
+=== Examples
+
+[source,tiri]
+----
+2 + 3 * 4           -- 14 (level 11 before level 10)
+2 ** 3 ** 2         -- 512 (right-associative: 2 ** (3 ** 2))
+-x ** 2             -- -(x ** 2) (** level 13 before unary level 12)
+'a' .. 'b' .. 'c'   -- 'abc' (right-associative)
+x > 0 and x < 10    -- comparison (level 4) before logical (level 3)
+a & 0xFF | 0x100    -- AND (level 8) before OR (level 5)
+2 | 1 is 3          -- true: OR (level 5) before comparison (level 4)
+6 & 3 .. 'x'        -- '2x': & (level 8) before .. (level 7)
+3 ^ 1 .. 'x'        -- error: .. (level 7) before ^ (level 6)
+flags has F1 | F2   -- has (level 4) consumes bitwise OR on RHS
+a has b and c has d -- (a has b) and (c has d): has (4) before and (3)
+0.1 + 0.2 ≈ 0.3     -- arithmetic (level 10) before approx (level 4)
+x and y |> f()      -- (x and y) |> f(): and (3) before |> (2)
+a ?? b or c         -- ?? and or share level 1; evaluates left to right
+x ? a : y ? b : c   -- right-associative: x ? a : (y ? b : c)
+----

@@ -1,0 +1,399 @@
+// VERIFIED: 2028-08-05
+// UPDATED: 2026-08-21 - Added __iter metamethod to bare collection iteration resolution order (commit 28cc93e73)
+// UPDATED: 2026-08-06 - Documented bare collection iteration in generic for loops (commit 5f9e2003e)
+// UPDATED: 2026-08-22 - Added the Callback Traversal section for forEach(), the callback counterpart of the generic
+//                       for loop and the replacement for pipe iteration (commit 790a9ebb2)
+
+[[ch-control-flow]]
+== Control Flow
+indexterm:[control flow] This chapter defines the control flow statements in Tiri: conditionals, loops, loop control, and return.  All blocks are delimited by keywords (`then`/`do`/`repeat`) and terminated by `end` or `until`.
+
+Only `nil` and `false` are false when evaluating conditions.  All other values -- including `0`, `""`, and empty tables -- are considered true.  All condition statements in this chapter follow this rule.  Using the <<sec-conditional-operators,conditional operator>> `??` is the standard approach to overcoming this restriction, at a slight cost to performance.
+
+[[sec-if-elseif-else]]
+=== If / Elseif / Else
+[source,ebnf]
+----
+if_statement = "if" expression "then" block
+               { "elseif" expression "then" block }
+               [ "else" block ]
+               "end" ;
+----
+
+indexterm:[if statements] Evaluates `expression` and executes the associated `block` if the result is true.  If the condition is false, subsequent `elseif` clauses are tested in order.  If no condition is true and an `else` clause is present, its block executes.  At most one block executes per `if` statement.
+
+[source,tiri]
+----
+if x > 0 then
+   print('positive')
+elseif x is 0 then
+   print('zero')
+else
+   print('negative')
+end
+----
+
+Each `block` introduces a new scope.  Variables declared inside a branch are not visible outside the `if` statement.
+
+[[sec-while-loop]]
+=== While Loop
+[source,ebnf]
+----
+while_statement = "while" expression "do" block "end" ;
+----
+
+indexterm:[loops, while] Evaluates `expression` before each iteration.  If the result is true, `block` executes and the condition is re-evaluated.  If the result is false, the loop terminates.  If the condition is false on the first evaluation, the body never executes.
+
+[source,tiri]
+----
+i = 0
+while i < 5 do
+   print(i)
+   i++
+end
+----
+
+The loop body introduces a new scope.  `break` and `continue` are permitted (see <<sec-break-and-continue>>).
+
+[[sec-repeat-until-loop]]
+=== Repeat-Until Loop
+[source,ebnf]
+----
+repeat_statement = "repeat" block "until" expression ;
+----
+
+indexterm:[loops, repeat until] Executes `block` and then evaluates `expression`.  If the result is false, the loop iterates again.  If the result is true, the loop terminates.  The body always executes at least once.
+
+[source,tiri]
+----
+i = 0
+repeat
+   print(i)
+   i++
+until i >= 5
+----
+
+The scope of the `block` extends to include the `until` condition.  Variables declared inside the body are visible in the condition expression.
+
+[source,tiri]
+----
+repeat
+   line = read_line()
+until line is 'quit'
+----
+
+`break` and `continue` are permitted.  `continue` jumps to the `until` condition check.
+
+[[sec-range-for-loop]]
+=== Range For Loop
+[source,ebnf]
+----
+range_for = "for" [ identifier "in" ] range_literal "do" block "end" ;
+----
+
+indexterm:[loops, range for] `for Name in {Start to Stop [by Step]} do pass:[...] end`
+
+Counted iteration is expressed with a range literal.  `Start`, `Stop` and `Step` are evaluated once before the loop begins.  On each iteration, the loop variable `Name` is set to the current value.  The loop terminates when the sequence defined by the range is exhausted.
+
+The loop variable is local to the loop body and is not accessible after the loop terminates.  Assigning to the loop variable inside the body does not affect iteration.
+
+==== Range Iteration
+
+A range literal can be used with `in` to iterate over a numeric sequence:
+
+[source,tiri]
+----
+for i in {0 to 5} do
+   print(i)   -- 0, 1, 2, 3, 4
+end
+
+for i in {1 into 5} do
+   print(i)   -- 1, 2, 3, 4, 5
+end
+----
+
+`{Start to Stop}` is an exclusive range: the stop value is not included.  `{Start into Stop}` is an inclusive range: the stop value is included.  The step direction is determined automatically from the start and stop values.  Operands can be fractional:
+
+[source,tiri]
+----
+for i in {0 to 1 by 0.25} do
+   print(i)   -- 0, 0.25, 0.5, 0.75
+end
+----
+
+When a single loop variable iterates over a range literal whose bounds are constant whole numbers within the signed 32-bit integer range, the compiler lowers it to an optimised counted loop.  Variable bounds and fractional operands use the generic iterator path.  Both paths produce the same sequence.
+
+[source,tiri]
+----
+for i in {10 to 0} do
+   print(i)   -- 10, 9, 8, ..., 1  (exclusive of 0)
+end
+
+for i in {5 into 1} do
+   print(i)   -- 5, 4, 3, 2, 1  (inclusive)
+end
+----
+
+See <<ch-ranges>> for the full range type specification.
+
+==== Anonymous For Loop
+
+The loop variable can be omitted when only the iteration count matters:
+
+[source,tiri]
+----
+for {0 to 5} do
+   print('hello')   -- prints 5 times
+end
+----
+
+The anonymous form accepts the same range syntax as the named form.  `break` and `continue` are permitted.
+
+WARNING: A zero `Step` produces an infinite loop.
+
+[[sec-generic-for-loop]]
+=== Generic For Loop
+[source,ebnf]
+----
+generic_for = "for" identifier_list "in" expression_list "do" block "end" ;
+identifier_list = identifier { "," identifier } ;
+----
+
+indexterm:[loops, generic for] `for Var1 [, Var2, pass:[...]] in iterator_expr do pass:[...] end`
+
+Evaluates `iterator_expr` once to obtain an iterator function, an invariant state, and an initial control variable.  On each iteration, the iterator function is called with the state and current control variable.  If the first return value is `nil`, the loop terminates.  Otherwise, the return values are assigned to the loop variables.
+
+[source,tiri]
+----
+for i, v in {10, 20, 30} do
+   print(i, ' ', v)   -- 0 10, 1 20, 2 30
+end
+----
+
+The loop variables are local to the loop body.
+
+[[sec-bare-collection-iteration]]
+==== Bare Collection Iteration
+
+indexterm:[loops, bare iteration] indexterm:[iteration, bare collections] When the expression list after `in` yields exactly one value and that value is a collection, the collection is iterated directly.
+
+[source,tiri]
+----
+for index, value in array<int> { 10, 20, 30 } do end   -- 0 10, 1 20, 2 30
+for key, value in { x = 1, y = 2 } do end              -- 'x' 1, 'y' 2
+for value in range(1, 5) do end                        -- 1, 2, 3, 4
+----
+
+The target expression is evaluated exactly once, before the first iteration, so a function call in the loop header is not repeated per element.
+
+When the target carries a `pass:[__]iter` metamethod in its metatable, that metamethod is called to produce the iterator function and the default collection behaviour described below is bypassed.  See <<sec-iter-metamethod>> for the full protocol.
+
+When no `pass:[__]iter` metamethod is present, the three collection categories yield the following defaults:
+
+`array`::
+Index and value, zero-based, in ascending index order.  A single loop variable therefore receives the *index*, not the element; write `for _, value in arr` or `values(arr)` to iterate elements alone.
+
+`table`::
+Key and value, exactly as `pairs()` produces them.  The order over non-integer keys is unspecified.
+
+`range`::
+Each value of the sequence in turn.  This covers ranges held in a variable and ranges returned by `range()` and `range.new()`, not only range literals.
+
+A single value that is not a collection is still resolved by the established rules.  A function is used as the iterator function, as is any non-collection value carrying a `pass:[__]call` metamethod.  A table is always iterated as a table, even when it declares `pass:[__]call`; call it explicitly if the callable behaviour is wanted.  Two or more values after `in` are always taken as an iterator triple, unchanged.
+
+Any other single value -- `nil`, a number, a string or a boolean -- raises an error at the point the loop starts.
+
+==== Standard Iterators
+
+`pairs(Table)`::
+Returns an iterator that produces `key, value` pairs for every entry in `Table`, including both integer and string keys.  Iteration order is unspecified.
+
+`ipairs(Table)`::
+Returns an iterator that produces `index, value` pairs for consecutive integer keys starting at `0`.  Iteration stops at the first `nil` value.
+
+`values(Container)`::
+Returns an iterator that produces each value in `Container` (table or array), without its key.  For tables, yields values for all keys.  For arrays, yields elements in order.
+
+`keys(Table)`::
+Returns an iterator that produces each key in `Table`, without its value.  Iteration order is unspecified.
+
+[source,tiri]
+----
+for k, v in pairs({x = 1, y = 2}) do
+   print(k, ' = ', v)
+end
+
+for v in values({10, 20, 30}) do
+   print(v)   -- 10, 20, 30
+end
+
+for k in keys({x = 1, y = 2}) do
+   print(k)   -- 'x', 'y' (order unspecified)
+end
+----
+
+[[sec-callback-traversal]]
+==== Callback Traversal
+
+indexterm:[iteration, forEach] indexterm:[forEach] `forEach()` is the callback-driven counterpart of the generic `for` loop.  It resolves its target with the same protocol as <<sec-bare-collection-iteration,bare collection iteration>>, and it is the form a pipeline uses to traverse a collection (<<sec-pipe-operator>>).
+
+===== forEach()
+
+[.api]`target = forEach(Target, Callback)`
+
+Traverses `Target` and calls `Callback` once for every iterator result, then returns `Target`.  `Target` is any value that a bare generic `for` loop accepts, resolved by the rules given in <<sec-bare-collection-iteration>>.  Passing any other number of arguments, or a `Callback` that is not a function, raises an error.
+
+[source,tiri]
+----
+forEach(array<int> { 10, 20 }, function(Index, Value) print(Index, Value) end)
+range(1, 4) |> forEach(print)
+----
+
+`Target` is evaluated once and its iterator prepared once, before the first callback invocation.  A `pass:[__]iter` metamethod is therefore consulted once per traversal; replacing it during a traversal has no effect until the next one.
+
+The callback receives every value the iterator yields, in the order the iterator produces them:
+
+[cols="3,4",options="header"]
+|===
+|Target |Callback arguments
+
+|Array          |`Index, Value` (zero-based)
+|Table, object, struct |`Key, Value`
+|Range          |`Value`
+|Iterator function |Every value the function returns, in its original order
+|`pass:[__]iter` metamethod |Every yielded value, in its original order
+|===
+
+The callback argument order matches the loop variables of the equivalent `for` loop.  It is not the order used by the `each()` methods of arrays and ranges, which place the element value first.
+
+Traversal stops when the callback returns `false` as its first result.  Every other result, including no result at all, `nil` and `true`, continues the traversal, and all callback results are otherwise discarded.
+
+[source,tiri]
+----
+forEach({1 to 1000}, function(Value):bool
+   if found_target(Value) then return false end
+   return true
+end)
+----
+
+`forEach()` returns the value passed as `Target`, unchanged and unresolved: a deferred expression (<<sec-deferred-expressions>>) is traversed through its resolved collection but returned as the original thunk.  The return value makes traversal composable in a pipeline:
+
+[source,tiri]
+----
+items |> forEach(function(Index, Value) validate(Value) end)
+      |> forEach(function(Index, Value) store(Value) end)
+----
+
+`forEach()` accepts exactly two arguments, so a pipe source that yields more than one value must be limited explicitly:
+
+[source,tiri]
+----
+collection_source() |1> forEach(Callback)
+----
+
+Errors raised during preparation, by the iterator, or by the callback propagate to the caller unchanged.  A target that cannot be iterated raises `cannot iterate over a <type> value`.
+
+==== Range Iterators
+
+A range (see <<ch-ranges>>) iterates directly, whether it is written as a literal in the loop header or held in a variable:
+
+[source,tiri]
+----
+r = {1 to 10}
+for i in r do
+   print(i)
+end
+----
+
+Ranges are also callable, and calling one returns an iterator function suitable for use with `for pass:[...] in` and other mechanisms that rely on iterators.
+
+[[sec-break-and-continue]]
+=== Break & Continue
+==== Break
+
+indexterm:[break statement] indexterm:[continue statement] `break` terminates the innermost enclosing loop immediately.  Execution resumes at the first statement after the loop.
+
+[source,tiri]
+----
+for i in {0 to 100} do
+   if i is 5 then break end
+end
+----
+
+`break` is valid inside `while`, `repeat`, and all `for` loop forms.  Using `break` outside a loop raises a parse error.
+
+In nested loops, `break` exits only the innermost loop:
+
+[source,tiri]
+----
+for i in {0 to 5} do
+   for j in {0 to 5} do
+      if j is 2 then break end
+   end
+   -- continues here after inner break
+end
+----
+
+==== Continue
+
+`continue` skips the remainder of the current iteration and advances to the next iteration of the innermost enclosing loop.
+
+[source,tiri]
+----
+for i in {0 to 10} do
+   if i % 2 is 0 then continue end
+   print(i)   -- 1, 3, 5, 7, 9
+end
+----
+
+In a `while` loop, `continue` jumps to the condition check.  In a `repeat pass:[...] until` loop, `continue` jumps to the `until` condition check.  In a `for` loop, `continue` advances the loop variable and re-evaluates the loop condition.
+
+`continue` is valid inside `while`, `repeat`, and all `for` loop forms.  Using `continue` outside a loop raises a parse error.
+
+==== Conditional Shorthand
+
+The `?!` operator can be used as a falsey guard when combined with `break`, `continue`, `return` or `raise` on a single line:
+
+[source,tiri]
+----
+value ?! return
+value ?! break
+value ?! continue
+value ?! raise ERR_Failed
+----
+
+The shorthand executes the statement when `value` is falsey under the extended definition: `nil`, `false`, `0`, `""`, or an empty collection.  The `return` form accepts optional return values on the same line:
+
+[source,tiri]
+----
+result ?! return -1
+----
+
+This is equivalent to `if not result?? then return -1 end`.
+
+[[sec-return]]
+=== Return
+[source,ebnf]
+----
+return_statement = "return" [ expression_list ] [ ";" ] ;
+----
+
+indexterm:[return statement] `return` exits the current function and returns zero or more values to the caller.
+
+[%unbreakable]
+[source,tiri]
+----
+function add(A, B)
+   return A + B
+end
+
+function swap(A, B)
+   return B, A
+end
+----
+
+`return` must be the last statement in a block.  Statements after `return` in the same block raise a parse error (unreachable code).
+
+At the top level of a script, `return` terminates the script.  Using `return` at the top level of an imported file emits a warning, as it terminates the importing script's scope.
+
+An optional trailing semicolon is permitted after the return values.

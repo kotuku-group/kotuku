@@ -1,0 +1,1077 @@
+// VERIFIED: 2026-08-15
+// UPDATED: 2026-08-15 - Extracted methods now cover the `method` literal form; added the sec-extracted-methods anchor
+//                       (commit ac4f30a67)
+// UPDATED: 2026-08-16 - Removed the `method` literal from extracted methods; the renamed `metamethod` keyword is
+//                       documented for metatable handlers only (commit 5c92d652a)
+// UPDATED: 2026-08-18 - table.move() and table.concat() migrated to half-open (exclusive stop) range semantics; the
+//                       explicit boundary parameter is now named `Stop` (commit 3e99d69ac)
+// UPDATED: 2026-08-19 - The `metamethod` keyword is removed; handlers such as __newindex and __pairs are ordinary
+//                       functions (commit 81aa5f3)
+// UPDATED: 2026-08-21 - Documented raw key-presence testing with the 'in' operator and the '__contains'
+//                       override (commit 2b788f198)
+
+[[ch-tables]]
+== Tables
+indexterm:[tables] Tables are the primary compound data structure in Tiri.  A table is a mutable, unordered map of key-value pairs.  No type restrictions are imposed on table values.  Setting a key's value to `nil` removes that entry from the table.  Tables are used to represent records, dictionaries, configuration maps, and ad-hoc objects.
+
+Tables are reference types.  Assigning a table to another variable creates a second reference to the same underlying data, not a copy.  Two distinct tables are never equal, even if they contain identical entries; `is` compares identity, not content.
+
+[source,tiri]
+----
+t = { name = 'Alice', age = 30 }
+a = t
+a.name = 'Bob'
+print(t.name)   -- 'Bob' (same table)
+----
+
+Tables have two internal regions: an __array part__ that stores sequential integer keys starting from 0, and a __hash part__ that stores all other keys (strings, non-sequential integers, and mixed types).  The `#` operator measures the array part only; hash entries are not counted, and `#` returns `nil` once the table has been stored through a key outside the sequence domain (see <<sec-table-classification>>).  Use `table.size()` to count every entry in both parts.
+
+For sequential data storage, the dedicated `array` type (see <<ch-arrays>>) provides more efficient memory layout.
+
+[%breakable]
+[[sec-table-fundamentals]]
+=== Table Fundamentals
+==== Table Constructors
+
+indexterm:[tables, fundamentals] Tables are created with the `{}` constructor syntax.  A constructor can contain a mix of positional values (assigned to sequential integer keys starting from 0) and explicit key-value pairs.
+
+[source,tiri]
+----
+empty = {} <1>
+seq   = { 10, 20, 30 } <2>
+rec   = { name = 'Alice', age = 30 } <3>
+mixed = { 'a', 'b', x = 10, y = 20 } <4>
+----
+<1> Empty table
+<2> Sequential: seq[0]=10, seq[1]=20, seq[2]=30
+<3> Record with string keys
+<4> Both sequential and named entries
+
+Explicit keys use the `key = value` syntax for string keys and `[expression] = value` for computed keys:
+
+[source,tiri]
+----
+t = {
+   name  = 'settings',
+   [0]   = 'first',
+   [1+1] = 'computed'
+}
+----
+
+A trailing comma after the last entry is permitted.
+
+[discrete]
+===== Duplicate Keys
+
+A constructor that assigns the same key twice is rejected at compile time with a duplication error message.  The rule applies to every key the compiler can resolve without evaluating the program: named fields, literal string, number and boolean keys, and the implicit indices of positional entries.  Equivalent spellings collide, so `name` and `['name']` are the same key, as are `[1]` and `[1.0]`.
+
+[source,tiri]
+----
+{ name = 'a', name = 'b' }   -- error: duplicate key 'name'
+{ ['k'] = 1, k = 2 }         -- error: the spellings are equivalent
+{ [1] = 'a', [1.0] = 'b' }   -- error: the numbers are equal
+{ 1, 2, [0] = 'x' }          -- error: [0] collides with the first
+                             --        positional entry
+{ 1, 2, [5] = 'x' }          -- valid: no positional entry reaches 5
+----
+
+A key whose value depends on evaluation is never diagnosed, and a trailing call or vararg entry is exempt because the number of indices it occupies is not known until run time.
+
+[[sec-table-length]]
+==== Length Operator
+
+For a table containing a contiguous sequence at integer keys `0` through `n - 1`, with no value at key `n`, the `#` operator returns `n`.
+
+A table that has been stored through a key outside the sequence domain is not a sequence, and `#` returns `nil` for it.  The intent is that a table used as a record, as an associative map or as a sparsely indexed map cannot silently report a length that describes only part of its contents.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c' }
+#t              -- 3
+
+t.name = 'test'
+#t              -- nil: the table is no longer a sequence
+----
+
+[[sec-table-classification]]
+[discrete]
+===== Classification
+
+Every table carries a permanent classification derived from the keys it has been stored through.  Two independent facts
+are recorded:
+
+Associative:: A store through a key that is not a number.
+Sparse:: A store through a numerical key that cannot be a sequence index, meaning a negative key or a key that is not an
+exact integer.
+
+`table.kind()` reports the combination as one of four names:
+
+[cols="1,4",options="header"]
+|===
+|Kind |Meaning
+
+|`sequence`    |Neither fact applies.  `#` returns the numerical sequence length.
+|`sparse`      |Stored through a negative or non-integral key.  `#` returns `nil`.
+|`associative` |Stored through a non-numeric key.  `#` returns `nil`.
+|`mixed`       |Both facts apply.  `#` returns `nil`.
+|===
+
+The classification is a property of the table's usage history, not of its current contents.  It is applied by *stores*
+only:
+
+* Assigning through a string key classifies the table as associative, whether written as `t.name`, `t['name']` or with a computed key.
+* Boolean, table, function and userdata keys classify the table as associative in exactly the same way.
+* A negative key such as `t[-1]`, or a non-integral key such as `t[1.5]`, classifies the table as sparse.
+* Non-negative integral keys never classify the table, however large or scattered.  `t[9999]` stores into the hash part and leaves the table a sequence.
+* Storing `nil` through a classifying key classifies the table, even though no entry results.
+* `rawset()` classifies the table; bypassing `pass:[__]newindex` does not bypass the classification.
+* A table literal containing a constant classifying key is classified at construction, including `{ 1, 2, name = 'x' }`, `{ 1, 2, [true] = 'x' }` and `{ [-1] = 'x' }`.
+* Reading a key classifies nothing, whatever the key's type.
+
+[source,tiri]
+----
+table.kind({ 1, 2, 3 })       -- 'sequence'
+table.kind({ 1, [9999] = 2 }) -- 'sequence'
+table.kind({ [-1] = 'x' })    -- 'sparse'
+table.kind({ [1.5] = 'x' })   -- 'sparse'
+table.kind({ name = 'x' })    -- 'associative'
+table.kind({ [-1] = 1, n = 2 })  -- 'mixed'
+----
+
+Once classified, the table cannot be reclassified.  Deleting the entry, calling `table.clear()`, and refilling the table
+with sequence keys all leave `#` returning `nil`.  Storing through the same key a second time, after its value has been
+set to `nil`, likewise keeps the table classified.
+
+[source,tiri]
+----
+t = { 1, 2 }
+t.name = 'x'
+t.name = nil
+#t              -- nil: deleting the entry does not restore the length
+
+table.clear(t)
+#t              -- nil: clearing does not restore the length
+
+t[0] = 'a'
+t[1] = 'b'
+#t              -- nil: the classification is permanent
+----
+
+The examples below contrast the three classifying key forms with a non-negative integral key:
+
+[source,tiri]
+----
+t = { 1, 2, 3 }
+t[9999]  = 'high'
+#t              -- 3: a non-negative integer is a sequence key
+
+u = { 1, 2, 3 }
+u[-5]    = 'negative'
+#u              -- nil: a negative key classifies the table as sparse
+
+v = { 1, 2, 3 }
+v[1.5]   = 'fractional'
+#v              -- nil: so does a non-integral key
+
+w = { 1, 2, 3 }
+w[true]  = 'bool'
+#w              -- nil: a boolean key classifies it as associative
+----
+
+A store diverted by a `pass:[__]newindex` metamethod classifies the table that actually receives it, not the table the
+store was written against.  A read through `pass:[__]index` classifies nothing, because no store reaches the table.
+
+[discrete]
+===== Sequence Operations
+
+The classification is observed by `#` and by the library functions that infer a boundary from the sequence length.
+`table.insert()`, `table.remove()`, `table.sort()`, `table.slice()`, and `table.concat()` called without an explicit
+`Stop` require a table classified as `sequence`.  Each raises `'name'() requires a sequence table; received kind table`
+for any other classification, where `name` is the function and `kind` is the value reported by `table.kind()`.  A
+`pass:[__]len` metamethod does not satisfy the requirement.
+
+`rawlen()`, `table.size()`, `table.empty()`, `table.clear()`, `table.move()`, `table.concat()` with an explicit `Stop`,
+and every iterator accept a table of any classification and use the internal numerical length.  The lengths of strings
+and of `array` values are unaffected.
+
+[source,tiri]
+----
+t = { 1, 2 }
+t.name = 'x'
+#t              -- nil
+rawlen(t)       -- 2
+table.size(t)   -- 3: every live entry, both parts
+table.insert(t, 3)    -- error: 'insert'() requires a sequence table
+table.concat(t, ',', 0, 2)   -- '1,2': an explicit Stop supplies the range
+----
+
+CAUTION: Using `#` on a table is a nullable expression.  Code that feeds it straight into arithmetic, such as
+`#t - 1`, raises an error once the table acquires a classifying key.  Use `rawlen()` where the numerical sequence
+length is what is actually wanted.
+
+[discrete]
+===== Holes
+
+Classification constrains the key domain; it does not guarantee that the live contents are dense.  A table that has only
+ever been stored through non-negative integral keys remains classified as a sequence even after an interior entry is
+deleted, and `#` continues to return a number.
+
+The length of a table with holes in its integer keys is unspecified.  The runtime selects a valid sequence boundary:
+either zero when key `0` is absent, or an absent key `n` immediately following a present key `n - 1`.  It does not
+guarantee that it selects the first hole.  Do not use `#` to measure a table with holes:
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd' }
+t[1] = nil
+#t              -- unspecified: do not rely on a particular boundary
+----
+
+Entries above a hole remain accessible even though the table no longer has a defined sequence length:
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd' }
+t[2] = nil
+t[3]            -- 'd' (still present)
+----
+
+Use `table.empty()` to test whether a table contains no entries, and `table.size()` to count them.  Use `pairs()` or
+another iterator when every entry in a table with holes must be processed.
+
+==== Pre-allocation
+
+[.api]`t = table.new(ArraySize, HashSize)`
+
+Creates an empty table with pre-allocated capacity for `ArraySize` sequential entries and `HashSize` hash entries.  Pre-allocation avoids incremental resizing when the final size is known in advance.  The returned table is empty; the capacity hint does not affect the reported length.
+
+[source,tiri]
+----
+t = table.new(100, 10)
+#t   -- 0
+----
+
+==== Identity and Equality
+
+Tables use identity comparison.  The `is` operator returns `true` only when both operands reference the same table object.  Two tables with identical content but distinct identities are not equal.
+
+[source,tiri]
+----
+a = { x = 1 }
+b = { x = 1 }
+c = a
+
+a is c   -- true  (same object)
+a is b   -- false (distinct objects, same content)
+----
+
+Custom equality can be defined with the `__eq` metamethod (see <<ch-metatables-and-metamethods>>).
+
+[[sec-accessing-and-modifying]]
+=== Accessing & Modifying
+
+==== Field Access
+
+Table values are read and written using dot syntax for string keys and bracket syntax for all key types:
+
+[source,tiri]
+----
+t = { name = 'Alice', age = 30 }
+
+t.name         -- 'Alice'
+t['name']      -- 'Alice'
+t.age          -- 30
+
+t.name = 'Bob'
+t['score'] = 100
+----
+
+Accessing a key that does not exist returns `nil`.  Setting a key's value to `nil` removes that entry from the table.
+
+[source,tiri]
+----
+t = { a = 1, b = 2 }
+t.c          -- nil (key does not exist)
+t.a = nil    -- removes key 'a'
+----
+
+Any value except `nil` and `NaN` can serve as a key.  Assigning to a `nil` or `NaN` key raises an error; reading one returns `nil`.
+
+A float key that holds an exact integer value is converted to that integer.  `t[2.0]` and `t[2]` therefore address the same entry:
+
+[source,tiri]
+----
+t = {}
+t[2] = 'first'
+t[2.0]       -- 'first' (same entry)
+t[2.0] = 'second'
+t[2]         -- 'second'
+----
+
+[[sec-table-key-presence]]
+==== Key Presence
+
+indexterm:[tables, key presence] The `in` operator tests whether a table holds an entry under a given key.  The table is the right-hand operand and the key is the left-hand operand.  The result is `true` when the table holds a non-`nil` value under that key, and `false` otherwise.  A stored `false` counts as present.
+
+[source,tiri]
+----
+t = { name = 'Alice', ready = false }
+
+'name' in t       -- true
+'ready' in t      -- true: a false value is still an entry
+'score' in t      -- false
+----
+
+The test is raw: it does not invoke `pass:[__]index`, so a key that a proxy table would manufacture on demand is reported as absent.  A table that defines a `pass:[__]contains` metamethod overrides the raw test entirely; see <<sec-membership-metamethod>>.
+
+The operator tests keys, not values.  Search a table by value with `pairs()` or `values()`.
+
+==== Numeric Indexing
+
+Sequential elements are accessed by their zero-based integer index:
+
+[source,tiri]
+----
+t = { 10, 20, 30 }
+t[0]   -- 10
+t[1]   -- 20
+t[2]   -- 30
+t[10]  -- nil (out of bounds)
+----
+
+==== Nested Access
+
+Chained field access and bracket indexing can be combined freely:
+
+[source,tiri]
+----
+cfg = {}
+table.insert(cfg, { apple = 'banana', orange = 'lemon' })
+cfg[0].apple     -- 'banana'
+cfg[0]['orange'] -- 'lemon'
+----
+
+[[sec-raw-access]]
+==== Raw Access
+
+The `rawget()`, `rawset()`, and `rawlen()` functions bypass metamethods entirely.
+
+[.api]`value = rawget(Table, Key)`
+
+Returns the value at `Key` without invoking the `__index` metamethod.  Returns `nil` if the key is not present.
+
+[.api]`rawset(Table, Key, Value)`
+
+Sets `Key` to `Value` without invoking the `__newindex` metamethod.  Returns the table.
+
+Raw access bypasses metamethods only.  If `Table` is a global environment, `rawset()` can raise an error for a protected name or a value that violates the contract of a declared global.
+
+[.api]`length = rawlen(Table)`
+
+Returns the raw length of the array part without invoking the `__len` metamethod.  `rawlen()` also ignores the classification described in <<sec-table-classification>>, so it returns a number for every table and is the reliable way to obtain the numerical sequence length.  Use `table.size()` to count every entry rather than the sequence.
+
+[[sec-iteration]]
+=== Iteration
+indexterm:[tables, iteration] A table placed directly in a `for` loop header is iterated without an iterator function, yielding the same key-value pairs as `pairs()`:
+
+[source,tiri]
+----
+for key, value in { x = 1, y = 2 } do
+   print(key, value)
+end
+----
+
+This holds even when the table declares a `pass:[__]call` metamethod; a bare table is always iterated, never called.  The general rule is defined in <<sec-bare-collection-iteration>>.
+
+Tiri also provides four iterator functions for traversing tables, which remain the way to select a specific traversal.
+
+==== pairs()
+
+[.api]`for key, value in pairs(Table) do pass:[...] end`
+
+Iterates over all entries in `Table`, including both the array part and the hash part.  The iteration order over non-integer keys is unspecified and may vary between runs.  Integer keys are visited in ascending order.
+
+Supports the `__pairs` metamethod for custom iteration.
+
+[source,tiri]
+----
+t = { 'a', 'b', x = 10, y = 20 }
+for k, v in pairs(t) do
+   print(k, v)
+end
+-- 0  a
+-- 1  b
+-- x  10  (order of x, y unspecified)
+-- y  20
+----
+
+==== ipairs()
+
+[.api]`for index, value in ipairs(Table) do pass:[...] end`
+
+Iterates over the array part of `Table` in sequential order, starting at index 0.  Stops at the first `nil` gap in the sequence.
+
+Supports the `__ipairs` metamethod for custom iteration.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c' }
+for i, v in ipairs(t) do
+   print(i, v)
+end
+-- 0  a
+-- 1  b
+-- 2  c
+----
+
+==== values()
+
+[.api]`for value in values(Table) do pass:[...] end`
+
+Iterates over all entries in `Table`, yielding only values and ignoring keys.
+
+[source,tiri]
+----
+scores = { alice = 95, bob = 82, carol = 91 }
+for score in values(scores) do
+   print(score)
+end
+----
+
+==== keys()
+
+[.api]`for key in keys(Table) do pass:[...] end`
+
+Iterates over all entries in `Table`, yielding only keys and ignoring values.
+
+[source,tiri]
+----
+config = { debug = true, verbose = false, timeout = 30 }
+for name in keys(config) do
+   print(name)
+end
+----
+
+[[sec-table-library]]
+=== Table Library
+indexterm:[library, table] All table library functions are accessed through the `table` namespace, or as built-in methods on a table receiver: `t.insert(v)` is equivalent to `table.insert(t, v)`.  A registered method owns the immediate call position on a table receiver, and assigning a function to a member of the same name is rejected; see <<sec-built-in-method-calls>>.
+
+[[sec-table-insert]]
+==== table.insert()
+
+[.api]`table.insert(Table, [Pos,] Value)`
+
+Inserts `Value` into the array part of `Table`.  If `Pos` is omitted, appends `Value` after the last element.  If `Pos` is given, inserts at that index and shifts subsequent elements upward by one position.
+
+`Table` must be classified as a sequence.  Raises an error if it is not, as defined in <<sec-table-classification>>.
+
+[source,tiri]
+----
+t = {}
+table.insert(t, 'a')
+table.insert(t, 'b')
+table.insert(t, 'c')
+-- t = {'a', 'b', 'c'}
+
+table.insert(t, 1, 'x')
+-- t = {'a', 'x', 'b', 'c'}  (shifted from index 1)
+
+table.insert(t, 0, 'z')
+-- t = {'z', 'a', 'x', 'b', 'c'}  (shifted from index 0)
+----
+
+[[sec-table-remove]]
+==== table.remove()
+
+[.api]`value = table.remove(Table, [Pos])`
+
+Removes and returns the element at `Pos`.  If `Pos` is omitted, removes the last element.  Remaining elements shift downward to fill the gap.
+
+Returns `nil` if the table is empty or `Pos` is out of bounds.  The table is not modified in either case.
+
+`Table` must be classified as a sequence.  Raises an error if it is not, as defined in <<sec-table-classification>>.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd' }
+
+table.remove(t)      -- returns 'd'; t = {'a', 'b', 'c'}
+table.remove(t, 0)   -- returns 'a'; t = {'b', 'c'}
+table.remove(t, 10)  -- returns nil; t unchanged
+----
+
+[[sec-table-move]]
+==== table.move()
+
+[.api]`dest = table.move(Table, Start, Stop, Target, [DestTable])`
+
+Copies the elements occupying the half-open span `[Start, Stop)` of `Table` to positions starting at `Target` in `DestTable`.  `Stop` is exclusive, so `Stop - Start` elements are copied.  If `DestTable` is omitted, the source table is used as the destination.  Returns the destination table.
+
+Handles overlapping source and destination regions correctly.  If `Stop` is not greater than `Start`, no elements are copied.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd', 'e' }
+table.move(t, 0, 3, 3)
+-- t[3]='a', t[4]='b', t[5]='c'
+
+src = { 10, 20, 30 }
+dst = {}
+table.move(src, 0, 3, 0, dst)
+-- dst = {10, 20, 30}
+
+t = { 'x', 'y', 'z' }
+table.move(t, 1, 2, 5)
+-- t[5]='y': a one-element span
+----
+
+[[sec-table-concat]]
+==== table.concat()
+
+[.api]`str = table.concat(Table, [Sep, Start, Stop])`
+
+Concatenates the array elements of `Table` into a single string.  `Sep` is inserted between each element if specified.  `Start` and `Stop` define a half-open span `[Start, Stop)`, defaulting to `0` and `rawlen(Table)` respectively.  `Stop` is exclusive, so `Stop - Start` elements are concatenated and a `Stop` equal to `rawlen(Table)` includes the final element.
+
+If `Stop` is omitted, the boundary is inferred from the sequence length and `Table` must be classified as a sequence; an error is raised if it is not, as defined in <<sec-table-classification>>.  Supplying `Stop` states the span explicitly, so any classification is accepted and the numerical index domain is used.
+
+Returns an empty string if `Stop` is not greater than `Start`.
+
+Elements must be strings or numbers.  Raises an error if an element of any other type is encountered within the specified span.
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c' }
+table.concat(t)            -- 'abc'
+table.concat(t, ', ')      -- 'a, b, c'
+
+t = { 1, 2, 3, 4, 5 }
+table.concat(t, '-')       -- '1-2-3-4-5'
+
+t = { 'a', 'b', 'c', 'd', 'e' }
+table.concat(t, ',', 1, 3)   -- 'b,c'
+table.concat(t, ',', 0, 5)   -- 'a,b,c,d,e'
+table.concat(t, ',', 2, 2)   -- '': an empty span
+----
+
+[[sec-table-sort]]
+==== table.sort()
+
+[.api]`table.sort(Table, [Comparator])`
+
+Sorts the array part of `Table` in place.  The default comparator uses the `<` operator (ascending order).  A custom `Comparator` function receives two elements and returns `true` if the first must precede the second.
+
+`Table` must be classified as a sequence.  Raises an error if it is not, as defined in <<sec-table-classification>>.  `table.sortByKeys()` places no such requirement on `Table`.
+
+[source,tiri]
+----
+t = { 5, 3, 1, 4, 2 }
+table.sort(t)
+-- t = {1, 2, 3, 4, 5}
+
+t = { 1, 5, 3, 2, 4 }
+table.sort(t, function(a, b) return a > b end)
+-- t = {5, 4, 3, 2, 1}
+----
+
+[[sec-table-sortByKeys]]
+==== table.sortByKeys()
+
+[.api]`for key, value in table.sortByKeys(Table, [Comparator]) do pass:[...] end`
+
+Returns an iterator that yields key-value pairs from `Table` in sorted key order.  The default comparator uses ascending order.  A custom `Comparator` controls the sort order.
+
+[source,tiri]
+----
+t = { b = 2, a = 1, c = 3 }
+for k, v in table.sortByKeys(t) do
+   print(k, v)
+end
+-- a  1
+-- b  2
+-- c  3
+
+for k, v in table.sortByKeys(t, function(a, b) return a > b end) do
+   print(k, v)
+end
+-- c  3
+-- b  2
+-- a  1
+----
+
+[[sec-table-clear]]
+==== table.clear()
+
+[.api]`table.clear(Table)`
+
+Removes all entries from `Table`, including both the array part and the hash part.  After clearing, `rawlen(Table)` is 0 and `table.empty(Table)` returns `true`.  Values tracked by the garbage collector are released.
+
+Clearing empties the table but does not restore its classification, so `#Table` continues to return `nil` for a table that has ever been stored through a classifying key, and the sequence operations continue to reject it (see <<sec-table-classification>>).
+
+Raises an error if `Table` is a global environment, including any alias of one.  The environment is left unmodified.  This restriction is applied before any metamethod lookup.
+
+If `Table` has a `pass:[__]clear` metamethod, the metamethod is invoked in place of the default behaviour and no entries are removed.  See <<sec-clearing>>.
+
+[[sec-table-empty]]
+==== table.empty()
+
+[.api]`result = table.empty(Table)`
+
+Returns `true` if `Table` contains no entries in either the array part or the hash part.  Treats `nil` as an empty table.
+
+[[sec-table-kind]]
+==== table.kind()
+
+[.api]`name = table.kind(Table)`
+
+Returns the permanent classification of `Table` as one of `'sequence'`, `'sparse'`, `'associative'` or `'mixed'`, as defined in <<sec-table-classification>>.  The result describes the table's usage history, so `'sequence'` states that every key stored so far is a non-negative integer, not that every index below the length is populated.  No metamethod is invoked.
+
+[source,tiri]
+----
+table.kind({ 1, 2, 3 })     -- 'sequence'
+table.kind({ name = 'x' })  -- 'associative'
+----
+
+[[sec-table-size]]
+==== table.size()
+
+[.api]`count = table.size(Table)`
+
+Returns the number of live entries in `Table`, counting both the array part and the hash part.  The result is independent of the table's classification and of any `pass:[__]len` metamethod, and `pass:[__]index` is not invoked.  Entries whose value is `nil` are not counted.  The operation is O(n) in the allocated size of the table, in contrast to the O(1) `rawlen()`.
+
+[source,tiri]
+----
+t = { 1, 2, 3 }
+t.name = 'x'
+table.size(t)   -- 4
+rawlen(t)       -- 3
+----
+
+[[sec-table-slice]]
+==== table.slice()
+
+[.api]`result = table.slice(Table, Range)`
+
+Returns a new table containing the elements of `Table` selected by `Range`.  Supports all range features including step values, negative indices, and reverse iteration.  See <<sec-table-slicing-with-ranges>> for the full semantics.
+
+Clipping and negative index resolution both depend on the sequence length, so `Table` must be classified as a sequence.  Raises an error if it is not, as defined in <<sec-table-classification>>.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+table.slice(t, {1 to 4})             -- {20, 30, 40}
+table.slice(t, range(0, 7, true, 2)) -- {10, 30, 50} (stop clamped to the table length)
+----
+
+[[sec-table-toXML]]
+==== table.toXML()
+
+[.api]`str = table.toXML(Table)`
+
+Converts `Table` to an XML string.  String-keyed entries become attributes.  Numeric-keyed entries become child content.  Table-valued entries become nested elements.
+
+Boolean `true` values render as bare attributes.  Numeric attribute values are unquoted.  String attribute values are double-quoted and XML-escaped.  Child text content is XML-escaped.  Empty tables render as self-closing elements (`<tag/>`).  Elements with children use abbreviated closing tags (`</>`).  An empty input table produces an empty string.
+
+[source,tiri]
+----
+table.toXML({ item = {} })
+-- '<item/>'
+
+table.toXML({ item = { name = 'test', value = '42' } })
+-- '<item name="test" value="42"/>'
+
+table.toXML({ item = { [0] = 'hello' } })
+-- '<item>hello</>'
+
+table.toXML({ item = { [0] = 'a&b' } })
+-- '<item>a&amp;b</>'
+----
+
+[[sec-table-slicing-with-ranges]]
+=== Table Slicing with Ranges
+indexterm:[tables, slicing] indexterm:[ranges, table slicing] Tables support range objects as indices to extract subsequences.  Indexing is zero-based and follows inclusive/exclusive semantics consistent with string slicing (see <<sec-string-slicing-with-ranges>>).  Table slices always return a new table containing copies of the selected elements; modifying the result does not affect the original.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
+
+==== Exclusive and Inclusive Ranges
+
+The `to` keyword creates an exclusive range (stop index not included).  The `into` keyword creates an inclusive range (stop index included).
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+
+t[{1 to 4}]     -- {20, 30, 40} (exc. indices 1, 2, 3)
+t[{1 into 3}]   -- {20, 30, 40} (inc. indices 1, 2, 3)
+t[{0 to 5}]     -- {10, 20, 30, 40, 50} (full table)
+----
+
+==== Negative Indices
+
+Negative indices count backwards from the end of the table: `-1` is the last element, `-2` the second-to-last.  The exclusive/inclusive semantics of the range operator are preserved with negative indices.  `to` remains exclusive and `into` remains inclusive.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+
+t[{-3 into -1}]  -- {30, 40, 50}  (inclusive)
+t[{-3 to -1}]    -- {30, 40}      (exclusive)
+t[{-2 into -1}]  -- {40, 50}      (inclusive)
+t[{-2 to -1}]    -- {40}          (exclusive)
+t[{1 into -1}]   -- {20, 30, 40, 50}
+----
+
+==== Reverse Slicing
+
+Ranges where the start index is greater than the stop index produce reversed subsequences.  The direction is auto-detected from the resolved indices.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50 }
+
+t[{4 to 0}]     -- {50, 40, 30, 20} (reverse exclusive)
+t[{4 into 0}]   -- {50, 40, 30, 20, 10} (reverse inclusive)
+t[{3 to 1}]     -- {40, 30} (reverse partial)
+----
+
+==== Step Support
+
+Range literals support an optional `by` clause for stepped slicing.  The `range()` constructor can also be used.
+
+[source,tiri]
+----
+t = { 10, 20, 30, 40, 50, 60, 70 }
+
+t[{0 into 6 by 2}]          -- {10, 30, 50, 70}
+t[{6 into 0 by -2}]         -- {70, 50, 30, 10}
+
+r = range(0, 7, true, 2)
+table.slice(t, r)            -- {10, 30, 50, 70}
+----
+
+==== Out-of-Bounds and Empty Ranges
+
+- Indices beyond the table length are clamped to valid bounds.
+- Exclusive ranges where `start` equals `stop` return an empty table.
+- Ranges entirely beyond the table length return an empty table.
+- Slicing an empty table returns an empty table.
+
+[source,tiri]
+----
+t = { 10, 20, 30 }
+
+t[{0 to 10}]    -- {10, 20, 30} (end clamped)
+t[{-10 to 3}]   -- {10, 20, 30} (start clamped)
+t[{2 to 2}]     -- {} (empty exclusive range)
+t[{5 to 10}]    -- {} (beyond table length)
+----
+
+[[sec-table-entities]]
+=== Entities
+
+indexterm:[entities] indexterm:[tables, entities] An __entity__ is a table that has been permitted to establish itself as the context of a call made on it (<<sec-context>>).  Tables without this designation are ordinary and cannot be used as context.
+
+An entity is elevated above the ordinary table type and loses none of its properties.  It is a `table` for the purposes of `type()`, indexing, iteration, length, classification, identity, equality and every function of the table library.  Designation adds one capability and changes nothing else.
+
+Designation attaches to the table identity rather than to a variable, so every alias of an entity is an entity.  The designation is permanent and cannot be removed.
+
+==== Constructor Designation
+
+[source,ebnf]
+----
+entity_expr = "entity" table_constructor ;
+----
+
+The `entity` prefix designates the table that the following constructor produces:
+
+[%unbreakable]
+[source,tiri]
+----
+account = entity { owner = 'You', balance = 0 }
+readings = entity { 10, 20, 30 }
+----
+
+`entity` is a contextual keyword.  It introduces a designation only when a table constructor follows it, and remains available as an ordinary identifier in every other position.
+
+Designation is not recursive.  A table constructor nested inside an entity constructor produces an ordinary table:
+
+[source,tiri]
+----
+outer = entity { inner = { name = 'inner' } }
+-- 'outer' is an entity; 'outer.inner' is ordinary
+----
+
+[[sec-context-metafield]]
+==== Metatable Designation
+
+Attaching a metatable whose raw `pass:[__]context` field is `true` designates the target:
+
+[%unbreakable]
+[source,tiri]
+----
+Shape = { __context = true }
+Shape.__index = Shape
+
+function Shape.new(Name:str):table
+   return setmetatable({ name = Name }, Shape)
+end
+----
+
+The marker is read raw and shallow at the moment `setmetatable()` is called: `pass:[__]index` is not consulted, and neither is a metatable of the metatable.  A value of any other type, including a truthy non-boolean, leaves the target ordinary.  The marker is a designation input and not a live property; removing it from the metatable afterwards does not clear the designation.
+
+This form exists so that a constructor can designate the instance it builds, which is the basis of the class pattern in <<sec-class-pattern>>.
+
+===== Ownership
+
+Promotion of an ordinary table requires the author to own it.  The designating call must be a direct call to the built-in `setmetatable()`, and the target must trace back to a table constructor allocated in the function that performs the designation.  Prior ordinary use of an owned allocation -- mutation, aliasing, storage, or being passed to a call -- never removes ownership.
+
+[%unbreakable]
+[source,tiri]
+----
+contextual = { __context = true }
+
+function promote(Table:table):table
+   return setmetatable(Table, contextual)   -- error: the caller owns 'Table'
+end
+----
+
+The diagnostic is raised at compile time when the marker is visible to the compiler, and at runtime otherwise.  A call made through an extracted or shadowed `setmetatable` carries no authorisation and raises at runtime.
+
+A target that is already an entity accepts any metatable, because designation is permanent and no promotion takes place.
+
+==== Derived Tables
+
+Slicing propagates designation from its source, because the result is derived from a live table.  The three slice spellings behave identically, including when the result is empty:
+
+[%unbreakable]
+[source,tiri]
+----
+source = entity { 10, 20, 30 }
+
+source[{0 to 1}]               -- an entity
+table.slice(source, {0 to 1})  -- an entity
+range.slice(source, {0 to 1})  -- an entity
+----
+
+No other operation propagates designation.  A manually populated constructor, a decoded document, and a table that merely holds an entity as an element are all ordinary.  `table.move()` does not create its destination, so it neither designates a caller-supplied ordinary destination nor disturbs an entity destination.
+
+[[sec-tables-as-objects]]
+=== Tables as Objects
+
+indexterm:[tables, objects] indexterm:[objects, tables] indexterm:[methods] A table entity whose fields hold functions is an object, and those functions are its methods.  Calling a function as a member of an entity establishes that entity as the current context, so the function reaches the receiver's fields through a leading `&` without declaring a parameter for it.  <<sec-context>> defines the mechanism, <<sec-table-entities>> defines designation, and this section applies both.
+
+The capability requires no library, but it does require designation.  A table that is not an entity holds functions as ordinary fields, and calling one of them establishes no context.
+
+==== Methods
+
+A method is an ordinary function stored in the field of an entity.  It reads and writes the receiver through self referencing:
+
+[%unbreakable]
+[source,tiri]
+----
+stack = entity { items = {} }
+
+function stack.push(Value:any)
+   &items[#&items] = Value
+end
+
+function stack.pop():any
+   local last = #&items - 1
+   local value = &items[last]
+   &items[last] = nil
+   return value
+end
+
+stack.push('a')
+stack.pop()      -- 'a'
+----
+
+A method calls a sibling method through the context, without naming the receiver:
+
+[%unbreakable]
+[source,tiri]
+----
+function stack.drain()
+   while #&items > 0 do
+      &pop()
+   end
+end
+----
+
+A method name must not collide with a built-in `table` method, because the built-in owns the immediate call position on a table receiver.  See <<sec-built-in-method-calls>>.
+
+==== Constructors
+
+A constructor is a function that builds and returns a configured table.  Nothing distinguishes it from any other function; the name `new` is a convention:
+
+[%unbreakable]
+[source,tiri]
+----
+Account = {}
+
+function Account.new(Owner:str):table
+   local instance = entity { owner = Owner, balance = 0 }
+
+   function instance.deposit(Amount:num):num
+      &balance += Amount
+      return &balance
+   end
+
+   function instance.statement():str
+      return &owner .. ': ' .. &balance
+   end
+
+   return instance
+end
+
+savings = Account.new('Joe Bloggs')
+savings.deposit(120)
+savings.statement()      -- 'Joe Bloggs: 120'
+----
+
+This form gives every instance its own copy of each method.  <<sec-prototypes-and-inheritance>> shares one copy across all instances instead.
+
+==== Encapsulation
+
+Methods declared inside a constructor close over its locals (<<sec-closures>>).  A local that is never stored in the returned table is unreachable from outside, which yields private state:
+
+[%unbreakable]
+[source,tiri]
+----
+function newCounter(Start:num):table
+   local count = Start
+   local instance = entity {}
+
+   function instance.increment():num
+      count++
+      return count
+   end
+
+   return instance
+end
+
+counter = newCounter(5)
+counter.increment()          -- 6
+print(counter.count)         -- nil: the state is not a field
+----
+
+Private state held in an upvalue and public state held in a field are independent.  Self referencing reaches only the fields.
+
+[[sec-prototypes-and-inheritance]]
+==== Prototypes and Inheritance
+
+Setting an instance's `pass:[__]index` metamethod to a shared table causes absent lookups to fall through to that table (<<sec-indexing>>).  The shared table holds one copy of each method, and the instance holds only its data.
+
+The receiver of the call is the instance, so an inherited method operates on the instance that received the call.
+
+[%unbreakable]
+[source,tiri]
+----
+Shape = {}
+
+function Shape.describe():str
+   return &name .. ' has area ' .. &area() <1>
+end
+
+Rectangle = setmetatable({}, { __index = Shape })
+
+function Rectangle.area():num
+   return &width * &height
+end
+
+function Rectangle.new(Width:num, Height:num):table
+   return setmetatable({
+         name = 'rectangle', width = Width, height = Height
+      },
+      { __index = Rectangle, __context = true })
+end
+
+Rectangle.new(3, 4).describe()      -- 'rectangle has area 12'
+----
+<1> `describe` is declared once on `Shape` and reads `&name` from the instance.  `&area()` resolves through the same chain: it is absent from the instance, found on `Rectangle`, and runs with the instance as its context.
+
+Neither `Shape` nor `Rectangle` is an entity; only the instances are, because only the instance is ever a receiver.  Inheritance depth is limited only by the chain limit described in <<sec-indexing>>.
+
+==== Polymorphism
+
+A method resolved through a prototype chain dispatches on the receiver, so distinct types answer the same call with their own implementations:
+
+[source,tiri]
+----
+Circle = setmetatable({}, { __index = Shape })
+
+function Circle.area():num
+   return math.floor(math.pi * &radius * &radius)
+end
+
+function Circle.new(Radius:num):table
+   return setmetatable({ name = 'circle', radius = Radius },
+      { __index = Circle, __context = true })
+end
+
+for _, shape in pairs({ Rectangle.new(2, 5), Circle.new(3) }) do
+   print(shape.describe())
+end
+----
+
+`Shape.describe` is unchanged.  Each call binds `&area` to the implementation reached from that instance's chain.
+
+[[sec-extracted-methods]]
+==== Extracted Methods
+
+Selecting a method without calling it yields an unbound function value.  It carries no receiver, so calling it later runs it in whatever context is current at the call site, not on the table it came from:
+
+[source,tiri]
+----
+handler = savings.deposit
+handler(50)              -- does not operate on 'savings'
+----
+
+Pass the table and call the method on it, or wrap the call in a closure, when a receiver must survive the extraction:
+
+[source,tiri]
+----
+handler = function(Amount:num) return savings.deposit(Amount) end
+----
+
+[[sec-tables-vs-arrays]]
+=== Tables vs. Arrays
+indexterm:[tables, arrays comparison] indexterm:[arrays, tables comparison] Tables and arrays serve different purposes.  The following comparison summarises the key distinctions.
+
+[cols="2,3a,3a",options="header"]
+|===
+|Property |Table |Array
+
+|Type
+|`'table'`
+|`'array'`
+
+|Element types
+|Mixed (any value as key or value)
+|Homogeneous (single declared element type)
+
+|Storage
+|Hash part + array part
+|Contiguous typed buffer
+
+|Key types
+|Strings, integers, and any non-nil value
+|Integer indices only
+
+|Indexing
+|Zero-based (array part)
+|Zero-based
+
+|`#` operator
+|Length of array part only
+|Total element count
+
+|Mutability
+|Mutable (entries added/removed freely)
+|Mutable (elements modified; resizable)
+
+|Identity
+|Reference type; `is` compares identity
+|Reference type; `is` compares __content__.  Use `rawequal()` for identity.
+|===
+
+The `ipairs()`, `pairs()`, and `values()` functions work identically on both types.  Numeric indexing behaves the same way.  Code that iterates with these functions is compatible with tables and arrays interchangeably.
+
+Use tables when keys are strings or mixed types, or when representing records and dictionaries.  Use arrays when storing sequential data of a uniform type, especially for numerical computation or when interoperating with C/C++ interfaces.

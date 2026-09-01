@@ -1,0 +1,1189 @@
+// VERIFIED: 2026-09-01
+
+[[ch-arrays]]
+== Arrays
+indexterm:[arrays] indexterm:[typed arrays] Arrays are mutable, typed, contiguous sequences of elements.  Each array holds elements of a single declared type, providing efficient storage and direct memory access.  Arrays are a distinct type from tables, purpose-built for sequential data where all elements share a common type.
+
+Arrays are reference types.  Assigning an array to another variable creates a second reference to the same underlying data, not a copy.
+
+[source,tiri]
+----
+nums = array<int> { 10, 20, 30 }
+print(nums[0])      -- 10
+print(#nums)        -- 3
+print(type(nums))   -- 'array'
+----
+
+All indexing is zero-based.  The `#` operator returns the element count.  Element access by index is O(1) and is optimised by the JIT compiler in hot paths.  The `ipairs()`, `pairs()`, and `values()` functions work identically on arrays and tables.
+
+[[sec-array-fundamentals]]
+=== Array Fundamentals
+[discrete]
+==== Element Types
+
+indexterm:[arrays, fundamentals] Each array declares a fixed element type at creation.  Storing a value of an incompatible type raises an error, as defined in <<sec-element-storage-contract>>.
+
+The names below are the complete set accepted in an `array<pass:[...]>` declaration and in the `Type` argument of `array.new()` and `array.of()`.  A name that is not listed is rejected.  The `array` name accepts a nested element name of its own, forming a recursive type as defined in <<sec-recursive-array-types>>.
+
+[cols="3,2,12",options="header"]
+|===
+|Type |Size |Description
+
+|`byte`
+|1
+|Unsigned 8-bit integer (0--255).  Alias: `char`.
+
+|`int8`
+|1
+|Signed 8-bit integer (−128--127).  A numeric element type, distinct from `byte`.
+
+|`int16`
+|2
+|Signed 16-bit integer
+
+|`int`
+|4
+|Signed 32-bit integer
+
+|`int64`
+|8
+|Signed 64-bit integer
+
+|`uint8`
+|1
+|Unsigned 8-bit integer (0--255).  A numeric element type, distinct from `byte`.
+
+|`uint16`
+|2
+|Unsigned 16-bit integer (0--65535)
+
+|`uint`
+|4
+|Unsigned 32-bit integer (0--4294967295)
+
+|`uint64`
+|8
+|Unsigned 64-bit integer (0--18446744073709551615).  Values above 2^53^ are not exactly representable as numbers; see <<sec-element-numeric-conversion>>.
+
+|`float`
+|4
+|32-bit floating point
+
+|`double`
+|8
+|64-bit floating point
+
+|`str`
+|8
+|String reference (garbage-collected)
+
+|`table`
+|8
+|Table reference (garbage-collected)
+
+|`obj`
+|8
+|Kōtuku object reference (garbage-collected).
+
+|`array`
+|8
+|Nested array reference (garbage-collected).  Accepts a nested element name, e.g. `array<int>`; see <<sec-recursive-array-types>>.
+
+|`struct<Name>`
+|Varies
+|Struct instance stored by value.  The array is bound to the struct definition declared at creation.
+
+|`any`
+|16
+|Any Tiri value (mixed types permitted)
+|===
+
+[[sec-recursive-array-types]]
+[discrete]
+==== Recursive Element Types
+
+indexterm:[arrays, recursive element types] indexterm:[arrays, nested arrays] indexterm:[arrays, type identity] The `array` element type accepts a nested element name, so an array of arrays constrains what its inner arrays hold.  The nesting is written with further angle brackets and repeats to a maximum of 32 `array` levels; a deeper name is rejected at parse time.
+
+[source,tiri]
+----
+matrix = array<array<int>> { array<int> { 1, 2 }, array<int> { 3, 4 } }
+cube = array<array<array<double>>> { }
+rows = array<array> { }               -- inner arrays unconstrained
+----
+
+A recursive name is accepted wherever an element type is named: an array constructor, a type annotation (<<sec-array-member-annotations>>), a type-test descriptor (<<sec-type-testing>>), and the `Type` and `ElementType` string arguments of `array.new()`, `array.of()`, `map()` and `range.map()`.
+
+[discrete]
+===== Type Identity
+
+Every array records a _type identity_: the complete recursive name of the array and of everything it declares.  The identity is canonical, so element names using aliases are reduced to the canonical spelling.  `rawtype()` reports type information as it is stored, see <<sec-rawtype>>.
+
+[source,tiri]
+----
+rawtype(array<array<int>> { })         -- 'array<array<int>>'
+rawtype(array< array < char > > { })   -- 'array<array<byte>>'
+rawtype(array<array> { })              -- 'array<array>'
+----
+
+`arr.type()` and `tostring()` report the immediate element category alone and never name what an inner array holds; see <<sec-array-element-type>>.
+
+[discrete]
+===== Identity Matching
+
+Storing an array into an array element, and testing an array against a declared type, compares identities name by name from the outermost inwards:
+
+* Two identical identities match.
+* An `any` element name matches every identity at that position, so `array<array<any>>` accepts an inner array of any element type, including one whose own element type is unconstrained.
+* An unconstrained `array` element name matches every array identity at that position, so `array<array>` accepts any array of arrays.
+* Every other pair of names must be equal.
+
+A more general identity never satisfies a more specific declaration.  An `array<array>` value is rejected where `array<array<int>>` is declared, because its inner element type is unconstrained and cannot be proven to hold integers.
+
+[source,tiri]
+----
+matrix = array<array<int>, 1>
+matrix[0] = array<int> { 1 }     -- accepted
+matrix[0] = array<str> { 'a' }   -- error: incompatible element type
+
+rows = array<array, 1>
+rows[0] = array<str> { 'a' }     -- accepted: inner type unconstrained
+----
+
+[discrete]
+===== Identity Preservation
+
+An operation that derives a new array from an existing one carries the source identity to the result.  This covers `clone()`, `filter()`, `slice()` and `mapSame()`, so a derived array enforces the same element contract as its source.  `map()` declares the identity named by its `ElementType` argument, and `array<any>` when the argument is omitted.
+
+[source,tiri]
+----
+matrix = array<array<int>> { array<int> { 1 } }
+rawtype(matrix.clone())                           -- array<array<int>>
+rawtype(matrix.slice({0 into 0}))                 -- array<array<int>>
+rawtype(matrix.map(v => array: v, 'array<int>'))  -- array<array<int>>
+----
+
+[discrete]
+===== Nested Size Restriction
+
+A nested element name cannot declare a size.  The outermost `array` declares one as usual, because the length is a property of the array and not of its type.
+
+[source,tiri]
+----
+grid = array<array<int>, 3>      -- valid: three inner arrays
+local bad:array<array<int, 4>>   -- error: nested size
+----
+
+A nested element name draws on the same vocabulary as any other element name, so `array<array<missing>>`, `array<array<pointer>>` and `array<array<struct<Unknown>>>` are all rejected at parse time.
+
+[[sec-uint8-versus-byte]]
+[discrete]
+==== The One-Byte Element Types Are Distinct
+
+indexterm:[arrays, uint8] indexterm:[arrays, int8] indexterm:[arrays, byte arrays] Three element types occupy one byte: `byte`, `uint8` and `int8`.  They are distinct types and are never interchangeable.  Only `byte` carries the string behaviour defined throughout this chapter.  `array<uint8>` and `array<int8>` are strictly numeric arrays.  `byte` is unsigned, making it numerically equivalent to `uint8`.
+
+[cols="2,1,1,1",options="header"]
+|===
+|Behaviour |`array<byte>` |`array<uint8>` |`array<int8>`
+
+|Value range
+|0--255
+|0--255
+|−128--127
+
+|`arr.type()`
+|`'byte'`
+|`'uint8'`
+|`'int8'`
+
+|`tostring(arr)`
+|Raw bytes as a string
+|`array<uint8, __length__>`
+|`array<int8, __length__>`
+
+|`push()` with a string argument
+|Appends the bytes
+|Error
+|Error
+
+|`..` concatenation
+|Supported
+|Error
+|Error
+
+|`..=` with a number
+|Coerces to text
+|Appends one numeric element
+|Appends one numeric element
+
+|`..=` with a string
+|Appends the bytes
+|Error
+|Error
+
+|`getString()`, `setString()`
+|Supported
+|Error
+|Error
+
+|`copy()` from a string
+|Supported
+|Error
+|Error
+|===
+
+No two of the three types are ever equal, and `copy()` between them is rejected, because an array source must declare the same element type as the destination.  A parameter or return annotation naming one of them accepts only that exact type; `array<byte>` does not satisfy `array<int8>`, and `array<int8>` does not satisfy `array<byte>`.
+
+[source,tiri]
+----
+buf = array<byte> { 72, 105 }
+tostring(buf)              -- 'Hi'
+
+nums = array<uint8> { 72, 105 }
+tostring(nums)             -- 'array<uint8, 2>'
+nums.push('A')             -- error: incompatible element type
+nums.copy(buf)             -- error: incompatible element type
+
+signed = array<int8> { -128, 127 }
+tostring(signed)           -- 'array<int8, 2>'
+signed.push('A')           -- error: incompatible element type
+----
+
+NOTE: Use `byte` (or its alias `char`) for text and binary buffers, `uint8` for unsigned numeric data that happens to be one byte wide, and `int8` for signed one-byte numeric data.
+
+[[sec-element-storage-contract]]
+[discrete]
+==== Element Storage Contract
+
+indexterm:[arrays, element storage] indexterm:[arrays, type safety] Every operation that writes an element applies the same contract.  A value is stored only if it matches the declared element type exactly.  Values are never converted between categories; a conversion that crosses categories must be written explicitly at the call site.
+
+* Numeric and string arrays accept matching elements only.  Use `tonumber()` and `tostring()` for conversion.
+* The `table` and `obj` element types accept only a value of that exact category.
+* The `array` element type accepts only an array, and when the element name is itself recursive the identity of the stored array must satisfy it as defined in <<sec-recursive-array-types>>.
+* A `struct<Name>` element type accepts only instances of the same struct definition.  A different definition is rejected even when its field layout is identical.
+* The `any` element type accepts every value.
+
+The element type therefore behaves as a type contract on every write, applying the same identity rules as the runtime contracts defined in <<sec-runtime-type-contracts>>.
+
+`nil` writes the empty value for the element type: zero for numeric elements, a cleared reference for `str`, `table`, `array` and `obj` elements, and `nil` for `any` elements.  The `struct<Name>` element type is the sole exception and rejects `nil`, because a struct element is stored by value and has no empty representation.
+
+`byte` arrays extend the contract for two operations:
+
+* `push()` also accepts strings and appends their characters
+* `..=` automatically stringifies values, as for regular string types.
+
+[source,tiri]
+----
+nums = array<int> { 1, 2, 3 }
+nums[0] = 4             -- 4
+nums[0] = '4'           -- error: incompatible element type
+nums[0] = tonumber('4') -- 4
+
+names = array<str> { 'a' }
+names.push(42)            -- error: incompatible element type
+names.push(tostring(42))  -- '42'
+----
+
+[[sec-element-numeric-conversion]]
+[discrete]
+==== Numeric Conversion
+
+indexterm:[arrays, numeric conversion] Storing a number in a numeric element type narrower than a double converts the value by the following rules.  The result is defined for every accepted value and does not vary between platforms.
+
+* Integer element types truncate the value towards zero, then wrap modulo the width of the type.  The signed types (`int8`, `int16`, `int`, `int64`) wrap into two's complement range.  The unsigned types (`byte`, `uint8`, `uint16`, `uint`, `uint64`) wrap into the range 0 to 2^__N__^−1, where __N__ is the width of the type in bits; a negative value therefore wraps to the top of that range.
+* Integer element types reject infinity and NaN with an out-of-range error.
+* The `float` element type rejects a finite value whose magnitude exceeds the largest representable single-precision number (approximately 3.4×10^38^) with an out-of-range error.  Infinity and NaN are stored unchanged.  All other values are rounded to the nearest representable single-precision value.
+* The `double` element type accepts every number, including infinity and NaN.
+
+A rejected value leaves the target element at its previous value.
+
+[source,tiri]
+----
+vals = array<int> { 1.9, -1.9, 3000000000, nil }
+-- vals = {1, -1, -1294967296, 0}
+
+bytes = array<byte> { 300, -1 }
+-- bytes = {44, 255}
+
+signed = array<int8> { 300, -1 }
+-- signed = {44, -1}
+
+words = array<uint16> { -1, 65536, 1.9 }
+-- words = {65535, 0, 1}
+
+vals[0] = math.huge   -- error: value out of range; vals[0] remains 1
+----
+
+[discrete]
+==== Precision of Wide Integer Elements
+
+indexterm:[arrays, uint64] A number is a double-precision value, so whole numbers are exact only up to 2^53^ (<<sec-numbers>>).  The `int64` and `uint64` element types store the full width of the type, but a value written from or read back into a number is subject to that limit.  A `uint64` element is read as the nearest representable double, and a written value beyond 2^53^ is rounded before it is stored.  `concat()` reports the stored value exactly, because it formats the element directly.
+
+[source,tiri]
+----
+counters = array<uint64> { -1 }
+counters.concat('', '%llu')   -- '18446744073709551615'
+counters[0]                   -- 1.844674407371e+19 (nearest double)
+----
+
+[[sec-array-atomic-mutation]]
+[discrete]
+==== Atomic Mutation
+
+indexterm:[arrays, atomic mutation] Operations that write more than one element validate every value against the element contract before any element is written.  If any value is rejected, the operation raises an error and the array retains its original length and contents; a partial write is never observable.  This guarantee covers multi-value `push()` and `insert()`, `fill()`, and `copy()` from a table.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30 }
+arr.push(40, {})   -- error: incompatible element type
+#arr               -- 3; arr is unchanged
+----
+
+[[sec-array-element-type]]
+[discrete]
+==== Type Inspection
+
+[.api]`name = arr.type()`
+
+Returns the element type of the array as a string, e.g. 'byte', 'float'.  The name is the canonical spelling of the element type, which is not always the spelling used to declare the array: `char` is reported as its canonical alias `byte`.  A nested array reports `array` and a struct array reports `struct`, without naming what they hold, and this holds for a recursively declared array as well: `array<array<int>>` reports `array`.
+
+[source,tiri]
+----
+array<int>.type()            -- 'int'
+array<float>.type()          -- 'float'
+array<byte>.type()           -- 'byte'
+array<char>.type()           -- 'byte'
+array<obj>.type()            -- 'obj'
+array<uint8>.type()          -- 'uint8'
+array<int8>.type()           -- 'int8'
+array<uint>.type()           -- 'uint'
+array<array<str>>.type()     -- 'array'
+array<struct<Vec>>.type()    -- 'struct'
+----
+
+`rawtype()` reports the array and its element together as `array<Element>`, drawing the element name from the same alias set.  Unlike `arr.type()` it reports the complete type identity: it names the struct definition an array of structs holds, and it names every level of a recursive array (<<sec-rawtype>>, <<sec-recursive-array-types>>).
+
+[source,tiri]
+----
+rawtype(array<byte> { 65 })          -- 'array<byte>'
+rawtype(array<struct<Vec>> { })      -- 'array<struct<Vec>>'
+rawtype(array<array<int>> { })       -- 'array<array<int>>'
+----
+
+`tostring()` reports the immediate element category and the length, so a recursive array is rendered as `array<array, __length__>` whatever its inner element type.
+
+[[sec-read-only-arrays]]
+[discrete]
+==== Read-Only Arrays
+
+[.api]`result = arr.readOnly()`
+
+Returns `true` if the array is read-only.  Read-only arrays are produced by Kōtuku API calls that expose internal buffers.  Mutation methods raise an error when called on a read-only array.  A `<view>` local binds a live, read-only view of an object array field that aliases the field's native storage; see <<sec-view-variables>>.
+
+[discrete]
+==== Length and Equality
+
+The `#` operator returns the current element count.  The `is` operator performs content equality comparison: two arrays are equal if they have the same element type, the same length, and identical contents.  This differs from tables, where `is` compares by identity.  See <<sec-comparison-operators>> for the rationale behind this deliberate asymmetry.
+
+[source,tiri]
+----
+a = array<int> { 1, 2, 3 }
+b = array<int> { 1, 2, 3 }
+c = a
+
+a is c   -- true  (same object — also same contents)
+a is b   -- true  (distinct objects, but same type, length, and contents)
+#a       -- 3
+
+rawequal(a, b) -- false (identity comparison: distinct objects)
+rawequal(a, c) -- true  (identity comparison: same object)
+----
+
+Equality rules depend on the element type:
+
+[cols="1,3",options="header"]
+|===
+|Element Category |Comparison Method
+
+|Primitive (`byte`, `int8`, `int16`, `int`, `int64`, `uint8`, `uint16`, `uint`, `uint64`, `float`, `double`)
+|Raw memory comparison of the underlying data.
+
+|`str`
+|Element-by-element string comparison (hash, length, then content).
+
+|`obj`
+|Element-by-element comparison of object UIDs.
+|===
+
+Arrays with different element types are never equal, even if the raw values are numerically equivalent.  Equality for `table` and `any` element types is not yet supported and raises an error.
+
+NOTE: Content equality is O(n) in the array length.  For primitive element types, the comparison uses `memcmp` and is highly efficient.  For string and object arrays, each element is compared individually.  If reference identity is sufficient, use `rawequal(a, b)` which is O(1).
+
+[discrete]
+==== String Conversion
+
+The `tostring()` function, `string.format('%s', pass:[...])`, and f-string interpolation all invoke the array's string conversion metamethod.
+
+For byte arrays, conversion returns the raw bytes interpreted as a string, preserving embedded NUL bytes:
+
+[source,tiri]
+----
+buf = array<byte> { 72, 101, 108, 108, 111 }
+tostring(buf)        -- 'Hello'
+f'{buf}'             -- 'Hello'
+
+str_arr = array.new('Hello')
+tostring(str_arr)    -- 'Hello'
+----
+
+For all other element types, conversion returns a descriptive summary of the form `array<__type__, __length__>`:
+
+[source,tiri]
+----
+tostring(array<int> { 1, 2, 3 })      -- 'array<int, 3>'
+tostring(array<str> { 'a', 'b' })     -- 'array<str, 2>'
+tostring(array<double, 0>)            -- 'array<double, 0>'
+----
+
+[discrete]
+==== String Concatenation
+
+Byte arrays can be used with the `..` concatenation operator.  The array is converted to a string and concatenated with the other value.  The result is always a new string; neither operand is modified.
+
+[source,tiri]
+----
+buf = array<char> { 72, 105 }
+'Say: ' .. buf            -- 'Say: Hi'
+buf .. ' there'           -- 'Hi there'
+buf .. 123                -- 'Hi123'
+buf .. array<byte> { 33 } -- 'Hi!'
+----
+
+Non-byte arrays (e.g. `int`, `str`, `table`) cannot be concatenated with `..` and raise an error.
+
+[discrete]
+==== In-Place Append with `..=`
+
+When the target of a `..=` compound assignment is an array, the operator appends to the array in place instead of producing a new value.  The array is mutated and its length grows.  This differs from the `..` operator, which always produces a new string and never mutates its operands.
+
+The appended representation depends on the array's element type:
+
+* Byte arrays follow concatenation semantics.  A string operand contributes its bytes, preserving embedded NUL bytes; a number operand contributes its decimal text, identical to the conversion the `..` operator performs.
+* All other array types append the operand as a single element of the array's element type.  A number is stored as a numeric element, not as text.  The operand must satisfy <<sec-element-storage-contract>>; an incompatible operand raises an error and the array is unchanged.
+
+If the right operand is a function call or vararg, only its first value is appended.  The target is any assignable array reference, including a table or object field.  See <<sec-compound-assignment>> for the general rules governing compound assignment.
+
+[source,tiri]
+----
+buf = array<char>
+buf ..= 'Value = '   -- append 8 bytes
+buf ..= 42           -- append '42' as decimal text
+print(buf)           -- 'Value = 42'
+
+nums = array<int> { 1, 2 }
+nums ..= 3           -- append the element 3; nums = {1, 2, 3}
+----
+
+TIP: A byte array assembled with `..=` is the most efficient way to build a large string buffer.  Each append mutates the array in place and reuses spare capacity, avoiding the repeated allocation and copying that building a string with `..` in a loop incurs.  Recover the finished string with `tostring(buf)` or `buf.getString()`, or pass the array directly to functions that support character arrays.
+
+[source,tiri]
+----
+buf = array<char>
+for line in values(lines) do
+   buf ..= line
+   buf ..= '\n'  -- single append faster than concatenating with 'line'
+end
+text = tostring(buf)
+----
+
+[[sec-creating-arrays]]
+=== Creating Arrays
+[discrete]
+==== Typed Syntax
+
+indexterm:[arrays, creation] The `array<type>` syntax creates arrays with concise, declarative notation:
+
+[source,tiri]
+----
+arr = array<int>                     -- empty array
+arr = array<int, 5>                  -- 5 elements, zero-initialised
+arr = array<int> { 10, 20, 30 }      -- 3 elements with values
+arr = array<int, 10> { 1, 2, 3 }     -- 10 elements; first 3 set, rest zero
+arr = array<str> { 'a', 'b', 'c' }   -- string array with values
+----
+
+When both a size and initial values are provided, the array is first populated with the values, then extended to the specified size.  Extended elements are zero-initialised for numeric types or `nil` for reference types.  If the number of values exceeds the size, the values take precedence.
+
+The size expression accepts variables and function calls:
+
+[source,tiri]
+----
+n = 8
+buf = array<int, n>   -- 8 zero-initialised elements
+----
+
+The `array<type>` form is also the array type annotation, where it constrains a variable, parameter or result to arrays of that element type.  A size is not permitted in that position.  See <<sec-array-member-annotations>>.
+
+==== array.new()
+
+[.api]`arr = array.new(Size, Type)`
+
+Creates an array of `Size` elements with the specified element `Type` string.  `Type` accepts the names listed in <<sec-array-fundamentals>>.  Raises an error if `Size` is negative.
+
+[source,tiri]
+----
+arr = array.new(100, 'int')
+arr = array.new(50, 'double')
+arr = array.new(4, 'array<int>')   -- rawtype 'array<array<int>>'
+----
+
+A string argument creates a byte array initialised from the string's bytes:
+
+[source,tiri]
+----
+arr = array.new('Hello')
+arr.type()     -- 'byte'
+#arr           -- 5
+arr[0]         -- 72 (ASCII 'H')
+----
+
+==== array.of()
+
+[.api]`arr = array.of(Type, Value, pass:[...])`
+
+Creates an array populated with the given values.  At least one value is required.  `Type` accepts the same names as `array.new()`.  Each value must satisfy <<sec-element-storage-contract>> for `Type`; an incompatible value raises an error and no array is returned.
+
+[source,tiri]
+----
+arr = array.of('str', 'google.com', 'kotuku.dev')
+arr = array.of('int', 1, 2, 3, 4, 5)
+----
+
+NOTE: The typed syntax `array<int> { 1, 2, 3 }` is preferred over `array.of()` for readability.
+
+[[sec-element-access]]
+[%breakable]
+=== Element Access
+[discrete]
+==== Indexing
+
+indexterm:[arrays, element access] Elements are accessed by zero-based integer index.  Out-of-bounds reads and writes raise an error.  Negative indices are not supported.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30 }
+arr[0]    -- 10
+arr[2]    -- 30
+arr[3]    -- error: index out of bounds
+arr[-1]   -- error: negative index
+----
+
+[discrete]
+==== first() and last()
+
+[.api]`value = arr.first()`
+
+Returns the first element, or `nil` if the array is empty.
+
+[.api]`value = arr.last()`
+
+Returns the last element, or `nil` if the array is empty.
+
+[discrete]
+==== Iteration
+
+Arrays support three iteration styles for use in `for` loops.
+
+Direct iteration returns index-value pairs, following the general rule defined in <<sec-bare-collection-iteration>>:
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30 }
+for i, v in arr do
+   print(i, v)
+end
+----
+
+A single loop variable binds the index rather than the element, because the index is the first value yielded.  Use `for _, v in arr` or `values(arr)` to iterate elements alone.
+
+The `ipairs()`, `pairs()`, and `values()` functions also work on arrays with identical semantics to tables:
+
+[source,tiri]
+----
+for i, v in ipairs(arr) do ... end
+for i, v in pairs(arr) do ... end
+for v in values(arr) do ... end
+----
+
+TIP: Direct iteration is preferred over the use of `ipairs()` and `pairs()`, which are supported to maintain seamless compatibility with tables.
+
+[discrete]
+==== Membership Testing
+
+The `in` operator tests whether a value exists in an array.  The array is the right-hand operand and the candidate value is the left-hand operand.  Equality is defined by the element type:
+
+[cols="1,3"]
+|===
+|Element type |Comparison
+
+|Numeric
+|The candidate is converted to a number and compared by value.  A candidate that cannot be converted raises an error.
+
+|`str`
+|A string candidate is compared by value.  A numeric candidate is converted to its string form first.  Any other candidate raises an error.
+
+|`obj`
+|The candidate is an object or a numeric UID, and elements are compared by object identity.  Any other candidate raises an error.
+
+|`any`, `table`, `array`, `struct`
+|The candidate is compared under the rules of the `is` operator (<<sec-comparison-and-equality>>): by identity, or through a `pass:[__]eq` metamethod that the element and the candidate both resolve to.  A candidate of any type is accepted, and one that matches no element reports `false`.
+|===
+
+[source,tiri]
+----
+arr = array<str> { 'red', 'green', 'blue' }
+'green' in arr       -- true
+'yellow' in arr      -- false
+
+if 'red' in arr then
+   print('found')
+end
+----
+
+An empty array reports `false` without inspecting the candidate.  Reading an element of a `struct` array produces a new struct interface, so a struct candidate compares unequal to every element and the test always reports `false`.
+
+`in` selects the same elements as `indexOf()` (<<sec-search-and-query>>), which reports the position rather than the presence of a match.
+
+[[sec-mutation-methods]]
+=== Mutation Methods
+[discrete]
+==== push()
+
+[.api]`length = arr.push(Value, pass:[...])`
+
+indexterm:[arrays, mutation] Appends one or more values to the end of the array.  Grows the array if necessary.  Returns the new length.  If called with no arguments, returns the current length without modification.
+
+Each value must satisfy <<sec-element-storage-contract>>.  All values are validated before the first is appended, so a rejected value leaves the array unchanged as defined in <<sec-array-atomic-mutation>>.
+
+For byte arrays, string arguments are also accepted: the bytes of each string are appended in sequence, preserving embedded NUL bytes.  Integer arguments are appended as single bytes.  A single call may mix strings and integers.
+
+[source,tiri]
+----
+arr = array<int>
+arr.push(10)         -- returns 1
+arr.push(20, 30)     -- returns 3
+
+buf = array<char>
+buf.push('Hello')     -- append 5 bytes; returns 5
+buf.push(32, 'World') -- append a space and 5 bytes; returns 11
+----
+
+[discrete]
+==== pop()
+
+[.api]`value = arr.pop([Count])`
+
+Removes and returns elements from the end of the array.  If `Count` is omitted, removes one element.  If `Count` exceeds the array length, removes all elements.  Returns `nil` for each element beyond the array's content.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30 }
+arr.pop()       -- returns 30; #arr is 2
+arr.pop()       -- returns 20; #arr is 1
+
+arr = array<int> { 1, 2, 3, 4, 5 }
+a, b = arr.pop(2)   -- a=5, b=4; #arr is 3
+----
+
+Returns `nil` on an empty array.
+
+[discrete]
+==== insert()
+
+[.api]`length = arr.insert(Index, Value, pass:[...])`
+
+Inserts one or more values at `Index`, shifting subsequent elements to the right.  Returns the new length.  Raises an error if `Index` is negative or exceeds the current length.  If no values are provided, the array is unchanged.
+
+Each value must satisfy <<sec-element-storage-contract>>.  All values are validated before any element is shifted, so a rejected value leaves the array unchanged as defined in <<sec-array-atomic-mutation>>.  Unlike `push()`, string arguments are not accepted by byte arrays.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 5 }
+arr.insert(2, 3, 4)   -- arr = {1, 2, 3, 4, 5}
+arr.insert(0, 0)      -- arr = {0, 1, 2, 3, 4, 5}
+----
+
+[discrete]
+==== remove()
+
+[.api]`length = arr.remove(Index, [Count])`
+
+Removes `Count` elements starting at `Index`, shifting subsequent elements to the left.  `Count` defaults to 1.  If `Count` exceeds the number of elements from `Index` to the end, removes all remaining elements from `Index`.  Returns the new length.  Raises an error if `Index` is negative, at or beyond the current length, or if `Count` is negative.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3, 4, 5 }
+arr.remove(2)       -- arr = {1, 2, 4, 5}
+arr.remove(1, 2)    -- arr = {1, 5}
+----
+
+[discrete]
+==== fill()
+
+[.api]`arr.fill(Value, [Start, [Stop]])` +
+[.api]`arr.fill(Value, Range)`
+
+Sets elements to `Value`.  With no additional arguments, fills the entire array.  With `Start` and `Stop`, fills the half-open span `[Start, Stop)`: every element from `Start` up to but excluding `Stop`.  `Start` defaults to `0` and `Stop` defaults to the array length, so `arr.fill(Value, Start)` fills from `Start` to the end.  The positional form selects the same elements as the exclusive range form: `arr.fill(Value, Start, Stop)` is equivalent to `arr.fill(Value, {Start to Stop})`.
+
+With a range, fills the elements selected by the range (supports exclusive, inclusive, negative, and stepped ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
+
+A `Stop` greater than the array length is clipped to the length.  A span that selects no elements is a no-op that leaves the array unchanged and does not validate `Value`; this applies when `Start` is at or beyond the array length, and when `Stop` is at or below `Start`.  A negative `Start` or `Stop` raises an error.
+
+`Value` must satisfy <<sec-element-storage-contract>> and is validated before the first element is written, so a rejected value leaves the array unchanged.  Reference element types accept a reference, or `nil` to clear the selected elements.
+
+[source,tiri]
+----
+arr = array<int, 10>
+arr.fill(0)               -- zero-fill all elements
+arr.fill(99, 2, 5)        -- arr[2], arr[3], arr[4] = 99
+arr.fill(88, 6)           -- arr[6] through arr[9] = 88
+arr.fill(77, {2 into 5})  -- arr[2 into 5] = 77 (inclusive)
+arr.fill(33, range.new(0, 10, false, 2))   -- every 2nd element
+
+refs = array<table, 3>
+refs.fill({ id = 1 })     -- every element references the same table
+refs.fill(nil, 1, 3)      -- clears refs[1] and refs[2]
+----
+
+[discrete]
+==== sort()
+
+[.api]`arr.sort([Descending])` +
+[.api]`arr.sort(ComparatorFn)`
+
+Sorts the array in place.  The default order is ascending.  If `Descending` is `true`, sorts in descending order.  Supported for all numeric types, string arrays, and `any` arrays.
+
+Alternatively, a comparator function can be provided.  The function receives two elements `(a, b)` and returns `true` if `a` precedes `b` in the sorted result.  This works for all pushable array types, including `table` and `obj` arrays.
+
+[source,tiri]
+----
+arr = array<int> { 5, 3, 1, 4, 2 }
+arr.sort()        -- {1, 2, 3, 4, 5}
+arr.sort(true)    -- {5, 4, 3, 2, 1}
+
+-- Custom comparator: sort by absolute value
+nums = array<int> { -5, 3, -1, 4, -2 }
+nums.sort((a, b) => math.abs(a) < math.abs(b))
+
+-- Sort tables by a field
+people = array<table> {
+   { name = 'Charlie', age = 35 },
+   { name = 'Alice',   age = 28 },
+   { name = 'Bob',     age = 31 }
+}
+people.sort((a, b) => a.age < b.age)  -- sorted by age ascending
+----
+
+[discrete]
+==== reverse()
+
+[.api]`arr.reverse()`
+
+Reverses the order of all elements in place.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3, 4, 5 }
+arr.reverse()   -- {5, 4, 3, 2, 1}
+----
+
+[discrete]
+==== clear()
+
+[.api]`arr.clear()`
+
+Resets the array length to zero.  Storage capacity is preserved for reuse.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3 }
+arr.clear()
+#arr            -- 0
+arr.push(67)    -- reuses existing capacity
+----
+
+[discrete]
+==== resize()
+
+[.api]`arr.resize(NewSize)`
+
+Changes the array length to `NewSize`.  When growing, new elements are zero-initialised (or `nil` for reference types).  When shrinking, excess elements are discarded.  Raises an error if `NewSize` is negative.
+
+[[sec-search-and-query]]
+=== Search & Query
+[discrete]
+==== find()
+
+[.api]`value = arr.find(Predicate)`
+
+indexterm:[arrays, searching] indexterm:[arrays, querying] Returns the first element for which `Predicate(Value, Index)` returns a truthy value, or `nil` if no element matches.  Evaluation stops at the first match.  The result is the value passed to the matching call, so a predicate that overwrites that index does not change the result.
+
+`Predicate` must be a function.  To search for a value by equality, use `indexOf()`.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30, 40 }
+arr.find(Value => Value > 20)            -- 30
+arr.find((Value, Index) => Index is 1)   -- 20
+arr.find(Value => Value > 100)           -- nil
+----
+
+[discrete]
+==== findIndex()
+
+[.api]`index = arr.findIndex(Predicate)`
+
+Returns the zero-based index of the first element for which `Predicate(Value, Index)` returns a truthy value, or `nil` if no element matches.  Evaluation stops at the first match.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30, 40 }
+arr.findIndex(Value => Value > 20)    -- 2
+arr.findIndex(Value => Value > 100)   -- nil
+----
+
+[discrete]
+==== indexOf()
+
+[.api]`index = arr.indexOf(Value, [Start], [Stop])` +
+[.api]`index = arr.indexOf(Value, Range)`
+
+Searches for `Value` and returns its zero-based index, or `nil` if not found.  With a numeric `Start`, the search begins at that index.  `Stop` bounds the search as a half-open span `[Start, Stop)`, defaulting to the array length: the element at `Stop` is not examined.  A negative `Stop` is resolved against the array length, a `Stop` beyond the length is clamped to the length, and a span in which `Stop` is not greater than `Start` returns `nil`.
+
+With a range, the search is restricted to the indices selected by the range (supports exclusive, inclusive, negative, stepped, and reverse ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
+
+For `obj` arrays, `Value` can be an object or a numeric UID.  Every other element type is compared under the rules of the `is` operator (<<sec-comparison-and-equality>>): numbers, strings and booleans compare by value, and tables and userdata compare by identity unless the element and `Value` resolve the same `pass:[__]eq` metamethod, which is then invoked to decide the match.  An error raised inside `pass:[__]eq` propagates to the caller.  Values of different types never match, and a struct candidate never matches, because reading a `struct` element produces a new struct interface.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30, 40, 50 }
+arr.indexOf(30)           -- 2
+arr.indexOf(30, 3)        -- nil (search starts at index 3)
+arr.indexOf(30, 0, 2)     -- nil (index 2 lies outside the span)
+arr.indexOf(30, 0, 3)     -- 2
+arr.indexOf(50, 0, #arr)  -- 4 (a stop equal to the length includes the last element)
+arr.indexOf(30, {0 to 5}) -- 2
+arr.indexOf(99)           -- nil
+----
+
+Reverse ranges search from higher to lower indices, finding the last occurrence first:
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30, 20, 40 }
+arr.indexOf(20, {4 into 0})   -- 3 (found searching backwards)
+----
+
+[[sec-copying-and-slicing]]
+=== Copying & Slicing
+[discrete]
+==== clone()
+
+[.api]`copy = arr.clone()`
+
+indexterm:[arrays, copying] indexterm:[arrays, slicing] Creates a new array with the same type identity and a copy of all elements, so a recursive element type is retained in full (<<sec-recursive-array-types>>).  For reference types (tables, objects, arrays), the clone is shallow: the new array holds references to the same underlying objects.
+
+A `struct` element type is not supported and raises an error.
+
+[discrete]
+==== slice()
+
+[.api]`result = arr.slice(Range)`
+
+Returns a new array containing the elements selected by `Range`.  The result has the same type identity as the source, including a recursive element type.  Supports exclusive, inclusive, negative, reverse, and stepped ranges.  Out-of-bounds indices are clamped.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
+
+[source,tiri]
+----
+arr = array<int> { 0, 10, 20, 30, 40, 50 }
+arr.slice({1 to 4})       -- array<int> {10, 20, 30}
+arr.slice({-2 into -1})   -- array<int> {40, 50}  (inclusive)
+arr.slice({-2 to -1})     -- array<int> {40}      (exclusive)
+arr.slice({4 into 2})     -- array<int> {40, 30, 20} (reverse)
+
+arr.slice({0 to 6 by 2})   -- array<int> {0, 20, 40}
+----
+
+[discrete]
+==== copy()
+
+[.api]`arr.copy(Source, [DestIndex, SrcIndex, Count])`
+
+Copies data into the array from `Source`.  `Source` can be an array, a string (copied as bytes into a byte array), or a table.
+
+`DestIndex` specifies the starting position in the destination (default: 0).  `SrcIndex` specifies the starting position in the source (default: 0).  `Count` limits the number of elements copied (default: all remaining from `SrcIndex`).
+
+Raises an error if the copy would exceed the destination bounds.
+
+The source must match the destination:
+
+* An array source must declare the same element type as the destination.  Element values are transferred without conversion, so an `array<double>` cannot be copied into an `array<int>`.  When the destination declares a recursive element type, the source identity must also satisfy it as defined in <<sec-recursive-array-types>>.
+* A string source requires a byte array destination.
+* A table source is read as a sequence and each element must satisfy <<sec-element-storage-contract>>.  The complete sequence is validated before the destination is modified, so a rejected element leaves the destination unchanged as defined in <<sec-array-atomic-mutation>>.
+
+CAUTION: An array source is matched on its element type alone.  For a `struct` element type the struct definition is not compared, so two `struct` arrays declaring different definitions satisfy the check and their raw bytes are transferred.  The result is meaningless when the definitions differ, and unsafe when their sizes differ.  Confirm the definitions match at the call site before copying between struct arrays.
+
+[source,tiri]
+----
+dest = array<int, 6>
+dest.fill(0)
+dest.copy(array<int> { 100, 200, 300 }, 2, 0, 3)
+-- dest = {0, 0, 100, 200, 300, 0}
+
+dest.copy({ 1.9, 2.1, 3.8 })
+-- dest = {1, 2, 3, 200, 300, 0}
+
+dest.copy({ 8, {}, 9 })   -- error: incompatible element type; dest is unchanged
+
+buf = array<byte, 10>
+buf.copy('Hello')
+buf.getString(0, 5)   -- 'Hello'
+----
+
+[discrete]
+==== table()
+
+[.api]`t = arr.table()`
+
+Converts the array to a table.  Each element becomes a sequential entry in the returned table.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30 }
+t = arr.table()
+t[0]   -- 10
+t[1]   -- 20
+----
+
+[discrete]
+==== Byte Array String Methods
+
+These methods are available only on byte (`char`) arrays.
+
+[.api]`str = arr.getString([Start, Length])`
+
+Extracts a string from the byte array starting at `Start` (default: 0) with the specified `Length` (default: remaining bytes from `Start`).  Raises an error if the range exceeds the array bounds, or if `Start` or `Length` is negative.
+
+[.api]`count = arr.setString(String, [Start])`
+
+Copies the bytes of `String` into the array at `Start` (default: 0).  If the string extends beyond the array bounds, it is clamped.  Returns the number of bytes written.
+
+[source,tiri]
+----
+arr = array.new('Hello World')
+arr.getString(0, 5)   -- 'Hello'
+arr.getString(6)      -- 'World'
+
+arr.setString('Greet', 0)
+arr.getString(0, 5)   -- 'Greet'
+----
+
+[discrete]
+==== concat()
+
+[.api]`str = arr.concat([Separator], [Format], [Start], [Stop])`
+
+Concatenates array elements into a string.  `Separator` is inserted between each element (default: empty string).  `Format` is an optional C-style format specifier applied to each element (e.g. `'%d'`, `'%.2f'`, `'%s'`).  `Start` and `Stop` are optional zero-based indexes that restrict the operation to the half-open span `[Start, Stop)` of the array.  `Stop` is exclusive, so `Stop - Start` elements are concatenated.  `Start` defaults to `0` and `Stop` defaults to the array length.
+
+When `Format` is provided, it must contain exactly one format specifier.  An error is raised if `Format` contains zero or multiple specifiers, or if the format specifier is incomplete.  For non-string arrays without a format specifier, elements are converted to their default string representation, which is a more optimal conversion path.  Unsigned elements are converted to unsigned decimal text on that path.
+
+An unsigned array constrains the permitted conversion, because the element is passed to the formatter at its own width:
+
+* `uint8`, `uint16` and `uint` arrays require an unsigned conversion (`%u`, `%o`, `%x` or `%X`) with no length modifier.
+* `uint64` arrays require one of the same conversions with the `ll` length modifier, e.g. `%llu` or `%llx`.
+
+Every other conversion, including `%d` and `%s`, raises an error.
+
+Concatenation is only available for primitive array types that consist of string and number elements.  Attempting to concatenate table, struct or object elements raises an error.
+
+An error is raised if `Start` or `Stop` is negative, or greater than the array length.  A `Stop` equal to the array length is valid and selects through to the final element.  If `Stop` is not greater than `Start`, an empty string is returned; this includes an explicit `0, 0` span on an empty array.  Empty arrays are converted to an empty string.
+
+[source,tiri]
+----
+arr = array<str> { 'hello', 'world' }
+arr.concat(' ')          -- 'hello world'
+arr.concat()             -- 'helloworld'
+
+arr = array<int> { 1, 2, 3 }
+arr.concat('-')          -- '1-2-3'
+
+arr = array<int> { 10, 20, 30 }
+arr.concat(', ', '%d')   -- '10, 20, 30'
+
+arr = array<float> { 1.5, 2.7 }
+arr.concat(' | ', '%.1f')   -- '1.5 | 2.7'
+----
+
+Unsigned arrays:
+
+[source,tiri]
+----
+arr = array<uint8> { 1, 255 }
+arr.concat(',')             -- '1,255'
+arr.concat(',', '%u')       -- '1,255'
+arr.concat(',', '%02x')     -- '01,ff'
+arr.concat(',', '%d')       -- error: unsigned format required
+
+wide = array<uint64> { 255 }
+wide.concat('', '%llu')     -- '255'
+wide.concat('', '%llX')     -- 'FF'
+wide.concat('', '%u')       -- error: unsigned long long format required
+----
+
+Sub-range concatenation with `Start` and `Stop`:
+
+[source,tiri]
+----
+arr = array<str> { 'a', 'b', 'c', 'd' }
+arr.concat(',', nil, 1, 3)      -- 'b,c'
+arr.concat(',', nil, 0, #arr)   -- 'a,b,c,d'
+arr.concat(',', nil, 2, 2)      -- '': an empty span
+
+arr = array<int> { 1, 2, 3, 4 }
+arr.concat('-', '%02d', 1, 4)   -- '02-03-04'
+----
+
+[[sec-functional-methods]]
+=== Functional Methods
+indexterm:[arrays, functional methods] All functional methods in this section accept a callback function that receives `(Value, Index)` as parameters.  The `Index` parameter is optional; callbacks that only need the value can omit it.
+
+Every functional method records the array length before the first callback runs.  Elements appended during the iteration are not visited, and the iteration stops early if the array is shortened to fewer elements than the recorded length.  A `map()` or `mapSame()` result keeps the recorded length; positions that are never visited retain their zero-initialised value.
+
+[discrete]
+==== each()
+
+[.api]`arr.each(Callback)`
+
+Calls `Callback(Value, Index)` for every element.  Returns the array for chaining.  A callback that returns `false` terminates the iteration; returning `true`, `nil`, or no value continues it.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30 }
+arr.each(function(v, i)
+   print(i, v)
+end)
+
+arr.each(function(v, i)
+   if v > 20 then return false end
+   print(v)
+end)
+----
+
+[discrete]
+==== map()
+
+[.api]`result = arr.map(Callback, [ElementType])`
+
+Returns a new array where each element is the result of `Callback(Value, Index)`.  The original array is not modified.
+
+`ElementType` names the element type of the result and accepts the type names listed in <<sec-array-fundamentals>>, including a recursive `array<pass:[...]>` name (<<sec-recursive-array-types>>).  When `ElementType` is omitted or `nil`, the result is an `array<any>`, which accepts a callback result of any type.  `ElementType` is validated before the first callback runs: an unrecognised name raises an error and no callback is invoked.
+
+Each callback result must satisfy <<sec-element-storage-contract>> for the result element type; a result of another category raises an error and leaves the source array unmodified.  Use `mapSame()` to retain the source element type.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3 }
+arr.map(v => v * 2)                -- array<any>: {2, 4, 6}
+arr.map(v => tostring(v), 'str')   -- array<str>: {'1', '2', '3'}
+arr.map(v => tostring(v), 'int')   -- error: incompatible element type
+----
+
+[discrete]
+==== mapSame()
+
+[.api]`result = arr.mapSame(Callback)`
+
+Returns a new array where each element is the result of `Callback(Value, Index)`.  The original array is not modified.  The result declares the source type identity, including the struct definition of a `struct` element type and every level of a recursive element type.
+
+Each callback result must satisfy <<sec-element-storage-contract>> for the source element type; a result of another category raises an error.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3, 4, 5 }
+doubled = arr.mapSame(v => v * 2)
+-- doubled = {2, 4, 6, 8, 10}
+
+arr.mapSame(v => tostring(v))   -- error: incompatible element type
+----
+
+[discrete]
+==== filter()
+
+[.api]`result = arr.filter(Predicate)`
+
+Returns a new array containing only the elements for which `Predicate(Value, Index)` returns a truthy value.  The original array is not modified.  The result declares the same type identity as the source, including the struct definition of a `struct` element type and every level of a recursive element type.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3, 4, 5, 6 }
+evens = arr.filter(v => v % 2 is 0)
+-- evens = {2, 4, 6}
+----
+
+[discrete]
+==== reduce()
+
+[.api]`result = arr.reduce(Initial, Reducer)`
+
+Applies `Reducer(Accumulator, Value, Index)` to each element, threading the accumulator from left to right.  Returns the final accumulator.  If the array is empty, returns `Initial` unchanged.
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3, 4, 5 }
+sum = arr.reduce(0, (acc, v) => acc + v)
+-- sum = 15
+
+product = arr.reduce(1, (acc, v) => acc * v)
+-- product = 120
+----
+
+[discrete]
+==== any()
+
+[.api]`result = arr.any(Predicate)`
+
+Returns `true` if `Predicate(Value, Index)` returns a truthy value for at least one element.  Returns `false` on an empty array.
+
+[source,tiri]
+----
+arr = array<int> { 1, 3, 5, 6, 7 }
+arr.any(v => v % 2 is 0)   -- true
+----
+
+[discrete]
+==== all()
+
+[.api]`result = arr.all(Predicate)`
+
+Returns `true` if `Predicate(Value, Index)` returns a truthy value for every element.  Returns `true` on an empty array (vacuous truth).
+
+[source,tiri]
+----
+arr = array<int> { 2, 4, 6, 8 }
+arr.all(v => v % 2 is 0)   -- true
+----
+
+[discrete]
+==== Chaining
+
+Functional methods that return arrays can be chained:
+
+[source,tiri]
+----
+arr = array<int> { 1, 2, 3, 4, 5 }
+
+result = arr.mapSame(v => v * 2).filter(v => v > 5)
+-- result = {6, 8, 10}
+
+sum = arr.filter(v => v % 2 is 0)
+   .reduce(0, (acc, v) => acc + v)
+-- sum = 6
+----

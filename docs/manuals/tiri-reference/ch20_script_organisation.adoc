@@ -1,0 +1,347 @@
+// VERIFIED: 2026-08-24
+// UPDATED: 2026-09-01 - loadFile() and exec() now report a specific ERR code (commit ed7f16f04)
+// CHANGED: 2026-08-31 - Rewrote the namespace documentation for declarative namespaces.  `namespace` now takes
+//                       an identifier with an optional table, function or thunk initialiser, binds the name as
+//                       a constant local, and `_NS` has been removed (commit 4a0d907ae)
+
+[[ch-script-management]]
+== Script Organisation
+indexterm:[script organisation] Tiri programs use compile-time directives and runtime loading functions.  The `import` directive inlines library scripts at parse time; `loadFile()` and `exec()` provide dynamic loading and evaluation.  The `arg()` function reads command-line parameters.
+
+[[sec-the-import-directive]]
+=== The import Directive
+[.api]`import 'Name' [as Alias]` +
+[.api]`import 'Name'[, 'Name' pass:[...]]`
+
+indexterm:[import directive] The `import` directive loads and inlines a Tiri script at parse time.  The imported script's bytecode is merged into the importing script during compilation, enabling the parser to produce optimised code across library boundaries.
+
+[discrete]
+==== Resolution Rules
+
+The `Name` argument identifies the library to import.  Resolution follows these rules:
+
+. Names must be alphanumeric with optional `/` separators for nested modules.  File extensions are not permitted.
+. The default search location is the `scripts:` volume.
+. Nested modules use `/` folder separators.
+. To import from the local directory, prefix with `./`. For example, a name of `./lib/mylib` resolves relative to the importing script.
+. To import from a parent directory, prefix with one or more `../` segments.  For example, `../shared/util` resolves relative to the importing script's parent directory.
+. Each library is imported at most once per compilation unit.  Subsequent `import` calls for the same library are silently ignored.
+
+[source,tiri]
+----
+import 'json'             -- scripts:json.tiri
+import 'gui/button'       -- scripts:gui/button.tiri
+import './helpers'        -- ./helpers.tiri (relative to script)
+import '../shared/util'   -- ../shared/util.tiri (relative to script's parent)
+----
+
+[discrete]
+==== Import Lists
+
+A single `import` statement imports multiple libraries as a comma-separated list of string literals.  Each entry is resolved and inlined from left to right, following the same order as an equivalent sequence of individual `import` statements.
+
+[source,tiri]
+----
+import 'json', 'options', 'gui/window'
+----
+
+[discrete]
+==== Scope Rules
+
+`import` can only appear at the top-level scope of a script.  Attempting to use `import` inside a function or block raises a parse error.
+
+An imported file is its own compilation unit for the purposes of module namespaces (<<sec-module-declarations>>).  A namespace declared in an imported file is private to that file, and a namespace declared by the importing script is not visible to it.  Each file that calls a module function declares the module for itself.
+
+NOTE: The imported code executes in the calling script's context.  `global` variables and functions in the imported file are accessible to the caller post-import.  `local` variables in the imported file remain private and do not pollute the importing script's namespace.
+
+.helpers.tiri
+[source,tiri]
+----
+global function formatDate(Timestamp:str):str
+   return Timestamp.sub(0, 10)
+end
+
+global HELPER_VERSION <const> = '1.0'
+
+cache = {}  -- Private to helpers.tiri
+----
+
+.main.tiri
+[source,tiri]
+----
+import './helpers'
+
+print(formatDate('2026-02-13T10:30:00'))   -- '2026-02-13'
+print(HELPER_VERSION)                      -- '1.0'
+-- cache is not accessible here
+----
+
+[discrete]
+==== Namespaces
+
+A library declares the namespace that owns its exports with the `namespace` declaration (<<sec-namespace-declarations>>).  Importing the library binds that namespace as a constant local in the importing script:
+
+[%unbreakable]
+[source,tiri]
+----
+import 'json'
+
+data = json.decode('{"key":"value"}')
+output = json.encode(data)
+----
+
+To assign a custom namespace alias, use the `as` clause:
+
+[%unbreakable]
+[source,tiri]
+----
+import 'json' as j
+
+data = j.decode('{"key":"value"}')
+----
+
+The `as` clause changes only the local alias; the library's own namespace declaration is unaffected.  The alias carries the static type of the namespace value, exactly as the default binding does.
+
+==== Conditional Pre-Processing
+
+Imported files can detect whether they are being imported or executed directly using the `@if(imported=true)` and `@if(imported=false)` annotations:
+
+.library.tiri
+[source,tiri]
+----
+namespace mylib { }
+
+mylib.compute = function(X:num):num
+   return X * 2
+end
+
+@if(imported=false)
+   -- Runs only when library.tiri is executed directly
+   print(mylib.compute(21))
+@end
+----
+
+This pattern allows libraries to include an alternative runtime mode when the script is executed directly.  See <<ch-annotations-and-preprocessing>> for the full annotation reference.
+
+[[sec-namespace-declarations]]
+=== Namespace Declarations
+[.api]`namespace Name` +
+[.api]`namespace Name { Fields }` +
+[.api]`namespace Name function(Parameters) pass:[...] end` +
+
+indexterm:[namespace declaration] The `namespace` declaration names the namespace that owns a library's exports.  `Name` is an identifier, and is bound as a constant local for the remainder of the file.  The declaration also records the namespace against the source file, so that importing the file publishes `Name` to the importing script (<<sec-the-import-directive>>).
+
+indexterm:[_LIB] `_LIB` is a global table that holds every namespace value, keyed by namespace name.  The local binding and the registry entry are the same value:
+
+[source,tiri]
+----
+namespace mylib { }
+
+print(_LIB.mylib is mylib)   -- true
+----
+
+A declaration that supplies an initialiser creates the namespace.  A declaration without an initialiser joins a namespace that already exists.
+
+`Name` acquires the static type of its initialiser, and a binding published by `import` carries the same type (<<sec-type-inference>>).
+
+==== Creating a Namespace
+
+The initialiser is a table, function or thunk literal, and begins on the same line as `Name`.  It is evaluated once, and the result is stored in `_LIB` under `Name`, replacing any existing entry of that name:
+
+[source,tiri]
+----
+namespace mylib {
+   version = '1.0'
+}
+
+mylib.greet = function(Name:str):str
+   return 'Hello, ' .. Name
+end
+----
+
+`Name` is bound before the initialiser is evaluated, so a function declared within the initialiser can reference the namespace that owns it:
+
+[%unbreakable]
+[source,tiri]
+----
+namespace config {
+   values = { },
+   get = function(Key:str):any return config.values[Key] end
+}
+----
+
+A thunk literal that declares no parameters produces a deferred value: the body executes on first access to the namespace, and the result is cached (<<sec-deferred-expressions>>).
+
+[%unbreakable]
+[source,tiri]
+----
+namespace catalogue thunk():table
+   return { }
+end
+----
+
+A thunk literal that declares parameters produces the thunk function itself, and each call returns a separate deferred value.
+
+==== Joining a Namespace
+
+A declaration without an initialiser binds `Name` to the existing registry entry and records the file as a member of that namespace.  Multiple files contribute to one namespace by joining it:
+
+.mylib/extra.tiri
+[source,tiri]
+----
+import 'mylib'
+
+namespace mylib
+
+mylib.extraFeature = function():str
+   return 'extra'
+end
+----
+
+Importing either file publishes the `mylib` binding, because both files declare the namespace:
+
+[source,tiri]
+----
+import 'mylib', 'mylib/extra'
+
+mylib.greet('World')
+mylib.extraFeature()
+----
+
+The registry is read when the declaration executes, so the file that creates the namespace must be imported before the file that joins it.  Joining a namespace that has no registry entry raises an exception:
+
+[source,tiri]
+----
+namespace absent   -- error: Cannot join namespace 'absent'
+----
+
+An `import` of the namespace being joined already binds `Name`, and the declaration reuses that binding rather than creating a second one.
+
+==== Declaration Rules
+
+Each of the following conditions is a parse error, except where stated otherwise:
+
+* A declaration placed inside a function or a nested block.  `namespace` is permitted only at library level.
+* A second `namespace` declaration in one source file.
+* A name that conflicts with an existing lexical binding.  The binding created by an `import` of the same namespace is the sole exception, and is reused.  An `import` that renames the namespace with `as` does not qualify, because the alias and the namespace differ.
+* An assignment to `Name`, which is constant.  Members of the namespace value remain mutable.
+* An initialiser that is not a table, function or thunk literal.
+* Joining a namespace that has no registry entry.  This condition raises an exception when the declaration executes, rather than a parse error.
+
+==== Avoid Using `global` for Exports
+
+Namespaces exist to prevent conflicts between scripts.  Declaring `global` functions and variables in a library makes them accessible to the importing script, risking silent shadowing and unexpected read/write operations.  Limit the use of `global` exports to local scripts over which you have full control.
+
+[[sec-dynamic-loading]]
+=== Dynamic Loading
+==== loadFile()
+
+[.api]`resultspass:[...] = loadFile(Path)`
+
+indexterm:[dynamic loading] Loads, parses, and executes a Tiri script at runtime.  `Path` is a string specifying the file location.  If the path is not fully qualified, it is resolved relative to the current working directory of the process.
+
+If `Path` begins with `./` or `../`, it is resolved relative to the directory of the calling script.  If the calling script's directory is not available, the current working directory is used as a fallback.  This makes it possible to load companion files from the same directory as the caller regardless of the process working directory.
+
+`loadFile()` raises an exception if the file cannot be opened, parsed, or if execution fails.  The exception carries the code describing the failure: `ERR_DoesNotExist` if the file is not found, `ERR_Syntax` if the source fails to parse, and, if the loaded code raises, the code of that exception (see <<sec-runtime-error-codes>>).
+
+[source,tiri]
+----
+loadFile('scripts:tools/helper.tiri')
+----
+
+If the executed script ends with a `return` statement, the returned values are forwarded to the caller:
+
+[%unbreakable]
+.config.tiri
+[source,tiri]
+----
+return {
+   host = 'localhost',
+   port = 8080
+}
+----
+
+[%unbreakable]
+.main.tiri — loads config.tiri from the same directory as main.tiri
+[source,tiri]
+----
+config = loadFile('./config.tiri')
+print(config.host)   -- 'localhost'
+----
+
+[discrete]
+===== Performance
+
+Code loaded via `loadFile()` is parsed and compiled at runtime.  It does not benefit from the compile-time optimisations afforded by `import`.  Prefer `import` for shared library code; reserve `loadFile()` for cases where runtime flexibility is required.
+
+==== exec()
+
+[.api]`resultspass:[...] = exec(Code)`
+
+Parses and executes a string containing Tiri source code.  Raises an exception with the code `ERR_Syntax` if the code is unparseable.  If the executed code raises, the exception propagates unchanged, retaining its code, message and source location.  Returns any values produced by the executed code.
+
+[%unbreakable]
+[source,tiri]
+----
+exec([[ print('Hello World') ]])
+
+result = exec([[ return 40 + 2 ]])   -- result is 42
+----
+
+`exec()` is intended for dynamic code generation and evaluation.  Avoid it in performance-sensitive paths because the string is parsed and compiled on every call.
+
+[[sec-loading-comparison]]
+=== Comparison of Loading Mechanisms
+
+The following table summarises the available mechanisms for loading and executing Tiri code:
+
+[cols="1,1,1,1,1a",options="header"]
+|===
+|Mechanism |Timing |Caching |Returns Values |Scope Restriction
+
+|`import`
+|Compile-time
+|Per-compilation
+|No
+|Top-level only
+
+|`loadFile()`
+|Runtime
+|None
+|Yes
+|None
+
+|`exec()`
+|Runtime
+|None
+|Yes
+|None
+|===
+
+`import` produces the most efficient code because the imported source is inlined during compilation.  `loadFile()` and `exec()` provide maximum flexibility at the cost of runtime parsing overhead.
+
+[[sec-script-parameters]]
+=== Script Parameters
+==== arg()
+
+[.api]`value = arg(Key, [Default])`
+
+indexterm:[script parameters] Retrieves a named argument passed to the script on the command line.  If `Key` is not found and `Default` is provided, returns `Default`.  If `Key` is not found and no default is provided, returns `nil`.
+
+Arguments are passed to the Origo executable as `key=value` pairs after the script path:
+
+[source,bash]
+----
+origo myscript.tiri width=1024 mode=fast name='John Smith'
+----
+
+[%unbreakable]
+[source,tiri]
+----
+width = tonumber(arg('width', '800'))   -- 1024
+mode = arg('mode')                      -- 'fast'
+name = arg('name', 'Anonymous')         -- 'John Smith'
+missing = arg('debug')                  -- nil
+----
+
+All argument values are strings regardless of their apparent type.  Use `tonumber()` for numeric conversion.
