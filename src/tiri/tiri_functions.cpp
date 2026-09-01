@@ -419,7 +419,11 @@ int fcmd_loadfile(lua_State *Lua)
          if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
             results = lua_gettop(Lua) - result_top + 1;
          }
-         else error_msg = lua_tostringview(Lua, -1);
+         else {
+            auto caught_error = Lua->CaughtError;
+            error_msg = lua_tostringview(Lua, -1);
+            if (caught_error >= ERR::ExceptionThreshold) error = caught_error;
+         }
       }
       else { lua_load_failed(Lua); return 0; }
    }
@@ -443,6 +447,7 @@ int fcmd_loadfile(lua_State *Lua)
 int fcmd_exec(lua_State *Lua)
 {
    int results = 0;
+   ERR error = ERR::Okay;
 
    size_t len;
    auto statement = lua_tolstring(Lua, 1, &len);
@@ -468,12 +473,16 @@ int fcmd_exec(lua_State *Lua)
          if (not lua_pcall(Lua, 0, LUA_MULTRET, 0)) {
             results = lua_gettop(Lua) - result_top + 1;
          }
-         else error_msg = lua_tostring(Lua, -1);
+         else {
+            auto caught_error = Lua->CaughtError;
+            error_msg = lua_tostring(Lua, -1);
+            if (caught_error >= ERR::ExceptionThreshold) error = caught_error;
+         }
       }
       else { lua_load_failed(Lua); return 0; }
    }
 
-   if (error_msg) luaL_error(Lua, ERR::Exception, "%s", error_msg);
+   if (error_msg) luaL_error(Lua, error != ERR::Okay ? error : ERR::Exception, "%s", error_msg);
 
    return results;
 }

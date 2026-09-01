@@ -1738,10 +1738,18 @@ end
       exec("this is not ++ valid tiri")
    end)
 
+   expect(ERR_Failed, "exec() runtime failure", function()
+      exec("assert(false)")
+   end)
+
    -- loadFile() previously discarded the ERR it had already resolved and raised a bare ERR_Exception.  The real
    -- code now reaches the handler.
 
    expect(ERR_DoesNotExist, "loadFile() on a missing file", function()
       loadFile("/nonexistent/definitely_not_here.tiri")
+   end)
+
+   expect(ERR_Failed, "loadFile() runtime failure", function()
+      loadFile("sdk:src/tiri/tests/loadfile_runtime_error_fixture.tiri")
    end)
 end
