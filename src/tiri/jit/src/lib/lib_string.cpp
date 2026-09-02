@@ -370,11 +370,7 @@ LJLIB_CF(string_replace)
 
 LJLIB_CF(string_trim)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-   if (not s) {
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    CSTRING str   = strdata(s);
    MSize len     = s->len;
@@ -409,11 +405,7 @@ LJLIB_CF(string_trim)
 
 LJLIB_CF(string_rtrim)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-   if (not s) {
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    auto str = strdata(s);
    MSize len = s->len;
@@ -618,12 +610,7 @@ LJLIB_CF(string_hash)
 
 LJLIB_CF(string_unescapeXML)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-
-   if (not s) {
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    static constexpr std::array<std::pair<std::string_view, char>, 5> entities = {{
       { "lt;", '<' }, { "gt;", '>' }, { "amp;", '&' }, { "quot;", '"' }, { "apos;", '\'' }
@@ -661,12 +648,7 @@ LJLIB_CF(string_unescapeXML)
 
 LJLIB_CF(string_escXML)
 {
-   GCstr *s = lj_lib_optstr(L, 1);
-
-   if (not s) { // Handle nil input - return empty string
-      setstrV(L, L->top - 1, &G(L)->strempty);
-      return 1;
-   }
+   GCstr *s = lj_lib_checkstr(L, 1);
 
    auto str = strdata(s);
    MSize len = s->len;
