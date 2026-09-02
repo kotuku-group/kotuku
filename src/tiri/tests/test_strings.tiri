@@ -433,9 +433,13 @@ end
    amps = string.escXML("A & B & C")
    assert(amps is "A &amp; B &amp; C", "Expected 'A &amp; B &amp; C', got '" .. amps .. "'")
 
-   -- Mixed with quotes (should not escape quotes)
-   quotes = string.escXML('Hello "world" & <test>')
-   assert(quotes is 'Hello "world" &amp; &lt;test&gt;', "Expected 'Hello \"world\" &amp; &lt;test&gt;', got '" .. quotes .. "'")
+   -- Attribute delimiters
+   quotes = string.escXML([[Hello "world" & 'friends' <test>]])
+   assert(quotes is 'Hello &quot;world&quot; &amp; &apos;friends&apos; &lt;test&gt;',
+      'Single and double quotes should be escaped, got ' .. quotes)
+
+   source = [[Hello "world" & 'friends' <test>]]
+   assert(source.escXML().unescapeXML() is source, 'Escaping and unescaping should round-trip all XML entities')
 
    ue = string.unescapeXML('&amp;&quot;&apos;;')
    assert(ue is "&\"';", "Received string is incorrect: " .. tostring(ue))
