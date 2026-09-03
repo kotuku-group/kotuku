@@ -1746,13 +1746,43 @@ static void asm_intmin_max(ASMState* as, IRIns* ir, int cc)
 
 static void asm_min(ASMState* as, IRIns* ir)
 {
-   if (irt_isnum(ir->t)) asm_fparith(as, ir, XO_MINSD);
+   if (irt_isnum(ir->t)) {
+      RegSet allow = RSET_FPR;
+      Reg right = IR(ir->op2)->r;
+      if (ra_hasreg(right)) {
+         rset_clear(allow, right);
+         ra_noweak(as, right);
+      }
+      Reg dest = ra_dest(as, ir, allow);
+      right = ra_alloc1(as, ir->op2, rset_exclude(RSET_FPR, dest));
+      Reg scratch = ra_scratch(as, rset_exclude(rset_exclude(RSET_FPR, dest), right));
+      emit_rr(as, XO_ORPS, dest, scratch);
+      emit_rr(as, XO_MINSD, dest, right);
+      emit_rr(as, XO_MINSD, scratch, dest);
+      emit_rr(as, XO_MOVAPS, scratch, right);
+      ra_left(as, dest, ir->op1);
+   }
    else asm_intmin_max(as, ir, CC_G);
 }
 
 static void asm_max(ASMState* as, IRIns* ir)
 {
-   if (irt_isnum(ir->t)) asm_fparith(as, ir, XO_MAXSD);
+   if (irt_isnum(ir->t)) {
+      RegSet allow = RSET_FPR;
+      Reg right = IR(ir->op2)->r;
+      if (ra_hasreg(right)) {
+         rset_clear(allow, right);
+         ra_noweak(as, right);
+      }
+      Reg dest = ra_dest(as, ir, allow);
+      right = ra_alloc1(as, ir->op2, rset_exclude(RSET_FPR, dest));
+      Reg scratch = ra_scratch(as, rset_exclude(rset_exclude(RSET_FPR, dest), right));
+      emit_rr(as, XO_ANDPS, dest, scratch);
+      emit_rr(as, XO_MAXSD, dest, right);
+      emit_rr(as, XO_MAXSD, scratch, dest);
+      emit_rr(as, XO_MOVAPS, scratch, right);
+      ra_left(as, dest, ir->op1);
+   }
    else asm_intmin_max(as, ir, CC_L);
 }
 

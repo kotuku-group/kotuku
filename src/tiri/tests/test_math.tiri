@@ -1,37 +1,138 @@
+function expect_math_error(Call, ParameterText, ConstraintText)
+   try
+      Call()
+   except e
+      assert(e.message.find(ParameterText), f'Expected error to identify {ParameterText}: {e.message}')
+      assert(e.message.find(ConstraintText), f'Expected error to mention {ConstraintText}: {e.message}')
+      return
+   end
+   error(f'Expected math call to reject invalid {ParameterText}')
+end
+
+function expect_random_error_without_consumption(Call, ParameterText, ConstraintText)
+   math.randomSeed(24680)
+   local expected = math.random()
+   math.randomSeed(24680)
+   expect_math_error(Call, ParameterText, ConstraintText)
+   assert(math.random() is expected, 'An invalid math.random() call must not consume PRNG state')
+end
+
+@Test function PowerOperatorReplacesMathPow()
+   assert(math.pow is nil, 'math.pow should not remain as a compatibility alias')
+   assert(2 ** 10 is 1024, 'The power operator should handle positive integer exponents')
+   assert(2 ** -3 is 0.125, 'The power operator should handle negative exponents')
+   assert(2 ** 3 ** 2 is 512, 'The power operator should remain right-associative')
+end
 
 @Test function Round()
-   -- Test basic rounding (no decimal places)
    assert(math.round(3.7) is 4, 'math.round(3.7) should be 4')
    assert(math.round(3.2) is 3, 'math.round(3.2) should be 3')
    assert(math.round(3.5) is 4, 'math.round(3.5) should be 4')
    assert(math.round(-3.7) is -4, 'math.round(-3.7) should be -4')
    assert(math.round(-3.2) is -3, 'math.round(-3.2) should be -3')
-   assert(math.round(-3.5) is -3, 'math.round(-3.5) should be -3')
+   assert(math.round(-3.5) is -4, 'math.round(-3.5) should be -4')
+   assert(math.round(0.5) is 1, 'math.round(0.5) should be 1')
+   assert(math.round(-0.5) is -1, 'math.round(-0.5) should be -1')
+   assert(math.round(0) is 0 and 1 / math.round(0) is math.huge,
+      'math.round(+0) should preserve positive zero')
+   assert(math.round(-0.0) is 0 and 1 / math.round(-0.0) is -math.huge,
+      'math.round(-0) should preserve negative zero')
+   assert(math.round(math.huge) is math.huge, 'math.round(+infinity) should preserve infinity')
+   assert(math.round(-math.huge) is -math.huge, 'math.round(-infinity) should preserve infinity')
+   local nan = math.round(0 / 0)
+   assert(nan != nan, 'math.round(NaN) should preserve NaN')
 
-   -- Test with decimal places
-   assert(math.round(3.14159, 2) is 3.14, 'math.round(3.14159, 2) should be 3.14')
-   assert(math.round(3.14159, 3) is 3.142, 'math.round(3.14159, 3) should be 3.142')
-   assert(math.round(123.456, 1) is 123.5, 'math.round(123.456, 1) should be 123.5')
-   assert(math.round(123.456, 0) is 123, 'math.round(123.456, 0) should be 123')
+   expect_math_error(() => math.round(3.14159, 2), 'argument #2', 'accepts one value')
+end
 
-   -- Test edge cases
-   assert(math.round(0) is 0, 'math.round(0) should be 0')
-   assert(math.round(0, 2) is 0, 'math.round(0, 2) should be 0')
+@Test function ExtremaSpecialValues()
+   local nan = 0 / 0
+   assert(math.min(nan, 1) != math.min(nan, 1), 'math.min() should propagate a leading NaN')
+   assert(math.min(1, nan) != math.min(1, nan), 'math.min() should propagate a trailing NaN')
+   assert(math.max(nan, 1) != math.max(nan, 1), 'math.max() should propagate a leading NaN')
+   assert(math.max(1, nan) != math.max(1, nan), 'math.max() should propagate a trailing NaN')
+   assert(math.min(3, 2, nan, 1) != math.min(3, 2, nan, 1),
+      'math.min() should propagate NaN across variadic arguments')
+   assert(math.max(1, nan, 2, 3) != math.max(1, nan, 2, 3),
+      'math.max() should propagate NaN across variadic arguments')
 
-   -- Test negative decimal places (rounding to tens, hundreds, etc.)
-   assert(math.round(1234.5, -1) is 1230, 'math.round(1234.5, -1) should be 1230')
-   assert(math.round(1234.5, -2) is 1200, 'math.round(1234.5, -2) should be 1200')
+   assert(1 / math.min(0.0, -0.0) is -math.huge and 1 / math.min(-0.0, 0.0) is -math.huge,
+      'math.min() should return negative zero independently of argument order')
+   assert(1 / math.max(0.0, -0.0) is math.huge and 1 / math.max(-0.0, 0.0) is math.huge,
+      'math.max() should return positive zero independently of argument order')
+   assert(math.min(5, -2, 7, 1) is -2, 'math.min() should preserve ordinary finite results')
+   assert(math.max(5, -2, 7, 1) is 7, 'math.max() should preserve ordinary finite results')
 end
 
 @Test function RandomUsesZeroBasedUpperBound()
-   for _ in {0 to 100} do
+   local saw_zero = false
+   local saw_one = false
+   for _ in {0 to 1000} do
       assert(math.random(1) is 0, 'math.random(1) should return the only value in the range [0, 1)')
+      local bounded = math.random(2)
+      assert(bounded >= 0 and bounded < 2 and bounded % 1 is 0,
+         'math.random(Stop) should return an integer in [0, Stop)')
+      if bounded is 0 then saw_zero = true
+      elseif bounded is 1 then saw_one = true
+      end
    end
+   assert(saw_zero and saw_one, 'math.random(2) should reach both values in its half-open range')
 
    assert(math.random(7, 7) is 7, 'math.random(Min, Max) should retain its explicit inclusive bounds')
+   local wide = math.random(-1e308, 1e308)
+   assert(wide is wide and wide >= -1e308 and wide <= 1e308 and wide % 1 is 0,
+      'math.random(Min, Max) should handle finite ranges whose width overflows')
+
+   local saw_minimum = false
+   local saw_maximum = false
+   for _ in {0 to 1000} do
+      local bounded = math.random(-2, 2)
+      assert(bounded >= -2 and bounded <= 2 and bounded % 1 is 0,
+         'math.random(Min, Max) should return an integer in the inclusive range')
+      if bounded is -2 then saw_minimum = true
+      elseif bounded is 2 then saw_maximum = true
+      end
+   end
+   assert(saw_minimum and saw_maximum, 'math.random(Min, Max) should reach both inclusive bounds')
 
    local fraction = math.random()
    assert(fraction >= 0 and fraction < 1, 'math.random() should return a value in the range [0, 1)')
+end
+
+@Test function LdexpRequiresFiniteIntegerExponent()
+   assert(math.ldexp(1, 0) is 1, 'math.ldexp() should accept a zero exponent')
+   assert(math.ldexp(1, 10) is 1024, 'math.ldexp() should accept positive integer exponents')
+   assert(math.ldexp(8, -3) is 1, 'math.ldexp() should accept negative integer exponents')
+   assert(math.ldexp(1, 1024) is math.huge, 'math.ldexp() should preserve overflow at boundary exponents')
+   assert(math.ldexp(1, -1075) is 0, 'math.ldexp() should preserve underflow at boundary exponents')
+   assert(math.ldexp(1, 1e20) is math.huge, 'math.ldexp() should accept finite integral exponents beyond native range')
+
+   expect_math_error(() => math.ldexp(1, 2.5), 'argument #2', 'finite integer')
+   expect_math_error(() => math.ldexp(1, 0 / 0), 'argument #2', 'finite integer')
+   expect_math_error(() => math.ldexp(1, math.huge), 'argument #2', 'finite integer')
+end
+
+@Test function RandomRejectsInvalidBoundsWithoutConsumingState()
+   expect_random_error_without_consumption(() => math.random(0), 'argument #1', 'greater than zero')
+   expect_random_error_without_consumption(() => math.random(-1), 'argument #1', 'greater than zero')
+   expect_random_error_without_consumption(() => math.random(2.5), 'argument #1', 'finite integer')
+   expect_random_error_without_consumption(() => math.random(0 / 0), 'argument #1', 'finite integer')
+   expect_random_error_without_consumption(() => math.random(math.huge), 'argument #1', 'finite integer')
+   expect_random_error_without_consumption(() => math.random(5, 4), 'argument #1', 'must not exceed')
+   expect_random_error_without_consumption(() => math.random(1.5, 4), 'argument #1', 'finite integer')
+   expect_random_error_without_consumption(() => math.random(1, 4.5), 'argument #2', 'finite integer')
+   expect_random_error_without_consumption(() => math.random(1, 0 / 0), 'argument #2', 'finite integer')
+   expect_random_error_without_consumption(() => math.random(1, math.huge), 'argument #2', 'finite integer')
+end
+
+@Test function RandomSeedingIsRepeatable()
+   math.randomSeed(13579)
+   local first = math.random()
+   local second = math.random(10)
+   local third = math.random(-10, 10)
+   math.randomSeed(13579)
+   assert(math.random() is first and math.random(10) is second and math.random(-10, 10) is third,
+      'Repeated seeding should reproduce the same random sequence')
 end
 
 @Test function Clamp()
@@ -44,10 +145,12 @@ end
    assert(math.clamp(0.25, 0.5, 1.5) is 0.5, 'math.clamp() should clamp floating-point values below range')
    assert(math.clamp(1.25, 0.5, 1.5) is 1.25, 'math.clamp() should preserve floating-point values in range')
    assert(math.clamp(2.25, 0.5, 1.5) is 1.5, 'math.clamp() should clamp floating-point values above range')
+   assert(math.clamp(5, 5, 5) is 5, 'math.clamp() should return an equal bound')
+   assert(math.clamp(5, -math.huge, math.huge) is 5, 'math.clamp() should permit infinite bounds')
 
-   local reversed = math.clamp(5, 10, 0)
-   local expected = math.min(math.max(5, 10), 0)
-   assert(reversed is expected, 'math.clamp() should match min(max(value, lower), upper) for reversed bounds')
+   local nan = 0 / 0
+   local result = math.clamp(nan, 0, 10)
+   assert(result != result, 'math.clamp() should propagate a NaN value')
 end
 
 @Test function ClampArgumentErrors()
@@ -68,4 +171,8 @@ end
       assert(e.message.find('number'), 'math.clamp() bad argument error should mention number')
    end
    assert(bad_arg_raised is true, 'math.clamp() should reject non-numeric arguments')
+
+   expect_math_error(() => math.clamp(5, 10, 0), 'argument #2', 'must not exceed')
+   expect_math_error(() => math.clamp(5, 0 / 0, 10), 'argument #2', 'must not be NaN')
+   expect_math_error(() => math.clamp(5, 0, 0 / 0), 'argument #3', 'must not be NaN')
 end

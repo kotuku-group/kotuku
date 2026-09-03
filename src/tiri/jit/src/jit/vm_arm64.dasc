@@ -1574,7 +1574,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  math_extern sinh
   |  math_extern cosh
   |  math_extern tanh
-  |  math_extern2 pow, lj_vm_pow
   |  math_extern2 atan2
   |
   |.ffunc_2 math_ldexp
@@ -1604,7 +1603,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  str d0, [BASE, #-8]
   |  b ->fff_res
   |
-  |.macro math_minmax, name, cond, fcond
+  |.macro math_minmax, name, cond, fop
   |  .ffunc_1 name
   |   add RB, BASE, RC
   |   add RA, BASE, #8
@@ -1634,9 +1633,8 @@ static void build_subroutines(BuildCtx *ctx)
   |   bhs ->fff_resn
   |  checknum CARG2, >7
   |6:
-  |  fcmp d0, d1
   |   add RA, RA, #8
-  |  fcsel d0, d1, d0, fcond
+  |  fop d0, d0, d1
   |  b <5
   |7:  // Convert integer to number and continue above.
   |  scvtf d1, CARG2w
@@ -1644,8 +1642,8 @@ static void build_subroutines(BuildCtx *ctx)
   |  b <6
   |.endmacro
   |
-  |  math_minmax math_min, gt, pl
-  |  math_minmax math_max, lt, le
+  |  math_minmax math_min, gt, fmin
+  |  math_minmax math_max, lt, fmax
   |
   |//-- String library -----------------------------------------------------
   |

@@ -375,24 +375,13 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Rounding edge cases
 
-@Test function RoundingHalfUp()
+@Test function RoundingHalfAwayFromZero()
    assert(math.round(0.5) is 1, 'math.round(0.5) should round up to 1')
    assert(math.round(1.5) is 2, 'math.round(1.5) should round up to 2')
    assert(math.round(2.5) is 3, 'math.round(2.5) should round up to 3')
-end
-
-@Test function RoundingNegativeHalf()
-   -- Negative halves: round-half-up means towards positive infinity
-   assert(math.round(-0.5) is 0, 'math.round(-0.5) should round toward +inf to 0')
-   assert(math.round(-1.5) is -1, 'math.round(-1.5) should round toward +inf to -1')
-   assert(math.round(-2.5) is -2, 'math.round(-2.5) should round toward +inf to -2')
-end
-
-@Test function RoundingWithPrecision()
-   assert(math.round(1.005, 2) is 1.01 or math.abs(math.round(1.005, 2) - 1.0) < 0.01,
-      'math.round(1.005, 2) demonstrates floating-point representation issues')
-   assert(math.round(1.555, 2) is 1.56 or math.abs(math.round(1.555, 2) - 1.56) < 0.01,
-      'math.round(1.555, 2) should be approximately 1.56')
+   assert(math.round(-0.5) is -1, 'math.round(-0.5) should round away from zero to -1')
+   assert(math.round(-1.5) is -2, 'math.round(-1.5) should round away from zero to -2')
+   assert(math.round(-2.5) is -3, 'math.round(-2.5) should round away from zero to -3')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

@@ -114,7 +114,7 @@ end
       d = math.exp(x % 10)   -- Limit to avoid overflow
       a = math.log(i + 1)
       b = math.log10(i + 1)
-      c = math.pow(2, x % 20)
+      c = 2 ** (x % 20)
       checksum += a + b + c + d
       d = math.sqrt(i + 1)
       checksum += d

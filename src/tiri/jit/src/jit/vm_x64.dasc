@@ -1948,13 +1948,12 @@ static void build_subroutines(BuildCtx *ctx)
   |  math_extern sinh
   |  math_extern cosh
   |  math_extern tanh
-  |  math_extern2 pow, lj_vm_pow
   |  math_extern2 atan2
   |
   |.ffunc_2 math_ldexp
   |  checknumtp [BASE], ->fff_fallback
-  |  checknumtp [BASE+8], ->fff_fallback
-  |  fld qword [BASE+8]
+  |  checkinttp [BASE+8], ->fff_fallback
+  |  fild dword [BASE+8]
   |  fld qword [BASE]
   |  fscale
   |  fpop1
@@ -1998,7 +1997,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov RDd, 1+2
   |  jmp ->fff_res
   |
-  |.macro math_minmax, name, cmovop, sseop
+  |.macro math_minmax, name, cmovop, sseop, bitop
   |  .ffunc_1 name
   |  mov RAd, 2
   |.if DUALNUM
@@ -2038,13 +2037,24 @@ static void build_subroutines(BuildCtx *ctx)
   |6:
   |  movsd xmm1, qword [BASE+RA*8-8]
   |7:
+  |  ucomisd xmm0, xmm0
+  |  jp >8
+  |  ucomisd xmm1, xmm1
+  |  jp >9
+  |  movsd xmm2, xmm0
   |  sseop xmm0, xmm1
+  |  sseop xmm1, xmm2
+  |  bitop xmm0, xmm1
+  |8:
   |  add RAd, 1
   |  jmp <5
+  |9:
+  |  movsd xmm0, xmm1
+  |  jmp <8
   |.endmacro
   |
-  |  math_minmax math_min, cmovg, minsd
-  |  math_minmax math_max, cmovl, maxsd
+  |  math_minmax math_min, cmovg, minsd, orps
+  |  math_minmax math_max, cmovl, maxsd, andps
   |
   |//-- String library -----------------------------------------------------
   |

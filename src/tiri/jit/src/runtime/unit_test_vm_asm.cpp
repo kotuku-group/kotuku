@@ -1075,6 +1075,96 @@ static bool run_lua_test_with_capture(RegisterSnapshot& Before, RegisterSnapshot
 }
 
 //********************************************************************************************************************
+// math.ldexp assembly tests
+
+static bool test_asm_math_ldexp_integer_exponent(kt::Log& Log)
+{
+   LuaStateHolder holder;
+   lua_State* state = holder.get();
+   if (not state) { Log.error("failed to create Lua state"); return false; }
+   luaL_openlibs(state);
+
+   std::string error;
+#if LJ_TARGET_X86ORX64
+   RegisterSnapshot before, after;
+   if (not run_lua_test_with_capture(before, after, state, "return math.ldexp(1.0, 3)", error)) {
+      Log.error("test failed: %s", error.c_str());
+      return false;
+   }
+   if (not verify_registers(&before, &after, Log, REG_RBP | REG_RDI | REG_RSI)) {
+      Log.error("register corruption detected in math.ldexp assembly");
+      return false;
+   }
+#else
+   if (not run_lua_test(state, "return math.ldexp(1.0, 3)", error)) {
+      Log.error("test failed: %s", error.c_str());
+      return false;
+   }
+#endif
+
+   lua_Number result = lua_tonumber(state, -1);
+   if (result IS 8) return true;
+
+   Log.error("expected 8, got %g", result);
+   return false;
+}
+
+static bool test_asm_math_ldexp_fractional_exponent(kt::Log& Log)
+{
+   LuaStateHolder holder;
+   lua_State* state = holder.get();
+   if (not state) { Log.error("failed to create Lua state"); return false; }
+   luaL_openlibs(state);
+
+   std::string error;
+   if (run_lua_test(state, "return math.ldexp(1.0, 2.5)", error)) {
+      Log.error("fractional exponent was accepted");
+      return false;
+   }
+   if (error.find("finite integer") != std::string::npos) return true;
+
+   Log.error("unexpected error: %s", error.c_str());
+   return false;
+}
+
+static bool test_asm_math_extrema_special_values(kt::Log& Log)
+{
+   LuaStateHolder holder;
+   lua_State* state = holder.get();
+   if (not state) { Log.error("failed to create Lua state"); return false; }
+   luaL_openlibs(state);
+
+   constexpr std::string_view code =
+      "local nan = 0 / 0; return 1 / math.min(0.0, -0.0), 1 / math.min(-0.0, 0.0), "
+      "1 / math.max(0.0, -0.0), 1 / math.max(-0.0, 0.0), math.min(1.0, nan), math.max(nan, 1.0)";
+   std::string error;
+#if LJ_TARGET_X86ORX64
+   RegisterSnapshot before, after;
+   if (not run_lua_test_with_capture(before, after, state, code, error)) {
+      Log.error("test failed: %s", error.c_str());
+      return false;
+   }
+   if (not verify_registers(&before, &after, Log, REG_RBP | REG_RDI | REG_RSI)) {
+      Log.error("register corruption detected in math extrema assembly");
+      return false;
+   }
+#else
+   if (not run_lua_test(state, code, error)) {
+      Log.error("test failed: %s", error.c_str());
+      return false;
+   }
+#endif
+
+   bool signed_zeros = lua_tonumber(state, -6) IS -HUGE_VAL and lua_tonumber(state, -5) IS -HUGE_VAL and
+      lua_tonumber(state, -4) IS HUGE_VAL and lua_tonumber(state, -3) IS HUGE_VAL;
+   bool nan_results = std::isnan(lua_tonumber(state, -2)) and std::isnan(lua_tonumber(state, -1));
+   if (signed_zeros and nan_results) return true;
+
+   Log.error("math extrema did not preserve NaN and signed-zero semantics");
+   return false;
+}
+
+//********************************************************************************************************************
 // string.byte assembly tests
 // The assembly fast-path handles ONLY the 1-arg case (no position arguments)
 // See vm_x64.dasc line ~1882: .ffunc string_byte
@@ -1792,7 +1882,12 @@ extern void vm_asm_unit_tests(int &Passed, int &Total)
    if (!NewObject(CLASSID::TIRI, &glStringTestScript)) {
       glStringTestScript->setStatement("");
       if (!Action(AC::Init, glStringTestScript, nullptr)) {
-         constexpr std::array<TestCase, 20> StringAsmTests = { {
+         constexpr std::array<TestCase, 23> StringAsmTests = { {
+            // math.ldexp assembly and fallback validation
+            { "asm_math_ldexp_integer_exponent", test_asm_math_ldexp_integer_exponent },
+            { "asm_math_ldexp_fractional_exponent", test_asm_math_ldexp_fractional_exponent },
+            { "asm_math_extrema_special_values", test_asm_math_extrema_special_values },
+
             // string.byte assembly tests (1-arg fast path)
             { "asm_string_byte_first_char", test_asm_string_byte_first_char },
             { "asm_string_byte_empty_string", test_asm_string_byte_empty_string },

@@ -22,6 +22,7 @@
 #define LUA_CORE
 
 #include <bit>
+#include <cfloat>
 #include <cstring>
 
 #include "lj_obj.h"
@@ -1259,12 +1260,16 @@ static void recff_math_atan2(jit_State* J, RecordFFData* rd)
 static void recff_math_ldexp(jit_State* J, RecordFFData* rd)
 {
    TRef tr = lj_ir_tonum(J, J->base[0]);
+   TRef tr2 = J->base[1];
+   if (not tref_isinteger(tr2)) {
+      tr2 = lj_ir_tonum(J, tr2);
+      tr2 = emitir(IRTGI(IR_CONV), tr2, IRCONV_INT_NUM | IRCONV_CHECK);
+   }
 #if LJ_TARGET_X86ORX64
-   TRef tr2 = lj_ir_tonum(J, J->base[1]);
-#else
-   TRef tr2 = lj_opt_narrow_toint(J, J->base[1]);
+   tr2 = emitir(IRTN(IR_CONV), tr2, IRCONV_NUM_INT);
 #endif
    J->base[0] = emitir(IRTN(IR_LDEXP), tr, tr2);
+   UNUSED(rd);
 }
 
 //********************************************************************************************************************
@@ -1273,13 +1278,6 @@ static void recff_math_call(jit_State* J, RecordFFData* rd)
 {
    TRef tr = lj_ir_tonum(J, J->base[0]);
    J->base[0] = emitir(IRTN(IR_CALLN), tr, rd->data);
-}
-
-//********************************************************************************************************************
-
-static void recff_math_pow(jit_State* J, RecordFFData* rd)
-{
-   J->base[0] = lj_opt_narrow_pow(J, J->base[0], J->base[1], &rd->argv[0], &rd->argv[1]);
 }
 
 //********************************************************************************************************************
@@ -1296,6 +1294,8 @@ static void recff_math_minmax(jit_State* J, RecordFFData* rd)
          if (tref_isinteger(tr)) tr = emitir(IRTN(IR_CONV), tr, IRCONV_NUM_INT);
          if (tref_isinteger(tr2)) tr2 = emitir(IRTN(IR_CONV), tr2, IRCONV_NUM_INT);
          t = IRT_NUM;
+         emitir(IRTG(IR_EQ, IRT_NUM), tr, tr);
+         emitir(IRTG(IR_EQ, IRT_NUM), tr2, tr2);
       }
       tr = emitir(IRT(op, t), tr, tr2);
    }
@@ -1314,29 +1314,57 @@ static void recff_math_clamp(jit_State* J, RecordFFData* rd)
       if (tref_isinteger(lower)) lower = emitir(IRTN(IR_CONV), lower, IRCONV_NUM_INT);
       if (tref_isinteger(upper)) upper = emitir(IRTN(IR_CONV), upper, IRCONV_NUM_INT);
       t = IRT_NUM;
+      emitir(IRTG(IR_EQ, IRT_NUM), tr, tr);  // A NaN value must side-exit so the interpreter can propagate it.
    }
 
+   emitir(IRTG(IR_LE, t), lower, upper);  // Also rejects NaN bounds for floating-point traces.
    tr = emitir(IRT(IR_MAX, t), tr, lower);
    tr = emitir(IRT(IR_MIN, t), tr, upper);
    J->base[0] = tr;
    UNUSED(rd);
 }
 
+static TRef recff_math_finite_integer(jit_State* J, TRef Ref)
+{
+   TRef number = lj_ir_tonum(J, Ref);
+   if (not tref_isinteger(Ref)) {
+      emitir(IRTG(IR_GE, IRT_NUM), number, lj_ir_knum(J, -DBL_MAX));
+      emitir(IRTG(IR_LE, IRT_NUM), number, lj_ir_knum(J, DBL_MAX));
+      TRef truncated = emitir(IRTN(IR_FPMATH), number, IRFPM_TRUNC);
+      emitir(IRTG(IR_EQ, IRT_NUM), number, truncated);
+   }
+   return number;
+}
+
 static void recff_math_random(jit_State* J, RecordFFData* rd)
 {
    GCudata* ud = udataV(&J->fn->c.upvalue[0]);
    TRef tr, one;
+   TRef tr1 = 0;
+   TRef tr2 = 0;
+   TRef range = 0;
+   bool integer_result = false;
+
+   if (J->base[0]) {
+      integer_result = tref_isinteger(J->base[0]) and (not J->base[1] or tref_isinteger(J->base[1]));
+      tr1 = recff_math_finite_integer(J, J->base[0]);
+      if (J->base[1]) {
+         tr2 = recff_math_finite_integer(J, J->base[1]);
+         emitir(IRTG(IR_LE, IRT_NUM), tr1, tr2);
+         range = emitir(IRTN(IR_SUB), tr2, tr1);
+         emitir(IRTG(IR_LE, IRT_NUM), range, lj_ir_knum(J, DBL_MAX));
+      }
+      else emitir(IRTG(IR_GT, IRT_NUM), tr1, lj_ir_knum_zero(J));
+   }
+
    lj_ir_kgc(J, obj2gco(ud), IRT_UDATA);  //  Prevent collection.
    tr = lj_ir_call(J, IRCALL_lj_prng_u64d, lj_ir_kptr(J, uddata(ud)));
    one = lj_ir_knum_one(J);
    tr = emitir(IRTN(IR_SUB), tr, one);
    if (J->base[0]) {
-      TRef tr1 = lj_ir_tonum(J, J->base[0]);
       if (J->base[1]) {  // d = floor(d*(r2-r1+1.0)) + r1
-         TRef tr2 = lj_ir_tonum(J, J->base[1]);
-         tr2 = emitir(IRTN(IR_SUB), tr2, tr1);
-         tr2 = emitir(IRTN(IR_ADD), tr2, one);
-         tr = emitir(IRTN(IR_MUL), tr, tr2);
+         range = emitir(IRTN(IR_ADD), range, one);
+         tr = emitir(IRTN(IR_MUL), tr, range);
          tr = emitir(IRTN(IR_FPMATH), tr, IRFPM_FLOOR);
          tr = emitir(IRTN(IR_ADD), tr, tr1);
       }
@@ -1345,6 +1373,7 @@ static void recff_math_random(jit_State* J, RecordFFData* rd)
          tr = emitir(IRTN(IR_FPMATH), tr, IRFPM_FLOOR);
       }
    }
+   if (integer_result) tr = emitir(IRTGI(IR_CONV), tr, IRCONV_INT_NUM | IRCONV_CHECK);
    J->base[0] = tr;
    UNUSED(rd);
 }
