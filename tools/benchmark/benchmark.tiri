@@ -14,6 +14,7 @@ Parameters:
   warmup=[n]   - Warmup cycles per test.
   hotloop=[n]  - Cycles required before performing JIT optimisation.
   calls=[n]    - Limit each test to this many calls.
+  retry=[n]    - Re-run tests that regressed by n% or more against the previous run.  Use 0 to disable.
   interpreter  - Disable JIT compilation during timing.
   save[=all]   - Saves the results to the log.  Use save=all to store the full result tables.
   traces       - Report on JIT trace compilation for each test instead of timing it.
@@ -25,13 +26,13 @@ Parameters:
    import 'json'
    import 'options'
 
-rxEmailParts   = <{ regex.new([[([^@]+)@(.+)]]) }>
-rxDateParts    = <{ regex.new([[(\d+)-(\d+)-(\d+)]]) }>
-rxLogLevel     = <{ regex.new("\\[([A-Z]+)\\]") }>
-rxTimestamp    = <{ regex.new([[(\d\d:\d\d:\d\d)]]) }>
-rxProtocol     = <{ regex.new([[^(\w+)://]]) }>
-rxUrlHost      = <{ regex.new([[:\/\/([^:\/]+)]]) }>
-rxUrlPort      = <{ regex.new([[:(\d+)/]]) }>
+rxEmailParts   = <{ r[[([^@]+)@(.+)]] }>
+rxDateParts    = <{ r[[(\d+)-(\d+)-(\d+)]] }>
+rxLogLevel     = <{ r"\[([A-Z]+)\]" }>
+rxTimestamp    = <{ r[[(\d\d:\d\d:\d\d)]] }>
+rxProtocol     = <{ r[[^(\w+)://]] }>
+rxUrlHost      = <{ r[[:\/\/([^:\/]+)]] }>
+rxUrlPort      = <{ r[[:(\d+)/]] }>
 
 global glSelf = obj.find('self')
 global glPath = glSelf.workingPath
@@ -82,6 +83,9 @@ Examples:
         comment = 'Cycles required before performing JIT optimisation.' },
       { name = 'calls', type = 'int', default = 1000, group = 'Timing',
         comment = 'Limit each benchmark to this many measured calls.' },
+      { name = 'retry', type = 'num', default = 2, group = 'Timing',
+        comment = 'Re-run any benchmark that has regressed by this percentage or more against the previous saved ' ..
+                  'run, keeping whichever of the two measurements is faster.  Use 0 to disable.' },
       { name = 'interpreter', kind = 'flag', group = 'Timing',
         comment = 'Disable JIT compilation during the timing run.' },
 
@@ -202,6 +206,115 @@ function compareResults(Previous:table, Current:table, NameWidth:num)
    end
 end
 
+-- Time a single benchmark and return its evaluation table, or nil if the benchmark raised an error.  Config carries
+-- the timing settings gathered from the command line, so that a re-run measures the benchmark on exactly the same
+-- terms as the original run.
+
+function runBenchmark(Name:str, Func:func, Config:table):any
+   local eval
+   try<trace>
+      -- Keep each benchmark independent from trace limits, blacklisting and side traces created by earlier cases.
+      jit.flush()
+      eval = bmark.run({
+         duration     = Config.duration,
+         warmupCalls  = Config.warmup,
+         feedbackRate = 100,
+         maxCalls     = Config.calls,
+         hotLoop      = Config.hotLoop
+      }, nil, Func)
+   except ex
+      logMessage(f'Error in benchmark {Name}: {ex.message}')
+      logMessage(ex.stackTrace)
+   success
+      logMessage(string.format(
+         '%s() Calls Per Second: %d; Total Calls: %d, Fastest: %.3f ms, Median: %.3f ms, Trimmed Tail: %.3f ms',
+         Name, eval.callsPerSecond, eval.benchmarkCalls, eval.stats.min, eval.stats.median, eval.stats.max))
+      if eval.memoryLeakRate / eval.callsPerSecond > 512 then
+         logMessage(string.format('Leak Rate:  %d bytes per call', eval.memoryLeakRate / eval.callsPerSecond))
+      end
+   end
+
+   return eval
+end
+
+-- Reduce an evaluation to the record that is written to the log.  Full retains the exhaustive statistics produced by
+-- bmark.run(), which is what "save=all" asks for.
+
+function summariseEval(Eval:table, Full:bool):table
+   if Full then return Eval end
+
+   return {
+      time    = Eval.benchmarkTime,
+      cps     = math.floor(Eval.callsPerSecond),
+      samples = Eval.stats.sampleSize,
+      min     = Eval.stats.min,
+      median  = Eval.stats.median,
+      p99     = Eval.stats.p99
+   }
+end
+
+-- Re-measure the benchmarks that have regressed against the previous run, keeping whichever result is faster.
+--
+-- A timing run is exposed to whatever else the machine is doing.  A scheduler hiccup or a background process inflates
+-- the measurement of whichever benchmark happens to be running at that moment, and the outcome is a regression in the
+-- report that has nothing to do with the code.  Each benchmark that appears to have regressed by Threshold percent or
+-- more is therefore measured once more, and its result is replaced only if the second measurement is faster.
+--
+-- Only regressions are re-run and only improvements are kept, so the pass can retract a false alarm but cannot
+-- manufacture one: code that is genuinely slower regresses again and keeps its original result.
+
+function retryRegressions(Report:table, Previous:table, Config:table, Threshold:num, NameList:table)
+   if not Previous.evals?? then return end
+
+   local candidates = array<table> { }
+
+   for entry in values(NameList) do
+      local current = Report.evals[entry.name]
+      local prior   = Previous.evals[entry.name]
+      if current is nil or prior is nil then continue end
+
+      local before = cmpResult(prior)
+      local after  = cmpResult(current)
+      if before is nil or after is nil or before <= 0 then continue end
+
+      local regression = (after - before) / before * 100
+      if regression >= Threshold then
+         candidates.push({ name = entry.name, func = entry.func, before = before, after = after,
+                           regression = regression })
+      end
+   end
+
+   if #candidates is 0 then return end
+
+   logMessage('')
+   logMessage(string.format('%d benchmark(s) regressed by %.1f%% or more against the previous run; re-running each ' ..
+      'once.', #candidates, Threshold))
+   logMessage('')
+
+   local replaced = 0
+   for item in values(candidates) do
+      logMessage(string.format('Re-running %s (%.3f -> %.3f ms, %.2f%% slower)', item.name, item.before, item.after,
+         item.regression))
+
+      local eval = runBenchmark(item.name, item.func, Config)
+      if eval is nil then continue end
+
+      local retimed = cmpResult(eval)
+      if retimed is nil then continue end
+
+      if retimed < item.after then
+         Report.evals[item.name] = summariseEval(eval, Config.full)
+         replaced++
+         logMessage(string.format('  Result replaced: %.3f -> %.3f ms', item.after, retimed))
+      else
+         logMessage(string.format('  Result kept: the re-run measured %.3f ms', retimed))
+      end
+   end
+
+   logMessage('')
+   logMessage(string.format('Re-ran %d regressed benchmark(s); %d improved and were replaced.', #candidates, replaced))
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- JIT trace analysis.
 --
@@ -295,6 +408,7 @@ end
    warmup       = glArgs.warmup
    hotloop      = glArgs.hotloop
    call_limit   = glArgs.calls
+   retry_limit  = glArgs.retry
    save_results = glArgs.save
    trace_mode   = glArgs.traces
    interpreter_mode = glArgs.interpreter
@@ -428,53 +542,8 @@ end
       jit.on()
    end
 
-   for entry in values(name_list) do
-      func = entry.func
-      name = entry.name
-      entry = anno[func]
-
-      if rx_test then
-         if not rx_test.test(name) then continue end
-      end
-
-      local eval
-      try<trace>
-         -- Keep each benchmark independent from trace limits, blacklisting and side traces created by earlier cases.
-         jit.flush()
-         eval = bmark.run({
-            duration     = duration,
-            warmupCalls  = warmup,
-            feedbackRate = 100,
-            maxCalls     = call_limit,
-            hotLoop      = hotloop
-         }, nil, func)
-      except ex
-         logMessage(f'Error in benchmark {name}: {ex.message}')
-         logMessage(ex.stackTrace)
-      success
-         logMessage(string.format(
-            '%s() Calls Per Second: %d; Total Calls: %d, Fastest: %.3f ms, Median: %.3f ms, Trimmed Tail: %.3f ms',
-            name, eval.callsPerSecond, eval.benchmarkCalls, eval.stats.min, eval.stats.median, eval.stats.max))
-         if eval.memoryLeakRate / eval.callsPerSecond > 512 then
-            logMessage(string.format('Leak Rate:  %d bytes per call', eval.memoryLeakRate / eval.callsPerSecond))
-         end
-
-         if save_results is 'all' then
-            report['evals'][name] = eval
-         else
-            report['evals'][name] = {
-               time    = eval.benchmarkTime,
-               cps     = math.floor(eval.callsPerSecond),
-               samples = eval.stats.sampleSize,
-               min     = eval.stats.min,
-               median  = eval.stats.median,
-               p99     = eval.stats.p99
-            }
-         end
-      end
-   end
-
-   if interpreter_mode then jit.on() end
+   -- The previous run is loaded before any timing takes place, because the retry pass that follows the timing loop
+   -- needs it in order to identify which benchmarks have regressed.
 
    local last_result
    try
@@ -484,6 +553,32 @@ end
    except ex
       logMessage(f'Error loading last results: {ex.message}')
    end
+
+   bench_config = {
+      duration = duration,
+      warmup   = warmup,
+      hotLoop  = hotloop,
+      calls    = call_limit,
+      full     = (save_results is 'all')
+   }
+
+   for entry in values(name_list) do
+      if rx_test then
+         if not rx_test.test(entry.name) then continue end
+      end
+
+      local eval = runBenchmark(entry.name, entry.func, bench_config)
+      if eval != nil then report['evals'][entry.name] = summariseEval(eval, bench_config.full) end
+   end
+
+   -- Retry regressions before the JIT state is restored, so that a re-run is measured under the same conditions as
+   -- the original.
+
+   if retry_limit > 0 and last_result != nil then
+      retryRegressions(report, last_result, bench_config, retry_limit, name_list)
+   end
+
+   if interpreter_mode then jit.on() end
 
    -- Save the results
 

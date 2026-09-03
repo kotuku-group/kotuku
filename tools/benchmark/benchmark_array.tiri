@@ -457,6 +457,64 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Focused GC-reference bulk-copy cases.  Dense and sparse large copies measure barrier batching, while short copies
+-- and small spans in a large destination expose any fixed-cost or destination-rescan penalty.
+
+@Test function ArrayCopyGCRef()
+   local glCopyDenseSource = array<str, 8192>
+   local glCopyDenseDestination = array<str, 8192>
+   local glCopySparseSource = array<str, 8192>
+   local glCopySparseDestination = array<str, 8192>
+   local glCopyShortSource = array<str, 16>
+   local glCopyShortDestination = array<str, 16>
+   local glCopySpanDestination = array<str, 8192>
+   local glCopyStepOptions = { stepSize=1 }
+
+   for i in {0 to 8192} do
+      glCopyDenseSource[i] = f'copy-value-{i}'
+      if i % 16 is 0 then glCopySparseSource[i] = glCopyDenseSource[i] end
+   end
+   for i in {0 to 16} do glCopyShortSource[i] = glCopyDenseSource[i] end
+
+   processing.collect('full')
+
+   local checksum = 0
+   -- Dense-Large
+   for {0 to 1000} do glCopyDenseDestination.copy(glCopyDenseSource) end
+   checksum += #glCopyDenseDestination[4096]
+
+   -- Sparse-Large
+   for {0 to 1000} do glCopySparseDestination.copy(glCopySparseSource) end
+   checksum += #glCopySparseDestination[4096]
+
+   -- Short
+   for {0 to 100000} do glCopyShortDestination.copy(glCopyShortSource) end
+   checksum += #glCopyShortDestination[8]
+
+   -- SmallSpan, LargeDestination
+   for {0 to 100000} do glCopySpanDestination.copy(glCopyDenseSource, 4096, 0, 8) end
+   checksum += #glCopySpanDestination[4096]
+
+   -- DenseLargeIncremental
+   processing.collect('full')
+   for {0 to 1000} do
+      processing.collect('step', glCopyStepOptions)
+      glCopyDenseDestination.copy(glCopyDenseSource)
+   end
+   checksum += #glCopyDenseDestination[4096]
+
+   -- SmallSpanLargeDestinationIncremental
+   processing.collect('full')
+   for {0 to 1000} do
+      processing.collect('step', glCopyStepOptions)
+      glCopySpanDestination.copy(glCopyDenseSource, 4096, 0, 8)
+   end
+   checksum += #glCopySpanDestination[4096]
+
+   return checksum
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Goal: Iterate over all elements in arrays and tables
 
 @Test function IterateArrayValues()
