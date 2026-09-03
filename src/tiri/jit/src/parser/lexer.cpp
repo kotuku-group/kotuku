@@ -1010,10 +1010,6 @@ static LexToken match_unicode_operator(LexState *State, int &ByteLength) noexcep
          ByteLength = 3;
          return TK_ternary_sep;  // ▷
       }
-      else if (second IS 0xA7 and third IS 0xBA) {
-         ByteLength = 3;
-         return TK_plusplus;     // ⧺
-      }
    }
 
    return 0;
@@ -1262,7 +1258,7 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             return TK_number;
          }
 
-         // Scan identifier (stop before Unicode operators like ⧺)
+         // Scan identifier, stopping before Unicode operator characters that require separate handling.
          do {
             lex_savenext(State);
          } while (lj_char_isident(State->c) and not is_unicode_operator_start(State) and
