@@ -2423,15 +2423,16 @@ static void build_subroutines(BuildCtx *ctx)
   |  b <6
   |.else
   |  .ffunc_n name
-  |  li TMP1, 8
+  |  addi SAVE0, BASE, 8
+  |  add SAVE1, BASE, NARGS8:RC
   |1:
-  |   lwzx CARG2, BASE, TMP1
-  |   lfdx FARG2, BASE, TMP1
-  |  cmplw cr1, TMP1, NARGS8:RC
+  |   lwz CARG2, 0(SAVE0)
+  |   lfd FARG2, 0(SAVE0)
+  |  cmplw cr1, SAVE0, SAVE1
   |   checknum CARG2
   |  bge cr1, ->fff_resn
   |   bge ->fff_fallback
-  |   addi TMP1, TMP1, 8
+  |   addi SAVE0, SAVE0, 8
   |.if ismax
   |  blex lj_vm_max
   |.else
