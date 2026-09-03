@@ -1636,7 +1636,7 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Any }, FProtoFlags::None,
       FProtoArity::required(1));
    reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
-      FProtoArity::required(1));
+      FProtoArity::required(0));
 
    // Register debug.anno interface prototypes
    reg_iface_prototype("debug.anno", "get", { TiriType::Table }, { TiriType::Func });

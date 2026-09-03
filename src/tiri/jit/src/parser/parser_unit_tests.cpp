@@ -6858,7 +6858,10 @@ static bool test_native_prototype_arity(kt::Log &Log)
       "local bounded:num = math.random(1, 4)\n"
       "local nil_value:num = math.log(nil)\n"
       "local piped:num = 8 |> math.log()\n"
-      "return unary, binary, unbounded, stopped, bounded, nil_value, piped\n";
+      "local repeated:str = 'x' |> string.rep(3)\n"
+      "local clamped:num = 1 |> math.clamp(0, 2)\n"
+      "local locality:str = debug.locality()\n"
+      "return unary, binary, unbounded, stopped, bounded, nil_value, piped, repeated, clamped, locality\n";
    if (not compile_snapshot(L, valid, true, error)) {
       Log.error("valid optional native calls failed static analysis: %s", error.c_str());
       return false;
@@ -6875,7 +6878,9 @@ static bool test_native_prototype_arity(kt::Log &Log)
    };
    if (not expect_rejected("return math.log()\n", "required argument 1 is missing") or
        not expect_rejected("return math.round(1, 2)\n", "expected at most 1 arguments, got 2") or
-       not expect_rejected("return math.random(1, 2, 3)\n", "expected at most 2 arguments, got 3")) return false;
+       not expect_rejected("return math.random(1, 2, 3)\n", "expected at most 2 arguments, got 3") or
+       not expect_rejected("return 1 |> math.clamp()\n", "required argument 2 is missing") or
+       not expect_rejected("return 'x' |> string.rep('bad')\n", "argument 2 expects num, got str")) return false;
 
    constexpr std::string_view forwarded =
       "local function arguments():<num, ...> return 8, 2 end\n"

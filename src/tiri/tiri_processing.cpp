@@ -553,7 +553,7 @@ void register_processing_class(lua_State *Lua)
    reg_iface_prototype("processing", "startCollector", {}, {});
    reg_iface_prototype("processing", "gcStats", { TiriType::Table }, {});
    reg_iface_prototype("processing", "halt", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
-      FProtoArity::required(0));
+      FProtoArity::required(1));
    reg_iface_prototype("processing", "sleep", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
       FProtoArity::required(0));
    reg_iface_prototype("processing", "signal", {}, {});
