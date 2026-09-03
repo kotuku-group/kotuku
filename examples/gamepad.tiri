@@ -235,7 +235,7 @@ end
       end
 
       ball_spin = ball_vx * ROTATION_SPEED_SCALE
-      ball_angle = math.fmod(ball_angle + (ball_spin * dt), 360)
+      ball_angle = (ball_angle + (ball_spin * dt)) % 360
 
       pivot_x = ballVP.width * squash_pivot_x
       pivot_y = ballVP.height * squash_pivot_y

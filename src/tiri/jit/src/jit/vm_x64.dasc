@@ -1950,7 +1950,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  math_extern tanh
   |  math_extern2 pow, lj_vm_pow
   |  math_extern2 atan2
-  |  math_extern2 fmod
   |
   |.ffunc_2 math_ldexp
   |  checknumtp [BASE], ->fff_fallback
@@ -2741,36 +2740,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  vm_round vm_floor, 0, 1
   |  vm_round vm_ceil,  1, JIT
   |  vm_round vm_trunc, 2, JIT
-  |
-  |// FP modulo x%y. Called by BC_MOD* and vm_arith.
-  |->vm_mod:
-  |// Args in xmm0/xmm1, return value in xmm0.
-  |// Caveat: xmm0-xmm5 and RC (eax) modified!
-  |  movaps xmm5, xmm0
-  |  divsd xmm0, xmm1
-  |  sseconst_abs xmm2, RD
-  |  sseconst_2p52 xmm3, RD
-  |  movaps xmm4, xmm0
-  |  andpd xmm4, xmm2         // |x/y|
-  |  ucomisd xmm3, xmm4       // No truncation if 2^52 <= |x/y|.
-  |  jbe >1
-  |  andnpd xmm2, xmm0        // Isolate sign bit.
-  |  addsd xmm4, xmm3         // (|x/y| + 2^52) - 2^52
-  |  subsd xmm4, xmm3
-  |  orpd xmm4, xmm2       // Merge sign bit back in.
-  |  sseconst_1 xmm2, RD
-  |  cmpsd xmm0, xmm4, 1      // x/y < result?
-  |  andpd xmm0, xmm2
-  |  subsd xmm4, xmm0         // If yes, subtract 1.0.
-  |  movaps xmm0, xmm5
-  |  mulsd xmm1, xmm4
-  |  subsd xmm0, xmm1
-  |  ret
-  |1:
-  |  mulsd xmm1, xmm0
-  |  movaps xmm0, xmm5
-  |  subsd xmm0, xmm1
-  |  ret
   |
   |//-----------------------------------------------------------------------
   |//-- Miscellaneous functions --------------------------------------------
@@ -3690,7 +3659,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_MODVN:
     |  ins_arithpre movsd, xmm1
     |->BC_MODVN_Z:
-    |  call ->vm_mod
+    |  mov RB, BASE
+    |  call extern fmod
+    |  mov BASE, RB
+    |  movzx RAd, PC_RA
     |  ins_arithpost
     |  ins_next
     break;

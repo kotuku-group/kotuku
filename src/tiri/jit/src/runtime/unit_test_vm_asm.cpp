@@ -763,7 +763,7 @@ static bool test_trunc_register_preservation(kt::Log& Log)
 #endif // LJ_HASJIT
 
 //********************************************************************************************************************
-// lj_vm_modi tests (integer modulo with Lua semantics)
+// lj_vm_modi tests (integer remainder with truncation towards zero)
 
 #if LJ_HASJIT && !(LJ_TARGET_ARM || LJ_TARGET_ARM64 || LJ_TARGET_PPC)
 
@@ -783,10 +783,9 @@ static bool test_modi_positive_positive(kt::Log& Log)
 
 static bool test_modi_negative_positive(kt::Log& Log)
 {
-   // Lua modulo: result has same sign as divisor
    int32_t a = -17;
    int32_t b = 5;
-   int32_t expected = 3;  // -17 % 5 = 3 in Lua (not -2 as in C)
+   int32_t expected = -2;
    int32_t result = lj_vm_modi(a, b);
 
    if (result != expected) {
@@ -798,10 +797,9 @@ static bool test_modi_negative_positive(kt::Log& Log)
 
 static bool test_modi_positive_negative(kt::Log& Log)
 {
-   // Lua modulo: result has same sign as divisor
    int32_t a = 17;
    int32_t b = -5;
-   int32_t expected = -3;  // 17 % -5 = -3 in Lua (not 2 as in C)
+   int32_t expected = 2;
    int32_t result = lj_vm_modi(a, b);
 
    if (result != expected) {
@@ -844,6 +842,34 @@ static bool test_modi_exact_divisor(kt::Log& Log)
    int32_t a = 15;
    int32_t b = 5;
    int32_t expected = 0;
+   int32_t result = lj_vm_modi(a, b);
+
+   if (result != expected) {
+      Log.error("modi(%d, %d) = %d, expected %d", a, b, result, expected);
+      return false;
+   }
+   return true;
+}
+
+static bool test_modi_minimum_over_negative_one(kt::Log& Log)
+{
+   int32_t a = (std::numeric_limits<int32_t>::min)();
+   int32_t b = -1;
+   int32_t expected = 0;
+   int32_t result = lj_vm_modi(a, b);
+
+   if (result != expected) {
+      Log.error("modi(%d, %d) = %d, expected %d", a, b, result, expected);
+      return false;
+   }
+   return true;
+}
+
+static bool test_modi_minimum_over_positive(kt::Log& Log)
+{
+   int32_t a = (std::numeric_limits<int32_t>::min)();
+   int32_t b = 3;
+   int32_t expected = -2;
    int32_t result = lj_vm_modi(a, b);
 
    if (result != expected) {
@@ -1730,13 +1756,15 @@ extern void vm_asm_unit_tests(int &Passed, int &Total)
 
 #if !(LJ_TARGET_ARM || LJ_TARGET_ARM64 || LJ_TARGET_PPC)
    // lj_vm_modi tests (separate array due to conditional compilation)
-   constexpr std::array<TestCase, 6> ModiTests = { {
+   constexpr std::array<TestCase, 8> ModiTests = { {
       { "modi_positive_positive", test_modi_positive_positive },
       { "modi_negative_positive", test_modi_negative_positive },
       { "modi_positive_negative", test_modi_positive_negative },
       { "modi_negative_negative", test_modi_negative_negative },
       { "modi_zero_dividend", test_modi_zero_dividend },
       { "modi_exact_divisor", test_modi_exact_divisor },
+      { "modi_minimum_over_negative_one", test_modi_minimum_over_negative_one },
+      { "modi_minimum_over_positive", test_modi_minimum_over_positive },
    } };
 
    for (const TestCase& Test : ModiTests) {

@@ -1576,7 +1576,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  math_extern tanh
   |  math_extern2 pow, lj_vm_pow
   |  math_extern2 atan2
-  |  math_extern2 fmod
   |
   |.ffunc_2 math_ldexp
   |  ldr FARG1, [BASE]
@@ -2223,20 +2222,8 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |  // int lj_vm_modi(int dividend, int divisor);
   |->vm_modi:
-  |    eor CARG4w, CARG1w, CARG2w
-  |    cmp CARG4w, #0
-  |  eor CARG3w, CARG1w, CARG1w, asr #31
-  |   eor CARG4w, CARG2w, CARG2w, asr #31
-  |  sub CARG3w, CARG3w, CARG1w, asr #31
-  |   sub CARG4w, CARG4w, CARG2w, asr #31
-  |  udiv CARG1w, CARG3w, CARG4w
-  |  msub CARG1w, CARG1w, CARG4w, CARG3w
-  |    ccmp CARG1w, #0, #4, mi
-  |    sub CARG3w, CARG1w, CARG4w
-  |    csel CARG1w, CARG1w, CARG3w, eq
-  |  eor CARG3w, CARG1w, CARG2w
-  |  cmp CARG3w, #0
-  |  cneg CARG1w, CARG1w, mi
+  |  sdiv CARG3w, CARG1w, CARG2w
+  |  msub CARG1w, CARG3w, CARG2w, CARG1w
   |  ret
   |
   |//-----------------------------------------------------------------------
@@ -2956,9 +2943,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |.endmacro
     |
     |.macro ins_arithmod, res, reg1, reg2
-    |  fdiv d2, reg1, reg2
-    |  frintm d2, d2
-    |  fmsub res, d2, reg2, reg1
+    |  bl extern fmod
     |.endmacro
     |
     |.macro ins_arithdn, intins, fpins
