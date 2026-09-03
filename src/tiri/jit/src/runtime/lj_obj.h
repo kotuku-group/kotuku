@@ -1461,7 +1461,8 @@ public:
    [[nodiscard]] inline size_t storage_size() const noexcept { return is_external() ? 0 : size_t(capacity) * elemsize; }
 };
 
-// Ensure metatable field is at the same offset in GCtab, GCarray, GCudata
+// IR_TBAR and the collector use the shared colour and GC-list offsets for tables and arrays.
+static_assert(offsetof(GCarray, marked) IS offsetof(GCtab, marked));
 static_assert(offsetof(GCarray, metatable) IS offsetof(GCtab, metatable));
 static_assert(offsetof(GCarray, gclist) IS offsetof(GCtab, gclist));
 static_assert(offsetof(GCarray, type_metadata) IS 56);

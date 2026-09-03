@@ -842,6 +842,54 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Test GC-reference array.copy() behaviour
+
+@Test function ArrayCopyGCReferencesSurviveCollection()
+   local string_source = array<str> { f'copied-{17}' }
+   local string_destination = array<str, 1>
+   string_destination.copy(string_source)
+
+   local table_value = { answer=42 }
+   local table_source = array<table> { table_value }
+   local table_destination = array<table, 1>
+   table_destination.copy(table_source)
+
+   local nested_value = array<int> { 43 }
+   local array_source = array<array> { nested_value }
+   local array_destination = array<array, 1>
+   array_destination.copy(array_source)
+
+   local object_value = obj.new('time')
+   local object_source = array<obj> { object_value }
+   local object_destination = array<obj, 1>
+   object_destination.copy(object_source)
+
+   string_source = nil
+   table_value = nil
+   table_source = nil
+   nested_value = nil
+   array_source = nil
+   object_value = nil
+   object_source = nil
+   processing.collect('step', { stepSize=1 })
+   processing.collect('full')
+
+   assert(string_destination[0] is 'copied-17', 'array.copy lost a string during collection')
+   assert(table_destination[0].answer is 42, 'array.copy lost a table during collection')
+   assert(array_destination[0][0] is 43, 'array.copy lost a nested array during collection')
+   assert(rawtype(object_destination[0]) is 'obj<Time>', 'array.copy lost an object during collection')
+   object_destination[0].free()
+end
+
+@Test function ArrayCopyGCReferencesOverlap()
+   local values = array<str> { 'zero', 'one', 'two', 'three', 'four', 'five' }
+   values.copy(values, 1, 0, 5)
+   processing.collect('full')
+   assert(values[0] is 'zero' and values[1] is 'zero' and values[2] is 'one' and values[5] is 'four',
+      'an overlapping GC-reference array.copy did not preserve memmove semantics')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test array.clone() functionality
 
 @Test function ArrayCloneInt()

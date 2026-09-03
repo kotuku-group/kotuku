@@ -883,11 +883,7 @@ void lj_array_copy_unchecked(
    else if (array_is_gc_ref_type(Dest->elemtype)) {
       size_t byte_count = Count * Dest->elemsize;
       memmove(dst_ptr, src_ptr, byte_count);
-
-      auto refs = (GCRef *)dst_ptr;
-      for (MSize i = 0; i < Count; i++) {
-         if (gcref(refs[i])) lj_gc_objbarrier(L, Dest, gcref(refs[i]));
-      }
+      lj_gc_barrierbackarray(G(L), Dest);
    }
    else {
       size_t byte_count = Count * Dest->elemsize;

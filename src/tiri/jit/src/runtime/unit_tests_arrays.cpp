@@ -403,6 +403,201 @@ static bool test_array_fresh_copy(kt::Log &Log)
 
 //********************************************************************************************************************
 
+template<size_t Size>
+static bool array_test_all_black(const std::array<GCarray *, Size> &Arrays)
+{
+   for (GCarray *array : Arrays) {
+      if (not isblack(obj2gco(array))) return false;
+   }
+   return true;
+}
+
+template<size_t Size>
+static bool array_test_move_to_incremental_black(lua_State *Lua, const std::array<GCarray *, Size> &Arrays)
+{
+   global_State *global = G(Lua);
+   MSize original_step_multiplier = global->gc.stepmul;
+   global->gc.stepmul = 1;
+   for (unsigned step = 0; step < 1024; step++) {
+      if (global->gc.state IS GCPhase::Propagate and array_test_all_black(Arrays)) {
+         global->gc.stepmul = original_step_multiplier;
+         return true;
+      }
+      if (step > 0 and global->gc.state IS GCPhase::Pause) break;
+      lj_gc_step(Lua);
+   }
+   global->gc.stepmul = original_step_multiplier;
+   return global->gc.state IS GCPhase::Propagate and array_test_all_black(Arrays);
+}
+
+static bool array_test_advance_to_phase(lua_State *Lua, GCPhase Phase)
+{
+   global_State *global = G(Lua);
+   MSize original_step_multiplier = global->gc.stepmul;
+   global->gc.stepmul = 1;
+   for (unsigned step = 0; step < 4096; step++) {
+      if (global->gc.state IS Phase) {
+         global->gc.stepmul = original_step_multiplier;
+         return true;
+      }
+      if (global->gc.state IS GCPhase::Pause) break;
+      lj_gc_step(Lua);
+   }
+   global->gc.stepmul = original_step_multiplier;
+   return global->gc.state IS Phase;
+}
+
+static bool array_test_finish_incremental_cycle(lua_State *Lua)
+{
+   global_State *global = G(Lua);
+   for (unsigned step = 0; step < 4096 and global->gc.state != GCPhase::Pause; step++) lj_gc_step(Lua);
+   return global->gc.state IS GCPhase::Pause;
+}
+
+static bool test_gc_ref_array_bulk_copy_incremental(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+
+   GCarray *strings = lj_array_new(lua, 1, AET::STR_GC);
+   setarrayV(lua, lua->top++, strings);
+   GCarray *tables = lj_array_new(lua, 1, AET::TABLE);
+   setarrayV(lua, lua->top++, tables);
+   GCarray *arrays = lj_array_new(lua, 1, AET::ARRAY);
+   setarrayV(lua, lua->top++, arrays);
+   GCarray *objects = lj_array_new(lua, 1, AET::OBJECT);
+   setarrayV(lua, lua->top++, objects);
+   const std::array<GCarray *, 4> destinations = { strings, tables, arrays, objects };
+   if (not array_test_move_to_incremental_black(lua, destinations)) {
+      Log.error("GC-reference destinations did not become black during incremental propagation");
+      return false;
+   }
+
+   GCarray *string_source = lj_array_new(lua, 1, AET::STR_GC);
+   GCstr *string = lj_str_newz(lua, "bulk-copy-string");
+   setgcref(string_source->get<GCRef>()[0], obj2gco(string));
+   lj_array_copy_unchecked(lua, strings, 0, string_source, 0, 1);
+   GCobj *first_grayagain = gcref(G(lua)->gc.grayagain);
+   GCobj *first_array_link = gcref(strings->gclist);
+   lj_array_copy_unchecked(lua, strings, 0, string_source, 0, 1);
+   if (gcref(G(lua)->gc.grayagain) != first_grayagain or gcref(strings->gclist) != first_array_link) {
+      Log.error("repeated GC-reference bulk copies linked an already-grey destination twice");
+      return false;
+   }
+
+   GCarray *table_source = lj_array_new(lua, 1, AET::TABLE);
+   GCtab *table = lj_tab_new(lua, 0, 1);
+   setintV(lj_tab_setint(lua, table, 1), 71);
+   setgcref(table_source->get<GCRef>()[0], obj2gco(table));
+   lj_array_copy_unchecked(lua, tables, 0, table_source, 0, 1);
+
+   GCarray *array_source = lj_array_new(lua, 1, AET::ARRAY);
+   GCarray *nested = lj_array_new(lua, 1, AET::INT32);
+   nested->get<int32_t>()[0] = 72;
+   setgcref(array_source->get<GCRef>()[0], obj2gco(nested));
+   lj_array_copy_unchecked(lua, arrays, 0, array_source, 0, 1);
+
+   GCarray *object_source = lj_array_new(lua, 1, AET::OBJECT);
+   GCobject *object = lj_object_new(lua, OBJECTID(73), nullptr, nullptr, GCOBJ_DETACHED);
+   setgcref(object_source->get<GCRef>()[0], obj2gco(object));
+   lj_array_copy_unchecked(lua, objects, 0, object_source, 0, 1);
+
+   for (GCarray *destination : destinations) {
+      if (not isgray(obj2gco(destination))) {
+         Log.error("a black GC-reference destination was not moved to grayagain");
+         return false;
+      }
+   }
+   if (not array_test_finish_incremental_cycle(lua)) {
+      Log.error("incremental collection did not complete after GC-reference bulk copies");
+      return false;
+   }
+
+   GCstr *retained_string = strref(strings->get<GCRef>()[0]);
+   GCtab *retained_table = tabref(tables->get<GCRef>()[0]);
+   GCarray *retained_array = arrayref(arrays->get<GCRef>()[0]);
+   GCobject *retained_object = objectref(objects->get<GCRef>()[0]);
+   cTValue *table_value = lj_tab_getint(retained_table, 1);
+   bool passed = retained_string IS string and retained_string->len IS sizeof("bulk-copy-string") - 1 and
+      retained_table IS table and tvisnumber(table_value) and numberVnum(table_value) IS 71 and
+      retained_array IS nested and retained_array->get<int32_t>()[0] IS 72 and retained_object IS object and
+      retained_object->uid IS OBJECTID(73);
+   if (not passed) Log.error("a GC-reference bulk copy lost a child during incremental collection");
+   return passed;
+}
+
+static bool test_gc_ref_array_bulk_copy_overlap(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+
+   GCarray *strings = lj_array_new(lua, 6, AET::STR_GC);
+   setarrayV(lua, lua->top++, strings);
+   std::array<GCstr *, 6> original;
+   for (MSize i = 0; i < original.size(); i++) {
+      std::string text = std::to_string(i);
+      original[i] = lj_str_new(lua, text.data(), text.size());
+      setgcref(strings->get<GCRef>()[i], obj2gco(original[i]));
+   }
+
+   lj_array_copy(lua, strings, 1, strings, 0, 5);
+   lj_gc_fullgc(lua);
+   for (MSize i = 0; i < 5; i++) {
+      if (strref(strings->get<GCRef>()[i + 1]) != original[i]) {
+         Log.error("an overlapping GC-reference bulk copy failed at slot %d", int(i + 1));
+         return false;
+      }
+   }
+   return true;
+}
+
+static bool test_gc_ref_array_bulk_copy_phases(kt::Log &Log)
+{
+   constexpr std::array<GCPhase, 6> phases = { GCPhase::Propagate, GCPhase::Atomic, GCPhase::SweepString,
+      GCPhase::Sweep, GCPhase::Finalize, GCPhase::Pause };
+
+   for (GCPhase phase : phases) {
+      LuaStateHolder holder;
+      lua_State *lua = holder.get();
+      if (not lua) return false;
+      GCarray *destination = lj_array_new(lua, 1, AET::STR_GC);
+      setarrayV(lua, lua->top++, destination);
+      const std::array<GCarray *, 1> destinations = { destination };
+      global_State *global = G(lua);
+
+      if (phase IS GCPhase::Finalize) global->gc.state = GCPhase::Finalize;
+      else if (phase != GCPhase::Pause) {
+         if (not array_test_move_to_incremental_black(lua, destinations)) return false;
+         if (phase IS GCPhase::Atomic) global->gc.state = GCPhase::Atomic;
+         else if (phase != GCPhase::Propagate and not array_test_advance_to_phase(lua, phase)) return false;
+         if (not isblack(obj2gco(destination))) {
+            Log.error("GC-reference destination was not black in collector phase %d", int(phase));
+            return false;
+         }
+      }
+
+      GCarray *source = lj_array_new(lua, 1, AET::STR_GC);
+      std::string text = std::string("phase-") + std::to_string(int(phase));
+      GCstr *string = lj_str_new(lua, text.data(), text.size());
+      setgcref(source->get<GCRef>()[0], obj2gco(string));
+      lj_array_copy_unchecked(lua, destination, 0, source, 0, 1);
+
+      if (phase != GCPhase::Pause and not array_test_finish_incremental_cycle(lua)) return false;
+      lj_gc_fullgc(lua);
+      GCstr *retained = strref(destination->get<GCRef>()[0]);
+      if (retained != string or retained->len != text.size() or
+          std::string_view(strdata(retained), retained->len) != text) {
+         Log.error("a GC-reference copy lost its child in collector phase %d", int(phase));
+         return false;
+      }
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_unsigned_array_types(kt::Log &Log)
 {
    LuaStateHolder holder;
@@ -2003,13 +2198,16 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 43> Tests = { {
+   constexpr std::array<TestCase, 46> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
       { "array_recursive_identity", test_array_recursive_identity },
       { "array_strided_copy", test_array_strided_copy },
       { "array_fresh_copy", test_array_fresh_copy },
+      { "gc_ref_array_bulk_copy_incremental", test_gc_ref_array_bulk_copy_incremental },
+      { "gc_ref_array_bulk_copy_overlap", test_gc_ref_array_bulk_copy_overlap },
+      { "gc_ref_array_bulk_copy_phases", test_gc_ref_array_bulk_copy_phases },
       { "unsigned_array_types", test_unsigned_array_types },
       { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
       { "struct_to_table_string_vector", test_struct_to_table_string_vector },
