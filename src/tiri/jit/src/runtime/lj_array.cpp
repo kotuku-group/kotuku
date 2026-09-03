@@ -930,6 +930,69 @@ void lj_array_copy_strided_unchecked(lua_State *L, GCarray *Dest, uint32_t DstId
    }
 }
 
+// Copy into a newly allocated, unexposed array.  All checks occur before the first store so that the copy itself cannot
+// allocate, call script code, raise an error or advance the collector.  A current-white destination will be traversed
+// normally when marked, so copied references do not require forward barriers.
+void lj_array_copy_to_fresh(lua_State *L, GCarray *Dest, uint32_t DstIdx, const GCarray *Src, uint32_t SrcIdx,
+   int32_t SrcStride, uint32_t Count)
+{
+   if (DstIdx > Dest->len or Count > Dest->len - DstIdx or SrcIdx > Src->len) luaL_error(L, ErrMsg::IDXRNG);
+   if (Count > 0) {
+      int64_t last_source = int64_t(SrcIdx) + (int64_t(Count) - 1) * int64_t(SrcStride);
+      if (SrcIdx >= Src->len or SrcStride IS 0 or last_source < 0 or last_source >= int64_t(Src->len)) {
+         luaL_error(L, ErrMsg::IDXRNG);
+      }
+   }
+   if (Dest->is_readonly()) luaL_error(L, ErrMsg::ARRRO);
+   if (not (Dest->elemtype IS Src->elemtype) or not array_copy_identity_compatible(Dest, Src)) {
+      luaL_error(L, ErrMsg::ARRTYPE);
+   }
+
+   lj_assertL(Dest != Src, "fresh array copy source and destination must differ");
+   lj_assertL(not Dest->is_external(), "fresh array copy destination must own its storage");
+   lj_assertL((Dest->marked & LJ_GC_WHITES) IS curwhite(G(L)),
+      "fresh array copy destination must be current-white");
+
+   if (Count IS 0) return;
+
+   if (SrcStride IS 1) {
+      void *dst_ptr = lj_array_index(Dest, DstIdx);
+      const void *src_ptr = lj_array_index(Src, SrcIdx);
+      if (Dest->elemtype IS AET::ANY) {
+         lj_bulk_move_tvalue((TValue *)dst_ptr, (const TValue *)src_ptr, Count);
+      }
+      else {
+         std::memmove(dst_ptr, src_ptr, size_t(Count) * Dest->elemsize);
+      }
+   }
+   else if (Dest->elemtype IS AET::ANY) {
+      auto dst_slots = &Dest->get<TValue>()[DstIdx];
+      auto src_slot = &Src->get<TValue>()[SrcIdx];
+      for (MSize i = 0; i < Count; i++) {
+         copyTV(L, &dst_slots[i], src_slot);
+         if (i + 1 < Count) src_slot += SrcStride;
+      }
+   }
+   else if (array_is_gc_ref_type(Dest->elemtype)) {
+      auto dst_refs = &Dest->get<GCRef>()[DstIdx];
+      auto src_ref = &Src->get<GCRef>()[SrcIdx];
+      for (MSize i = 0; i < Count; i++) {
+         setgcrefr(dst_refs[i], *src_ref);
+         if (i + 1 < Count) src_ref += SrcStride;
+      }
+   }
+   else {
+      auto dst_ptr = (uint8_t *)lj_array_index(Dest, DstIdx);
+      auto src_ptr = (const uint8_t *)lj_array_index(Src, SrcIdx);
+      ptrdiff_t src_byte_stride = ptrdiff_t(SrcStride) * Src->elemsize;
+      for (MSize i = 0; i < Count; i++) {
+         std::memcpy(dst_ptr, src_ptr, Dest->elemsize);
+         dst_ptr += Dest->elemsize;
+         if (i + 1 < Count) src_ptr += src_byte_stride;
+      }
+   }
+}
+
 void lj_array_copy(lua_State *L, GCarray *Dest, uint32_t DstIdx, GCarray *Src, uint32_t SrcIdx, uint32_t Count)
 {
    if (SrcIdx > Src->len or Count > Src->len - SrcIdx or DstIdx > Dest->len or Count > Dest->len - DstIdx) {

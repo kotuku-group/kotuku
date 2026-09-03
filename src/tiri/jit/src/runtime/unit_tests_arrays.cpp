@@ -357,6 +357,52 @@ static bool test_array_strided_copy(kt::Log &Log)
 
 //********************************************************************************************************************
 
+static bool test_array_fresh_copy(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) return false;
+
+   GCarray *strings = lj_array_new(lua, 6, AET::STR_GC);
+   setarrayV(lua, lua->top++, strings);
+   for (MSize i = 0; i < strings->len; i++) {
+      std::string value = std::to_string(i);
+      GCstr *string = lj_str_new(lua, value.data(), value.size());
+      setgcref(strings->get<GCRef>()[i], obj2gco(string));
+      lj_gc_objbarrier(lua, strings, string);
+   }
+
+   GCarray *contiguous = lj_array_new_like(lua, strings, 3);
+   lj_array_copy_to_fresh(lua, contiguous, 0, strings, 1, 1, 3);
+   setarrayV(lua, lua->top++, contiguous);
+   GCarray *descending = lj_array_new_like(lua, strings, 3);
+   lj_array_copy_to_fresh(lua, descending, 0, strings, 5, -2, 3);
+   setarrayV(lua, lua->top++, descending);
+   GCarray *empty = lj_array_new_like(lua, strings, 0);
+   lj_array_copy_to_fresh(lua, empty, 0, strings, strings->len, 1, 0);
+   setarrayV(lua, lua->top++, empty);
+
+   lj_gc_fullgc(lua);
+   const char contiguous_expected[] = { '1', '2', '3' };
+   const char descending_expected[] = { '5', '3', '1' };
+   for (MSize i = 0; i < 3; i++) {
+      GCstr *contiguous_string = strref(contiguous->get<GCRef>()[i]);
+      GCstr *descending_string = strref(descending->get<GCRef>()[i]);
+      if (contiguous_string->len != 1 or strdata(contiguous_string)[0] != contiguous_expected[i] or
+          descending_string->len != 1 or strdata(descending_string)[0] != descending_expected[i]) {
+         Log.error("a barrier-free fresh array copy lost a string reference at slot %d", int(i));
+         return false;
+      }
+   }
+   if (empty->len != 0) {
+      Log.error("an empty fresh array copy changed the destination length");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_unsigned_array_types(kt::Log &Log)
 {
    LuaStateHolder holder;
@@ -1957,12 +2003,13 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 42> Tests = { {
+   constexpr std::array<TestCase, 43> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
       { "array_recursive_identity", test_array_recursive_identity },
       { "array_strided_copy", test_array_strided_copy },
+      { "array_fresh_copy", test_array_fresh_copy },
       { "unsigned_array_types", test_unsigned_array_types },
       { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
       { "struct_to_table_string_vector", test_struct_to_table_string_vector },
