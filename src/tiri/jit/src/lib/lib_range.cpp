@@ -997,15 +997,9 @@ static int range_slice_impl(lua_State *L)
       // Create result array
       GCarray *new_arr = lj_array_new_like(L, arr, MSize(result_size));
 
-      // A unit forward step is contiguous and can use one fully checked bulk copy.  Other ranges have already been
-      // clipped and the result was created from the source metadata, so validate that contract once before copying.
-      if (forward and step IS 1) {
-         lj_array_copy(L, new_arr, 0, arr, MSize(start), MSize(result_size));
-      }
-      else {
-         lj_array_copy(L, new_arr, 0, arr, MSize(start), 0);
-         lj_array_copy_strided_unchecked(L, new_arr, 0, arr, MSize(start), step, MSize(result_size));
-      }
+      // The result is current-white and remains unobservable until it reaches the stack.  The dedicated fresh-copy
+      // path validates the complete contract once and then copies without per-reference barriers.
+      lj_array_copy_to_fresh(L, new_arr, 0, arr, MSize(start), step, MSize(result_size));
 
       setarrayV(L, L->top++, new_arr); // Push array onto the stack
       return 1;
