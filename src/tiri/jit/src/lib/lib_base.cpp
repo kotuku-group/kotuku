@@ -1279,11 +1279,13 @@ extern int luaopen_base(lua_State* L)
    LJ_LIB_REG(L, "_G", base);
 
    // Register function prototypes for compile-time type inference
-   reg_func_prototype("print", { }, {}, FProtoFlags::Variadic);
-   reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str });
+   reg_func_prototype("print", { }, {}, FProtoFlags::Variadic, FProtoArity::required(0));
+   reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("type", { TiriType::Str }, { TiriType::Any });
    reg_func_prototype("rawtype", { TiriType::Str }, { TiriType::Any });
-   reg_func_prototype("tonumber", { TiriType::Num }, { TiriType::Any, TiriType::Num });
+   reg_func_prototype("tonumber", { TiriType::Num }, { TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("tostring", { TiriType::Str }, { TiriType::Any });
    reg_func_prototype("pairs", { TiriType::Func, TiriType::Table, TiriType::Nil }, { TiriType::Any });
    reg_func_prototype("ipairs", { TiriType::Func, TiriType::Table, TiriType::Num }, { TiriType::Any });
@@ -1294,9 +1296,12 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("error", { }, { TiriType::Any }, FProtoFlags::NoNil);
    reg_func_prototype("getmetatable", { TiriType::Any }, { TiriType::Any });
    reg_func_prototype("setmetatable", { TiriType::Table }, { TiriType::Table, TiriType::Table });
-   reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic);
-   reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any });
-   reg_func_prototype("newproxy", { TiriType::Userdata }, { TiriType::Any });
+   reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic,
+      FProtoArity::required(1));
+   reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_func_prototype("newproxy", { TiriType::Userdata }, { TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_func_prototype("ltr", { TiriType::Str }, { TiriType::Str });
    reg_func_prototype("resolve", { TiriType::Any }, { TiriType::Any });
 

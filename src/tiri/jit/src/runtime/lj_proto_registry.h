@@ -23,27 +23,30 @@ void seal_proto_registry();
 // Register a global/local function prototype
 
 ERR reg_func_prototype(std::string_view Name, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None);
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None,
+   FProtoArity Arity = FProtoArity::unspecified());
 
 // Register an interface method prototype
 
 ERR reg_iface_prototype(std::string_view Interface, std::string_view Method,
    std::initializer_list<TiriType> ResultTypes, std::initializer_list<TiriType> ParamTypes,
-   FProtoFlags Flags = FProtoFlags::None);
+   FProtoFlags Flags = FProtoFlags::None, FProtoArity Arity = FProtoArity::unspecified());
 
 // Register an instance-capable interface method.  The full native parameter list includes the receiver at position
 // zero.  The exported interface field and canonical built-in slot are validated in every Lua state.
 
 ERR reg_iface_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
    BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None, bool AllowAlias = false);
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None,
+   FProtoArity Arity = FProtoArity::unspecified(), bool AllowAlias = false);
 
 // Register a hidden instance method.  Unlike reg_iface_method(), this does not require a matching public interface
 // field and stores only the receiver/member prototype entry.
 
 ERR reg_intrinsic_method(lua_State *L, std::string_view Interface, std::string_view Method, TiriType ReceiverType,
    BuiltinCallableID Callable, std::initializer_list<TiriType> ResultTypes,
-   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None);
+   std::initializer_list<TiriType> ParamTypes, FProtoFlags Flags = FProtoFlags::None,
+   FProtoArity Arity = FProtoArity::unspecified());
 
 // Lookup by string (computes hash internally)
 

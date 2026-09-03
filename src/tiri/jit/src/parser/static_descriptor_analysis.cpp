@@ -840,6 +840,7 @@ private:
       }
 
       if (not prototype) return {};
+      Call.native_prototype = prototype;
       StaticResultSet results = describe_native_prototype_results(prototype);
       if (results.stored_count > 0) {
          if (results.values[0].primary IS TiriType::Object and Call.object_class_id != CLASSID::NIL) {
@@ -956,7 +957,7 @@ private:
       return {};
    }
 
-   void report_method_argument(SourceSpan Span, std::string Message)
+   void report_native_argument(SourceSpan Span, std::string Message)
    {
       ParserDiagnostic diagnostic;
       diagnostic.severity = ParserDiagnosticSeverity::Error;
@@ -1007,17 +1008,16 @@ private:
       Field.builtin_shadow_reported = true;
    }
 
-   void validate_builtin_method_arguments(CallExprPayload &Call)
+   void validate_native_arguments(CallExprPayload &Call, const fprototype *Prototype, size_t NativeOffset,
+      bool &ArgumentsValidated)
    {
-      if (not Call.builtin_method or Call.builtin_method->arguments_validated) return;
-      const fprototype *prototype = Call.builtin_method->prototype;
-      if (not prototype or prototype->param_count IS 0) return;
+      if (ArgumentsValidated or not Prototype) return;
 
-      const TiriType *parameters = prototype->param_types();
+      const TiriType *parameters = Prototype->param_types();
       bool validation_complete = true;
       for (size_t index = 0; index < Call.arguments.size(); ++index) {
-         size_t native_index = index + 1;
-         if (native_index >= prototype->param_count) break;
+         size_t native_index = index + NativeOffset;
+         if (native_index >= Prototype->param_count) break;
          if (Call.arguments[index]->kind IS AstNodeKind::IdentifierExpr) {
             const auto &reference = std::get<NameRef>(Call.arguments[index]->data);
             if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) continue;
@@ -1025,8 +1025,8 @@ private:
          const StaticValueDescriptor actual = this->descriptor_of(*Call.arguments[index]);
          TiriType expected = parameters[native_index];
          if (actual.primary IS TiriType::Nil) {
-            if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
-               this->report_method_argument(Call.arguments[index]->span,
+            if ((Prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
+               this->report_native_argument(Call.arguments[index]->span,
                   std::format("required argument {} cannot be nil", index + 1));
             }
          }
@@ -1034,19 +1034,37 @@ private:
          else if (expected != TiriType::Any and actual.primary != TiriType::Unknown and
              actual.primary != TiriType::Any and actual.primary != expected and
              not (expected IS TiriType::Func and actual.primary IS TiriType::Table)) {
-            this->report_method_argument(Call.arguments[index]->span,
+            this->report_native_argument(Call.arguments[index]->span,
                std::format("argument {} expects {}, got {}", index + 1,
                   type_name(expected), type_name(actual.primary)));
          }
       }
 
-      if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None and
-          Call.arguments.size() + 1 < prototype->param_count and not Call.forwards_multret) {
-         this->report_method_argument(Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span,
+      size_t fixed_arguments = Call.arguments.size() - size_t(Call.forwards_multret and not Call.arguments.empty());
+      size_t minimum = Prototype->min_param_count >= NativeOffset ?
+         Prototype->min_param_count - NativeOffset : 0;
+      size_t maximum = Prototype->param_count >= NativeOffset ? Prototype->param_count - NativeOffset : 0;
+      SourceSpan arity_span = Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span;
+      bool arity_known = Prototype->min_param_count != FProtoArity::UNSPECIFIED;
+      if (arity_known and not Call.forwards_multret and not Call.receives_pipe_results and
+          Call.arguments.size() < minimum) {
+         this->report_native_argument(arity_span,
             std::format("required argument {} is missing", Call.arguments.size() + 1));
       }
-      if (Call.forwards_multret) validation_complete = false;
-      Call.builtin_method->arguments_validated = validation_complete;
+      if (arity_known and (Prototype->flags & FProtoFlags::Variadic) IS FProtoFlags::None and
+          fixed_arguments > maximum) {
+         this->report_native_argument(arity_span,
+            std::format("expected at most {} arguments, got {}", maximum, Call.arguments.size()));
+      }
+      if (Call.forwards_multret or Call.receives_pipe_results) validation_complete = false;
+      ArgumentsValidated = validation_complete;
+   }
+
+   void validate_builtin_method_arguments(CallExprPayload &Call)
+   {
+      if (not Call.builtin_method) return;
+      this->validate_native_arguments(Call, Call.builtin_method->prototype, 1,
+         Call.builtin_method->arguments_validated);
    }
 
    void resolve_builtin_method(CallExprPayload &Call)
@@ -1266,6 +1284,10 @@ private:
          if (not Call.results) Call.results = this->native_call_results(Call);
       }
       else this->annotate_call(Call);
+      if (Call.native_prototype and Call.native_prototype->min_param_count != FProtoArity::UNSPECIFIED and
+          Call.compiler_callable IS BuiltinCallableID::Invalid) {
+         this->validate_native_arguments(Call, Call.native_prototype, 0, Call.native_arguments_validated);
+      }
       StaticValueDescriptor result;
 
       if (Call.results) {

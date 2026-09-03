@@ -595,12 +595,16 @@ void register_async_class(lua_State *Lua)
    lua_pop(Lua, 2);                            // Pop async table and pool table
 
    // Register async interface prototypes for compile-time type inference
-   reg_iface_prototype("async", "action",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num });
+   reg_iface_prototype("async", "action",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num },
+      FProtoFlags::Variadic, FProtoArity::required(2));
    reg_iface_prototype("async", "cancel",  { TiriType::Num }, { TiriType::Any });
-   reg_iface_prototype("async", "method",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num });
+   reg_iface_prototype("async", "method",  {}, { TiriType::Any, TiriType::Any, TiriType::Func, TiriType::Num },
+      FProtoFlags::Variadic, FProtoArity::required(2));
    reg_iface_prototype("async", "pending", { TiriType::Num }, { TiriType::Object });
-   reg_iface_prototype("async", "script",  {}, { TiriType::Object, TiriType::Func });
-   reg_iface_prototype("async", "wait",    { TiriType::Num }, { TiriType::Any, TiriType::Num });
+   reg_iface_prototype("async", "script",  {}, { TiriType::Object, TiriType::Func }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("async", "wait",    { TiriType::Num }, { TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
 
    lua_pop(Lua, 2); // Drop the Tiri.async metatable and the async library table
 }

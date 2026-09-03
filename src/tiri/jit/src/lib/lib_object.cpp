@@ -1112,10 +1112,12 @@ extern "C" int luaopen_object(lua_State *L)
    setgcref(basemt_it(g, LJ_TOBJECT), obj2gco(lib));
 
    // Register obj interface prototypes for compile-time type inference
-   reg_iface_prototype("obj", "new", { TiriType::Object }, { TiriType::Any, TiriType::Table });
+   reg_iface_prototype("obj", "new", { TiriType::Object }, { TiriType::Any, TiriType::Table }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_prototype("obj", "find", { TiriType::Object }, { TiriType::Any });
    reg_intrinsic_method(L, "obj", "new", TiriType::Object, builtin_callable_id(FastFunc::object_new),
-      { TiriType::Object }, { TiriType::Object, TiriType::Any, TiriType::Table });
+      { TiriType::Object }, { TiriType::Object, TiriType::Any, TiriType::Table }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_intrinsic_method(L, "obj", "_state", TiriType::Object, builtin_callable_id(FastFunc::object__state),
       { TiriType::Table }, { TiriType::Object });
    reg_iface_method(L, "obj", "class", TiriType::Object, builtin_callable_id(FastFunc::object_class),
@@ -1125,21 +1127,24 @@ extern "C" int luaopen_object(lua_State *L)
    reg_iface_method(L, "obj", "free", TiriType::Object, builtin_callable_id(FastFunc::object_free), {},
       { TiriType::Object });
    reg_iface_method(L, "obj", "children", TiriType::Object, builtin_callable_id(FastFunc::object_children),
-      { TiriType::Array }, { TiriType::Object, TiriType::Str });
+      { TiriType::Array }, { TiriType::Object, TiriType::Str }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_method(L, "obj", "detach", TiriType::Object, builtin_callable_id(FastFunc::object_detach), {},
       { TiriType::Object });
    reg_iface_method(L, "obj", "get", TiriType::Object, builtin_callable_id(FastFunc::object_get),
-      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any });
+      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "obj", "set", TiriType::Object, builtin_callable_id(FastFunc::object_set),
       { TiriType::Num }, { TiriType::Object, TiriType::Str, TiriType::Any });
    reg_iface_method(L, "obj", "getKey", TiriType::Object, builtin_callable_id(FastFunc::object_getKey),
-      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any });
+      { TiriType::Any }, { TiriType::Object, TiriType::Str, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "obj", "setKey", TiriType::Object, builtin_callable_id(FastFunc::object_setKey),
       { TiriType::Num }, { TiriType::Object, TiriType::Str, TiriType::Any });
    reg_iface_method(L, "obj", "exists", TiriType::Object, builtin_callable_id(FastFunc::object_exists),
       { TiriType::Bool }, { TiriType::Object });
    reg_iface_method(L, "obj", "subscribe", TiriType::Object, builtin_callable_id(FastFunc::object_subscribe), {},
-      { TiriType::Object, TiriType::Str, TiriType::Func, TiriType::Any });
+      { TiriType::Object, TiriType::Str, TiriType::Func, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(3));
    reg_iface_method(L, "obj", "unsubscribe", TiriType::Object,
       builtin_callable_id(FastFunc::object_unsubscribe), {}, { TiriType::Object, TiriType::Any });
 

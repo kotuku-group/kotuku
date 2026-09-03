@@ -709,7 +709,7 @@ end
    -- Test mixing range access with other string operations
    s = "Hello, World!"
    slice = s[{0 to 5}]
-   assert(slice.upper(slice) is "HELLO", "should be able to call methods on sliced result")
+   assert(slice.upper() is "HELLO", "should be able to call methods on sliced result")
    assert(#slice is 5, "sliced result should have correct length")
 end
 

@@ -466,6 +466,7 @@ struct CallExprPayload {
    ExprNodeList arguments;
    CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic;
    bool forwards_multret = false;
+   bool receives_pipe_results = false;
    BuiltinCallableID compiler_callable = BuiltinCallableID::Invalid;
    struct BuiltinMethodCall {
       const fprototype *prototype = nullptr;
@@ -475,6 +476,8 @@ struct CallExprPayload {
       bool arguments_validated = false;
    };
    mutable std::optional<BuiltinMethodCall> builtin_method;
+   mutable const fprototype *native_prototype = nullptr;
+   mutable bool native_arguments_validated = false;
    struct RuntimeBuiltinMethodCall {
       GCstr *member = nullptr;
       bool safe = false;

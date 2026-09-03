@@ -585,6 +585,21 @@ inline constexpr FProtoFlags operator&(FProtoFlags a, FProtoFlags b) {
 
 constexpr size_t FPROTO_MAX_PARAMS = 16; // Maximum parameter count for prototypes
 
+// Arity metadata is deliberately independent of parameter nil acceptance.  An exact prototype requires every
+// declared parameter; optional prototypes specify the number of leading parameters that are required.  Variadic
+// prototypes continue to use FProtoFlags::Variadic to remove the declared upper bound.
+
+struct FProtoArity {
+   static constexpr uint8_t EXACT = UINT8_MAX - 1;
+   static constexpr uint8_t UNSPECIFIED = UINT8_MAX;
+
+   uint8_t minimum;
+
+   [[nodiscard]] static constexpr FProtoArity unspecified() noexcept { return { UNSPECIFIED }; }
+   [[nodiscard]] static constexpr FProtoArity exact() noexcept { return { EXACT }; }
+   [[nodiscard]] static constexpr FProtoArity required(uint8_t Minimum) noexcept { return { Minimum }; }
+};
+
 // Function prototype storing type signature
 
 struct fprototype {
@@ -593,7 +608,8 @@ struct fprototype {
    FProtoFlags flags;        // Optional flags
    TiriType receiver_type;   // Concrete receiver for instance methods; Unknown for namespace functions
    BuiltinCallableID builtin_callable_id; // Canonical callable identity for instance methods
-   uint16_t reserved;        // Reserved for future prototype metadata
+   uint8_t min_param_count;  // Required leading parameters, or FProtoArity::UNSPECIFIED when unaudited
+   uint8_t reserved;         // Reserved for future prototype metadata
    std::array<TiriType, PROTO_MAX_RETURN_TYPES> result_types;
 
    // Parameter types follow (accessed via param_types())

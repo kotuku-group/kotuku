@@ -546,13 +546,16 @@ void register_processing_class(lua_State *Lua)
    lua_pop(Lua, 2); // Drop the Tiri.processing metatable and the processing library table
 
    // Register processing interface prototypes for compile-time type inference
-   reg_iface_prototype("processing", "new", { TiriType::Userdata }, { TiriType::Table });
-   reg_iface_prototype("processing", "collect", { TiriType::Num }, { TiriType::Str, TiriType::Table });
+   reg_iface_prototype("processing", "new", { TiriType::Userdata }, { TiriType::Any });
+   reg_iface_prototype("processing", "collect", { TiriType::Num }, { TiriType::Str, TiriType::Table },
+      FProtoFlags::None, FProtoArity::required(0));
    reg_iface_prototype("processing", "stopCollector", {}, {});
    reg_iface_prototype("processing", "startCollector", {}, {});
    reg_iface_prototype("processing", "gcStats", { TiriType::Table }, {});
-   reg_iface_prototype("processing", "halt", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("processing", "sleep", { TiriType::Num }, { TiriType::Num });
+   reg_iface_prototype("processing", "halt", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("processing", "sleep", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("processing", "signal", {}, {});
    reg_iface_prototype("processing", "task", { TiriType::Any }, {});
    reg_iface_prototype("processing", "flush", {}, {});

@@ -84,8 +84,9 @@ end
 end
 
 @Test function RemovedObjectAliasIsRejectedByFactories()
+   local array_of:any = array.of
    expect_failure(() => array.new(0, 'object'), "array.new() accepted the removed 'object' alias")
-   expect_failure(() => array.of('object'), "array.of() accepted the removed 'object' alias")
+   expect_failure(() => any: array_of('object'), "array.of() accepted the removed 'object' alias")
 end
 
 @Test function NilUsesTheTypedEmptyValue()
