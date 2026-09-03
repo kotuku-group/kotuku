@@ -90,6 +90,12 @@ code:
   border-width: [0, 0, 0, 2]
   border-color: '#ddddff'
 
+# Grammar blocks ([source,ebnf], or any listing with the 'ebnf' role) are rendered flat
+# by the tiri_ebnf.rb extension: the 'code' font is kept, but the left rule, indent and
+# background are suppressed.  Keys added here override 'code' for those blocks only.
+#ebnf:
+#  font-family: Inconsolata
+
 page:
   margin: [0.75in, 0.75in, 0.75in, 0.75in]
 

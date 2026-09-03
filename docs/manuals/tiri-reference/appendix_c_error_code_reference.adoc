@@ -60,7 +60,7 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_InvalidState` |Object is in an incorrect state for the requested operation.
 |`ERR_NullArgs` |Required arguments are null.
 |`ERR_InvalidValue` |An invalid value was provided.
-|`ERR_Exception` |Generic exception code.  Assigned to `error()` calls and to runtime faults that no specific code describes.  See <<sec-runtime-error-codes>>.
+|`ERR_Exception` |Generic exception code.  Assigned to `error()` calls and to runtime faults that no specific code describes.
 |`ERR_TypeMismatch` |The expected type was not provided.
 |`ERR_Immutable` |Object or resource is immutable and cannot be modified.
 |`ERR_Obsolete` |The requested feature is obsolete.

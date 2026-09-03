@@ -30,6 +30,8 @@
 //                       (commit d99bfaabb)
 // UPDATED: 2026-08-23 - Documented `checkall` in the exception handling migration; `try` no longer promotes API
 //                       error codes (commit 136e79469)
+// UPDATED: 2026-09-03 - Recorded the removal of math.fmod() and the truncated-remainder behaviour of `%`,
+//                       which differs from Lua whenever the operands have opposite signs (commit fc1f9292d)
 
 [[appendix-migration-from-lua]]
 [appendix]
@@ -806,12 +808,15 @@ The following standard Lua functions are removed or replaced:
 
 |`table.maxn()`
 |Removed.  Use `#t` for the length of a table or array, or `rawlen(t)` if the table also holds non-numeric keys.
+
+|`math.fmod(X, Y)`
+|Removed.  The `%` operator computes the same truncated remainder, so `math.fmod(x, y)` translates to `x % y`.  See <<sec-arithmetic-operators>>.
 |===
 
 [discrete]
 ==== Behavioural Differences
 
-Four constructs in common Lua code return different values in Tiri and produce no diagnostic when translated literally:
+Five constructs in common Lua code return different values in Tiri and produce no diagnostic when translated literally:
 
 `#t` on a mixed table::
 Lua returns the sequence length and ignores the hash part.  Tiri returns `nil` for any table that has ever been stored through a key that is not a positive integer.  Positive integer keys are unaffected however scattered, so `t[9999]` leaves the length intact.  Translate `#t` to `rawlen(t)` wherever the numerical sequence length is what the original code meant.  See <<sec-table-classification>>.
@@ -824,6 +829,9 @@ Both languages apply `pass:[__]name` to `tostring()` and to error messages.  Lua
 
 `math.random(N)`::
 Lua returns an integer in [1, `N`].  Tiri returns an integer in [0, `N`), matching its zero-based indexing so that `math.random(#arr)` is a valid index.  Translate a one-based Lua call to the two-argument form `math.random(1, N)`.  See <<sec-random-numbers>>.
+
+`%` on operands of opposite sign::
+Lua computes the remainder of floor division, so the result carries the sign of the right operand.  Tiri computes the remainder of truncated division, so the result carries the sign of the left operand: `-5 % 3` is `1` in Lua and `-2` in Tiri.  The two agree whenever the operands share a sign.  Lua code that relies on `%` to normalise a negative value into the range [0, `b`) needs `((a % b) + b) % b` in Tiri.  See <<sec-arithmetic-operators>>.
 
 Two further differences produce an explicit diagnostic rather than a wrong value:
 

@@ -242,7 +242,7 @@ indexterm:[dynamic loading] Loads, parses, and executes a Tiri script at runtime
 
 If `Path` begins with `./` or `../`, it is resolved relative to the directory of the calling script.  If the calling script's directory is not available, the current working directory is used as a fallback.  This makes it possible to load companion files from the same directory as the caller regardless of the process working directory.
 
-`loadFile()` raises an exception if the file cannot be opened, parsed, or if execution fails.  The exception carries the code describing the failure: `ERR_DoesNotExist` if the file is not found, `ERR_Syntax` if the source fails to parse, and, if the loaded code raises, the code of that exception (see <<sec-runtime-error-codes>>).
+`loadFile()` raises an exception if the file cannot be opened, parsed, or if execution fails.  The exception carries the code describing the failure: `ERR_DoesNotExist` if the file is not found, `ERR_Syntax` if the source fails to parse, and, if the loaded code raises, the code of that exception.
 
 [source,tiri]
 ----

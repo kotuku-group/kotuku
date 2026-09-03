@@ -515,7 +515,8 @@ function calculate_area(Radius:num):num
 end
 
 function divide(A:num, B:num):<num, num>
-   return math.floor(A / B), A % B
+   quotient = math.modf(A / B)
+   return quotient, A % B
 end
 ----
 

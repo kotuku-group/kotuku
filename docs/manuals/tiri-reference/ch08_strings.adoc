@@ -1,24 +1,16 @@
-// VERIFIED: 2026-08-05
-// UPDATED: 2026-08-11 - String methods are called with '.' as built-in method calls (commit 7e6746950)
-// UPDATED: 2026-08-14 - The array string element is now spelled 'str'; 'string' is rejected (commit 148480f9d)
-// UPDATED: 2026-08-14 - Documented self referencing inside f-string interpolation, which now parses in every position
-//                       within the string (commit 148480f9d)
-// UPDATED: 2026-08-18 - string.byte(), string.sub() and string.find() migrated to half-open (exclusive stop) range
-//                       semantics; documented the deprecated string.substr() alias (commit 3e99d69ac)
-// UPDATED: 2026-08-21 - Documented substring membership via the 'in' operator; string.contains() is no longer
-//                       publicly callable (commit 2b788f198)
+// VERIFIED: 2026-09-02
 
 [[ch-strings]]
 == Strings
-indexterm:[strings] This chapter defines the string library: the built-in functions for creating, inspecting, searching, modifying, and encoding strings.  For string literal syntax, escape sequences, and type semantics see <<sec-strings-overview>> and <<sec-lexical-conventions>>.
+indexterm:[strings] This chapter defines the string library: the built-in functions for creating, inspecting, searching, modifying, and encoding strings.
 
 Strings are immutable except for the interoperability exemption provided by `string.alloc()`.  String operations that appear to modify a string produce a new string value.  Identical strings are interned: two strings with the same byte content share the same internal object.
 
-All string indexing is zero-based.  Index 0 refers to the first byte, index `#s - 1` to the last.  Negative indices count backwards from the end: index `-1` is the last byte, `-2` the second-to-last.
+All string indexing is zero-based.  Negative indices count backwards from the end: index `-1` is the last byte, `-2` the second-to-last.
 
-Every string function that accepts a `Start` and `Stop` index pair defines a half-open span `[Start, Stop)`: the byte at `Start` is included and the byte at `Stop` is excluded.  The number of bytes selected is therefore `Stop - Start`.  A negative index is resolved against the string length before the span is evaluated, and a resolved `Stop` remains exclusive.  A span in which `Stop` is not greater than `Start` after resolution is empty.  Functions that return a position pair, such as `string.find()`, return the same half-open form, so a returned pair can be passed directly to `string.sub()`.
+Every string function that accepts a `Start` and `Stop` index pair defines a half-open span `[Start, Stop)`: the byte at `Start` is included and the byte at `Stop` is excluded.  The total number of bytes selected is therefore `Stop - Start`.  A negative index is resolved against the string length before the span is evaluated, and a resolved `Stop` remains exclusive.  A span in which `Stop` is not greater than `Start` after resolution is empty.  Functions that return a position pair, such as `string.find()`, return the same half-open form, so a returned pair can be passed directly to `string.sub()`.
 
-Most string library functions raise a type error if a required string argument is not a string.  The exceptions are `string.trim()`, `string.rtrim()`, `string.escXML()` and `string.unescapeXML()`, which treat a `nil` argument as an empty string and return `''`.  Each function's specification states its own behaviour.  Functions that accept optional parameters treat missing arguments as described in each function's specification.
+String library functions raise a type error if a required string argument is not a string.
 
 String functions are accessed through the `string` namespace, or as built-in methods on a string receiver using dot notation:
 
@@ -262,6 +254,7 @@ Extracts the substring occupying the half-open span `[Start, Stop)`.  If `Stop` 
 
 Returns a copy of `String` with all ASCII lowercase letters converted to uppercase.  Non-ASCII bytes are unchanged.
 
+[%breakable]
 [[sec-searching-and-extraction]]
 === Searching & Extraction
 [[sec-string-membership]]
@@ -383,14 +376,14 @@ For regular expression replacement, use the `regex` library (see <<ch-regular-ex
 
 [.api]`str = string.trim(String)`
 
-Removes leading and trailing whitespace from `String`.  Whitespace characters are: space, tab, newline, and carriage return.  Returns an empty string if `String` is `nil` or contains only whitespace.
+Removes leading and trailing whitespace from `String`.  Whitespace characters are: space, tab, newline, and carriage return.  Returns an empty string if `String` contains only whitespace.
 
 [[sec-string-rtrim]]
 ==== string.rtrim()
 
 [.api]`str = string.rtrim(String)`
 
-Removes trailing whitespace from `String`.  Leading whitespace is preserved.  Whitespace characters are: space, tab, newline, and carriage return.  Returns an empty string if `String` is `nil` or contains only whitespace.
+Removes trailing whitespace from `String`.  Leading whitespace is preserved.  Whitespace characters are: space, tab, newline, and carriage return.  Returns an empty string if `String` contains only whitespace.
 
 [[sec-splitting]]
 === Splitting
@@ -455,15 +448,16 @@ Returns `true` if `String` begins with `Prefix`.  An empty `Prefix` always retur
 
 indexterm:[strings, encoding] indexterm:[XML escaping] Escapes `String` for safe inclusion in XML content or attribute values.  The following characters are replaced:
 
-[cols="2,3",options="header"]
+[%autowidth]
+[options="header"]
 |===
 |Character |Replacement
 |`&`       |`+&amp;+`
 |`<`       |`+&lt;+`
 |`>`       |`+&gt;+`
+|`"`       |`+&quot;+`
+|`'`       |`+&apos;+`
 |===
-
-Quote characters (`"` and `'`) are not escaped.  `string.unescapeXML()` decodes a wider set of entities including `&quot;` and `&apos;`.  Returns an empty string if `String` is `nil`.
 
 [source,tiri]
 ----
@@ -476,7 +470,7 @@ Quote characters (`"` and `'`) are not escaped.  `string.unescapeXML()` decodes 
 
 [.api]`hash = string.hash(String, [CaseSensitive])`
 
-Returns a 32-bit integer hash value for `String`.  If `CaseSensitive` is `false` (the default), the hash is case-insensitive.  If `CaseSensitive` is `true`, the hash distinguishes between uppercase and lowercase letters.
+Returns a 32-bit integer hash value for `String`.  If `CaseSensitive` is `false` (the default), the hash is case-insensitive.
 
 [source,tiri]
 ----
@@ -494,7 +488,8 @@ TIP: The hash algorithm is compatible with Kōtuku's string hashing, ensuring ha
 
 Decodes XML entities in `String`, returning the unescaped result.  The following entities are recognised:
 
-[cols="2,3",options="header"]
+[%autowidth]
+[options="header"]
 |===
 |Entity     |Character
 |`+&lt;+`     |`<`
@@ -514,7 +509,7 @@ Returns an empty string if `String` is `nil`.  Unrecognised `&` sequences are pa
 
 [[sec-string-slicing-with-ranges]]
 === Slicing with Ranges
-indexterm:[strings, slicing] indexterm:[ranges, string slicing] Strings support range objects as indices for substring extraction.  Indexing is zero-based.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
+indexterm:[strings, slicing] indexterm:[ranges, string slicing] Strings support range objects as indices for substring extraction.  Indexing is zero-based.  The range must be whole-numbered; a fractional range raises an error.
 
 [source,tiri]
 ----
@@ -522,8 +517,8 @@ s = 'Hello, World!'
 
 s[{0 to 5}]     -- 'Hello'   (exclusive: indices 0-4)
 s[{7 to 12}]    -- 'World'   (exclusive: indices 7-11)
-s[{0 into 4}]    -- 'Hello'   (inclusive: indices 0-4)
-s[{-6 into -1}]  -- 'World!'  (negative inclusive)
+s[{0 into 4}]   -- 'Hello'   (inclusive: indices 0-4)
+s[{-6 into -1}] -- 'World!'  (negative inclusive)
 s[{-6 to -1}]   -- 'World'   (negative exclusive)
 ----
 

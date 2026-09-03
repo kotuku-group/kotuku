@@ -566,7 +566,7 @@ NOTE: The typed syntax `array<int> { 1, 2, 3 }` is preferred over `array.of()` f
 [discrete]
 ==== Indexing
 
-indexterm:[arrays, element access] Elements are accessed by zero-based integer index.  Out-of-bounds reads and writes raise an error.  Negative indices are not supported.
+indexterm:[arrays, element access] Elements are accessed by zero-based integer index.  Out-of-bounds reads and writes raise an exception with the code `ERR_OutOfBounds` (<<appendix-error-code-reference>>), reporting the offending index.  Negative indices are not supported.
 
 [source,tiri]
 ----
@@ -732,13 +732,13 @@ arr.remove(1, 2)    -- arr = {1, 5}
 [.api]`arr.fill(Value, [Start, [Stop]])` +
 [.api]`arr.fill(Value, Range)`
 
-Sets elements to `Value`.  With no additional arguments, fills the entire array.  With `Start` and `Stop`, fills the half-open span `[Start, Stop)`: every element from `Start` up to but excluding `Stop`.  `Start` defaults to `0` and `Stop` defaults to the array length, so `arr.fill(Value, Start)` fills from `Start` to the end.  The positional form selects the same elements as the exclusive range form: `arr.fill(Value, Start, Stop)` is equivalent to `arr.fill(Value, {Start to Stop})`.
+Sets elements to `Value`.  With no additional arguments, fills the entire array.  With `Start` and `Stop`, fills every element from `Start` up to but excluding `Stop`.  `Start` defaults to `0` and `Stop` defaults to the array length.  `arr.fill(Value, Start, Stop)` is equivalent to `arr.fill(Value, {Start to Stop})`.
 
 With a range, fills the elements selected by the range (supports exclusive, inclusive, negative, and stepped ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 A `Stop` greater than the array length is clipped to the length.  A span that selects no elements is a no-op that leaves the array unchanged and does not validate `Value`; this applies when `Start` is at or beyond the array length, and when `Stop` is at or below `Start`.  A negative `Start` or `Stop` raises an error.
 
-`Value` must satisfy <<sec-element-storage-contract>> and is validated before the first element is written, so a rejected value leaves the array unchanged.  Reference element types accept a reference, or `nil` to clear the selected elements.
+`Value` is validated before the first element is written, so a rejected value leaves the array unchanged.  Referential types like `obj` accept `nil` to clear the selected elements.
 
 [source,tiri]
 ----
@@ -870,7 +870,7 @@ arr.indexOf(30)           -- 2
 arr.indexOf(30, 3)        -- nil (search starts at index 3)
 arr.indexOf(30, 0, 2)     -- nil (index 2 lies outside the span)
 arr.indexOf(30, 0, 3)     -- 2
-arr.indexOf(50, 0, #arr)  -- 4 (a stop equal to the length includes the last element)
+arr.indexOf(50, 0, #arr)  -- 4
 arr.indexOf(30, {0 to 5}) -- 2
 arr.indexOf(99)           -- nil
 ----
@@ -890,7 +890,7 @@ arr.indexOf(20, {4 into 0})   -- 3 (found searching backwards)
 
 [.api]`copy = arr.clone()`
 
-indexterm:[arrays, copying] indexterm:[arrays, slicing] Creates a new array with the same type identity and a copy of all elements, so a recursive element type is retained in full (<<sec-recursive-array-types>>).  For reference types (tables, objects, arrays), the clone is shallow: the new array holds references to the same underlying objects.
+indexterm:[arrays, copying] indexterm:[arrays, slicing] Creates a new array with the same type identity and a copy of all elements.  For reference types (tables, objects, arrays), the clone is shallow: the new array holds references to the same underlying objects.
 
 A `struct` element type is not supported and raises an error.
 
@@ -899,7 +899,7 @@ A `struct` element type is not supported and raises an error.
 
 [.api]`result = arr.slice(Range)`
 
-Returns a new array containing the elements selected by `Range`.  The result has the same type identity as the source, including a recursive element type.  Supports exclusive, inclusive, negative, reverse, and stepped ranges.  Out-of-bounds indices are clamped.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
+Returns a new array containing the elements selected by `Range`.  The result has the same type identity as the source.  Supports exclusive, inclusive, negative, reverse, and stepped ranges.  Out-of-bounds indices are clamped.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 [source,tiri]
 ----
@@ -923,13 +923,11 @@ Copies data into the array from `Source`.  `Source` can be an array, a string (c
 
 Raises an error if the copy would exceed the destination bounds.
 
-The source must match the destination:
+The `Source` must match the destination:
 
 * An array source must declare the same element type as the destination.  Element values are transferred without conversion, so an `array<double>` cannot be copied into an `array<int>`.  When the destination declares a recursive element type, the source identity must also satisfy it as defined in <<sec-recursive-array-types>>.
 * A string source requires a byte array destination.
 * A table source is read as a sequence and each element must satisfy <<sec-element-storage-contract>>.  The complete sequence is validated before the destination is modified, so a rejected element leaves the destination unchanged as defined in <<sec-array-atomic-mutation>>.
-
-CAUTION: An array source is matched on its element type alone.  For a `struct` element type the struct definition is not compared, so two `struct` arrays declaring different definitions satisfy the check and their raw bytes are transferred.  The result is meaningless when the definitions differ, and unsafe when their sizes differ.  Confirm the definitions match at the call site before copying between struct arrays.
 
 [source,tiri]
 ----
@@ -966,7 +964,7 @@ t[1]   -- 20
 [discrete]
 ==== Byte Array String Methods
 
-These methods are available only on byte (`char`) arrays.
+These methods are available only on byte (`byte`, `char`, `uint8`) arrays.
 
 [.api]`str = arr.getString([Start, Length])`
 
@@ -991,7 +989,7 @@ arr.getString(0, 5)   -- 'Greet'
 
 [.api]`str = arr.concat([Separator], [Format], [Start], [Stop])`
 
-Concatenates array elements into a string.  `Separator` is inserted between each element (default: empty string).  `Format` is an optional C-style format specifier applied to each element (e.g. `'%d'`, `'%.2f'`, `'%s'`).  `Start` and `Stop` are optional zero-based indexes that restrict the operation to the half-open span `[Start, Stop)` of the array.  `Stop` is exclusive, so `Stop - Start` elements are concatenated.  `Start` defaults to `0` and `Stop` defaults to the array length.
+Concatenates array elements into a string.  `Separator` is inserted between each element, or omitted if `nil`.  `Format` is an optional C-style format specifier applied to each element (e.g. `'%d'`).  `Start` and `Stop` are optional zero-based indexes that restrict the operation to the half-open span `[Start, Stop)` of the array.  `Stop` is exclusive, so `Stop - Start` elements are concatenated.  `Start` defaults to `0` and `Stop` defaults to the array length.
 
 When `Format` is provided, it must contain exactly one format specifier.  An error is raised if `Format` contains zero or multiple specifiers, or if the format specifier is incomplete.  For non-string arrays without a format specifier, elements are converted to their default string representation, which is a more optimal conversion path.  Unsigned elements are converted to unsigned decimal text on that path.
 
@@ -1000,7 +998,7 @@ An unsigned array constrains the permitted conversion, because the element is pa
 * `uint8`, `uint16` and `uint` arrays require an unsigned conversion (`%u`, `%o`, `%x` or `%X`) with no length modifier.
 * `uint64` arrays require one of the same conversions with the `ll` length modifier, e.g. `%llu` or `%llx`.
 
-Every other conversion, including `%d` and `%s`, raises an error.
+Incompatible conversions raise an error.
 
 Concatenation is only available for primitive array types that consist of string and number elements.  Attempting to concatenate table, struct or object elements raises an error.
 
@@ -1084,7 +1082,7 @@ end)
 
 Returns a new array where each element is the result of `Callback(Value, Index)`.  The original array is not modified.
 
-`ElementType` names the element type of the result and accepts the type names listed in <<sec-array-fundamentals>>, including a recursive `array<pass:[...]>` name (<<sec-recursive-array-types>>).  When `ElementType` is omitted or `nil`, the result is an `array<any>`, which accepts a callback result of any type.  `ElementType` is validated before the first callback runs: an unrecognised name raises an error and no callback is invoked.
+`ElementType` names the element type of the result and accepts the type names listed in <<sec-array-fundamentals>>.  When `ElementType` is omitted or `nil`, the result is an `array<any>`, which accepts a callback result of any type.  `ElementType` is validated before the first callback runs: an unrecognised name raises an error and no callback is invoked.
 
 Each callback result must satisfy <<sec-element-storage-contract>> for the result element type; a result of another category raises an error and leaves the source array unmodified.  Use `mapSame()` to retain the source element type.
 

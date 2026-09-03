@@ -1,5 +1,7 @@
 
 // VERIFIED:
+// UPDATED: 2026-09-03 - Renamed the `%=` compound operator entry from modulo to remainder, following the switch
+//                       to truncating remainder semantics (commit fc1f9292d)
 
 [[ch-variables-and-scoping]]
 == Variables & Scoping
@@ -79,7 +81,7 @@ _, fresh <const> = 1, 2       -- valid: '_' introduces no binding
 [[sec-implicit-annotation-redeclaration]]
 ===== Annotated Declarations Without local
 
-An annotated declaration that omits `local` declares a name only where that name is not already visible.  The statement then declares a local carrying the annotated contract, and the initialiser is checked against it:
+An annotated declaration that omits `local` declares a new name if that name is not already visible.  A contract is attached to the name, and the initialiser is checked against it:
 
 [source,tiri]
 ----
@@ -110,7 +112,7 @@ end
 
 ===== Shadowing
 
-Write `local` to declare a second binding for a visible name, in either form.  The declaration shadows the visible binding for the remainder of its scope, at every scope depth, and the outer binding is restored when the scope ends:
+Write `local` to explicitly declare a new binding for a visible name.  The declaration shadows the visible binding for the remainder of its scope, and the outer binding is restored when the scope ends:
 
 [source,tiri]
 ----
@@ -438,7 +440,7 @@ Compound assignment operators evaluate the right-hand side exactly once and appl
 |`-=`     |Subtraction
 |`*=`     |Multiplication
 |`/=`     |Division
-|`%=`     |Modulo
+|`%=`     |Remainder
 |`..=`    |String concatenation
 |`??=`    |If-empty assignment (assigns only if current value is falsey under extended semantics; see <<sec-truthiness>>)
 |`?=`     |If-nil assignment (assigns only if current value is `nil`)

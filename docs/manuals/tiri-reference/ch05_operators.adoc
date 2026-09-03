@@ -1,18 +1,4 @@
-// VERIFIED: 2026-08-16
-// UPDATED: 2026-08-16 - The ternary separator is now ':'; ':>' and its '▷' alias are deprecated but accepted with a
-//                       warning.  Added the separator/type-annotation disambiguation and the '??' single-line rule
-//                       (commit 982d890de)
-// CHANGED: 2026-08-16 - Corrected the expression-list note: a ternary terminates at a comma, so parentheses are
-//                       optional rather than required (pre-existing defect, verified against the parser)
-// UPDATED: 2026-08-21 - The membership operator is now a metamethod-driven primitive: it dispatches through
-//                       '__contains' on the right operand, tables without a handler perform a raw key-presence
-//                       test, and the 'b.contains(a)' equivalence no longer holds (commit 2b788f198)
-// UPDATED: 2026-08-19 - Added the Type-Test Operator subsection for the '<type>' descriptor reading of is/is not/!=
-//                       (commit c70f7542a)
-// UPDATED: 2026-08-22 - Removed pipe iteration: the right operand must now be a call, and pipelines traverse with
-//                       forEach().  Replaced the Pipe Iteration subsection accordingly (commit 790a9ebb2)
-// UPDATED: 2026-08-23 - Structs now supply '__contains' natively, so a struct is a valid right-hand operand of the
-//                       membership operator (commit ea8b050c8)
+// VERIFIED: 2026-09-03
 
 [[ch-operators]]
 == Operators
@@ -30,31 +16,41 @@ Convert a string operand explicitly with `tonumber()`:
 tonumber('10') + 5    -- 15
 ----
 
-[cols="2,3,3a,3",options="header"]
+[cols="2,2,5,2",options="header"]
 |===
 |Operator |Syntax |Effect |Metamethod
 |Addition      |`a + b`  |Sum of `a` and `b`           |`__add`
 |Subtraction   |`a - b`  |Difference of `a` and `b`    |`__sub`
 |Multiplication|`a * b`  |Product of `a` and `b`       |`__mul`
 |Division      |`a / b`  |Quotient of `a` and `b`      |`__div`
-|Modulo        |`a % b`  |Remainder of the floor division of `a` by `b`  |`__mod`
+|Remainder     |`a % b`  |Remainder of the truncated division of `a` by `b` |`__mod`
 |Exponentiation|`a pass:[**] b` |`a` raised to the power `b`  |`__pow`
 |Unary negation|`-a`     |Negation of `a`              |`__unm`
 |===
 
 Division always produces a floating-point result.  Dividing by zero yields `inf` or `-inf`; dividing zero by zero yields `nan`.
 
-The `%` operator is defined as the remainder of floor division, so the result carries the sign of the right operand:
+The `%` operator is defined as the remainder of truncated division: `a % b` equals `a - q * b`, where `q` is the quotient `a / b` truncated towards zero.  The result carries the sign of the left operand; the sign of the right operand does not affect it.
 
 [source,tiri]
 ----
 5 % 3      -- 2
--5 % 3     -- 1
-5 % -3     -- -1
+-5 % 3     -- -2
+5 % -3     -- 2
 -5 % -3    -- -2
 ----
 
-NOTE: `math.fmod()` computes the remainder of truncated division, so its result carries the sign of the left operand instead.  `-5 % 3` is `1`, whereas `math.fmod(-5, 3)` is `-2`.  See <<sec-math-fmod>>.
+An exact division yields a zero that carries the sign of the left operand, so `-4.5 % 1.5` produces `-0.0`.  A right operand of zero yields `nan`, as does an infinite left operand.  An infinite right operand returns a finite left operand unchanged.
+
+[%unbreakable]
+[source,tiri]
+----
+5 % 0            -- nan
+math.huge % 3    -- nan
+3 % math.huge    -- 3
+----
+
+NOTE: To map a result into the range [0, `b`) for a positive `b`, add `b` and take the remainder again: `((a % b) + b) % b`.
 
 Exponentiation is right-associative: `2 pass:[**] 3 pass:[**] 2` evaluates as `2 pass:[**] (3 pass:[**] 2)` = `512`.  All other arithmetic operators are left-associative.
 
@@ -73,7 +69,7 @@ n = -42        -- unary negation
 === Comparison Operators
 indexterm:[operators, comparison] Comparison operators return a boolean value.  The equality operators (`is`, `!=`) accept operands of any type.  The ordering operators (`<`, `>`, `\<=`, `>=`) accept two numbers or two strings; comparing other types without a metamethod raises an error.
 
-[cols="2,3,3a,3",options="header"]
+[cols="3,2,5,3",options="header"]
 |===
 |Operator |Syntax |Effect |Metamethod
 |Equal             |`a is b`  |`true` if `a` equals `b`              |`__eq`
@@ -87,9 +83,13 @@ indexterm:[operators, comparison] Comparison operators return a boolean value.  
 
 ==== Equality Semantics
 
-The `is` operator compares by value for value types (numbers, strings, booleans, nil).  For reference types, the default behaviour is identity comparison: two distinct tables, functions, or userdata values are never equal unless a `pass:[__]eq` metamethod overrides this.  The runtime invokes the `pass:[__]eq` metamethod only when both operands share the same metatable.
+The `is` operator compares by value for `nil`, booleans, numbers and strings.  For reference types, the default behaviour is identity comparison: two distinct tables, functions, or userdata values are never equal unless a `pass:[__]eq` metamethod overrides this.  The runtime invokes the `pass:[__]eq` metamethod only when both operands share the same metatable.
 
-**Arrays are the deliberate exception.** Although arrays are reference types, `is` compares them by content: two arrays are equal if they share the same element type, length, and element values.  This is implemented via a built-in `pass:[__]eq` metamethod on the array base metatable.  The rationale is that arrays model typed value sequences — they are routinely constructed, returned, and compared without the caller retaining a reference to the original.  Identity comparison would make array equality impractical in most use cases.  To test whether two array variables refer to the same underlying object, use `rawequal(a, b)`.
+Strings sit on the boundary of that division.  A string is an immutable, heap-allocated byte sequence rather than an inline value, yet `is` compares content because strings are interned: the runtime guarantees that equal content is the same internal object, so content equality and identity always agree.  `rawequal('ab' .. 'c', 'abc')` is therefore `true`, and no ambiguity arises from comparing strings by content.
+
+**Arrays extend content comparison to a mutable type.** Arrays are reference types, but `is` compares them by content: two arrays are equal if they share the same element type, length, and element values.  This is implemented via a built-in `pass:[__]eq` metamethod on the array base metatable.  The rationale is that arrays model typed value sequences — they are routinely constructed, returned, and compared without the caller retaining a reference to the original.  Identity comparison would make array equality impractical in most use cases.
+
+Arrays are the only type for which content comparison and identity can disagree.  Unlike interned strings, two equal arrays remain distinct, mutable objects: `a is b` can be `true` at one moment and `false` after either array is modified, and equality never implies that a write through `a` is visible through `b`.  To test whether two array variables refer to the same underlying object, use `rawequal(a, b)`.
 
 `!=` negates the result of `is`.
 
@@ -100,8 +100,12 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 |===
 |Type |`is` behaviour |Override
 
-|nil, bool, number, string
+|nil, bool, number
 |Value comparison
+|N/A
+
+|String
+|Content comparison (interned, so equivalent to identity)
 |N/A
 
 |Array
@@ -115,11 +119,11 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 
 **String comparison** is lexicographic and byte-by-byte.  The comparison applies no locale-aware collation.
 
-The ordering operators do not coerce their operands, as for <<sec-arithmetic-operators>>.
+The ordering operators do not coerce their operands:
 
 [source,tiri]
 ----
-1 < '1'   -- error: attempt to compare number with string
+1 < '1'   -- error: type mismatch
 ----
 
 The equality operators never raise on a type mismatch.  Values of different types are never equal, so `'0' is 0` is `false`.
@@ -197,7 +201,7 @@ Comparison chaining applies only to ordering operators.  The equality operators 
 === Logical Operators
 indexterm:[operators, logical] Logical operators use standard falsiness: only `nil` and `false` are false.  All other values -- including `0`, `""`, and empty tables -- are true.
 
-[cols="2,3,5a",options="header"]
+[cols="2,2,6",options="header"]
 |===
 |Operator |Syntax |Effect
 |`and` |`a and b` |Returns `a` if `a` is false; otherwise returns `b`
@@ -238,13 +242,14 @@ A numeric operand is converted to a 32-bit integer before the operation, accordi
 
 A non-numeric operand of any other type is rejected on the same terms.  Because the bitwise operators have no metamethods, the error is raised without consulting a handler, which is where they differ from the arithmetic operators (<<sec-arithmetic-operators>>).
 
+[%unbreakable]
 [source,tiri]
 ----
 1 << '3'             -- error: number expected, got string
 tonumber('3') & 1    -- 1
 ----
 
-[cols="2,3,5a",options="header"]
+[cols="2,3,5",options="header"]
 |===
 |Operator |Syntax |Effect
 |AND        |`a & b`  |Bitwise AND
@@ -365,7 +370,7 @@ label = 'Item #' .. 42            -- 'Item #42'
 === Length Operator
 indexterm:[operators, length] The unary `#` operator returns the length of a value.
 
-[cols="2,5a",options="header"]
+[cols="2,6",options="header"]
 |===
 |Operand type |Result
 |String |Byte count
@@ -391,14 +396,14 @@ print(#{ 'a', [9999] = 'x' })  -- 1: positive integers are exempt
 === Compound Assignment
 indexterm:[operators, compound assignment] Compound assignment operators evaluate the right-hand side exactly once and apply the operation to the target.  If the RHS is a function call or vararg, only the first return value is used.  The target must be an assignable location: a local, upvalue, global, field, or index.  Applying compound assignment to a constant or a function call result is a compile-time error.
 
-[cols="2,3,5a",options="header"]
+[cols="2,2,7",options="header"]
 |===
 |Operator |Syntax |Effect
 |`+=`  |`x += expr`  |Addition assignment
 |`-=`  |`x -= expr`  |Subtraction assignment
 |`*=`  |`x *= expr`  |Multiplication assignment
 |`/=`  |`x /= expr`  |Division assignment
-|`%=`  |`x %= expr`  |Modulo assignment
+|`%=`  |`x %= expr`  |Remainder assignment
 |`..=` |`s ..= expr` |Concatenation assignment
 |`?=`  |`x ?= expr`  |If-nil assignment: assigns only if the current value of `x` is `nil`
 |`??=` |`x ??= expr` |If-empty assignment: assigns only if the current value of `x` is falsey under extended semantics (see <<sec-truthiness>>).  Incurs a performance penalty compared to `?=` due to the broader falsiness check.
@@ -456,7 +461,7 @@ t.score++           -- t.score is now 11
 
 Use `++` only as a statement.  Its return value as an expression is unspecified.
 
-NOTE: There is no `--` decrement operator.  The `--` character sequence begins a comment.  Use `x -= 1` instead.
+NOTE: There is no `--` decrement operator as it denotes a comment.  Use `x -= 1` instead.
 
 [[sec-conditional-operators]]
 === Conditional Operators
@@ -525,7 +530,7 @@ indexterm:[operators, ternary] Evaluates `condition`.  If truthy, evaluates and 
 
 Two forms are available, distinguished by the leading sigil and differing only in the falsiness rule applied to `condition`:
 
-[cols="1,4a",options="header"]
+[cols="1,4",options="header"]
 |===
 |Form |Condition rule
 
@@ -568,7 +573,7 @@ label = count is 0 ? 'none' : f'{count} items'
 === Safe Navigation
 indexterm:[operators, safe navigation] The safe navigation operators provide nil-safe access to fields, methods, and indices.  If the receiver is `nil`, the expression evaluates to `nil` without raising an error.
 
-[cols="2,3,5a",options="header"]
+[cols="3,3,8",options="header"]
 |===
 |Operator |Syntax |Effect
 |Safe field access |`obj?.field`    |Returns `nil` if `obj` is `nil`; otherwise returns `obj.field`
@@ -710,7 +715,7 @@ The pipe operator performs no iteration of its own.  A pipeline stage that visit
 
 [source,tiri]
 ----
-{1 to 5} |> forEach(print)                          -- prints 1, 2, 3, 4
+{1 to 5} |> forEach(print)    -- prints 1, 2, 3, 4
 
 array<int> { 5, 10, 15 } |> forEach(function(i, v) validate(v) end)
                          |> forEach(function(i, v) store(v) end)
@@ -726,7 +731,7 @@ NOTE: The collection-specific `each()` methods (<<sec-functional-methods>>, <<se
 === Unicode Operator Aliases
 indexterm:[operators, Unicode aliases] The lexer recognises a set of Unicode symbols as aliases for existing ASCII operators.  Each alias is interchangeable with its ASCII form and carries identical precedence, associativity and semantics; the choice is purely one of presentation.
 
-[cols="2,2,5a",options="header"]
+[cols="2,2,7",options="header"]
 |===
 |Symbol |ASCII form |Meaning
 
@@ -738,7 +743,6 @@ indexterm:[operators, Unicode aliases] The lexer recognises a set of Unicode sym
 |`↑` (U+2191)  |`pass:[**]` |Exponentiation
 |`‥` (U+2025)  |`..`  |Concatenation
 |`⁇` (U+2047)  |`??`  |If-empty
-|`⧺` (U+29FA)  |`++`  |Postfix increment
 |===
 
 The approximate equality operator `≈` (see <<sec-approximate-equality>>) has no ASCII equivalent and is the only operator that requires a Unicode symbol.

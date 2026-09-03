@@ -1,9 +1,4 @@
-// VERIFIED: 2028-08-19
-// UPDATED: 2026-08-24 - Narrowed variant result source 2: a member or index read is variant only when its
-//                       receiver is a table or carries no type; array and object receivers remain dynamic ingress.
-// UPDATED: 2026-08-21 - Replaced the range.contains() example; the method was removed in favour of the 'in'
-//                       operator (commit 2b788f198)
-// UPDATED: 2026-08-23 - A `checkall` block excludes a return from tail call optimisation (commit 136e79469)
+// VERIFIED: 2028-09-02
 
 [[ch-functions]]
 == Functions
@@ -160,10 +155,16 @@ Assigning a function to a member whose name matches a built-in method of the rec
 [source,tiri]
 ----
 records = {}
-records.insert = function(V:any):any return V end     -- error: cannot assign
-                                                      -- a function to built-in
-                                                      -- method 'insert'
-records['insert'] = function(V:any):any return V end  -- permitted
+
+-- error: cannot assign a function to built-in method 'insert'
+records.insert = function(V:any):any
+   return V
+end
+
+-- permitted
+records['insert'] = function(V:any):any
+   return V
+end
 ----
 
 The same rule applies to a record field in a table constructor.  Assigning a non-function value to such a name is permitted, as shown in the preceding section.
@@ -195,11 +196,10 @@ table.sort(items, function(A, B) return A < B end)
 [[sec-context]]
 === Context
 
-indexterm:[current context] indexterm:[context] indexterm:[receiver] Every function activation runs within a __context__, represented by a table that the activation reaches without naming it.  A leading `&` on a name reads or writes a field of that table, and `+&&+` yields the table itself.  Context is Tiri's equivalent of the receiver that other languages expose as `this` or `self`.  A key difference is that Tiri maintains context on a stack and can be referenceed from anywhere, thus it is not restricted to the scope of a method call.
+indexterm:[current context] indexterm:[context] indexterm:[receiver] Every function activation runs within a __context__, represented by a table that the activation reaches without naming it.  A leading `&` on a name reads or writes a field of that table, and `+&&+` yields the table itself.  __Context__ is Tiri's equivalent of `this` or `self` in other languages.  A key difference is that Tiri maintains context on a stack and can be referenceed from anywhere, thus it is not restricted to the scope of a method call.
 
-The capability is opt-in.  A receiver becomes the current context of a call made on it only when it is a table that has been designated an __entity__ (<<sec-table-entities>>).  An ordinary table receiver leaves the context unchanged, as does a receiver of any other type.  Designation belongs to the table identity, not to the functions stored in it, so one function behaves according to the receiver used for each call.
+The capability is opt-in.  Only a table that is designated as an __entity__ (<<sec-table-entities>>) can become the current context of a call made on it.
 
-[%unbreakable]
 [source,tiri]
 ----
 account = entity { name = 'current', balance = 0 }
@@ -255,26 +255,8 @@ The adjacency requirement is what separates the two roles of the character.  A `
 
 [source,tiri]
 ----
-&flags                     -- self reference to the field 'flags'
-mask & flags               -- bitwise AND
-----
-
-===== Statement Boundaries
-
-A line break does not terminate a statement (<<sec-statement-ambiguity>>).  A self reference that opens a line therefore terminates the expression on the preceding line and begins a new statement:
-
-[%unbreakable]
-[source,tiri]
-----
-&total = Value
-&count++                   -- a second statement, not 'Value & count'
-----
-
-Two statements written on one line are read as a single expression, because the same-line `&` is the binary operator.  Separate them with a semicolon:
-
-[source,tiri]
-----
-&reset(); &count++
+&flags           -- self reference to the field 'flags'
+mask & flags     -- bitwise AND
 ----
 
 [[sec-context-expression]]
@@ -483,7 +465,7 @@ end
 print(&height)       -- nil: settings no longer holds the context
 ----
 
-Activation is temporary and confers no designation.  A table activated by a `using` block remains ordinary, so a call made on it afterwards establishes no context.
+Activation is temporary and does not promote ordinary tables to entities.
 
 Blocks nest, and each block restores the context that preceded it.  Every exit path removes the activations it crosses, including `return`, `break`, `continue` and error unwinding.  Cleanup declared inside a block runs under that block's context: a `<close>` handler and a `defer` block both observe the activation that encloses their declaration (<<ch-resource-management>>).
 
@@ -688,7 +670,8 @@ function double(X:num):num
 end
 
 function divmod(A:num, B:num):<num, num>
-   return math.floor(A / B), A % B
+   quotient = math.modf(A / B)
+   return quotient, A % B
 end
 ----
 

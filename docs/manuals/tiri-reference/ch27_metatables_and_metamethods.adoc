@@ -135,7 +135,7 @@ indexterm:[metamethods, arithmetic] When an arithmetic operator encounters a non
 |Subtraction    |`a - b`  |`pass:[__]sub(Other, LHS)`
 |Multiplication |`a * b`  |`pass:[__]mul(Other, LHS)`
 |Division       |`a / b`  |`pass:[__]div(Other, LHS)`
-|Modulo         |`a % b`  |`pass:[__]mod(Other, LHS)`
+|Remainder      |`a % b`  |`pass:[__]mod(Other, LHS)`
 |Exponentiation |`a ** b` |`pass:[__]pow(Other, LHS)`
 |Unary negation |`-a`     |`pass:[__]unm()`
 |===

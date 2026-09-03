@@ -1,8 +1,4 @@
-// VERIFIED: 2028-08-05
-// UPDATED: 2026-08-21 - Added __iter metamethod to bare collection iteration resolution order (commit 28cc93e73)
-// UPDATED: 2026-08-06 - Documented bare collection iteration in generic for loops (commit 5f9e2003e)
-// UPDATED: 2026-08-22 - Added the Callback Traversal section for forEach(), the callback counterpart of the generic
-//                       for loop and the replacement for pipe iteration (commit 790a9ebb2)
+// VERIFIED: 2028-09-03
 
 [[ch-control-flow]]
 == Control Flow
@@ -97,6 +93,8 @@ Counted iteration is expressed with a range literal.  `Start`, `Stop` and `Step`
 
 The loop variable is local to the loop body and is not accessible after the loop terminates.  Assigning to the loop variable inside the body does not affect iteration.
 
+WARNING: A zero `Step` produces an infinite loop.
+
 ==== Range Iteration
 
 A range literal can be used with `in` to iterate over a numeric sequence:
@@ -148,8 +146,6 @@ end
 ----
 
 The anonymous form accepts the same range syntax as the named form.  `break` and `continue` are permitted.
-
-WARNING: A zero `Step` produces an infinite loop.
 
 [[sec-generic-for-loop]]
 === Generic For Loop
@@ -245,7 +241,10 @@ Traverses `Target` and calls `Callback` once for every iterator result, then ret
 
 [source,tiri]
 ----
-forEach(array<int> { 10, 20 }, function(Index, Value) print(Index, Value) end)
+forEach(array<int> { 10, 20 }, function(Index, Value)
+   print(Index, Value)
+end)
+
 range(1, 4) |> forEach(print)
 ----
 
@@ -253,7 +252,7 @@ range(1, 4) |> forEach(print)
 
 The callback receives every value the iterator yields, in the order the iterator produces them:
 
-[cols="3,4",options="header"]
+[cols="3,6",options="header"]
 |===
 |Target |Callback arguments
 

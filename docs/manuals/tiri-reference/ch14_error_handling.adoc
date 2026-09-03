@@ -1,7 +1,4 @@
-// VERIFIED: 2026-08-31
-// UPDATED: 2026-09-01 - Runtime faults now carry a specific ERR code instead of the generic ERR_Exception
-//                       (commit ed7f16f04).  Added <<sec-runtime-error-codes>>, revised the exception model
-//                       and filter matching rules, and corrected ERR_DirEmpty to ERR_EndOfSequence.
+// VERIFIED: 2026-09-02
 
 [[ch-error-handling]]
 == Error Handling
@@ -20,7 +17,7 @@ indexterm:[exceptions] Exceptions originate from one of the following:
 |Source |Description
 
 |Runtime errors
-|Nil indexing, type mismatches, out-of-bounds access, and other violations detected by the Tiri engine.  Each fault carries the `ERR` code that describes it, as listed in <<sec-runtime-error-codes>>.
+|Nil indexing, type mismatches, out-of-bounds access, and other violations detected by the Tiri engine.  Each fault carries an `ERR` code describing the failure, but the code assigned to a particular fault is an implementation detail and may change between releases.
 
 |`error()`
 |Raises an exception with a custom message and the error code `ERR_Exception`.
@@ -48,7 +45,7 @@ When an `except` clause declares a variable, the runtime constructs a table desc
 
 |`code`
 |integer
-|The `ERR` code.  For a runtime fault this is the code describing the fault (<<sec-runtime-error-codes>>).  For `error()` raised with a string it is `ERR_Exception`.
+|The `ERR` code.  For a runtime fault this is a code describing the fault, chosen by the engine.  For `error()` raised with a string it is `ERR_Exception`.
 
 |`message`
 |string
@@ -323,7 +320,8 @@ end
 
 Handlers are checked in declaration order.  The first handler whose filter contains the exception's error code is selected.  If no filter matches and no catch-all handler exists, the exception propagates to the next enclosing `try` block.
 
-Only error codes at or above the exception threshold match specific filters.  A runtime fault matches a filter naming the code for that fault (<<sec-runtime-error-codes>>).  An exception raised by `error()` with a string carries `ERR_Exception`.
+Only error codes at or above the exception threshold match specific filters.  An exception raised by `error()` with a string carries `ERR_Exception`.
+
 
 [source,tiri]
 ----

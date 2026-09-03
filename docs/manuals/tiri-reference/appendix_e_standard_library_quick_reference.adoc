@@ -18,6 +18,8 @@
 //                       ea8b050c8)
 // UPDATED: 2026-08-23 - arr.fill() migrated from a positional Count to a half-open exclusive Stop (commit a11b59100)
 // UPDATED: 2026-08-24 - Noted recursive array element types in the array creation summary (commit 8717fde66)
+// UPDATED: 2026-09-03 - Removed math.fmod(); the `%` operator now computes the same truncated remainder
+//                       (commit fc1f9292d)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -262,7 +264,6 @@ indexterm:[library, math] See <<ch-mathematics>>.
 |`math.floor(X)`                 |Rounds towards negative infinity.
 |`math.ceil(X)`                  |Rounds towards positive infinity.
 |`math.round(X, [DecimalPlaces])`|Rounds to the nearest integer or decimal place.
-|`math.fmod(X, Y)`               |Floating-point remainder.
 |`math.modf(X)`                  |Returns integer and fractional parts.
 |`math.min(X, pass:[...])`       |Returns the smallest argument.
 |`math.max(X, pass:[...])`       |Returns the largest argument.
