@@ -235,6 +235,8 @@ private:
       std::string_view, const SourceSpan &, bool Implicit);
    [[nodiscard]] GCstr *module_function_binding(ModuleDependency &, GCstr *CanonicalFunction);
    [[nodiscard]] StmtNodePtr make_dependency_activation(ModuleDependency &, const SourceSpan &);
+   [[nodiscard]] ParserResult<StmtNodePtr> make_assignment_statement(const Token &, AssignmentOperator,
+      ExprNodeList, ExprNodeList);
    void finalise_module_dependencies();
    void publish_dependency_descriptors();
    void prepend_implicit_dependencies(BlockStmt &);

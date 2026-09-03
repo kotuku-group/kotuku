@@ -54,6 +54,24 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Assignment value-list arity
+
+@Test function ValidateSurplusExplicitAssignmentValues()
+   local result = debug.validate('a, b = 1, 2, 3')
+   assert(result.success is false, 'An assignment with surplus explicit values should fail validation')
+   assert(result.diagnostics[0].code is 'InvalidAssignment',
+      'A surplus explicit value should report InvalidAssignment')
+   assert(result.diagnostics[0].message.find('more explicit values than targets') != nil,
+      'The diagnostic should distinguish explicit values from multi-return results')
+
+   result = debug.validate([[
+      function three():<num, num, num> return 1, 2, 3 end
+      a, b = three()
+   ]])
+   assert(result.success is true, 'Surplus results from a function call should remain valid')
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Removed Lua-style numeric for syntax
 
 @Test function ValidateDeprecatedNumericForDiagnostic()

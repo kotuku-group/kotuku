@@ -68,6 +68,25 @@ ParserResult<Token> AstBuilder::consume_ternary_separator()
 }
 
 //********************************************************************************************************************
+// Builds an assignment after enforcing Tiri's explicit value-list arity.  A single trailing call or vararg expression
+// remains free to produce more results than the target list consumes because it occupies only one explicit list entry.
+
+ParserResult<StmtNodePtr> AstBuilder::make_assignment_statement(const Token &Operator, AssignmentOperator Assignment,
+   ExprNodeList Targets, ExprNodeList Values)
+{
+   if (Values.size() > Targets.size()) {
+      const ExprNodePtr &surplus = Values[Targets.size()];
+      Token error_token = surplus ? Token::from_span(surplus->span) : Operator;
+      return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment, error_token,
+         "Assignment has more explicit values than targets; surplus results are only permitted from a trailing "
+         "function call or vararg expression");
+   }
+
+   return ParserResult<StmtNodePtr>::success(
+      make_assignment_stmt(Operator.span(), Assignment, std::move(Targets), std::move(Values)));
+}
+
+//********************************************************************************************************************
 // Parses expression statements, handling assignments, compound assignments, conditional shorthands, and standalone expressions.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
@@ -111,10 +130,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
       this->ctx.tokens().advance();
       auto values = this->parse_expression_list();
       if (not values.ok()) return ParserResult<StmtNodePtr>::failure(values.error_ref());
-      auto stmt = std::make_unique<StmtNode>(AstNodeKind::AssignmentStmt, op.span());
-      AssignmentStmtPayload payload(assignment, std::move(targets), std::move(values.value_ref()));
-      stmt->data = std::move(payload);
-      return ParserResult<StmtNodePtr>::success(std::move(stmt));
+      return this->make_assignment_statement(
+         op, assignment, std::move(targets), std::move(values.value_ref()));
    }
 
    // Guard shorthand pattern: value ?! return/break/continue/raise/check
