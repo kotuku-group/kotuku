@@ -5,6 +5,10 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
+function dynamic_remainder(Dividend:num, Divisor:num):num
+   return Dividend % Divisor
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- IEEE 754 special values: NaN
 
@@ -219,22 +223,37 @@ end
 -- Modulo and remainder edge cases
 
 @Test function ModuloWithNegativeOperands()
-   -- Tiri/Lua % follows the sign of the divisor (Euclidean-style)
+   -- Tiri % is a truncating remainder, so a non-zero result follows the sign of the dividend.
    assert(7 % 3 is 1, '7 % 3 should be 1')
-   assert(-7 % 3 is 2, '-7 % 3 should be 2 (sign of divisor)')
-   assert(7 % -3 is -2, '7 % -3 should be -2 (sign of divisor)')
-   assert(-7 % -3 is -1, '-7 % -3 should be -1 (sign of divisor)')
+   assert(-7 % 3 is -1, '-7 % 3 should be -1 (sign of dividend)')
+   assert(7 % -3 is 1, '7 % -3 should be 1 (sign of dividend)')
+   assert(-7 % -3 is -1, '-7 % -3 should be -1 (sign of dividend)')
+   assert(dynamic_remainder(-17, 5) is -2, 'Runtime integer remainder should retain the dividend sign')
+   assert(dynamic_remainder(17, -5) is 2, 'Runtime integer remainder should ignore the divisor sign')
+   assert(dynamic_remainder(-2147483648, -1) is 0, 'Minimum int remainder by -1 should avoid overflow')
+   assert(dynamic_remainder(-2147483648, 3) is -2, 'Minimum int remainder should retain the dividend sign')
 end
 
 @Test function ModuloWithFloats()
-   result = 5.5 % 2.0
-   assert(math.abs(result - 1.5) < 1e-15, '5.5 % 2.0 should be 1.5')
+   assert(math.abs((5.5 % 2.0) - 1.5) < 1e-15, '5.5 % 2.0 should be 1.5')
+   assert(math.abs((-5.5 % 2.0) - -1.5) < 1e-15, '-5.5 % 2.0 should be -1.5')
+   assert(math.abs((5.5 % -2.0) - 1.5) < 1e-15, '5.5 % -2.0 should be 1.5')
+   assert(math.abs(dynamic_remainder(-5.5, 2.0) - -1.5) < 1e-15,
+      'Runtime floating-point remainder should retain the dividend sign')
+
+   negative_zero = dynamic_remainder(-4.5, 1.5)
+   assert(negative_zero is 0 and 1 / negative_zero is -math.huge,
+      'An exact negative floating-point remainder should preserve negative zero')
 end
 
-@Test function FmodConsistency()
-   -- fmod should match % behaviour for positive values
-   assert(math.fmod(7, 3) is 7 % 3, 'fmod(7,3) should match 7 % 3')
-   assert(math.fmod(5.5, 2.0) is 5.5 % 2.0, 'fmod(5.5, 2.0) should match 5.5 % 2.0')
+@Test function CompoundRemainderUsesTruncation()
+   value = -17
+   value %= 5
+   assert(value is -2, 'value %= 5 should retain the dividend sign')
+end
+
+@Test function FmodIsRemoved()
+   assert(math.fmod is nil, 'math.fmod() should not remain available after % adopts truncating remainder semantics')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -444,8 +463,8 @@ end
    expect_string_arithmetic_error(function() return 3 + text end, 'Number plus string')
    expect_string_arithmetic_error(function() return text + 3 end, 'String plus number')
    expect_string_arithmetic_error(function() return text + other_text end, 'String plus string')
-   expect_string_arithmetic_error(function() return text % 3 end, 'String modulo number')
-   expect_string_arithmetic_error(function() return 3 % text end, 'Number modulo string')
+   expect_string_arithmetic_error(function() return text % 3 end, 'String remainder number')
+   expect_string_arithmetic_error(function() return 3 % text end, 'Number remainder string')
    expect_string_arithmetic_error(function() return 2 ** text end, 'Number to a string power')
    assert(3 + tonumber('4') is 7, '3 + tonumber("4") should be 7')
 

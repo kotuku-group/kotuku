@@ -2262,7 +2262,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  math_extern tanh
   |  math_extern2 pow, lj_vm_pow
   |  math_extern2 atan2
-  |  math_extern2 fmod
   |
   |.if DUALNUM
   |.ffunc math_ldexp
@@ -3250,17 +3249,8 @@ static void build_subroutines(BuildCtx *ctx)
   |->vm_modi:
   |  divwo. TMP0, CARG1, CARG2
   |  bso >1
-  |.if GPR64
-  |   xor CARG3, CARG1, CARG2
-  |   cmpwi CARG3, 0
-  |.else
-  |   xor. CARG3, CARG1, CARG2
-  |.endif
   |  mullw TMP0, TMP0, CARG2
   |  sub CARG1, CARG1, TMP0
-  |   bgelr
-  |  cmpwi CARG1, 0; beqlr
-  |  add CARG1, CARG1, CARG2
   |  blr
   |1:
   |  cmpwi CARG2, 0
@@ -4255,29 +4245,15 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |
     |.macro fpmod, a, b, c
     |->BC_MODVN_Z:
-    |  fdiv FARG1, b, c
-    |  // NYI: Use internal implementation of floor.
-    |  blex floor			// floor(b/c)
-    |  fmul a, FARG1, c
-    |  fsub a, b, a			// b - floor(b/c)*c
+    |  fmr FARG1, b
+    |  fmr FARG2, c
+    |  blex fmod
+    |  fmr a, FARG1
     |.endmacro
     |
     |.macro sfpmod
     |->BC_MODVN_Z:
-    |  stw CARG1, SFSAVE_1
-    |  stw CARG2, SFSAVE_2
-    |  mr SAVE0, CARG3
-    |  mr SAVE1, CARG4
-    |  blex __divdf3
-    |  blex floor
-    |  mr CARG3, SAVE0
-    |  mr CARG4, SAVE1
-    |  blex __muldf3
-    |  mr CARG3, CRET1
-    |  mr CARG4, CRET2
-    |  lwz CARG1, SFSAVE_1
-    |  lwz CARG2, SFSAVE_2
-    |  blex __subdf3
+    |  blex fmod
     |.endmacro
     |
     |.macro ins_arithfp, fpins

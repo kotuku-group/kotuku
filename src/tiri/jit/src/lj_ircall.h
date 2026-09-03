@@ -175,6 +175,7 @@ typedef struct CCallInfo {
   _(ANY,    cmath_sinh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_cosh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_tanh,            1,   N, NUM, XA_FP) \
+  _(ANY,    cmath_fmod,            2,   N, NUM, XA2_FP) \
   _(ANY,    fputc,                 2,   S, INT, 0) \
   _(ANY,    fwrite,                4,   S, INT, 0) \
   _(ANY,    fflush,                1,   S, INT, 0) \

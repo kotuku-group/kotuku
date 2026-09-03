@@ -375,7 +375,7 @@ vfx.shake = function(Viewport:obj!, Options:table)
          end
 
          cycle = (state.seconds / SHAKES) * 1000000
-         angle = (math.fmod(CurrentTime - state.time, cycle) / cycle) * MAX_ANGLE
+         angle = ((CurrentTime - state.time) % cycle / cycle) * MAX_ANGLE
 
          if angle < QRT_ANGLE then -- (45)
             angle = angle

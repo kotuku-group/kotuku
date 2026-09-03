@@ -1183,7 +1183,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             pos += 2
             col += 2
          else
-            -- % modulo
+            -- % remainder
             addToken(line, op_start, 1, 1, 0)
             pos++
             col++

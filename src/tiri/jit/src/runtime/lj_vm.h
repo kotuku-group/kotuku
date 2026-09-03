@@ -78,6 +78,7 @@ LJ_ASMF double cmath_atan(double);
 LJ_ASMF double cmath_sinh(double);
 LJ_ASMF double cmath_cosh(double);
 LJ_ASMF double cmath_tanh(double);
+LJ_ASMF double cmath_fmod(double, double);
 LJ_ASMF double cmath_sqrt(double);
 LJ_ASMF double cmath_log(double);
 LJ_ASMF double cmath_log2(double);

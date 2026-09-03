@@ -71,7 +71,6 @@ LJLIB_ASM(math_atan2)      LJLIB_REC(.)
    return FFH_RETRY;
 }
 LJLIB_ASM_(math_pow)      LJLIB_REC(.)
-LJLIB_ASM_(math_fmod)
 
 LJLIB_ASM(math_ldexp)      LJLIB_REC(.)
 {
@@ -272,7 +271,6 @@ extern int luaopen_math(lua_State* L)
    reg_iface_prototype("math", "log", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "atan2", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "pow", { TiriType::Num }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "fmod", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "ldexp", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "min", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
    reg_iface_prototype("math", "max", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
