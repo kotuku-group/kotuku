@@ -319,34 +319,61 @@ extern int luaopen_math(lua_State* L)
    LJ_LIB_REG(L, LUA_MATHLIBNAME, math);
 
    // Register math interface prototypes for compile-time type inference
-   reg_iface_prototype("math", "abs", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "floor", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "ceil", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "sqrt", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "log10", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "deg", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "rad", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "exp", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "sin", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "cos", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "tan", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "asin", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "acos", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "atan", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "sinh", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "cosh", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "tanh", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "frexp", { TiriType::Num, TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "modf", { TiriType::Num, TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "log", { TiriType::Num }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "atan2", { TiriType::Num }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "ldexp", { TiriType::Num }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "min", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
-   reg_iface_prototype("math", "max", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
-   reg_iface_prototype("math", "clamp", { TiriType::Num }, { TiriType::Num, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "round", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("math", "random", { TiriType::Num }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "randomSeed", {}, { TiriType::Num });
+   reg_iface_prototype("math", "abs", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "floor", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "ceil", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "sqrt", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "log10", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "deg", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "rad", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "exp", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "sin", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "cos", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "tan", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "asin", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "acos", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "atan", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "sinh", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "cosh", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "tanh", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "frexp", { TiriType::Num, TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "modf", { TiriType::Num, TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "log", { TiriType::Num }, { TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("math", "atan2", { TiriType::Num }, { TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "ldexp", { TiriType::Num }, { TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "min", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "max", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "clamp", { TiriType::Num }, { TiriType::Num, TiriType::Num, TiriType::Num },
+      FProtoFlags::None, FProtoArity::exact());
+   reg_iface_prototype("math", "round", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::exact());
+   reg_iface_prototype("math", "random", { TiriType::Num }, { TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("math", "randomSeed", {}, { TiriType::Num }, FProtoFlags::None, FProtoArity::exact());
 
    return 1;
 }

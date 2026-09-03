@@ -42,7 +42,8 @@ end
    local nan = math.round(0 / 0)
    assert(nan != nan, 'math.round(NaN) should preserve NaN')
 
-   expect_math_error(() => math.round(3.14159, 2), 'argument #2', 'accepts one value')
+   local round = math.round
+   expect_math_error(() => any: round(3.14159, 2), 'argument #2', 'accepts one value')
 end
 
 @Test function ExtremaSpecialValues()
@@ -154,9 +155,10 @@ end
 end
 
 @Test function ClampArgumentErrors()
+   local clamp = math.clamp
    local missing_arg_raised = false
    try
-      math.clamp(1, 0)
+      clamp(1, 0)
    except e
       missing_arg_raised = true
       assert(e.message.find('number'), 'math.clamp() missing argument error should mention number')
@@ -165,7 +167,7 @@ end
 
    local bad_arg_raised = false
    try
-      math.clamp(1, 'low', 10)
+      clamp(1, 'low', 10)
    except e
       bad_arg_raised = true
       assert(e.message.find('number'), 'math.clamp() bad argument error should mention number')

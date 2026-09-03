@@ -233,6 +233,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
                "forEach(Callback) to iterate");
          }
 
+         std::get<CallExprPayload>(rhs.value_ref()->data).receives_pipe_results = true;
+
          SourceSpan span = combine_spans(left.value_ref()->span, rhs.value_ref()->span);
          ExprNodePtr pipe = make_pipe_expr(span, std::move(left.value_ref()), std::move(rhs.value_ref()), limit);
          left = ParserResult<ExprNodePtr>::success(std::move(pipe));

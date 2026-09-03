@@ -6822,6 +6822,84 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
    return true;
 }
 
+static bool test_native_prototype_arity(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   lua_protect_globals(L);
+
+   const fprototype *log = get_prototype("math", "log");
+   const fprototype *random = get_prototype("math", "random");
+   const fprototype *minimum = get_prototype("math", "min");
+   if (not log or log->min_param_count != 1 or log->param_count != 2 or
+       not random or random->min_param_count != 0 or random->param_count != 2 or
+       not minimum or minimum->min_param_count != 1 or
+       (minimum->flags & FProtoFlags::Variadic) IS FProtoFlags::None) {
+      Log.error("native prototype arity did not distinguish required, optional and variadic parameters");
+      return false;
+   }
+
+   ERR duplicate = reg_iface_prototype("math", "log", { TiriType::Num },
+      { TiriType::Num, TiriType::Num }, FProtoFlags::None, FProtoArity::required(1));
+   ERR conflicting = reg_iface_prototype("math", "log", { TiriType::Num },
+      { TiriType::Num, TiriType::Num });
+   if (duplicate != ERR::Exists or conflicting != ERR::Mismatch) {
+      Log.error("repeated prototype registration did not compare arity metadata");
+      return false;
+   }
+
+   std::string error;
+   constexpr std::string_view valid =
+      "local unary:num = math.log(8)\n"
+      "local binary:num = math.log(8, 2)\n"
+      "local unbounded:num = math.random()\n"
+      "local stopped:num = math.random(4)\n"
+      "local bounded:num = math.random(1, 4)\n"
+      "local nil_value:num = math.log(nil)\n"
+      "local piped:num = 8 |> math.log()\n"
+      "local repeated:str = 'x' |> string.rep(3)\n"
+      "local clamped:num = 1 |> math.clamp(0, 2)\n"
+      "local locality:str = debug.locality()\n"
+      "return unary, binary, unbounded, stopped, bounded, nil_value, piped, repeated, clamped, locality\n";
+   if (not compile_snapshot(L, valid, true, error)) {
+      Log.error("valid optional native calls failed static analysis: %s", error.c_str());
+      return false;
+   }
+
+   auto expect_rejected = [&](std::string_view Source, std::string_view Expected) {
+      error.clear();
+      if (compile_snapshot(L, Source, true, error) or error.find(Expected) IS std::string::npos) {
+         Log.error("native arity diagnostic did not contain '%.*s': %s",
+            int(Expected.size()), Expected.data(), error.c_str());
+         return false;
+      }
+      return true;
+   };
+   if (not expect_rejected("return math.log()\n", "required argument 1 is missing") or
+       not expect_rejected("return math.round(1, 2)\n", "expected at most 1 arguments, got 2") or
+       not expect_rejected("return math.random(1, 2, 3)\n", "expected at most 2 arguments, got 3") or
+       not expect_rejected("return 1 |> math.clamp()\n", "required argument 2 is missing") or
+       not expect_rejected("return 'x' |> string.rep('bad')\n", "argument 2 expects num, got str")) return false;
+
+   constexpr std::string_view forwarded =
+      "local function arguments():<num, ...> return 8, 2 end\n"
+      "return math.log(arguments())\n";
+   if (not compile_snapshot(L, forwarded, true, error)) {
+      Log.error("forwarded multi-result native call was rejected statically: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view dynamic =
+      "local callable = math.log\n"
+      "return callable()\n";
+   if (not compile_snapshot(L, dynamic, true, error)) {
+      Log.error("dynamic native call lost runtime arity validation: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
 static bool test_builtin_method_registry(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -6872,7 +6950,8 @@ static bool test_builtin_method_registry(kt::Log &Log)
       return false;
    }
    if (not table_insert->is_method() or table_insert->receiver_type != TiriType::Table or
-       table_insert->param_count != 2 or table_insert->param_types()[0] != TiriType::Table) {
+       table_insert->min_param_count != 2 or table_insert->param_count != 3 or
+       table_insert->param_types()[0] != TiriType::Table) {
       Log.error("table.insert method metadata did not retain its receiver ABI");
       return false;
    }
@@ -6964,25 +7043,29 @@ static bool test_builtin_method_registry(kt::Log &Log)
    }
 
    ERR duplicate = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any, TiriType::Any },
+      FProtoFlags::None, FProtoArity::required(2));
    ERR conflicting = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::table_insert), { TiriType::Num }, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::table_insert), { TiriType::Num },
+      { TiriType::Table, TiriType::Any, TiriType::Any }, FProtoFlags::None, FProtoArity::required(2));
    ERR invalid_receiver = reg_iface_method(L, "table", "insert", TiriType::Any,
       builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Any, TiriType::Any });
    ERR wrong_callable = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::string_upper), {}, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::string_upper), {}, { TiriType::Table, TiriType::Any, TiriType::Any },
+      FProtoFlags::None, FProtoArity::required(2));
    lua_getglobal(L, "table");
    lua_getfield(L, -1, "insert");
    lua_pushnil(L);
    lua_setfield(L, -3, "insert");
    ERR wrong_export = reg_iface_method(L, "table", "insert", TiriType::Table,
-      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any });
+      builtin_callable_id(FastFunc::table_insert), {}, { TiriType::Table, TiriType::Any, TiriType::Any },
+      FProtoFlags::None, FProtoArity::required(2));
    lua_pushvalue(L, -1);
    lua_setfield(L, -3, "insert");
    lua_pop(L, 2);
    ERR hidden_duplicate = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
       builtin_callable_id(FastFunc::object_new), { TiriType::Object },
-      { TiriType::Object, TiriType::Any, TiriType::Table });
+      { TiriType::Object, TiriType::Any, TiriType::Table }, FProtoFlags::None, FProtoArity::required(2));
    ERR hidden_conflict = reg_intrinsic_method(L, "obj", "new", TiriType::Object,
       builtin_callable_id(FastFunc::object_new), { TiriType::Table },
       { TiriType::Object, TiriType::Any, TiriType::Table });
@@ -10859,7 +10942,7 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 99> tests = { {
+   constexpr std::array<TestCase, 100> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
@@ -10932,6 +11015,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "static_result_set_model", test_static_result_set_model },
       { "environment_store_boundary", test_environment_store_boundary },
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
+      { "native_prototype_arity", test_native_prototype_arity },
       { "builtin_method_registry", test_builtin_method_registry },
       { "builtin_method_table_initialiser_rejection", test_builtin_method_table_initialiser_rejection },
       { "builtin_method_static_classification", test_builtin_method_static_classification },

@@ -640,15 +640,17 @@ extern int luaopen_table(lua_State *L)
 
    // Register table interface prototypes for compile-time type inference
    reg_iface_method(L, "table", "insert", TiriType::Table, builtin_callable_id(FastFunc::table_insert), {},
-      { TiriType::Table, TiriType::Any });
+      { TiriType::Table, TiriType::Any, TiriType::Any }, FProtoFlags::None, FProtoArity::required(2));
    reg_iface_method(L, "table", "remove", TiriType::Table, builtin_callable_id(FastFunc::table_remove),
-      { TiriType::Any }, { TiriType::Table, TiriType::Num });
+      { TiriType::Any }, { TiriType::Table, TiriType::Num }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_method(L, "table", "move", TiriType::Table, builtin_callable_id(FastFunc::table_move),
-      { TiriType::Table }, { TiriType::Table, TiriType::Num, TiriType::Num, TiriType::Num, TiriType::Table });
+      { TiriType::Table }, { TiriType::Table, TiriType::Num, TiriType::Num, TiriType::Num, TiriType::Table },
+      FProtoFlags::None, FProtoArity::required(4));
    reg_iface_method(L, "table", "concat", TiriType::Table, builtin_callable_id(FastFunc::table_concat),
-      { TiriType::Str }, { TiriType::Table, TiriType::Str, TiriType::Num, TiriType::Num });
+      { TiriType::Str }, { TiriType::Table, TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_method(L, "table", "sort", TiriType::Table, builtin_callable_id(FastFunc::table_sort), {},
-      { TiriType::Table, TiriType::Func });
+      { TiriType::Table, TiriType::Func }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("table", "new", { TiriType::Table }, { TiriType::Num, TiriType::Num });
    reg_iface_method(L, "table", "empty", TiriType::Table, builtin_callable_id(FastFunc::table_empty),
       { TiriType::Bool }, { TiriType::Table });
@@ -661,7 +663,7 @@ extern int luaopen_table(lua_State *L)
    reg_iface_method(L, "table", "slice", TiriType::Table, builtin_callable_id(FastFunc::table_slice),
       { TiriType::Table }, { TiriType::Table, TiriType::Any });
    reg_iface_method(L, "table", "sortByKeys", TiriType::Table, builtin_callable_id(FastFunc::table_sortByKeys),
-      { TiriType::Func }, { TiriType::Table, TiriType::Func });
+      { TiriType::Func }, { TiriType::Table, TiriType::Func }, FProtoFlags::None, FProtoArity::required(1));
    reg_iface_method(L, "table", "toXML", TiriType::Table, builtin_callable_id(FastFunc::table_toXML),
       { TiriType::Str }, { TiriType::Table });
 
