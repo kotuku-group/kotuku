@@ -452,6 +452,20 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Surplus function results remain valid even though surplus explicit values are rejected.
+
+@Test(hotpath=true) function MultiReturnSurplusResults()
+   function three_values()
+      return 'first', 'second', 'discarded'
+   end
+
+   first, second = three_values()
+
+   assert(first is 'first', 'first should receive the first function result')
+   assert(second is 'second', 'second should receive the second function result')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test multi-return where undeclared target is first, existing local is second
 
 @Test(hotpath=true) function MultiReturnUndeclaredFirst()

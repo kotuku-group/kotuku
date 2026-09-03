@@ -156,8 +156,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local_name_list(const Token &StartTo
             reference.identifier = std::move(identifier);
             targets.push_back(make_identifier_expr(reference.identifier.span, reference));
          }
-         return ParserResult<StmtNodePtr>::success(
-            make_assignment_stmt(StartToken.span(), assign_op, std::move(targets), std::move(values)));
+         Token assignment_token = Token::from_span(StartToken.span(), TokenKind::Equals);
+         return this->make_assignment_statement(
+            assignment_token, assign_op, std::move(targets), std::move(values));
       }
    }
 

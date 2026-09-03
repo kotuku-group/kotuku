@@ -387,11 +387,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_choose_expr()
             return ParserResult<ExprNodePtr>::failure(values.error_ref());
          }
 
-         auto stmt = std::make_unique<StmtNode>(AstNodeKind::AssignmentStmt, op.span());
-         AssignmentStmtPayload payload(assignment_op, std::move(targets), std::move(values.value_ref()));
-         stmt->data = std::move(payload);
+         auto stmt = this->make_assignment_statement(
+            op, assignment_op, std::move(targets), std::move(values.value_ref()));
+         if (not stmt.ok()) {
+            this->in_choose_expression = false;
+            return ParserResult<ExprNodePtr>::failure(stmt.error_ref());
+         }
 
-         case_arm.result_stmt = std::move(stmt);
+         case_arm.result_stmt = std::move(stmt.value_ref());
          case_arm.has_statement_result = true;
       }
       else { // Parse as expression (original behaviour)
