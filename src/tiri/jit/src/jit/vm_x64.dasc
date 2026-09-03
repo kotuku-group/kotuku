@@ -1003,6 +1003,20 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-- Array metamethod fallbacks -----------------------------------------
   |
+  |->vmeta_agetb:
+  |  // BC_AGETB carries the index as an operand literal rather than a register, so the key must be boxed into the
+  |  // scratch TValue.  Reloading it as a register index would pass an unrelated stack slot as the key.
+  |  movzx RCd, PC_RC
+  |.if DUALNUM
+  |  setint RC
+  |  mov TMP1, RC
+  |.else
+  |  cvtsi2sd xmm0, RCd
+  |  movsd TMP1, xmm0
+  |.endif
+  |  lea RC, TMP1
+  |  jmp ->vmeta_agetv1
+  |
   |->vmeta_agetv:
   |  movzx RCd, PC_RC         // Reload TValue *k from RC.
   |  lea RC, [BASE+RC*8]
@@ -1033,6 +1047,19 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov LFUNC:RB, [RA-16]    // Guaranteed to be a function here.
   |  cleartp LFUNC:RB
   |  jmp ->vm_call_dispatch_f
+  |
+  |->vmeta_asetb:
+  |  // BC_ASETB carries the index as an operand literal rather than a register.  See ->vmeta_agetb.
+  |  movzx RCd, PC_RC
+  |.if DUALNUM
+  |  setint RC
+  |  mov TMP1, RC
+  |.else
+  |  cvtsi2sd xmm0, RCd
+  |  movsd TMP1, xmm0
+  |.endif
+  |  lea RC, TMP1
+  |  jmp ->vmeta_asetv1
   |
   |->vmeta_asetv:
   |  movzx RCd, PC_RC         // Reload TValue *k from RC.
@@ -1921,14 +1948,12 @@ static void build_subroutines(BuildCtx *ctx)
   |  math_extern sinh
   |  math_extern cosh
   |  math_extern tanh
-  |  math_extern2 pow, lj_vm_pow
   |  math_extern2 atan2
-  |  math_extern2 fmod
   |
   |.ffunc_2 math_ldexp
   |  checknumtp [BASE], ->fff_fallback
-  |  checknumtp [BASE+8], ->fff_fallback
-  |  fld qword [BASE+8]
+  |  checkinttp [BASE+8], ->fff_fallback
+  |  fild dword [BASE+8]
   |  fld qword [BASE]
   |  fscale
   |  fpop1
@@ -1972,7 +1997,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov RDd, 1+2
   |  jmp ->fff_res
   |
-  |.macro math_minmax, name, cmovop, sseop
+  |.macro math_minmax, name, cmovop, sseop, bitop
   |  .ffunc_1 name
   |  mov RAd, 2
   |.if DUALNUM
@@ -2012,13 +2037,24 @@ static void build_subroutines(BuildCtx *ctx)
   |6:
   |  movsd xmm1, qword [BASE+RA*8-8]
   |7:
+  |  ucomisd xmm0, xmm0
+  |  jp >8
+  |  ucomisd xmm1, xmm1
+  |  jp >9
+  |  movsd xmm2, xmm0
   |  sseop xmm0, xmm1
+  |  sseop xmm1, xmm2
+  |  bitop xmm0, xmm1
+  |8:
   |  add RAd, 1
   |  jmp <5
+  |9:
+  |  movsd xmm0, xmm1
+  |  jmp <8
   |.endmacro
   |
-  |  math_minmax math_min, cmovg, minsd
-  |  math_minmax math_max, cmovl, maxsd
+  |  math_minmax math_min, cmovg, minsd, orps
+  |  math_minmax math_max, cmovl, maxsd, andps
   |
   |//-- String library -----------------------------------------------------
   |
@@ -2714,36 +2750,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  vm_round vm_floor, 0, 1
   |  vm_round vm_ceil,  1, JIT
   |  vm_round vm_trunc, 2, JIT
-  |
-  |// FP modulo x%y. Called by BC_MOD* and vm_arith.
-  |->vm_mod:
-  |// Args in xmm0/xmm1, return value in xmm0.
-  |// Caveat: xmm0-xmm5 and RC (eax) modified!
-  |  movaps xmm5, xmm0
-  |  divsd xmm0, xmm1
-  |  sseconst_abs xmm2, RD
-  |  sseconst_2p52 xmm3, RD
-  |  movaps xmm4, xmm0
-  |  andpd xmm4, xmm2         // |x/y|
-  |  ucomisd xmm3, xmm4       // No truncation if 2^52 <= |x/y|.
-  |  jbe >1
-  |  andnpd xmm2, xmm0        // Isolate sign bit.
-  |  addsd xmm4, xmm3         // (|x/y| + 2^52) - 2^52
-  |  subsd xmm4, xmm3
-  |  orpd xmm4, xmm2       // Merge sign bit back in.
-  |  sseconst_1 xmm2, RD
-  |  cmpsd xmm0, xmm4, 1      // x/y < result?
-  |  andpd xmm0, xmm2
-  |  subsd xmm4, xmm0         // If yes, subtract 1.0.
-  |  movaps xmm0, xmm5
-  |  mulsd xmm1, xmm4
-  |  subsd xmm0, xmm1
-  |  ret
-  |1:
-  |  mulsd xmm1, xmm0
-  |  movaps xmm0, xmm5
-  |  subsd xmm0, xmm1
-  |  ret
   |
   |//-----------------------------------------------------------------------
   |//-- Miscellaneous functions --------------------------------------------
@@ -3663,7 +3669,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_MODVN:
     |  ins_arithpre movsd, xmm1
     |->BC_MODVN_Z:
-    |  call ->vm_mod
+    |  mov RB, BASE
+    |  call extern fmod
+    |  mov BASE, RB
+    |  movzx RAd, PC_RA
     |  ins_arithpost
     |  ins_next
     break;
@@ -4558,9 +4567,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_AGETB:
     |  ins_ABC // RA = dst, RB = array, RC = literal index (0-255, 0-based)
     |  mov ARRAY:RB, [BASE+RB*8]
-    |  checkarray ARRAY:RB, ->vmeta_agetv
+    |  checkarray ARRAY:RB, ->vmeta_agetb
     |  cmp RCd, ARRAY:RB->len    // Bounds check.
-    |  jae ->vmeta_agetv      // Out of bounds? Use fallback.
+    |  jae ->vmeta_agetb      // Out of bounds? Use fallback.
     |
     |  // Sync L->base and SAVE_PC before C call (lj_arr_getidx may throw via longjmp on error).
     |  mov TMPR, SAVE_L
@@ -4640,14 +4649,14 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_ASETB:
     |  ins_ABC // RA = src, RB = array, RC = literal index (0-255, 0-based)
     |  mov ARRAY:RB, [BASE+RB*8]
-    |  checkarray ARRAY:RB, ->vmeta_asetv
+    |  checkarray ARRAY:RB, ->vmeta_asetb
     |
     |  // Check read-only flag
     |  test byte ARRAY:RB->flags, ARRAY_READONLY
-    |  jnz ->vmeta_asetv      // Read-only? Use fallback (will error).
+    |  jnz ->vmeta_asetb      // Read-only? Use fallback (will error).
     |
     |  cmp RCd, ARRAY:RB->len    // Bounds check.
-    |  jae ->vmeta_asetv      // Out of bounds? Use fallback.
+    |  jae ->vmeta_asetb      // Out of bounds? Use fallback.
     |
     |  // Sync L->base and SAVE_PC before C call (lj_arr_setidx may throw via longjmp on type mismatch).
     |  mov TMPR, SAVE_L

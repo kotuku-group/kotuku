@@ -30,6 +30,10 @@ extern void lj_array_copy_unchecked(lua_State *, GCarray *, uint32_t DstIdx, con
 // Copies a non-overlapping source sequence after the caller has validated bounds, mutability, storage and identity.
 extern void lj_array_copy_strided_unchecked(lua_State *, GCarray *, uint32_t DstIdx, const GCarray *,
    uint32_t SrcIdx, int32_t SrcStride, uint32_t Count);
+// Copies into an owned array that was just allocated and has not escaped.  The destination must remain current-white
+// and no allocation, callback, error transition or GC step may occur after validation and before this function returns.
+extern void lj_array_copy_to_fresh(lua_State *, GCarray *, uint32_t DstIdx, const GCarray *, uint32_t SrcIdx,
+   int32_t SrcStride, uint32_t Count);
 extern GCtab* lj_array_to_table(lua_State *, GCarray *);
 extern bool lj_array_grow(lua_State *, GCarray *, MSize MinCapacity);
 

@@ -216,6 +216,7 @@ LJFOLDF(kfold_fpcall1)
 }
 
 LJFOLD(CALLN CARG IRCALL_cmath_atan2)
+LJFOLD(CALLN CARG IRCALL_cmath_fmod)
 LJFOLDF(kfold_fpcall2)
 {
    if (irref_isk(fleft->op1) and irref_isk(fleft->op2)) {

@@ -162,6 +162,8 @@ typedef struct CCallInfo {
   _(ANY,    lj_mem_newgco,         2,  FA, PGC, CCI_L|CCI_T) \
   _(ANY,    lj_prng_u64d,          1,  FS, NUM, CCI_CASTU64) \
   _(ANY,    lj_vm_modi,            2,  FN, INT, 0) \
+  _(ANY,    lj_vm_min,             2,   N, NUM, XA2_FP) \
+  _(ANY,    lj_vm_max,             2,   N, NUM, XA2_FP) \
   _(ANY,    cmath_log10,           1,   N, NUM, XA_FP) \
   _(ANY,    deg,                   1,   N, NUM, XA_FP) \
   _(ANY,    rad,                   1,   N, NUM, XA_FP) \
@@ -175,6 +177,7 @@ typedef struct CCallInfo {
   _(ANY,    cmath_sinh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_cosh,            1,   N, NUM, XA_FP) \
   _(ANY,    cmath_tanh,            1,   N, NUM, XA_FP) \
+  _(ANY,    cmath_fmod,            2,   N, NUM, XA2_FP) \
   _(ANY,    fputc,                 2,   S, INT, 0) \
   _(ANY,    fwrite,                4,   S, INT, 0) \
   _(ANY,    fflush,                1,   S, INT, 0) \

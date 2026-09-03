@@ -13,6 +13,7 @@
 
 #include "lj_bc.h"
 #include "lj_ir.h"
+#include "lj_ircall.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
 #include "lj_trace.h"
@@ -560,10 +561,9 @@ TRef lj_opt_narrow_unm(jit_State* J, TRef rc, TValue* vc)
    return emitir(IRTN(IR_NEG), rc, lj_ir_ksimd(J, LJ_KSIMD_NEG));
 }
 
-// Narrowing of modulo operator.
+// Narrowing of remainder operator.
 TRef lj_opt_narrow_mod(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
 {
-   TRef tmp;
    rb = conv_str_tonum(J, rb, vb);
    rc = conv_str_tonum(J, rc, vc);
    if ((LJ_DUALNUM or (J->flags & JIT_F_OPT_NARROW)) &&
@@ -572,16 +572,13 @@ TRef lj_opt_narrow_mod(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
       emitir(IRTGI(IR_NE), rc, lj_ir_kint(J, 0));
       return emitir(IRTI(IR_MOD), rb, rc);
    }
-   // b % c ==> b - floor(b/c)*c
+   // Floating-point remainder follows fmod(): b - trunc(b/c)*c, with the sign of b.
    rb = lj_ir_tonum(J, rb);
    rc = lj_ir_tonum(J, rc);
-   tmp = emitir(IRTN(IR_DIV), rb, rc);
-   tmp = emitir(IRTN(IR_FPMATH), tmp, IRFPM_FLOOR);
-   tmp = emitir(IRTN(IR_MUL), tmp, rc);
-   return emitir(IRTN(IR_SUB), rb, tmp);
+   return lj_ir_call(J, IRCALL_cmath_fmod, rb, rc);
 }
 
-// Narrowing of power operator or math.pow.
+// Narrowing of power operator.
 TRef lj_opt_narrow_pow(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
 {
    rb = conv_str_tonum(J, rb, vb);

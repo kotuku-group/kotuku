@@ -2260,9 +2260,7 @@ static void build_subroutines(BuildCtx *ctx)
   |  math_extern sinh
   |  math_extern cosh
   |  math_extern tanh
-  |  math_extern2 pow, lj_vm_pow
   |  math_extern2 atan2
-  |  math_extern2 fmod
   |
   |.if DUALNUM
   |.ffunc math_ldexp
@@ -2408,31 +2406,10 @@ static void build_subroutines(BuildCtx *ctx)
   |  checknum CARG3; bge >7
   |6:
   |   addi SAVE0, SAVE0, 8
-  |.if FPU
   |.if ismax
-  |  fsub f0, FARG1, FARG2
+  |  blex lj_vm_max
   |.else
-  |  fsub f0, FARG2, FARG1
-  |.endif
-  |  fsel FARG1, f0, FARG1, FARG2
-  |.else
-  |  stw CARG1, SFSAVE_1
-  |  stw CARG2, SFSAVE_2
-  |  stw CARG3, SFSAVE_3
-  |  stw CARG4, SFSAVE_4
-  |  blex __ledf2
-  |  cmpwi CRET1, 0
-  |.if ismax
-  |  blt >8
-  |.else
-  |  bge >8
-  |.endif
-  |  lwz CARG1, SFSAVE_1
-  |  lwz CARG2, SFSAVE_2
-  |  b <5
-  |8:
-  |  lwz CARG1, SFSAVE_3
-  |  lwz CARG2, SFSAVE_4
+  |  blex lj_vm_min
   |.endif
   |  b <5
   |7:  // Convert integer to number and continue above.
@@ -2446,21 +2423,21 @@ static void build_subroutines(BuildCtx *ctx)
   |  b <6
   |.else
   |  .ffunc_n name
-  |  li TMP1, 8
+  |  addi SAVE0, BASE, 8
+  |  add SAVE1, BASE, NARGS8:RC
   |1:
-  |   lwzx CARG2, BASE, TMP1
-  |   lfdx FARG2, BASE, TMP1
-  |  cmplw cr1, TMP1, NARGS8:RC
+  |   lwz CARG2, 0(SAVE0)
+  |   lfd FARG2, 0(SAVE0)
+  |  cmplw cr1, SAVE0, SAVE1
   |   checknum CARG2
   |  bge cr1, ->fff_resn
   |   bge ->fff_fallback
+  |   addi SAVE0, SAVE0, 8
   |.if ismax
-  |  fsub f0, FARG1, FARG2
+  |  blex lj_vm_max
   |.else
-  |  fsub f0, FARG2, FARG1
+  |  blex lj_vm_min
   |.endif
-  |   addi TMP1, TMP1, 8
-  |  fsel FARG1, f0, FARG1, FARG2
   |  b <1
   |.endif
   |.endmacro
@@ -3250,17 +3227,8 @@ static void build_subroutines(BuildCtx *ctx)
   |->vm_modi:
   |  divwo. TMP0, CARG1, CARG2
   |  bso >1
-  |.if GPR64
-  |   xor CARG3, CARG1, CARG2
-  |   cmpwi CARG3, 0
-  |.else
-  |   xor. CARG3, CARG1, CARG2
-  |.endif
   |  mullw TMP0, TMP0, CARG2
   |  sub CARG1, CARG1, TMP0
-  |   bgelr
-  |  cmpwi CARG1, 0; beqlr
-  |  add CARG1, CARG1, CARG2
   |  blr
   |1:
   |  cmpwi CARG2, 0
@@ -4255,29 +4223,15 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |
     |.macro fpmod, a, b, c
     |->BC_MODVN_Z:
-    |  fdiv FARG1, b, c
-    |  // NYI: Use internal implementation of floor.
-    |  blex floor			// floor(b/c)
-    |  fmul a, FARG1, c
-    |  fsub a, b, a			// b - floor(b/c)*c
+    |  fmr FARG1, b
+    |  fmr FARG2, c
+    |  blex fmod
+    |  fmr a, FARG1
     |.endmacro
     |
     |.macro sfpmod
     |->BC_MODVN_Z:
-    |  stw CARG1, SFSAVE_1
-    |  stw CARG2, SFSAVE_2
-    |  mr SAVE0, CARG3
-    |  mr SAVE1, CARG4
-    |  blex __divdf3
-    |  blex floor
-    |  mr CARG3, SAVE0
-    |  mr CARG4, SAVE1
-    |  blex __muldf3
-    |  mr CARG3, CRET1
-    |  mr CARG4, CRET2
-    |  lwz CARG1, SFSAVE_1
-    |  lwz CARG2, SFSAVE_2
-    |  blex __subdf3
+    |  blex fmod
     |.endmacro
     |
     |.macro ins_arithfp, fpins

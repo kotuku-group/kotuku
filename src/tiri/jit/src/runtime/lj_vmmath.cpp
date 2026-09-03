@@ -78,6 +78,26 @@ double lj_vm_pow(double x, double y)
       return pow(x, y);
 }
 
+double lj_vm_min(double X, double Y)
+{
+   if (isnan(X)) return X;
+   if (isnan(Y)) return Y;
+   if (X < Y) return X;
+   if (X > Y) return Y;
+   if (X != 0.0) return X;
+   return signbit(X) or signbit(Y) ? -0.0 : 0.0;
+}
+
+double lj_vm_max(double X, double Y)
+{
+   if (isnan(X)) return X;
+   if (isnan(Y)) return Y;
+   if (X > Y) return X;
+   if (X < Y) return Y;
+   if (X != 0.0) return X;
+   return signbit(X) and signbit(Y) ? -0.0 : 0.0;
+}
+
 double lj_vm_foldarith(double x, double y, int op)
 {
    switch (op) {
@@ -85,14 +105,14 @@ double lj_vm_foldarith(double x, double y, int op)
    case IR_SUB - IR_ADD: return x - y; break;
    case IR_MUL - IR_ADD: return x * y; break;
    case IR_DIV - IR_ADD: return x / y; break;
-   case IR_MOD - IR_ADD: return x - lj_vm_floor(x / y) * y; break;
+   case IR_MOD - IR_ADD: return fmod(x, y); break;
    case IR_POW - IR_ADD: return lj_vm_pow(x, y); break;
    case IR_NEG - IR_ADD: return -x; break;
    case IR_ABS - IR_ADD: return fabs(x); break;
 #if LJ_HASJIT
    case IR_LDEXP - IR_ADD: return ldexp(x, (int)y); break;
-   case IR_MIN - IR_ADD: return x < y ? x : y; break;
-   case IR_MAX - IR_ADD: return x > y ? x : y; break;
+   case IR_MIN - IR_ADD: return lj_vm_min(x, y); break;
+   case IR_MAX - IR_ADD: return lj_vm_max(x, y); break;
 #endif
    default: return x;
    }
@@ -105,13 +125,11 @@ int32_t lj_vm_modi(int32_t a, int32_t b)
 {
    uint32_t y, ua, ub;
    // This must be checked before using this function.
-   lj_assertX(b != 0, "modulo with zero divisor");
-   ua = a < 0 ? (uint32_t)-a : (uint32_t)a;
-   ub = b < 0 ? (uint32_t)-b : (uint32_t)b;
+   lj_assertX(b != 0, "remainder with zero divisor");
+   ua = a < 0 ? 0u - uint32_t(a) : uint32_t(a);
+   ub = b < 0 ? 0u - uint32_t(b) : uint32_t(b);
    y = ua % ub;
-   if (y != 0 and (a ^ b) < 0) y = y - ub;
-   if (((int32_t)y ^ b) < 0) y = (uint32_t)-(int32_t)y;
-   return (int32_t)y;
+   return a < 0 ? -int32_t(y) : int32_t(y);
 }
 #endif
 

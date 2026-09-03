@@ -134,6 +134,8 @@ end
    assert(tempus.localDate(2024, 2, 29).isLeapYear(), '2024 should be a leap year')
    assert(tempus.localDate(2000, 2, 29).daysInYear() is 366, 'Years divisible by 400 should leap')
    assert(tempus.localDate(1970, 1, 1).dayOfWeek() is 4, 'Unix epoch date should be Thursday')
+   assert(tempus.localDate(1969, 12, 28).dayOfWeek() is 7,
+      'Dates before the Unix epoch should retain a positive ISO weekday')
    assert(tempus.localDate(2026, 5, 16) < date, 'LocalDate ordering should compare dates')
    assert(tempus.localDate.parse('2026-05-17') is date, 'LocalDate parse should produce equal values')
 end

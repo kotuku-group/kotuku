@@ -2635,11 +2635,8 @@ LJLIB_CF(array_clone)
 
    // Create new array with same type and length
    GCarray *result = lj_array_new_like(L, arr, arr->len);
+   lj_array_copy_to_fresh(L, result, 0, arr, 0, 1, arr->len);
    setarrayV(L, L->top++, result);
-
-   if (arr->len IS 0) return 1;
-
-   lj_array_copy(L, result, 0, arr, 0, arr->len);
    return 1;
 }
 

@@ -4,6 +4,18 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
+function expect_nil_string_error(Callback:func, Name:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert('string expected' in e.message and 'got nil' in e.message,
+         Name .. '(nil) should report the standard string argument error: ' .. tostring(e.message))
+   end
+   assert(failed, Name .. '(nil) should raise an error')
+end
+
 @Test function Alloc()
    s = string.alloc(10)
    assert(#s is 10, "String size is not 10 characters, got " .. #s)
@@ -157,6 +169,13 @@ end
    -- No whitespace
    none = "hello".rtrim()
    assert(none is "hello", "No whitespace should be unchanged, got '" .. none .. "'")
+end
+
+@Test function NilStringArguments()
+   expect_nil_string_error(function() string.trim(nil) end, 'string.trim')
+   expect_nil_string_error(function() string.rtrim(nil) end, 'string.rtrim')
+   expect_nil_string_error(function() string.escXML(nil) end, 'string.escXML')
+   expect_nil_string_error(function() string.unescapeXML(nil) end, 'string.unescapeXML')
 end
 
 @Test function StartsWith()
@@ -410,17 +429,17 @@ end
    empty = string.escXML("")
    assert(empty is "", "Empty string should remain empty, got '" .. empty .. "'")
 
-   -- Nil input (should return empty string)
-   nilResult = string.escXML(nil)
-   assert(nilResult is "", "Nil input should return empty string, got '" .. nilResult .. "'")
-
    -- Multiple ampersands (should not double-escape)
    amps = string.escXML("A & B & C")
    assert(amps is "A &amp; B &amp; C", "Expected 'A &amp; B &amp; C', got '" .. amps .. "'")
 
-   -- Mixed with quotes (should not escape quotes)
-   quotes = string.escXML('Hello "world" & <test>')
-   assert(quotes is 'Hello "world" &amp; &lt;test&gt;', "Expected 'Hello \"world\" &amp; &lt;test&gt;', got '" .. quotes .. "'")
+   -- Attribute delimiters
+   quotes = string.escXML([[Hello "world" & 'friends' <test>]])
+   assert(quotes is 'Hello &quot;world&quot; &amp; &apos;friends&apos; &lt;test&gt;',
+      'Single and double quotes should be escaped, got ' .. quotes)
+
+   source = [[Hello "world" & 'friends' <test>]]
+   assert(source.escXML().unescapeXML() is source, 'Escaping and unescaping should round-trip all XML entities')
 
    ue = string.unescapeXML('&amp;&quot;&apos;;')
    assert(ue is "&\"';", "Received string is incorrect: " .. tostring(ue))

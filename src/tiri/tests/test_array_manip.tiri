@@ -1568,14 +1568,33 @@ end
    local nested_value = array<int> { 23 }
    local table_value = { answer=42 }
    local references = array<any> { 'text', 0, object_value, 0, table_value, 0, nested_value }
+   local contiguous_reference_slice = references.slice({0 into 6})
    local reference_slice = references.slice({0 into 6 by 2})
    object_value = nil
    nested_value = nil
    table_value = nil
    references = nil
+   processing.collect('step', { stepSize=100 })
    processing.collect('full')
+   assert(contiguous_reference_slice[0] is 'text' and rawtype(contiguous_reference_slice[2]) is 'obj<Time>' and
+      contiguous_reference_slice[4].answer is 42 and contiguous_reference_slice[6][0] is 23,
+      'a contiguous any slice lost references after collection')
    assert(reference_slice[0] is 'text', 'a strided any slice lost a string after collection')
    assert(rawtype(reference_slice[1]) is 'obj<Time>', 'a strided any slice lost an object after collection')
    assert(reference_slice[2].answer is 42, 'a strided any slice lost a table after collection')
    assert(reference_slice[3][0] is 23, 'a strided any slice lost a nested array after collection')
+
+   local large_source = array<table, 1024>
+   for i in {0 to 1024} do large_source[i] = { index=i, label=f'entry-{i}' } end
+   local large_contiguous = large_source.slice({128 to 896})
+   local large_reverse = large_source.slice({1023 into 1 by -2})
+   large_source = nil
+   processing.collect('step', { stepSize=100 })
+   assert(large_contiguous[0].index is 128 and large_contiguous[767].label is 'entry-895',
+      'a large contiguous table slice lost references after incremental collection')
+   assert(large_reverse[0].index is 1023 and large_reverse[511].label is 'entry-1',
+      'a large reverse table slice lost references after incremental collection')
+   processing.collect('full')
+   assert(large_contiguous[384].index is 512 and large_reverse[256].index is 511,
+      'large fresh array copies lost references after full collection')
 end

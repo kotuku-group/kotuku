@@ -3134,7 +3134,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {

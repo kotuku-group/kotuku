@@ -52,9 +52,11 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // Version 0x96 adds BC_ISIN and BC_ISNIN. Version 0x97 adds rawtype and shifts the generated fast-function ordering.
 // Version 0x98 adds forEach and shifts the generated fast-function ordering.  Version 0x99 adds the Stage A array
 // and range collection compatibility callables. Version 0x9a adds BC_CHECKALLENTER and BC_CHECKALLLEAVE. Version 0x9b
-// adds BC_DEFERARM and BC_DEFERCONSUME. Older chunks are rejected rather than retaining compatibility shims.
+// adds BC_DEFERARM and BC_DEFERCONSUME. Version 0x9c removes math.fmod from the generated fast-function ordering.
+// Version 0x9d removes math.pow from that ordering.  Older chunks are rejected rather than retaining compatibility
+// shims.
 
-constexpr uint8_t BCDUMP_VERSION = 0x9b;
+constexpr uint8_t BCDUMP_VERSION = 0x9d;
 
 // Compatibility flags.
 

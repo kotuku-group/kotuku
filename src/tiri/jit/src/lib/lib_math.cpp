@@ -5,6 +5,9 @@
 
 #include <math.h>
 
+#include <cmath>
+#include <limits>
+
 #define lib_math_c
 #define LUA_LIB
 
@@ -13,6 +16,7 @@
 #include "lualib.h"
 
 #include "lj_obj.h"
+#include "lj_ff.h"
 #include "lib.h"
 #include "lj_vm.h"
 #include "lj_prng.h"
@@ -70,26 +74,72 @@ LJLIB_ASM(math_atan2)      LJLIB_REC(.)
    lj_lib_checknum(L, 2);
    return FFH_RETRY;
 }
-LJLIB_ASM_(math_pow)      LJLIB_REC(.)
-LJLIB_ASM_(math_fmod)
 
 LJLIB_ASM(math_ldexp)      LJLIB_REC(.)
 {
-   lj_lib_checknum(L, 1);
-#if LJ_DUALNUM && !LJ_TARGET_X86ORX64
-   lj_lib_checkint(L, 2);
-#else
-   lj_lib_checknum(L, 2);
-#endif
-   return FFH_RETRY;
+   lua_Number value = lj_lib_checknum(L, 1);
+   lua_Number exponent = lj_lib_checknum(L, 2);
+   if (not std::isfinite(exponent) or std::trunc(exponent) != exponent) {
+      luaL_argerror(L, 2, "exponent must be a finite integer");
+   }
+
+   int native_exponent;
+   if (exponent > lua_Number(std::numeric_limits<int>::max())) {
+      native_exponent = std::numeric_limits<int>::max();
+   }
+   else if (exponent < lua_Number(std::numeric_limits<int>::min())) {
+      native_exponent = std::numeric_limits<int>::min();
+   }
+   else native_exponent = int(exponent);
+
+   setnumV(L->base - 1 - LJ_FR2, std::ldexp(value, native_exponent));
+   return FFH_RES(1);
 }
 
 LJLIB_ASM(math_min)      LJLIB_REC(math_minmax IR_MIN)
 {
-   int i = 0;
-   do { lj_lib_checknumber(L, ++i); } while (L->base + i < L->top);
-   return FFH_RETRY;
+   int argument = 1;
+   bool find_maximum = curr_func(L)->c.ffid IS FF_math_max;
+   lj_lib_checknumber(L, argument);
+#if LJ_DUALNUM
+   bool is_integer = tvisint(L->base);
+   int32_t integer_result = is_integer ? intV(L->base) : 0;
+   lua_Number number_result = is_integer ? lua_Number(integer_result) : numV(L->base);
+#else
+   lua_Number number_result = numV(L->base);
+#endif
+
+   while (L->base + argument < L->top) {
+      lj_lib_checknumber(L, ++argument);
+#if LJ_DUALNUM
+      TValue* value = L->base + argument - 1;
+      if (is_integer and tvisint(value)) {
+         if ((find_maximum and intV(value) > integer_result) or
+             (not find_maximum and intV(value) < integer_result)) integer_result = intV(value);
+      }
+      else {
+         if (is_integer) {
+            number_result = lua_Number(integer_result);
+            is_integer = false;
+         }
+         lua_Number number = tvisint(value) ? lua_Number(intV(value)) : numV(value);
+         number_result = find_maximum ? lj_vm_max(number_result, number) : lj_vm_min(number_result, number);
+      }
+#else
+      lua_Number number = numV(L->base + argument - 1);
+      number_result = find_maximum ? lj_vm_max(number_result, number) : lj_vm_min(number_result, number);
+#endif
+   }
+
+#if LJ_DUALNUM
+   if (is_integer) setintV(L->top - 1, integer_result);
+   else setnumV(L->top - 1, number_result);
+#else
+   setnumV(L->top - 1, number_result);
+#endif
+   return 1;
 }
+
 LJLIB_ASM_(math_max)      LJLIB_REC(math_minmax IR_MAX)
 
 LJLIB_CF(math_clamp)      LJLIB_REC(.)
@@ -107,6 +157,7 @@ LJLIB_CF(math_clamp)      LJLIB_REC(.)
       int32_t result = intV(value_tv);
       int32_t lower = intV(lower_tv);
       int32_t upper = intV(upper_tv);
+      if (lower > upper) luaL_argerror(L, 2, "lower bound must not exceed upper bound");
       result = result > lower ? result : lower;
       result = result < upper ? result : upper;
       setintV(L->top - 1, result);
@@ -115,16 +166,26 @@ LJLIB_CF(math_clamp)      LJLIB_REC(.)
       lua_Number result = tvisint(value_tv) ? lua_Number(intV(value_tv)) : numV(value_tv);
       lua_Number lower = tvisint(lower_tv) ? lua_Number(intV(lower_tv)) : numV(lower_tv);
       lua_Number upper = tvisint(upper_tv) ? lua_Number(intV(upper_tv)) : numV(upper_tv);
-      result = result > lower ? result : lower;
-      result = result < upper ? result : upper;
+      if (std::isnan(lower)) luaL_argerror(L, 2, "lower bound must not be NaN");
+      if (std::isnan(upper)) luaL_argerror(L, 3, "upper bound must not be NaN");
+      if (lower > upper) luaL_argerror(L, 2, "lower bound must not exceed upper bound");
+      if (not std::isnan(result)) {
+         result = result > lower ? result : lower;
+         result = result < upper ? result : upper;
+      }
       setnumV(L->top - 1, result);
    }
 #else
    lua_Number result = lj_lib_checknum(L, 1);
    lua_Number lower = lj_lib_checknum(L, 2);
    lua_Number upper = lj_lib_checknum(L, 3);
-   result = result > lower ? result : lower;
-   result = result < upper ? result : upper;
+   if (std::isnan(lower)) luaL_argerror(L, 2, "lower bound must not be NaN");
+   if (std::isnan(upper)) luaL_argerror(L, 3, "upper bound must not be NaN");
+   if (lower > upper) luaL_argerror(L, 2, "lower bound must not exceed upper bound");
+   if (not std::isnan(result)) {
+      result = result > lower ? result : lower;
+      result = result < upper ? result : upper;
+   }
    setnumV(L->top - 1, result);
 #endif
    return 1;
@@ -132,15 +193,9 @@ LJLIB_CF(math_clamp)      LJLIB_REC(.)
 
 LJLIB_CF(math_round)
 {
+   if (L->base + 1 < L->top) luaL_argerror(L, 2, "unexpected argument; math.round accepts one value");
    double num = lj_lib_checknum(L, 1);
-   double mult = 1.0;
-
-   if (L->base + 1 < L->top) { // Second argument is decimal places
-      double idp = lj_lib_checknum(L, 2);
-      mult = pow(10.0, idp);
-   }
-
-   double result = floor(num * mult + 0.5) / mult;
+   double result = std::round(num);
    setnumV(L->top - 1, result);
    return 1;
 }
@@ -180,43 +235,57 @@ LJLIB_CF(math_random)      LJLIB_REC(.)
 {
    int n = (int)(L->top - L->base);
    PRNGState* rs = (PRNGState*)(uddata(udataV(lj_lib_upvalue(L, 1))));
-   U64double u;
-   double d;
-   u.u64 = lj_prng_u64d(rs);
-   d = u.d - 1.0;
-   if (n > 0) {
+   double r1 = 0;
+   double r2 = 0;
 #if LJ_DUALNUM
-      int isint = 1;
-      double r1;
+   int isint = 1;
+#endif
+
+   if (n > 0) {
       lj_lib_checknumber(L, 1);
-      if (tvisint(L->base)) {
-         r1 = (lua_Number)intV(L->base);
-      }
+#if LJ_DUALNUM
+      if (tvisint(L->base)) r1 = lua_Number(intV(L->base));
       else {
          isint = 0;
          r1 = numV(L->base);
       }
 #else
-      double r1 = lj_lib_checknum(L, 1);
+      r1 = numV(L->base);
 #endif
-      if (n == 1) {
-         d = lj_vm_floor(d * r1);  //  d is an int in range [0, r1)
+      if (not std::isfinite(r1) or std::trunc(r1) != r1) {
+         luaL_argerror(L, 1, n IS 1 ? "stop must be a finite integer" : "minimum must be a finite integer");
       }
-      else {
-#if LJ_DUALNUM
-         double r2;
+      if (n IS 1 and r1 <= 0) luaL_argerror(L, 1, "stop must be greater than zero");
+
+      if (n > 1) {
          lj_lib_checknumber(L, 2);
-         if (tvisint(L->base + 1)) {
-            r2 = (lua_Number)intV(L->base + 1);
-         }
+#if LJ_DUALNUM
+         if (tvisint(L->base + 1)) r2 = lua_Number(intV(L->base + 1));
          else {
             isint = 0;
             r2 = numV(L->base + 1);
          }
 #else
-         double r2 = lj_lib_checknum(L, 2);
+         r2 = numV(L->base + 1);
 #endif
-         d = lj_vm_floor(d * (r2 - r1 + 1.0)) + r1;  //  d is an int in range [r1, r2]
+         if (not std::isfinite(r2) or std::trunc(r2) != r2) {
+            luaL_argerror(L, 2, "maximum must be a finite integer");
+         }
+         if (r1 > r2) luaL_argerror(L, 1, "minimum must not exceed maximum");
+      }
+   }
+
+   U64double u;
+   u.u64 = lj_prng_u64d(rs);
+   double d = u.d - 1.0;
+   if (n > 0) {
+      if (n IS 1) {
+         d = lj_vm_floor(d * r1);  //  d is an int in range [0, r1)
+      }
+      else {
+         double range = r2 - r1;
+         if (std::isfinite(range)) d = lj_vm_floor(d * (range + 1.0)) + r1;
+         else d = lj_vm_floor((1.0 - d) * r1 + d * r2);
       }
 #if LJ_DUALNUM
       if (isint) {
@@ -271,13 +340,11 @@ extern int luaopen_math(lua_State* L)
    reg_iface_prototype("math", "modf", { TiriType::Num, TiriType::Num }, { TiriType::Num });
    reg_iface_prototype("math", "log", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "atan2", { TiriType::Num }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "pow", { TiriType::Num }, { TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "fmod", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "ldexp", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "min", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
    reg_iface_prototype("math", "max", { TiriType::Num }, { TiriType::Num }, FProtoFlags::Variadic);
    reg_iface_prototype("math", "clamp", { TiriType::Num }, { TiriType::Num, TiriType::Num, TiriType::Num });
-   reg_iface_prototype("math", "round", { TiriType::Num }, { TiriType::Num, TiriType::Num });
+   reg_iface_prototype("math", "round", { TiriType::Num }, { TiriType::Num });
    reg_iface_prototype("math", "random", { TiriType::Num }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("math", "randomSeed", {}, { TiriType::Num });
 

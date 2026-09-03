@@ -1770,7 +1770,9 @@ end
 ]])
 function tempus.mtLocalDate.dayOfWeek(Self):num
    fields = tempus._fields(Self, 'LocalDate')
-   return ((days_from_civil(fields.year, fields.month, fields.day) + 3) % 7) + 1
+   day_index = (days_from_civil(fields.year, fields.month, fields.day) + 3) % 7
+   if day_index < 0 then day_index += 7 end
+   return day_index + 1
 end
 
 @Doc(text=[[

@@ -439,6 +439,65 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- A literal index and a variable index compile to different bytecode: BC_AGETB/BC_ASETB carry the index as an operand
+-- literal, BC_AGETV/BC_ASETV read it from a register.  Both forms must report the same fault.  The literal forms
+-- previously entered the fallback with an unrelated stack slot as the key, so a read reported ERR_TypeMismatch and a
+-- write reported the wrong index.
+
+@Test function ArrayBoundsFaultReporting()
+   register_sentinel = 'keep array out of register zero'
+   arr = array<int> { 10, 20, 30 }
+   idx = #arr + 6   -- 9, computed so that the index cannot be folded into an operand literal
+
+   raised = false
+   try
+      t = arr[9]
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Literal-index read reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Literal-index read reported: ' .. e.message)
+   end
+   assert(raised, 'Literal-index read beyond bounds must raise')
+
+   raised = false
+   try
+      t = arr[idx]
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Variable-index read reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Variable-index read reported: ' .. e.message)
+   end
+   assert(raised, 'Variable-index read beyond bounds must raise')
+
+   raised = false
+   try
+      arr[9] = 1
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Literal-index write reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Literal-index write reported: ' .. e.message)
+   end
+   assert(raised, 'Literal-index write beyond bounds must raise')
+
+   raised = false
+   try
+      arr[idx] = 1
+   except e
+      raised = true
+      assert(e.code is ERR_OutOfBounds, 'Variable-index write reported ' .. tostring(e.code))
+      assert(e.message.find('index 9'), 'Variable-index write reported: ' .. e.message)
+   end
+   assert(raised, 'Variable-index write beyond bounds must raise')
+
+   -- In-bounds access through both forms remains unaffected.
+
+   assert(arr[1] is 20, 'Literal-index read of a valid element failed')
+   arr[1] = 99
+   assert(arr[1] is 99, 'Literal-index write of a valid element failed')
+   assert(register_sentinel is 'keep array out of register zero', 'Register sentinel was unexpectedly modified')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test table to array copying functionality
 
 @Test function TableToIntegerArrayCopy()

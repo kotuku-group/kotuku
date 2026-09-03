@@ -25,7 +25,7 @@ rx_all_upper    = <{ regex.new([[^[A-Z_]+$]]) }>
 -- look them up by their full sequence.  The value is the number of UTF-8 bytes the operator occupies.
 MULTIBYTE_OPERATORS = {
    ['«'] = 2, ['»'] = 2, ['×'] = 2, ['÷'] = 2,
-   ['‥'] = 3, ['⁇'] = 3, ['≠'] = 3, ['≈'] = 3, ['≤'] = 3, ['≥'] = 3, ['↑'] = 3, ['▷'] = 3, ['⧺'] = 3
+   ['‥'] = 3, ['⁇'] = 3, ['≠'] = 3, ['≈'] = 3, ['≤'] = 3, ['≥'] = 3, ['↑'] = 3, ['▷'] = 3
 }
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1183,7 +1183,7 @@ global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
             pos += 2
             col += 2
          else
-            -- % modulo
+            -- % remainder
             addToken(line, op_start, 1, 1, 0)
             pos++
             col++
