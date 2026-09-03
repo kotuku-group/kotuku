@@ -1141,6 +1141,36 @@ function traced_clamp_sum(Count)
    return total
 end
 
+global function traced_math_call(Mode, First, Second, Third)
+   local result:any = 0
+   for _ in {0 to 4} do
+      if Mode is 1 then result = math.ldexp(1, First)
+      elseif Mode is 2 then result = math.random(First)
+      elseif Mode is 3 then result = math.clamp(First, Second, Third)
+      else result = math.random(First, Second)
+      end
+   end
+   return result
+end
+
+global function traced_minimum(First, Second, Third)
+   local result = 0.0
+   for _ in {0 to 4} do result = math.min(First, Second, Third) end
+   return result
+end
+
+global function traced_maximum(First, Second, Third)
+   local result = 0.0
+   for _ in {0 to 4} do result = math.max(First, Second, Third) end
+   return result
+end
+
+global function traced_power(Base, Exponent)
+   local result = 0.0
+   for _ in {0 to 4} do result = Base ** Exponent end
+   return result
+end
+
 function sample_vararg(Left, Right, ...)
    padding = 1
    return Left + Right + padding
@@ -1455,9 +1485,17 @@ assert(trace_count > 0, "Dynamic result calls inside try blocks should remain JI
 end
 
 @Test(hotpath=80) function JITMathClampEmitsMinMax()
+   jit.off()
+   local expected_power = traced_power(1.5, 3.25)
+
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local power_result = 0.0
+   for _ in {0 to 80} do power_result = traced_power(1.5, 3.25) end
+   assert(power_result is expected_power,
+      f'JIT power result {power_result} should match interpreter result {expected_power}')
 
    local result = 0
    for i in {0 to 80} do
@@ -1484,6 +1522,106 @@ end
    assert(clamp_trace_no != nil, "Expected math.clamp() trace to contain IR_MIN and IR_MAX")
    assert(count_trace_opcode(clamp_trace_no, clamp_trace_info, ir_calln) is 0,
       "math.clamp() trace should not rely on a runtime IR_CALLN")
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   for _ in {0 to 80} do
+      assert(traced_math_call(1, 3, 0, 0) is 8, 'Traced math.ldexp() should accept integer exponents')
+      traced_math_call(2, 10, 0, 0)
+      assert(traced_math_call(3, 5, 0, 10) is 5, 'Traced math.clamp() should preserve in-range values')
+      traced_math_call(4, -5, 5, 0)
+   end
+
+   try
+      traced_math_call(1, 2.5, 0, 0)
+   except e
+      assert(e.message.find('finite integer'), 'Traced math.ldexp() should reject fractional exponents')
+   success
+      error('Traced math.ldexp() accepted a fractional exponent')
+   end
+
+   math.randomSeed(97531)
+   local expected = math.random()
+   math.randomSeed(97531)
+   try
+      traced_math_call(2, 0, 0, 0)
+   except e
+      assert(e.message.find('greater than zero'), 'Traced math.random() should reject an empty range')
+   success
+      error('Traced math.random() accepted an empty range')
+   end
+   assert(math.random() is expected, 'A failed traced math.random() call must not consume PRNG state')
+
+   try
+      traced_math_call(2, 2.5, 0, 0)
+   except e
+      assert(e.message.find('finite integer'), 'Traced math.random() should reject a fractional stop')
+   success
+      error('Traced math.random() accepted a fractional stop')
+   end
+
+   try
+      traced_math_call(4, 5, 4, 0)
+   except e
+      assert(e.message.find('must not exceed'), 'Traced math.random() should reject reversed explicit bounds')
+   success
+      error('Traced math.random() accepted reversed explicit bounds')
+   end
+
+   try
+      traced_math_call(3, 5, 10, 0)
+   except e
+      assert(e.message.find('must not exceed'), 'Traced math.clamp() should reject reversed bounds')
+   success
+      error('Traced math.clamp() accepted reversed bounds')
+   end
+
+   try
+      traced_math_call(3, 5, 0 / 0, 10)
+   except e
+      assert(e.message.find('must not be NaN'), 'Traced math.clamp() should reject a NaN bound')
+   success
+      error('Traced math.clamp() accepted a NaN bound')
+   end
+
+   local nan = 0 / 0
+   local nan_result = traced_math_call(3, nan, 0, 10)
+   assert(nan_result != nan_result, 'Traced math.clamp() should propagate a NaN value')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   for _ in {0 to 80} do
+      assert(traced_minimum(4.0, -2.0, 7.0) is -2, 'Traced math.min() should preserve finite results')
+      assert(traced_maximum(4.0, -2.0, 7.0) is 7, 'Traced math.max() should preserve finite results')
+   end
+
+   assert(1 / traced_minimum(0.0, -0.0, 0.0) is -math.huge,
+      'Traced math.min() should return negative zero for mixed signed zeros')
+   assert(1 / traced_minimum(-0.0, 0.0, 0.0) is -math.huge,
+      'Traced math.min() signed-zero result should not depend on argument order')
+   assert(1 / traced_maximum(0.0, -0.0, -0.0) is math.huge,
+      'Traced math.max() should return positive zero for mixed signed zeros')
+   assert(1 / traced_maximum(-0.0, 0.0, -0.0) is math.huge,
+      'Traced math.max() signed-zero result should not depend on argument order')
+
+   nan = 0 / 0
+   assert(traced_minimum(4.0, nan, -2.0) != traced_minimum(4.0, nan, -2.0),
+      'Traced math.min() should propagate NaN from any argument')
+   assert(traced_maximum(nan, 4.0, -2.0) != traced_maximum(nan, 4.0, -2.0),
+      'Traced math.max() should propagate NaN from any argument')
+
+   local folded_minimum = 0.0
+   local folded_maximum = 0.0
+   for _ in {0 to 80} do
+      folded_minimum = math.min(0.0, -0.0)
+      folded_maximum = math.max(-0.0, 0.0)
+   end
+   assert(1 / folded_minimum is -math.huge, 'Constant-folded math.min() should preserve negative zero')
+   assert(1 / folded_maximum is math.huge, 'Constant-folded math.max() should preserve positive zero')
 end
 
 @Test(hotpath=80) function JITVariableNumericHashLookup()

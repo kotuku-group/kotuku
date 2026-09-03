@@ -578,7 +578,7 @@ TRef lj_opt_narrow_mod(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
    return lj_ir_call(J, IRCALL_cmath_fmod, rb, rc);
 }
 
-// Narrowing of power operator or math.pow.
+// Narrowing of power operator.
 TRef lj_opt_narrow_pow(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
 {
    rb = conv_str_tonum(J, rb, vb);
