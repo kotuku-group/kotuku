@@ -20,6 +20,8 @@
 // UPDATED: 2026-08-24 - Noted recursive array element types in the array creation summary (commit 8717fde66)
 // UPDATED: 2026-09-03 - Removed math.fmod(); the `%` operator now computes the same truncated remainder
 //                       (commit fc1f9292d)
+// UPDATED: 2026-09-03 - Removed math.pow(), dropped the math.round() DecimalPlaces argument and recorded the
+//                       new math.ldexp(), math.min(), math.max() and math.random() constraints (commit ed0517c58)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -263,10 +265,10 @@ indexterm:[library, math] See <<ch-mathematics>>.
 |`math.abs(X)`                   |Absolute value.
 |`math.floor(X)`                 |Rounds towards negative infinity.
 |`math.ceil(X)`                  |Rounds towards positive infinity.
-|`math.round(X, [DecimalPlaces])`|Rounds to the nearest integer or decimal place.
+|`math.round(X)`                 |Rounds to the nearest integer; midpoints round away from zero.
 |`math.modf(X)`                  |Returns integer and fractional parts.
-|`math.min(X, pass:[...])`       |Returns the smallest argument.
-|`math.max(X, pass:[...])`       |Returns the largest argument.
+|`math.min(X, pass:[...])`       |Returns the smallest argument, or NaN if any argument is NaN.
+|`math.max(X, pass:[...])`       |Returns the largest argument, or NaN if any argument is NaN.
 |===
 
 ==== Trigonometry
@@ -292,9 +294,8 @@ All trigonometric functions operate in radians.
 |`math.exp(X)`                   |Returns _e_ raised to the power `X`.
 |`math.log(X, [Base])`           |Natural logarithm, or logarithm to `Base`.
 |`math.log10(X)`                 |Base-10 logarithm.
-|`math.pow(X, Y)`                |Returns `X` raised to the power `Y`.
 |`math.sqrt(X)`                  |Square root.
-|`math.ldexp(Mantissa, Exponent)`|Returns `Mantissa` x 2^`Exponent`.
+|`math.ldexp(Mantissa, Exponent)`|Returns `Mantissa` x 2^`Exponent`.  `Exponent` must be a finite integer.
 |`math.frexp(X)`                 |Returns mantissa and exponent.
 |`math.deg(X)`                   |Converts radians to degrees.
 |`math.rad(X)`                   |Converts degrees to radians.
@@ -306,7 +307,7 @@ All trigonometric functions operate in radians.
 |===
 |Signature |Description
 
-|`math.random([Low], [High])`|Returns a pseudo-random number.  No arguments: a float in [0, 1).  One argument: an integer in [0, `High`).  Two arguments: an integer in [`Low`, `High`].
+|`math.random([Low], [High])`|Returns a pseudo-random number.  No arguments: a float in [0, 1).  One argument: an integer in [0, `High`).  Two arguments: an integer in [`Low`, `High`].  Bounds must be finite integers; an invalid bound raises an error.
 |`math.randomSeed(Seed)`     |Seeds the random number generator.
 |===
 

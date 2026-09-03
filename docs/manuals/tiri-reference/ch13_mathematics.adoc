@@ -48,22 +48,18 @@ math.ceil(-3.2)   -- -3
 [discrete]
 ==== math.round()
 
-[.api]`result = math.round(X, [DecimalPlaces])`
+[.api]`result = math.round(X)`
 
-Rounds `X` to the nearest integer.  If `DecimalPlaces` is specified, rounds to that number of decimal places.  Negative values for `DecimalPlaces` round to the corresponding power of ten (tens, hundreds, etc.).
+Rounds `X` to the nearest integer.  Rounding uses the round-half-away-from-zero strategy: a value exactly midway between two integers rounds to the integer of greater magnitude.
 
-Rounding uses the round-half-up strategy: values at the midpoint (e.g. `0.5`) round towards positive infinity.
+`math.round()` accepts exactly one argument; supplying a second argument raises an error.  Infinities and NaN are returned unchanged, and both signed zeroes retain their sign.
 
 [source,tiri]
 ----
-math.round(3.7)          -- 4
-math.round(3.2)          -- 3
-math.round(3.5)          -- 4
-math.round(-3.5)         -- -3
-math.round(3.14159, 2)   -- 3.14
-math.round(3.14159, 3)   -- 3.142
-math.round(1234.5, -1)   -- 1230
-math.round(1234.5, -2)   -- 1200
+math.round(3.2)    -- 3
+math.round(3.5)    -- 4
+math.round(-3.5)   -- -4
+math.round(-0.5)   -- -1
 ----
 
 [discrete]
@@ -222,20 +218,6 @@ math.log10(1000)   -- 3.0
 ----
 
 [discrete]
-==== math.pow()
-
-[.api]`result = math.pow(X, Y)`
-
-Returns `X` raised to the power `Y`.
-
-[source,tiri]
-----
-math.pow(2, 10)   -- 1024
-math.pow(4, 0.5)  -- 2.0
-math.pow(2, -1)   -- 0.5
-----
-
-[discrete]
 ==== math.sqrt()
 
 [.api]`result = math.sqrt(X)`
@@ -255,10 +237,15 @@ math.sqrt(2)    -- 1.4142...
 
 Returns `Mantissa` multiplied by 2 raised to the power `Exponent`.  This is the inverse of `math.frexp()`.
 
+`Exponent` must be a finite integral value.  A fractional, infinite or NaN exponent raises an error.  An exponent whose magnitude exceeds the representable range scales the result to an infinity or to zero, carrying the sign of `Mantissa`.
+
 [source,tiri]
 ----
-math.ldexp(1.5, 3)   -- 12.0   (1.5 * 2^3)
-math.ldexp(0.5, 10)  -- 512.0  (0.5 * 2^10)
+math.ldexp(1.5, 3)      -- 12.0   (1.5 * 2^3)
+math.ldexp(0.5, 10)     -- 512.0  (0.5 * 2^10)
+math.ldexp(1, 1024)     -- inf    (overflow)
+math.ldexp(1, -1075)    -- 0.0    (underflow)
+math.ldexp(1, 2.5)      -- error: Exponent must be a finite integer
 ----
 
 [discrete]
@@ -311,11 +298,15 @@ math.rad(90)    -- 1.5708...  (pi/2)
 
 indexterm:[mathematics, clamping] Returns the smallest value among all arguments.  Accepts one or more numeric arguments.
 
+Returns NaN if any argument is NaN, irrespective of its position in the argument list.  Zeroes of opposite sign compare equal; when the smallest value is zero, `math.min()` returns `-0` if any of those zeroes is negative.  The result is independent of argument order.
+
 [source,tiri]
 ----
 math.min(5, 2, 8, 1)   -- 1
 math.min(3.5, 3.2)     -- 3.2
-math.min(7)             -- 7
+math.min(7)            -- 7
+math.min(1, 0 / 0)     -- nan
+math.min(0.0, -0.0)    -- -0.0
 ----
 
 [discrete]
@@ -325,11 +316,15 @@ math.min(7)             -- 7
 
 Returns the largest value among all arguments.  Accepts one or more numeric arguments.
 
+Returns NaN if any argument is NaN, irrespective of its position in the argument list.  Zeroes of opposite sign compare equal; when the largest value is zero, `math.max()` returns `+0` unless every one of those zeroes is negative.  The result is independent of argument order.
+
 [source,tiri]
 ----
 math.max(5, 2, 8, 1)   -- 8
 math.max(3.5, 3.2)     -- 3.5
-math.max(7)             -- 7
+math.max(7)            -- 7
+math.max(1, 0 / 0)     -- nan
+math.max(0.0, -0.0)    -- 0.0
 ----
 
 [discrete]
@@ -337,16 +332,18 @@ math.max(7)             -- 7
 
 [.api]`result = math.clamp(Value, Lower, Upper)`
 
-Constrains `Value` to the inclusive range [`Lower`, `Upper`] and returns the result.  Values below `Lower` are raised to `Lower` and values above `Upper` are lowered to `Upper`; values already within the range are returned unchanged.  It is functionally equivalent to `math.min(math.max(Value, Lower), Upper)`.
+Constrains `Value` to the inclusive range [`Lower`, `Upper`] and returns the result.  Values below `Lower` are raised to `Lower` and values above `Upper` are lowered to `Upper`; values already within the range are returned unchanged.
 
-All three arguments are required.  If the bounds are supplied in reverse order (`Lower` greater than `Upper`), `Upper` takes precedence and is always returned.
+All three arguments are required.  Raises an error if `Lower` is greater than `Upper`, or if either bound is NaN.  Infinite bounds are permitted, and equal bounds return that bound.  A NaN `Value` is returned unchanged.
 
 [source,tiri]
 ----
-math.clamp(-5, 0, 10)      -- 0
-math.clamp(5, 0, 10)       -- 5
-math.clamp(15, 0, 10)      -- 10
-math.clamp(1.25, 0.5, 1.5) -- 1.25
+math.clamp(-5, 0, 10)                -- 0
+math.clamp(5, 0, 10)                 -- 5
+math.clamp(15, 0, 10)                -- 10
+math.clamp(1.25, 0.5, 1.5)           -- 1.25
+math.clamp(5, -math.huge, math.huge) -- 5
+math.clamp(5, 10, 0)                 -- error: bounds are reversed
 ----
 
 [[sec-random-numbers]]
@@ -376,12 +373,17 @@ Generates a pseudo-random number.  Behaviour depends on the number of arguments:
 
 The single-argument form is zero-based and exclusive of its bound, so `math.random(#arr)` selects a valid index of `arr` directly.  The two-argument form is unaffected and retains inclusive bounds, so `math.random(1, N)` is the way to obtain a one-based value.
 
+Every supplied bound must be a finite integral value; `High` must be greater than zero in the single-argument form, and `Low` must not exceed `High` in the two-argument form.  A call that violates a constraint raises an error and leaves the generator state unchanged, so a rejected call does not advance the sequence.  The two-argument form returns a value within its inclusive bounds for any finite `Low` and `High`, including ranges whose width exceeds the largest representable number.
+
 [source,tiri]
 ----
 math.random()        -- e.g. 0.523 (float in [0, 1))
 math.random(10)      -- e.g. 7     (integer in [0, 10) -- never 10)
 math.random(1)       -- always 0   (the range [0, 1) holds one integer)
 math.random(5, 15)   -- e.g. 11    (integer in [5, 15])
+math.random(0)       -- error: High must be greater than zero
+math.random(2.5)     -- error: High must be a finite integer
+math.random(5, 4)    -- error: Low must not exceed High
 ----
 
 [discrete]

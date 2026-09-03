@@ -124,13 +124,11 @@ end
 print(depth)                   -- 1
 ----
 
-A shadowed binding is not destroyed.  It remains live and reachable through any closure that captured it, and through any scope in which it is still the visible binding of the name.
-
-Two rules distinguish the declaration form from the assignment form.  A declaration accepts a name list with no initialiser, which an assignment rejects; and a declaration rejects a value list longer than its name list, whereas an assignment discards the surplus.  Declarations are otherwise governed by <<sec-the-local-keyword>>.
+One rule distinguishes the declaration form from the assignment form: a declaration accepts a name list with no initialiser, which an assignment rejects.  Both forms reject an explicit value list longer than the name or target list.  Surplus results produced by a call or vararg expression are discarded.  Declarations are otherwise governed by <<sec-the-local-keyword>>.
 
 [source,tiri]
 ----
-a, b = 1, 2, 3          -- assignment: 3 is discarded
+a, b = 1, 2, 3          -- assignment: error, more values than targets
 a, b:num = 1, 2, 3      -- declaration: error, more values than names
 ----
 
@@ -411,12 +409,13 @@ arr[0] = 42
 
 ==== Multiple Assignment
 
-Multiple targets and values are matched left-to-right.  Excess targets receive `nil`; excess values are discarded.
+Multiple targets and values are matched left-to-right.  Excess targets receive `nil`.  An explicit value list longer than the target list is a parse error; surplus results of a call or vararg expression are discarded.
 
 [source,tiri]
 ----
 a, b = b, a           -- swap two existing variables
 local x, y, z = f()   -- f() may return multiple values
+a, b = 1, 2, 3        -- error: more explicit values than targets
 ----
 
 Safe-navigation targets are not permitted in multi-assignment statements.  Use separate assignments instead:

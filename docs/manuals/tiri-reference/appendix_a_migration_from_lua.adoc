@@ -811,6 +811,9 @@ The following standard Lua functions are removed or replaced:
 
 |`math.fmod(X, Y)`
 |Removed.  The `%` operator computes the same truncated remainder, so `math.fmod(x, y)` translates to `x % y`.  See <<sec-arithmetic-operators>>.
+
+|`math.pow(X, Y)`
+|Removed.  The `pass:[**]` operator computes the same result, so `math.pow(x, y)` translates to `x pass:[**] y`.  See <<sec-arithmetic-operators>>.
 |===
 
 [discrete]
@@ -833,13 +836,16 @@ Lua returns an integer in [1, `N`].  Tiri returns an integer in [0, `N`), matchi
 `%` on operands of opposite sign::
 Lua computes the remainder of floor division, so the result carries the sign of the right operand.  Tiri computes the remainder of truncated division, so the result carries the sign of the left operand: `-5 % 3` is `1` in Lua and `-2` in Tiri.  The two agree whenever the operands share a sign.  Lua code that relies on `%` to normalise a negative value into the range [0, `b`) needs `((a % b) + b) % b` in Tiri.  See <<sec-arithmetic-operators>>.
 
-Two further differences produce an explicit diagnostic rather than a wrong value:
+Three further differences produce an explicit diagnostic rather than a wrong value:
 
 Sequence operations reject classified tables::
 `table.insert()`, `table.remove()`, `table.sort()`, `table.slice()` and `table.concat()` without an explicit `Stop` require a table classified as a sequence, and raise an error otherwise.  Lua applies them to any table.  Where the original code inserts into a record-shaped table, assign through an explicit index instead, or supply `Stop` to `table.concat()`.  `table.kind()` reports the classification and `table.size()` counts every entry.
 
 Duplicate constructor keys are rejected::
 Lua accepts `{ name = 1, name = 2 }` and keeps the last value.  Tiri rejects any duplicate key it can resolve at compile time.  See <<sec-table-fundamentals>>.
+
+`math.ldexp()` and `math.random()` reject non-integral arguments::
+Lua truncates a fractional exponent or range bound to an integer.  Tiri requires a finite integral value and raises an error otherwise; `math.random()` additionally rejects a zero or negative `High`, and a `Low` greater than `High`.  A rejected `math.random()` call leaves the generator state unchanged.  See <<sec-random-numbers>>.
 
 [[sec-migration-removed-libraries]]
 === Removed Libraries
