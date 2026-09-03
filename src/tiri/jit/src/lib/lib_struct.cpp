@@ -823,7 +823,8 @@ extern "C" int luaopen_struct(lua_State *L)
    lua_setfield(L, -2, "__tostring");
    setgcref(basemt_it(g, LJ_TSTRUCT), obj2gco(lib));
 
-   reg_iface_prototype("struct", "new", { TiriType::Struct }, { TiriType::Str, TiriType::Table });
+   reg_iface_prototype("struct", "new", { TiriType::Struct }, { TiriType::Str, TiriType::Table }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_iface_prototype("struct", "def", { TiriType::Func }, { TiriType::Str });
    reg_iface_prototype("struct", "size", { TiriType::Num }, { TiriType::Any }); // Accepts a struct name or reference
    reg_iface_method(L, "struct", "copy", TiriType::Struct, builtin_callable_id(FastFunc::struct_copy),

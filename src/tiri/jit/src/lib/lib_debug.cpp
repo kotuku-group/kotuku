@@ -1618,7 +1618,8 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "setMetatable", { TiriType::Any }, { TiriType::Any, TiriType::Table });
    reg_iface_prototype("debug", "getEnv", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setEnv", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "getInfo", { TiriType::Table }, { TiriType::Any, TiriType::Str });
+   reg_iface_prototype("debug", "getInfo", { TiriType::Table }, { TiriType::Any, TiriType::Str },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("debug", "getLocal", { TiriType::Str, TiriType::Any }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("debug", "setLocal", { TiriType::Str }, { TiriType::Num, TiriType::Num, TiriType::Any });
    reg_iface_prototype("debug", "getUpvalue", { TiriType::Str, TiriType::Any }, { TiriType::Func, TiriType::Num });
@@ -1627,15 +1628,21 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "upvalueJoin", {}, { TiriType::Func, TiriType::Num, TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "getUserValue", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setUserValue", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "setHook", {}, { TiriType::Func, TiriType::Str, TiriType::Num });
+   reg_iface_prototype("debug", "setHook", {}, { TiriType::Func, TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("debug", "getHook", { TiriType::Func, TiriType::Str, TiriType::Num }, {});
-   reg_iface_prototype("debug", "traceback", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Any });
-   reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num });
+   reg_iface_prototype("debug", "traceback", { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
 
    // Register debug.anno interface prototypes
    reg_iface_prototype("debug.anno", "get", { TiriType::Table }, { TiriType::Func });
-   reg_iface_prototype("debug.anno", "set", { TiriType::Table }, { TiriType::Func, TiriType::Any, TiriType::Str, TiriType::Str });
+   reg_iface_prototype("debug.anno", "set", { TiriType::Table },
+      { TiriType::Func, TiriType::Any, TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_prototype("debug.anno", "list", { TiriType::Table }, {});
 
    return 1;

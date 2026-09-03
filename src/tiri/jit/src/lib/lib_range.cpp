@@ -1078,9 +1078,11 @@ extern "C" int luaopen_range(lua_State *L)
 
    // Register prototypes for range methods (used for type inference)
 
-   reg_func_prototype("range", { TiriType::Range }, { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num });
+   reg_func_prototype("range", { TiriType::Range }, { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num },
+      FProtoFlags::None, FProtoArity::required(2));
    reg_iface_prototype("range", "new", { TiriType::Range },
-      { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num });
+      { TiriType::Num, TiriType::Num, TiriType::Bool, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_prototype("range", "slice", { TiriType::Any }, { TiriType::Any, TiriType::Range });
    reg_iface_method(L, "range", "each", TiriType::Range, builtin_callable_id(FastFunc::range_each),
       { TiriType::Range }, { TiriType::Range, TiriType::Func });
@@ -1089,7 +1091,8 @@ extern "C" int luaopen_range(lua_State *L)
    reg_iface_method(L, "range", "reduce", TiriType::Range, builtin_callable_id(FastFunc::range_reduce),
       { TiriType::Any }, { TiriType::Range, TiriType::Any, TiriType::Func });
    reg_iface_method(L, "range", "map", TiriType::Range, builtin_callable_id(FastFunc::range_map),
-      { TiriType::Array }, { TiriType::Range, TiriType::Func, TiriType::Str });
+      { TiriType::Array }, { TiriType::Range, TiriType::Func, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_method(L, "range", "take", TiriType::Range, builtin_callable_id(FastFunc::range_take),
       { TiriType::Array }, { TiriType::Range, TiriType::Num }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "range", "any", TiriType::Range, builtin_callable_id(FastFunc::range_any),

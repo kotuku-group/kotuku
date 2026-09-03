@@ -1019,14 +1019,15 @@ static ERR register_interfaces(extTiri *Self)
    lua_register(Self->Lua, "MAKESTRUCT", MAKESTRUCT);
 
    // Register global function prototypes for compile-time type inference
-   reg_func_prototype("arg", { TiriType::Str }, { TiriType::Str, TiriType::Str });
+   reg_func_prototype("arg", { TiriType::Str }, { TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("loadFile", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("exec", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("print", {}, {}, FProtoFlags::Variadic);
    reg_func_prototype("msg", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("subscribeEvent", { TiriType::Num, TiriType::Userdata }, { TiriType::Str, TiriType::Func });
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Userdata });
-   reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str });
+   reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str }, FProtoFlags::Variadic);
 
    if (auto error = load_module_defs("core"); error != ERR::Okay) {
       log.error("Failed to process the core includes.");

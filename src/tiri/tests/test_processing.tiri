@@ -2,6 +2,19 @@
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function HaltRequiresSeconds()
+   try
+      exec('processing.halt()')
+   except e
+      assert(e.message.find('required argument 1 is missing') != nil,
+         'processing.halt() should publish its required seconds argument')
+   success
+      error('processing.halt() should be rejected without a seconds argument')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test function GCStatsKeyValues()
    stats = processing.gcStats()
    assert(type(stats) is 'table', 'gcStats() should return a table')

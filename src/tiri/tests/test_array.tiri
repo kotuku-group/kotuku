@@ -1540,8 +1540,9 @@ end
 -- Test array.of() error cases
 
 @Test function ArrayOfNoValues()
+   local array_of:any = array.of
    try
-      array.of('int')
+      array_of('int')
    success
       error("array.of() with no values should fail")
    end

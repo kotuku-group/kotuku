@@ -840,6 +840,7 @@ private:
       }
 
       if (not prototype) return {};
+      Call.native_prototype = prototype;
       StaticResultSet results = describe_native_prototype_results(prototype);
       if (results.stored_count > 0) {
          if (results.values[0].primary IS TiriType::Object and Call.object_class_id != CLASSID::NIL) {
@@ -956,7 +957,7 @@ private:
       return {};
    }
 
-   void report_method_argument(SourceSpan Span, std::string Message)
+   void report_native_argument(SourceSpan Span, std::string Message)
    {
       ParserDiagnostic diagnostic;
       diagnostic.severity = ParserDiagnosticSeverity::Error;
@@ -1007,17 +1008,16 @@ private:
       Field.builtin_shadow_reported = true;
    }
 
-   void validate_builtin_method_arguments(CallExprPayload &Call)
+   void validate_native_arguments(CallExprPayload &Call, const fprototype *Prototype, size_t NativeOffset,
+      size_t PipedArguments, bool &ArgumentsValidated)
    {
-      if (not Call.builtin_method or Call.builtin_method->arguments_validated) return;
-      const fprototype *prototype = Call.builtin_method->prototype;
-      if (not prototype or prototype->param_count IS 0) return;
+      if (ArgumentsValidated or not Prototype) return;
 
-      const TiriType *parameters = prototype->param_types();
+      const TiriType *parameters = Prototype->param_types();
       bool validation_complete = true;
       for (size_t index = 0; index < Call.arguments.size(); ++index) {
-         size_t native_index = index + 1;
-         if (native_index >= prototype->param_count) break;
+         size_t native_index = index + NativeOffset + PipedArguments;
+         if (native_index >= Prototype->param_count) break;
          if (Call.arguments[index]->kind IS AstNodeKind::IdentifierExpr) {
             const auto &reference = std::get<NameRef>(Call.arguments[index]->data);
             if (reference.binding_id and this->catalogue_.binding(reference.binding_id).is_variant) continue;
@@ -1025,28 +1025,81 @@ private:
          const StaticValueDescriptor actual = this->descriptor_of(*Call.arguments[index]);
          TiriType expected = parameters[native_index];
          if (actual.primary IS TiriType::Nil) {
-            if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
-               this->report_method_argument(Call.arguments[index]->span,
-                  std::format("required argument {} cannot be nil", index + 1));
+            if ((Prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None) {
+               this->report_native_argument(Call.arguments[index]->span,
+                  std::format("required argument {} cannot be nil", index + PipedArguments + 1));
             }
          }
          else if (expected != TiriType::Any and not actual.proved()) validation_complete = false;
          else if (expected != TiriType::Any and actual.primary != TiriType::Unknown and
              actual.primary != TiriType::Any and actual.primary != expected and
              not (expected IS TiriType::Func and actual.primary IS TiriType::Table)) {
-            this->report_method_argument(Call.arguments[index]->span,
-               std::format("argument {} expects {}, got {}", index + 1,
+            this->report_native_argument(Call.arguments[index]->span,
+               std::format("argument {} expects {}, got {}", index + PipedArguments + 1,
                   type_name(expected), type_name(actual.primary)));
          }
       }
 
-      if ((prototype->flags & FProtoFlags::NoNil) != FProtoFlags::None and
-          Call.arguments.size() + 1 < prototype->param_count and not Call.forwards_multret) {
-         this->report_method_argument(Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span,
-            std::format("required argument {} is missing", Call.arguments.size() + 1));
+      size_t fixed_arguments = PipedArguments + Call.arguments.size() -
+         size_t(Call.forwards_multret and not Call.arguments.empty());
+      size_t minimum = Prototype->min_param_count >= NativeOffset ?
+         Prototype->min_param_count - NativeOffset : 0;
+      size_t maximum = Prototype->param_count >= NativeOffset ? Prototype->param_count - NativeOffset : 0;
+      SourceSpan arity_span = Call.arguments.empty() ? SourceSpan{} : Call.arguments.back()->span;
+      bool arity_known = Prototype->min_param_count != FProtoArity::UNSPECIFIED;
+      size_t supplied_arguments = PipedArguments + Call.arguments.size();
+      if (arity_known and not Call.forwards_multret and supplied_arguments < minimum) {
+         this->report_native_argument(arity_span,
+            std::format("required argument {} is missing", supplied_arguments + 1));
       }
-      if (Call.forwards_multret) validation_complete = false;
-      Call.builtin_method->arguments_validated = validation_complete;
+      if (arity_known and (Prototype->flags & FProtoFlags::Variadic) IS FProtoFlags::None and
+          fixed_arguments > maximum) {
+         this->report_native_argument(arity_span,
+            std::format("expected at most {} arguments, got {}", maximum, supplied_arguments));
+      }
+      if (Call.forwards_multret or Call.receives_pipe_results) validation_complete = false;
+      ArgumentsValidated = validation_complete;
+   }
+
+   void validate_builtin_method_arguments(CallExprPayload &Call)
+   {
+      if (not Call.builtin_method or Call.receives_pipe_results) return;
+      this->validate_native_arguments(Call, Call.builtin_method->prototype, 1, 0,
+         Call.builtin_method->arguments_validated);
+   }
+
+   [[nodiscard]] std::optional<size_t> pipe_argument_count(const PipeExprPayload &Pipe) const
+   {
+      if (not Pipe.lhs) return std::nullopt;
+
+      bool multi_result_source = Pipe.lhs->kind IS AstNodeKind::CallExpr or
+         Pipe.lhs->kind IS AstNodeKind::SafeCallExpr or Pipe.lhs->kind IS AstNodeKind::PipeExpr or
+         Pipe.lhs->kind IS AstNodeKind::ResultFilterExpr or Pipe.lhs->kind IS AstNodeKind::VarArgExpr;
+      if (not multi_result_source) return 1;
+      if (Pipe.limit > 0) return Pipe.limit;
+      if (not Pipe.lhs->static_results) return std::nullopt;
+
+      const StaticResultSet &results = this->catalogue_.results(Pipe.lhs->static_results);
+      if (results.dynamic or results.variadic) return std::nullopt;
+      return results.declared_count;
+   }
+
+   void validate_pipe_native_arguments(PipeExprPayload &Pipe)
+   {
+      if (not Pipe.rhs_call or (Pipe.rhs_call->kind != AstNodeKind::CallExpr and
+          Pipe.rhs_call->kind != AstNodeKind::SafeCallExpr)) return;
+      std::optional<size_t> piped_arguments = this->pipe_argument_count(Pipe);
+      if (not piped_arguments) return;
+
+      auto &call = std::get<CallExprPayload>(Pipe.rhs_call->data);
+      if (call.builtin_method) {
+         this->validate_native_arguments(call, call.builtin_method->prototype, 1, *piped_arguments,
+            call.builtin_method->arguments_validated);
+      }
+      else if (call.native_prototype and call.compiler_callable IS BuiltinCallableID::Invalid) {
+         this->validate_native_arguments(call, call.native_prototype, 0, *piped_arguments,
+            call.native_arguments_validated);
+      }
    }
 
    void resolve_builtin_method(CallExprPayload &Call)
@@ -1266,6 +1319,11 @@ private:
          if (not Call.results) Call.results = this->native_call_results(Call);
       }
       else this->annotate_call(Call);
+      if (not Call.receives_pipe_results and Call.native_prototype and
+          Call.native_prototype->min_param_count != FProtoArity::UNSPECIFIED and
+          Call.compiler_callable IS BuiltinCallableID::Invalid) {
+         this->validate_native_arguments(Call, Call.native_prototype, 0, 0, Call.native_arguments_validated);
+      }
       StaticValueDescriptor result;
 
       if (Call.results) {
@@ -1942,6 +2000,7 @@ private:
          case AstNodeKind::PipeExpr: {
             auto &pipe = std::get<PipeExprPayload>(Expression.data);
             if (pipe.rhs_call) {
+               this->validate_pipe_native_arguments(pipe);
                if (pipe.lhs and (pipe.rhs_call->kind IS AstNodeKind::CallExpr or
                                 pipe.rhs_call->kind IS AstNodeKind::SafeCallExpr)) {
                   auto &call = std::get<CallExprPayload>(pipe.rhs_call->data);

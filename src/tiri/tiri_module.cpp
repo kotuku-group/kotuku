@@ -2169,5 +2169,6 @@ void register_module_class(lua_State *Lua)
    lua_pop(Lua, 1); // Drop the mod library table
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str });
+   reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str },
+      FProtoFlags::None, FProtoArity::required(1));
 }

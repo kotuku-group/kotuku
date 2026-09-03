@@ -129,6 +129,7 @@ end
 -- Test debug.locality with nil argument
 
 @Test(hotpath=true) function LocalityNilArg()
+   assert(debug.locality() is 'nil', 'debug.locality() should accept a missing name')
    assert(debug.locality(nil) is 'nil', 'debug.locality(nil) should return nil')
 end
 
