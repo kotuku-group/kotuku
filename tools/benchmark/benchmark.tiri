@@ -83,7 +83,7 @@ Examples:
         comment = 'Cycles required before performing JIT optimisation.' },
       { name = 'calls', type = 'int', default = 1000, group = 'Timing',
         comment = 'Limit each benchmark to this many measured calls.' },
-      { name = 'retry', type = 'num', default = 2, group = 'Timing',
+      { name = 'retry', type = 'num', default = 4, group = 'Timing',
         comment = 'Re-run any benchmark that has regressed by this percentage or more against the previous saved ' ..
                   'run, keeping whichever of the two measurements is faster.  Use 0 to disable.' },
       { name = 'interpreter', kind = 'flag', group = 'Timing',
