@@ -556,6 +556,68 @@ static bool test_table_string_hash_keys_unchanged(kt::Log& Log)
    return true;
 }
 
+static bool test_mutable_string_table_keys_use_identity(kt::Log& Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab *table = lj_tab_new(lua, 0, 1);
+   settabV(lua, lua->top, table);
+   incr_top(lua);
+   GCstr *key = lj_str_newbuf(lua, 4);
+   setstrV(lua, lua->top, key);
+   incr_top(lua);
+   GCstr *equal_buffer = lj_str_newbuf(lua, 4);
+   setstrV(lua, lua->top, equal_buffer);
+   incr_top(lua);
+   memcpy(strdatawr(key), "key1", 4);
+   memcpy(strdatawr(equal_buffer), "key1", 4);
+
+   TValue value;
+   setnumV(&value, 42.0);
+   copyTV(lua, lj_tab_setstr(lua, table, key), &value);
+
+   cTValue *found = lj_tab_getstr(table, key);
+   if (not found or not tvisnum(found) or numV(found) != 42.0) {
+      Log.error("mutable string key did not retrieve its table value");
+      return false;
+   }
+   if (lj_tab_getstr(table, equal_buffer) or lj_tab_getstr(table, lj_str_newlit(lua, "key1"))) {
+      Log.error("equal-content strings unexpectedly matched a mutable identity key");
+      return false;
+   }
+
+   const uint32_t sid = key->sid;
+   memcpy(strdatawr(key), "key2", 4);
+   GCstr *mutated_content = lj_str_newlit(lua, "key2");
+   if (key->sid != sid or key->hash != 0 or lj_str_cmp(key, mutated_content) != 0) {
+      Log.error("mutable string metadata or content comparison changed unexpectedly after mutation");
+      return false;
+   }
+   if (lj_tab_getstr(table, key) != found or lj_tab_getstr(table, mutated_content)) {
+      Log.error("mutable string mutation invalidated identity-key lookup semantics");
+      return false;
+   }
+
+   for (int index = 0; index < 32; index++) {
+      std::string name = "rehash_key_" + std::to_string(index);
+      GCstr *ordinary_key = lj_str_new(lua, name.data(), name.size());
+      setnumV(&value, lua_Number(index));
+      copyTV(lua, lj_tab_setstr(lua, table, ordinary_key), &value);
+   }
+   found = lj_tab_getstr(table, key);
+   if (not found or not tvisnum(found) or numV(found) != 42.0) {
+      Log.error("table rehash invalidated a mutable identity key");
+      return false;
+   }
+
+   return true;
+}
+
 // The permanent non-numeric key classification underpins the Tiri '#' operator returning nil for associative tables.
 
 static bool test_table_flags_initialise_clear(kt::Log& Log)
@@ -787,7 +849,7 @@ static bool test_table_layout_offsets_stable(kt::Log& Log)
 
 extern void indexing_unit_tests(int& Passed, int& Total)
 {
-   constexpr std::array<TestCase, 22> Tests = { {
+   constexpr std::array<TestCase, 23> Tests = { {
       { "array_first_element_access", test_array_first_element_access },
       { "table_length_operator", test_table_length_operator },
       { "ipairs_starting_index", test_ipairs_starting_index },
@@ -804,6 +866,7 @@ extern void indexing_unit_tests(int& Passed, int& Total)
       { "table_numeric_hash_keys_roundtrip", test_table_numeric_hash_keys_roundtrip },
       { "table_gc_hash_keys_roundtrip", test_table_gc_hash_keys_roundtrip },
       { "table_string_hash_keys_unchanged", test_table_string_hash_keys_unchanged },
+      { "mutable_string_table_keys_use_identity", test_mutable_string_table_keys_use_identity },
       { "table_flags_initialise_clear", test_table_flags_initialise_clear },
       { "table_numeric_keys_do_not_classify", test_table_numeric_keys_do_not_classify },
       { "table_non_numeric_keys_classify", test_table_non_numeric_keys_classify },

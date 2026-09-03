@@ -53,7 +53,7 @@ inline constexpr uint64_t HASH_MIX64_MUL2 = 0x94d049bb133111ebull;
    return &n[hash & t->hmask];
 }
 
-// String IDs are generated when a string is interned.
+// Every string object has an immutable ID.  Mutable buffers therefore remain stable identity keys as bytes change.
 [[nodiscard]] inline constexpr Node* hashstr(const GCtab* t, const GCstr* s) noexcept
 {
    return hashmask(t, s->sid);

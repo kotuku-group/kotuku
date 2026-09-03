@@ -154,12 +154,12 @@ LJLIB_CF(string_rep)      LJLIB_REC(.)
 }
 
 //********************************************************************************************************************
-// string.alloc() is a quicker version of string.rep() for reserving space without filling it.
+// string.alloc() creates a distinct mutable byte buffer whose complete payload is NUL-filled.
 //
 // 1. Takes a size parameter - Uses lj_lib_checkint(L, 1) to get the size from the first argument
 // 2. Validates the size - Checks that size is not negative and throws an error if it is
 // 3. Allocates a mutable GC string buffer outside the normal string interning table.
-// 4. Returns the mutable string with the requested length.
+// 4. Returns the NUL-filled mutable string with the requested length.
 
 LJLIB_CF(string_alloc)
 {

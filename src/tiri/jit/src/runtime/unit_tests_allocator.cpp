@@ -4,7 +4,11 @@
 
 #ifdef UNIT_TESTS
 
+#include "lua.h"
+#include "lauxlib.h"
+
 #include "lj_alloc.h"
+#include "lj_str.h"
 #include "lj_prng.h"
 
 #include <array>
@@ -16,6 +20,23 @@ namespace {
 struct TestCase {
    const char* name;
    bool (*fn)(kt::Log &Log);
+};
+
+struct LuaStateHolder {
+   LuaStateHolder()
+   {
+      this->state = luaL_newstate(nullptr);
+   }
+
+   ~LuaStateHolder()
+   {
+      if (this->state) lua_close(this->state);
+   }
+
+   lua_State* get() const { return this->state; }
+
+private:
+   lua_State* state = nullptr;
 };
 
 #ifndef LUAJIT_USE_SYSMALLOC
@@ -127,13 +148,45 @@ static bool test_allocator_realloc_preserves_16_byte_alignment(kt::Log &Log)
 #endif
 }
 
+static bool test_mutable_string_buffers_are_zero_initialised(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   constexpr std::array<MSize, 10> Lengths = { { 0, 1, 2, 3, 4, 5, 7, 8, 9, 4096 } };
+   for (MSize length : Lengths) {
+      GCstr *buffer = lj_str_newbuf(lua, length);
+      if (buffer->len != length or not lj_str_ismutable(buffer)) {
+         Log.error("mutable string allocation of %u bytes has incorrect metadata", (unsigned)length);
+         return false;
+      }
+
+      const MSize storage_size = (length + 4) & ~MSize(3);
+      const uint8_t *data = (const uint8_t *)strdata(buffer);
+      for (MSize index = 0; index < storage_size; index++) {
+         if (data[index] != 0) {
+            Log.error("mutable string allocation of %u bytes contains 0x%02x at storage offset %u",
+               (unsigned)length, (unsigned)data[index], (unsigned)index);
+            return false;
+         }
+      }
+   }
+
+   return true;
+}
+
 } // namespace
 
 extern void allocator_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 2> Tests = { {
+   constexpr std::array<TestCase, 3> Tests = { {
       { "allocator_returns_16_byte_aligned_blocks", test_allocator_returns_16_byte_aligned_blocks },
-      { "allocator_realloc_preserves_16_byte_alignment", test_allocator_realloc_preserves_16_byte_alignment }
+      { "allocator_realloc_preserves_16_byte_alignment", test_allocator_realloc_preserves_16_byte_alignment },
+      { "mutable_string_buffers_are_zero_initialised", test_mutable_string_buffers_are_zero_initialised }
    } };
 
    for (const TestCase& Test : Tests) {

@@ -17,8 +17,17 @@ function expect_nil_string_error(Callback:func, Name:str)
 end
 
 @Test function Alloc()
+   local sizes = array<int> { 0, 1, 2, 3, 4, 5, 7, 8, 9, 1000 }
+   for _, size in sizes do
+      local buffer = string.alloc(size)
+      assert(#buffer is size, f"string.alloc({size}) returned {#buffer} bytes")
+      for index in {0 to size} do
+         assert(buffer.byte(index) is 0,
+            f"string.alloc({size}) byte {index} was not NUL-filled")
+      end
+   end
+
    s = string.alloc(10)
-   assert(#s is 10, "String size is not 10 characters, got " .. #s)
 
    s2 = string.alloc(10)
    assert(not (s is s2), "Same-sized string.alloc() buffers should be distinct objects")
@@ -36,6 +45,24 @@ end
 
    slice = s.sub(#s, #s)
    assert(slice is "", "Slices copied from mutable buffers should be normal interned strings")
+end
+
+@Test function AllocatedBuffersAreIdentityTableKeys()
+   local key = string.alloc(4)
+   local equal_content = string.alloc(4)
+   local values = { [key] = 'buffer' }
+
+   assert(values[key] is 'buffer', 'A mutable buffer should retrieve its own table entry')
+   assert(values[equal_content] is nil,
+      'A distinct mutable buffer with equal content must be a different table key')
+   assert(values['\0\0\0\0'] is nil,
+      'An interned string with equal content must be a different table key')
+
+   local matches = 0
+   for _ in {0 to 100} do
+      if values[key] is 'buffer' then matches++ end
+   end
+   assert(matches is 100, 'Mutable-buffer table lookup must remain stable after JIT warming')
 end
 
 @Test function Index()
