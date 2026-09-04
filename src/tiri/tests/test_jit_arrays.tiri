@@ -666,6 +666,16 @@ function traced_array_get_string_error(Values:array<byte>, Start:num):str
    return Values.getString(Start, 1)
 end
 
+function traced_array_branch_error(Values:array<byte>, FirstBranch:bool, Start:num):str
+   local result = ''
+   if FirstBranch then
+      for i in {1 into 10} do result = Values.getString(Start, 1) end
+   else
+      for i in {1 into 10} do result = Values.getString(Start, 1) end
+   end
+   return result
+end
+
 @Test(hotpath=80) function JITArrayHelpersPreserveErrorStack()
    jit.on()
    jit.flush()
@@ -708,6 +718,8 @@ end
       traced_array_get_string_error(bytes, -1)
    except error_value
       assert(error_value != nil, 'A traced getString range error should provide an error value')
+      assert(error_value.source != nil and error_value.line > 0,
+         'A traced getString range error should retain its source location')
    success
       error('A traced getString range error should fail')
    end
@@ -717,6 +729,39 @@ end
    assert(traced_array_resize_sync(integers, 4) is 4 and traced_array_get_string_error(bytes, 1) is 'b',
       'Array helper calls must remain usable after caught trace errors')
    assert(count_jit_traces(30) > 0, 'Expected the array helper workload to produce JIT traces')
+end
+
+@Test(hotpath=80) function JITArrayErrorsUseActiveRootTrace()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local bytes = array.new("abc")
+   for i in {1 into 80} do
+      assert(traced_array_branch_error(bytes, true, 0) is 'a')
+      assert(traced_array_branch_error(bytes, false, 0) is 'a')
+   end
+
+   local first_line = 0
+   try
+      traced_array_branch_error(bytes, true, -1)
+   except error_value
+      first_line = error_value.line
+   success
+      error('The first traced array branch should fail')
+   end
+
+   local second_line = 0
+   try
+      traced_array_branch_error(bytes, false, -1)
+   except error_value
+      second_line = error_value.line
+   success
+      error('The second traced array branch should fail')
+   end
+
+   assert(first_line > 0 and second_line > 0, 'Both traced array branches should retain source lines')
+   assert(first_line != second_line, 'Each traced array branch should report its active root trace source line')
 end
 
 @Test(hotpath=80) function ArrayPushSingleValueTracesAndReturnsLength()
