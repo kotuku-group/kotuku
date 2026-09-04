@@ -857,6 +857,7 @@ void register_io_class(lua_State *Lua)
       { "flush",       file_flush },
       { "seek",        file_seek },
       { "lines",       file_lines },
+      { "__close",     file_gc },
       { "__gc",        file_gc },
       { nullptr, nullptr }
    };

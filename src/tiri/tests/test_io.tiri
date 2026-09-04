@@ -102,6 +102,37 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test(labels=['io', 'file']) function IOAutomaticClose()
+   test_path = createTestFile('test_automatic_close.txt', 'test')
+   file_ref = nil
+
+   do
+      local file <close> = io.open(test_path, 'r')
+      file_ref = file
+      assert(io.type(file_ref) is 'file', 'File should remain open inside its owning scope')
+   end
+
+   assert(io.type(file_ref) is 'closed file', 'File should be closed when its owning scope exits')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(labels=['io', 'file']) function IOAutomaticCloseOnError()
+   test_path = createTestFile('test_automatic_close_error.txt', 'test')
+   file_ref = nil
+
+   try
+      local file <close> = io.open(test_path, 'r')
+      file_ref = file
+      error('Intentional automatic file close test error')
+   except e
+   end
+
+   assert(io.type(file_ref) is 'closed file', 'File should be closed during error unwinding')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test(labels=['io', 'file', 'defaults']) function IOCloseDefaultOutput()
    output_path = glTestFolder .. 'test_close_default_output.txt'
    output_file = io.output(output_path)
