@@ -1,0 +1,846 @@
+-- Flute tests for JIT recording of native-array operations.
+
+local ir_loop <const> = 17
+local ir_xload <const> = 70
+local ir_bufput <const> = 86
+local ir_bufstr <const> = 87
+local ir_calln <const> = 95
+local ir_calla <const> = 96
+local ir_calll <const> = 97
+local ir_calls <const> = 98
+
+struct JITArrayContractAlpha
+   Value: int
+end
+
+struct JITArrayContractBeta
+   Value: int
+end
+
+@BeforeAll
+function SetupJitArrayTests()
+   jit.on()
+   jit.opt.start()
+end
+
+function ir_opcode(IrOt)
+   return IrOt >> 8
+end
+
+function count_trace_opcode(TraceNo, Info, Opcode)
+   local count = 0
+   for idx in {1 into Info.nins} do
+      local _, ir_ot = jit.util.traceIR(TraceNo, idx)
+      if ir_ot != nil and ir_opcode(ir_ot) is Opcode then
+         count++
+      end
+   end
+   return count
+end
+
+function first_trace_opcode(TraceNo, Info, Opcode)
+   for idx in {1 into Info.nins} do
+      local _, ir_ot = jit.util.traceIR(TraceNo, idx)
+      if ir_ot != nil and ir_opcode(ir_ot) is Opcode then return idx end
+   end
+   return nil
+end
+
+function count_jit_traces(MaxTraceNo)
+   local count = 0
+   for trace_no in {1 into MaxTraceNo} do
+      if jit.util.traceInfo(trace_no) != nil then count++ end
+   end
+   return count
+end
+
+function traced_array_ipairs_strings(Values:array<str>, Repetitions:num):<num, num, num>
+   local key_checksum = 0
+   local value_checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in ipairs(Values) do
+         key_checksum += key
+         value_checksum += #value
+         count++
+      end
+   end
+   return key_checksum, value_checksum, count
+end
+
+function traced_array_pairs_integers(Values:array<int>, Repetitions:num):<num, num, num>
+   local key_checksum = 0
+   local value_checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in pairs(Values) do
+         key_checksum += key
+         value_checksum += value
+         count++
+      end
+   end
+   return key_checksum, value_checksum, count
+end
+
+function traced_dynamic_array_ipairs(Values:any, Repetitions:num):<num, num>
+   local checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in ipairs(Values) do
+         checksum += key + value
+         count++
+      end
+   end
+   return checksum, count
+end
+
+function traced_any_array_ipairs(Values:array<any>, Repetitions:num):<num, num>
+   local checksum = 0
+   local count = 0
+   for repetition in {1 into Repetitions} do
+      for key, value in ipairs(Values) do
+         checksum += key
+         if value != nil then checksum += value end
+         count++
+      end
+   end
+   return checksum, count
+end
+
+function count_trace_calls(TraceNo, Info)
+   return count_trace_opcode(TraceNo, Info, ir_calln) + count_trace_opcode(TraceNo, Info, ir_calla) +
+      count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
+end
+
+function array_method_clear_workload(Count):str
+   local result = array.new("")
+
+   for i in {1 into Count} do
+      result.clear()
+      array.push(result, "clear")
+   end
+
+   return array.getString(result)
+end
+
+function array_method_resize_workload(Count):str
+   local result = array.new("abcdef")
+
+   for i in {1 into Count} do
+      result.resize(0)
+      array.push(result, "resize")
+   end
+
+   return array.getString(result)
+end
+
+function array_method_push_workload(Count):str
+   local result = array.new("")
+
+   for i in {1 into Count} do
+      result.push("push")
+   end
+
+   return array.getString(result)
+end
+
+function array_unknown_method_workload(Count)
+   local arr = array<int> { 1, 2, 3 }
+   local total = 0
+
+   for i in {1 into Count} do
+      total += arr[0]
+      if i is Count then arr.missingPhaseOneMethod() end
+   end
+
+   return total
+end
+
+function array_clear_then_push(Array)
+   Array.clear()
+   array.push(Array, "base")
+   return array.getString(Array)
+end
+
+function run_array_method_trace(Workload, Count):<str, str, num>
+   jit.off()
+   local expected = Workload(Count)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local result:str = nil
+   for i in {0 to 80} do
+      result = Workload(Count)
+   end
+
+   return expected, result, count_jit_traces(30)
+end
+
+@Test(hotpath=100) function ArrayIteratorTraces()
+   function ensure_trace(IterFunc)
+      jit.on()
+      jit.flush()
+      jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+      function traced_loop(Count)
+         arr = array<int> { 1, 2, 3, 4 }
+         sum = 0
+         for i in {1 into Count} do
+            for idx, val in IterFunc(arr) do
+               sum += val
+            end
+         end
+         return sum
+      end
+
+      for i in {0 to 80} do
+         traced_loop(3)
+      end
+
+      for trace_no in {1 into 20} do
+         info = jit.util.traceInfo(trace_no)
+         if info != nil then
+            return true
+         end
+      end
+
+      return false
+   end
+
+   assert(ensure_trace(ipairs) is true, "Expected array ipairs to produce a JIT trace")
+   assert(ensure_trace(pairs) is true, "Expected array pairs to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayMethodClearLookupTraces()
+   local expected, result, trace_count = run_array_method_trace(array_method_clear_workload, 12)
+
+   assert(result is expected, f"Expected traced array.clear() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array.clear() method lookup to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayMethodResizeLookupTraces()
+   local expected, result, trace_count = run_array_method_trace(array_method_resize_workload, 12)
+
+   assert(result is expected, f"Expected traced array.resize() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array.resize() method lookup to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayMethodPushLookupTraces()
+   local expected, result, trace_count = run_array_method_trace(array_method_push_workload, 12)
+
+   assert(result is expected, f"Expected traced array.push() result '{expected}', got '{result}'")
+   assert(trace_count > 0, "Expected array.push() method lookup to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayUnknownMethodStillRaises()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local saw_error = false
+   local message = ""
+
+   for i in {0 to 80} do
+      try
+         array_unknown_method_workload(6)
+      except e
+         saw_error = true
+         message = e.message ?? tostring(e)
+      end
+   end
+
+   assert(saw_error is true, "Unknown array method should still raise an error")
+   assert(message.find("call") != nil or message.find("index") != nil,
+      f"Unknown array method should raise a call/index error, got '{message}'")
+end
+
+@Test(hotpath=80) function ArrayMethodMetatableOverrideKeepsBuiltinPriority()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local arr = array.new("")
+   local result = ""
+
+   for i in {0 to 80} do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "base", f"Expected base array method result before override, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected base-metatable array method call to produce a JIT trace")
+
+   debug.setMetatable(arr, {
+      ['clear'] = function(Self)
+         array.resize(Self, 0)
+         array.push(Self, "override")
+      end
+   })
+
+   result = array_clear_then_push(arr)
+   assert(result is "base", f"Expected the built-in clear method to retain call-position priority, got '{result}'")
+
+   debug.setMetatable(arr, nil)
+   jit.flush()
+
+   for i in {0 to 80} do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "base", f"Expected nil array metatable to fall back to base methods, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected nil array metatable fallback to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayMethodInstanceSlotMutationKeepsBuiltinPriority()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local arr = array.new("")
+   local mt = {
+      ['clear'] = function(Self)
+         array.resize(Self, 0)
+         array.push(Self, "first")
+      end
+   }
+   debug.setMetatable(arr, mt)
+
+   local result = ""
+   for i in {0 to 80} do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "base", f"Expected the built-in clear method before metatable mutation, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected per-instance array method call to produce a JIT trace")
+
+   mt['clear'] = function(Self)
+      array.resize(Self, 0)
+      array.push(Self, "second")
+   end
+
+   try
+      result = array_clear_then_push(arr)
+      assert(result is "base", f"Expected the built-in clear method after metatable mutation, got '{result}'")
+   except e
+      debug.setMetatable(arr, nil)
+      error(e)
+   end
+
+   debug.setMetatable(arr, nil)
+end
+
+@Test(hotpath=80) function ArrayMethodBaseSlotMutationKeepsBuiltinPriority()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local arr = array.new("")
+   local base_mt = debug.getMetatable(arr)
+   local original_clear = base_mt.clear
+   local result = ""
+
+   for i in {0 to 80} do
+      result = array_clear_then_push(arr)
+   end
+
+   assert(result is "base", f"Expected base method result before mutation, got '{result}'")
+   assert(count_jit_traces(30) > 0, "Expected base array method call to produce a JIT trace")
+
+   base_mt['clear'] = function(Self)
+      array.resize(Self, 0)
+      array.push(Self, "patched")
+   end
+
+   try
+      result = array_clear_then_push(arr)
+      assert(result is "base", f"Expected the built-in clear method after base-slot mutation, got '{result}'")
+   except e
+      base_mt['clear'] = original_clear
+      error(e)
+   end
+
+   base_mt['clear'] = original_clear
+end
+
+@Test(hotpath=80) function ArrayNewLiteralTypeTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_new(Count)
+      local total = 0
+      for i in {1 into Count} do
+         local arr = array.new(i % 5, "int")
+         total += #arr
+      end
+      return total
+   end
+
+   local result = 0
+   for i in {0 to 80} do
+      result = traced_array_new(10)
+   end
+
+   assert(result is 20, f"Expected recorded array.new() loop to total 20, got {result}")
+
+   local trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected array.new(size, literal_type) to produce a JIT trace")
+end
+
+@Test(hotpath=80) function SignedInt8ArrayAccessTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_signed_int8_array(Count)
+      local source = array<int8> { -128 }
+      local destination = array<int8, 1>
+      local total = 0
+
+      for i in {1 into Count} do
+         destination[0] = source[0] + i - 1
+         total += destination[0]
+      end
+
+      return total, destination[0]
+   end
+
+   local total = 0
+   local last = 0
+   for i in {0 to 80} do
+      total, last = traced_signed_int8_array(10)
+   end
+
+   assert(total is -1235 and last is -119,
+      f"Expected signed int8 trace result -1235/-119, got {total}/{last}")
+   assert(count_jit_traces(20) > 0, "Expected signed int8 array access to produce a JIT trace")
+end
+
+@Test(hotpath=80) function NativeArrayIteratorLoadsUseGuardedFastPaths()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local strings = array<str> { "a", "bb", "ccc" }
+   local integers = array<int> { 10, 20, 30 }
+   local doubles = array<double> { 1.5, 2.5, 3.5 }
+   local mixed = array<any> { 4, nil, 6 }
+
+   local string_keys, string_values, string_count = traced_array_ipairs_strings(strings, 40)
+   assert(string_keys is 120 and string_values is 240 and string_count is 120,
+      f"Unexpected string ipairs result {string_keys}/{string_values}/{string_count}")
+
+   local integer_keys, integer_values, integer_count = traced_array_pairs_integers(integers, 40)
+   assert(integer_keys is 120 and integer_values is 2400 and integer_count is 120,
+      f"Unexpected integer pairs result {integer_keys}/{integer_values}/{integer_count}")
+
+   local dynamic_checksum, dynamic_count = traced_dynamic_array_ipairs(integers, 40)
+   assert(dynamic_checksum is 2520 and dynamic_count is 120,
+      f"Unexpected dynamic integer ipairs result {dynamic_checksum}/{dynamic_count}")
+   dynamic_checksum, dynamic_count = traced_dynamic_array_ipairs(doubles, 40)
+   assert(dynamic_checksum is 420 and dynamic_count is 120,
+      f"Unexpected dynamic double ipairs result {dynamic_checksum}/{dynamic_count}")
+
+   local mixed_checksum, mixed_count = traced_any_array_ipairs(mixed, 40)
+   assert(mixed_checksum is 520 and mixed_count is 120,
+      f"Unexpected mixed any ipairs result {mixed_checksum}/{mixed_count}")
+
+   local direct_load_trace_found = false
+   for trace_no in {1 into 30} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and count_trace_opcode(trace_no, info, ir_xload) > 0 and
+            count_trace_calls(trace_no, info) is 0 then
+         direct_load_trace_found = true
+         break
+      end
+   end
+   assert(direct_load_trace_found, "Expected native ipairs/pairs iteration to produce a call-free direct-load trace")
+   assert(count_jit_traces(30) > 0, "Expected native array iterator workloads to produce JIT traces")
+end
+
+@Test(hotpath=80) function ArrayNewObjTypeTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_obj_array_new(Count)
+      local total = 0
+      for i in {1 into Count} do
+         local arr = array<obj, 2>
+         total += #arr
+      end
+      return total
+   end
+
+   local result = 0
+   for i in {0 to 80} do
+      result = traced_obj_array_new(10)
+   end
+
+   assert(result is 20, f"Expected recorded array<obj> loop to total 20, got {result}")
+
+   local allocation_trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and first_trace_opcode(trace_no, info, ir_loop) != nil and
+            count_trace_opcode(trace_no, info, ir_calla) > 0 then
+         allocation_trace_found = true
+         break
+      end
+   end
+   assert(allocation_trace_found, "Expected array<obj> allocation to be recorded inside a loop trace")
+end
+
+@Test(hotpath=80) function ArrayClearTracesAndInvalidatesLength()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_clear(Count)
+      local arr = array<int> { 1, 2, 3, 4 }
+      local total = 0
+
+      for i in {1 into Count} do
+         total += #arr
+         arr.clear()
+         total += #arr
+         arr.push(i)
+      end
+
+      return total, #arr
+   end
+
+   local total = 0
+   local len = 0
+   for i in {0 to 80} do
+      total, len = traced_array_clear(10)
+   end
+
+   assert(total is 13, f"Expected array.clear() length invalidation total 13, got {total}")
+   assert(len is 1, f"Expected final array length 1 after clear/push loop, got {len}")
+
+   local trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected array.clear() to produce a JIT trace")
+end
+
+@Test function TableClearMetamethodTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local calls = 0
+   local target = setmetatable({ value=42 }, {
+      ['__clear'] = function()
+         calls += 1
+      end
+   })
+
+   local function clear_target(Target:table)
+      Target.clear()
+   end
+
+   for i in {0 to 80} do clear_target(target) end
+
+   assert(calls is 80, f"Expected __clear to run 80 times, got {calls}")
+   assert(target.value is 42, "Recorded __clear calls should not raw-clear the receiver")
+   assert(count_jit_traces(30) > 0, "Expected table.clear() with __clear to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayResizeTracesAndInvalidatesLength()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_resize(Count)
+      local arr = array<int> { 7, 8 }
+      local total = 0
+      local result = 0
+
+      for i in {1 into Count} do
+         total += #arr
+         result = arr.resize((i % 4) + 1)
+         total += #arr
+      end
+
+      return total, result, #arr, arr[2]
+   end
+
+   local total = 0
+   local result = 0
+   local len = 0
+   local expanded_value = 0
+   for i in {0 to 80} do
+      total, result, len, expanded_value = traced_array_resize(10)
+   end
+
+   assert(total is 49, f"Expected array.resize() length invalidation total 49, got {total}")
+   assert(result is 3, f"Expected final resize() result 3, got {result}")
+   assert(len is 3, f"Expected final array length 3 after resize loop, got {len}")
+   assert(expanded_value is 0, f"Expected grown array slot to be zero-filled, got {expanded_value}")
+
+   local trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected array.resize() to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayGetStringTracesWithRuntimeRemainingLength()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_get_string(Count)
+      local arr = array.new("abcdef")
+      local total = 0
+
+      for i in {1 into Count} do
+         arr.resize((i % 4) + 2)
+         total += #arr.getString(1)
+         total += #arr.getString(0, 1)
+      end
+
+      return total, #arr.getString(1)
+   end
+
+   local total = 0
+   local final_remaining = 0
+   for i in {0 to 80} do
+      total, final_remaining = traced_array_get_string(10)
+   end
+
+   assert(total is 35, f"Expected array.getString() runtime remaining total 35, got {total}")
+   assert(final_remaining is 3, f"Expected final remaining string length 3, got {final_remaining}")
+
+   local trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected array.getString() to produce a JIT trace")
+end
+
+function traced_struct_array_get(Values:array<struct<JITArrayContractAlpha>>, Index:num):struct<JITArrayContractAlpha>
+   return Values[Index]
+end
+
+function traced_struct_array_set(Values:array<struct<JITArrayContractAlpha>>, Value:any)
+   Values[0] = Value
+end
+
+function traced_float_array_push(Values:array<float>, Value:num):num
+   return Values.push(Value)
+end
+
+function traced_array_resize_sync(Values:array<int>, Size:num):num
+   return Values.resize(Size)
+end
+
+function traced_array_get_string_error(Values:array<byte>, Start:num):str
+   return Values.getString(Start, 1)
+end
+
+@Test(hotpath=80) function JITArrayHelpersPreserveErrorStack()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local alpha = struct<JITArrayContractAlpha> { Value=7 }
+   local beta = struct<JITArrayContractBeta> { Value=9 }
+   local structs = array<struct<JITArrayContractAlpha>> { alpha }
+   local floats = array<float>
+   local integers = array<int> { 1 }
+   local bytes = array.new("abc")
+
+   for i in {1 into 200} do
+      assert(traced_struct_array_get(structs, 0).Value is 7,
+         'A helper-backed structure array get should remain valid while hot')
+      traced_struct_array_set(structs, alpha)
+      traced_float_array_push(floats, 1.5)
+      traced_array_resize_sync(integers, (i % 3) + 1)
+      assert(traced_array_get_string_error(bytes, 0) is 'a',
+         'A helper-backed byte string extraction should remain valid while hot')
+   end
+
+   try
+      traced_struct_array_set(structs, beta)
+   except error_value
+      assert(error_value != nil, 'A traced structure-array mismatch should provide an error value')
+   success
+      error('A traced structure-array mismatch should fail')
+   end
+
+   try
+      traced_float_array_push(floats, 1e100)
+   except error_value
+      assert(error_value != nil, 'A traced float-array overflow should provide an error value')
+   success
+      error('A traced float-array overflow should fail')
+   end
+
+   try
+      traced_array_get_string_error(bytes, -1)
+   except error_value
+      assert(error_value != nil, 'A traced getString range error should provide an error value')
+   success
+      error('A traced getString range error should fail')
+   end
+
+   assert(traced_struct_array_get(structs, 0).Value is 7,
+      'Caught helper errors must preserve the original structure-array value and frame')
+   assert(traced_array_resize_sync(integers, 4) is 4 and traced_array_get_string_error(bytes, 1) is 'b',
+      'Array helper calls must remain usable after caught trace errors')
+   assert(count_jit_traces(30) > 0, 'Expected the array helper workload to produce JIT traces')
+end
+
+@Test(hotpath=80) function ArrayPushSingleValueTracesAndReturnsLength()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_push(Count)
+      local arr = array.new("")
+      local total = 0
+      local result = 0
+
+      for i in {1 into Count} do
+         result = arr.push("xy")
+         total += result
+      end
+
+      return total, result, #arr
+   end
+
+   local total = 0
+   local result = 0
+   local len = 0
+   for i in {0 to 80} do
+      total, result, len = traced_array_push(10)
+   end
+
+   assert(total is 110, f"Expected array.push() length result total 110, got {total}")
+   assert(result is 20, f"Expected final push() result 20, got {result}")
+   assert(len is 20, f"Expected final array length 20 after push loop, got {len}")
+
+   local trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected single-value array.push() to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayAppendFlattenedConcatChainTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_append_concat(Count)
+      local arr = array<byte>
+
+      for i in {1 into Count} do
+         arr ..= "a" .. 65 .. "b" .. 6.5
+      end
+
+      return arr.getString(), #arr
+   end
+
+   local final = ""
+   local len = 0
+   for i in {0 to 80} do
+      final, len = traced_array_append_concat(10)
+   end
+
+   assert(final is "a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5a65b6.5",
+      f"Expected flattened append result repeated 10 times, got {final}")
+   assert(len is 70, f"Expected flattened append result length 70, got {len}")
+
+   local trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         break
+      end
+   end
+
+   assert(trace_found is true, "Expected flattened array append chain to produce a JIT trace")
+end
+
+@Test(hotpath=80) function ArrayAppendMultiPieceConcatUsesBufferTrace()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_array_append_dynamic(Count)
+      local arr = array<byte>
+
+      for i in {1 into Count} do
+         arr ..= "x" .. i .. "y"
+      end
+
+      return arr.getString(), #arr
+   end
+
+   local final = ""
+   local len = 0
+   for i in {0 to 80} do
+      final, len = traced_array_append_dynamic(10)
+   end
+
+   assert(final is "x1yx2yx3yx4yx5yx6yx7yx8yx9yx10y",
+      f"Expected buffered append trace result, got {final}")
+   assert(len is 31, f"Expected buffered append trace length 31, got {len}")
+
+   local buffer_trace_found = false
+   for trace_no in {1 into 30} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         local bufput_count = count_trace_opcode(trace_no, info, ir_bufput)
+         if bufput_count > 0 then
+            buffer_trace_found = true
+            assert(count_trace_opcode(trace_no, info, ir_bufstr) <= 1,
+               "array append buffer trace should intern the completed buffer at most once")
+            assert(count_trace_calls(trace_no, info) <= 2,
+               "multi-piece array append should not record one mutating call per piece")
+         end
+      end
+   end
+
+   assert(buffer_trace_found is true, "Expected multi-piece array append to record buffer IR")
+end
+
+@AfterAll
+function TeardownJitArrayTests()
+   jit.opt.start()
+end

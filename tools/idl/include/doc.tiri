@@ -1230,7 +1230,7 @@ global function docTypes(References:table)
       if not References or (not References['TYPE:' .. ct.prefix]) then
          -- Type is not referenced
       else
-         out ..= "    <constants lookup=\"" .. ct.prefix .. '"' .. comment.escXML() .. '>\n'
+         out ..= "    <constants lookup=\"" .. ct.prefix .. '"' .. comment .. '>\n'
 
          sortedValues = { }
          for v in values(ct.list) do
