@@ -668,7 +668,6 @@ LJLIB_CF(string_escXML)
          case '<': lj_buf_putmem(sb, "&lt;", 4); break;
          case '>': lj_buf_putmem(sb, "&gt;", 4); break;
          case '"': lj_buf_putmem(sb, "&quot;", 6); break;
-         case '\'': lj_buf_putmem(sb, "&apos;", 6); break;
          default: lj_buf_putb(sb, c); break;
       }
    }

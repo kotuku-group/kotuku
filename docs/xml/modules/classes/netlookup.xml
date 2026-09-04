@@ -89,7 +89,7 @@
       <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, STRVIEW Address)</prototype>
       <tiriPrototype>err = ResolveAddress(Address:str)</tiriPrototype>
       <input>
-        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. "123.111.94.82".</param>
+        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. &quot;123.111.94.82&quot;.</param>
       </input>
       <description>
 <p>ResolveAddress() performs a IP address resolution, converting an address to an official host name and list of IP addresses.  The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication is used so that the function can return immediately.  The <fl>Callback</fl> function will be called on completion of the process.</p>

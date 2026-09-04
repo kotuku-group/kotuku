@@ -211,7 +211,7 @@ if (query.ok()) {
       <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, STRVIEW FunctionName, FUNCTION Callback)</prototype>
       <tiriPrototype>err = RegisterFunction(FunctionName:str, Callback:func)</tiriPrototype>
       <input>
-        <param type="STRVIEW" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
+        <param type="STRVIEW" name="FunctionName">The name of the function to register (e.g., &quot;custom-function&quot;).</param>
         <param type="FUNCTION" name="Callback">The callback function to register for FunctionName.</param>
       </input>
       <description>
