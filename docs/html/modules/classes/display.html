@@ -53,8 +53,8 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-DisplayType" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-DisplayType"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">DisplayType</th><td class="col-md-1"><span class="text-nowrap">DT</span></td><td>Identifies the active display backend.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-DisplayType" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field reports the display driver type, such as native, X11, Windows GDI or OpenGL ES.</p>
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">DT::GLES</th><td>The display is driven by OpenGLES.</td></tr>
-<tr><th class="col-md-1">DT::NATIVE</th><td>The display is native (supported by internal drivers).</td></tr>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">DT::GLES</th><td>The selected display driver uses OpenGL ES.</td></tr>
+<tr><th class="col-md-1">DT::NATIVE</th><td>The selected display driver uses no platform-specific hosted backend.</td></tr>
 <tr><th class="col-md-1">DT::WINGDI</th><td>The display is driven by Microsoft Windows drivers.</td></tr>
 <tr><th class="col-md-1">DT::X11</th><td>The display is driven by the X Window System (X11, X.Org, XFree86)</td></tr>
 </tbody></table>
@@ -405,8 +405,8 @@
 <tr><th>DPMS::STANDBY</th><td>Puts the display into standby (reduced power) mode.</td></tr>
 <tr><th>DPMS::SUSPEND</th><td>Puts the display into suspend mode (blanks the display output while maintaining normal power levels).</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="DT"><h1>DT Type</h1><p class="lead">Flags for GetDisplayType().</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DT::GLES</th><td>The display is driven by OpenGLES.</td></tr>
-<tr><th>DT::NATIVE</th><td>The display is native (supported by internal drivers).</td></tr>
+<div class="docs-content" style="display:none;" id="DT"><h1>DT Type</h1><p class="lead">Display backend identities returned by GetDisplayType().</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DT::GLES</th><td>The selected display driver uses OpenGL ES.</td></tr>
+<tr><th>DT::NATIVE</th><td>The selected display driver uses no platform-specific hosted backend.</td></tr>
 <tr><th>DT::WINGDI</th><td>The display is driven by Microsoft Windows drivers.</td></tr>
 <tr><th>DT::X11</th><td>The display is driven by the X Window System (X11, X.Org, XFree86)</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>

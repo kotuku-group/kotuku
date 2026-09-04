@@ -65,11 +65,11 @@
       <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement</const>
       <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement</const>
       <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
-      <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
+      <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as &apos;speed&apos;,</const>
       <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display</const>
       <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
       <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
-      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel</const>
+      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of &apos;clicks&apos; rotated on the wheel</const>
       <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
     </constants>
 

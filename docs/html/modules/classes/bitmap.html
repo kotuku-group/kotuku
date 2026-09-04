@@ -358,6 +358,8 @@ unpackAlpha(Colour)
 <p>Errors returned by the destination object's Write action are propagated to the caller.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">NoSupport</th><td>The bitmap surface cannot be read by the CPU.</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>The read buffer for a host drawable could not be allocated.</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>A buffer overflow has occurred</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>

@@ -221,8 +221,8 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="GetDisplayType"><h2>GetDisplayType()</h2><p class="lead">Returns the type of display supported.</p><div class="card card-info mb-3"><div class="card-header"><samp>DT gfx::GetDisplayType()</samp></div></div>
-<p>This function returns the type of display supported by the loaded Display module.  Current return values are:</p>
+<div class="docs-content" style="display:none;" id="GetDisplayType"><h2>GetDisplayType()</h2><p class="lead">Returns the selected display driver's backend type.</p><div class="card card-info mb-3"><div class="card-header"><samp>DT gfx::GetDisplayType()</samp></div></div>
+<p>This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:</p>
 <table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody></tbody></table>
     <h3>Result</h3><p>Returns an integer indicating the display type.</p><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="GetInputTypeName"><h2>GetInputTypeName()</h2><p class="lead">Returns the string name for an input type.</p><div class="card card-info mb-3"><div class="card-header"><samp>CSTRING gfx::GetInputTypeName(JET Type)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('JET');">Type</a></td><td>JET type integer.</td></tr>
