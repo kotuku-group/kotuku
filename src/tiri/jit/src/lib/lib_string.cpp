@@ -187,7 +187,11 @@ static CSTRING find_separator(CSTRING Pos, CSTRING End, CSTRING Sep, MSize SepLe
    if (SepLen IS 1) return (CSTRING)memchr(Pos, Sep[0], End - Pos);
 
    // Multi-character separator.
-   for (CSTRING p = Pos; p <= End - SepLen; p++) {
+   MSize remaining = MSize(End - Pos);
+   if (SepLen > remaining) return nullptr;
+
+   CSTRING last = End - SepLen;
+   for (CSTRING p = Pos; p <= last; p++) {
       if (memcmp(p, Sep, SepLen) IS 0) return p;
    }
    return nullptr;
