@@ -30,7 +30,7 @@ LJ_FUNC void lj_str_resize(lua_State* L, MSize newmask);
 // Intern a string and return the interned string object.
 LJ_FUNCA GCstr* lj_str_new(lua_State* L, const char* str, size_t len);
 
-// Allocate a mutable string buffer outside the interning table.
+// Allocate a distinct, NUL-filled mutable string buffer outside the interning table.
 LJ_FUNCA GCstr* lj_str_newbuf(lua_State* L, MSize len);
 
 // Free a string object (called during GC).

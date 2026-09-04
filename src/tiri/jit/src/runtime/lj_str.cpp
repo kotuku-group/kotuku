@@ -167,8 +167,8 @@ GCstr * lj_str_newbuf(lua_State *L, MSize len)
    s->reserved = 0;
    s->flags    = STRF_MUTABLE_BUFFER;
 
-   // Clear last 4 bytes of allocated memory. Implies zero-termination, too.
-   *(uint32_t *)(strdatawr(s) + (len & ~MSize(3))) = 0;
+   // Clear the visible payload and the aligned terminator/padding word.  Mutable buffers are readable immediately.
+   memset(strdatawr(s), 0, (len + 4) & ~MSize(3));
    return s;
 }
 
