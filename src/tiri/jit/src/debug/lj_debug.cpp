@@ -19,6 +19,7 @@
 #include "lj_strfmt.h"
 #include "lj_gc.h"
 #include "lj_jit.h"
+#include "lj_dispatch.h"
 
 // Invalid bytecode position.
 #define NO_BCPOS   (~(BCPOS)0)
@@ -54,6 +55,42 @@ cTValue * lj_debug_frame(lua_State *L, int level, int *size)
 }
 
 //********************************************************************************************************************
+// Return the starting bytecode position of the active machine-code trace when it belongs to Function.
+
+static BCPOS debug_tracepc(lua_State *L, GCfunc *Function)
+{
+   global_State *global = G(L);
+   if (not tvref(global->jit_base)) return NO_BCPOS;
+
+   jit_State *jit = G2J(global);
+   GCproto *prototype = funcproto(Function);
+   GCtrace *trace = nullptr;
+
+   int32_t trace_number = global->vmstate;
+   if (trace_number > 0 and TraceNo(trace_number) < jit->sizetrace) {
+      trace = traceref(jit, TraceNo(trace_number));
+      if (trace and &gcref(trace->startpt)->pt != prototype) trace = nullptr;
+   }
+
+   // ARM and PowerPC traces do not publish their trace number through vmstate.  The prototype's first root trace
+   // still provides a valid source location, and is also a safe fallback if the active trace belongs to an inlined
+   // frame rather than Function.
+
+   if (not trace) {
+      TraceNo root_trace_number = prototype->trace;
+      if (not root_trace_number or root_trace_number >= jit->sizetrace) return NO_BCPOS;
+
+      trace = traceref(jit, root_trace_number);
+      if (not trace or &gcref(trace->startpt)->pt != prototype) return NO_BCPOS;
+   }
+
+   const BCIns *pc = mref<const BCIns>(trace->startpc);
+   if (not pc or pc < proto_bc(prototype) or pc >= proto_bc(prototype) + prototype->sizebc) return NO_BCPOS;
+
+   return proto_bcpos(prototype, pc);
+}
+
+//********************************************************************************************************************
 // Return bytecode position for function/frame or NO_BCPOS.
 
 static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
@@ -67,9 +104,13 @@ static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
       return NO_BCPOS;
    }
    else if (nextframe IS nullptr) {  //  Tiri function on top.
+      if (tvref(G(L)->jit_base)) return debug_tracepc(L, fn);
+
       void *cf = cframe_raw(L->cframe);
-      if (cf IS nullptr or (char*)cframe_pc(cf) IS (char*)cframe_L(cf)) return NO_BCPOS;
+      if (cf IS nullptr) return NO_BCPOS;
+
       ins = cframe_pc(cf);  //  Only happens during error/hook handling.
+      if (not ins or (char*)ins IS (char*)cframe_L(cf)) return NO_BCPOS;
    }
    else {
       if (frame_islua(nextframe)) ins = frame_pc(nextframe);
@@ -98,6 +139,8 @@ static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
          if (not ins) return NO_BCPOS;
       }
    }
+
+   if (not ins) return NO_BCPOS;
 
    pt = funcproto(fn);
    pos = proto_bcpos(pt, ins) - 1;

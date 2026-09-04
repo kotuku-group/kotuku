@@ -708,6 +708,8 @@ end
       traced_array_get_string_error(bytes, -1)
    except error_value
       assert(error_value != nil, 'A traced getString range error should provide an error value')
+      assert(error_value.source != nil and error_value.line > 0,
+         'A traced getString range error should retain its source location')
    success
       error('A traced getString range error should fail')
    end
