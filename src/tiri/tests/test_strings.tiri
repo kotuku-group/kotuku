@@ -16,6 +16,16 @@ function expect_nil_string_error(Callback:func, Name:str)
    assert(failed, Name .. '(nil) should raise an error')
 end
 
+function expect_split(Source:str, Separator:str, Expected:array<str>, Description:str)
+   local parts = Source.split(Separator)
+   assert(#parts is #Expected,
+      f'{Description}: expected {#Expected} parts, got {#parts}')
+   for index in {0 to #Expected} do
+      assert(parts[index] is Expected[index],
+         f'{Description}: part {index} has length {#parts[index]}, expected {#Expected[index]}')
+   end
+end
+
 @Test function Alloc()
    local sizes = array<int> { 0, 1, 2, 3, 4, 5, 7, 8, 9, 1000 }
    for _, size in sizes do
@@ -109,6 +119,20 @@ end
    nosep = string.split("hello", ",")
    assert(#nosep is 1, "No separator should return single item, got " .. #nosep)
    assert(nosep[0] is "hello", "Expected 'hello', got '" .. nosep[0] .. "'")
+end
+
+@Test function SplitLiteralSeparatorBoundaries()
+   expect_split('a,b,c', ',', array<str> { 'a', 'b', 'c' }, 'one-byte separator')
+   expect_split('one::two::three', '::', array<str> { 'one', 'two', 'three' }, 'multi-byte separator')
+   expect_split('a', 'separator-is-longer', array<str> { 'a' }, 'separator longer than source')
+   expect_split('alpha--x', '--', array<str> { 'alpha', 'x' }, 'separator longer than final segment')
+   expect_split('\0::alpha\0::beta', '\0::', array<str> { '', 'alpha', 'beta' },
+      'multi-byte separator containing NUL')
+   expect_split('::alpha::::beta::', '::', array<str> { '', 'alpha', '', 'beta', '' },
+      'leading, trailing and consecutive separators')
+   expect_split('aaaaa', 'aaa', array<str> { '', 'aa' }, 'overlapping separator candidates')
+   expect_split('alpha', '::', array<str> { 'alpha' }, 'absent separator')
+   expect_split('entire', 'entire', array<str> { '', '' }, 'separator equal to source')
 end
 
 @Test function SplitReturnsArray()
