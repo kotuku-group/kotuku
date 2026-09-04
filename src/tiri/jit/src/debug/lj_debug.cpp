@@ -72,17 +72,7 @@ static BCPOS debug_tracepc(lua_State *L, GCfunc *Function)
       if (trace and &gcref(trace->startpt)->pt != prototype) trace = nullptr;
    }
 
-   // ARM and PowerPC traces do not publish their trace number through vmstate.  The prototype's first root trace
-   // still provides a valid source location, and is also a safe fallback if the active trace belongs to an inlined
-   // frame rather than Function.
-
-   if (not trace) {
-      TraceNo root_trace_number = prototype->trace;
-      if (not root_trace_number or root_trace_number >= jit->sizetrace) return NO_BCPOS;
-
-      trace = traceref(jit, root_trace_number);
-      if (not trace or &gcref(trace->startpt)->pt != prototype) return NO_BCPOS;
-   }
+   if (not trace) return NO_BCPOS;
 
    const BCIns *pc = mref<const BCIns>(trace->startpc);
    if (not pc or pc < proto_bc(prototype) or pc >= proto_bc(prototype) + prototype->sizebc) return NO_BCPOS;
