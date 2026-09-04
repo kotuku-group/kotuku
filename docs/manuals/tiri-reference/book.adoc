@@ -18,6 +18,11 @@ Paul Manias
 :sectnums:
 :sectnumlevels: 3
 :index:
+:xrefstyle: full
+//:chapter-refsig: Ch.
+//:section-refsig: Ch.
+// Remove 'Section' from section references
+//:!section-refsig:
 
 toc::[]
 

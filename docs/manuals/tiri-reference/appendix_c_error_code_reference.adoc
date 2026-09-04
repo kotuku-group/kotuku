@@ -1,7 +1,5 @@
-// UPDATED: 2026-08-23 - Automatic promotion of API error codes moved from `try` to `checkall` (commit 136e79469)
-// UPDATED: 2026-09-01 - Runtime faults now carry a specific ERR code (commit ed7f16f04); revised the
-//                       ERR_Exception description, added ERR_FieldNotFound and ERR_UnknownProperty, and
-//                       corrected ERR_DirEmpty to ERR_EndOfSequence (commit 6d224df2f)
+// VERIFIED: 2026-09-04
+
 [[appendix-error-code-reference]]
 [appendix]
 == Error Code Reference
@@ -21,7 +19,7 @@ The threshold boundary is `ERR_Terminate` (value 9).
 
 === Error Code Table
 
-The following tables list the exported error codes referenced in this manual, with their constant names and descriptions.  Aliases are listed in parentheses where applicable.
+The following tables list the error codes exported to Tiri, with their constant names and descriptions.  Aliases are listed in parentheses where applicable.  Deprecated codes are omitted.
 
 [discrete]
 ==== Minor Codes
@@ -51,6 +49,10 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_Terminate` |Terminate processing.  Marks the exception threshold boundary.
 |`ERR_Failed` |General failure with no specific cause.
 |`ERR_Args` |Invalid arguments passed to a function.
+|`ERR_ParameterRequired` |A required parameter was not provided.
+|`ERR_ParameterUnknown` |The supplied parameter name is not recognised.
+|`ERR_DuplicateValue` |A duplicate value was provided where duplicates are not permitted.
+|`ERR_TimeOut` |The operation timed out before completion.
 |`ERR_Init` |Initialisation error.
 |`ERR_OutOfRange` |A value is outside the valid range.
 |`ERR_OutOfBounds` |Index or value is out of bounds.
@@ -82,8 +84,8 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_Read` |Error reading data from a source.
 |`ERR_Write` |Error writing data to a destination.
 |`ERR_InvalidPath` |The specified path is invalid.
-|`ERR_FileReadFlag` |File does not have read permission.
-|`ERR_FileWriteFlag` |File does not have write permission.
+|`ERR_FileReadFlag` |The file was not initialised with the `FL::READ` flag set.
+|`ERR_FileWriteFlag` |The file was not initialised with the `FL::WRITE` flag set.
 |`ERR_MissingPath` |A required path was not provided.
 |`ERR_BufferOverflow` |A buffer overflow was detected.
 |`ERR_Seek` |A seek operation failed.
@@ -96,7 +98,7 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_ReadOnly` |A write operation was attempted on a read-only resource.
 |`ERR_IdenticalPaths` |Source and destination paths are identical.
 |`ERR_OutOfSpace` |Insufficient storage space.
-|`ERR_Finished` (`ERR_EndOfFile`, `ERR_OutOfData`) |End of file or data stream reached.
+|`ERR_Finished` (`ERR_EndOfFile`, `ERR_OutOfData`) |The operation has finished.
 |`ERR_DataSize` |Data size is incorrect or exceeds limits.
 |`ERR_InputOutput` |General I/O error.
 |`ERR_ExpectedFolder` |A folder path was expected but a file or other type was provided.
@@ -112,7 +114,6 @@ The following tables list the exported error codes referenced in this manual, wi
 
 |`ERR_Search` (`ERR_NotFound`) |A search operation found no matching result.
 |`ERR_Query` |A query operation failed.
-|`ERR_FieldSearch` |A field search operation failed.
 |`ERR_NoMatchingObject` |No object matching the criteria was found.
 |`ERR_NoSearchResult` |A search produced no results.
 |`ERR_DoesNotExist` |The requested item does not exist.
@@ -150,10 +151,20 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_ObjectExists` |An object with the same identity already exists.
 |`ERR_Exists` |The item already exists.
 |`ERR_InvalidObject` (`ERR_WrongObjectType`, `ERR_WrongClass`) |The object is invalid or of the wrong type.
-|`ERR_Deactivated` |The object has been deactivated.
+|`ERR_Deactivated` |The object must be activated with the Activate action before this operation is permitted.
 |`ERR_InvalidReference` |An invalid object reference was provided.
-|`ERR_UseSubClass` |The operation requires a subclass implementation.
+|`ERR_UseDerived` |A registered derived class should be used in place of the base class.  Not an error condition.
 |`ERR_AlreadyDefined` |The item has already been defined.
+|`ERR_ImmutableField` |The field value is immutable and cannot be modified.
+|`ERR_FieldValidation` |Field validation failed.
+|`ERR_SetValueNotNumeric` |A numeric field was assigned an incompatible value.
+|`ERR_SetValueNotString` |A string field was assigned an incompatible value.
+|`ERR_SetValueNotObject` |An object field was assigned an incompatible value.
+|`ERR_SetValueNotFunction` |A function field was assigned an incompatible value.
+|`ERR_SetValueNotPointer` |A pointer field was assigned an incompatible value.
+|`ERR_SetValueNotArray` |An array field was assigned an incompatible value.
+|`ERR_SetValueNotLookup` |A lookup field was assigned an incompatible value.
+|`ERR_SetValueNotStruct` |A struct field was assigned an incompatible value.
 |===
 
 [discrete]
@@ -167,11 +178,8 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_NoPointer` |A null pointer was encountered.
 |`ERR_Memory` |General memory error.
 |`ERR_MemoryCorrupt` |Memory corruption detected.
-|`ERR_MemoryDoesNotExist` |The referenced memory block does not exist.
-|`ERR_AccessMemory` |Memory access error.
 |`ERR_AllocMemory` |Memory allocation error.
 |`ERR_ReallocMemory` |Memory reallocation failed.
-|`ERR_MemoryInfo` |Failed to retrieve memory information.
 |===
 
 [discrete]
@@ -181,7 +189,6 @@ The following tables list the exported error codes referenced in this manual, wi
 |===
 |Constant |Description
 
-|`ERR_InUse` |The resource is currently in use.
 |`ERR_InitModule` |Module initialisation failed.
 |`ERR_WrongVersion` |Version mismatch detected.
 |`ERR_NoAction` |The requested action is not available.
@@ -190,8 +197,7 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_CoreVersion` |Core framework version mismatch.
 |`ERR_IllegalMethodID` |An illegal method ID was specified.
 |`ERR_IllegalActionID` |An illegal action ID was specified.
-|`ERR_ModuleOpenFailed` |Failed to open a module binary.
-|`ERR_IllegalActionAttempt` |An illegal action was attempted.
+|`ERR_ModuleOpenFailed` |The module loaded, but failed in its Open routine.
 |`ERR_ModuleMissingInit` |Module is missing its initialisation routine.
 |`ERR_ModuleInitFailed` |Module initialisation routine failed.
 |`ERR_SystemLocked` |The system is locked and cannot accept the operation.
@@ -200,6 +206,11 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_LoadModule` |Failed to load a module binary.
 |`ERR_ServiceUnavailable` |The requested service is unavailable.
 |`ERR_ResolveSymbol` |Failed to resolve a symbol within a module.
+|`ERR_ModuleValidation` |Module validation failed.
+|`ERR_ProcessCreation` |Process creation failed.
+|`ERR_TaskExecutionFailed` |Task or process execution failed.
+|`ERR_MessageOperation` |A message queue operation failed.
+|`ERR_ResourceRegistration` |Failed to register a resource with the system.
 |===
 
 [discrete]
@@ -210,8 +221,10 @@ The following tables list the exported error codes referenced in this manual, wi
 |Constant |Description
 
 |`ERR_NoPermission` (`ERR_Permissions`, `ERR_PermissionDenied`) |Insufficient permissions or a security violation occurred.
-|`ERR_ExecViolation` |An execution violation was detected.
+|`ERR_ExecViolation` |Execution violation --- the function must be called from the task that owns the object.
 |`ERR_Security` |A security error occurred.
+|`ERR_NotAuthorised` |The client is not authorised to perform this operation.
+|`ERR_NoSecureSockets` |A secure sockets layer is not available in this environment.
 |===
 
 [discrete]
@@ -221,10 +234,11 @@ The following tables list the exported error codes referenced in this manual, wi
 |===
 |Constant |Description
 
+|`ERR_InUse` |The resource is currently in use.
 |`ERR_LockFailed` (`ERR_Lock`) |A lock operation failed.
 |`ERR_DeadLock` |A deadlock was detected.
-|`ERR_NotLocked` |The resource is not locked when a lock is required.
-|`ERR_AllocSemaphore` |Semaphore allocation failed.
+|`ERR_ResourceNotLocked` |A lock was expected on the resource but none was found.
+|`ERR_SemaphoreOperation` |A semaphore operation failed.
 |`ERR_Busy` |The resource is busy.
 |`ERR_LockRequired` |A lock is required before performing this operation.
 |`ERR_AlreadyLocked` (`ERR_Locked`) |The resource is already locked.
@@ -240,7 +254,6 @@ The following tables list the exported error codes referenced in this manual, wi
 |===
 |Constant |Description
 
-|`ERR_TimeOut` |The operation timed out before completion.
 |`ERR_HostNotFound` |The specified host was not found.
 |`ERR_InvalidURI` |The URI is invalid.
 |`ERR_ConnectionRefused` |The connection was refused by the remote host.
@@ -293,6 +306,8 @@ The following tables list the exported error codes referenced in this manual, wi
 
 |`ERR_Decompression` |A decompression error occurred.
 |`ERR_Compression` |A compression error occurred.
+|`ERR_CompressionStreamError` |A compression stream operation failed.
+|`ERR_InvalidCompression` |The compressed data is invalid or corrupted.
 |===
 
 [discrete]
@@ -314,13 +329,15 @@ The following tables list the exported error codes referenced in this manual, wi
 |`ERR_OwnerPassThrough` |The operation was passed through to the owner.
 |`ERR_VirtualVolume` |A virtual volume error occurred.
 |`ERR_UnrecognisedFieldType` |The field type is not recognised.
-|`ERR_Loop` |A loop error was detected.
+|`ERR_Loop` |An infinite loop was detected.
 |`ERR_Refresh` |A refresh operation failed.
 |`ERR_ListChildren` |Failed to list child objects.
 |`ERR_SmallMask` |The mask is too small.
-|`ERR_SanityFailure` |A sanity check failed.
+|`ERR_SanityCheckFailed` |A sanity check failed.
+|`ERR_AudioMix` |Audio mixing failed.
+|`ERR_CardReaderUnavailable` |The requested smart card reader is in use.
 |`ERR_TaskStillExists` |A task still exists when it was expected to have terminated.
-|`ERR_Recursion` |A recursion limit was exceeded.
+|`ERR_Recursion` |A recursive function call was detected.
 |`ERR_IllegalAddress` |An illegal address was specified.
 |`ERR_InvalidHandle` |An invalid handle was provided.
 |`ERR_NoMediaInserted` |No media is inserted in the device.

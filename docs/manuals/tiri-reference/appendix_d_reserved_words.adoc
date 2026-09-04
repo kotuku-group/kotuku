@@ -1,16 +1,5 @@
-// UPDATED: 2026-07-06 -- Added the `extern` keyword.
-// UPDATED: 2026-04-03 -- Clarified `is not` as an inequality form using reserved words.
-// CHANGED: 2026-08-07 -- Documented the contextual keywords `module` and `struct`, and `as` in its module-declaration role (commit 45b671b20).
-// UPDATED: 2026-08-13 -- Added the reserved word `using` and the contextual keyword `entity` (commit d3638efc0).
-// UPDATED: 2026-08-15 -- Added the reserved word `method` and the positions in which it stays available as an
-//                        identifier (commit ac4f30a67).
-// UPDATED: 2026-08-16 -- Renamed the reserved word `method` to `metamethod`; `method` is now an ordinary identifier
-//                        (commit 5c92d652a).
-// UPDATED: 2026-08-19 -- Removed the reserved word `metamethod`; it is now an ordinary identifier and metatable
-//                        handlers are ordinary functions (commit 81aa5f3).
-// UPDATED: 2026-08-23 - Added the reserved word `checkall` (commit 136e79469).
-// CHANGED: 2026-08-31 - `namespace` takes an identifier and binds it as a constant local; the reference now
-//                       points at the namespace declaration section (commit 4a0d907ae)
+// VERIFIED: 2026-09-04
+
 [[appendix-reserved-words]]
 [appendix]
 == Reserved Words & Keywords

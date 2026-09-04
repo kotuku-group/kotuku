@@ -1,37 +1,4 @@
-// UPDATED: 2026-08-24 - Variant value: a member or index read is variant when its receiver is a table OR carries
-//                       no type of its own (':any', 'extern', an unannotated parameter)
-// CHANGED: 2026-08-26 - Dynamic ingress applies to 'local' and 'global' declarations only (commit fce85593f)
-// UPDATED: 2026-08-06 - Added the table classification terms (commit 26e122ab7)
-// UPDATED: 2026-08-07 - Added the Variant value entry (commit 58755ad6f)
-// UPDATED: 2026-08-07 - Added the Module namespace entry and distinguished it from a `namespace` declaration (commit 45b671b20)
-// UPDATED: 2026-08-08 - Added the Nullable and Required value entries; a type contract now accepts nil only when it is
-//                       not marked required (commit db7996e3e)
-// UPDATED: 2026-08-11 - Added the Built-in method entry; corrected the Method and Safe navigation entries for the removal of
-//                       colon syntax (commit 7e6746950)
-// UPDATED: 2026-08-11 - Added the Contextual call, Current context, Receiver and Root context entries (commit 798665547)
-// UPDATED: 2026-08-15 - Added the Context-first method entry (commit ac4f30a67)
-// UPDATED: 2026-08-16 - Replaced the Contextual method entry with Metamethod literal, scoped to metatable handlers
-//                       (commit 5c92d652a)
-// UPDATED: 2026-08-15 - Added the Bound context entry (commit 1a38f18e0)
-// UPDATED: 2026-08-20 - Added the View variable entry (commit ea9fbc23c)
-// UPDATED: 2026-08-17 - Corrected the Bound context entry; Tiri's own subscription interfaces capture a context
-//                       (commit f052ec04d)
-// UPDATED: 2026-08-13 - Added the Context block, Entity and Self referencing entries; context is now opt-in and
-//                       established only by an entity receiver (commit d3638efc0)
-// UPDATED: 2026-08-16 - The ternary separator is now ':'; corrected the Extended falsiness and Ternary operator
-//                       entries (commit 982d890de)
-// UPDATED: 2026-08-18 - Added the Half-open span entry; every library Stop index is exclusive (commit 3e99d69ac)
-// UPDATED: 2026-08-19 - Removed the Metamethod literal entry; handlers are ordinary functions whose receiver is
-//                       installed as context on dispatch (commit 81aa5f3)
-// UPDATED: 2026-08-22 - Added the Display name and Raw type entries (commits 3acfc4c44, 179bcc4af)
-// UPDATED: 2026-08-22 - A display name is now also the default tostring() result (commit 4a06b1a43)
-// UPDATED: 2026-08-22 - Corrected the Pipe operator entry; the operator no longer iterates (commit 790a9ebb2)
-// UPDATED: 2026-08-23 - Added the Checkall block entry; API error promotion moved from `try` to `checkall`
-//                       (commit 136e79469)
-// UPDATED: 2026-08-24 - Added the Type identity entry and recorded recursive array names in Raw type
-//                       (commit 8717fde66)
-// CHANGED: 2026-08-31 - Rewrote the Namespace entry for declarative namespaces and added the Namespace
-//                       registry entry (commit 4a0d907ae)
+// VERIFIED: 2026-09-04
 
 [[appendix-glossary]]
 [appendix]

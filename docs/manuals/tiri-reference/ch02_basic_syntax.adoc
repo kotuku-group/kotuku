@@ -1,14 +1,4 @@
-// VERIFIED: 2026-08-01
-// UPDATED: 2026-08-11 - Documented the indentation rule that separates a leading-dot continuation from a
-//                       current-context statement (commit 798665547)
-// UPDATED: 2026-08-13 - Replaced the leading-dot rule with the line rule for self referencing ('&name'), which is
-//                       what distinguishes it from the binary '&' (commit d3638efc0)
-// UPDATED: 2026-08-15 - Added the reserved word `method`, and `using`, which the keyword table had omitted
-// UPDATED: 2026-08-16 - Renamed the reserved word `method` to `metamethod`; `method` is now an ordinary identifier
-//                       (commit 5c92d652a)
-// UPDATED: 2026-08-19 - Removed `metamethod` from the keyword table; it is now an ordinary identifier (commit 81aa5f3)
-//                       (commits ac4f30a67, d3638efc0)
-// UPDATED: 2026-08-23 - Added the reserved word `checkall` to the keyword table (commit 136e79469)
+// VERIFIED: 2026-09-04
 
 [[ch-basic-syntax]]
 == Basic Syntax
@@ -94,9 +84,7 @@ The following words are reserved and cannot be used as identifiers:
 |`with`     |          |          |           |           |
 |===
 
-Keywords are case-sensitive.  `and` is reserved; `And` and `AND` are valid identifiers.
-
-A reserved word remains available as a table member name, so `t.using` and `t.with` are valid field accesses.
+Keywords are case-sensitive.  A reserved word remains available as a table member name, so `t.using` and `t.with` are valid field accesses.
 
 [%breakable]
 [[sec-statements-and-blocks]]
@@ -236,7 +224,7 @@ Short strings are delimited by single quotes or double quotes.  They must not sp
 
 The following escape sequences are recognised within short strings:
 
-[cols="2,5a",options="header"]
+[cols="2,8",options="header"]
 |===
 |Escape   |Meaning
 

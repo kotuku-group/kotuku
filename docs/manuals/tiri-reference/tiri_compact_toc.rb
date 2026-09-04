@@ -301,4 +301,23 @@ module Tiri
   end
 end
 
+module Tiri
+  module PlainXrefTitles
+    def xreftext xrefstyle = nil
+      text = super
+      return text unless xrefstyle == 'full' && !reftext
+
+      case sectname
+      when 'chapter'
+        text.gsub %r{</?em>}, ''
+      when 'section'
+        text.sub /, &#8220;(.*)&#8221;\z/, ', \1'
+      else
+        text
+      end
+    end
+  end
+end
+
+::Asciidoctor::Section.prepend ::Tiri::PlainXrefTitles
 ::Asciidoctor::PDF::Converter.prepend ::Tiri::CompactToc

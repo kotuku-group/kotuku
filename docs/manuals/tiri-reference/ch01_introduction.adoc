@@ -29,7 +29,7 @@ Tiri is not backwards-compatible with Lua.  Code written for standard Lua or Lua
 === Design Goals
 
 Minimalism::
-We want developers to be able to write code quickly and with minimal boilerplate.  Type inference eliminates explicit type declarations.  Safe navigation, compound operators, and string interpolation reduce verbosity.  Less code and more simplification provides more optimisation opportunities for the compiler and virtual machine.
+We want developers to be able to write code quickly and with minimal boilerplate.  Type inference eliminates explicit type declarations.  Safe navigation, compound operators, and string interpolation reduce verbosity.
 
 Simplicity::
 Tiri needed to be easy to learn and understand, with a minimal set of core concepts.  Using Lua as a foundational language and maintaining its core principles was a natural choice.

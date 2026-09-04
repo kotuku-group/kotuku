@@ -1,7 +1,5 @@
 
-// VERIFIED:
-// UPDATED: 2026-09-03 - Renamed the `%=` compound operator entry from modulo to remainder, following the switch
-//                       to truncating remainder semantics (commit fc1f9292d)
+// VERIFIED: 2026-09-04
 
 [[ch-variables-and-scoping]]
 == Variables & Scoping
@@ -114,6 +112,7 @@ end
 
 Write `local` to explicitly declare a new binding for a visible name.  The declaration shadows the visible binding for the remainder of its scope, and the outer binding is restored when the scope ends:
 
+[%unbreakable]
 [source,tiri]
 ----
 depth:num = 1
@@ -124,29 +123,19 @@ end
 print(depth)                   -- 1
 ----
 
-One rule distinguishes the declaration form from the assignment form: a declaration accepts a name list with no initialiser, which an assignment rejects.  Both forms reject an explicit value list longer than the name or target list.  Surplus results produced by a call or vararg expression are discarded.  Declarations are otherwise governed by <<sec-the-local-keyword>>.
+Both forms reject an explicit value list longer than the name or target list.  Surplus results produced by a call or vararg expression are discarded.  Declarations are otherwise governed by <<sec-the-local-keyword>>.
 
 [source,tiri]
 ----
-a, b = 1, 2, 3          -- assignment: error, more values than targets
-a, b:num = 1, 2, 3      -- declaration: error, more values than names
-----
-
-An attribute marks the statement as a declaration wherever it appears in the list, and constrains only the name it follows.  Names carrying no attribute are declared without one:
-
-[source,tiri]
-----
-a, b <const> = 1, 2        -- declares both; only 'b' is constant
-a <const>, b = 1, 2        -- declares both; only 'a' is constant
-a, b <const>:num = 1, 2    -- an annotation can follow the attribute
+a, b:num = 1, 2, 3        -- invalid: more values than targets
 ----
 
 [[sec-the-local-keyword]]
 === The local Keyword
 
-indexterm:[local variables] The `local` keyword asserts that the statement declares new variables rather than updating existing ones.  It declares one or more locals in the current scope, and any binding of the same name that is already visible is shadowed for the remainder of that scope.
+indexterm:[local variables] The `local` keyword asserts that the statement declares one or more new variables.  The declaration is limited to the current scope, and any binding of the same name that is already visible is shadowed for the remainder of that scope.
 
-The keyword is required if:
+The `local` keyword is required if:
 
 * You need to declare a bare variable name with no initialiser, annotation or attributes.
 * You need to shadow an existing name, which could be local or global.
@@ -431,7 +420,7 @@ b = 20
 
 Compound assignment operators evaluate the right-hand side exactly once and apply the operation to the target.  If the RHS is a function call or vararg, only the first return value is used.  Using a non-assignable LHS (a constant or a function call result) is an error.
 
-[cols="2,5a",options="header"]
+[cols="2,8",options="header"]
 |===
 |Operator |Effect
 
@@ -472,7 +461,7 @@ config?.theme = load_theme()   -- function is not called if config is nil
 
 ==== Compound Assignment on Undeclared Variables
 
-`+=`, `-=`, `*=`, `/=`, `%=` and `..=` require an existing target.  Applying one to an undeclared name is a compile-time error, as is applying `++` or `--` to one (<<sec-postfix-increment>>).
+`pass:[+=]`, `-=`, `*=`, `/=`, `%=` and `pass:[..=]` require an existing target.  Applying one to an undeclared name is a compile-time error, as is applying `pass:[++]` or `--` to one (<<sec-postfix-increment>>).
 
 `?=` and `??=` are exempt.  Where no binding exists, each reads the target as `nil` and declares a local under the local-by-default rule, so the initialiser is stored:
 
@@ -516,7 +505,7 @@ A `<const>` variable must have an initialiser.  Declaring a constant without a v
 
 [source,tiri]
 ----
-local x <const>      -- error: const 'x' requires an initialiser
+local x <const>  -- error: const 'x' requires an initialiser
 ----
 
 Assigning to a `<const>` variable is a compile-time error:
@@ -524,7 +513,7 @@ Assigning to a `<const>` variable is a compile-time error:
 [source,tiri]
 ----
 x <const> = 1
-x = 2           -- error: cannot assign to const local 'x'
+x = 2            -- error: cannot assign to const local 'x'
 ----
 
 The `<const>` attribute protects the variable binding, not the contents of the value.  Table and object contents remain mutable:
@@ -645,7 +634,6 @@ combined = FLAGS_LEFT | FLAGS_RIGHT  -- constant-folded to 12
 The following constraints apply to enum declarations:
 
 * The prefix cannot carry a type annotation (`:type`).
-* The prefix cannot use the `<const>`, `<close>` or `<view>` attributes.
 * The declaration must contain at least one member.
 * Member names within a single enum must be unique.
 * The fully qualified constant name (`PREFIX_MEMBER`) must not duplicate a constant already registered by a previous enum declaration.
@@ -689,47 +677,22 @@ See <<ch-resource-management>> for further patterns using `<close>` and `defer`.
 [[sec-view-variables]]
 === View Variables
 
-indexterm:[view variables] indexterm:[arrays, views] The `<view>` attribute binds a local variable to a live, read-only view of an object's array field, aliasing the object's native array storage directly instead of copying it.  As with `<const>` and `<close>`, the attribute marks the statement as a local declaration without the `local` keyword, provided the name is not already visible (<<sec-implicit-attribute-shadowing>>).
+indexterm:[view variables] indexterm:[arrays, views] The `<view>` attribute creates a local variable with a read-only view of an object's array field.  This avoids the performance hit and default behaviour of copying the array's contents.
 
-A read of an object array field returns a copy of the field's contents taken at the moment of the read.  A `<view>` local instead returns an array that references the same memory the object exposes, so later native mutations are observed without a further field read:
+Because a `<view>` local returns an array that references the same memory the object exposes, later native mutations are observed without a further field read:
 
 [source,tiri]
 ----
-local bitmap = obj<Bitmap> {
+bitmap = obj<Bitmap> {
    width=2, height=2, bitsPerPixel=32, bkgd='255,255,255,255' }
-local pixels <view> = bitmap.data   -- aliases native storage
+pixels <view> = bitmap.data   -- aliases native storage
 pixels[0]   -- 255
 
 bitmap.bkgd = '0,0,0,255'
 bitmap.acClear()
-pixels[0]   -- 0: the view observes the mutation without a second read
-----
-
-A view is read-only.  `array.readOnly()` returns `true` for it, and assignment to an element raises an error:
-
-[source,tiri]
-----
+pixels[0]       -- 0: the view observes the mutation without a second read
 pixels[0] = 1   -- error: the array is read-only
 ----
-
-==== One-Shot Semantics
-
-The attribute arms the first object array field read that occurs while the initialiser evaluates.  That read consumes the armed state; each subsequent object array field read in the same initialiser returns an independent copy.
-
-[source,tiri]
-----
-function read_twice(Bitmap:obj):array<any>
-   local first = Bitmap.data    -- consumes the view; aliases storage
-   second = Bitmap.data         -- ordinary copy
-   return first
-end
-
-local first <view> = read_twice(bitmap)
-array.readOnly(first)    -- true
-array.readOnly(second)   -- false
-----
-
-The armed state is confined to the initialiser and does not leak into later declarations.  A caught error inside the initialiser preserves the outer view scope; an initialiser that raises an uncaught error clears its own armed state without arming a later read.  View scopes nest independently to a depth of 64.
 
 ==== Eligible Fields
 
@@ -753,7 +716,7 @@ local same <view> = array<int> { 1, 2 }  -- ordinary mutable array reference
 
 A `<view>` declaration:
 
-* binds exactly one name.  `local a <view>, b = ...` is a compile-time error.
+* binds exactly one name.  `local a <view>, b = pass:[...]` is a compile-time error.
 * requires a plain `=` initialiser.  A declaration with no value, or one using a compound assignment operator, is a compile-time error.
 * cannot combine with `<const>` or `<close>` on the same name.
 * is valid only on local declarations.  The attribute is rejected on `global` and `extern` declarations.
@@ -761,6 +724,8 @@ A `<view>` declaration:
 ==== Lifetime and Safety
 
 A view does not own the memory it aliases.  When the field is a Kōtuku resource, the view pins that resource for the lifetime of the array and releases the pin when the array is collected, keeping the aliased memory valid.  For every other field the view carries no lifetime guarantee: if the owning object frees or reallocates the underlying buffer, the view references invalid memory.  Managing that risk, or declining the feature, is the responsibility of the program.
+
+Because views are cheap to establish, repeated reads are the recommended pattern over long-term storage of the view itself.
 
 See <<sec-read-only-arrays>> and <<ch-resource-management>>.
 

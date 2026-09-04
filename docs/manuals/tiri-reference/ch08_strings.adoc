@@ -456,7 +456,6 @@ indexterm:[strings, encoding] indexterm:[XML escaping] Escapes `String` for safe
 |`<`       |`+&lt;+`
 |`>`       |`+&gt;+`
 |`"`       |`+&quot;+`
-|`'`       |`+&apos;+`
 |===
 
 [source,tiri]
@@ -464,6 +463,8 @@ indexterm:[strings, encoding] indexterm:[XML escaping] Escapes `String` for safe
 '<div>Hello & World</div>'.escXML()
 -- '&lt;div&gt;Hello &amp; World&lt;/div&gt;'
 ----
+
+Single apostrophes `'` are not escaped on the assumption that double quotes `"` are used for encapsulating attribute values.
 
 [[sec-string-hash]]
 ==== string.hash()
