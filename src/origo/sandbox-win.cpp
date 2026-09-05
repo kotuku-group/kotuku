@@ -231,5 +231,5 @@ static ERR set_low_file(LPCWSTR pwszFileName)
       LocalFree(pSD);
       return(ERR::Okay);
    }
-   else return(ERR::Failed);
+   else return(ERR::SystemCall);
 }

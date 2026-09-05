@@ -101,8 +101,9 @@
 </tbody></table></div></div>
 <p>This function will start playback of the sound sample associated with the target mixer channel.  If the channel is already in playback mode, it will be stopped to facilitate the new playback request.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Playback successfully initiated.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>Channel not associated with a valid sample.</td></tr>
+<tr><th class="col-md-1">NoData</th><td>The referenced sample is unconfigured.</td></tr>
 <tr><th class="col-md-1">OutOfRange</th><td>Position exceeds sample boundaries.</td></tr>
+<tr><th class="col-md-1">FieldNotSet</th><td>Channel not associated with a valid sample.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Required parameters are null or missing.</td></tr>
 </tbody></table><div class="footer copyright text-right">Audio module documentation © Paul Manias © 2002-2026</div></div>
 <div class="docs-content" style="display:none;" id="MixRate"><h2>MixRate()</h2><p class="lead">Sets a new update rate for a channel.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR snd::MixRate(objAudio * Audio, INT Handle, INT Rate)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Audio</td><td>The target Audio object.</td></tr>
@@ -121,8 +122,9 @@
 <p>This function will associate a sound sample with the channel identified by Handle.  The client should follow this by setting configuration details (e.g. volume and pan values).</p>
 <p>The referenced Sample must have been added to the audio server via the <a href="classes/audio.html#tm-AddSample">Audio⇒AddSample()</a> or <a href="classes/audio.html#tm-AddStream">Audio⇒AddStream()</a> methods.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">NoData</th><td>The sample handle refers to a dead or unconfigured sample.</td></tr>
 <tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
+<tr><th class="col-md-1">DataSize</th><td>The sample has an invalid length.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Audio module documentation © Paul Manias © 2002-2026</div></div>
 <div class="docs-content" style="display:none;" id="MixStartSequence"><h2>MixStartSequence()</h2><p class="lead">Initiates buffering of mix commands.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR snd::MixStartSequence(objAudio * Audio, INT Handle)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Audio</td><td>The target Audio object.</td></tr>

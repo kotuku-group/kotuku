@@ -182,7 +182,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    }
 #else
    log.warning("No audio support available.");
-   return ERR::Failed;
+   return ERR::NoSupport;
 #endif
 
    if (add_audio_class() != ERR::Okay) return ERR::AddClass;

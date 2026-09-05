@@ -326,7 +326,7 @@ if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
 <tr><th class="col-md-1">Timeout</th><td>The timeout expired before all actions completed.</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-<tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
+<tr><th class="col-md-1">Recursion</th><td>Detected an illegal attempt at recursion</td></tr>
 <tr><th class="col-md-1">OutsideMainThread</th><td>Operation permitted from the main thread only</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="BroadcastEvent"><h2>BroadcastEvent()</h2><p class="lead">Broadcast an event to all event listeners in the system.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR BroadcastEvent(APTR Event, INT EventSize)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Event</td><td>Pointer to an event structure.</td></tr>
@@ -404,7 +404,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Virtual file system does not support folder creation.</td></tr>
 <tr><th class="col-md-1">FileExists</th><td>An identically named file or folder already exists at the <code>Path</code>.</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CreateLink"><h2>CreateLink()</h2><p class="lead">Creates symbolic links on supported file systems.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR CreateLink(STRVIEW From, STRVIEW To)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>From</td><td>The symbolic link will be created at the location specified here.</td></tr>
@@ -420,7 +420,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <tr><th class="col-md-1">NoPermission</th><td>The user does not have permission to create the link, or the file system is mounted read-only.</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>One or both of the provided arguments is too long.</td></tr>
 <tr><th class="col-md-1">FileExists</th><td>The location referenced at From already exists.</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -444,7 +444,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <tr><th class="col-md-1">NoSupport</th><td>The filesystem driver does not support deletion.</td></tr>
 <tr><th class="col-md-1">NoPermission</th><td>General security violation</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="DeleteVolume"><h2>DeleteVolume()</h2><p class="lead">Deletes volumes from the system.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR DeleteVolume(STRVIEW Name)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Name</td><td>The name of the volume.</td></tr>
@@ -705,9 +705,10 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <p>The OpenDir() function is used to open a folder for scanning via the <a href="?page=ScanDir">ScanDir()</a> function.  If the provided Path can be accessed, a <a data-toggle="tooltip" title="" href="?page=struct-DirInfo">DirInfo</a> structure will be returned in the Info parameter, which will need to be passed to <a href="?page=ScanDir">ScanDir()</a>.  Once the scanning process is complete, call the <a href="?page=FreeResource">FreeResource()</a> function.</p>
 <p>When opening a folder, it is necessary to indicate the type of files that are of interest.  If no flags are defined, the scanner will return file and folder names only.  Only a subset of the available <code>RDF</code> flags may be used, specifically <code>SIZE</code>, <code>DATE</code>, <code>PERMISSIONS</code>, <code>FILE</code>, <code>FOLDER</code>, <code>QUALIFY</code>, <code>TAGS</code>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
+<tr><th class="col-md-1">EndOfSequence</th><td>The end of the sequence has been reached</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="ParentContext"><h2>ParentContext()</h2><p class="lead">Returns the context of the client.</p><div class="card card-info mb-3"><div class="card-header"><samp>OBJECTPTR ParentContext()</samp></div></div>
@@ -739,7 +740,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <tr><th class="col-md-1">Timeout</th><td>Function timed-out before successful completion</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Attempting to lock an object failed</td></tr>
-<tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
+<tr><th class="col-md-1">Recursion</th><td>Detected an illegal attempt at recursion</td></tr>
 <tr><th class="col-md-1">OutsideMainThread</th><td>Operation permitted from the main thread only</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="QueueAction"><h2>QueueAction()</h2><p class="lead">Delay the execution of an action by adding the call to the message queue.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR QueueAction(AC Action, OBJECTID Object, APTR Args)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('AC');">Action</a></td><td>The ID of an action or method to execute.</td></tr>
@@ -855,6 +856,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 
 <p>The <code>RDF</code> flags that may be returned in the Flags field are <code>VOLUME</code>, <code>FOLDER</code>, <code>FILE</code>, <code>LINK</code>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>An item was successfully scanned from the folder.</td></tr>
+<tr><th class="col-md-1">EndOfSequence</th><td>There are no more items to scan.</td></tr>
 <tr><th class="col-md-1">InvalidData</th><td>There is an error in the provided data</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
@@ -928,7 +930,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">OwnerPassThrough</th><td>Container pass through notification</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-<tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
+<tr><th class="col-md-1">Recursion</th><td>Detected an illegal attempt at recursion</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="SetResource"><h2>SetResource()</h2><p class="lead">Updates a writable Core resource value.</p><div class="card card-info mb-3"><div class="card-header"><samp>INT64 SetResource(RES Resource, INT64 Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('RES');">Resource</a></td><td>The writable resource identifier.</td></tr>
 <tr><td>Value</td><td>The value to assign to the resource.</td></tr>
@@ -1101,7 +1103,7 @@ identifier has no effect.</li>
 <tr><th class="col-md-1">ExceptionThreshold</th><td>Termination requested</td></tr>
 <tr><th class="col-md-1">Timeout</th><td>Function timed-out before successful completion</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
-<tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
+<tr><th class="col-md-1">Recursion</th><td>Detected an illegal attempt at recursion</td></tr>
 <tr><th class="col-md-1">OutsideMainThread</th><td>Operation permitted from the main thread only</td></tr>
 <tr><th class="col-md-1">MessageOperation</th><td>A message queue operation has failed</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>

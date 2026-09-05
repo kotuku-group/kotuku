@@ -191,7 +191,7 @@ void XPathEvaluator::pop_context()
 
 ERR XPathEvaluator::evaluate_ast(const XPathNode *Node, uint32_t CurrentPrefix)
 {
-   if (not Node) return ERR::Failed;
+   if (not Node) return ERR::NullArgs;
 
    // NOTE: This switch targets top-level AST categories (path traversal versus expression bodies).
    //       The handlers funnel into specialised evaluation entry points rather than the
@@ -232,7 +232,7 @@ ERR XPathEvaluator::evaluate_ast(const XPathNode *Node, uint32_t CurrentPrefix)
          return evaluate_top_level_expression(Node, CurrentPrefix);
 
       default:
-         return ERR::Failed;
+         return ERR::NoSupport;
    }
 }
 
@@ -244,7 +244,7 @@ ERR XPathEvaluator::evaluate_location_path(const XPathNode *PathNode, uint32_t C
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not PathNode) or (PathNode->type != XQueryNodeType::LOCATION_PATH)) return log.warning(ERR::Failed);
+   if ((not PathNode) or (PathNode->type != XQueryNodeType::LOCATION_PATH)) return log.warning(ERR::Args);
 
    std::vector<const XPathNode *> steps;
    std::vector<std::unique_ptr<XPathNode>> owned_steps;
@@ -272,7 +272,7 @@ ERR XPathEvaluator::evaluate_location_path(const XPathNode *PathNode, uint32_t C
 
 ERR XPathEvaluator::evaluate_union(const XPathNode *Node, uint32_t CurrentPrefix)
 {
-   if ((not Node) or (Node->type != XQueryNodeType::UNION)) return ERR::Failed;
+   if ((not Node) or (Node->type != XQueryNodeType::UNION)) return ERR::Args;
 
    auto saved_context = context;
    auto saved_context_stack = context_stack;
@@ -395,7 +395,7 @@ static ERR filter_step_matches_for_collect(XPathEvaluator &Eval, const std::vect
       auto predicate_error = Eval.apply_predicates_to_candidates(PredicateNodes, CurrentPrefix, AxisBuffer, PredicateBuffer);
       if (predicate_error != ERR::Okay) {
          Unsupported = true;
-         return ERR::Failed;
+         return ERR::NoSupport;
       }
       if (AxisBuffer.empty()) continue;
 
@@ -449,7 +449,7 @@ ERR XPathEvaluator::apply_predicates_to_candidates(const std::vector<const XPath
          ContextGuard context_guard(*this, match.node, index + 1, Candidates.size(), match.attribute);
 
          auto predicate_result = evaluate_predicate(predicate_node, CurrentPrefix);
-         if (predicate_result IS PredicateResult::UNSUPPORTED) return ERR::Failed;
+         if (predicate_result IS PredicateResult::UNSUPPORTED) return ERR::NoSupport;
          if (predicate_result IS PredicateResult::MATCH) ScratchBuffer.push_back(match);
       }
 
@@ -617,7 +617,7 @@ ERR XPathEvaluator::evaluate_step_sequence(const NODES &ContextNodes, const std:
       if (current_context.empty()) break;
 
       auto step_node = Steps[step_index];
-      if ((not step_node) or (step_node->type != XQueryNodeType::STEP)) return ERR::Failed;
+      if ((not step_node) or (step_node->type != XQueryNodeType::STEP)) return ERR::Args;
       auto &parsed = parsed_steps[step_index];
       AxisType axis = AxisType::CHILD;
       if (parsed.axis_node) axis = AxisEvaluator::parse_axis_name(parsed.axis_node->value);

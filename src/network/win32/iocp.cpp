@@ -493,7 +493,7 @@ static IocpStoreResult store_operation_result(IocpSocketRecord &Record, const Io
                completion.Buffer.resize(Operation.BytesTransferred);
                std::memcpy(completion.Buffer.data(), Operation.Buffer.get(), Operation.BytesTransferred);
             }
-            else completion.Result = ERR::Failed;
+            else completion.Result = ERR::NoData;
          }
 
          if (Record.ReadCompletions.emplace(Operation.Sequence, std::move(completion)).second) {

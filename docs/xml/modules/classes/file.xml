@@ -73,7 +73,7 @@
         <error code="SetField">An error occurred while updating the <fl>Path</fl> field.</error>
         <error code="MissingPath">The object is missing a path reference</error>
         <error code="VirtualVolume">ResolvePath() failed to resolve the path because it is a virtual reference</error>
-        <error code="ResolvePath">A volume could not be resolved</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
         <error code="ExpectedFile">The operation expected a path to a file</error>
         <error code="CreateFile">A new file could not be created</error>
         <error code="UseDerived">Requested to use a registered derived class (not an error)</error>
@@ -208,7 +208,7 @@
         <error code="Write">Data could not be written to the destination path.</error>
         <error code="FieldNotSet">The <fl>Path</fl> field has not been set in the file object.</error>
         <error code="Loop">Performing the copy would cause infinite recursion.</error>
-        <error code="ResolvePath">A volume could not be resolved</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>blocking, updates-seek-index, callback-inlines</tags>
@@ -232,7 +232,7 @@
         <error code="NoPermission">The user does not have the necessary permissions to delete the file.</error>
         <error code="MissingPath">The object is missing a path reference</error>
         <error code="BufferOverflow">The file path string is too long.</error>
-        <error code="ResolvePath">A volume could not be resolved</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
         <error code="SystemCall">A call to the host system has failed</error>
         <error code="DeleteFile">Deletion of a folder or file failed (e.g. permissions, read-only media)</error>
         <error code="ReadOnly">The file is on a read-only filesystem.</error>
@@ -338,7 +338,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NoSupport">The platform does not support file date setting.</error>
-        <error code="ResolvePath">A volume could not be resolved</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
         <error code="SystemCall">A call to the host system has failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

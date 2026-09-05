@@ -218,7 +218,7 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
       }
       else {
          log.warning("Unsupported arg %s, flags $%.8x, aborting now.", args[i].Name, args[i].Type);
-         return ERR::Failed;
+         return ERR::UnrecognisedFieldType;
       }
       lua_settable(Lua, -3);
    }
@@ -333,7 +333,7 @@ static ERR TIRI_Activate(extTiri *Self)
 
             if (lua_pcall(Self->Lua, 0, 0, 0)) {
                process_error(Self, "Activation");
-               if (!(error = Self->Error)) error = ERR::Failed;
+               if (!(error = Self->Error)) error = ERR::Exception;
             }
          }
       }
@@ -546,7 +546,7 @@ static ERR TIRI_Init(extTiri *Self)
    if (not (Self->Lua = luaL_newstate(Self))) {
       log.warning("Failed to open a Lua instance.");
       if (src_file) FreeResource(src_file);
-      return ERR::Failed;
+      return ERR::CreateResource;
    }
 
    if (src_file) FreeResource(src_file);
@@ -597,7 +597,7 @@ static ERR TIRI_Query(extTiri *Self)
 
       // Register private variables in the registry, which is tamper proof from the user's Lua code
 
-      if (register_interfaces(Self) != ERR::Okay) return ERR::Failed;
+      if (auto error = register_interfaces(Self); error != ERR::Okay) return error;
 
       // Line hook, executes on the execution of a new line (doesn't execute during Query() compilation)
 

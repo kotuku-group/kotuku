@@ -229,7 +229,8 @@ extern "C" void bc_struct_getfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
    const auto field_name = strdata(Key);
    lj_struct_check_lifecycle(L, Struct, field_name, true);
    if (not Struct->data) {
-      luaL_error_current(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
+      luaL_error_current(L, ERR::NotInitialised, "Cannot reference field '%s' because struct address is NULL.",
+         field_name);
    }
 
    if (auto field = find_cached_field(Struct, Key, Ins)) {

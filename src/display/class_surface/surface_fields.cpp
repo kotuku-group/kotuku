@@ -98,11 +98,12 @@ static ERR SET_Drag(extSurface *Self, OBJECTID Value)
 {
    if (Value) {
       auto callback = C_FUNCTION(consume_input_events);
-      if (!gfx::SubscribeInput(&callback, Self->UID, JTYPE::MOVEMENT|JTYPE::BUTTON, 0, &Self->InputHandle)) {
+      if (auto error = gfx::SubscribeInput(&callback, Self->UID, JTYPE::MOVEMENT|JTYPE::BUTTON, 0,
+            &Self->InputHandle); !error) {
          Self->DragID = Value;
          return ERR::Okay;
       }
-      else return ERR::Failed;
+      else return error;
    }
    else {
       if (Self->InputHandle) { gfx::UnsubscribeInput(Self->InputHandle); Self->InputHandle = 0; }

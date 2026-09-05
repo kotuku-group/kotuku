@@ -22,7 +22,7 @@ static ERR compile_backstage_routes()
       if ((not route.regex) and (not route.pattern.empty())) {
          if (rx::Compile(route.pattern, REGEX::NIL, nullptr, &route.regex) != ERR::Okay) {
             log.warning("Failed to compile route regex: %.*s", int(route.pattern.size()), route.pattern.data());
-            return ERR::Failed;
+            return ERR::Syntax;
          }
       }
    }

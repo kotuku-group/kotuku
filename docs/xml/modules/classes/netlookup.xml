@@ -49,11 +49,11 @@
       <result>
         <error code="Okay">The IP address was resolved successfully.</error>
         <error code="Retry">Retry the operation (could not succeed at this time)</error>
-        <error code="Failed">The address could not be resolved.</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="Memory">General memory error</error>
         <error code="BufferOverflow">A buffer overflow has occurred</error>
         <error code="SystemCall">A call to the host system has failed</error>
+        <error code="HostNotFound">The address could not be resolved.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>blocking, mutates-object, callback-inlines</tags>
@@ -74,10 +74,10 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Retry">Retry the operation (could not succeed at this time)</error>
-        <error code="Failed">General failure</error>
         <error code="Memory">General memory error</error>
         <error code="BufferOverflow">A buffer overflow has occurred</error>
         <error code="SystemCall">A call to the host system has failed</error>
+        <error code="HostNotFound">The host name could not be resolved.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>blocking, mutates-object, callback-inlines</tags>
@@ -97,8 +97,8 @@
       </description>
       <result>
         <error code="Okay">The IP address was resolved successfully.</error>
-        <error code="Failed">The address could not be resolved</error>
         <error code="FieldNotSet">A required field value is undefined</error>
+        <error code="Syntax">The address is not a valid IP address literal.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>non-blocking, mutates-object, copies-input, callback-inlines</tags>

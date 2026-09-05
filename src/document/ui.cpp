@@ -464,7 +464,7 @@ static ERR activate_cell_edit(extDocument *Self, INDEX CellIndex, stream_char Cu
    log.branch("Cell Index: %d, Cursor Index: %d", CellIndex, CursorIndex.index);
 
    if (Self->Stream[CellIndex].code != SCODE::CELL) { // Sanity check
-      return log.warning(ERR::Failed);
+      return log.warning(ERR::SanityCheckFailed);
    }
 
    auto &cell = Self->Stream.lookup<bc_cell>(CellIndex);

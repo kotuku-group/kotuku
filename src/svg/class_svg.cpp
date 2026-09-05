@@ -627,7 +627,7 @@ static ERR SET_Target(extSVG *Self, OBJECTPTR Value)
          Self->Target = Value;
          if (Self->Scene->Viewport) Self->Viewport = Self->Scene->Viewport;
       }
-      else return ERR::Failed;
+      else return ERR::UnsupportedOwner;
    }
 
    return ERR::Okay;

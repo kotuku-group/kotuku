@@ -116,7 +116,8 @@
 <p>All resources and device locks obtained during activation can be released through <a data-bs-toggle="tooltip" title="Disables the audio mixer and returns device resources to the system." href="#ta-Deactivate">Deactivate()</a>. An inactive audio object can perform configuration operations but cannot process audio samples.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Hardware activation completed successfully.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>Hardware device unavailable or driver initialisation failed.</td></tr>
+<tr><th class="col-md-1">Activate</th><td>The hardware device could not begin playback.</td></tr>
+<tr><th class="col-md-1">CreateResource</th><td>The hardware audio buffer could not be created.</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Deactivate" style="scroll-margin:3em;" id="ta-Deactivate" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Deactivate</th><td>Disables the audio mixer and returns device resources to the system.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Deactivate" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acDeactivate(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Deactivating an audio object will switch off the mixer, clear the output buffer and return any allocated device resources back to the host system.  The audio object will remain in a suspended state until it is reactivated.</p>
@@ -255,8 +256,8 @@
 <p>Setting a <code>Length</code> of <code>-1</code> indicates that the stream should be played indefinitely.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>Sample is not a stream.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
+<tr><th class="col-md-1">NoSupport</th><td>Sample is not a stream.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-SetVolume" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SetVolume</th><td id="tm-SetVolume">Sets the volume for input and output mixers.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SetVolume" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR snd::SetVolume(OBJECTPTR Object, INT Index, STRVIEW Name, SVF Flags, INT Channel, DOUBLE Volume)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Index</td><td>The index of the mixer that you want to set.</td></tr>

@@ -67,7 +67,7 @@
       </description>
       <result>
         <error code="Okay">Proxy deleted.</error>
-        <error code="Failed">General failure</error>
+        <error code="FieldNotSet">The proxy has no group name or record reference.</error>
         <error code="CreateObject">A call to CreateObject() failed</error>
       </result>
       <tags>blocking, mutates-object</tags>

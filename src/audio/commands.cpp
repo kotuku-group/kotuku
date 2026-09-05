@@ -365,7 +365,8 @@ int Position: The new playing position, measured in bytes.
 Okay: Playback successfully initiated.
 NullArgs: Required parameters are null or missing.
 OutOfRange: Position exceeds sample boundaries.
-Failed: Channel not associated with a valid sample.
+FieldNotSet: Channel not associated with a valid sample.
+NoData: The referenced sample is unconfigured.
 
 -TAGS-
 mutates-object
@@ -392,7 +393,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    if (!channel->SampleHandle) { // A sample must be defined for the channel.
       log.warning("Channel not associated with a sample.");
-      return ERR::Failed;
+      return ERR::FieldNotSet;
    }
 
    ((extAudio *)Audio)->finish(*channel, false); // Turn off previous sound
@@ -405,7 +406,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    if (sample.Data.empty()) { // The sample reference must be valid and not stale.
       log.warning("On channel %d, referenced sample %d is unconfigured.", Handle, channel->SampleHandle);
-      return ERR::Failed;
+      return ERR::NoData;
    }
 
    if (sample.Stream) {
@@ -616,7 +617,8 @@ int Sample: A sample handle allocated from @Audio.AddSample() or @Audio.AddStrea
 Okay
 NullArgs
 OutOfRange
-Failed
+NoData: The sample handle refers to a dead or unconfigured sample.
+DataSize: The sample has an invalid length.
 
 -TAGS-
 mutates-object
@@ -639,11 +641,11 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    }
    else if (((extAudio *)Audio)->Samples[idx].Data.empty()) {
       log.warning("Sample #%d refers to a dead sample.", idx);
-      return ERR::Failed;
+      return ERR::NoData;
    }
    else if (((extAudio *)Audio)->Samples[idx].SampleLength <= 0) {
       log.warning("Sample #%d has invalid sample length %d", idx, ((extAudio *)Audio)->Samples[idx].SampleLength);
-      return ERR::Failed;
+      return ERR::DataSize;
    }
 
    auto channel = ((extAudio *)Audio)->GetChannel(Handle);

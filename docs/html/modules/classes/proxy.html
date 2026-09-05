@@ -89,7 +89,7 @@
 <p>Call the DeleteRecord() method to remove a proxy from the system.  The proxy will be permanently removed from the proxy database on the success of this function.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Proxy deleted.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">FieldNotSet</th><td>The proxy has no group name or record reference.</td></tr>
 <tr><th class="col-md-1">CreateObject</th><td>A call to CreateObject() failed</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-Find" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Find</th><td id="tm-Find">Search for a proxy that matches a set of filters.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Find" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR prx::Find(OBJECTPTR Object, INT Port, INT Enabled)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Port</td><td>The port number  to access.  If zero, all proxies will be returned if you perform a looped search.</td></tr>

@@ -74,7 +74,7 @@
         <error code="CreateObject">A call to CreateObject() failed</error>
         <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
-        <error code="Recursion">Detected a recursive function call</error>
+        <error code="Recursion">Detected an illegal attempt at recursion</error>
       </result>
     </action>
 

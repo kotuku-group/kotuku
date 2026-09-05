@@ -153,7 +153,7 @@ ERR ALSADeviceEnumerator::wait_for_devices(int timeout_ms)
    }
 
    log.msg("No sound drivers were started in the allotted time period.");
-   return ERR::Failed;
+   return ERR::Timeout;
 }
 
 #endif // ALSA_ENABLED

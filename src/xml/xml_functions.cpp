@@ -843,7 +843,7 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
          else if (!error) { // Extract any new content caught in-between tags
             extract_content(Self, Tags.back().Children, State);
          }
-         else return ERR::Failed;
+         else return error;
       }
 
       // There should be a closing tag - skip past it

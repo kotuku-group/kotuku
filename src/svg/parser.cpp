@@ -966,7 +966,7 @@ ERR svgState::parse_fe_lighting(objVectorFilter *Filter, XTag &Tag, LT Type) noe
       }
       else {
          log.warning("Unrecognised %s child node '%s'", Tag.name(), child.name());
-         error = ERR::Failed;
+         error = ERR::NoSupport;
       }
 
       if (error != ERR::Okay) {
@@ -1134,7 +1134,7 @@ ERR svgState::parse_fe_component_xfer(objVectorFilter *Filter, XTag &Tag) noexce
             case 'A': cmp = CMP::ALPHA; break;
             default:
                log.warning("Invalid feComponentTransfer element %s", child.name());
-               return ERR::Failed;
+               return ERR::InvalidData;
          }
 
          uint32_t type = 0;
@@ -2360,7 +2360,7 @@ ERR svgState::proc_style(XTag &Tag)
       // The application of CSS styles is possible on initial loading of the document, but not in post-processing
       // once the XML object has been abandoned.
       log.warning("Unable to apply CSS style-sheet, XML object already terminated.");
-      return ERR::Failed;
+      return ERR::InvalidState;
    }
 
    for (auto &a : Tag.Attribs) {

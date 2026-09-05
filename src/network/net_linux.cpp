@@ -13,13 +13,13 @@ static ERR convert_lookup_error(int Result)
    switch (Result) {
       case 0: return ERR::Okay;
       case EAI_AGAIN: return ERR::Retry;
-      case EAI_FAIL: return ERR::Failed;
+      case EAI_FAIL: return ERR::HostNotFound;
       case EAI_MEMORY: return ERR::Memory;
       #ifdef EAI_OVERFLOW
          case EAI_OVERFLOW: return ERR::BufferOverflow;
       #endif
       case EAI_SYSTEM: return ERR::SystemCall;
-      default: return ERR::Failed;
+      default: return ERR::HostNotFound;
    }
 }
 
@@ -329,7 +329,7 @@ public:
          IPv6 = true;
          mreq6.ipv6mr_interface = 0;
          return setsockopt(Handle, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *)&mreq6, sizeof(mreq6)) ?
-            ERR::Failed : ERR::Okay;
+            ERR::SystemCall : ERR::Okay;
       }
       else {
          struct ip_mreq mreq4;
@@ -338,7 +338,7 @@ public:
          IPv6 = false;
          mreq4.imr_interface.s_addr = INADDR_ANY;
          return setsockopt(Handle, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq4, sizeof(mreq4)) ?
-            ERR::Failed : ERR::Okay;
+            ERR::SystemCall : ERR::Okay;
       }
    }
 
@@ -354,7 +354,7 @@ public:
          IPv6 = true;
          mreq6.ipv6mr_interface = 0;
          return setsockopt(Handle, IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char *)&mreq6, sizeof(mreq6)) ?
-            ERR::Failed : ERR::Okay;
+            ERR::SystemCall : ERR::Okay;
       }
       else {
          struct ip_mreq mreq4;
@@ -363,7 +363,7 @@ public:
          IPv6 = false;
          mreq4.imr_interface.s_addr = INADDR_ANY;
          return setsockopt(Handle, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char *)&mreq4, sizeof(mreq4)) ?
-            ERR::Failed : ERR::Okay;
+            ERR::SystemCall : ERR::Okay;
       }
    }
 
@@ -401,7 +401,7 @@ public:
       Length = 0;
       if ((errno IS EAGAIN) or (errno IS EWOULDBLOCK)) return ERR::BufferOverflow;
       else if (errno IS EMSGSIZE) return ERR::DataSize;
-      else return convert_socket_error(errno, ERR::Failed);
+      else return convert_socket_error(errno, ERR::SystemCall);
    }
 
    ERR send_to(SocketHandle Handle, CPTR Buffer, size_t &Length, const NetworkEndpoint &Endpoint) override

@@ -668,7 +668,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="True">Operation successful.</error>
-      <error code="NothingDone">There is nothing to process</error>
+      <error code="NothingDone">Nothing to do for the requested operation</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="LockFailed">Failed to lock a required resource</error>
       <error code="OutOfRange">The cursor ID is outside of acceptable range.</error>
@@ -733,7 +733,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NothingDone">There is nothing to process</error>
+      <error code="NothingDone">Nothing to do for the requested operation</error>
       <error code="LockFailed">Failed to lock a required resource</error>
       <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="AccessObject">Failed to access the internally maintained image object.</error>
