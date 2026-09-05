@@ -100,6 +100,12 @@ end
       'unknown variable read in local declaration')
    assertInvalidCode("local code = ERR_ThisDoesNotExist", 'UndefinedVariable',
       'unknown constant read in local declaration')
+   assertInvalidCode("collectgarbage()", 'UndefinedVariable',
+      'removed collectgarbage function')
+   assertInvalidCode("newproxy()", 'UndefinedVariable',
+      'removed newproxy function')
+   assertInvalidCode("select(0)", 'UndefinedVariable',
+      'removed select function')
 
    result = debug.validate("local something = print")
    assert(result.success is true, "Known global read should validate")

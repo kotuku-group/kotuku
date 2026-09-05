@@ -150,7 +150,7 @@ end
    local native_struct = struct<ContractAlpha> { Value=1 }
    local object = obj.new('time')
    local sequence = {0 to 2}
-   local proxy = newproxy(true)
+   local proxy = regex.new('')
    local captured = 1
    function capture() return captured end
    local pointer = debug.upvalueID(capture, 0)
@@ -448,7 +448,7 @@ end
    local bravo = struct<ContractBravo> { Value=5 }
    local object = obj.new('time')
    local sequence = {0 to 3}
-   local proxy = newproxy(true)
+   local proxy = regex.new('')
    local callable = setmetatable({}, { __call = function():bool return true end })
 
    assert(checked_nil(nil) is nil, 'nil should satisfy a nil result contract')
@@ -1379,11 +1379,11 @@ end
 end
 
 @Test function UserdataContractBoundaries()
-   function userdata_source():any return newproxy(true) end
+   function userdata_source():any return regex.new('') end
    function typed_userdata_result():userdata return userdata_source() end
 
    local first = typed_userdata_result()
-   assert(type(first) is 'userdata', 'a userdata result contract should preserve full userdata')
+   assert(rawtype(first) is 'userdata', 'a userdata result contract should preserve full userdata')
 
    local typed_local:userdata = first
    typed_local = userdata_source()
@@ -1395,12 +1395,12 @@ end
    end
    write_userdata(userdata_source())
    expect_contract_failure(function() write_userdata('wrong') end, 'upvalue')
-   assert(type(captured) is 'userdata', 'a rejected userdata upvalue store must preserve its value')
+   assert(rawtype(captured) is 'userdata', 'a rejected userdata upvalue store must preserve its value')
 
    global glContractUserdata:userdata = userdata_source()
    glContractUserdata = userdata_source()
    expect_contract_failure(function() glContractUserdata = dynamic_value(3) end, 'global')
-   assert(type(glContractUserdata) is 'userdata', 'a rejected userdata global store must preserve its value')
+   assert(rawtype(glContractUserdata) is 'userdata', 'a rejected userdata global store must preserve its value')
 
    function wrong_userdata_result():userdata return dynamic_value({}) end
    expect_contract_failure(function() wrong_userdata_result() end, 'result')
@@ -1409,10 +1409,10 @@ end
 @Test function DeferredUserdataContracts()
    function accept_userdata(Value:userdata):userdata return Value end
 
-   local deferred_proxy = <{ newproxy(true) }>
+   local deferred_proxy = <{ regex.new('') }>
    assert(type(deferred_proxy) is 'userdata', 'a typed deferred proxy should advertise userdata')
    local resolved_proxy = accept_userdata(deferred_proxy)
-   assert(type(resolved_proxy) is 'userdata', 'a deferred proxy should resolve before its contract')
+   assert(rawtype(resolved_proxy) is 'userdata', 'a deferred proxy should resolve before its contract')
 
    local captured = 2
    function capture() return captured end
@@ -1498,7 +1498,7 @@ end
    end
    local dynamic:any = hot
    local compatible_callable:any = function():num return 2 end
-   local proxy = newproxy(true)
+   local proxy = regex.new('')
    local matching_time = obj.new('time')
    for i in {0 to 200} do
       assert(dynamic(i) is i + 1, 'Valid hot call should preserve its argument')

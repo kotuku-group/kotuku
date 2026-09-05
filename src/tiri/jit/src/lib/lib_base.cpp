@@ -839,45 +839,6 @@ LJLIB_ASM(tostring)      LJLIB_REC(.)
    return FFH_RES(1);
 }
 
-LJLIB_CF(collectgarbage)
-{
-   kt::Log("collectgarbage").warning("DEPRECATED - Use processing.collect()");
-   return 0;
-}
-
-//********************************************************************************************************************
-// newproxy() is deprecated and not published for client use.  It remains only to assist some tests that need a
-// userdata return type.
-
-LJLIB_PUSH(top-2)  //  Upvalue holds weak table.
-LJLIB_CF(newproxy)
-{
-   lua_settop(L, 1);
-   lua_newuserdata(L, 0);
-   if (lua_toboolean(L, 1) IS 0) {  // newproxy(): without metatable.
-      return 1;
-   }
-   else if (lua_isboolean(L, 1)) {  // newproxy(true): with metatable.
-      lua_newtable(L);
-      lua_pushvalue(L, -1);
-      lua_pushboolean(L, 1);
-      lua_rawset(L, lua_upvalueindex(1));  //  Remember mt in weak table.
-   }
-   else {  // newproxy(proxy): inherit metatable.
-      int validproxy = 0;
-      if (lua_getmetatable(L, 1)) {
-         lua_rawget(L, lua_upvalueindex(1));
-         validproxy = lua_toboolean(L, -1);
-         lua_pop(L, 1);
-      }
-      if (!validproxy) lj_err_arg(L, 1, ErrMsg::NOPROXY);
-      lua_getmetatable(L, 1);
-   }
-   lua_setmetatable(L, 2);
-   return 1;
-}
-
-//********************************************************************************************************************
 // RAII Pattern: Uses StackFrame to ensure L->top is restored if tostring conversion
 // fails or triggers an error during the print loop, preventing stack corruption.
 
@@ -927,7 +888,7 @@ LJLIB_CF(print)
    return 0;
 }
 
-LJLIB_PUSH(top-3)
+LJLIB_PUSH(top-2)
 LJLIB_SET(_VERSION)
 
 //********************************************************************************************************************
@@ -1163,25 +1124,12 @@ LJLIB_INTRINSIC LJLIB_CF(__setmetatable_ctx)
 
 //********************************************************************************************************************
 
-static void newproxy_weaktable(lua_State* L)
-{
-   // NOBARRIER: The table is new (marked white). This internal metatable only defines __mode.
-   GCtab *t = lj_tab_new(L, 0, 1);
-   settabV(L, L->top++, t);
-   setgcref(t->metatable, obj2gco(t));
-   setstrV(L, lj_tab_setstr(L, t, lj_str_newlit(L, "__mode")), lj_str_newlit(L, "kv"));
-   t->nomm = (uint8_t)(~(1u << MM_mode));
-}
-
-//********************************************************************************************************************
-
 extern int luaopen_base(lua_State* L)
 {
    // NOBARRIER: Table and value are the same.
    GCtab *env = tabref(L->env);
    settabV(L, lj_tab_setstr(L, env, lj_str_newlit(L, "_G")), env);
-   lua_pushliteral(L, "5.4");  //  top-3. // Lua version number, set as _VERSION
-   newproxy_weaktable(L);  //  top-2.
+   lua_pushliteral(L, "5.4");  //  top-2. // Lua version number, set as _VERSION
    LJ_LIB_REG(L, "_G", base);
 
    // Register function prototypes for compile-time type inference
@@ -1201,12 +1149,8 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("rawset", { TiriType::Table }, { TiriType::Table, TiriType::Any, TiriType::Any });
    reg_func_prototype("getmetatable", { TiriType::Any }, { TiriType::Any });
    reg_func_prototype("setmetatable", { TiriType::Table }, { TiriType::Table, TiriType::Table });
-   reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic,
-      FProtoArity::required(1));
    reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any }, FProtoFlags::None,
       FProtoArity::required(1));
-   reg_func_prototype("newproxy", { TiriType::Userdata }, { TiriType::Any }, FProtoFlags::None,
-      FProtoArity::required(0));
    reg_func_prototype("ltr", { TiriType::Str }, { TiriType::Str });
    reg_func_prototype("resolve", { TiriType::Any }, { TiriType::Any });
 

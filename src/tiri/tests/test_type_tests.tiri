@@ -18,6 +18,7 @@ function dynamic_value(Value):any
 end
 
 @Test function PrimitiveDescriptors()
+   assert(_VERSION is '5.4', 'the base library should expose the Tiri compatibility version')
    assert(nil is <nil>, 'nil should match <nil>')
    assert(nil is <any>, '<any> should include nil')
    assert(true is <bool>, 'boolean should match <bool>')
@@ -26,7 +27,7 @@ end
    assert({} is <table>, 'table should match <table>')
    assert((function() end) is <func>, 'function should match <func>')
    assert({0 to 2} is <range>, 'range should match <range>')
-   assert(newproxy(true) is <userdata>, 'full userdata should match <userdata>')
+   assert(regex.new('') is <userdata>, 'full userdata should match <userdata>')
 
    assert(1 is not <str>, 'negated mismatch should be true')
    assert(not (1 is not <num>), 'negated match should be false')
