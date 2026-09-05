@@ -42,9 +42,9 @@ function arrangeAll(self:table!, Middle:num)
 
    if self._anchored then -- If pointer is anchored, it must be moved manually.
       if self._orientation is 'h' then
-         mGfx.setCursorPos(self._vp.absX + self._div.x + HALF_GAP, self._vp.absY + self._anchorY)
+         mGfx.SetCursorPos(self._vp.absX + self._div.x + HALF_GAP, self._vp.absY + self._anchorY)
       else
-         mGfx.setCursorPos(self._vp.absX + self._anchorX, self._vp.absY + self._div.y + HALF_GAP)
+         mGfx.SetCursorPos(self._vp.absX + self._anchorX, self._vp.absY + self._div.y + HALF_GAP)
       end
    end
 
@@ -118,7 +118,7 @@ gui.divider = function(Options:table)
    end
 
    self._vp.subscribe('free', function(Viewport:obj!)
-      if self._anchored then mGfx.unlockCursor(self._vp) end
+      if self._anchored then mGfx.UnlockCursor(self._vp) end
    end)
 
    if self._orientation is 'h' then
@@ -167,7 +167,7 @@ gui.divider = function(Options:table)
             end
          elseif ev.type is JET_BUTTON_1 then -- LMB
             if ev.value > 0 then
-               if mGfx.lockCursor(self._vp) is ERR_Okay then
+               if mGfx.LockCursor(self._vp) is ERR_Okay then
                   self._anchored = true
                   self._anchorX  = input.x
                   self._anchorY  = input.y
@@ -176,7 +176,7 @@ gui.divider = function(Options:table)
             elseif self._buttonHeld then
                if self._anchored then
                   self._anchored = false
-                  mGfx.unlockCursor(self._vp)
+                  mGfx.UnlockCursor(self._vp)
                end
 
                self._buttonHeld = false

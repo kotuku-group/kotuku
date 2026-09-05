@@ -4777,8 +4777,9 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    return true;
 }
 
-// Covers the process-wide module registry: indexed case-insensitive lookup, revalidation of the canonical name after
-// hashing, stable record addresses across registry growth, and single publication under concurrent first resolution.
+// Covers the process-wide module registry: indexed module lookup, case-sensitive function lookup, revalidation of the
+// canonical name after hashing, stable record addresses across registry growth, and single publication under concurrent
+// first resolution.
 
 static bool test_module_registry_lookup(kt::Log &Log)
 {
@@ -4809,20 +4810,20 @@ static bool test_module_registry_lookup(kt::Log &Log)
       return false;
    }
 
-   // Function lookup must be case-insensitive and must revalidate the canonical spelling.
+   // Function lookup must require the canonical case and must revalidate the spelling after hashing.
 
    auto fields = static_module_function(core, "PreciseTime");
    if (not fields) {
       Log.error("PreciseTime was not found through the function index");
       return false;
    }
-   for (auto spelling : { "precisetime", "PRECISETIME", "PreciseTime" }) {
-      if (static_module_function(core, spelling) != fields) {
-         Log.error("function spelling '%s' did not resolve to the canonical entry", spelling);
+   for (auto spelling : { "precisetime", "PRECISETIME", "preciseTime" }) {
+      if (static_module_function(core, spelling)) {
+         Log.error("incorrectly cased function spelling '%s' resolved", spelling);
          return false;
       }
-      if (static_module_function_name(core, spelling) != std::string_view("PreciseTime")) {
-         Log.error("function spelling '%s' did not report the canonical name", spelling);
+      if (not static_module_function_name(core, spelling).empty()) {
+         Log.error("incorrectly cased function spelling '%s' reported a canonical name", spelling);
          return false;
       }
    }
@@ -4864,9 +4865,9 @@ static bool test_module_registry_shared_ordinal(kt::Log &Log)
       return false;
    }
 
-   // Every spelling of a function must resolve through both entry points, to the same ordinal.
+   // Every canonical function name must resolve through both entry points, to the same ordinal.
 
-   for (auto spelling : { "PreciseTime", "precisetime", "PRECISETIME", "GetErrorMsg", "geterrormsg" }) {
+   for (auto spelling : { "PreciseTime", "GetErrorMsg" }) {
       auto resolution = test_module_resolve("core", spelling);
       if ((not resolution.Found) or (not resolution.CallableFound)) {
          Log.error("'%s' resolved through only one of the compiler and runtime paths", spelling);
@@ -4894,13 +4895,13 @@ static bool test_module_registry_shared_ordinal(kt::Log &Log)
       }
    }
 
-   // Case variants of one function share one ordinal, and distinct functions do not.
+   // Incorrect case must fail through both paths, and distinct functions must not share an ordinal.
 
    auto lower = test_module_resolve("core", "precisetime");
    auto exact = test_module_resolve("core", "PreciseTime");
    auto other = test_module_resolve("core", "GetErrorMsg");
-   if (lower.Ordinal != exact.Ordinal) {
-      Log.error("case variants of one function resolved to differing ordinals");
+   if (lower.Found or lower.CallableFound) {
+      Log.error("an incorrectly cased function name resolved through the shared index");
       return false;
    }
    if (other.Ordinal IS exact.Ordinal) {
@@ -8434,7 +8435,7 @@ static bool test_module_namespace_ast(kt::Log &Log)
 {
    auto valid = build_ast_from_source(
       "module core as mCore\n"
-      "local first = mCore.preciseTime()\n"
+      "local first = mCore.PreciseTime()\n"
       "local callable = mCore.PreciseTime\n");
    if (not valid.chunk.ok() or not valid.diagnostics.empty() or valid.chunk.value_ref()->statements.size() != 3) {
       Log.error("valid module namespace declaration did not produce the expected AST");
@@ -8496,7 +8497,7 @@ static bool test_module_namespace_ast(kt::Log &Log)
       "module core as mFirst\n"
       "module core as mSecond\n"
       "local a = mFirst.PreciseTime()\n"
-      "local b = mSecond.preciseTime()\n"
+      "local b = mSecond.PreciseTime()\n"
       "local c = mSecond.GetErrorMsg(0)\n");
    if (not aliased.chunk.ok() or not aliased.diagnostics.empty()) {
       Log.error("aliased module namespaces failed to parse");
@@ -8568,7 +8569,7 @@ static bool test_implicit_module_namespace(kt::Log &Log)
 
    auto implicit = build_ast_from_source(
       "local started = mSys.PreciseTime()\n"
-      "local message = mSys.getErrorMsg(0)\n"
+      "local message = mSys.GetErrorMsg(0)\n"
       "local clock <const> = mSys.PreciseTime\n");
    if (not implicit.chunk.ok() or not implicit.diagnostics.empty()) {
       Log.error("an implicit mSys reference failed to parse");
@@ -8631,7 +8632,7 @@ static bool test_implicit_module_namespace(kt::Log &Log)
 static bool test_module_namespace_diagnostics(kt::Log &Log)
 {
    struct InvalidCase { std::string_view source; std::string_view diagnostic; };
-   constexpr std::array<InvalidCase, 15> invalid = { {
+   constexpr std::array<InvalidCase, 17> invalid = { {
       { "module 'core' as mCore\n", "Module name must be an identifier" },
       { "module core mCore\n", "Expected 'as'" },
       { "do module core as mCore end\n", "compilation-unit level" },
@@ -8650,7 +8651,9 @@ static bool test_module_namespace_diagnostics(kt::Log &Log)
       { "local mSys = 1\n", "cannot be declared as a variable" },
       { "local function accept(mSys) end\n", "cannot be declared as a function parameter" },
       { "module display as mSys\n", "reserved for the core module" },
-      { "local value = mSys.NotARealCoreFunction()\n", "Unknown function" }
+      { "local value = mSys.NotARealCoreFunction()\n", "Unknown function" },
+      { "local value = mSys.preciseTime()\n", "Unknown function 'preciseTime'" },
+      { "module display as mGfx\nlocal value = mGfx.drawPixel\n", "Unknown function 'drawPixel'" }
    } };
    for (const auto &entry : invalid) {
       auto result = build_ast_from_source(entry.source);

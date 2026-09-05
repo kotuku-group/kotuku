@@ -361,9 +361,9 @@ end
 gui.getFontHeight = function(Font:table):<num,num>
    try<trace>
       if not Font.height then
-         err, handle = mVec.getFontHandle(Font.face, 'Regular', 0, tonumber(Font.size))
+         err, handle = mVec.GetFontHandle(Font.face, 'Regular', 0, tonumber(Font.size))
          metrics = struct.new('FontMetrics')
-         mVec.getFontMetrics(handle, metrics)
+         mVec.GetFontMetrics(handle, metrics)
          Font.height  = metrics.height
          Font.spacing = metrics.lineSpacing
       end

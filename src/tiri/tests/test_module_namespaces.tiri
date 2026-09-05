@@ -26,7 +26,7 @@ function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
 end
 
 @Test function DirectCallsAndAliasesPreserveResults()
-   local direct_time = mCore.preciseTime()
+   local direct_time = mCore.PreciseTime()
    local alias_time = mCoreAlias.PreciseTime()
    assert(direct_time > 0 and alias_time > 0, 'Declared module calls should preserve scalar results')
 end
@@ -104,11 +104,9 @@ end
    local direct <const> = mCore.PreciseTime
    local repeated <const> = mCore.PreciseTime
    local through_alias <const> = mCoreAlias.PreciseTime
-   local case_folded <const> = mCore.preciseTime
 
    assert(direct is repeated, 'Repeated references should reuse one hidden callable')
    assert(direct is through_alias, 'An alias of the same module should share hidden callables')
-   assert(direct is case_folded, 'Case-insensitive spellings should resolve to one canonical callable')
 
    local other <const> = mCore.GetErrorMsg
    assert(direct != other, 'Distinct functions must have distinct callables')
@@ -154,7 +152,6 @@ end
 
 @Test function ImplicitSysNamespaceResolvesCore()
    assert(mSys.PreciseTime() > 0, 'An implicit mSys call should execute')
-   assert(mSys.preciseTime() > 0, 'An implicit mSys call should resolve case-insensitively')
 
    local clock <const> = mSys.PreciseTime
    assert(clock() > 0, 'An extracted implicit mSys callable should execute')
@@ -183,6 +180,16 @@ end
       local implicit = mSys.PreciseTime()
       local aliased = mCoreTwin.PreciseTime()
    ]], 'implicit and explicit Core aliases')
+end
+
+@Test function ModuleFunctionNamesAreCaseSensitive()
+   assert_invalid([[ local value = mSys.preciseTime() ]],
+      "Unknown function 'preciseTime'", 'incorrectly cased implicit module function')
+
+   assert_invalid([[
+      module display as mGfx
+      local draw <const> = mGfx.drawPixel
+   ]], "Unknown function 'drawPixel'", 'incorrectly cased declared module function')
 end
 
 -- mSys is compiler metadata, so every first-class use is rejected exactly as a declared namespace would be.

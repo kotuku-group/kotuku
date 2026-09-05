@@ -85,7 +85,7 @@ glDisplayAvailable = thunk():bool return moduleAvailable('display') end
 global glSSLAvailable = thunk():bool
    return exec([[
       module network as mNet
-      return mNet.setSSL(nil, nil, nil) != ERR_NoSecureSockets
+      return mNet.SetSSL(nil, nil, nil) != ERR_NoSecureSockets
    ]])
 end
 

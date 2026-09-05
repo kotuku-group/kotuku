@@ -68,6 +68,28 @@ public:
    }
 
 private:
+   // AST spans hold file-relative lines.  Keep the source context active during imported traversals,
+   // including diagnostics emitted through ParserContext and nested validation analysers.
+   struct ImportSourceGuard {
+      LexState &lex;
+      uint8_t saved_file_index;
+
+      ImportSourceGuard(LexState &Lex, uint8_t FileIndex)
+         : lex(Lex), saved_file_index(Lex.current_file_index) {
+         this->lex.current_file_index = FileIndex;
+      }
+
+      ~ImportSourceGuard() {
+         this->lex.current_file_index = this->saved_file_index;
+      }
+   };
+
+   void report_diagnostic(ParserDiagnostic &Diagnostic)
+   {
+      Diagnostic.file_index = this->context_.lex().current_file_index;
+      this->context_.diagnostics().report(Diagnostic);
+   }
+
    [[nodiscard]] StaticBindingID resolve(GCstr *Name) const
    {
       for (auto scope = this->scopes_.rbegin(); scope != this->scopes_.rend(); ++scope) {
@@ -118,7 +140,7 @@ private:
          diagnostic.message = std::format(
             "declaration attribute on existing variable '{}' requires explicit 'local'", name_view);
          diagnostic.token = Token::from_span(name.span, TokenKind::Identifier);
-         this->context_.diagnostics().report(diagnostic);
+         this->report_diagnostic(diagnostic);
       }
    }
 
@@ -129,7 +151,7 @@ private:
       diagnostic.code = ParserErrorCode::InternalInvariant;
       diagnostic.message = std::move(Message);
       diagnostic.token = Token::from_span(Name.span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
    }
 
    [[nodiscard]] bool binding_is_catalogued(StaticBindingID Binding) const
@@ -599,7 +621,10 @@ private:
          }
          case AstNodeKind::ImportStmt: {
             for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
-               if (entry.inlined_body) this->discover_block(*entry.inlined_body);
+               if (entry.inlined_body) {
+                  ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
+                  this->discover_block(*entry.inlined_body);
+               }
                if (entry.namespace_name) {
                   const ExprNode *initialiser = nullptr;
                   const FunctionExprPayload *function = nullptr;
@@ -964,7 +989,7 @@ private:
       diagnostic.code = ParserErrorCode::TypeMismatchArgument;
       diagnostic.message = std::move(Message);
       diagnostic.token = Token::from_span(Span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
    }
 
    void reject_builtin_method_shadow(ExprNode &Target, const StaticValueDescriptor &Assigned)
@@ -985,7 +1010,7 @@ private:
          std::string_view(strdata(member.member.symbol), member.member.symbol->len),
          std::string_view(strdata(member.member.symbol), member.member.symbol->len));
       diagnostic.token = Token::from_span(Target.span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
       member.builtin_shadow_reported = true;
    }
 
@@ -1004,7 +1029,7 @@ private:
          std::string_view(strdata(Field.name->symbol), Field.name->symbol->len),
          std::string_view(strdata(Field.name->symbol), Field.name->symbol->len));
       diagnostic.token = Token::from_span(Field.name->span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
       Field.builtin_shadow_reported = true;
    }
 
@@ -1852,7 +1877,7 @@ private:
          "cannot designate a contextual table through '__context' because {}",
          foreign_table_source_reason(proof.foreign_source));
       diagnostic.token = Token::from_span(target.span, TokenKind::Identifier);
-      this->context_.diagnostics().report(diagnostic);
+      this->report_diagnostic(diagnostic);
    }
 
    void propagate_call_children(CallExprPayload &Call)
@@ -2014,7 +2039,7 @@ private:
                            diagnostic.message = std::format("forEach expects exactly 2 arguments, got {}",
                               input.stored_count + call.arguments.size());
                            diagnostic.token = Token::from_span(pipe.rhs_call->span, TokenKind::Identifier);
-                           this->context_.diagnostics().report(diagnostic);
+                           this->report_diagnostic(diagnostic);
                         }
                      }
                      StaticValueDescriptor target = this->descriptor_of(*pipe.lhs);
@@ -2688,7 +2713,10 @@ private:
             visit(std::get<CheckallStmtPayload>(Statement.data).block);
             break;
          case AstNodeKind::ImportStmt:
-            for (auto &e : std::get<ImportStmtPayload>(Statement.data).entries) visit(e.inlined_body);
+            for (auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
+               ImportSourceGuard guard(this->context_.lex(), entry.file_source_idx);
+               visit(entry.inlined_body);
+            }
             break;
          case AstNodeKind::WithStmt: visit(std::get<WithStmtPayload>(Statement.data).block); break;
          default: break;

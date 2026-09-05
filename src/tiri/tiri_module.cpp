@@ -36,7 +36,7 @@ struct static_module_function_signature {
 // module's original Function list, so a name or field descriptor has one representation with one lifetime.
 //
 // The function-name index removes the linear scan that compile-time queries previously performed; it maps a
-// case-insensitive hash to every ordinal sharing that hash, so the canonical name is always revalidated after the
+// case-sensitive hash to every ordinal sharing that hash, so the canonical name is always revalidated after the
 // lookup and a collision cannot resolve to the wrong function.  Because Functions is built in the module's export
 // order and ModuleBinding::Callables is built from it, one ordinal addresses both representations.
 
@@ -48,9 +48,9 @@ struct static_module_signature {
    ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> FunctionIndex;
 
    [[nodiscard]] uint32_t find_ordinal(std::string_view Name) const noexcept {
-      if (auto it = FunctionIndex.find(strihash(Name)); it != FunctionIndex.end()) {
+      if (auto it = FunctionIndex.find(strhash(Name)); it != FunctionIndex.end()) {
          for (auto slot : it->second) {
-            if (kt::iequals(Functions[slot].Name, Name)) return slot;
+            if (Functions[slot].Name IS Name) return slot;
          }
       }
       return NO_FUNCTION_ORDINAL;
@@ -168,7 +168,7 @@ enum class def_state : uint8_t {
 
 // Callables is parallel to Signature->Functions: element i describes the module's i'th export in both. Runtime name
 // lookup therefore uses the signature's index to obtain an ordinal and then addresses Callables directly, so the
-// compiler and the call bridge share one collision-safe, case-insensitive mapping.
+// compiler and the call bridge share one collision-safe, case-sensitive mapping.
 
 struct ModuleBinding {
    std::string Name;
@@ -326,7 +326,7 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
    for (size_t i = 0; i < function_count; ++i) {
       auto &entry = signature->Functions.emplace_back();
       entry.Name = Functions[i].Name;
-      signature->FunctionIndex[strihash(entry.Name)].push_back(uint32_t(i));
+      signature->FunctionIndex[strhash(entry.Name)].push_back(uint32_t(i));
 
       if (const FunctionField *fields = Functions[i].Args) {
          size_t field_count = 0;
@@ -1045,9 +1045,9 @@ static int module_test(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution
-// because it is literally the same index: the signature resolves the name to an ordinal, and Callables is parallel to
-// the signature's function list.  A module whose signature failed to build exports nothing resolvable.
+// Locate one exported function by canonical name.  Matching is case-sensitive, like the compiler's source-level
+// resolution, because both use the same index: the signature resolves the name to an ordinal, and Callables is parallel
+// to the signature's function list.  A module whose signature failed to build exports nothing resolvable.
 
 static ModuleCallable * find_module_callable(ModuleBinding *Module, std::string_view Name)
 {

@@ -53,14 +53,14 @@ return {
       }, 0, 0, 1, 0, 'boundingbox')
 
       bar.mtAddCallback(function(Surface, Bitmap)
-         err, path = mVec.generateRectangle(0, 0, Surface.width, Surface.height)
+         err, path = mVec.GenerateRectangle(0, 0, Surface.width, Surface.height)
          if err is ERR_Okay then
             if (Surface.flags & RNF_HAS_FOCUS) != RNF_HAS_FOCUS then
-               mVec.drawPath(Bitmap, path, 0, nil, lGradientA)
+               mVec.DrawPath(Bitmap, path, 0, nil, lGradientA)
             else
-               mVec.drawPath(Bitmap, path, 0, nil, lGradientB)
+               mVec.DrawPath(Bitmap, path, 0, nil, lGradientB)
             end
-            mSys.freeResource(path)
+            mSys.FreeResource(path)
          end
          for y in {1 into Surface.height by 2} do
             err, colShade = Bitmap.mtGetColour(0, 0, 0, 40)
