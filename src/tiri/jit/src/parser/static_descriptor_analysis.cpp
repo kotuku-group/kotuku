@@ -14,6 +14,7 @@
 #include "../../../defs.h"
 #include "../runtime/lj_proto_registry.h"
 #include "../runtime/lj_tab.h"
+#include "../debug/lj_ff.h"
 
 namespace {
 
@@ -289,6 +290,12 @@ private:
             for (auto &operand : std::get<ComparisonChainExprPayload>(Expression.data).operands) {
                if (operand) this->discover_expression(*operand);
             }
+            break;
+         }
+         case AstNodeKind::RaiseExpr: {
+            auto &payload = std::get<RaisePayload>(Expression.data);
+            if (payload.error_code) this->discover_expression(*payload.error_code);
+            if (payload.message) this->discover_expression(*payload.message);
             break;
          }
          case AstNodeKind::TernaryExpr: {
@@ -2153,7 +2160,9 @@ private:
          case AstNodeKind::TernaryExpr: {
             auto &payload = std::get<TernaryExprPayload>(Expression.data);
             if (payload.if_true and payload.if_false) {
-               value = join_static_descriptors(
+               if (expression_never_returns(*payload.if_true)) value = this->descriptor_of(*payload.if_false);
+               else if (expression_never_returns(*payload.if_false)) value = this->descriptor_of(*payload.if_true);
+               else value = join_static_descriptors(
                   this->descriptor_of(*payload.if_true), this->descriptor_of(*payload.if_false));
             }
             break;
@@ -2161,7 +2170,7 @@ private:
          case AstNodeKind::ChooseExpr: {
             bool have_value = false;
             for (auto &choice : std::get<ChooseExprPayload>(Expression.data).cases) {
-               if (not choice.result) continue;
+               if (not choice.result or expression_never_returns(*choice.result)) continue;
                if (not have_value) {
                   value = this->descriptor_of(*choice.result);
                   have_value = true;
@@ -2337,6 +2346,11 @@ private:
          if (not statement) continue;
          if (statement->kind IS AstNodeKind::ReturnStmt) {
             auto &payload = std::get<ReturnStmtPayload>(statement->data);
+            bool returns = true;
+            for (const auto &value : payload.values) {
+               if (value and expression_never_returns(*value)) returns = false;
+            }
+            if (not returns) continue;
             StaticResultSet current;
             current.declared_count = uint16_t(payload.values.size());
             current.stored_count = uint8_t(std::min<size_t>(payload.values.size(), MAX_RETURN_TYPES));
@@ -2560,6 +2574,9 @@ private:
    {
       auto visit = [&](ExprNodePtr &Node) { if (Node) Visit(*Node); };
       switch (Expression.kind) {
+         case AstNodeKind::RaiseExpr: {
+            auto &p = std::get<RaisePayload>(Expression.data); visit(p.error_code); visit(p.message); break;
+         }
          case AstNodeKind::UnaryExpr: visit(std::get<UnaryExprPayload>(Expression.data).operand); break;
          case AstNodeKind::UpdateExpr: visit(std::get<UpdateExprPayload>(Expression.data).target); break;
          case AstNodeKind::TypeTestExpr: visit(std::get<TypeTestExprPayload>(Expression.data).value); break;

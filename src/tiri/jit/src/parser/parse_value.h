@@ -59,6 +59,7 @@ public:
    }
 
    inline BCReg to_reg(RegisterAllocator& Allocator, BCReg Slot) {
+      if (this->descriptor.is_unreachable()) return BCReg(NO_REG);
       expr_toreg(Allocator.state(), &this->descriptor, Slot.raw());
       return BCReg(this->descriptor.u.s.info);
    }
@@ -66,6 +67,7 @@ public:
    inline BCReg to_any_reg(RegisterAllocator& Allocator) { return BCReg(expr_toanyreg(Allocator.state(), &this->descriptor)); }
 
    inline BCReg to_next_reg(RegisterAllocator& Allocator) {
+      if (this->descriptor.is_unreachable()) return BCReg(NO_REG);
       expr_tonextreg(Allocator.state(), &this->descriptor);
       return BCReg(this->descriptor.u.s.info);
    }

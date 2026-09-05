@@ -40,7 +40,7 @@ end
    try
       processing.new({ mode = 'first' })
    success
-      error("processing.new() accepted an unknown signal mode")
+      assert(false, "processing.new() accepted an unknown signal mode")
    end
 end
 
@@ -50,6 +50,6 @@ end
    try
       processing.new({ mode = 1 })
    success
-      error("processing.new() accepted a non-string signal mode")
+      assert(false, "processing.new() accepted a non-string signal mode")
    end
 end

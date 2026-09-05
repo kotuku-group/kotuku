@@ -667,7 +667,7 @@ gui.fileview = function(Options)
          local err
          err, lDir = mSys.OpenDir(self.path ?? ':', flags)
          if err != ERR_Okay then
-            error('Failed to resolve path ' .. (self.path ?? ':'))
+            raise 'Failed to resolve path ' .. (self.path ?? ':')
             return
          end
       end
@@ -1421,7 +1421,7 @@ gui.fileview = function(Options)
          elseif Options.toolBar is <table> then
             tbo = Options.toolBar
          else
-            error('Invalid value passed to fileview.toolBar')
+            raise 'Invalid value passed to fileview.toolBar'
          end
 
          self.toolbar = gui.toolbar({

@@ -667,14 +667,17 @@ void AstBuilder::rollback_registered_enum_hierarchy()
    if (this->parent_builder) this->parent_builder->rollback_registered_enum_hierarchy();
 }
 
-AstBuilder::FunctionNameScope::FunctionNameScope(AstBuilder &Builder, GCstr *FunctionName) : builder(Builder)
+AstBuilder::FunctionNameScope::FunctionNameScope(AstBuilder &Builder, GCstr *FunctionName) : builder(Builder),
+   saved_handler_depth(Builder.handler_depth)
 {
+   this->builder.handler_depth = 0;
    this->builder.function_name_stack.push_back(FunctionName ? FunctionName : this->builder.anonymous_function_name());
 }
 
 AstBuilder::FunctionNameScope::~FunctionNameScope()
 {
    this->builder.function_name_stack.pop_back();
+   this->builder.handler_depth = this->saved_handler_depth;
 }
 
 AstBuilder::BlockDepthScope::BlockDepthScope(AstBuilder &Builder) : builder(Builder)

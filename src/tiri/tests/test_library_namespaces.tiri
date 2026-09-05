@@ -94,5 +94,5 @@ end
       return
    end
 
-   error('Joining an absent namespace should fail')
+   assert(false, 'Joining an absent namespace should fail')
 end

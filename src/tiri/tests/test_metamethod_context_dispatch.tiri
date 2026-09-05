@@ -12,7 +12,7 @@ function enforce_hotpath() end
          return &id is Other.id
       end,
       __newindex = function(Key, Value)
-         error(f'Colour tables are immutable: {Key}')
+         raise f'Colour tables are immutable: {Key}'
       end
    }
    local first = setmetatable({ name = 'red', id = 7 }, colour_mt)
@@ -137,7 +137,7 @@ end
 @Test function MetamethodReturnsAndErrorsRestoreTheCallerContext()
    local caller = { name = 'caller' }
    local read_or_fail = function(Fail:bool):str
-      if Fail then error('expected method failure') end
+      if Fail then raise 'expected method failure' end
       return &name
    end
    local receiver = setmetatable({ name = 'metamethod' }, { __call = read_or_fail })
@@ -213,7 +213,7 @@ end
    })
    function fail_with_close()
       local resource <close> = close_target
-      error('dispatch close failure')
+      raise 'dispatch close failure'
    end
    try
       fail_with_close()
@@ -258,7 +258,7 @@ end
    setmetatable(values, {
       __iter = function():func
          assert(&name is 'iterator', '__iter should enter its selected table context before an error')
-         error('expected iteration preparation failure')
+         raise 'expected iteration preparation failure'
       end
    })
 

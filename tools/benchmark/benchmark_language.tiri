@@ -7,7 +7,7 @@
    -- Function that may throw an error
    local function mayFail(ShouldFail:bool):num
       if ShouldFail then
-         error("Intentional error")
+         raise "Intentional error"
       end
       return 42
    end
@@ -57,7 +57,7 @@
       -- Try-except with conditional exception
       try
          if i % 50 is 0 then
-            error("Periodic error")
+            raise "Periodic error"
          end
          acc += i * 2
       except ex
@@ -74,14 +74,14 @@ end
 @Test function ExceptionTrySuccess()
    local function compute(Value:num):num
       if Value < 0 then
-         error("Negative value not allowed")
+         raise "Negative value not allowed"
       end
       return Value * Value
    end
 
    local function fetchData(Id:num):table
       if Id is 0 then
-         error("Invalid ID")
+         raise "Invalid ID"
       end
       return { id = Id, value = Id * 10 }
    end

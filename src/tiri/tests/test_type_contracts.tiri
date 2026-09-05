@@ -315,7 +315,7 @@ end
       except e
          assert(e.message.find(Message) != nil, 'Unexpected required-annotation diagnostic: ' .. e.message)
       success
-         error('Expected required annotation syntax to be rejected')
+         assert(false, 'Expected required annotation syntax to be rejected')
       end
    end
 
@@ -1259,7 +1259,7 @@ end
       'A rejected filtered-except global store must preserve the previous value')
 
    try
-      error('expected')
+      raise 'expected'
    except e
       global glContractReducedExcept = 'except'
    end

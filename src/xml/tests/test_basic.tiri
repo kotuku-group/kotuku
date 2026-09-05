@@ -34,14 +34,14 @@ end
 
       if #func.attribs > 0 then
          if func.attribs[0].name != 'function' then
-            error("Expected 'function', got '" .. tostring(func.attribs[0].name) .. "'")
+            raise "Expected 'function', got '" .. tostring(func.attribs[0].name) .. "'"
          end
          totalFunctions++
       end
    end)
 
    if (totalFunctions != 5) then
-      error("Expected 5 functions, got " .. totalFunctions)
+      raise "Expected 5 functions, got " .. totalFunctions
    end
 end
 
@@ -56,7 +56,7 @@ end
    assert(err is ERR_Okay, "Failed to retrieve 'type' attribute, error: " .. mSys.GetErrorMsg(err))
 
    if (value != 'struct rkFont *') then
-      error("Tag type value of '" .. value .. "' was not expected.")
+      raise "Tag type value of '" .. value .. "' was not expected."
    end
 end
 

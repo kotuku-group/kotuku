@@ -249,7 +249,7 @@ end
 
 @Test function TailPositionExceptionRemainsProtected()
    function fail():num
-      error('tail-position failure')
+      raise 'tail-position failure'
    end
 
    function protectedCall():any

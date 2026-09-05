@@ -471,7 +471,7 @@ global function cType(Value:table, Origin:str):table
             Value.type = 'uint16_t'
             Value.fullType = copyOf('ushort')
          else
-            error('Invalid type "' .. t .. '"')
+            raise 'Invalid type "' .. t .. '"'
          end
 
          Value.ref    = glCustomTypes[prefix]
@@ -748,7 +748,7 @@ global function cType(Value:table, Origin:str):table
    end
 
    if not glTypes[Value.type] then
-      error(f"No handling for field type '{Value.type}' from {Origin}")
+      raise f"No handling for field type '{Value.type}' from {Origin}"
    end
 
    -- No special handling, lookup the type table directly

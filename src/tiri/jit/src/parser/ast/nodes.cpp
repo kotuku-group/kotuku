@@ -73,8 +73,67 @@ uint8_t tiri_type_to_lj_tag(TiriType Type)
 }
 
 //********************************************************************************************************************
-// Infer the result type of an expression from its AST structure.
-// This is used for type-carrying deferred expressions to store the expected result type.
+// Internal bottom marker: evaluating this expression cannot produce a value. No runtime type is introduced.
+
+bool expression_never_returns(const ExprNode &Expression)
+{
+   if (Expression.kind IS AstNodeKind::RaiseExpr) return true;
+   if (auto *ternary = std::get_if<TernaryExprPayload>(&Expression.data)) {
+      return (ternary->condition and expression_never_returns(*ternary->condition)) or
+         (ternary->if_true and ternary->if_false and expression_never_returns(*ternary->if_true) and
+          expression_never_returns(*ternary->if_false));
+   }
+   if (auto *choice = std::get_if<ChooseExprPayload>(&Expression.data)) {
+      if (choice->scrutinee and expression_never_returns(*choice->scrutinee)) return true;
+      for (const auto &item : choice->scrutinee_tuple) {
+         if (item and expression_never_returns(*item)) return true;
+      }
+      bool has_fallback = false;
+      for (const auto &branch : choice->cases) {
+         if (not branch.result or not expression_never_returns(*branch.result)) return false;
+         if ((branch.is_else or branch.is_wildcard) and not branch.guard) has_fallback = true;
+      }
+      return has_fallback;
+   }
+   auto stops = [](const ExprNodePtr &Node) { return Node and expression_never_returns(*Node); };
+   if (auto *unary = std::get_if<UnaryExprPayload>(&Expression.data)) return stops(unary->operand);
+   if (auto *binary = std::get_if<BinaryExprPayload>(&Expression.data)) {
+      if (stops(binary->left)) return true;
+      if (binary->op IS AstBinaryOperator::LogicalAnd or binary->op IS AstBinaryOperator::LogicalOr or
+          binary->op IS AstBinaryOperator::IfEmpty) return false;
+      return stops(binary->right);
+   }
+   if (auto *call = std::get_if<CallExprPayload>(&Expression.data)) {
+      if (auto *direct = std::get_if<DirectCallTarget>(&call->target)) {
+         if (stops(direct->callable)) return true;
+      }
+      if (Expression.kind IS AstNodeKind::SafeCallExpr) return false;
+      for (const auto &argument : call->arguments) if (stops(argument)) return true;
+   }
+   if (auto *member = std::get_if<MemberExprPayload>(&Expression.data)) return stops(member->table);
+   if (auto *member = std::get_if<SafeMemberExprPayload>(&Expression.data)) return stops(member->table);
+   if (auto *index = std::get_if<IndexExprPayload>(&Expression.data)) {
+      return stops(index->table) or stops(index->index);
+   }
+   if (auto *index = std::get_if<SafeIndexExprPayload>(&Expression.data)) return stops(index->table);
+   if (auto *test = std::get_if<TypeTestExprPayload>(&Expression.data)) return stops(test->value);
+   if (auto *presence = std::get_if<PresenceExprPayload>(&Expression.data)) return stops(presence->value);
+   if (auto *table = std::get_if<TableExprPayload>(&Expression.data)) {
+      for (const auto &field : table->fields) if (stops(field.key) or stops(field.value)) return true;
+   }
+   if (auto *range = std::get_if<RangeExprPayload>(&Expression.data)) {
+      return stops(range->start) or stops(range->stop) or stops(range->step);
+   }
+   if (auto *pipe = std::get_if<PipeExprPayload>(&Expression.data)) return stops(pipe->lhs) or stops(pipe->rhs_call);
+   if (auto *filter = std::get_if<ResultFilterPayload>(&Expression.data)) return stops(filter->expression);
+   if (auto *update = std::get_if<UpdateExprPayload>(&Expression.data)) return stops(update->target);
+   if (auto *chain = std::get_if<ComparisonChainExprPayload>(&Expression.data)) {
+      for (size_t i = 0; i < std::min(size_t(2), chain->operands.size()); ++i) {
+         if (stops(chain->operands[i])) return true;
+      }
+   }
+   return false;
+}
 
 TiriType infer_expression_type(const ExprNode &Expr)
 {
@@ -165,6 +224,10 @@ TiriType infer_expression_type(const ExprNode &Expr)
       // Ternary expression: type depends on branches (would need to check both)
       case AstNodeKind::TernaryExpr: {
          const auto& payload = std::get<TernaryExprPayload>(Expr.data);
+         if (payload.if_true and payload.if_false) {
+            if (expression_never_returns(*payload.if_true)) return infer_expression_type(*payload.if_false);
+            if (expression_never_returns(*payload.if_false)) return infer_expression_type(*payload.if_true);
+         }
          if (payload.if_true) {
             TiriType true_type = infer_expression_type(*payload.if_true);
             if (payload.if_false) {
@@ -176,6 +239,19 @@ TiriType infer_expression_type(const ExprNode &Expr)
             return TiriType::Unknown;
          }
          return TiriType::Unknown;
+      }
+
+      case AstNodeKind::ChooseExpr: {
+         TiriType result = TiriType::Unknown;
+         bool have_result = false;
+         for (const auto &choice : std::get<ChooseExprPayload>(Expr.data).cases) {
+            if (not choice.result or expression_never_returns(*choice.result)) continue;
+            TiriType branch = infer_expression_type(*choice.result);
+            if (have_result and branch != result) return TiriType::Unknown;
+            result = branch;
+            have_result = true;
+         }
+         return result;
       }
 
       // Presence check returns boolean
@@ -347,6 +423,10 @@ struct ExpressionChildCounter {
 
    [[nodiscard]] inline size_t operator()(const MemberExprPayload &Payload) const {
       return Payload.table ? 1 : 0;
+   }
+
+   [[nodiscard]] inline size_t operator()(const RaisePayload &Payload) const {
+      return size_t(bool(Payload.error_code)) + size_t(bool(Payload.message));
    }
 
    [[nodiscard]] inline size_t operator()(const ModuleFunctionExprPayload &) const { return 0; }
@@ -617,7 +697,7 @@ ConditionalShorthandStmtPayload::~ConditionalShorthandStmtPayload() = default;
 ExceptClause::~ExceptClause() = default;
 TryExceptPayload::~TryExceptPayload() = default;
 CheckallStmtPayload::~CheckallStmtPayload() = default;
-RaiseStmtPayload::~RaiseStmtPayload() = default;
+RaisePayload::~RaisePayload() = default;
 CheckStmtPayload::~CheckStmtPayload() = default;
 ImportEntryPayload::~ImportEntryPayload() = default;
 ImportStmtPayload::~ImportStmtPayload() = default;

@@ -120,7 +120,7 @@ end
    except error_value when ERR_MissingPath
       -- Expected failure due to missing path
    success
-      error('Expected a file without a path to fail initialisation')
+      assert(false, 'Expected a file without a path to fail initialisation')
    end
 end
 
@@ -146,7 +146,7 @@ end
       assert(ex.message.find('Parsing failed') or ex.message.find('does_not_exist'),
          'Invalid typed constructor fields should retain the regular object-field diagnostic: ' .. ex.message)
    success
-      error('Expected an invalid typed constructor field to fail')
+      assert(false, 'Expected an invalid typed constructor field to fail')
    end
 
    try
@@ -155,7 +155,7 @@ end
       assert(ex.message.find('UnavailableObjectClass') or ex.message.find('class'),
          'Unavailable typed constructor classes should fail through object creation: ' .. ex.message)
    success
-      error('Expected unavailable typed constructor class creation to fail')
+      assert(false, 'Expected unavailable typed constructor class creation to fail')
    end
 end
 
@@ -205,7 +205,7 @@ end
       assert(ex.message.find("Parsing failed") or ex.message.find("not_a_field"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when accessing invalid field")
+      assert(false, "Expected error when accessing invalid field")
    end
 
    -- Test OBSETF - write to a read-only field (runtime error, timestamp exists in dictionary)
@@ -214,7 +214,7 @@ end
    except ex
       assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
    success
-      error("Expected error when writing a read-only field")
+      assert(false, "Expected error when writing a read-only field")
    end
 
    -- Test compile-time detection of non-existent field (write)
@@ -228,7 +228,7 @@ end
       assert(ex.message.find("Parsing failed") or ex.message.find("does_not_exist"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when writing a non-existent field")
+      assert(false, "Expected error when writing a non-existent field")
    end
 end
 
@@ -397,7 +397,7 @@ end
          time_obj = file_obj
       ]])
    success
-      error("Expected error when assigning object of different class")
+      assert(false, "Expected error when assigning object of different class")
    end
 end
 
@@ -417,7 +417,7 @@ end
       assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
          "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected type error when assigning str field to num variable")
+      assert(false, "Expected type error when assigning str field to num variable")
    end
 end
 
@@ -435,7 +435,7 @@ end
       assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
          "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected type error when assigning num field to str variable")
+      assert(false, "Expected type error when assigning num field to str variable")
    end
 end
 
@@ -496,7 +496,7 @@ value = obj.new('file')
       assert(ex.message.find('object class mismatch') != nil or ex.message.find('ObjectClassMismatch') != nil,
          'A visible cross-class assignment should retain its compile-time diagnostic: ' .. ex.message)
    success
-      error('Expected a compile-time object class mismatch')
+      assert(false, 'Expected a compile-time object class mismatch')
    end
 
    local broad:obj = obj.new('time')

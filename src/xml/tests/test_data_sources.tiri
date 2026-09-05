@@ -151,7 +151,7 @@ end
    try
       xml = obj.new("xml", { path = 'temp:nonexistent.xml' })
    success
-      error("Should report error for non-existent file")
+      assert(false, "Should report error for non-existent file")
    end
 
    -- Try to parse invalid XML content.  Throwing an exception is considered acceptable if content is unparseable

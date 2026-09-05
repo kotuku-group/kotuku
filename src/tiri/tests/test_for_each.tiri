@@ -194,7 +194,7 @@ end
          message = '__iter must return a function, got number'
       },
       {
-         source = 'forEach({0 to 1}, function(Value) error(\'callback failure\') end)',
+         source = 'forEach({0 to 1}, function(Value) raise(\'callback failure\') end)',
          message = 'callback failure'
       }
    }

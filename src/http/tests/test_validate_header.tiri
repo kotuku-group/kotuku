@@ -89,7 +89,7 @@ SERVER_PORT <const> = 18940
          { pattern = '/error/validation-crash',
             method = 'GET',
             validateHeader = function(headers):any
-               error('Intentional validation error')
+               raise 'Intentional validation error'
             end,
             handler = function(req, res)
                res.json({ message = 'This should never be reached' })

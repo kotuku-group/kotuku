@@ -252,6 +252,6 @@ end
       -- Verify the error message contains expected content
       assert(e.message.find('Error in test context'), 'Error should contain context')
    success
-      error('assert(false) should fail')
+      assert(false, 'assert(false) should fail')
    end
 end

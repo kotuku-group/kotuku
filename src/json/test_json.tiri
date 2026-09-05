@@ -54,7 +54,7 @@ function expect_native_failure(Source:str, Description:str)
       return
    end
 
-   error(Description .. ' was accepted by the native JSON parser: ' .. Source)
+   assert(false, Description .. ' was accepted by the native JSON parser: ' .. Source)
 end
 
 function save_as_json(Source:obj, ClassID:num):str
@@ -102,6 +102,22 @@ end
    assert(sj.find('"array-obj"'), "Expected array-object tag not found in serialised XML.")
    assert(sj.find('"XYZ"'), "Expected object field value not found in serialised XML.")
    assert(#sj > 200, "Serialised JSON length too short.")
+end
+
+@Test function EncodeFailureCallbacks()
+   try
+      json.encode({}, nil, true)
+   except e
+      assert(e.code is ERR_Exception, 'The default encoder callback should raise a generic exception.')
+      assert(e.message is "Can't encode table as key.", 'The default callback should preserve the encoder message.')
+   success
+      assert(false, 'Encoding a table as a key should fail.')
+   end
+
+   local message = nil
+   local result = json.encode({}, function(Message:str) message = Message end, true)
+   assert(message is "Can't encode table as key.", 'A supplied error callback should receive the encoder message.')
+   assert(result is '', 'A supplied callback may return without raising.')
 end
 
 @Test function DecodeArrayWithFalseValue()

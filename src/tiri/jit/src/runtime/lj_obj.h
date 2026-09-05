@@ -105,6 +105,7 @@ enum class AstNodeKind : uint16_t {
    DeferredExpr,  // Deferred expression <{ expr }>
    RangeExpr,     // Range literal {start to stop} or {start into stop}
    ChooseExpr,    // Choose expression: choose value from pattern -> result ... end
+   RaiseExpr,
    ModuleFunctionExpr, // Compiler-managed module function selection, e.g. mCore.PreciseTime
    BlockStmt,
    AssignmentStmt,
@@ -1674,6 +1675,7 @@ typedef struct StrInternState {
 
 // Global state, shared by all threads of a Lua universe.
 typedef struct global_State {
+   GCtab *exception_metatable = nullptr; // Protected runtime exception identity
    lua_Alloc allocf;         // Memory allocator.
    void      *allocd;        // Memory allocator data.
    GCState   gc;             // Garbage collector.
@@ -1773,6 +1775,8 @@ struct lua_State {
    CheckallFrameStack *checkall_stack = nullptr; // Preallocated lexical automatic native error promotion scopes
    const BCIns   *try_handler_pc; // Handler PC for error re-entry (set during unwind)
    CapturedStackTrace *pending_trace; // Trace captured during exception handling (for try<trace>)
+   GCtab  *pending_exception = nullptr; // Original exception during rethrow
+   std::vector<GCtab *> exception_unwind_roots; // Preserve outer rethrows during nested cleanup
    GCstr  *pending_exception_message = nullptr; // Raw exception message for try/except tables
    GCstr  *pending_exception_source = nullptr;  // Display source filename for try/except tables
    int    pending_exception_line = 0;           // Source line for try/except tables

@@ -292,7 +292,7 @@ global function parseMethod(Class:table, Extract:str)
       method = Class.lookupMethods[name]
       assert(method, "Method '" .. name .. "' is not registered in the TDL.")
    else
-      error("Methods need to be pre-defined for class '" .. tostring(Class.name) .. "' with methods()")
+      raise "Methods need to be pre-defined for class '" .. tostring(Class.name) .. "' with methods()"
    end
 
    method.params = { }
@@ -335,7 +335,7 @@ global function parseMethod(Class:table, Extract:str)
                Class.references['TYPE:' .. param.lookup] = 'method:' .. name
             end
          elseif content.trim()?? then
-            error("Unable to process line '" .. (content ?? "NULL") .. "' for method '" .. name .. "'")
+            raise "Unable to process line '" .. (content ?? "NULL") .. "' for method '" .. name .. "'"
          end
       end
    end
@@ -371,15 +371,15 @@ end
 
 function classStorageOrigin(Class:table):num
    if not Class.meta then
-      error(f"Cannot determine the storage origin for {glModule.name}.{Class.name}: " ..
-         'live class metadata is unavailable.')
+      raise f"Cannot determine the storage origin for {glModule.name}.{Class.name}: " ..
+         'live class metadata is unavailable.'
    end
 
    if Class.meta.classID != Class.meta.baseClassID then
       local base = mSys.FindClass(Class.meta.baseClassID, 0)
       if not base then
-         error(f"Cannot determine the storage origin for {glModule.name}.{Class.name}: " ..
-            'base class metadata is unavailable.')
+         raise f"Cannot determine the storage origin for {glModule.name}.{Class.name}: " ..
+            'base class metadata is unavailable.'
       end
 
       Class.storageOffsetSymbol = 'CLASS_OFFSET_' .. base.className.upper()
@@ -401,7 +401,7 @@ function classStorageOrigin(Class:table):num
    end
 
    if not origin then
-      error(f"Cannot determine the storage origin for root class {glModule.name}.{Class.name}.")
+      raise f"Cannot determine the storage origin for root class {glModule.name}.{Class.name}."
    end
 
    return origin
@@ -485,15 +485,15 @@ global function parseClassFields(Class:table, ClientSpec:str)
          f.needsClassOffset = fieldNeedsClassOffset(f)
          if f.needsClassOffset then
             if f.offset is nil then
-               error(f"Cannot generate direct access for {glModule.name}.{Class.name}.{f.name}: " ..
-                  'live field metadata is unavailable.')
+               raise f"Cannot generate direct access for {glModule.name}.{Class.name}.{f.name}: " ..
+                  'live field metadata is unavailable.'
             end
 
             Class.storageOrigin ?= classStorageOrigin(Class)
             f.relativeOffset = f.offset - Class.storageOrigin
             if (f.relativeOffset < 0) or (f.offset >= Class.meta.size) then
-               error(f"Invalid live offset {f.offset} for {glModule.name}.{Class.name}.{f.name} " ..
-                  f"(storage origin {Class.storageOrigin}, class size {Class.meta.size}).")
+               raise f"Invalid live offset {f.offset} for {glModule.name}.{Class.name}.{f.name} " ..
+                  f"(storage origin {Class.storageOrigin}, class size {Class.meta.size})."
             end
          end
 

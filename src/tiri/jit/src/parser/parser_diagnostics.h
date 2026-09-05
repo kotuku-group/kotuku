@@ -54,6 +54,7 @@ struct ParserDiagnostic {
    uint8_t file_index = 0;   // FileSource index captured from the lexer at creation (token spans store raw lines)
    std::string message;
    Token token;
+   size_t length = 0;      // Optional source width; zero retains the diagnostic consumer's range inference.
 
    [[nodiscard]] std::string to_string(int LineOffset = 0, lua_State *L = nullptr) const;
 };

@@ -346,7 +346,7 @@ end
 function path_param_regex(Route:table, ParamName:str):str
    path_fields = Route.interface.path
    if not path_fields or not path_fields[ParamName] then
-      error('Path parameter {' .. ParamName .. '} is not declared in route path table: ' .. Route.path)
+      raise 'Path parameter {' .. ParamName .. '} is not declared in route path table: ' .. Route.path
    end
 
    param_type = path_fields[ParamName].type ?? 'string'
@@ -378,7 +378,7 @@ function path_to_regex(Route:table):str
       if in_param then
          if ch is '}' then
             if not param_name?? then
-               error('Empty path parameter in route: ' .. Route.path)
+               raise 'Empty path parameter in route: ' .. Route.path
             end
 
             Route.params.push(param_name)
@@ -396,7 +396,7 @@ function path_to_regex(Route:table):str
    end
 
    if in_param then
-      error('Unterminated path parameter in route: ' .. Route.path)
+      raise 'Unterminated path parameter in route: ' .. Route.path
    end
 
    rx ..= '$'

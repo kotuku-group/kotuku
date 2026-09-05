@@ -255,6 +255,72 @@ static AstHarnessResult build_resolved_ast_from_source(std::string_view Source,
 
 //********************************************************************************************************************
 
+static bool test_raise_payload_and_context(kt::Log &Log)
+{
+   constexpr std::string_view accepted[] = {
+      "raise 'message'", "raise 12", "raise 12, 'message'",
+      "raise (12 + 0), 'message'", "raise (12) + 0, 'message'", "raise('message')", "raise(12, 'message')",
+      "try except\nraise\nend", "try except e\nif true then raise end\nend",
+      "try except\ntry except\nraise\nend\nraise\nend",
+      "try except\nfalse ?! raise\nend",
+      "return raise('message')", "return false ? 1 : raise(12, 'message'), 2",
+      "return f(raise('message'), 2)", "return (raise('message'))",
+      "return choose 1 from 1 -> raise('message') else -> 2 end"
+   };
+   for (auto source : accepted) {
+      auto ast = build_ast_from_source(source, true);
+      if (not ast.chunk.ok() or not ast.diagnostics.empty()) {
+         Log.error("raise syntax rejected: %.*s", int(source.size()), source.data());
+         log_diagnostics(ast.diagnostics, Log);
+         return false;
+      }
+   }
+   constexpr std::string_view rejected[] = {
+      "raise", "raise\nprint(1)", "try raise except end", "try except end\nraise",
+      "try except\nfunction f() raise end\nend",
+      "try except\nlocal f = function() raise end\nend",
+      "try except\ndefer raise end\nend",
+      "try except\nlocal f = (() => do raise end)\nend",
+      "try except\nsuccess\nraise\nend",
+      "return raise", "return raise()", "raise()", "raise(1,)", "raise(1, 2, 3)",
+      "return raise(1, 2, 3)", "return raise 'message'", "raise('message') = 2"
+   };
+   for (auto source : rejected) {
+      auto ast = build_ast_from_source(source, true);
+      if (ast.chunk.ok() and ast.diagnostics.empty()) {
+         Log.error("invalid raise syntax accepted: %.*s", int(source.size()), source.data());
+         return false;
+      }
+   }
+   auto ast = build_ast_from_source("return false ? 1 : raise(12, 'message'), 2", true);
+   auto &values = std::get<ReturnStmtPayload>(ast.chunk.value_ref()->statements.front()->data).values;
+   if (values.size() != 2 or infer_expression_type(*values.front()) != TiriType::Num) {
+      Log.error("raise consumed an enclosing comma or poisoned the ternary result type");
+      return false;
+   }
+   auto &branch = std::get<TernaryExprPayload>(values.front()->data).if_false;
+   if (not expression_never_returns(*branch) or expression_never_returns(*values.front())) {
+      Log.error("raise bottom semantics did not distinguish the returning ternary path");
+      return false;
+   }
+   auto choice = build_ast_from_source("return choose 1 from 1 -> raise('failure') else -> 2 end", true);
+   auto &choice_value = std::get<ReturnStmtPayload>(choice.chunk.value_ref()->statements.front()->data).values.front();
+   if (infer_expression_type(*choice_value) != TiriType::Num or expression_never_returns(*choice_value)) {
+      Log.error("raise poisoned the choose result type");
+      return false;
+   }
+   auto unhandled = build_ast_from_source("raise", true);
+   bool focused = false;
+   for (const auto &diagnostic : unhandled.diagnostics) {
+      if (diagnostic.message IS "bare raise is only valid inside an except handler") focused = true;
+   }
+   if (not focused) {
+      Log.error("bare raise did not report its lexical handler restriction");
+      return false;
+   }
+   return true;
+}
+
 static bool test_assignment_target_semantic_resolution(kt::Log &Log)
 {
    constexpr std::string_view source =
@@ -2025,6 +2091,46 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
 
 //********************************************************************************************************************
 
+static bool test_error_removal(kt::Log &Log)
+{
+   constexpr std::string_view source = "error('removed')";
+   auto result = discover_bindings_from_source(source, true, true);
+   lua_State *L = result.state->get();
+   lua_getglobal(L, "error");
+   bool absent = lua_isnil(L, -1);
+   lua_pop(L, 1);
+   if (not absent) {
+      Log.error("the removed error built-in remains in the public base environment");
+      return false;
+   }
+
+   for (const auto &diagnostic : result.diagnostics) {
+      if (diagnostic.code IS ParserErrorCode::DeprecatedApi) {
+         Log.error("the removed error name still emitted a deprecation warning");
+         return false;
+      }
+   }
+   if (not result.chunk.ok()) return false;
+
+   if (lua_load(L, source, "=error-removal") IS 0) {
+      Log.error("the removed error built-in still compiled as a public global");
+      lua_pop(L, 1);
+      return false;
+   }
+   std::string_view message = lua_tostring(L, -1);
+   if (message.find("Undeclared variable 'error'") IS std::string_view::npos) {
+      Log.error("the removed error built-in produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto local = discover_bindings_from_source(
+      "local error = function(Message) end\nerror('local')\nlocal api = { error=function() end }\napi.error()", true,
+      true);
+   return local.chunk.ok() and local.diagnostics.empty();
+}
+
 static bool test_library_namespace_declarations(kt::Log &Log)
 {
    auto created = discover_bindings_from_source(
@@ -3134,7 +3240,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f), uint8_t(0xa0) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -10706,6 +10812,85 @@ static bool test_checkall_syntax_and_bytecode(kt::Log &Log)
 // Defer error-unwind registration is intentionally test-first.  Resolve the planned opcodes by name so this test
 // remains compileable until the bytecode definitions land, while still failing clearly when either opcode is absent.
 
+static bool test_expression_raise_bytecode(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   std::string error;
+   auto raised = compile_snapshot(lua, "return raise('failure')", true, error);
+   if (not raised or count_opcode_tree(*raised, BC_RAISE) != 1 or
+       count_opcode_tree(*raised, BC_KPRI) != 0 or count_opcode_tree(*raised, BC_KNIL) != 0 or
+       count_opcode_tree(*raised, BC_RET1) != 0) {
+      Log.error("expression raise fabricated a return value: %s", error.c_str());
+      return false;
+   }
+   auto discarded = compile_snapshot(lua,
+      "return true ? 42 : raise('discarded'), false ? raise('discarded') : 24", true, error);
+   if (not discarded or count_opcode_tree(*discarded, BC_RAISE) != 0) {
+      Log.error("constant-folded branches emitted a discarded raise: %s", error.c_str());
+      return false;
+   }
+   auto branches = compile_snapshot(lua,
+      "local function pick(C) return C ? raise('true') : raise('false') end", true, error);
+   if (not branches or branches->children.size() != 1 or
+       count_opcode_tree(branches->children[0], BC_RAISE) != 2 or
+       count_opcode_tree(branches->children[0], BC_KPRI) != 0 or
+       count_opcode_tree(branches->children[0], BC_RET1) != 0) {
+      Log.error("non-returning ternary branches acquired a result join: %s", error.c_str());
+      return false;
+   }
+   auto arguments = compile_snapshot(lua,
+      "local function target(A, B) end\nreturn target(raise('argument'), 99)", true, error);
+   if (not arguments or count_opcode_tree(*arguments, BC_CALL) != 0 or
+       count_opcode_tree(*arguments, BC_CALLT) != 0 or count_opcode_tree(*arguments, BC_KSHORT) != 0) {
+      Log.error("argument raise emitted its enclosing call or later argument: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
+static bool test_rethrow_dump_validation(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (lua_load(lua, "try\nraise 12\nexcept\nraise\nend", "rethrow-dump")) return false;
+   GCproto *proto = funcproto(funcV(lua->top - 1));
+   if (proto->try_block_count != 1 or proto->try_handler_count != 1) return false;
+   BCIns *bytecode = proto_bc(proto);
+   BCPOS rethrow_pc = 0;
+   for (BCPOS pc = 1; pc < proto->sizebc; ++pc) {
+      if (bc_op(bytecode[pc]) IS BC_RETHROW) rethrow_pc = pc;
+   }
+   if (not rethrow_pc or bc_a(bytecode[rethrow_pc]) != proto->try_handlers[0].exception_reg) {
+      Log.error("bare raise did not emit the hidden handler register");
+      return false;
+   }
+
+   TryBlockDesc saved_block = proto->try_blocks[0];
+   TryHandlerDesc saved_handler = proto->try_handlers[0];
+   BCIns saved_ins = bytecode[rethrow_pc];
+   for (int malformed = 0; malformed < 5; ++malformed) {
+      switch (malformed) {
+         case 0: proto->try_blocks[0].first_handler = 2; break;
+         case 1: proto->try_blocks[0].flags = 0xff; break;
+         case 2: proto->try_handlers[0].handler_pc = proto->sizebc; break;
+         case 3: proto->try_handlers[0].exception_reg = proto->framesize; break;
+         case 4: bytecode[rethrow_pc] = BCINS_AD(BC_RETHROW, proto->framesize, 0); break;
+      }
+      std::string dump;
+      int status = lj_bcwrite(lua, proto, bytecode_writer, &dump, 1);
+      proto->try_blocks[0] = saved_block;
+      proto->try_handlers[0] = saved_handler;
+      bytecode[rethrow_pc] = saved_ins;
+      if (status != 0 or lua_load(lua, std::string_view(dump), "malformed-rethrow") IS 0) {
+         Log.error("rethrow dump accepted invalid metadata case %d", malformed);
+         return false;
+      }
+      lua_pop(lua, 1);
+   }
+   return true;
+}
+
 static bool test_defer_unwind_registration_bytecode(kt::Log &Log)
 {
    auto find_opcode = [](std::string_view Name) -> std::optional<BCOp> {
@@ -10945,9 +11130,13 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 100> tests = { {
+   constexpr std::array<TestCase, 104> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
+      { "error_removal", test_error_removal },
+      { "expression_raise_bytecode", test_expression_raise_bytecode },
+      { "rethrow_dump_validation", test_rethrow_dump_validation },
+      { "raise_payload_and_context", test_raise_payload_and_context },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },
       { "assignment_target_semantic_resolution", test_assignment_target_semantic_resolution },
       { "assignment_target_descriptor_discovery", test_assignment_target_descriptor_discovery },

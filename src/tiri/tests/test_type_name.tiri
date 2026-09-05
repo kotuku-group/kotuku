@@ -83,7 +83,7 @@ end
    invalid = {}
    metatable.__name = invalid
    assert(type(value) is 'table', 'a table __name should fall back')
-   invalid = function() error('__name must never be called') end
+   invalid = function() raise '__name must never be called' end
    metatable.__name = invalid
    assert(type(value) is 'table', 'a function __name should fall back without being called')
 end
@@ -158,7 +158,7 @@ end
    local executed = false
    thunk deferred_number():num
       executed = true
-      error('rawtype() must not resolve a declared thunk')
+      assert(false, 'rawtype() must not resolve a declared thunk')
    end
 
    local value = deferred_number()
@@ -168,7 +168,7 @@ end
 
    function undeclared_body():any
       executed = true
-      error('rawtype() must not resolve an undeclared thunk')
+      assert(false, 'rawtype() must not resolve an undeclared thunk')
    end
    local undeclared:any = <{ undeclared_body() }>
    assert(rawtype(undeclared) is 'thunk', 'rawtype() should identify an undeclared thunk container')

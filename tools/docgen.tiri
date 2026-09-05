@@ -42,7 +42,7 @@ function resolveSDKPath(Path:str)
          msg ..= path .. '\n'
       end
       print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
-      error('A path to Kōtuku could not be determined.')
+      raise 'A path to Kōtuku could not be determined.'
    end
 
    mSys.SetVolume('sdk', sdk_path)
@@ -55,7 +55,7 @@ end
    platform = mSys.GetSystemState().platform
 
    if platform is 'Windows' then
-      error('Windows not supported (requires xsltproc).')
+      raise 'Windows not supported (requires xsltproc).'
    else
       err, xsltproc_path = mSys.ResolvePath("xsltproc", RSF_PATH)
       assert(xsltproc_path, 'xsltproc not found on system path, please install it first.')

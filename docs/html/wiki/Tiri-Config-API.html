@@ -346,7 +346,8 @@
 <div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="op">})</span>            <span class="co">-- Result: &#39;&#39;</span></span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="va">Empty</span> <span class="op">=</span> <span class="op">{</span> <span class="op">}</span> <span class="op">})</span> <span class="co">-- Result: &#39;[Empty]\n&#39;</span></span></code></pre></div>
 <h3 id="validation">Validation</h3>
-<p>Unlike <code>decode()</code>, the encoder is strict and raises an <code>error()</code> for any input that could not be represented as valid, round-trippable Config text:</p>
+<p>Unlike <code>decode()</code>, the encoder is strict and raises an exception for any input that cannot be represented as valid,
+round-trippable Config text:</p>
 <ul>
 <li>The root value must be a table, and every group value must be a table.</li>
 <li>Group names must be non-empty strings and cannot contain <code>[</code>, <code>]</code>, or line breaks.</li>

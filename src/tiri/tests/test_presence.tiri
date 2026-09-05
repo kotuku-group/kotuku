@@ -45,19 +45,19 @@ end
    if comment?? then
       -- Expected path
    else
-      error("Should enter if block when comment is truthy")
+      assert(false, "Should enter if block when comment is truthy")
    end
 
    empty = ""
    if empty?? then
-      error("Should not enter if block when empty string")
+      assert(false, "Should not enter if block when empty string")
    else
       -- Expected path
    end
 
    zero = 0
    if zero?? then
-      error("Should not enter if block when zero")
+      assert(false, "Should not enter if block when zero")
    end
 end
 
@@ -79,18 +79,18 @@ end
    if comment?? and author?? then
       -- Expected path
    else
-      error("Should enter if block when both are truthy")
+      assert(false, "Should enter if block when both are truthy")
    end
 
    empty_comment = ""
    if empty_comment?? and author?? then
-      error("Should not enter if block when comment is empty")
+      assert(false, "Should not enter if block when comment is empty")
    end
 
    if empty_comment?? or author?? then
       -- Expected path (author is truthy)
    else
-      error("Should enter if block when author is truthy")
+      assert(false, "Should enter if block when author is truthy")
    end
 end
 
@@ -330,21 +330,21 @@ end
 
 @Test function ShortCircuit()
    function sideEffect()
-      error("This function should not be called due to short-circuiting")
+      assert(false, "This function should not be called due to short-circuiting")
    end
    a = false
    b = true
 
    -- Short-circuit AND
    if (a?? and sideEffect()??) then
-      error("Should not enter this block due to short-circuiting")
+      assert(false, "Should not enter this block due to short-circuiting")
    end
 
    -- Short-circuit OR
    if (b?? or sideEffect()??) then
       -- Expected path, sideEffect should not be called
    else
-      error("Should enter this block since b is truthy")
+      assert(false, "Should enter this block since b is truthy")
    end
 end
 
@@ -364,7 +364,7 @@ end
 @Test function ArrayInConditional()
    local empty = array<int>
    if empty?? then
-      error("Should not enter if block for empty array")
+      assert(false, "Should not enter if block for empty array")
    end
 
    local filled = array<int, 3>

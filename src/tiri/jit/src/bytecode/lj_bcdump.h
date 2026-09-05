@@ -58,7 +58,9 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 
 // Version 0x9f reorders array.new arguments and adds the string.toArray callable.
 
-constexpr uint8_t BCDUMP_VERSION = 0x9f;
+// Version 0xa0 adds BC_RETHROW, the hidden exception debug variable and a portable exception metadata trailer.
+// Version 0xa1 removes the public error callable and shifts the generated fast-function ordering.
+constexpr uint8_t BCDUMP_VERSION = 0xa1;
 
 // Compatibility flags.
 

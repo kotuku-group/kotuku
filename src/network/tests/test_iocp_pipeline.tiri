@@ -417,7 +417,7 @@ function PendingTCPReadWriteFreeDropsCompletion()
          buffer = array<byte, 65536>
          err, read_len = Client.acRead(buffer)
          if (err != ERR_Okay) and (err != ERR_Disconnected) then
-            error('Server read failed during pending TCP free test: ' .. mSys.GetErrorMsg(err))
+            raise 'Server read failed during pending TCP free test: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -433,7 +433,7 @@ function PendingTCPReadWriteFreeDropsCompletion()
          buffer = array<byte, 256>
          err, read_len = Socket.acRead(buffer)
          if (err != ERR_Okay) and (err != ERR_Disconnected) then
-            error('Client read failed during pending TCP free test: ' .. mSys.GetErrorMsg(err))
+            raise 'Client read failed during pending TCP free test: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -458,7 +458,7 @@ function PendingTCPReadWriteFreeDropsCompletion()
    if accepted_client then
       err, len = accepted_client.acWrite('late-read-trigger')
       if (err != ERR_Okay) and (err != ERR_Disconnected) then
-         error('Server write failed during pending TCP free test: ' .. mSys.GetErrorMsg(err))
+         raise 'Server write failed during pending TCP free test: ' .. mSys.GetErrorMsg(err)
       end
    end
 
@@ -490,7 +490,7 @@ function PendingUDPReceiveSendFreeDropsCompletion()
          if server_freed then late_udp_callbacks++ end
          err, read_len = Socket.mtRecvFrom(source, buffer)
          if (err != ERR_Okay) and (err != ERR_Disconnected) then
-            error('UDP receive failed during pending UDP free test: ' .. mSys.GetErrorMsg(err))
+            raise 'UDP receive failed during pending UDP free test: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -523,7 +523,7 @@ function PendingUDPReceiveSendFreeDropsCompletion()
    for i in {0 to 64} do
       err, len = sender.mtSendTo(dest, packet)
       if (err != ERR_Okay) and (err != ERR_BufferOverflow) and (err != ERR_Disconnected) then
-         error('UDP send failed during pending UDP free test: ' .. mSys.GetErrorMsg(err))
+         raise 'UDP send failed during pending UDP free test: ' .. mSys.GetErrorMsg(err)
       end
    end
 

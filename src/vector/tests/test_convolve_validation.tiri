@@ -18,7 +18,7 @@ end
       fx.init()
    except error_value when ERR_FieldNotSet
    success
-      error('ConvolveFX should require Matrix before init')
+      assert(false, 'ConvolveFX should require Matrix before init')
    end
 end
 
@@ -32,7 +32,7 @@ end
       fx.init()
    except error_value when ERR_Mismatch
    success
-      error('Matrix length mismatch should fail init')
+      assert(false, 'Matrix length mismatch should fail init')
    end
 end
 
@@ -47,7 +47,7 @@ end
    try
       fx.divisor = 0
    success
-      error('Zero divisor should be rejected.')
+      assert(false, 'Zero divisor should be rejected.')
    end
 end
 
@@ -60,7 +60,7 @@ end
       fx.init()
    except error_value when ERR_OutOfRange
    success
-      error('Explicit out-of-range TargetX should fail init')
+      assert(false, 'Explicit out-of-range TargetX should fail init')
    end
 end
 
@@ -87,13 +87,13 @@ end
    try
       fx.unitX = 0
    success
-      error('Zero UnitX should be rejected.')
+      assert(false, 'Zero UnitX should be rejected.')
    end
 
    try
       fx.unitY = -0.5
    success
-      error('Negative UnitY should be rejected.')
+      assert(false, 'Negative UnitY should be rejected.')
    end
 end
 

@@ -59,7 +59,7 @@ end
    try
       path.mtSetCommandList(array<byte> { 1, 2, 3 })
    success
-      error('SetCommandList() should reject an array with the wrong element type.')
+      assert(false, 'SetCommandList() should reject an array with the wrong element type.')
    end
 end
 

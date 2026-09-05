@@ -313,7 +313,7 @@
 <p><code>data1, data2, ... = io.read([Format, ...])</code></p>
 <p>Reads from the default input file according to the given format strings. If no format is provided, a single line is
 read. The default input file is initially <code>stdin</code> but can be changed with <code>io.input()</code>.</p>
-<p>See <code>file:read()</code> for a full description of format strings.</p>
+<p>See <code>file.read()</code> for a full description of format strings.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="va">line</span> <span class="op">=</span> <span class="fu">io.read</span><span class="op">()</span>            <span class="co">-- Read one line</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="va">num</span>  <span class="op">=</span> <span class="fu">io.read</span><span class="op">(</span><span class="st">&#39;*n&#39;</span><span class="op">)</span>        <span class="co">-- Read a number</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="va">all</span>  <span class="op">=</span> <span class="fu">io.read</span><span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">)</span>        <span class="co">-- Read entire file</span></span></code></pre></div>
@@ -357,7 +357,7 @@ lines without closing the handle. When called with no arguments, iterates lines 
 it is a closed file handle, or <code>nil</code> if it is not a file handle.</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:test.txt&#39;</span><span class="op">,</span> <span class="st">&#39;w&#39;</span><span class="op">)</span></span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="fu">io.type</span><span class="op">(</span><span class="va">file</span><span class="op">))</span>    <span class="co">-- &quot;file&quot;</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>close<span class="op">()</span></span>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="fu">io.type</span><span class="op">(</span><span class="va">file</span><span class="op">))</span>    <span class="co">-- &quot;closed file&quot;</span></span>
 <span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="fu">io.type</span><span class="op">(</span><span class="st">&#39;hello&#39;</span><span class="op">))</span> <span class="co">-- nil</span></span></code></pre></div>
 <h3 id="iotempfile">io.tempFile()</h3>
@@ -366,10 +366,10 @@ it is a closed file handle, or <code>nil</code> if it is not a file handle.</p>
 allowing the OS to use swap space for large files. The file is automatically freed when the handle is garbage collected
 or explicitly closed.</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span> <span class="op">=</span> <span class="va">io</span><span class="op">.</span>tempFile<span class="op">()</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">:</span><span class="fu">write</span><span class="op">(</span><span class="st">&#39;temporary data&#39;</span><span class="op">)</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">tmp</span><span class="op">:</span><span class="fu">read</span><span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">))</span>   <span class="co">-- &quot;temporary data&quot;</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">.</span>write<span class="op">(</span><span class="st">&#39;temporary data&#39;</span><span class="op">)</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">.</span>seek<span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">tmp</span><span class="op">.</span>read<span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">))</span>   <span class="co">-- &quot;temporary data&quot;</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="va">tmp</span><span class="op">.</span>close<span class="op">()</span></span></code></pre></div>
 <h3 id="ioreadall">io.readAll()</h3>
 <p><code>content = io.readAll(Path)</code></p>
 <p>Reads the entire contents of the file at <code>Path</code> and returns it as a string. This is a convenience function that
@@ -404,10 +404,16 @@ Returns <code>nil, nil</code> if <code>Path</code> is nil or empty. Returns <cod
 paths constructed by concatenation.</p>
 <div class="sourceCode" id="cb14"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span><span class="op">(</span><span class="va">io</span><span class="op">.</span>sanitisePath<span class="op">(</span><span class="st">&#39;system://users///file.txt&#39;</span><span class="op">))</span>  <span class="co">-- &quot;system:/users/file.txt&quot;</span></span></code></pre></div>
 <h1 id="file-handle-methods">File Handle Methods</h1>
-<p>File handles returned by <code>io.open()</code> and related functions support the following methods, called with the colon
-syntax (e.g. <code>file:read()</code>).</p>
-<h3 id="fileread">file:read()</h3>
-<p><code>data1, data2, ... = file:read([Format, ...])</code></p>
+<p>File handles returned by <code>io.open()</code> and related functions support the following methods, called with dot syntax
+(e.g. <code>file.read()</code>). The receiver is supplied automatically only for an immediate, ungrouped dot call.</p>
+<p>Reading a method returns its unbound native function. Grouped and computed calls therefore pass the file handle
+explicitly:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">write</span> <span class="op">=</span> <span class="va">file</span><span class="op">.</span><span class="va">write</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">write</span><span class="op">(</span><span class="va">file</span><span class="op">,</span> <span class="st">&#39;data&#39;</span><span class="op">)</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="op">(</span><span class="va">file</span><span class="op">.</span><span class="va">flush</span><span class="op">)(</span><span class="va">file</span><span class="op">)</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">[</span><span class="st">&#39;close&#39;</span><span class="op">](</span><span class="va">file</span><span class="op">)</span></span></code></pre></div>
+<h3 id="fileread">file.read()</h3>
+<p><code>data1, data2, ... = file.read([Format, ...])</code></p>
 <p>Reads from the file according to the given format strings. Multiple formats can be provided and each returns a
 separate value. If no format is provided, a single line is read.</p>
 <table>
@@ -436,26 +442,26 @@ separate value. If no format is provided, a single line is read.</p>
 </tr>
 </tbody>
 </table>
-<div class="sourceCode" id="cb15"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="va">line</span> <span class="op">=</span> <span class="va">file</span><span class="op">:</span><span class="fu">read</span><span class="op">()</span>          <span class="co">-- Read one line</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="va">all</span>  <span class="op">=</span> <span class="va">file</span><span class="op">:</span><span class="fu">read</span><span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">)</span>      <span class="co">-- Read entire file</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
-<h3 id="filewrite">file:write()</h3>
-<p><code>file = file:write(Data, ...)</code></p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="va">line</span> <span class="op">=</span> <span class="va">file</span><span class="op">.</span>read<span class="op">()</span>          <span class="co">-- Read one line</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>seek<span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="va">all</span>  <span class="op">=</span> <span class="va">file</span><span class="op">.</span>read<span class="op">(</span><span class="st">&#39;*a&#39;</span><span class="op">)</span>      <span class="co">-- Read entire file</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>close<span class="op">()</span></span></code></pre></div>
+<h3 id="filewrite">file.write()</h3>
+<p><code>file = file.write(Data, ...)</code></p>
 <p>Writes each argument to the file. Arguments must be strings or numbers. Returns the file handle to allow chained
 calls.</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:output.txt&#39;</span><span class="op">,</span> <span class="st">&#39;w&#39;</span><span class="op">)</span></span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">write</span><span class="op">(</span><span class="st">&#39;Line 1</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">):</span><span class="fu">write</span><span class="op">(</span><span class="st">&#39;Line 2</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">)</span></span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
-<h3 id="fileclose">file:close()</h3>
-<p><code>file:close()</code></p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:output.txt&#39;</span><span class="op">,</span> <span class="st">&#39;w&#39;</span><span class="op">)</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>write<span class="op">(</span><span class="st">&#39;Line 1</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">).</span>write<span class="op">(</span><span class="st">&#39;Line 2</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">)</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>close<span class="op">()</span></span></code></pre></div>
+<h3 id="fileclose">file.close()</h3>
+<p><code>file.close()</code></p>
 <p>Closes the file handle and releases the underlying file object. Returns <code>true</code> on success.</p>
-<h3 id="fileflush">file:flush()</h3>
-<p><code>file:flush()</code></p>
+<h3 id="fileflush">file.flush()</h3>
+<p><code>file.flush()</code></p>
 <p>Flushes any buffered output data to disk, ensuring all writes are committed. Returns <code>true</code> on success.</p>
-<h3 id="fileseek">file:seek()</h3>
-<p><code>position = file:seek([Whence, [Offset]])</code></p>
+<h3 id="fileseek">file.seek()</h3>
+<p><code>position = file.seek([Whence, [Offset]])</code></p>
 <p>Sets the file position for reading and writing. Returns the resulting absolute file position.</p>
 <table>
 <thead>
@@ -480,25 +486,25 @@ calls.</p>
 </tbody>
 </table>
 <p><code>Offset</code> defaults to <code>0</code>.</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">10</span><span class="op">)</span>     <span class="co">-- Move to byte 10</span></span>
-<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="va">pos</span> <span class="op">=</span> <span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;cur&#39;</span><span class="op">)</span>   <span class="co">-- Get current position</span></span>
-<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">seek</span><span class="op">(</span><span class="st">&#39;end&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span>      <span class="co">-- Move to end of file</span></span>
-<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
-<h3 id="filelines">file:lines()</h3>
-<p><code>iterator = file:lines()</code></p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>seek<span class="op">(</span><span class="st">&#39;set&#39;</span><span class="op">,</span> <span class="dv">10</span><span class="op">)</span>     <span class="co">-- Move to byte 10</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="va">pos</span> <span class="op">=</span> <span class="va">file</span><span class="op">.</span>seek<span class="op">(</span><span class="st">&#39;cur&#39;</span><span class="op">)</span>   <span class="co">-- Get current position</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>seek<span class="op">(</span><span class="st">&#39;end&#39;</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span>      <span class="co">-- Move to end of file</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>close<span class="op">()</span></span></code></pre></div>
+<h3 id="filelines">file.lines()</h3>
+<p><code>iterator = file.lines()</code></p>
 <p>Returns an iterator function that reads lines from the file. The file handle is not closed when iteration completes,
 unlike <code>io.lines()</code> with a filename argument.</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="va">line</span> <span class="kw">in</span> <span class="va">file</span><span class="op">:</span><span class="fu">lines</span><span class="op">()</span> <span class="cf">do</span></span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">line</span><span class="op">)</span></span>
-<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
-<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span></code></pre></div>
+<div class="sourceCode" id="cb19"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="va">file</span> <span class="op">=</span> <span class="fu">io.open</span><span class="op">(</span><span class="st">&#39;temp:data.txt&#39;</span><span class="op">,</span> <span class="st">&#39;r&#39;</span><span class="op">)</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="va">line</span> <span class="kw">in</span> <span class="va">file</span><span class="op">.</span>lines<span class="op">()</span> <span class="cf">do</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="va">line</span><span class="op">)</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="va">file</span><span class="op">.</span>close<span class="op">()</span></span></code></pre></div>
 <h1 id="io-extensions">I/O Extensions</h1>
 <h2 id="file-search">File Search</h2>
 <p>The FileSearch interface simplifies the process of searching for files and folders within the file system. Support is provided for both wildcard filters and content searching.</p>
 <p>It can be loaded with the line:</p>
-<div class="sourceCode" id="cb19"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;io/filesearch&#39;</span></span></code></pre></div>
+<div class="sourceCode" id="cb20"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;io/filesearch&#39;</span></span></code></pre></div>
 <h2 id="functions">Functions</h2>
 <h3 id="iosearch">io.search()</h3>
 <p><code>io.search(Path | {PathA, PathB, ...}, Options)</code></p>
@@ -581,7 +587,7 @@ io.search(&#39;documents:&#39;, {
 <p>The File Manager API supports common file management needs such as mass file transfer and clipboard operations, and adds integrated UI support so that user interactions are managed in a consistent way across all Kōtuku applications.</p>
 <p>For example, copying a large number of files will pop-up a progress dialog to keep the user informed of progress. If an operation will overwrite an existing file, the user will be notified and given a choice of whether or not to continue.</p>
 <p>It can be loaded with the line:</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;io/filemgr&#39;</span></span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;io/filemgr&#39;</span></span></code></pre></div>
 <h2 id="functions-1">Functions</h2>
 <h3 id="iouicopy">io.ui.copy()</h3>
 <p><code>error = io.ui.copy(Source, Dest, Move)</code></p>

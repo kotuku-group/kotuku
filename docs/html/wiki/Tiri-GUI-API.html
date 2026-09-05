@@ -331,16 +331,16 @@
 </ul>
 <p>Available methods:</p>
 <ul>
-<li><code>rgb:interpolate(New, Ratio)</code> returns a new RGB colour between <code>rgb</code> and <code>New</code>.</li>
-<li><code>rgb:toHSV()</code> converts to an HSV colour table.</li>
-<li><code>rgb:brightness()</code> returns the maximum RGB channel value, equivalent to the <code>V</code> component in HSV.</li>
-<li><code>rgb:withAlpha(Alpha)</code> returns a copy with alpha multiplied by <code>Alpha</code>.</li>
-<li><code>rgb:linearise()</code> converts to linear sRGB.</li>
-<li><code>rgb:toHSL()</code> returns <code>{ h, s, l }</code>.</li>
-<li><code>rgb:luminance()</code> returns WCAG relative luminance in the range <code>0..1</code>.</li>
-<li><code>rgb:toDisplayP3()</code> returns a Display P3 <code>{ r, g, b }</code> table.</li>
-<li><code>rgb:toOKLab()</code> returns <code>{ okl, oka, okb, a }</code>.</li>
-<li><code>rgb:toOKLCH()</code> returns <code>{ okl, okc, okh, a }</code> and formats as <code>oklch(...)</code> when converted to string.</li>
+<li><code>rgb.interpolate(New, Ratio)</code> returns a new RGB colour between <code>rgb</code> and <code>New</code>.</li>
+<li><code>rgb.toHSV()</code> converts to an HSV colour table.</li>
+<li><code>rgb.brightness()</code> returns the maximum RGB channel value, equivalent to the <code>V</code> component in HSV.</li>
+<li><code>rgb.withAlpha(Alpha)</code> returns a copy with alpha multiplied by <code>Alpha</code>.</li>
+<li><code>rgb.linearise()</code> converts to linear sRGB.</li>
+<li><code>rgb.toHSL()</code> returns <code>{ h, s, l }</code>.</li>
+<li><code>rgb.luminance()</code> returns WCAG relative luminance in the range <code>0..1</code>.</li>
+<li><code>rgb.toDisplayP3()</code> returns a Display P3 <code>{ r, g, b }</code> table.</li>
+<li><code>rgb.toOKLab()</code> returns <code>{ okl, oka, okb, a }</code>.</li>
+<li><code>rgb.toOKLCH()</code> returns <code>{ okl, okc, okh, a }</code> and formats as <code>oklch(...)</code> when converted to string.</li>
 </ul>
 <p>Note: The sRGB colour values are unclamped in order to support extended colourspaces like Display P3. Clients are expected to clamp values to the 0 - 1.0 range when strict sRGB values are required.</p>
 <h3 id="hsv-colours">HSV colours</h3>
@@ -352,8 +352,8 @@
 </ul>
 <p>Available methods:</p>
 <ul>
-<li><code>hsv:interpolate(New, Ratio)</code> returns a new HSV colour between <code>hsv</code> and <code>New</code>.</li>
-<li><code>hsv:toRGB()</code> converts to an RGB colour table.</li>
+<li><code>hsv.interpolate(New, Ratio)</code> returns a new HSV colour between <code>hsv</code> and <code>New</code>.</li>
+<li><code>hsv.toRGB()</code> converts to an RGB colour table.</li>
 </ul>
 <h3 id="parsing-colour-strings">Parsing colour strings</h3>
 <p><code>gui.strToRGB(Value)</code> parses a CSS colour string using the vector painter parser and returns an <code>RGB</code> table.</p>

@@ -111,7 +111,7 @@ global function extractFields(Def:str, Origin:str):table
       elseif not content.trim()?? then
          -- Ignore empty line
       else
-         error(f"Unable to process line '{content}' for '{Origin}'")
+         raise f"Unable to process line '{content}' for '{Origin}'"
       end
    end
 
@@ -130,7 +130,7 @@ global function parseTDLFile(Source:str)
       loadFile(full_path)
       return ERR_Okay
    else
-      error("The specified source '" .. Source .. "' could not be located.")
+      raise "The specified source '" .. Source .. "' could not be located."
    end
 end
 
@@ -169,7 +169,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
       for f in values(glFunctions) do
          list ..= f.name .. '\n'
       end
-      error("Function '" .. Name .. "' is not declared in the TDL.  Known functions are:\n" .. list)
+      raise "Function '" .. Name .. "' is not declared in the TDL.  Known functions are:\n" .. list
    end
 
    if Status then func.status = Status.lower() end
@@ -250,7 +250,7 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
 
             last_param = param
          elseif content.trim()?? then
-            error(f"Unable to process line '{content}' for function '{Name}'")
+            raise f"Unable to process line '{content}' for function '{Name}'"
          end
       end
    end

@@ -542,6 +542,18 @@ public:
       return ParserResult<ExpDesc>::success(result);
    }
 
+   // The non-nil path terminated.  Only the receiver's nil edge produces a value.
+   ParserResult<ExpDesc> complete_unreachable(BCReg ResultReg)
+   {
+      FuncState *fs = &this->emitter->func_state;
+      if (fs->freereg <= ResultReg.raw()) this->allocator.reserve(BCReg(ResultReg.raw() + 1 - fs->freereg));
+      this->nil_jump.patch_here();
+      bcemit_nil(fs, ResultReg.raw(), 1);
+      fs->freereg = ResultReg.raw() + 1;
+      this->register_guard.disarm();
+      return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::NonReloc, ResultReg.raw()));
+   }
+
    // Complete a call expression, whose method-dispatch frame may move CallBase beyond base_reg.
    // The final free-register boundary must retain the whole call result frame.
 
@@ -712,6 +724,12 @@ void LexState::assign_adjust(BCREG nvars, BCREG nexps, ExpDesc *Expr)
 {
    FuncState* fs = this->fs;
    RegisterAllocator allocator(fs);
+   if (Expr->is_unreachable()) {
+      // Keep lexical slots for subsequent dead statements, without manufacturing initialiser values.
+      fs->reset_freereg();
+      allocator.reserve(BCReg(nvars));
+      return;
+   }
    int32_t extra = int32_t(nvars) - int32_t(nexps);
    if (Expr->k IS ExpKind::Call) {
       extra++;  // Compensate for the ExpKind::Call itself.
@@ -1442,7 +1460,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
    }
    case AstNodeKind::RaiseStmt: {
       const auto &payload = std::get<RaiseStmtPayload>(stmt.data);
-      return this->emit_raise_stmt(payload, stmt.span);
+      return this->emit_raise_payload(payload, stmt.span);
    }
    case AstNodeKind::CheckStmt: {
       const auto &payload = std::get<CheckStmtPayload>(stmt.data);
@@ -1742,6 +1760,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       auto count = BCReg(0);
       auto list = this->emit_expression_list(Payload.values, count);
       if (not list.ok()) return ParserResult<IrEmitUnit>::failure(list.error_ref());
+      if (list.value_ref().is_unreachable()) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 
       ExpDesc last = list.value_ref();
 
@@ -3155,6 +3174,7 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
 
    this->lex_state.lastline = expr.span.line;
 
+   BCREG expression_base = this->func_state.freereg;
    BCReg checkall_base = BCReg(0);
    if (expr.is_checked) {
       checkall_base = BCReg(this->func_state.freereg);
@@ -3170,6 +3190,12 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
       result = this->emit_literal_expr(constant->to_literal());
    }
    else switch (expr.kind) {
+      case AstNodeKind::RaiseExpr: {
+         auto raised = this->emit_raise_payload(std::get<RaisePayload>(expr.data), expr.span);
+         if (not raised.ok()) result = ParserResult<ExpDesc>::failure(raised.error_ref());
+         else result = ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
+         break;
+      }
       case AstNodeKind::LiteralExpr:
          result = this->emit_literal_expr(std::get<LiteralValue>(expr.data));
          break;
@@ -3249,7 +3275,9 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
 
    if (result.ok()) {
       ExpDesc &emitted = result.value_ref();
-      if (expr.is_checked) {
+      if (emitted.is_unreachable()) this->func_state.freereg = expression_base;
+      if (expr.is_checked and emitted.is_unreachable()) this->func_state.runtime_scopes.pop_back();
+      else if (expr.is_checked) {
          BCReg error_reg;
          if (emitted.k IS ExpKind::Call) error_reg = BCReg(emitted.u.s.aux);
          else {
@@ -3448,7 +3476,7 @@ ParserResult<ExpDesc> IrEmitter::emit_unary_expr(const UnaryExprPayload &Payload
 {
    if (not Payload.operand) return this->unsupported_expr(AstNodeKind::UnaryExpr, SourceSpan{});
    auto operand_result = this->emit_expression(*Payload.operand);
-   if (not operand_result.ok()) return operand_result;
+   if (not operand_result.ok() or operand_result.value_ref().is_unreachable()) return operand_result;
    ExpDesc operand = operand_result.value_ref();
 
    // Use OperatorEmitter facade for unary operators
@@ -3597,7 +3625,7 @@ ParserResult<ExpDesc> IrEmitter::emit_type_test_expr(const TypeTestExprPayload &
 {
    if (not Payload.value) return this->unsupported_expr(AstNodeKind::TypeTestExpr, SourceSpan{});
    auto value_result = this->emit_expression(*Payload.value);
-   if (not value_result.ok()) return value_result;
+   if (not value_result.ok() or value_result.value_ref().is_unreachable()) return value_result;
 
    ExpDesc value = value_result.value_ref();
    RegisterAllocator allocator(&this->func_state);
@@ -3620,7 +3648,7 @@ ParserResult<ExpDesc> IrEmitter::emit_type_test_expr(const TypeTestExprPayload &
 ParserResult<ExpDesc> IrEmitter::emit_binary_expr(const BinaryExprPayload &Payload)
 {
    auto lhs_result = this->emit_expression(*Payload.left);
-   if (not lhs_result.ok()) return lhs_result;
+   if (not lhs_result.ok() or lhs_result.value_ref().is_unreachable()) return lhs_result;
 
    auto mapped = map_binary_operator(Payload.op);
    if (not mapped.has_value()) {
@@ -3668,6 +3696,7 @@ ParserResult<ExpDesc> IrEmitter::emit_binary_expr(const BinaryExprPayload &Paylo
    auto rhs_result = this->emit_expression(*Payload.right);
    if (not rhs_result.ok()) return rhs_result;
    ExpDesc rhs = rhs_result.value_ref();
+   if (rhs.is_unreachable() and opr != BinOpr::LogicalAnd and opr != BinOpr::LogicalOr) return rhs_result;
 
    // Emit the actual operation based on operator type
    if (opr IS BinOpr::LogicalAnd) { // Logical AND: CFG-based short-circuit implementation
@@ -3704,7 +3733,7 @@ ParserResult<ExpDesc> IrEmitter::emit_comparison_chain_expr(const ComparisonChai
    }
 
    auto lhs_result = this->emit_expression(*Payload.operands[0]);
-   if (not lhs_result.ok()) return lhs_result;
+   if (not lhs_result.ok() or lhs_result.value_ref().is_unreachable()) return lhs_result;
 
    ExpDesc lhs = lhs_result.value_ref();
    ExpDesc result;
@@ -3727,6 +3756,11 @@ ParserResult<ExpDesc> IrEmitter::emit_comparison_chain_expr(const ComparisonChai
       if (not rhs_result.ok()) return rhs_result;
 
       ExpDesc rhs = rhs_result.value_ref();
+      if (rhs.is_unreachable()) {
+         if (has_result) this->operator_emitter.complete_logical_and(ExprValue(&result), rhs);
+         else result = rhs;
+         return ParserResult<ExpDesc>::success(result);
+      }
       bool preserve_rhs = index + 1 < Payload.operators.size();
       BCReg next_lhs_reg = BCReg(NO_REG);
       TiriType preserved_type = rhs.result_type;
@@ -3898,7 +3932,7 @@ ParserResult<ExpDesc> IrEmitter::emit_bitwise_expr(BinOpr opr, ExpDesc lhs, cons
 
    // NOW evaluate RHS - it will go to freereg (past the call frame)
    auto rhs_result = this->emit_expression(rhs_ast);
-   if (not rhs_result.ok()) return rhs_result;
+   if (not rhs_result.ok() or rhs_result.value_ref().is_unreachable()) return rhs_result;
    ExpDesc rhs = rhs_result.value_ref();
 
    // Move RHS to arg2 if not already there
@@ -3998,7 +4032,7 @@ ParserResult<ExpDesc> IrEmitter::emit_has_flag_expr(ExpDesc lhs, const ExprNode&
    // Evaluate RHS only after LHS is fixed and call frame is prepared.
    // This ordering prevents `x has f()` from reading a mutated `x` when `f()` has side effects.
    auto rhs_result = this->emit_expression(rhs_ast);
-   if (not rhs_result.ok()) return rhs_result;
+   if (not rhs_result.ok() or rhs_result.value_ref().is_unreachable()) return rhs_result;
    ExpDesc rhs = rhs_result.value_ref();
 
    if (rhs.k IS ExpKind::Call) {
@@ -4055,8 +4089,19 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
       return this->unsupported_expr(AstNodeKind::TernaryExpr, SourceSpan{});
    }
 
+   if (auto condition = this->constant_evaluator.evaluate(*Payload.condition)) {
+      bool selected = Payload.condition_mode IS TernaryConditionMode::Extended ?
+         not condition->is_extended_falsey() : condition->is_truthy();
+      auto result = this->emit_expression(selected ? *Payload.if_true : *Payload.if_false);
+      if (result.ok() and result.value_ref().k IS ExpKind::Call) {
+         // A ternary always consolidates a call to one result, even when its condition was folded.
+         this->register_allocator.discharge_to_value(result.value_ref());
+      }
+      return result;
+   }
+
    auto condition_result = this->emit_expression(*Payload.condition);
-   if (not condition_result.ok()) return condition_result;
+   if (not condition_result.ok() or condition_result.value_ref().is_unreachable()) return condition_result;
 
    // Use RegisterGuard for automatic register cleanup on all exit paths (RAII)
 
@@ -4084,6 +4129,8 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
 
    // Determine the result register. If cond_reg is a local variable, we must allocate a fresh register
    // to avoid corrupting it. Otherwise, we can reuse cond_reg (which is a temporary).
+   bool needs_result = not expression_never_returns(*Payload.if_true) or
+      not expression_never_returns(*Payload.if_false);
    BCReg result_reg;
    if (condition_reg.raw() != NO_REG and not this->func_state.is_local_register(condition_reg)) {
       result_reg = condition_reg; // condition_reg is a temporary - safe to reuse
@@ -4091,7 +4138,7 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
    else {
       // cond_reg holds a local variable that may be referenced later - allocate fresh register
       result_reg = BCReg(this->func_state.freereg);
-      bcreg_reserve(&this->func_state, 1);
+      if (needs_result) bcreg_reserve(&this->func_state, 1);
    }
 
    auto true_result = this->emit_expression(*Payload.if_true);
@@ -4100,9 +4147,10 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
    ExpressionValue true_value(&this->func_state, true_result.value_ref());
    true_value.discharge();
    this->materialise_to_reg(true_value.legacy(), result_reg, "ternary true branch");
-   allocator.collapse_freereg(result_reg);
+   if (needs_result) allocator.collapse_freereg(result_reg);
 
-   ControlFlowEdge skip_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+   ControlFlowEdge skip_false = this->control_flow.make_unconditional();
+   if (not true_result.value_ref().is_unreachable()) skip_false.append(BCPos(bcemit_jmp(&this->func_state)));
 
    BCPos false_start = BCPos(this->func_state.pc);
    false_edge.patch_to(false_start);
@@ -4112,9 +4160,12 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
    ExpressionValue false_value(&this->func_state, false_result.value_ref());
    false_value.discharge();
    this->materialise_to_reg(false_value.legacy(), result_reg, "ternary false branch");
-   allocator.collapse_freereg(result_reg);
+   if (needs_result) allocator.collapse_freereg(result_reg);
 
    skip_false.patch_to(BCPos(this->func_state.pc));
+   if (true_result.value_ref().is_unreachable() and false_result.value_ref().is_unreachable()) {
+      return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
+   }
 
    // Preserve result register by adjusting what RegisterGuard will restore to
    // Only restore to saved_freereg if it's beyond the result register
@@ -4135,7 +4186,7 @@ ParserResult<ExpDesc> IrEmitter::emit_presence_expr(const PresenceExprPayload &P
    SourceSpan span = Payload.value ? Payload.value->span : SourceSpan{};
    if (not Payload.value) return this->unsupported_expr(AstNodeKind::PresenceExpr, span);
    auto value_result = this->emit_expression(*Payload.value);
-   if (not value_result.ok()) return value_result;
+   if (not value_result.ok() or value_result.value_ref().is_unreachable()) return value_result;
    ExpDesc value = value_result.value_ref();
    this->operator_emitter.emit_presence_check(ExprValue(&value));
    return ParserResult<ExpDesc>::success(value);
@@ -4184,7 +4235,7 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
 
    ExpDesc table = table_result.value_ref();
 
@@ -4304,7 +4355,7 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
    ExpDesc table = table_result.value_ref();
 
    // Save the emitted expression's result_type before discharge operations may modify it.
@@ -4316,7 +4367,7 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
    table_value.discharge_to_any_reg(allocator);
    table = table_value.legacy();
    auto key_result = this->emit_expression(*Payload.index);
-   if (not key_result.ok()) return key_result;
+   if (not key_result.ok() or key_result.value_ref().is_unreachable()) return key_result;
    ExpDesc key = key_result.value_ref();
    ExpressionValue key_toval(&this->func_state, key);
    key_toval.to_val();
@@ -4375,13 +4426,13 @@ ParserResult<ExpDesc> IrEmitter::emit_table_slice_call(const IndexExprPayload &P
 
    // Emit base expression (table or string) as arg1
    auto base_result = this->emit_expression(*Payload.table);
-   if (not base_result.ok()) return base_result;
+   if (not base_result.ok() or base_result.value_ref().is_unreachable()) return base_result;
    ExpDesc base_arg = base_result.value_ref();
    this->materialise_to_next_reg(base_arg, "slice base arg");
 
    // Emit range expression as arg2 (this will call range() constructor)
    auto range_result = this->emit_expression(*Payload.index);
-   if (not range_result.ok()) return range_result;
+   if (not range_result.ok() or range_result.value_ref().is_unreachable()) return range_result;
    ExpDesc range_arg = range_result.value_ref();
    this->materialise_to_next_reg(range_arg, "slice range arg");
 
@@ -4408,7 +4459,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
    StaticValueHandle receiver_descriptor = table_result.value_ref().static_value;
 
    NilShortCircuitGuard guard(this, table_result.value_ref());
@@ -4488,7 +4539,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    }
 
    auto table_result = this->emit_expression(*Payload.table);
-   if (not table_result.ok()) return table_result;
+   if (not table_result.ok() or table_result.value_ref().is_unreachable()) return table_result;
    StaticValueHandle receiver_descriptor = table_result.value_ref().static_value;
 
    NilShortCircuitGuard guard(this, table_result.value_ref());
@@ -4497,6 +4548,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    // Index expression is evaluated only on non-nil path (short-circuit)
    auto key_result = this->emit_expression(*Payload.index);
    if (not key_result.ok()) return key_result;
+   if (key_result.value_ref().is_unreachable()) return guard.complete_unreachable(this->func_state.free_reg());
    StaticValueHandle key_descriptor = key_result.value_ref().static_value;
 
    ExpDesc key = key_result.value_ref();
@@ -4546,13 +4598,13 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
 
    // Emit start expression as arg1
    auto start_result = this->emit_expression(*Payload.start);
-   if (not start_result.ok()) return start_result;
+   if (not start_result.ok() or start_result.value_ref().is_unreachable()) return start_result;
    ExpDesc start_expr = start_result.value_ref();
    this->materialise_to_next_reg(start_expr, "range start");
 
    // Emit stop expression as arg2
    auto stop_result = this->emit_expression(*Payload.stop);
-   if (not stop_result.ok()) return stop_result;
+   if (not stop_result.ok() or stop_result.value_ref().is_unreachable()) return stop_result;
    ExpDesc stop_expr = stop_result.value_ref();
    this->materialise_to_next_reg(stop_expr, "range stop");
 
@@ -4563,7 +4615,7 @@ ParserResult<ExpDesc> IrEmitter::emit_range_expr(const RangeExprPayload &Payload
    uint8_t argument_count = 3;
    if (Payload.step) {
       auto step_result = this->emit_expression(*Payload.step);
-      if (not step_result.ok()) return step_result;
+      if (not step_result.ok() or step_result.value_ref().is_unreachable()) return step_result;
       ExpDesc step_expr = step_result.value_ref();
       this->materialise_to_next_reg(step_expr, "range step");
       argument_count = 4;

@@ -50,7 +50,7 @@ end
 -- Verify that the async.script() callback receives an error code and message when the script fails.
 
 @Test(priority=2) function ScriptCallbackError()
-   script = obj.new('tiri', { statement=[[ error('Deliberate test failure') ]] })
+   script = obj.new('tiri', { statement=[[ raise('Deliberate test failure') ]] })
 
    glCallbackError = nil
    glCallbackMsg = nil

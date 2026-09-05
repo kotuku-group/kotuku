@@ -245,7 +245,7 @@ local glDataFolder
    glDataFolder = State.folder
    err = mSys.CreateFolder(glResultFolder, 0)
    if (err != ERR_Okay) and (err != ERR_FileExists) then
-      error('CreateFolder() failed for ' .. glResultFolder .. ': ' .. mSys.GetErrorMsg(err))
+      raise 'CreateFolder() failed for ' .. glResultFolder .. ': ' .. mSys.GetErrorMsg(err)
    end
 end
 
@@ -311,7 +311,7 @@ end
          if #message > 0 then message ..= '\n\n' end
          message ..= 'Image PNG CRC mismatches or load failures:\n' .. mismatches.concat('\n')
       end
-      error(message)
+      raise message
    end
 end
 
@@ -329,6 +329,6 @@ end
    end
 
    if #failures > 0 then
-      error('Invalid PNG files loaded successfully:\n' .. failures.concat('\n'))
+      raise 'Invalid PNG files loaded successfully:\n' .. failures.concat('\n')
    end
 end

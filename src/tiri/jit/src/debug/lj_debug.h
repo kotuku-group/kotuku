@@ -55,7 +55,8 @@ extern int lj_debug_getinfo(lua_State* L, const char* what, lj_Debug* ar, int ex
   _(RANGE_START, "(range start)") \
   _(RANGE_STEP, "(range step)") \
   _(RANGE_FLAGS, "(range flags)") \
-  _(CONTEXT_CACHE, "(context cache)")
+  _(CONTEXT_CACHE, "(context cache)") \
+  _(EXCEPTION, "(exception)")
 
 enum {
    VARNAME_END,

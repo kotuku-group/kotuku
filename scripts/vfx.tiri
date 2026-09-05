@@ -57,11 +57,11 @@ vfx.apply_easing = function(Value:num!, Easing):num
    local easing:func
    if Easing is <str> then
       easing = vfx.ease[easing]
-      if not easing then error(f"Unsupported VFX easing '{Easing}'") end
+      if not easing then raise f"Unsupported VFX easing '{Easing}'" end
    elseif Easing is <func> then
       easing = Easing
    else
-      error('VFX easing must be a string or function')
+      raise 'VFX easing must be a string or function'
    end
 
    eased = easing(progress)
@@ -146,7 +146,7 @@ vfx.wipe = function(Viewport:obj!, Options:table)
 
    wipe = vfx.wipes[style]
    if (not wipe) or (not wipe.animate) then
-      error(f"Unsupported VFX wipe style '{style}'")
+      raise f"Unsupported VFX wipe style '{style}'"
    end
 
    state = {

@@ -8,7 +8,7 @@ function resolveFirstPath(Candidates:array<str>):str
       if err is ERR_Okay then return resolved end
    end
 
-   error('Unable to resolve any candidate path')
+   raise 'Unable to resolve any candidate path'
 end
 
 @BeforeAll function init(State)

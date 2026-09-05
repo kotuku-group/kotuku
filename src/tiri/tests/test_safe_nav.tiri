@@ -259,7 +259,7 @@ end
       result = capture(guest?.profile?.name ?? "Guest")
       assert(result is "Guest", f"BUG: safe-nav + ?? argument currently yields {result} instead of fallback")
    except ex
-      error("Function call should succeed, err=" .. ex.message)
+      assert(false, "Function call should succeed, err=" .. ex.message)
    end
 end
 
@@ -804,7 +804,7 @@ end
       return
    end
 
-   error('Safe-navigation target in multi-assignment should fail to compile')
+   assert(false, 'Safe-navigation target in multi-assignment should fail to compile')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -886,7 +886,7 @@ end
       return
    end
 
-   error('Safe-navigation target later in multi-assignment should fail to compile')
+   assert(false, 'Safe-navigation target later in multi-assignment should fail to compile')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -909,7 +909,7 @@ end
       return
    end
 
-   error('Safe-navigation target in multi-assignment from a call should fail to compile')
+   assert(false, 'Safe-navigation target in multi-assignment from a call should fail to compile')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -984,5 +984,5 @@ end
       return
    end
 
-   error('function obj?.method() ... end should remain unsupported')
+   assert(false, 'function obj?.method() ... end should remain unsupported')
 end

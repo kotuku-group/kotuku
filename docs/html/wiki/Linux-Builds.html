@@ -271,7 +271,7 @@
 <h1>Linux Builds</h1>
 <h2 id="gcc">GCC</h2>
 <p>Your Linux system may require a few package dependencies to be installed if a complete build of Kōtuku is desired. For an Apt based system such as Debian or Ubuntu, execute the following:</p>
-<pre><code>sudo apt-get install libasound2-dev libxrandr-dev libxxf86dga-dev libssl-dev cmake g++ xsltproc nasm</code></pre>
+<pre><code>sudo apt-get install libasound2-dev libxrandr-dev libssl-dev cmake g++ xsltproc nasm</code></pre>
 <p>The following will configure the build process for a standard install to <code>/usr</code> that will be available to all users:</p>
 <pre><code>cmake -S . -B release -DCMAKE_BUILD_TYPE=Release</code></pre>
 <p>The full build and install process can then be performed with:</p>

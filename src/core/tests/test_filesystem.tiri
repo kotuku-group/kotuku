@@ -12,7 +12,7 @@ rx_path = regex.new([[[^:\/]+[:\/](.*)]])
 function ensureFolder(Path)
    err = mSys.CreateFolder(Path, 0)
    if (err != ERR_Okay) and (err != ERR_FileExists) then
-      error('CreateFolder() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+      raise 'CreateFolder() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err)
    end
 end
 
@@ -90,13 +90,13 @@ end
          logOutput(fl.name .. ', Size: ' .. fl.size .. ', Date: ' .. created.year .. '/' .. created.month .. '/' .. created.day)
 
          if (created.year < 1900) or (created.year > 3000) or (created.month < 1) or (created.month > 12) or (created.day < 1) or (created.day > 31) then
-            error('Invalid Year/Month/Day retrieved for "' .. fl.name .. '"')
+            raise 'Invalid Year/Month/Day retrieved for "' .. fl.name .. '"'
          end
 
          err = mSys.ScanDir(dir)
       end
    else
-      error('OpenDir() error: ' .. mSys.GetErrorMsg(err))
+      raise 'OpenDir() error: ' .. mSys.GetErrorMsg(err)
    end
 end
 
@@ -121,7 +121,7 @@ end
       assert(volumes['user'], "The expected 'user' volume is not present.")
       assert(volumes['system'], "The expected 'system' volume is not present.")
    else
-      error("OpenDir() error: " .. mSys.GetErrorMsg(err))
+      raise "OpenDir() error: " .. mSys.GetErrorMsg(err)
    end
 end
 
@@ -162,7 +162,7 @@ function PathOnlyFileOwnership()
       assert(ex.message.startsWith('Read failure: File.user:'),
          'A failed field read should identify File.user, got: ' .. ex.message)
    success
-      error('Reading User for a missing file should fail.')
+      assert(false, 'Reading User for a missing file should fail.')
    end
 end
 
@@ -186,7 +186,7 @@ end
       fl.acSeek(SEEK_START, 0)
       fl.acRead('literal')
    success
-      error('acRead() should reject interned strings for mutable buffers')
+      assert(false, 'acRead() should reject interned strings for mutable buffers')
    end
 
    write_path = glTempRoot .. 'immutable_string_write.txt'
@@ -329,10 +329,10 @@ end
       try
          icon = obj.new('file', { path=v.path }).icon
       except ex
-         error(f'Failed to open path {v.path}: {ex.message}')
+         raise f'Failed to open path {v.path}: {ex.message}'
       success
          if icon != v.icon then
-            error(f'Icon for {v.path} evaluated to {icon} instead of expected "{v.icon}"')
+            raise f'Icon for {v.path} evaluated to {icon} instead of expected "{v.icon}"'
          end
       end
    end
@@ -528,14 +528,14 @@ end
    try
       mSys.ReadFileToBuffer(read_path, 'literal')
    success
-      error('ReadFileToBuffer() should reject interned strings for mutable buffers')
+      assert(false, 'ReadFileToBuffer() should reject interned strings for mutable buffers')
    end
 
    wrong_type = array<int, #expected>
    try
       mSys.ReadFileToBuffer(read_path, wrong_type)
    success
-      error('ReadFileToBuffer() should reject an array with the wrong element type')
+      assert(false, 'ReadFileToBuffer() should reject an array with the wrong element type')
    end
 end
 

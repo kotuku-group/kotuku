@@ -41,6 +41,9 @@ TCP or stdio and offers real-time feedback as you write Tiri code.
 Real-time syntax error detection with precise location information. Errors, warnings, and informational messages are
 reported as you type.
 
+The removed global `error()` built-in is treated as an undeclared variable. Use `raise` to create exceptions and bare
+`raise` in an `except` handler to preserve and rethrow the current exception.
+
 ### Semantic Highlighting
 
 Full semantic token support for accurate syntax highlighting:

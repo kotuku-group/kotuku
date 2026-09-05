@@ -43,6 +43,7 @@ private:
    ParserContext& ctx;
    bool in_guard_expression = false;  // True when parsing 'when' clause guard expression
    bool in_choose_expression = false; // True when parsing choose expression cases (for tuple pattern detection)
+   int handler_depth = 0;            // Active handlers in the current lexical function
    int function_depth = 0;           // Tracks nesting depth inside function bodies
    int block_depth = 0;              // Tracks nested statement blocks below chunk scope
    bool enum_constants_committed = false;
@@ -105,6 +106,7 @@ private:
 
    private:
       AstBuilder &builder;
+      int saved_handler_depth;
    };
 
    class BlockDepthScope {
@@ -158,6 +160,7 @@ private:
    ParserResult<StmtNodePtr> parse_try();
    ParserResult<StmtNodePtr> parse_checkall();
    ParserResult<StmtNodePtr> parse_raise();
+   ParserResult<RaisePayload> parse_raise_payload(bool Parenthesised);
    ParserResult<StmtNodePtr> parse_check();
    ParserResult<StmtNodePtr> parse_include_stmt();
    ParserResult<StmtNodePtr> parse_module_decl();

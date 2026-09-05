@@ -5413,6 +5413,7 @@ void lj_record_ins(jit_State *J)
 
    case BC_CHECK:
    case BC_RAISE:
+   case BC_RETHROW:
    case BC_MODACT:
       // These bytecodes throw, materialise GC closures or access VM state not yet represented by the recorder.
       // Exit to the interpreter so the handoff cannot corrupt interpreter state.

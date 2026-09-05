@@ -572,14 +572,14 @@ end
    try
       arr.insert(-1, 0)
    success
-      error("Should reject negative index")
+      assert(false, "Should reject negative index")
    end
 
    -- Test index beyond length
    try
       arr.insert(5, 0)
    success
-      error("Should reject index beyond array length")
+      assert(false, "Should reject index beyond array length")
    end
 end
 
@@ -808,20 +808,20 @@ end
    try
       arr.remove(-1)
    success
-      error("Should reject negative index")
+      assert(false, "Should reject negative index")
    end
 
    -- Test index at or beyond length
    try
       arr.remove(3)
    success
-      error("Should reject index at array length")
+      assert(false, "Should reject index at array length")
    end
 
    try
       arr.remove(5)
    success
-      error("Should reject index beyond array length")
+      assert(false, "Should reject index beyond array length")
    end
 end
 
@@ -830,7 +830,7 @@ end
    try
       arr.remove(0, -1)
    success
-      error("Should reject negative count")
+      assert(false, "Should reject negative count")
    end
 end
 
@@ -1520,13 +1520,13 @@ end
    try
       arr.fill(1, -1, 2)
    success
-      error("Positional fill should reject a negative Start")
+      assert(false, "Positional fill should reject a negative Start")
    end
 
    try
       arr.fill(1, 0, -1)
    success
-      error("Positional fill should reject a negative Stop")
+      assert(false, "Positional fill should reject a negative Stop")
    end
 end
 

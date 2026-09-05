@@ -949,6 +949,12 @@ void TypeAnalyser::lower_unanalysed_expression(ExprNode &Expression)
       case AstNodeKind::ComparisonChainExpr:
          for (auto &operand : std::get<ComparisonChainExprPayload>(Expression.data).operands) lower(operand);
          break;
+      case AstNodeKind::RaiseExpr: {
+         auto &payload = std::get<RaisePayload>(Expression.data);
+         lower(payload.error_code);
+         lower(payload.message);
+         break;
+      }
       case AstNodeKind::TernaryExpr: {
          auto &payload = std::get<TernaryExprPayload>(Expression.data);
          lower(payload.condition);
@@ -2466,6 +2472,12 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
          }
          break;
       }
+      case AstNodeKind::RaiseExpr: {
+         auto &payload = std::get<RaisePayload>(Expression.data);
+         if (payload.error_code) this->analyse_expression(*payload.error_code);
+         if (payload.message) this->analyse_expression(*payload.message);
+         break;
+      }
       case AstNodeKind::TernaryExpr: {
          auto *payload = std::get_if<TernaryExprPayload>(&Expression.data);
          if (payload) {
@@ -3166,10 +3178,28 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
          result.primary = TiriType::Any;
          break;
       }
+      case AstNodeKind::ChooseExpr: {
+         bool have_result = false;
+         for (const auto &choice : std::get<ChooseExprPayload>(Expr.data).cases) {
+            if (not choice.result or expression_never_returns(*choice.result)) continue;
+            InferredType branch = this->infer_expression_type(*choice.result);
+            if (have_result and branch.primary != result.primary) {
+               result.primary = TiriType::Any;
+               return result;
+            }
+            result = branch;
+            have_result = true;
+         }
+         break;
+      }
       case AstNodeKind::TernaryExpr: {
          // Ternary returns type of true branch (or false branch if true is unknown)
          auto *payload = std::get_if<TernaryExprPayload>(&Expr.data);
          if (payload) {
+            if (payload->if_true and payload->if_false) {
+               if (expression_never_returns(*payload->if_true)) return this->infer_expression_type(*payload->if_false);
+               if (expression_never_returns(*payload->if_false)) return this->infer_expression_type(*payload->if_true);
+            }
             if (payload->if_true) {
                result = this->infer_expression_type(*payload->if_true);
                if (result.primary != TiriType::Any and result.primary != TiriType::Unknown) return result;
@@ -3732,6 +3762,10 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
    FunctionContext* ctx = this->current_function();
    if (not ctx) return;  // Not inside a function (shouldn't happen in valid code)
 
+   for (const auto &value : Return.values) {
+      if (value and expression_never_returns(*value)) return;
+   }
+
    size_t return_count = Return.values.size();
    size_t fixed_count = return_count;
    const ExprNode *tail_expression = nullptr;
@@ -3911,7 +3945,13 @@ bool TypeAnalyser::body_has_return_values(const BlockStmt& Block) const
       switch (stmt->kind) {
          case AstNodeKind::ReturnStmt: {
             auto *payload = std::get_if<ReturnStmtPayload>(&stmt->data);
-            if (payload and not payload->values.empty()) return true;  // Found a return with values
+            if (payload and not payload->values.empty()) {
+               bool returns = true;
+               for (const auto &value : payload->values) {
+                  if (value and expression_never_returns(*value)) returns = false;
+               }
+               if (returns) return true;
+            }
             break;
          }
          case AstNodeKind::IfStmt: {
@@ -4132,6 +4172,11 @@ bool TypeAnalyser::expression_contains_call_to(const ExprNode& Expr, GCstr *Name
       case AstNodeKind::TypeTestExpr: {
          auto *payload = std::get_if<TypeTestExprPayload>(&Expr.data);
          return payload and payload->value and this->expression_contains_call_to(*payload->value, Name);
+      }
+      case AstNodeKind::RaiseExpr: {
+         auto &payload = std::get<RaisePayload>(Expr.data);
+         return (payload.error_code and this->expression_contains_call_to(*payload.error_code, Name)) or
+            (payload.message and this->expression_contains_call_to(*payload.message, Name));
       }
       case AstNodeKind::TernaryExpr: {
          auto *payload = std::get_if<TernaryExprPayload>(&Expr.data);

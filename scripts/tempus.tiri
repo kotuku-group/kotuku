@@ -109,7 +109,7 @@ end
 
 tempus._immutableError = function(Key:any!, Value:any!)
    type_name = tempus._typeOf(&&) ?? 'Value'
-   error(f"tempus.{type_name} is immutable: Cannot set {Key}")
+   raise f"tempus.{type_name} is immutable: Cannot set {Key}"
 end
 
 tempus._tostring = function():str

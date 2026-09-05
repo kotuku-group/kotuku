@@ -68,7 +68,7 @@ end
          err, value = cfg.mtReadValue('Courier Sans', 'Scalable')
       end
    success
-      error('ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
+      assert(false, 'ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
    end
 end
 
@@ -89,7 +89,7 @@ end
          err, value = cfg.mtReadValue('Clean', 'Points')
       end
    success
-      error('ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
+      assert(false, 'ReadValue() returned successfully with: ' .. mSys.GetErrorMsg(err) .. ', ' .. tostring(value))
    end
 end
 
@@ -405,7 +405,7 @@ Styles = Bold,Bold Italic,Italic,Regular
 
    for i in {0 to buf.len()} do
       if buf.byte(i) != expected_output.byte(i) then
-         error('Written output is invalid:\n---\n' .. buf .. '---\n' .. expected_output .. '---\n')
+         raise 'Written output is invalid:\n---\n' .. buf .. '---\n' .. expected_output .. '---\n'
       end
    end
 end

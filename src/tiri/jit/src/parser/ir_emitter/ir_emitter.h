@@ -190,6 +190,7 @@ private:
    ControlFlowGraph  control_flow;
    OperatorEmitter   operator_emitter;
    LocalBindingTable binding_table;
+   std::vector<BCReg> handler_exceptions; // Hidden registers in this lexical function
    ConstantEvaluator constant_evaluator;
    StaticCallableHandle current_callable{};
    bool is_root_chunk = true;
@@ -217,7 +218,7 @@ private:
    ParserResult<IrEmitUnit> emit_conditional_shorthand_stmt(const ConditionalShorthandStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_try_except_stmt(const TryExceptPayload& payload);
    ParserResult<IrEmitUnit> emit_checkall_stmt(const CheckallStmtPayload& payload);
-   ParserResult<IrEmitUnit> emit_raise_stmt(const RaiseStmtPayload& payload, const SourceSpan& span);
+   ParserResult<IrEmitUnit> emit_raise_payload(const RaisePayload &Payload, const SourceSpan &Span);
    ParserResult<IrEmitUnit> emit_check_stmt(const CheckStmtPayload& payload, const SourceSpan& span);
    ParserResult<IrEmitUnit> emit_import_entry(const ImportEntryPayload& entry);
    ParserResult<IrEmitUnit> emit_import_stmt(const ImportStmtPayload& payload);

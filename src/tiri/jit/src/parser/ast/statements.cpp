@@ -1127,7 +1127,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_defer()
 
    const TokenKind body_terms[] = { TokenKind::EndToken };
    BlockDepthScope block_scope(*this);
+   int saved_handler_depth = this->handler_depth;
+   this->handler_depth = 0;
    auto body = this->parse_block(body_terms);
+   this->handler_depth = saved_handler_depth;
    if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
    this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
 
@@ -1340,7 +1343,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
       const TokenKind except_terms[] = { TokenKind::ExceptToken, TokenKind::SuccessToken, TokenKind::EndToken };
       {
          BlockDepthScope block_scope(*this);
+         ++this->handler_depth;
          auto except_body = this->parse_block(except_terms);
+         --this->handler_depth;
          if (not except_body.ok()) return ParserResult<StmtNodePtr>::failure(except_body.error_ref());
          clause.block = std::move(except_body.value_ref());
       }
@@ -1418,24 +1423,83 @@ ParserResult<StmtNodePtr> AstBuilder::parse_raise()
    Token raise_token = this->ctx.tokens().current();
    this->ctx.tokens().advance();  // consume 'raise'
 
-   // Parse error code expression (required)
-   auto error_code = this->parse_expression();
-   if (not error_code.ok()) return ParserResult<StmtNodePtr>::failure(error_code.error_ref());
-
-   RaiseStmtPayload payload;
-   payload.error_code = std::move(error_code.value_ref());
-
-   // Check for optional message
-   if (this->ctx.check(TokenKind::Comma)) {
-      this->ctx.tokens().advance();  // consume ','
-      auto message = this->parse_expression();
-      if (not message.ok()) return ParserResult<StmtNodePtr>::failure(message.error_ref());
-      payload.message = std::move(message.value_ref());
+   Token next = this->ctx.tokens().current();
+   bool omitted = next.span().line != raise_token.span().line or
+      next.kind() IS TokenKind::EndToken or next.kind() IS TokenKind::ExceptToken or
+      next.kind() IS TokenKind::SuccessToken or next.kind() IS TokenKind::Else or
+      next.kind() IS TokenKind::ElseIf or next.kind() IS TokenKind::Until or
+      next.kind() IS TokenKind::EndOfFile or next.kind() IS TokenKind::Semicolon;
+   RaisePayload payload;
+   if (omitted) {
+      if (not this->handler_depth) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, raise_token,
+            "bare raise is only valid inside an except handler");
+      }
+      payload.rethrow = true;
    }
-
+   else {
+      bool parenthesised = this->ctx.check(TokenKind::LeftParen);
+      if (parenthesised) {
+         // A grouped first operand may continue with an operator or suffix in the original statement syntax.
+         size_t offset = 1;
+         int depth = 1;
+         while (depth > 0) {
+            Token ahead = this->ctx.tokens().peek(offset++);
+            if (ahead.kind() IS TokenKind::EndOfFile) break;
+            if (ahead.kind() IS TokenKind::LeftParen) ++depth;
+            else if (ahead.kind() IS TokenKind::RightParen) --depth;
+         }
+         if (depth IS 0) {
+            Token after = this->ctx.tokens().peek(offset);
+            if (this->match_binary_operator(after) or after.kind() IS TokenKind::Dot or
+                after.kind() IS TokenKind::LeftBracket or after.kind() IS TokenKind::LeftParen) parenthesised = false;
+         }
+      }
+      auto parsed = this->parse_raise_payload(parenthesised);
+      if (not parsed.ok()) return ParserResult<StmtNodePtr>::failure(parsed.error_ref());
+      payload = std::move(parsed.value_ref());
+      if (this->ctx.check(TokenKind::Comma) and not payload.message) {
+         this->ctx.tokens().advance();
+         auto message = this->parse_expression();
+         if (not message.ok()) return ParserResult<StmtNodePtr>::failure(message.error_ref());
+         payload.message = std::move(message.value_ref());
+      }
+   }
    auto stmt = std::make_unique<StmtNode>(AstNodeKind::RaiseStmt, raise_token.span());
    stmt->data = std::move(payload);
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
+}
+
+ParserResult<RaisePayload> AstBuilder::parse_raise_payload(bool Parenthesised)
+{
+   if (Parenthesised) this->ctx.tokens().advance();
+   if (this->ctx.check(TokenKind::RightParen) or this->ctx.check(TokenKind::Comma)) {
+      return this->fail<RaisePayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "raise requires one value or a code and message");
+   }
+   RaisePayload payload;
+   auto value = this->parse_expression();
+   if (not value.ok()) return ParserResult<RaisePayload>::failure(value.error_ref());
+   payload.error_code = std::move(value.value_ref());
+   if (this->ctx.check(TokenKind::Comma)) {
+      this->ctx.tokens().advance();
+      if (this->ctx.check(TokenKind::RightParen) or this->ctx.check(TokenKind::Comma)) {
+         return this->fail<RaisePayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "raise requires a message after the comma");
+      }
+      auto message = this->parse_expression();
+      if (not message.ok()) return ParserResult<RaisePayload>::failure(message.error_ref());
+      payload.message = std::move(message.value_ref());
+   }
+   if (this->ctx.check(TokenKind::Comma)) {
+      return this->fail<RaisePayload>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "raise accepts at most two arguments");
+   }
+   if (Parenthesised) {
+      auto close = this->ctx.consume(TokenKind::RightParen, ParserErrorCode::ExpectedToken);
+      if (not close.ok()) return ParserResult<RaisePayload>::failure(close.error_ref());
+   }
+   return ParserResult<RaisePayload>::success(std::move(payload));
 }
 
 //********************************************************************************************************************

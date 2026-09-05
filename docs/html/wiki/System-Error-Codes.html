@@ -269,7 +269,7 @@
 <div class="docs-content" id="default-page">
 
 <h1>System Error Codes</h1>
-<p>The following table lists all common error codes and their associated message.</p>
+<p>The following table lists all active error codes and their associated message. Retired codes are omitted from this list, but their numeric slots remain permanently reserved so that the values of active codes never change.</p>
 <table>
 <thead>
 <tr>
@@ -296,7 +296,7 @@
 </tr>
 <tr>
 <td>NothingDone</td>
-<td>There is nothing to process.</td>
+<td>Nothing to do for the requested operation.</td>
 </tr>
 <tr>
 <td>Continue</td>
@@ -311,20 +311,16 @@
 <td>Retry the operation (could not succeed at this time).</td>
 </tr>
 <tr>
-<td>DirEmpty</td>
-<td>The folder is empty.</td>
+<td>EndOfSequence</td>
+<td>The end of the sequence has been reached.</td>
 </tr>
 <tr>
-<td>Terminate</td>
+<td>Terminate / ExceptionThreshold</td>
 <td>Termination requested.</td>
 </tr>
 <tr>
 <td>NoMemory</td>
 <td>Not enough memory available.</td>
-</tr>
-<tr>
-<td>NoPointer</td>
-<td>Required pointer not present.</td>
 </tr>
 <tr>
 <td>InUse</td>
@@ -351,7 +347,7 @@
 <td>Trouble initialising/using a module.</td>
 </tr>
 <tr>
-<td>FileNotFound / FileDoesNotExist</td>
+<td>FileNotFound</td>
 <td>File not found.</td>
 </tr>
 <tr>
@@ -379,10 +375,6 @@
 <td>Failed to lock a required resource.</td>
 </tr>
 <tr>
-<td>ExamineFailed</td>
-<td>Could not examine folder or file.</td>
-</tr>
-<tr>
 <td>LostClass</td>
 <td>The object has lost its class reference.</td>
 </tr>
@@ -399,12 +391,8 @@
 <td>General memory error.</td>
 </tr>
 <tr>
-<td>TimeOut</td>
+<td>Timeout / TimeOut</td>
 <td>Function timed-out before successful completion.</td>
-</tr>
-<tr>
-<td>NoStats</td>
-<td>This object has lost its stats structure.</td>
 </tr>
 <tr>
 <td>LowCapacity</td>
@@ -423,20 +411,8 @@
 <td>System corruption detected.</td>
 </tr>
 <tr>
-<td>NeedOwner</td>
-<td>A container is needed to operate correctly.</td>
-</tr>
-<tr>
-<td>OwnerNeedsBitmap</td>
-<td>Container needs a Bitmap field.</td>
-</tr>
-<tr>
 <td>CoreVersion</td>
-<td>A newer version of the Core is required.</td>
-</tr>
-<tr>
-<td>NeedWidthHeight</td>
-<td>The Width and/or Height field values need to be set.</td>
+<td>A compatible version of the Core is required.</td>
 </tr>
 <tr>
 <td>ModuleValidation</td>
@@ -455,10 +431,6 @@
 <td>A value is outside of the valid range.</td>
 </tr>
 <tr>
-<td>ObtainMethod</td>
-<td>A call to ObtainMethod() failed.</td>
-</tr>
-<tr>
 <td>ArrayFull</td>
 <td>Array has reached capacity and cannot be expanded.</td>
 </tr>
@@ -467,16 +439,8 @@
 <td>Attempt to Query() failed.</td>
 </tr>
 <tr>
-<td>LostOwner</td>
-<td>The object has lost its container.</td>
-</tr>
-<tr>
 <td>DoNotExpunge</td>
 <td>Do not expunge yet.</td>
-</tr>
-<tr>
-<td>MemoryCorrupt</td>
-<td>The memory block is corrupt.</td>
 </tr>
 <tr>
 <td>FieldNotFound</td>
@@ -495,14 +459,6 @@
 <td>A resource cannot be accessed as it is marked for deletion.</td>
 </tr>
 <tr>
-<td>IllegalMethodID</td>
-<td>Illegal method ID (outside of valid range).</td>
-</tr>
-<tr>
-<td>IllegalActionID</td>
-<td>Illegal action ID (outside of valid range).</td>
-</tr>
-<tr>
 <td>ModuleOpenFailed</td>
 <td>Module failed in its Open routine.</td>
 </tr>
@@ -511,20 +467,12 @@
 <td>Duplicate value not permitted.</td>
 </tr>
 <tr>
-<td>EntryMissingHeader</td>
-<td>The ModEntry-&gt;Header is missing.</td>
-</tr>
-<tr>
 <td>ModuleMissingInit</td>
 <td>Module has not defined support for Init().</td>
 </tr>
 <tr>
-<td>ModuleInitFailed</td>
-<td>Module failed its Initialisation routine.</td>
-</tr>
-<tr>
-<td>MemoryDoesNotExist</td>
-<td>Memory block does not exist.</td>
+<td>AudioMix</td>
+<td>Audio mixing failed.</td>
 </tr>
 <tr>
 <td>DeadLock</td>
@@ -548,7 +496,7 @@
 </tr>
 <tr>
 <td>DoubleInit</td>
-<td>Warning - attempt to initialise a resource twice.</td>
+<td>Warning - Attempt to initialise a resource twice.</td>
 </tr>
 <tr>
 <td>UndefinedField / FieldNotSet</td>
@@ -567,10 +515,6 @@
 <td>The File flag FL::WRITE was not set on initialisation.</td>
 </tr>
 <tr>
-<td>Draw</td>
-<td>An error occurred while drawing the object.</td>
-</tr>
-<tr>
 <td>NoMethods</td>
 <td>The class does not export any methods.</td>
 </tr>
@@ -579,8 +523,8 @@
 <td>No matching object was found for the given object ID.</td>
 </tr>
 <tr>
-<td>AccessMemory</td>
-<td>Access to a memory block was denied.</td>
+<td>ImmutableField</td>
+<td>Cannot modify an immutable field value.</td>
 </tr>
 <tr>
 <td>MissingPath</td>
@@ -593,10 +537,6 @@
 <tr>
 <td>NoSearchResult</td>
 <td>The search yielded no results.</td>
-</tr>
-<tr>
-<td>StatementUnsatisfied</td>
-<td>The tested statement was not satisfied.</td>
 </tr>
 <tr>
 <td>ObjectCorrupt</td>
@@ -616,7 +556,7 @@
 </tr>
 <tr>
 <td>AllocMemory</td>
-<td>AllocMemory() failed to create a new memory block.</td>
+<td>Failed to create a new memory block.</td>
 </tr>
 <tr>
 <td>NewObject</td>
@@ -667,10 +607,6 @@
 <td>An error occurred during a seek operation.</td>
 </tr>
 <tr>
-<td>ReallocMemory</td>
-<td>The reallocation of a memory block failed.</td>
-</tr>
-<tr>
 <td>Loop</td>
 <td>An infinite loop was detected.</td>
 </tr>
@@ -680,15 +616,11 @@
 </tr>
 <tr>
 <td>ResolvePath</td>
-<td>A volume could not be resolved.</td>
+<td>A call to ResolvePath() failed.</td>
 </tr>
 <tr>
 <td>CreateObject</td>
 <td>A call to CreateObject() failed.</td>
-</tr>
-<tr>
-<td>MemoryInfo</td>
-<td>Failed to obtain information on a memory block (MemoryInfo() failed).</td>
 </tr>
 <tr>
 <td>NotInitialised</td>
@@ -699,20 +631,8 @@
 <td>A new resource could not be created because a matching resource exists.</td>
 </tr>
 <tr>
-<td>Refresh</td>
-<td>An attempt to Refresh() an object failed.</td>
-</tr>
-<tr>
-<td>ListChildren</td>
-<td>An error occurred in a call to ListChildren().</td>
-</tr>
-<tr>
 <td>SystemCall</td>
 <td>A call to the host system has failed.</td>
-</tr>
-<tr>
-<td>SmallMask</td>
-<td>The size of the mask is smaller than the source Bitmap&#39;s dimensions.</td>
 </tr>
 <tr>
 <td>EmptyString</td>
@@ -737,10 +657,6 @@
 <tr>
 <td>SemaphoreOperation</td>
 <td>A semaphore operation failed.</td>
-</tr>
-<tr>
-<td>FieldValidation</td>
-<td>Field validation failed.</td>
 </tr>
 <tr>
 <td>CreateFile</td>
@@ -771,10 +687,6 @@
 <td>Resource exists.</td>
 </tr>
 <tr>
-<td>SanityFailure</td>
-<td>A sanity check failed.</td>
-</tr>
-<tr>
 <td>OutOfSpace</td>
 <td>Out of space. There is no available room to complete the request.</td>
 </tr>
@@ -783,7 +695,7 @@
 <td>GetSurfaceInfo() failed.</td>
 </tr>
 <tr>
-<td>Finished / EndOfFile / OutOfData</td>
+<td>Finished</td>
 <td>Operation finished.</td>
 </tr>
 <tr>
@@ -816,7 +728,7 @@
 </tr>
 <tr>
 <td>Disconnected</td>
-<td>The connection between client and server was terminated.</td>
+<td>Device or end-point disconnected.</td>
 </tr>
 <tr>
 <td>TaskStillExists</td>
@@ -848,7 +760,7 @@
 </tr>
 <tr>
 <td>InvalidObject / WrongObjectType / WrongClass</td>
-<td>An object is not of the required type.</td>
+<td>An object is not of the required class type.</td>
 </tr>
 <tr>
 <td>ExecViolation</td>
@@ -856,7 +768,7 @@
 </tr>
 <tr>
 <td>Recursion</td>
-<td>Detected a recursive function call.</td>
+<td>Detected an illegal attempt at recursion.</td>
 </tr>
 <tr>
 <td>IllegalAddress</td>
@@ -888,31 +800,11 @@
 </tr>
 <tr>
 <td>InvalidValue</td>
-<td>A required value was not within expected constraints.</td>
-</tr>
-<tr>
-<td>ServiceUnavailable</td>
-<td>The required service is not available.</td>
-</tr>
-<tr>
-<td>Deactivated</td>
-<td>The object must be activated with the Activate action.</td>
-</tr>
-<tr>
-<td>LockRequired</td>
-<td>A lock is required before accessing this functionality.</td>
+<td>A value has not passed validation.</td>
 </tr>
 <tr>
 <td>AlreadyLocked / Locked</td>
 <td>Object or resource has already been locked.</td>
-</tr>
-<tr>
-<td>NoMediaInserted</td>
-<td>No media is inserted in the device.</td>
-</tr>
-<tr>
-<td>CardReaderUnavailable</td>
-<td>The requested smart card reader is in use.</td>
 </tr>
 <tr>
 <td>ProxySSLTunnel</td>
@@ -921,10 +813,6 @@
 <tr>
 <td>InvalidHTTPResponse</td>
 <td>A valid HTTP response was not received from the server.</td>
-</tr>
-<tr>
-<td>InvalidReference</td>
-<td>The reference is invalid.</td>
 </tr>
 <tr>
 <td>Exception</td>
@@ -947,8 +835,8 @@
 <td>Requested to use a registered derived class (not an error).</td>
 </tr>
 <tr>
-<td>WrongType</td>
-<td>The expected type was not provided.</td>
+<td>TypeMismatch</td>
+<td>The provided value does not match the expected type.</td>
 </tr>
 <tr>
 <td>ThreadNotLocked</td>
@@ -1011,10 +899,6 @@
 <td>Attempted to set a numeric field with an incompatible value.</td>
 </tr>
 <tr>
-<td>SetValueNotString</td>
-<td>Attempted to set a string field with an incompatible value.</td>
-</tr>
-<tr>
 <td>SetValueNotObject</td>
 <td>Attempted to set an object field with an incompatible value.</td>
 </tr>
@@ -1073,6 +957,14 @@
 <tr>
 <td>ParameterUnknown</td>
 <td>Unknown parameter name.</td>
+</tr>
+<tr>
+<td>SetValueNotStruct</td>
+<td>Attempted to set a struct field with an incompatible value.</td>
+</tr>
+<tr>
+<td>ResourceRegistration</td>
+<td>Failed to register a resource with the system.</td>
 </tr>
 </tbody>
 </table>

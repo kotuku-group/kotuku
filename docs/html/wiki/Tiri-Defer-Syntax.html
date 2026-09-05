@@ -327,17 +327,17 @@
 <div class="sourceCode" id="cb3"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> acquireResources<span class="op">()</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">db</span> <span class="op">=</span> connectDatabase<span class="op">()</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>      <span class="va">db</span><span class="op">:</span>disconnect<span class="op">()</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>      <span class="va">db</span><span class="op">.</span>disconnect<span class="op">()</span></span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>   <span class="va">file</span> <span class="op">=</span> openFile<span class="op">(</span><span class="st">&#39;log.txt&#39;</span><span class="op">)</span></span>
 <span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">file</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">file</span><span class="op">.</span>close<span class="op">()</span></span>
 <span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>   <span class="va">lock</span> <span class="op">=</span> acquireLock<span class="op">()</span></span>
 <span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>      <span class="va">lock</span><span class="op">:</span>release<span class="op">()</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>      <span class="va">lock</span><span class="op">.</span>release<span class="op">()</span></span>
 <span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
 <span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Work with resources</span></span>
@@ -474,7 +474,7 @@
 <span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>   defer<span class="op">(</span><span class="va">res</span><span class="op">,</span> <span class="va">tkn</span><span class="op">,</span> <span class="va">ts</span><span class="op">)</span></span>
 <span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Cleanup started at: &#39;</span> <span class="op">..</span> <span class="va">ts</span><span class="op">)</span></span>
 <span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Token: &#39;</span> <span class="op">..</span> <span class="va">tkn</span><span class="op">)</span></span>
-<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">:</span>release<span class="op">()</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">res</span><span class="op">.</span>release<span class="op">()</span></span>
 <span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">(</span><span class="va">resource</span><span class="op">,</span> <span class="va">token</span><span class="op">,</span> <span class="va">timestamp</span><span class="op">)</span></span>
 <span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>   <span class="co">-- Even if these change, defer uses original values</span></span>
@@ -495,7 +495,7 @@
 <span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- Usage</span></span>
 <span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>withCustomCleanup<span class="op">(</span><span class="va">myResource</span><span class="op">,</span> <span class="kw">function</span><span class="op">(</span><span class="va">r</span><span class="op">)</span></span>
-<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>   <span class="va">r</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>   <span class="va">r</span><span class="op">.</span>close<span class="op">()</span></span>
 <span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Custom cleanup complete&#39;</span><span class="op">)</span></span>
 <span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span><span class="op">)</span></span></code></pre></div>
 <h2 id="scope-and-control-flow">Scope and Control Flow</h2>
@@ -528,7 +528,7 @@
 <span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">defer</span></span>
 <span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>         <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Cleaning iteration &#39;</span> <span class="op">..</span> <span class="va">i</span><span class="op">)</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>         <span class="va">temp</span><span class="op">:</span>delete<span class="op">()</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>         <span class="va">temp</span><span class="op">.</span>delete<span class="op">()</span></span>
 <span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>      <span class="cf">end</span></span>
 <span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="kw">not</span> processItem<span class="op">(</span><span class="va">item</span><span class="op">)</span> <span class="cf">then</span></span>
@@ -545,7 +545,7 @@
 <span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">defer</span></span>
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>         <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Releasing resource &#39;</span> <span class="op">..</span> <span class="va">i</span><span class="op">)</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>         <span class="va">resource</span><span class="op">:</span>release<span class="op">()</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>         <span class="va">resource</span><span class="op">.</span>release<span class="op">()</span></span>
 <span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>      <span class="cf">end</span></span>
 <span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="kw">not</span> shouldProcess<span class="op">(</span><span class="va">item</span><span class="op">)</span> <span class="cf">then</span></span>
@@ -580,21 +580,21 @@
 <h2 id="common-patterns-and-idioms">Common Patterns and Idioms</h2>
 <h3 id="transaction-rollback-pattern">Transaction Rollback Pattern</h3>
 <div class="sourceCode" id="cb17"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> performTransaction<span class="op">(</span><span class="va">operations</span><span class="op">)</span></span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">txn</span> <span class="op">=</span> <span class="va">db</span><span class="op">:</span>beginTransaction<span class="op">()</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">txn</span> <span class="op">=</span> <span class="va">db</span><span class="op">.</span>beginTransaction<span class="op">()</span></span>
 <span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">committed</span> <span class="op">=</span> <span class="kw">false</span></span>
 <span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
 <span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="kw">not</span> <span class="va">committed</span> <span class="cf">then</span></span>
 <span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>         <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Rolling back transaction&#39;</span><span class="op">)</span></span>
-<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>         <span class="va">txn</span><span class="op">:</span><span class="fu">rollback</span><span class="op">()</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>         <span class="va">txn</span><span class="op">.</span>rollback<span class="op">()</span></span>
 <span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>      <span class="cf">end</span></span>
 <span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
 <span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>   <span class="cf">for</span> <span class="cn">_</span><span class="op">,</span> <span class="va">op</span> <span class="kw">in</span> <span class="fu">ipairs</span><span class="op">(</span><span class="va">operations</span><span class="op">)</span> <span class="cf">do</span></span>
-<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>      <span class="va">txn</span><span class="op">:</span><span class="fu">execute</span><span class="op">(</span><span class="va">op</span><span class="op">)</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>      <span class="va">txn</span><span class="op">.</span>execute<span class="op">(</span><span class="va">op</span><span class="op">)</span></span>
 <span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
 <span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>   <span class="va">txn</span><span class="op">:</span><span class="fu">commit</span><span class="op">()</span></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>   <span class="va">txn</span><span class="op">.</span>commit<span class="op">()</span></span>
 <span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>   <span class="va">committed</span> <span class="op">=</span> <span class="kw">true</span></span>
 <span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
 <h3 id="timing-measurements">Timing Measurements</h3>
@@ -615,7 +615,7 @@
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
 <span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Releasing lock: &#39;</span> <span class="op">..</span> <span class="va">lockName</span><span class="op">)</span></span>
-<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>      <span class="va">lock</span><span class="op">:</span>release<span class="op">()</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>      <span class="va">lock</span><span class="op">.</span>release<span class="op">()</span></span>
 <span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
 <span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> fn<span class="op">()</span></span>
@@ -701,15 +701,15 @@
 <h3 id="3-keep-deferred-functions-simple">3. Keep Deferred Functions Simple</h3>
 <div class="sourceCode" id="cb24"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Good: simple, focused cleanup</span></span>
 <span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="va">defer</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">resource</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">resource</span><span class="op">.</span>close<span class="op">()</span></span>
 <span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
 <span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="co">-- Bad: complex logic in defer</span></span>
 <span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a><span class="va">defer</span></span>
 <span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">resource</span><span class="op">.</span><span class="va">type</span> is <span class="st">&#39;file&#39;</span> <span class="cf">then</span></span>
-<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">resource</span><span class="op">:</span><span class="fu">close</span><span class="op">()</span></span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>      <span class="va">resource</span><span class="op">.</span>close<span class="op">()</span></span>
 <span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>   <span class="cf">elseif</span> <span class="va">resource</span><span class="op">.</span><span class="va">type</span> is <span class="st">&#39;socket&#39;</span> <span class="cf">then</span></span>
-<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>      <span class="va">resource</span><span class="op">:</span>disconnect<span class="op">()</span></span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>      <span class="va">resource</span><span class="op">.</span>disconnect<span class="op">()</span></span>
 <span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a>   <span class="cf">else</span></span>
 <span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- Complex cleanup logic</span></span>
 <span id="cb24-14"><a href="#cb24-14" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
@@ -728,38 +728,35 @@
 <span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a>   <span class="cf">return</span> transform<span class="op">(</span><span class="va">data</span><span class="op">)</span></span>
 <span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
 <h2 id="limitations">Limitations</h2>
-<h3 id="error-path-handling">Error Path Handling</h3>
-<p>Defers do <strong>not</strong> currently execute during error unwinding (stack unwinding from exceptions):</p>
-<div class="sourceCode" id="cb26"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> limitationExample<span class="op">()</span></span>
+<h3 id="exception-path-handling">Exception Path Handling</h3>
+<p>Defers execute during exception unwinding as well as normal scope exit:</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> exceptionPathExample<span class="op">()</span></span>
 <span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
-<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;This will NOT execute if error() is called&#39;</span><span class="op">)</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;This executes before the exception leaves the scope&#39;</span><span class="op">)</span></span>
 <span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
 <span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>   <span class="fu">error</span><span class="op">(</span><span class="st">&#39;Something went wrong&#39;</span><span class="op">)</span></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>   raise <span class="st">&#39;Something went wrong&#39;</span></span>
 <span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
-<p>For error-safe cleanup, use <code>pcall</code>:</p>
+<p>Use <code>try</code> when cleanup should run before handling an exception locally:</p>
 <div class="sourceCode" id="cb27"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> errorSafeCleanup<span class="op">()</span></span>
 <span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">resource</span> <span class="op">=</span> acquire<span class="op">()</span></span>
 <span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">ok</span><span class="op">,</span> <span class="va">result</span> <span class="op">=</span> <span class="fu">pcall</span><span class="op">(</span><span class="kw">function</span><span class="op">()</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">try</span></span>
 <span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>      <span class="va">defer</span></span>
-<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>         <span class="va">resource</span><span class="op">:</span>release<span class="op">()</span></span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>         <span class="va">resource</span><span class="op">.</span>release<span class="op">()</span></span>
 <span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span></span>
 <span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- Work that might error</span></span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- Work that might raise an exception.</span></span>
 <span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a>      riskyOperation<span class="op">()</span></span>
-<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">)</span></span>
-<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="kw">not</span> <span class="va">ok</span> <span class="cf">then</span></span>
-<span id="cb27-14"><a href="#cb27-14" aria-hidden="true" tabindex="-1"></a>      <span class="co">-- Handle error</span></span>
-<span id="cb27-15"><a href="#cb27-15" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Error: &#39;</span> <span class="op">..</span> <span class="va">result</span><span class="op">)</span></span>
-<span id="cb27-16"><a href="#cb27-16" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
-<span id="cb27-17"><a href="#cb27-17" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>   <span class="va">except</span> <span class="va">e</span></span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Error: &#39;</span> <span class="op">..</span> <span class="va">e</span><span class="op">.</span><span class="va">message</span><span class="op">)</span></span>
+<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
+<span id="cb27-14"><a href="#cb27-14" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
 <h3 id="defer-errors-propagate">Defer Errors Propagate</h3>
 <p>Errors in deferred functions propagate normally:</p>
 <div class="sourceCode" id="cb28"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> deferError<span class="op">()</span></span>
 <span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
-<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">error</span><span class="op">(</span><span class="st">&#39;Defer failed&#39;</span><span class="op">)</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>      raise <span class="st">&#39;Defer failed&#39;</span></span>
 <span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
 <span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Body&#39;</span><span class="op">)</span></span>
@@ -767,16 +764,18 @@
 <span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a><span class="co">-- Output:</span></span>
 <span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a><span class="co">-- Body</span></span>
 <span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- [Error: Defer failed]</span></span></code></pre></div>
-<p>To prevent defer errors from aborting execution, use <code>pcall</code> inside the defer:</p>
+<p>To handle an exception raised by deferred work, place the scope containing the defer inside <code>try</code>:</p>
 <div class="sourceCode" id="cb29"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> safeDeferError<span class="op">()</span></span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">defer</span></span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">pcall</span><span class="op">(</span><span class="kw">function</span><span class="op">()</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">try</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>      <span class="va">defer</span></span>
 <span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>         riskyCleanup<span class="op">()</span></span>
-<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span><span class="op">)</span></span>
-<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
-<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>   <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Body&#39;</span><span class="op">)</span></span>
-<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>      <span class="kw">end</span></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>      performWork<span class="op">()</span></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>   <span class="va">except</span> <span class="va">e</span></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>      <span class="fu">print</span><span class="op">(</span><span class="st">&#39;Cleanup failed: &#39;</span> <span class="op">..</span> <span class="va">e</span><span class="op">.</span><span class="va">message</span><span class="op">)</span></span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
 <h3 id="no-defer-outside-function-scope">No Defer Outside Function Scope</h3>
 <p>Defer must be used within a function or method:</p>
 <div class="sourceCode" id="cb30"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- Invalid: defer at module level</span></span>

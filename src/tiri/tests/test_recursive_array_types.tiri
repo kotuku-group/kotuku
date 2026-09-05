@@ -138,9 +138,10 @@ end
 function expect_recursive_store_failure(Operation:func, Message:str)
    try
       Operation()
-      error(Message)
    except e
       assert(e.message.find('element type') != nil, 'Unexpected recursive array runtime diagnostic: ' .. e.message)
+   success
+      assert(false, Message)
    end
 end
 
@@ -184,10 +185,11 @@ end
 function expect_recursive_contract_failure(Operation:func, Message:str)
    try
       Operation()
-      error(Message)
    except e
       assert(e.message.find('array<array<int>>') != nil,
          'Recursive contract diagnostic lost the complete expected type: ' .. e.message)
+   success
+      assert(false, Message)
    end
 end
 
@@ -373,7 +375,7 @@ end
    function assert_rejected(Source:str, Expected:str)
       try
          exec(Source)
-         error('Expected recursive array type syntax to be rejected')
+         raise 'Expected recursive array type syntax to be rejected'
       except e
          assert(e.message.find(Expected) != nil, 'Unexpected recursive array diagnostic: ' .. e.message)
       end
