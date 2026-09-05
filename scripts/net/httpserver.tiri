@@ -654,7 +654,7 @@ end
 
 function isHeadRequest(Client):bool
    try
-      state = Client._state()
+      state = Client.state()
       if state?.request?.method is 'HEAD' then return true end
    end
 
@@ -1520,7 +1520,7 @@ end
 
 @Doc(text="Incoming data handler for client sockets.  acRead() is used to read data from the ClientSocket.")
 function serverIncoming(self, ClientSocket)
-   state = ClientSocket._state()
+   state = ClientSocket.state()
 
    if not state.initialised then
       state.buffer            = ''
