@@ -355,18 +355,12 @@ u = struct.new('B')
    assertContains(hover, 'Value from A', 'The earlier field hover should use the first struct documentation.')
 end
 
-@Test function ErrorDeprecationHover()
+@Test function RemovedErrorHasNoBuiltinHover()
    local hover = hoverAt("err|or('message')")
-   assertContains(hover, '**Deprecated**', 'Canonical error hover must be marked deprecated.')
-   assertContains(hover, 'error() is replaced with raise()', 'Hover must state the concise replacement.')
+   assert(not hover, 'The removed error built-in must not have hover documentation.')
 
    hover = hoverAt("local error = function(Message) end\nerr|or('local')")
-   assert(not hover or not hover.find('Deprecated'), 'A local error function must not have deprecated hover.')
+   assert(not hover or not hover.find('Deprecated'), 'A local error function must not have built-in hover.')
    hover = hoverAt("local api = { error=function() end }\napi.err|or()")
-   assert(not hover or not hover.find('Deprecated'), 'A member named error must not have deprecated hover.')
-end
-
-@Test function ErrorDeprecationHoverAfterUnicode()
-   local hover = hoverAt("local text = '😀'; err|or('message')")
-   assertContains(hover, '**Deprecated**', 'Deprecated hover must resolve UTF-16 cursor positions.')
+   assert(not hover or not hover.find('Deprecated'), 'A member named error must not have built-in hover.')
 end

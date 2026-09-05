@@ -444,19 +444,20 @@ scans for annotated functions and executes them according to their configuration
 <span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="va">result</span> <span class="op">&gt;</span> <span class="dv">0</span><span class="op">,</span> <span class="st">&quot;Result should be positive&quot;</span><span class="op">)</span></span>
 <span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="fu">type</span><span class="op">(</span><span class="va">result</span><span class="op">)</span> is <span class="st">&quot;number&quot;</span><span class="op">,</span> <span class="st">&quot;Result should be a number&quot;</span><span class="op">)</span></span>
 <span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
-<p>Use <code>error()</code> to explicitly fail a test with a message:</p>
+<p>Use <code>assert()</code> to fail a test with a message and make the expected condition explicit:</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testExplicitFailure<span class="op">()</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="va">someCondition</span> <span class="cf">then</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>      <span class="fu">error</span><span class="op">(</span><span class="st">&quot;Test failed: unexpected condition encountered&quot;</span><span class="op">)</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>   <span class="cf">end</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
-<p>Use <code>pcall()</code> to test that code correctly raises exceptions:</p>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="kw">not</span> <span class="va">someCondition</span><span class="op">,</span> <span class="st">&quot;Unexpected condition encountered&quot;</span><span class="op">)</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
+<p>Use <code>try</code> to test that code correctly raises exceptions:</p>
 <div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testExpectedError<span class="op">()</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">status</span><span class="op">,</span> <span class="va">err</span> <span class="op">=</span> <span class="fu">pcall</span><span class="op">(</span><span class="kw">function</span><span class="op">()</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">try</span></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>      functionThatShouldFail<span class="op">()</span></span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span><span class="op">)</span></span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>   <span class="fu">assert</span><span class="op">(</span><span class="kw">not</span> <span class="va">status</span><span class="op">,</span> <span class="st">&quot;Expected function to raise an error&quot;</span><span class="op">)</span></span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>   <span class="va">except</span> <span class="va">e</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>      <span class="fu">assert</span><span class="op">(</span><span class="va">e</span><span class="op">.</span><span class="va">code</span> <span class="va">is</span> <span class="va">ERR_Exception</span><span class="op">,</span> <span class="st">&quot;Expected ERR_Exception&quot;</span><span class="op">)</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>   <span class="va">success</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>      <span class="fu">assert</span><span class="op">(</span><span class="kw">false</span><span class="op">,</span> <span class="st">&quot;Expected function to raise an exception&quot;</span><span class="op">)</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>   <span class="kw">end</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div>
 <h3 id="logging-output">Logging Output</h3>
 <p>Use <code>logOutput()</code> to record diagnostic information during test execution:</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>@<span class="va">Test</span> <span class="kw">function</span> testWithLogging<span class="op">()</span></span>

@@ -175,22 +175,14 @@ end
    assert(init.result.capabilities.renameProvider is true, 'Server should advertise namespace rename.')
 end
 
-@Test function CompletesDeprecatedErrorBuiltin()
+@Test function DoesNotCompleteRemovedErrorBuiltin()
    local items:array<table> = resolveBuiltinCompletion(makeDoc('err'), { line=0, character=3 })
-   local item = findCompletion(items, 'error')
-   assert(item and item.deprecated, 'Built-in error completion must be marked deprecated.')
-   assert(item.tags and item.tags[0] is 1, 'Completion must use the standard deprecated completion tag.')
-   assert(item.documentation.value is 'error() is replaced with raise().', 'Completion must name the replacement.')
+   assert(not findCompletion(items, 'error'), 'The removed error built-in must not be offered for completion.')
 
    items = resolveBuiltinCompletion(makeDoc('local error = function() end\nerr'), { line=1, character=3 })
-   assert(not findCompletion(items, 'error'), 'A shadowed error must not receive the deprecated built-in completion.')
+   assert(not findCompletion(items, 'error'), 'A local error function must not receive built-in completion.')
    items = resolveBuiltinCompletion(makeDoc('local api = {}\napi.err'), { line=1, character=7 })
-   assert(not findCompletion(items, 'error'), 'Members must not receive the deprecated built-in completion.')
+   assert(not findCompletion(items, 'error'), 'Members must not receive built-in completion.')
    items = resolveBuiltinCompletion(makeDoc('-- err'), { line=0, character=6 })
-   assert(not findCompletion(items, 'error'), 'Comments must not receive the deprecated built-in completion.')
-end
-
-@Test function DeprecatedCompletionInsideIdentifier()
-   local items:array<table> = resolveBuiltinCompletion(makeDoc('error("message")'), { line=0, character=3 })
-   assert(findCompletion(items, 'error'), 'Completion should resolve an error reference with the cursor inside it.')
+   assert(not findCompletion(items, 'error'), 'Comments must not receive built-in completion.')
 end

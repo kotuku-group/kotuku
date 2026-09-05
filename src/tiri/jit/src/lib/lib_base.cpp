@@ -839,60 +839,6 @@ LJLIB_ASM(tostring)      LJLIB_REC(.)
    return FFH_RES(1);
 }
 
-//********************************************************************************************************************
-// Base library: throw and catch errors
-//
-// error(Message:str, [Level:int])
-// error(Exception:table, [Level:int]) For rethrowing exceptions
-//
-// Level can be set to zero to suppress the inclusion of source and line number injection.
-
-LJLIB_CF(error)
-{
-   int32_t level = lj_lib_optint(L, 2, 1);
-   lua_settop(L, 1);
-
-   L->pending_exception = nullptr;
-   L->pending_exception_message = nullptr;
-   L->pending_exception_source  = nullptr;
-   L->pending_exception_line    = 0;
-   L->pending_exception_valid   = false;
-
-   if (lj_is_exception_table(L, L->base)) lj_rethrow(L, L->base);
-
-   // Handle regular string errors.
-   if (lua_isstring(L, 1)) {
-      if (tvisstr(L->base)) {
-         L->pending_exception_message = strV(L->base);
-         L->pending_exception_source  = nullptr;
-         L->pending_exception_line    = 0;
-         L->pending_exception_valid   = true;
-      }
-
-      if (level > 0) {
-         if (not L->pending_exception_source and L->pending_exception_line IS 0) {
-            int size;
-            cTValue *frame = lj_debug_frame(L, level, &size);
-            cTValue *nextframe = (frame and size) ? frame + size : nullptr;
-            DebugLocation location;
-
-            if (lj_debug_getloc(L, frame, nextframe, &location)) {
-               L->pending_exception_source = location.source;
-               L->pending_exception_line   = location.line;
-            }
-         }
-
-         luaL_where(L, level);  // Keep unhandled error output compatible.
-         lua_pushvalue(L, 1);
-         lua_concat(L, 2);
-      }
-   }
-   lj_err_run(L); // Does not return
-   return 0;
-}
-
-//********************************************************************************************************************
-
 LJLIB_CF(collectgarbage)
 {
    kt::Log("collectgarbage").warning("DEPRECATED - Use processing.collect()");
@@ -1253,7 +1199,6 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("forEach", { TiriType::Any }, { TiriType::Any, TiriType::Func });
    reg_func_prototype("rawget", { TiriType::Any }, { TiriType::Table, TiriType::Any });
    reg_func_prototype("rawset", { TiriType::Table }, { TiriType::Table, TiriType::Any, TiriType::Any });
-   reg_func_prototype("error", { }, { TiriType::Any }, FProtoFlags::NoNil);
    reg_func_prototype("getmetatable", { TiriType::Any }, { TiriType::Any });
    reg_func_prototype("setmetatable", { TiriType::Table }, { TiriType::Table, TiriType::Table });
    reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic,

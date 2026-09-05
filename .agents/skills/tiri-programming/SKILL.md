@@ -52,7 +52,7 @@ Recognise and use these Tiri extensions where they match local code style:
 - String append: `..=`
 - Postfix increment: `++`
 - C-style bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`
-- C-style ternary operator: `condition ? true_val :> false_val`
+- C-style ternary operator: `condition ? true_val : false_val`
 - Falsey checks and defaults: `??`, `??=`, and `value1 ?? value2`
 - Nil assignment shorthand: `?=`
 - Safe navigation: `obj?.field`, `obj?.method()`, `obj?[key]`
@@ -90,7 +90,13 @@ search tools, and mixed editor environments.
 - Put filtered `except e when ERR_Name` handlers before any catch-all `except e` handler.
 - Use `try<trace>` only when stack traces are needed; normal `try` avoids trace overhead.
 - Use `check` with API calls returning `ERR` codes, and `raise ERR_Name` for explicit error-code exceptions.
-- Use `error(Message)` for generic script exceptions and `error(e)` to rethrow an exception table.
+- Use `raise Message` for generic script exceptions and `raise ERR_Name, Message` for coded exceptions with a custom
+  message.  In expression branches, use the non-returning `raise(Value)` or `raise(Code, Message)` form.
+- Use bare `raise` in an `except` handler to rethrow the current exception while preserving its code, message, source,
+  line, trace and stackTrace data.  Bare rethrow is invalid outside the handler's lexical function, including in nested
+  functions.
+- The global `error()` built-in has been removed.  Its `Level` argument has no `raise` equivalent, and `raise` is
+  not first-class; wrap it in an ordinary function when an API requires a failure callback.
 - There is no `finally`; use `defer`, `<close>`, or object lifetime management for cleanup.
 - `defer` executes on normal scope exit, `return`, `break`, and `continue`. `<close>` handlers run before defers.
 - `??` treats `nil`, `false`, `0`, `{}` and `""` as empty. Tables and arrays are tested for empty. Standard `or` only treats `nil` and `false` as falsey.

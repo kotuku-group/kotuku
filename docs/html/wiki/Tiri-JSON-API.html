@@ -320,7 +320,8 @@
 </ul>
 <p>Native Tiri arrays are encoded as JSON arrays. Tables are encoded as JSON objects.</p>
 <p>Because the <code>nil</code> value cannot be a key, and as a table value is considered equivalent to a missing key, there is no way to express the JSON &quot;null&quot; value in a table. The only way this will output &quot;null&quot; is if your entire input value is nil itself.</p>
-<p>The optional <code>ErrorCallback</code> parameter accepts a function that will be called on encoding errors (e.g. unsupported types, or attempting to encode an array or table as an object key). If not provided, errors are raised with <code>error()</code>.</p>
+<p>The optional <code>ErrorCallback</code> parameter accepts a function that is called on encoding errors (for example, unsupported
+types or an array or table used as an object key). If it is omitted, the encoder raises an exception.</p>
 <h2 id="jsondecode">json.decode()</h2>
 <p><code>result = json.decode(String, Pos)</code></p>
 <p>Decodes a JSON string into Tiri values. Returns two values: the decoded result and the position after the last parsed character.</p>

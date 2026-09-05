@@ -154,7 +154,6 @@ static void recff_nyi(jit_State* J, RecordFFData* rd)
          if (!(op IS BC_CALLM or op IS BC_CALLMT or
             op IS BC_RETM or op IS BC_TSETM)) {
             switch (J->fn->c.ffid) {
-               case FF_error:
                case FF_debug_setHook:
                case FF_jit_flush:
                   break;  //  Don't stitch across special builtins.

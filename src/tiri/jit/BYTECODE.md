@@ -691,6 +691,9 @@ block, including in stripped dumps. The trailer uses ULEB128 integers: block and
 `handler_pc` and `exception_reg`. The loader validates counts, register bounds, handler PCs and `TRYENTER` references.
 Older dump versions are rejected.
 
+The private dump format `0xa1` removes the public `error` fast-function identity.  This shifts later `BFUNC` IDs, so
+`0xa0` chunks are rejected rather than being loaded with incorrect callable identities.
+
 **Handler metadata:**
 Handler metadata is stored in `GCproto.try_blocks[]` and `GCproto.try_handlers[]`. Each `TryBlockDesc` contains:
 - `first_handler`: Index of the first handler in `try_handlers[]`
@@ -919,7 +922,7 @@ static-descriptor analysis classify the expression's result as a non-nullable `B
 - Treat `BuiltinCallableID` values as serialised ABI values.  Any generated fast-function insertion, removal or
   reorder must update `BCDUMP_VERSION` and the fingerprint in `lj_ff.h`.
 - Keep the state-local built-in callable registry immutable after library initialisation and retain its independent GC
-  roots.  `BFUNC` must remain a direct load rather than a public table lookup.
+roots.  `BFUNC` must remain a direct load rather than a public table lookup.
 
 ## 13. Glossary and Quick Reference
 

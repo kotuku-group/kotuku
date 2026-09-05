@@ -2077,80 +2077,17 @@ end]])
    assert(exception.line is 2, 'Raise location must identify the keyword, not the final payload line')
 end
 
------------------------------------------------------------------------------------------------------------------------
--- Deprecated error() compatibility: the only runtime fixture retaining the legacy built-in.
--- Keep this section until phase 7 removes error() from the public environment.
+----------------------------------------------------------------------------------------------------------------------
+-- Removed error() built-in
 
-@Test function DeprecatedErrorStillExecutes()
-   try
-      exec("error('compatibility')")
-   except e
-      assert(e.message.find('compatibility'), 'Deprecated error() must retain its runtime behaviour.')
-   success
-      assert(false, 'Deprecated error() should still throw.')
-   end
-end
+@Test function ErrorBuiltinIsUndeclared()
+   assert(_G.error is nil, 'The public base environment must not register error().')
 
-@Test function LegacyRethrowPreservesTracedException()
-   local original = nil
-   local caught = false
-   try<trace>
-      try<trace>
-         try<trace>
-            raise ERR_Args, 'legacy rethrow'
-         except e
-            original = e
-            assert(e.trace != nil, 'Expected trace before legacy rethrow')
-            error(e)
-         end
-      except e when ERR_Args
-         assert(e is original, 'Legacy rethrow reconstructed the exception')
-         raise
-      end
-   except e when ERR_Args
-      caught = true
-      assert(e is original, 'Mixed rethrows must preserve the same exception')
-      assert(e.trace != nil and e.stackTrace != nil, 'Legacy rethrow lost the trace')
+   local result = debug.validate("error('removed')")
+   local undeclared = false
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'DeprecatedApi', 'The removed built-in must not produce a deprecation warning.')
+      if diagnostic.message.find("Undeclared variable 'error'", 0, true) then undeclared = true end
    end
-   assert(caught, 'Legacy rethrow lost the original code')
-end
-
-@Test function OrdinaryTablesCannotImpersonateExceptions()
-   local fake = setmetatable({ code=ERR_Args, message='forged exception' }, { __metatable='exception' })
-   local caught = false
-   try
-      error(fake)
-   except e when ERR_Args
-      assert(false, 'A script-created metatable must not grant exception identity')
-   except e
-      caught = true
-      assert(e != fake, 'An ordinary table must not be reused as an exception')
-   end
-   assert(caught, 'Expected a generic exception for the ordinary table')
-end
-
-@Test(hotpath=false) function UnhandledRethrowRetainsScriptError()
-   for mode in {0 to 2} do
-      local statement = [[try
-   try
-      raise ERR_Args, 'unhandled original'
-   except e
-      ]] .. (mode is 1 ? 'error(e)' : 'raise') .. [[
-   end
-except
-   defer
-      try
-         raise 'caught cleanup error'
-      except
-         processing.collect('full')
-      end
-   end
-   raise
-end]]
-      local script = obj.new('tiri', { statement=statement })
-      script.acActivate()
-      assert(script.error is ERR_Args, 'Unhandled rethrow must retain the original Script error code')
-      assert(script.errorMessage.find('unhandled original') != nil, 'Unhandled rethrow lost its message')
-      assert(script.errorMessage.find(':3:') != nil, 'Unhandled rethrow must report the original line')
-   end
+   assert(result.success is false and undeclared, 'A direct error() call must report an undeclared variable.')
 end

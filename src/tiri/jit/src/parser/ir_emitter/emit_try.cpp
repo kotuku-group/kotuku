@@ -380,16 +380,16 @@ void IrEmitter::emit_namespace_missing_guard(std::string_view Name, BCReg Value)
 
    missing.patch_here();
    BCReg saved_freereg = fs->free_reg();
-   BCReg call_base = saved_freereg;
-   bcreg_reserve(fs, BCReg(2 + LJ_FR2));
+   BCReg message_reg = saved_freereg;
+   bcreg_reserve(fs, BCReg(2));
    auto str_const = [fs](GCstr *String) -> BCREG {
       return const_gc(fs, obj2gco(String), LJ_TSTR);
    };
-   bcemit_AD(fs, BC_GGET, call_base.raw(), str_const(lj_str_newlit(L, "error")));
    std::string message = std::format("Cannot join namespace '{}': registry entry does not exist", Name);
-   bcemit_AD(fs, BC_KSTR, call_base.raw() + 1 + LJ_FR2,
-      str_const(lj_str_new(L, message.c_str(), message.size())));
-   bcemit_ABC(fs, BC_CALL, call_base.raw(), 2, 2);
+   bcemit_AD(fs, BC_KSTR, message_reg.raw(), str_const(lj_str_new(L, message.c_str(), message.size())));
+   BCReg raise_message_reg = BCReg(message_reg.raw() + 1);
+   bcemit_AD(fs, BC_MOV, raise_message_reg, message_reg);
+   bcemit_AD(fs, BC_RAISE, message_reg, raise_message_reg);
    fs->freereg = saved_freereg.raw();
    present.patch_here();
 }

@@ -28,8 +28,8 @@ skill for Tiri syntax, naming, indentation, object API usage, and runtime conven
 - Use top-to-bottom Tiri execution. Do not add an entry point function.
 - Use `@Test` for test functions and `@BeforeAll`, `@AfterAll`, `@BeforeEach`, and `@AfterEach` for fixtures.
 - Use `@Requires` for optional runtime dependencies such as `display`, `network`, `audio`, `font`, or `ssl`.
-- Use `assert(Condition, Message)` for expected test conditions. Prefer assertions over `error()` for conditional test
-  failures so the failing expectation is explicit.
+- Use `assert(Condition, Message)` for expected test conditions.  Prefer assertions over conditional `raise` statements
+  so the failing expectation is explicit.
 - Use `try ... except ... success ... end` when testing expected failures.
 - Clean up temporary files, objects, subscriptions, sockets, and servers in `@AfterAll` or `@AfterEach`.
 

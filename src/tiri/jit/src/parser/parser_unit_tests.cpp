@@ -2054,8 +2054,7 @@ struct BindingDiscoveryResult {
 };
 
 static BindingDiscoveryResult discover_bindings_from_source(std::string_view Source,
-   bool EnableTypeAnalysis = true, bool OpenLibraries = false, bool AddEnvironmentGlobal = false,
-   bool ReplaceError = false)
+   bool EnableTypeAnalysis = true, bool OpenLibraries = false, bool AddEnvironmentGlobal = false)
 {
    BindingDiscoveryResult result;
    result.state = std::make_unique<LuaStateHolder>();
@@ -2067,10 +2066,6 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
    }
 
    StringReaderCtx reader{ Source.data(), Source.size() };
-   if (ReplaceError) {
-      lua_pushcfunction(L, +[](lua_State *State) -> int { return 0; });
-      lua_setglobal(L, "error");
-   }
    LexState lex(L, unit_reader, &reader, "implicit-attribute-shadowing", std::nullopt);
    FuncState &fs = lex.fs_init();
    ParserContext context = ParserContext::from(lex, fs, ParserAllocator::from(L));
@@ -2096,64 +2091,44 @@ static BindingDiscoveryResult discover_bindings_from_source(std::string_view Sou
 
 //********************************************************************************************************************
 
-static bool test_error_deprecation(kt::Log &Log)
+static bool test_error_removal(kt::Log &Log)
 {
-   constexpr std::string_view positive[] = {
-      "error('message')", "return error('message')", "error('message', 2)", "local callback = error",
-      "try except e\nerror(e)\nend", "local function nested() error('nested') end",
-      "return true ? 1 : error('discarded')"
-   };
-   for (auto source : positive) {
-      auto result = discover_bindings_from_source(source, true, true);
-      size_t warnings = 0;
-      for (const auto &diagnostic : result.diagnostics) {
-         if (diagnostic.code != ParserErrorCode::DeprecatedApi) continue;
-         warnings++;
-         size_t offset = source.find("error");
-         size_t newline = source.rfind('\n', offset);
-         BCLine column = BCLine(newline IS std::string_view::npos ? offset + 1 : offset - newline);
-         BCLine line = newline IS std::string_view::npos ? 1 : 2;
-         if (diagnostic.severity != ParserDiagnosticSeverity::Warning or
-             diagnostic.message != "error() is replaced with raise()" or diagnostic.length != 5 or
-             diagnostic.token.span().line != line or diagnostic.token.span().column != column) {
-            Log.error("error deprecation has incorrect severity, message or source range");
-            return false;
-         }
-      }
-      if (not result.chunk.ok() or warnings != 1) {
-         Log.error("expected one deprecation warning for %s", std::string(source).c_str());
-         log_diagnostics(result.diagnostics, Log);
-         return false;
-      }
+   constexpr std::string_view source = "error('removed')";
+   auto result = discover_bindings_from_source(source, true, true);
+   lua_State *L = result.state->get();
+   lua_getglobal(L, "error");
+   bool absent = lua_isnil(L, -1);
+   lua_pop(L, 1);
+   if (not absent) {
+      Log.error("the removed error built-in remains in the public base environment");
+      return false;
    }
 
-   constexpr std::string_view negative[] = {
-      "local error = function(Message) end\nerror('local')",
-      "local function run(error) error('parameter') end",
-      "local error = function() end\nlocal function nested() error() end",
-      "local api = { error=function() end }\napi.error()",
-      "namespace api { error=function() end }\napi.error()",
-      "local text = \"error('string')\" -- error('comment')\n",
-      "local query = [[fn:error()]]", "raise('message')"
-   };
-   for (auto source : negative) {
-      auto result = discover_bindings_from_source(source, true, true);
-      if (not result.chunk.ok()) return false;
-      for (const auto &diagnostic : result.diagnostics) {
-         if (diagnostic.code IS ParserErrorCode::DeprecatedApi) {
-            Log.error("unrelated name or text emitted error deprecation: %s", std::string(source).c_str());
-            return false;
-         }
-      }
-   }
-   auto host = discover_bindings_from_source("error('host')", true, true, false, true);
-   for (const auto &diagnostic : host.diagnostics) {
+   for (const auto &diagnostic : result.diagnostics) {
       if (diagnostic.code IS ParserErrorCode::DeprecatedApi) {
-         Log.error("host replacement for error emitted a built-in deprecation warning");
+         Log.error("the removed error name still emitted a deprecation warning");
          return false;
       }
    }
-   return host.chunk.ok();
+   if (not result.chunk.ok()) return false;
+
+   if (lua_load(L, source, "=error-removal") IS 0) {
+      Log.error("the removed error built-in still compiled as a public global");
+      lua_pop(L, 1);
+      return false;
+   }
+   std::string_view message = lua_tostring(L, -1);
+   if (message.find("Undeclared variable 'error'") IS std::string_view::npos) {
+      Log.error("the removed error built-in produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto local = discover_bindings_from_source(
+      "local error = function(Message) end\nerror('local')\nlocal api = { error=function() end }\napi.error()", true,
+      true);
+   return local.chunk.ok() and local.diagnostics.empty();
 }
 
 static bool test_library_namespace_declarations(kt::Log &Log)
@@ -3265,7 +3240,7 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
    for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86), uint8_t(0x8e),
-      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f) }) {
+      uint8_t(0x90), uint8_t(0x91), uint8_t(0x97), uint8_t(0x99), uint8_t(0x9c), uint8_t(0x9f), uint8_t(0xa0) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -11158,7 +11133,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
    constexpr std::array<TestCase, 104> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
-      { "error_deprecation", test_error_deprecation },
+      { "error_removal", test_error_removal },
       { "expression_raise_bytecode", test_expression_raise_bytecode },
       { "rethrow_dump_validation", test_rethrow_dump_validation },
       { "raise_payload_and_context", test_raise_payload_and_context },

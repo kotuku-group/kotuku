@@ -16,11 +16,6 @@ glBuiltins = {
       comment = 'Prints a message to the system log.',
       prototype = 'msg(...)'
    },
-   ['error'] = {
-      comment = 'error() is replaced with raise().',
-      deprecated = true,
-      prototype = 'error(message, [level])'
-   },
    ['assert'] = {
       comment = 'Raises an error if condition is false.',
       prototype = 'assert(condition, [message])'
@@ -224,7 +219,8 @@ glKeywords = {
       'to filter by condition.' },
    ['throw'] = { comment = 'Raises an exception. Can be caught by an enclosing `try/except`.' },
    ['catch'] = { comment = 'Error handling block.' },
-   ['raise'] = { comment = 'Raises an error or exception.' },
+   ['raise'] = { comment = 'Raises a message or coded exception. Parenthesised forms are non-returning expressions; ' ..
+      'bare raise rethrows the current exception from an except handler.' },
    ['check'] = { comment = 'Error checking statement - raises on failure.' },
    ['thunk'] = { comment = 'Declares a deferred/lazy expression.' },
 
