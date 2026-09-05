@@ -12,8 +12,8 @@
 //   debug.getRegistry()         - Returns the Tiri registry table
 //   debug.getMetatable(obj)     - Returns the metatable of any object
 //   debug.setMetatable(obj, mt) - Sets the metatable of any object
-//   debug.getEnv(obj)           - Returns the environment of a function/thread/userdata
-//   debug.setEnv(obj, env)      - Sets the environment of a function/thread/userdata
+//   debug.getEnv(func)          - Returns the environment of a function
+//   debug.setEnv(func, env)     - Sets the environment of a function
 //   debug.getInfo(f [, what])   - Returns debug information about a function or stack level
 //   debug.getLocal(level, idx)  - Returns local variable name and value at stack level
 //   debug.setLocal(level, idx, val) - Sets local variable value at stack level
@@ -569,10 +569,10 @@ LJLIB_CF(debug_setMetatable)
 }
 
 //********************************************************************************************************************
-// debug.getEnv(object:any):table
+// debug.getEnv(function:func):table
 //
-// Returns the environment of the given object.  The object can be a Tiri function, a thread, or a userdata.
-// For functions, this is the table that is used for global variable access within the function.
+// Returns the table used for global variable access within the given function.  Use debug.getUserValue() to access
+// the value associated with userdata.
 //
 // Example:
 //   env = debug.getEnv(myFunction)
@@ -580,20 +580,19 @@ LJLIB_CF(debug_setMetatable)
 
 LJLIB_CF(debug_getEnv)
 {
-   lj_lib_checkany(L, 1);
+   lj_lib_checkfunc(L, 1);
    lua_getfenv(L, 1);
    return 1;
 }
 
 //********************************************************************************************************************
-// debug.setEnv(object:any, table):any
+// debug.setEnv(function:func, table):func
 //
-// Sets the environment of the given object to the given table.  The object can be a Tiri function, a thread,
-// or a userdata.  For functions, this changes the table used for global variable access.  Throws an error if the
-// environment cannot be set (e.g., for C functions)
+// Sets the table used for global variable access within the given function.  Use debug.setUserValue() to associate a
+// table with userdata.
 //
-//   object - A function, thread, or userdata
-//   table  - The new environment table
+//   function - A function value
+//   table    - The new environment table
 //
 // Example:
 //   sandbox = { print = print }
@@ -601,6 +600,7 @@ LJLIB_CF(debug_getEnv)
 
 LJLIB_CF(debug_setEnv)
 {
+   lj_lib_checkfunc(L, 1);
    lj_lib_checktab(L, 2);
    L->top = L->base + 2;
    if (not lua_setfenv(L, 1)) luaL_error(L, ErrMsg::SETFENV);
@@ -1616,8 +1616,8 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "fileSources", { TiriType::Array }, {});
    reg_iface_prototype("debug", "getMetatable", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setMetatable", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "getEnv", { TiriType::Table }, { TiriType::Any });
-   reg_iface_prototype("debug", "setEnv", { TiriType::Any }, { TiriType::Any, TiriType::Table });
+   reg_iface_prototype("debug", "getEnv", { TiriType::Table }, { TiriType::Func });
+   reg_iface_prototype("debug", "setEnv", { TiriType::Func }, { TiriType::Func, TiriType::Table });
    reg_iface_prototype("debug", "getInfo", { TiriType::Table }, { TiriType::Any, TiriType::Str },
       FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("debug", "getLocal", { TiriType::Str, TiriType::Any }, { TiriType::Num, TiriType::Num });
