@@ -110,6 +110,49 @@ end
    assert(result is testFunc, "debug.setEnv should return the original object")
 end
 
+@Test function EnvRejectsUserdata()
+   user_data = regex.new('')
+
+   function get_env_dynamic(Value:any)
+      return debug.getEnv(Value)
+   end
+
+   function set_env_dynamic(Value:any)
+      return debug.setEnv(Value, {})
+   end
+
+   get_failed = false
+   try
+      get_env_dynamic(user_data)
+   except e
+      get_failed = true
+      assert(e.message.find('function') != nil, 'getEnv should report its function-only contract: ' .. e.message)
+   end
+   assert(get_failed, 'debug.getEnv should reject userdata')
+
+   set_failed = false
+   try
+      set_env_dynamic(user_data)
+   except e
+      set_failed = true
+      assert(e.message.find('function') != nil, 'setEnv should report its function-only contract: ' .. e.message)
+   end
+   assert(set_failed, 'debug.setEnv should reject userdata')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- debug.getUserValue() / debug.setUserValue()
+
+@Test function SetAndGetUserValue()
+   user_data = regex.new('')
+   user_value = { purpose = 'debug user value' }
+
+   result = debug.setUserValue(user_data, user_value)
+   assert(result is user_data, 'debug.setUserValue should return the original userdata')
+   assert(debug.getUserValue(user_data) is user_value,
+      'debug.getUserValue should return the table assigned by debug.setUserValue')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- debug.getInfo()
 
