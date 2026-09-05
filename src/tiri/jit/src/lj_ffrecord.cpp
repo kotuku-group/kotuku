@@ -698,7 +698,7 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
    else if (TypeStr->len IS 6 and memcmp(type_name, "struct", 6) IS 0) *Result = AET::STRUCT;
    else if (TypeStr->len IS 7 and memcmp(type_name, "pointer", 7) IS 0) *Result = AET::PTR;
    // Source syntax uses "obj", but array:type() returns the canonical runtime name "object".  Accept both so that
-   // array.new(Size, Existing:type()) records consistently with interpreted execution.
+   // array.new(Existing:type(), Size) records consistently with interpreted execution.
    else if (TypeStr->len IS 3 and memcmp(type_name, "obj", 3) IS 0) *Result = AET::OBJECT;
    else if (TypeStr->len IS 6 and memcmp(type_name, "object", 6) IS 0) *Result = AET::OBJECT;
    else if (TypeStr->len IS 5 and memcmp(type_name, "table", 5) IS 0) *Result = AET::TABLE;
@@ -710,30 +710,30 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
 }
 
 //********************************************************************************************************************
-// Record array.new(size, literal_type).  String-initialised byte arrays are left for the interpreter for now.
+// Record array.new(literal_type, size).
 
 static void recff_array_new(jit_State* J, RecordFFData* rd)
 {
-   TRef size_ref = J->base[0];
-   TRef type_ref = size_ref ? J->base[1] : 0;
+   TRef type_ref = J->base[0];
+   TRef size_ref = type_ref ? J->base[1] : 0;
 
-   if (!type_ref) {
+   if (not size_ref) {
       recff_nyi(J, rd);
       return;
    }
 
-   if (not tvisnumber(&rd->argv[0])) {
+   if (not tvisnumber(&rd->argv[1])) {
       recff_nyi(J, rd);
       return;
    }
 
-   if (not tvisstr(&rd->argv[1]) or not tref_isk(type_ref)) {
+   if (not tvisstr(&rd->argv[0]) or not tref_isk(type_ref)) {
       recff_nyi(J, rd);
       return;
    }
 
    AET elem_type;
-   if (not array_elemtype_from_string(strV(&rd->argv[1]), &elem_type) or elem_type IS AET::PTR or
+   if (not array_elemtype_from_string(strV(&rd->argv[0]), &elem_type) or elem_type IS AET::PTR or
        elem_type IS AET::STRUCT) {
       recff_nyi(J, rd);
       return;

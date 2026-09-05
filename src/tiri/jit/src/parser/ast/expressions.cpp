@@ -825,11 +825,11 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       case TokenKind::ArrayTyped: {
          // Typed array expression: array<type> or array<type, size> or array<type, expr> { values }
          // Desugar to:
-         //   array<type>             -> array.new(0, 'type')
-         //   array<type, size>       -> array.new(size, 'type')
-         //   array<type, expr>       -> array.new(expr, 'type')
+         //   array<type>             -> array.new('type', 0)
+         //   array<type, size>       -> array.new('type', size)
+         //   array<type, expr>       -> array.new('type', expr)
          //   array<type> { v1, v2 }  -> array.of('type', v1, v2, ...)
-         //   array<type, size> { v1, v2 } -> array.new(max(size, #values), 'type') then populate
+         //   array<type, size> { v1, v2 } -> array.new('type', max(size, #values)) then populate
 
          Token start = this->ctx.tokens().current();
          GCstr *type_str = start.payload().as_string();
@@ -959,16 +959,15 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          }
          else {
             // Empty braces {} or no initialiser: use array.new()
-            // array<type> or array<type, size> -> array.new(size, 'type')
+            // array<type> or array<type, size> -> array.new('type', size)
 
-            // Build argument list: (size, 'type')
+            // Build argument list: ('type', size)
 
             ExprNodeList args;
+            args.push_back(make_literal_expr(span, LiteralValue::string(type_str)));
             if (size_expr) args.push_back(std::move(size_expr));
             else args.push_back(make_literal_expr(span, LiteralValue::number(
                specified_size.is_literal() ? double(specified_size.literal) : 0.0)));
-
-            args.push_back(make_literal_expr(span, LiteralValue::string(type_str)));
 
             node = make_builtin_call(this->ctx, span, FastFunc::array_new, std::move(args), TiriType::Array);
          }

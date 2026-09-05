@@ -924,3 +924,32 @@ end
       assert(f10 is "hello", "Expected 'hello', got '" .. f10 .. "'")
    end
 end
+
+@Test function ToArrayCopiesRawBytes()
+   local source = 'A\0\255é'
+   local bytes:array<byte> = source.toArray()
+   local namespace_bytes:array<byte> = string.toArray(source)
+   assert(#bytes is #source and #namespace_bytes is #source, 'toArray should preserve the byte length')
+   for index in {0 to #source} do
+      assert(bytes[index] is source.byte(index), 'toArray method changed a source byte')
+      assert(namespace_bytes[index] is bytes[index], 'Namespace and method conversions should agree')
+   end
+   assert(bytes[1] is 0 and bytes[2] is 255, 'toArray should preserve NUL and high bytes')
+   bytes[0] = 90
+   assert(source.byte(0) is 65 and namespace_bytes[0] is 65, 'toArray should return an independent copy')
+
+   local empty = ''.toArray()
+   assert(#empty is 0 and empty.type() is 'byte', 'Empty strings should produce empty byte arrays')
+   empty.push('x')
+   assert(empty.getString() is 'x', 'Converted arrays should support byte buffer operations')
+
+   local mutable = string.alloc(3)
+   local mutable_bytes = mutable.toArray()
+   assert(#mutable_bytes is 3 and mutable_bytes[0] is 0 and mutable_bytes[2] is 0,
+      'toArray should copy mutable string buffers')
+end
+
+@Test function ToArrayRejectsMissingString()
+   local convert:any = string.toArray
+   expect_nil_string_error(() => do convert(nil) end, 'string.toArray')
+end

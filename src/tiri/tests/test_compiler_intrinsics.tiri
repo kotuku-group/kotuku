@@ -5,7 +5,7 @@ struct CompilerIntrinsicRecord
 end
 
 function replacement_range_slice(Value:any, Bounds:any):str return 'replacement slice' end
-function replacement_array_new(Size:num, Type:str):str return 'replacement array.new' end
+function replacement_array_new(Type:str, Size:num):str return 'replacement array.new' end
 function replacement_array_of(Type:str, ...):str return 'replacement array.of' end
 function replacement_array_resize(Value:any, Size:num):str return 'replacement array.resize' end
 function replacement_struct_new(Name:str, Initialiser:table):str return 'replacement struct.new' end
@@ -117,7 +117,7 @@ end
       'Explicit range calls should retain dynamic lookup semantics')
    assert(explicit_slice is 'replacement slice',
       'Explicit range.slice calls should retain dynamic field lookup semantics')
-   assert(array.new(1, 'int') is 'replacement array.new' and array.of('int', 1) is 'replacement array.of',
+   assert(array.new('int', 1) is 'replacement array.new' and array.of('int', 1) is 'replacement array.of',
       'Explicit array constructor calls should retain dynamic field lookup semantics')
    assert(struct.new('CompilerIntrinsicRecord', {}) is 'replacement struct.new',
       'Explicit struct.new calls should retain dynamic field lookup semantics')

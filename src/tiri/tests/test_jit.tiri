@@ -1191,7 +1191,7 @@ function constant_target(Value)
 end
 
 function array_method_clear_workload(Count):str
-   local result = array.new("")
+   local result = string.toArray("")
 
    for i in {1 into Count} do
       result.clear()
@@ -1202,7 +1202,7 @@ function array_method_clear_workload(Count):str
 end
 
 function array_method_resize_workload(Count):str
-   local result = array.new("abcdef")
+   local result = string.toArray("abcdef")
 
    for i in {1 into Count} do
       result.resize(0)
@@ -1213,7 +1213,7 @@ function array_method_resize_workload(Count):str
 end
 
 function array_method_push_workload(Count):str
-   local result = array.new("")
+   local result = string.toArray("")
 
    for i in {1 into Count} do
       result.push("push")

@@ -139,7 +139,7 @@ end
 
    err = proc.sleep()
    assert(err is ERR_Okay, '404 processing failed: ' .. mSys.GetErrorMsg(err))
-   assert(http.error is ERR_Okay, '404 HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.error is ERR_HTTPStatus, '404 response should report HTTPStatus, got: ' .. mSys.GetErrorMsg(http.error))
    assert(http.status is 404, 'Expected 404 Not Found, got: ' .. http.status)
 
    print('Route not found test passed - 404 received')
@@ -171,7 +171,7 @@ end
 
    err = proc.sleep()
    assert(err is ERR_Okay, '405 processing failed: ' .. mSys.GetErrorMsg(err))
-   assert(http.error is ERR_Okay, '405 HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.error is ERR_HTTPStatus, '405 response should report HTTPStatus, got: ' .. mSys.GetErrorMsg(http.error))
    assert(http.status is 405, 'Expected 405 Method Not Allowed, got: ' .. http.status)
 
    print('Method not allowed test passed - 405 received')

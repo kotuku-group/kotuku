@@ -1298,7 +1298,7 @@ private:
       bool is_of = member.member.symbol->hash IS kt::strhash("of");
       bool is_new = member.member.symbol->hash IS kt::strhash("new");
       if (not is_of and not is_new) return std::nullopt;
-      size_t position = is_of ? 0 : 1;
+      size_t position = 0;
       if (position >= Call.arguments.size() or Call.arguments[position]->kind != AstNodeKind::LiteralExpr) {
          return std::nullopt;
       }

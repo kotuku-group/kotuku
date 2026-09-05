@@ -630,10 +630,10 @@ end
 
 @Test function testTiriArraySafeIndexEmptyArray()
    -- Test safe navigation on empty arrays
-   emptyInt = array.new(0, 'int')
+   emptyInt = array.new('int', 0)
    assert(emptyInt?[0] is nil, "Safe index on empty array should return nil")
 
-   emptyStr = array.new(0, 'str')
+   emptyStr = array.new('str', 0)
    assert(emptyStr?[0] is nil, "Safe index on empty string array should return nil")
 end
 

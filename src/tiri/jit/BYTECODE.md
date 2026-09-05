@@ -530,7 +530,7 @@ retains `ASGETV` or `ASGETB` so a native-array value can preserve safe out-of-bo
 ### 5.7 Example: Array Access Pattern
 
 ```lua
-local arr = array.new(100, "integer")
+local arr = array.new("int", 100)
 arr[0] = 42        -- BC_ASETB if type known, else BC_TSETB
 local x = arr[i]   -- BC_AGETV if type known, else BC_TGETV
 ```

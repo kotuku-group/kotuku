@@ -26,21 +26,21 @@ end
       'float', 'double' }
 
    for _, element_type in element_types do
-      local indexed = array.new(1, element_type)
+      local indexed = array.new(element_type, 1)
       expect_failure(() => do indexed[0] = '12' end, element_type .. ' indexed store accepted a string')
 
-      local pushed = array.new(0, element_type)
+      local pushed = array.new(element_type, 0)
       if element_type != 'byte' then
          expect_failure(() => do pushed.push('12') end, element_type .. ' push accepted a string')
       end
 
-      local inserted = array.new(1, element_type)
+      local inserted = array.new(element_type, 1)
       expect_failure(() => do inserted.insert(0, '12') end, element_type .. ' insert accepted a string')
       expect_failure(() => do inserted.fill('12') end, element_type .. ' fill accepted a string')
       expect_failure(() => do array.of(element_type, '12') end, element_type .. ' constructor accepted a string')
       expect_failure(() => do inserted.copy({ [0]='12' }) end, element_type .. ' table copy accepted a string')
 
-      local source = array.new(1, element_type)
+      local source = array.new(element_type, 1)
       source[0] = 1
       expect_failure(() => do source.mapSame(Value => str: '12') end, element_type .. ' map accepted a string')
    end
@@ -58,7 +58,7 @@ end
    expect_failure(() => do array.of('str', 12) end, 'String constructor accepted a number')
    expect_failure(() => do indexed.copy({ [0]=12 }) end, 'String table copy accepted a number')
    expect_failure(() => do indexed.mapSame(Value => num: 12) end, 'String map accepted a number')
-   expect_failure(() => array.new(0, 'string'), "array.new() accepted the removed 'string' alias")
+   expect_failure(() => array.new('string', 0), "array.new() accepted the removed 'string' alias")
    expect_failure(() => array.of('string', 'value'), "array.of() accepted the removed 'string' alias")
 end
 
@@ -85,7 +85,7 @@ end
 
 @Test function RemovedObjectAliasIsRejectedByFactories()
    local array_of:any = array.of
-   expect_failure(() => array.new(0, 'object'), "array.new() accepted the removed 'object' alias")
+   expect_failure(() => array.new('object', 0), "array.new() accepted the removed 'object' alias")
    expect_failure(() => any: array_of('object'), "array.of() accepted the removed 'object' alias")
 end
 
@@ -93,7 +93,7 @@ end
    local numeric_types = array<str> { 'byte', 'int8', 'int16', 'int', 'int64', 'uint8', 'uint16', 'uint', 'uint64',
       'float', 'double' }
    for _, element_type in numeric_types do
-      local values = array.new(1, element_type)
+      local values = array.new(element_type, 1)
       values[0] = 9
       values[0] = nil
       assert(values[0] is 0, element_type .. ' nil store did not produce zero')
@@ -167,4 +167,25 @@ end
    expect_failure(() => do ordinary[0] = 'A' end, 'Byte indexed store accepted a string element')
    expect_failure(() => do ordinary.insert(0, 'A') end, 'Byte insert accepted a string element')
    expect_failure(() => do ordinary.fill('A') end, 'Byte fill accepted a string element')
+end
+
+@Test function ConstructorRequiresTypeThenSize()
+   local values:array<int> = array.new('int', 3)
+   assert(#values is 3 and values[0] is 0, 'Type-first construction should allocate zero-filled elements')
+   local empty:array<double> = array.new('double', 0)
+   assert(#empty is 0, 'Type-first construction should support empty arrays')
+   local nested:array<array<int>> = array.new('array<int>', 2)
+   nested[0] = values
+   assert(nested[0][0] is 0, 'Type-first construction should retain recursive member types')
+   local structures = array.new('struct<ValidationElement>', 1)
+   structures[0] = struct<ValidationElement> { Value=42 }
+   assert(structures[0].Value is 42, 'Type-first construction should support named structures')
+
+   -- Indirect calls exercise runtime validation without compile-time argument rejection.
+   local construct:any = array.new
+   expect_failure(() => do construct(3, 'int') end, 'Constructor accepted the old size-first order')
+   expect_failure(() => do construct('hello') end, 'Constructor accepted the removed string overload')
+   expect_failure(() => do construct('int') end, 'Constructor accepted a missing size')
+   expect_failure(() => do construct('byte', 'hello') end, 'Constructor accepted string contents as size')
+   expect_failure(() => do construct('int', -1) end, 'Constructor accepted a negative size')
 end
