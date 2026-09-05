@@ -311,18 +311,18 @@ end
 
 function classOffsetExpression(Class:table, Field:table):str
    if not Field.needsClassOffset or (Field.relativeOffset is nil) or (Class.storageOrigin is nil) then
-      error(f"Missing class-relative offset metadata for {glModule.name}.{Class.name}.{Field.name}.")
+      raise f"Missing class-relative offset metadata for {glModule.name}.{Class.name}.{Field.name}."
    end
 
    local symbol = Class.storageOffsetSymbol
    if not symbol then
-      error(f"Missing storage-owner metadata for {glModule.name}.{Class.name}.{Field.name}.")
+      raise f"Missing storage-owner metadata for {glModule.name}.{Class.name}.{Field.name}."
    end
 
    local entry:table = glClassOffsets[symbol]
    if entry then
       if entry.origin != Class.storageOrigin then
-         error(f"Conflicting storage origins collected for {glModule.name}.{Class.name}.")
+         raise f"Conflicting storage origins collected for {glModule.name}.{Class.name}."
       end
    else
       entry = { symbol=symbol, origin=Class.storageOrigin }
@@ -355,7 +355,7 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
                output(Indent .. f'Elements = {Field.arg};')
                output(Indent .. f'Value = ({FieldType} *)(((int8_t *)this) + {offset});')
             else
-               error(f"Detected embedded field array '{FidName}' with no size defined.")
+               raise f"Detected embedded field array '{FidName}' with no size defined."
             end
          end
       elseif Field.flags has FD_STRING then
@@ -697,18 +697,18 @@ function parseClassOffsetSections(Content:str, Path:str):table
 
       if start_name then
          if open_section then
-            error(f"Malformed class-offset markers in {Path}: module {start_name} starts inside {open_section.name}.")
+            raise f"Malformed class-offset markers in {Path}: module {start_name} starts inside {open_section.name}."
          end
          if sections[start_name] then
-            error(f"Duplicate class-offset section for module {start_name} in {Path}.")
+            raise f"Duplicate class-offset section for module {start_name} in {Path}."
          end
          open_section = { name=start_name, start=cursor }
       elseif end_name then
          if not open_section then
-            error(f"Malformed class-offset markers in {Path}: module {end_name} ends without a start marker.")
+            raise f"Malformed class-offset markers in {Path}: module {end_name} ends without a start marker."
          end
          if end_name != open_section.name then
-            error(f"Malformed class-offset markers in {Path}: module {open_section.name} ends as {end_name}.")
+            raise f"Malformed class-offset markers in {Path}: module {open_section.name} ends as {end_name}."
          end
          open_section.finish = cursor + #line
          sections[open_section.name] = open_section
@@ -719,7 +719,7 @@ function parseClassOffsetSections(Content:str, Path:str):table
    end
 
    if open_section then
-      error(f"Malformed class-offset markers in {Path}: module {open_section.name} has no end marker.")
+      raise f"Malformed class-offset markers in {Path}: module {open_section.name} has no end marker."
    end
 
    return sections
@@ -734,7 +734,7 @@ function parseClassOffsetEntries(Content:str, Path:str):table
    for _, line in Content.split('\n') do
       local symbol, value = rx_offset_constant.extract(line)
       if symbol then
-         if constants[symbol] then error(f"Duplicate class-offset constant {symbol} in {Path}.") end
+         if constants[symbol] then raise f"Duplicate class-offset constant {symbol} in {Path}." end
          constants[symbol] = { value=tonumber(value) }
       end
    end
@@ -799,10 +799,10 @@ function validateCollectedClassOffsets(Content:str, Path:str)
 
    for symbol, collected in pairs(glClassOffsets) do
       local stored = constants[symbol]
-      if not stored then error(f"Class-offset constant {symbol} is missing from {Path}.") end
+      if not stored then raise f"Class-offset constant {symbol} is missing from {Path}." end
       if stored.value != collected.origin then
-         error(f"Class-offset constant {symbol} is {stored.value} in {Path}, but live metadata reports " ..
-            f'{collected.origin}.')
+         raise f"Class-offset constant {symbol} is {stored.value} in {Path}, but live metadata reports " ..
+            f'{collected.origin}.'
       end
    end
 end
@@ -820,7 +820,7 @@ function prepareClassOffsetOutput():table
       active_path = 'sdk:include/kotuku/system/linux_class_offsets.h'
    else
       if glClassOffsets.empty() then return nil end
-      error(f"No generated class-offset table is available for platform {state.platform}.")
+      raise f"No generated class-offset table is available for platform {state.platform}."
    end
 
    if glClassOffsets.empty() then return nil end
@@ -844,7 +844,7 @@ global function saveOutput()
       if glModule.name?? then
          outPath = 'sdk:include/kotuku/modules/' .. glModule.name.lower() .. '.h'
       else
-         error('No output path specified in command-line.')
+         raise 'No output path specified in command-line.'
       end
    end
 

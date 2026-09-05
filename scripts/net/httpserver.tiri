@@ -1335,7 +1335,8 @@ function addRoute(self:table, route:table)
          if route.middleware is <table> then
             for j, mw in ipairs(route.middleware) do
                if mw != <func> then
-                  error('Invalid middleware for route ' .. method .. ' ' .. pattern .. ' at index ' .. j .. ' - must be a function')
+                  raise 'Invalid middleware for route ' .. method .. ' ' .. pattern .. ' at index ' .. j ..
+                     ' - must be a function'
                end
             end
          end
@@ -1350,10 +1351,10 @@ function addRoute(self:table, route:table)
 
          msg('Route registered: ' .. method .. ' ' .. pattern)
       else
-         error('Invalid handler for route ' .. method .. ' ' .. pattern .. ' - must be a function')
+         raise 'Invalid handler for route ' .. method .. ' ' .. pattern .. ' - must be a function'
       end
    else
-      error('Invalid route configuration - missing pattern, method, or handler')
+      raise 'Invalid route configuration - missing pattern, method, or handler'
    end
 end
 
@@ -1399,7 +1400,7 @@ function matchRoute(serverInstance, method, path):<table, table>
          try
             route.compiledRegex = regex.new(f'^{regexPattern}$')
          except ex
-            error('matchRoute: Failed to compile regex: ' .. ex.message)
+            raise 'matchRoute: Failed to compile regex: ' .. ex.message
          end
       end
 
@@ -1930,7 +1931,7 @@ hslib.start = function(Options)
       if validatePort(Options.port) then
          self.port = tonumber(Options.port)
       else
-         error(f'Invalid port number: {Options.port}. Port must be between 1 and 65535.')
+         raise f'Invalid port number: {Options.port}. Port must be between 1 and 65535.'
       end
    end
 
@@ -1938,7 +1939,7 @@ hslib.start = function(Options)
       -- Validate folder input
       folder = Options.folder
       if folder.find('..') or string.startsWith(folder, '~') then
-         error(f'Invalid folder path: security violation for: {folder}')
+         raise f'Invalid folder path: security violation for: {folder}'
       end
 
       err, resolvedPath = mSys.ResolvePath(folder)
@@ -1950,7 +1951,7 @@ hslib.start = function(Options)
       assert(file_type is LOC_FOLDER, f'Folder "{self.folder}" does not exist')
    end
 
-   self.folder ?? error('The folder option is required')
+   self.folder ?? raise('The folder option is required')
 
    if Options.verbose then
       if Options.verbose is <bool> then
@@ -1966,7 +1967,7 @@ hslib.start = function(Options)
       if timeout and (timeout > 0) and (timeout <= 300) then
          self.timeout = timeout
       else
-         error('Invalid timeout: must be between 1 and 300 seconds')
+         raise 'Invalid timeout: must be between 1 and 300 seconds'
       end
    end
 
@@ -1975,7 +1976,7 @@ hslib.start = function(Options)
       if max_request_size and max_request_size > 0 then
          self.maxRequestSize = max_request_size
       else
-         error('Invalid maxRequestSize: must be greater than 0')
+         raise 'Invalid maxRequestSize: must be greater than 0'
       end
    end
 
@@ -1984,7 +1985,7 @@ hslib.start = function(Options)
       if file_chunk_size and file_chunk_size > 0 then
          self.fileChunkSize = file_chunk_size
       else
-         error('Invalid fileChunkSize: must be greater than 0')
+         raise 'Invalid fileChunkSize: must be greater than 0'
       end
    end
 
@@ -2021,7 +2022,7 @@ hslib.start = function(Options)
       elseif Options.logMessage is true then
          self.logMessage = msg
       else
-         error('logMessage option must be a function')
+         raise 'logMessage option must be a function'
       end
    end
 
@@ -2036,11 +2037,11 @@ hslib.start = function(Options)
                middlewareCount++
                logMessage(self, f'Global middleware configured at index {middlewareCount}')
             else
-               error(f'Invalid middleware at index {middlewareCount + 1} - must be a function')
+               raise f'Invalid middleware at index {middlewareCount + 1} - must be a function'
             end
          end
       else
-         error('middleware option must be a table or array')
+         raise 'middleware option must be a table or array'
       end
    end
 
@@ -2055,7 +2056,7 @@ hslib.start = function(Options)
             end
          end
       else
-         error('routes option must be a table')
+         raise 'routes option must be a table'
       end
    end
 
@@ -2124,7 +2125,7 @@ hslib.start = function(Options)
          self._middleware.insert(middleware)
          logMessage(self, 'Global middleware added')
       else
-         error('Middleware must be a function')
+         raise 'Middleware must be a function'
       end
    end
 

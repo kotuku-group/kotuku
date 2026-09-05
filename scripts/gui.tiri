@@ -79,7 +79,7 @@ gui.mtHSV = { -- HSV metatable
    __context = true,
    __name = "HSV",
    __newindex = function(Key, Value)
-      error(f'Table structure is immutable: Cannot set {Key}')
+      raise f'Table structure is immutable: Cannot set {Key}'
    end,
    __eq = function(Other:table!):bool
       return &h is Other.h and &s is Other.s and &v is Other.v and &a is Other.a
@@ -146,7 +146,7 @@ gui.mtRGB = { -- sRGB metatable
    __context = true,
    __name = "RGB",
    __newindex = function(Key, Value)
-      error(f'Table structure is immutable: Cannot set {Key}')
+      raise f'Table structure is immutable: Cannot set {Key}'
    end,
    __eq = function(Other:table!):bool
       return &r is Other.r and &g is Other.g and &b is Other.b and &a is Other.a
@@ -369,7 +369,7 @@ gui.getFontHeight = function(Font:table):<num,num>
       end
       return Font.spacing, Font.height
    except ex
-      error(f'{ex.message}\n{ex.stackTrace}')
+      raise f'{ex.message}\n{ex.stackTrace}'
    end
 end
 
@@ -407,7 +407,7 @@ gui.strToRGB = function(Value:str!):table
          a = nrgb.alpha
       }, gui.mtRGB)
    except ex
-      error(f'Parsing "{Value}" failed: {ex.message}\n{ex.stackTrace}')
+      raise f'Parsing "{Value}" failed: {ex.message}\n{ex.stackTrace}'
    end
 end
 
@@ -491,7 +491,7 @@ gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:n
             gradient.free()
             return
          else
-            error(ex)
+            raise
          end
       end
    else
@@ -522,12 +522,12 @@ gui.createIcon = function(Scene:obj!, Path:str!, Size:num, Theme:any!, Name:str)
       if gui.iconThemes[Theme] then
          lGradient = gui.iconThemes[Theme]
       else
-         error(f'gui.createIcon() theme {Theme} not recognised.')
+         raise f'gui.createIcon() theme {Theme} not recognised.'
       end
 
       Name ??= Theme.lower() .. '/' .. Path.lower()
    else
-      error('Invalid Theme specified.')
+      raise 'Invalid Theme specified.'
    end
 
    Name ??= Path
@@ -615,7 +615,7 @@ gui.getTheme = function(Object:obj):table
    elseif obj.class(Object).name is 'VectorScene' then
       scene = Object
    else
-      error(f'Provided object class {Object.class()} is unsupported.')
+      raise f'Provided object class {Object.class()} is unsupported.'
    end
 
    state = scene.state()
@@ -645,7 +645,7 @@ gui.setTheme = function(Object:obj, Theme:str!):table
       elseif obj.class(Object).name is 'VectorScene' then
          scene = Object
       else
-         error(f'Provided object class {Object.class()} is unsupported.')
+         raise f'Provided object class {Object.class()} is unsupported.'
       end
 
       state = scene.state()

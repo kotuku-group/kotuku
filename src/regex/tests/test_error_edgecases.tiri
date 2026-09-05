@@ -4,7 +4,7 @@
    try
       regex.new("\\x")
    success
-      error("Invalid escape should trigger compilation error")
+      assert(false, "Invalid escape should trigger compilation error")
    end
 end
 
@@ -12,7 +12,7 @@ end
    try
       regex.new("[abc")
    success
-      error("Mismatched bracket should raise error")
+      assert(false, "Mismatched bracket should raise error")
    end
 end
 
@@ -20,7 +20,7 @@ end
    try
       regex.new("\\p{NotAProperty}")
    success
-      error("Unknown Unicode property should be rejected")
+      assert(false, "Unknown Unicode property should be rejected")
    end
 end
 

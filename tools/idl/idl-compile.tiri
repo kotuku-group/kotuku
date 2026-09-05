@@ -146,7 +146,7 @@ global function flags(Prefix:str, Options:table, ...)
             end
          end
       else
-         error("Invalid flag type for '" .. Prefix .. "', expected string, got '" .. type(flag_def) .. "'")
+         raise "Invalid flag type for '" .. Prefix .. "', expected string, got '" .. type(flag_def) .. "'"
       end
       f++
    end
@@ -178,7 +178,7 @@ global function enums(Prefix, Options:table, ...)
             list[name] = client_val
          end
       else
-         error("Invalid enum type for '" .. Prefix .. "', expected string, got '" .. type(enum_def) .. "'")
+         raise "Invalid enum type for '" .. Prefix .. "', expected string, got '" .. type(enum_def) .. "'"
       end
       inc++
    end
@@ -226,7 +226,7 @@ global function platform(Platform:str, Function:func)
    elseif Platform.lower() is 'x11' then
       Function()
    else
-      error("Unrecognised platform '" .. Platform .. "'")
+      raise "Unrecognised platform '" .. Platform .. "'"
    end
 end
 
@@ -453,7 +453,7 @@ global function extractStructFields(Def:str, Origin:str):table
 
       if type?? then
          if type.startsWith('!') then
-            error('struct() declarations should not contain virtual fields.')
+            raise 'struct() declarations should not contain virtual fields.'
          else
             field = cType({ type=type.trim(), name=name.trim() }, Origin)
             fields.insert(field)
@@ -461,7 +461,7 @@ global function extractStructFields(Def:str, Origin:str):table
       elseif not content.trim()?? then
          -- Ignore empty line
       else
-         error(f"Unable to process line '{content}' for '{Origin}'")
+         raise f"Unable to process line '{content}' for '{Origin}'"
       end
    end
 
@@ -511,7 +511,7 @@ global function saveOutput()
       if glModuleName?? then
          outPath = f'sdk:data/config/defs/{glModuleName.lower()}.def'
       else
-         error('No output path specified in command-line.')
+         raise 'No output path specified in command-line.'
       end
    end
 

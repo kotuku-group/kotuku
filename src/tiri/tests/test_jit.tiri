@@ -263,7 +263,7 @@ function build_trace()
       end
    end
 
-   error("Failed to create a JIT trace for inspection")
+   raise "Failed to create a JIT trace for inspection"
 end
 
 function ir_opcode(IrOt)
@@ -1072,7 +1072,7 @@ end
    try
       resize_during_array_loop(values, true)
    success
-      error('Shrinking an aliased array during traversal should invalidate the bounds proof')
+      assert(false, 'Shrinking an aliased array during traversal should invalidate the bounds proof')
    end
 end
 
@@ -1092,7 +1092,7 @@ end
    try
       clear_during_array_loop(values, true)
    success
-      error('Clearing an aliased array during traversal should invalidate the bounds proof')
+      assert(false, 'Clearing an aliased array during traversal should invalidate the bounds proof')
    end
 end
 
@@ -1112,7 +1112,7 @@ end
    try
       reassign_during_array_loop(values, true)
    success
-      error('Reassigning the traversed array should invalidate the bounds proof')
+      assert(false, 'Reassigning the traversed array should invalidate the bounds proof')
    end
 end
 
@@ -1276,7 +1276,7 @@ function build_try_materialisation_trace()
       end
    end
 
-   error("Failed to create a try-entry materialisation trace for inspection")
+   raise "Failed to create a try-entry materialisation trace for inspection"
 end
 
 -- Keep trace setup out of an enclosing Flute runner trace.  Flushing that trace while this helper is being recorded
@@ -1316,12 +1316,12 @@ end
 
 function range_try_success_workload():num
    local function compute(Value:num):num
-      if Value < 0 then error("Negative value not allowed") end
+      if Value < 0 then raise "Negative value not allowed" end
       return Value * Value
    end
 
    local function fetchData(Id:num):table
-      if Id is 0 then error("Invalid ID") end
+      if Id is 0 then raise "Invalid ID" end
       return { id = Id, value = Id * 10 }
    end
 
@@ -1408,12 +1408,12 @@ result = 0
 
 for outer_index in {0 to 120} do
    local function compute(Value)
-      if Value < 0 then error("Negative value not allowed") end
+      if Value < 0 then raise("Negative value not allowed") end
       return Value * Value
    end
 
    local function fetch_data(Id)
-      if Id is 0 then error("Invalid ID") end
+      if Id is 0 then raise("Invalid ID") end
       return { id = Id, value = Id * 10 }
    end
 
@@ -1539,7 +1539,7 @@ end
    except e
       assert(e.message.find('finite integer'), 'Traced math.ldexp() should reject fractional exponents')
    success
-      error('Traced math.ldexp() accepted a fractional exponent')
+      assert(false, 'Traced math.ldexp() accepted a fractional exponent')
    end
 
    math.randomSeed(97531)
@@ -1550,7 +1550,7 @@ end
    except e
       assert(e.message.find('greater than zero'), 'Traced math.random() should reject an empty range')
    success
-      error('Traced math.random() accepted an empty range')
+      assert(false, 'Traced math.random() accepted an empty range')
    end
    assert(math.random() is expected, 'A failed traced math.random() call must not consume PRNG state')
 
@@ -1559,7 +1559,7 @@ end
    except e
       assert(e.message.find('finite integer'), 'Traced math.random() should reject a fractional stop')
    success
-      error('Traced math.random() accepted a fractional stop')
+      assert(false, 'Traced math.random() accepted a fractional stop')
    end
 
    try
@@ -1567,7 +1567,7 @@ end
    except e
       assert(e.message.find('must not exceed'), 'Traced math.random() should reject reversed explicit bounds')
    success
-      error('Traced math.random() accepted reversed explicit bounds')
+      assert(false, 'Traced math.random() accepted reversed explicit bounds')
    end
 
    try
@@ -1575,7 +1575,7 @@ end
    except e
       assert(e.message.find('must not exceed'), 'Traced math.clamp() should reject reversed bounds')
    success
-      error('Traced math.clamp() accepted reversed bounds')
+      assert(false, 'Traced math.clamp() accepted reversed bounds')
    end
 
    try
@@ -1583,7 +1583,7 @@ end
    except e
       assert(e.message.find('must not be NaN'), 'Traced math.clamp() should reject a NaN bound')
    success
-      error('Traced math.clamp() accepted a NaN bound')
+      assert(false, 'Traced math.clamp() accepted a NaN bound')
    end
 
    local nan = 0 / 0
@@ -1793,7 +1793,7 @@ end
 @Test function TraceConstantsAndSnapshot()
    trace_no, info = build_trace()
    if type(info.nk) is "number" and info.nk <= 0 then
-      error("Trace did not expose any constants for verification")
+      raise "Trace did not expose any constants for verification"
    end
 
    k_value, k_type, k_slot = nil, nil, nil
@@ -1834,7 +1834,7 @@ end
    assert(type(addr) is "number", "traceMC should return a code address")
    assert(type(loop_flag) is "number", "traceMC should return loop flag information")
    if #mcode <= 0 then
-      error("traceMC returned an empty machine code buffer")
+      raise "traceMC returned an empty machine code buffer"
    end
 
    exit_addr = jit.util.traceExitStub(trace_no, 0)

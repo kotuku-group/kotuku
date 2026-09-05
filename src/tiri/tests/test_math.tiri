@@ -6,7 +6,7 @@ function expect_math_error(Call, ParameterText, ConstraintText)
       assert(e.message.find(ConstraintText), f'Expected error to mention {ConstraintText}: {e.message}')
       return
    end
-   error(f'Expected math call to reject invalid {ParameterText}')
+   raise f'Expected math call to reject invalid {ParameterText}'
 end
 
 function expect_random_error_without_consumption(Call, ParameterText, ConstraintText)

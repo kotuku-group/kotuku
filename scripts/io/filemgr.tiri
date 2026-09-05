@@ -96,7 +96,7 @@ end
 
 io.ui.copy = function(Source:any!, Dest:str!, Move:bool!)
    if Source is <str> then Source = { Source } end
-   if Source != <table> then error('Provided Source is not a table') end
+   if Source != <table> then raise 'Provided Source is not a table' end
 
    -- Scan the file list and move or copy each file to the Dest folder
 
@@ -210,7 +210,7 @@ end
 
 io.ui.delete = function(Paths)
    if Paths is <str> then Paths = { Paths } end
-   if Paths != <table> then error('Path must be a string or string list.') end
+   if Paths != <table> then raise 'Path must be a string or string list.' end
 
    for path in values(Paths) do
       mSys.DeleteFile(path, function(Feedback)

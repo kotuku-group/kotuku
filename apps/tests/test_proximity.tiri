@@ -48,7 +48,7 @@ function rawProxyRequestOnPort(ProxyPort:num, Request:str, Timeout:num):str
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Proxy client read failed: ' .. mSys.GetErrorMsg(err))
+            raise 'Proxy client read failed: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -166,7 +166,7 @@ function echoIncoming(Server:obj, Client:obj)
       elseif err is ERR_Disconnected then
          return
       else
-         error('Echo server read failed: ' .. mSys.GetErrorMsg(err))
+         raise 'Echo server read failed: ' .. mSys.GetErrorMsg(err)
       end
    end
 end
@@ -186,7 +186,7 @@ function stalledOriginIncoming(Server:obj, Client:obj)
    local buffer = string.alloc(4096)
    local err, read_len = Client.acRead(buffer)
    if err != ERR_Okay and err != ERR_TimeOut and err != ERR_Disconnected then
-      error('Stalled origin read failed: ' .. mSys.GetErrorMsg(err))
+      raise 'Stalled origin read failed: ' .. mSys.GetErrorMsg(err)
    end
 end
 
@@ -252,7 +252,7 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
          glUpstreamProxyBuffers[key] = nil
          return
       else
-         error('Upstream proxy test server read failed: ' .. mSys.GetErrorMsg(err))
+         raise 'Upstream proxy test server read failed: ' .. mSys.GetErrorMsg(err)
       end
    end
 end
@@ -307,7 +307,7 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Tunnel client read failed: ' .. mSys.GetErrorMsg(err))
+            raise 'Tunnel client read failed: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -618,7 +618,7 @@ end
       recordFlows = false,
       verbose     = false,
       onRequest   = function(Request:table)
-         error('onRequest test failure')
+         raise 'onRequest test failure'
       end,
       onError     = function(Error:table)
          errors.insert(Error)
@@ -714,7 +714,7 @@ function ConnectTunnelPassesSSLHandshake()
                check Client.acWrite(response)
             end
          elseif err != ERR_Disconnected then
-            error('SSL tunnel server read failed: ' .. mSys.GetErrorMsg(err))
+            raise 'SSL tunnel server read failed: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
@@ -766,7 +766,7 @@ function ConnectTunnelPassesSSLHandshake()
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('SSL tunnel client read failed: ' .. mSys.GetErrorMsg(err))
+            raise 'SSL tunnel client read failed: ' .. mSys.GetErrorMsg(err)
          end
       end
    })

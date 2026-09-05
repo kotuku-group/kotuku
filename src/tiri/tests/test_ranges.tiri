@@ -340,13 +340,13 @@ end
    try
       range(nil, 5)
    success
-     error("nil start should throw error")
+     assert(false, "nil start should throw error")
    end
 
    try
       return range(0, nil)
    success
-      error("nil stop should throw error")
+      assert(false, "nil stop should throw error")
    end
 end
 
@@ -355,7 +355,7 @@ end
    try
       range(0, 10, false, 0)
    success
-      error("zero step should throw error")
+      assert(false, "zero step should throw error")
    end
 end
 
@@ -732,25 +732,25 @@ end
    try
       tmp = range("a", 5)
    success
-      error("string start should throw error")
+      assert(false, "string start should throw error")
    end
 
    try
       tmp = range(0, "b")
    success
-      error("string stop should throw error")
+      assert(false, "string stop should throw error")
    end
 
    try
       range({}, 5)
    success
-      error("table start should throw error")
+      assert(false, "table start should throw error")
    end
 
    try
       return range(0, {})
    success
-      error("table stop should throw error")
+      assert(false, "table stop should throw error")
    end
 end
 
@@ -764,14 +764,14 @@ end
       b = "y"
       tmp = {a to b}  -- Parser treats this as range literal, throws at runtime
    success
-      error("range literal with string variables should throw")
+      assert(false, "range literal with string variables should throw")
    end
 
    -- Direct range() call with strings should also throw
    try
       bad = range("start", "stop")
    success
-      error("range with string arguments should throw")
+      assert(false, "range with string arguments should throw")
    end
 
    fractional = {1.5 to 5}
@@ -786,19 +786,19 @@ end
    try
       result = {nil to 5}
    success
-      error("range literal with nil start should throw")
+      assert(false, "range literal with nil start should throw")
    end
 
    try
       result = {0 to nil}
    success
-      error("range literal with nil stop should throw")
+      assert(false, "range literal with nil stop should throw")
    end
 
    try
       result = {0 to 10 by 0}
    success
-      error("range literal with zero step should throw")
+      assert(false, "range literal with zero step should throw")
    end
 
 end
@@ -1786,7 +1786,7 @@ end
       step = 0
       for value in {start to stop by step} do end
    success
-      error("direct runtime range should reject a zero step")
+      assert(false, "direct runtime range should reject a zero step")
    end
    try
       start = 0
@@ -1794,21 +1794,21 @@ end
       step = -0.0
       for value in {start to stop by step} do end
    success
-      error("direct runtime range should reject a negative-zero step")
+      assert(false, "direct runtime range should reject a negative-zero step")
    end
    try
       start = 0 / 0
       stop = 1
       for value in {start to stop} do end
    success
-      error("direct runtime range should reject a NaN bound")
+      assert(false, "direct runtime range should reject a NaN bound")
    end
    try
       start = 0
       stop = math.huge
       for value in {start to stop} do end
    success
-      error("direct runtime range should reject an infinite bound")
+      assert(false, "direct runtime range should reject an infinite bound")
    end
    try
       start = 1e15
@@ -1816,7 +1816,7 @@ end
       step = 0.1
       for value in {start to stop by step} do end
    success
-      error("direct runtime range should reject unrepresentable progress")
+      assert(false, "direct runtime range should reject unrepresentable progress")
    end
 end
 
@@ -1824,20 +1824,20 @@ end
    try
       tmp = range(1e15, 1e15 + 1, false, 0.1).toArray()
    success
-      error("materialising a range with repeated generated values should fail")
+      assert(false, "materialising a range with repeated generated values should fail")
    end
 
    try
       for value in range(1e15 + 1, 1e15, false, -0.1)() do
       end
    success
-      error("iterating a reverse range with repeated generated values should fail")
+      assert(false, "iterating a reverse range with repeated generated values should fail")
    end
 
    try
       tmp = range(-9007199254740992, 9007199254740992, false, 1).length
    success
-      error("ranges with ordinals beyond exact floating-point integers should fail")
+      assert(false, "ranges with ordinals beyond exact floating-point integers should fail")
    end
 end
 
@@ -1845,32 +1845,32 @@ end
    try
       range(0, 1, false, 0)
    success
-      error("positive zero step should fail")
+      assert(false, "positive zero step should fail")
    end
    try
       range(0, 1, false, -0.0)
    success
-      error("negative zero step should fail")
+      assert(false, "negative zero step should fail")
    end
    try
       range(0 / 0, 1)
    success
-      error("NaN bounds should fail")
+      assert(false, "NaN bounds should fail")
    end
    try
       range(0, math.huge)
    success
-      error("infinite bounds should fail")
+      assert(false, "infinite bounds should fail")
    end
    try
       tmp = range(0, 1e20).length
    success
-      error("ranges too large for a Lua integer should fail")
+      assert(false, "ranges too large for a Lua integer should fail")
    end
    try
       tmp = range(0, 4294967297).toArray()
    success
-      error("ranges too large for a native array should fail before allocation")
+      assert(false, "ranges too large for a native array should fail before allocation")
    end
 end
 
@@ -1881,30 +1881,30 @@ end
    try
       tmp = "abcdef"[range(0, 4, false, 0.5)]
    success
-      error("fractional string index ranges should fail")
+      assert(false, "fractional string index ranges should fail")
    end
    data_table = {10, 20, 30}
    try
       tmp = range.slice(data_table, range(0.5, 2))
    success
-      error("fractional table index ranges should fail")
+      assert(false, "fractional table index ranges should fail")
    end
 
    data_values = array<int> { 1, 2, 3, 4 }
    try
       data_values.fill(0, range(0, 4, false, 0.5))
    success
-      error("array.fill should reject fractional ranges")
+      assert(false, "array.fill should reject fractional ranges")
    end
    try
       data_values.indexOf(2, range(0.5, 4))
    success
-      error("array.indexOf should reject fractional ranges")
+      assert(false, "array.indexOf should reject fractional ranges")
    end
    try
       tmp = range.slice(data_values, range(0, 4, false, 0.5))
    success
-      error("array slicing should reject fractional ranges")
+      assert(false, "array slicing should reject fractional ranges")
    end
 end
 

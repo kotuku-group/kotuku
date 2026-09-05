@@ -41,7 +41,7 @@ function resolveSDKPath(Path)
          msg ..= f'{path}\n'
       end
       print(f'Unable to find CMakeLists.txt after searching the following paths:\n{msg}')
-      error('A path to the Kōtuku SDK could not be determined.')
+      raise 'A path to the Kōtuku SDK could not be determined.'
    end
 
    mSys.SetVolume('sdk', sdk_path)

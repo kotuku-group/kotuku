@@ -82,7 +82,7 @@ gui.divider = function(Options:table)
       self._length      = 'height'
       -- NB: The opposing viewport must use fixed y and yOffset coordinates.
    else
-      error('A left/right or top/bottom pair must be specified.')
+      raise 'A left/right or top/bottom pair must be specified.'
    end
 
    self._vp = self._primary.parent

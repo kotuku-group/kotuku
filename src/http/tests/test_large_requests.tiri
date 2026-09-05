@@ -109,7 +109,7 @@ end
          content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
-         if testPostCompleted then error('Outgoing called multiple times') end
+         if testPostCompleted then raise 'Outgoing called multiple times' end
          print('Sending large chunked body (' .. largeBody.len() .. ' bytes)')
          HTTP.acWrite(largeBody)
          testPostCompleted = true
@@ -240,7 +240,7 @@ end
          content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
-         if testPostCompleted then error('Outgoing called multiple times') end
+         if testPostCompleted then raise 'Outgoing called multiple times' end
          print('Sending very large body (' .. veryLargeBody.len() .. ' bytes)')
          HTTP.acWrite(veryLargeBody)
          testPostCompleted = true

@@ -26,7 +26,7 @@ end
    try
       exec("entry, count:num = 5, 6; count = 'text'")
    success
-      error("bare annotated assignment should enforce its declared type")
+      assert(false, "bare annotated assignment should enforce its declared type")
    end
 end
 
@@ -171,7 +171,7 @@ local err, value = task.acGetKey('ProductName')
 value = 1
 ]])
    success
-      error('Action string result should reject a later numeric assignment')
+      assert(false, 'Action string result should reject a later numeric assignment')
    end
 
    try
@@ -181,7 +181,7 @@ local err, value = task.mtGetEnv('PATH')
 value = 1
 ]])
    success
-      error('Method string result should reject a later numeric assignment')
+      assert(false, 'Method string result should reject a later numeric assignment')
    end
 end
 
@@ -244,7 +244,7 @@ end
    try
       exec("local x = 10; x = 'text'")
    success
-      error("should have thrown type error for number to string")
+      assert(false, "should have thrown type error for number to string")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -253,7 +253,7 @@ end
    try
       exec("local name = 'Alice'; name = 42")
    success
-      error("should have thrown type error for string to number")
+      assert(false, "should have thrown type error for string to number")
    end
 end
 
@@ -263,7 +263,7 @@ end
    try
       exec("local flag = true; flag = 'yes'")
    success
-      error("should have thrown type error for boolean to string")
+      assert(false, "should have thrown type error for boolean to string")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -272,7 +272,7 @@ end
    try
       exec("local data = {}; data = 'not a table'")
    success
-      error("should have thrown type error for table to string")
+      assert(false, "should have thrown type error for table to string")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -281,7 +281,7 @@ end
    try
       exec("local fn = function() end; fn = 123")
    success
-      error("should have thrown type error for function to number")
+      assert(false, "should have thrown type error for function to number")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -290,7 +290,7 @@ end
    try
       exec("local count: num = 10; count = 'text'")
    success
-      error("should have thrown type error for annotated variable")
+      assert(false, "should have thrown type error for annotated variable")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -299,7 +299,7 @@ end
    try
       exec("global glStickyMismatch = 'text'; glStickyMismatch = 42")
    success
-      error("should have thrown type error for inferred global")
+      assert(false, "should have thrown type error for inferred global")
    end
 end
 
@@ -322,7 +322,7 @@ end
    try
       exec("local count: num = 'not a number'")
    success
-      error("should have thrown type error for mismatched initial value")
+      assert(false, "should have thrown type error for mismatched initial value")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -331,7 +331,7 @@ end
    try
       exec("local x: NotAType = 42")
    success
-      error("should have rejected unknown type name")
+      assert(false, "should have rejected unknown type name")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -341,7 +341,7 @@ end
    try
       exec("local result; result = 42; result = 'text'")
    success
-      error("should have thrown type error for deferred fixing mismatch")
+      assert(false, "should have thrown type error for deferred fixing mismatch")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -350,7 +350,7 @@ end
    try
       exec("local value; value = nil; value = nil; value = 100; value = 'wrong'")
    success
-      error("should have thrown type error for deferred fixing with nil assignments")
+      assert(false, "should have thrown type error for deferred fixing with nil assignments")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -616,7 +616,7 @@ end
          x = data.value
       ]])
    success
-      error("Should raise error when table lookup type doesn't match")
+      assert(false, "Should raise error when table lookup type doesn't match")
    end
 end
 
@@ -631,7 +631,7 @@ end
          x = getString()
       ]])
    success
-      error("should raise error when function return type doesn't match")
+      assert(false, "should raise error when function return type doesn't match")
    end
 end
 
@@ -748,7 +748,7 @@ end
          x = getString()  -- Type mismatch: str vs num
       ]])
    success
-      error("mismatched return types should cause compile-time error")
+      assert(false, "mismatched return types should cause compile-time error")
    end
 end
 

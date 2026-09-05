@@ -51,7 +51,7 @@ end
          local resource <close>:obj = obj.new('time')
          id = resource.id
          alias = obj.find(id)
-         error('Intentional native object close test error')
+         raise 'Intentional native object close test error'
       end
    end
 
@@ -375,13 +375,13 @@ end
 
    function inner()
       local obj <close> = setmetatable({}, mt)
-      error('test error message')
+      raise 'test error message'
    end
 
    try
       inner()
    success
-      error('try should catch error')
+      assert(false, 'try should catch error')
    end
 
    assert(closed, 'Close should be called when error is caught by try')
@@ -405,7 +405,7 @@ end
             global_during_close = _G.__close_err
          end
       })
-      error('private close error')
+      raise 'private close error'
    end
 
    try
@@ -437,7 +437,7 @@ end
 
          function nested_failure()
             local nested <close> = setmetatable({}, inner_mt)
-            error('nested close error')
+            raise 'nested close error'
          end
 
          try
@@ -456,7 +456,7 @@ end
    function outer_failure()
       local trailing <close> = setmetatable({}, trailing_mt)
       local nesting <close> = setmetatable({}, nesting_mt)
-      error('outer close error')
+      raise 'outer close error'
    end
 
    try
@@ -505,13 +505,13 @@ end
       a <close> = setmetatable({}, makeMt(0))
       b <close> = setmetatable({}, makeMt(1))
       c <close> = setmetatable({}, makeMt(2))
-      error('multi close error')
+      raise 'multi close error'
    end
 
    try
       inner()
    success
-      error('try should catch error')
+      assert(false, 'try should catch error')
    end
 
    assert(#order is 3, 'All three close handlers should be called: ' .. #order)
@@ -662,7 +662,7 @@ end
    mt1 = {
       __close = function(Error)
          order.insert('close1')
-         error('close1 error')
+         raise 'close1 error'
       end
    }
    mt2 = {
@@ -675,7 +675,7 @@ end
    function inner()
       obj2 <close> = setmetatable({}, mt2)  -- Called second (LIFO)
       obj1 <close> = setmetatable({}, mt1)  -- Called first (LIFO), throws
-      error('original error')
+      raise 'original error'
    end
 
    caught_ex = nil
@@ -702,21 +702,21 @@ end
       __close = function(Error)
          msg('mt1 __close called')
          order.insert('close1')
-         error('close1 error')
+         raise 'close1 error'
       end
    }
    mt2 = {
       __close = function(Error)
          msg('mt2 __close called')
          order.insert('close2')
-         error('close2 error')
+         raise 'close2 error'
       end
    }
 
    function inner()
       local obj2 <close> = setmetatable({}, mt2)  -- Called second, also throws
       local obj1 <close> = setmetatable({}, mt1)  -- Called first, throws
-      error('Intentional error')
+      raise 'Intentional error'
    end
 
    caught_ex = nil
@@ -726,7 +726,7 @@ end
       print('Caught error: ' .. ex.message)
       caught_ex = ex
    success
-      error('Expected failure from inner()')
+      assert(false, 'Expected failure from inner()')
    end
 
    assert(#order is 2, 'Both close handlers should be called, got ' .. #order)
@@ -747,17 +747,17 @@ end
       value = setmetatable({}, {
          __gc = function()
             try
-               error('finaliser-local handled error')
+               raise 'finaliser-local handled error'
             except ex
                finalised = true
             end
-            error('intentional finaliser error')
+            raise 'intentional finaliser error'
          end
       })
       value = nil
       processing.collect('full')
       continued_after_collection = true
-      error('caller error after collection')
+      raise 'caller error after collection'
    except ex
       caught_message = ex.message
    end

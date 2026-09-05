@@ -229,7 +229,7 @@ end
          end
       ]])
    success
-      error('an unspecified dynamic return requires an explicit result annotation')
+      assert(false, 'an unspecified dynamic return requires an explicit result annotation')
    end
 end
 
@@ -242,7 +242,7 @@ end
          end
       ]])
    success
-      error('an unresolved call result requires an explicit result annotation')
+      assert(false, 'an unresolved call result requires an explicit result annotation')
    end
 end
 
@@ -291,7 +291,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch: str returned for num declaration")
+      assert(false, "should detect return type mismatch: str returned for num declaration")
    end
 end
 
@@ -303,7 +303,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch: num returned for str declaration")
+      assert(false, "should detect return type mismatch: num returned for str declaration")
    end
 end
 
@@ -315,7 +315,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch: table returned for bool declaration")
+      assert(false, "should detect return type mismatch: table returned for bool declaration")
    end
 end
 
@@ -327,7 +327,7 @@ end
          end
       ]])
    success
-      error("should detect return type mismatch in multiple returns")
+      assert(false, "should detect return type mismatch in multiple returns")
    end
 end
 
@@ -437,7 +437,7 @@ end
    except ex
       assert(ex.message, "the terminal activation should report the invalid result")
    success
-      error("a forwarded recursive return contract should still reject an invalid result")
+      assert(false, "a forwarded recursive return contract should still reject an invalid result")
    end
 end
 
@@ -473,7 +473,7 @@ end
          end
       ]])
    success
-      error("recursive function without explicit return type should error")
+      assert(false, "recursive function without explicit return type should error")
    end
 end
 
@@ -531,7 +531,7 @@ end
          bad = (x => num: "not a number")
       ]])
    success
-      error("arrow function with mismatched return type should error")
+      assert(false, "arrow function with mismatched return type should error")
    end
 end
 
@@ -575,7 +575,7 @@ end
          end
       ]])
    success
-      error("inconsistent return types should error (first wins rule)")
+      assert(false, "inconsistent return types should error (first wins rule)")
    end
 end
 
@@ -603,7 +603,7 @@ end
          end
       ]])
    success
-      error("inconsistent multiple return types should error")
+      assert(false, "inconsistent multiple return types should error")
    end
 end
 
@@ -709,7 +709,7 @@ end
          local result: str = getNum()
       ]])
    success
-      error("Expected exception to be raised from invalid typed assignment")
+      assert(false, "Expected exception to be raised from invalid typed assignment")
    end
 end
 
@@ -839,6 +839,6 @@ end
       assert(msg.find("type") or string.find(msg, "num") or string.find(msg, "str"),
          "error message should mention type information")
    success
-      error("should have caught type error")
+      assert(false, "should have caught type error")
    end
 end

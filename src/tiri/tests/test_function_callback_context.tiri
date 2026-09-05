@@ -173,7 +173,7 @@ end
 
       using owner do
          source.mtCopy('temp:function_callback_error.tiri', function()
-            error('expected bound callback failure')
+            raise('expected bound callback failure')
          end)
       end
 

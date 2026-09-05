@@ -136,7 +136,7 @@ end
 
 @Test function ShortCircuitTruth()
    function rhs()
-      error("RHS should not be evaluated when LHS is truthy")
+      assert(false, "RHS should not be evaluated when LHS is truthy")
    end
    v = "X" ?? rhs()
    assert(v is "X", "Failed short-circuit truth: expected 'X', got '" .. tostring(v) .. "'")

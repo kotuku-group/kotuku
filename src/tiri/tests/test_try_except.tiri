@@ -12,7 +12,7 @@ function enforce_hotpath() end
 
    try
       local some_value = 42
-      error("Test error")
+      raise "Test error"
    except e
       handled = true
       assert(e.message.find("Test error"), "Expected error message to contain 'Test error'")
@@ -34,7 +34,7 @@ end
    executed = false
    try
       executed = true
-      error('Ignore exception')
+      raise 'Ignore exception'
    end
    assert(executed, "Exception should be handled silently.")
 
@@ -50,7 +50,7 @@ end
    -- Test success block not executing when exception occurs in silent try
    success_executed = false
    try
-      error('Test error')
+      raise 'Test error'
    success
       success_executed = true
    end
@@ -86,7 +86,7 @@ end
    success_executed = false
 
    try
-      error("Test error")
+      raise "Test error"
    except
       handled = true
    success
@@ -108,7 +108,7 @@ end
 
    try
       try
-         error("Inner error")
+         raise "Inner error"
       except e
          inner_handled = true
          assert(e.message.find("Inner"), "Inner handler should get inner error")
@@ -139,12 +139,12 @@ end
       msg("Entered outer try")
       try
          msg("Entered inner try")
-         error("Raising error")
+         raise "Raising error"
       except e
          msg("Captured inner error: " .. e.message)
          inner_source = e.source
          inner_line = e.line
-         error(e)
+         raise
       end
    except e
       outer_handled = true
@@ -165,7 +165,7 @@ end
          raise ERR_Args, "Rethrown args"
       except e
          assert(e.code is ERR_Args, "Inner handler should receive ERR_Args")
-         error(e)
+         raise
       end
    except e when ERR_Args
       matched_args = true
@@ -183,7 +183,7 @@ end
 
 @Test(priority=6) function ExceptionTableFields()
    try
-      error("Test message")
+      raise "Test message"
    except e
       assert(e.code is ERR_Exception, "Lua errors should have ERR_Exception code")
       assert(e.message is "Test message", "Message should be raw, got " .. e.message)
@@ -209,7 +209,7 @@ end
    local message = "fake.tiri:99999: payload"
 
    try
-      error(message)
+      raise message
    except e
       assert(e.message is message, "Message should remain raw, got " .. e.message)
       assert(e.line != 99999, "Line should come from debug metadata, got " .. tostring(e.line))
@@ -357,7 +357,7 @@ end
 
 @Test(priority=18) function EmptyExceptBlock()
    try
-      error("Test")
+      raise "Test"
    except e
    end
    -- Should not crash - empty handler is valid
@@ -371,7 +371,7 @@ end
 
    for i in {0 to 30} do  -- Range is exclusive, so 0..30 gives 0, 1, 2, ..., 29
       try
-         error("Error " .. i)
+         raise "Error " .. i
       except e
          count++
       end
@@ -390,7 +390,7 @@ end
    for i in {0 to 5} do  -- Range is exclusive, so 0..5 gives 0, 1, 2, 3, 4
       try
          if i % 2 is 0 then
-            error("Even number")
+            raise "Even number"
          end
          successful++
       except e
@@ -414,7 +414,7 @@ end
          depth = 2
          try
             depth = 3
-            error("Deep error")
+            raise "Deep error"
          except e
             assert(depth is 3, "Innermost should catch")
          end
@@ -452,7 +452,7 @@ end
    try
       exec([[
          try
-            error("test")
+            raise "test"
          except e
             print("catchall")
          except e when ERR_Failed
@@ -460,7 +460,7 @@ end
          end
       ]])
    success
-      error("catch-all before filtered should fail to parse")
+      assert(false, "catch-all before filtered should fail to parse")
    end
 
    -- Test: duplicate catch-all (should be a parse error)
@@ -468,7 +468,7 @@ end
    try
       exec([[
          try
-            error("test")
+            raise "test"
          except e
             print("first")
          except e
@@ -476,7 +476,7 @@ end
          end
       ]])
    success
-      error("duplicate catch-all should fail to parse")
+      assert(false, "duplicate catch-all should fail to parse")
    end
 
    -- Test: when without error code
@@ -484,13 +484,13 @@ end
    try
       exec([[
          try
-            error("test")
+            raise "test"
          except e when
             print("test")
          end
       ]])
    success
-      error("when without error code should fail to parse")
+      assert(false, "when without error code should fail to parse")
    end
 end
 
@@ -521,7 +521,7 @@ end
    -- Just catch-all
    handled = false
    try
-      error("test")
+      raise "test"
    except e
       handled = true
    end
@@ -573,7 +573,7 @@ end
 @Test(priority=26) function ReturnFromExcept()
    function test_return()
       try
-         error("test")
+         raise "test"
       except e
          return "from_except"
       end
@@ -597,7 +597,7 @@ global function break_test()
             break
          end
       except e
-         error("Exception should not occur")
+         assert(false, "Exception should not occur")
       end
    end
    count++ -- We need a function to be called immediately after the break to ensure that function exit isn't broken
@@ -682,7 +682,7 @@ end
       -- This should NOT trigger an exception (ERR_Okay is below threshold)
       err = mSys.AnalysePath(".", 0)
    except e
-      error("ERR_Okay should not trigger except, got " .. e.message)
+      assert(false, "ERR_Okay should not trigger except, got " .. e.message)
    end
 end
 
@@ -691,7 +691,7 @@ end
    try
       err = mSys.AllocResource(-1024, 0)
    except e
-      error(f"Plain try must not promote returned ERR values, got {e.code}")
+      assert(false, f"Plain try must not promote returned ERR values, got {e.code}")
    success
       assert(err is ERR_Args, f"Expected ERR_Args as an ordinary result, got {err}")
    end
@@ -703,7 +703,7 @@ end
       end
       internal()
    except e
-      error(f"AllocResource() should not have its ERR code tested.")
+      assert(false, f"AllocResource() should not have its ERR code tested.")
    end
 end
 
@@ -723,7 +723,7 @@ end
 
    try
       local obj <close> = setmetatable({}, mt)
-      error("test error in try")
+      raise "test error in try"
    except e
       -- Exception should be caught
    end
@@ -750,7 +750,7 @@ end
       local a <close> = setmetatable({}, makeMt(1))
       local b <close> = setmetatable({}, makeMt(2))
       local c <close> = setmetatable({}, makeMt(3))
-      error("multi close test")
+      raise "multi close test"
    except e
       -- Exception should be caught
    end
@@ -774,7 +774,7 @@ end
       local outer_obj <close> = setmetatable({}, mt_outer)
       try
          local inner_obj <close> = setmetatable({}, mt_inner)
-         error("inner error")
+         raise "inner error"
       except e
          -- Inner exception caught
       end
@@ -820,14 +820,14 @@ end
    mt = {
       __close = function(Error)
          close_called = true
-         error("close handler error")
+         raise "close handler error"
       end
    }
 
    caught_error = nil
    try
       local obj <close> = setmetatable({}, mt)
-      error("original error")
+      raise "original error"
    except e
       caught_error = e
    end
@@ -877,7 +877,7 @@ end
    function subject()
       try
          local obj <close> = setmetatable({}, mt)
-         error("return from except test")
+         raise "return from except test"
       except e
          return "from_except"
       end
@@ -955,9 +955,9 @@ end
    try
       try
          local obj <close> = setmetatable({}, mt)
-         error("inner")
+         raise "inner"
       except e
-         error("outer " .. e.message)
+         raise "outer " .. e.message
       end
    except e
       caught_error = e
@@ -981,7 +981,7 @@ end
    mt_second = {
       __close = function(Error)
          order.insert("second")
-         error("close second")
+         raise "close second"
       end
    }
 
@@ -989,7 +989,7 @@ end
    try
       local a <close> = setmetatable({}, mt_first)
       local b <close> = setmetatable({}, mt_second)
-      error("original error")
+      raise "original error"
    except e
       caught_error = e
    end
@@ -1037,7 +1037,7 @@ end
             order.push('deferred')
          end
          order.push('before-error')
-         error('test error')
+         raise 'test error'
          order.push('after-error')
       except
          order.push('except')
@@ -1068,7 +1068,7 @@ end
             order.push('defer-3')
          end
          order.push('body')
-         error('test error')
+         raise 'test error'
       except e
          order.push('except')
       end
@@ -1088,7 +1088,7 @@ end
 
    function subject()
       try
-         error('test error')
+         raise 'test error'
       except
          defer
             order.push('except-defer')
@@ -1122,7 +1122,7 @@ end
                order.push('inner-defer')
             end
             order.push('inner-body')
-            error('inner error')
+            raise 'inner error'
          except e
             order.push('inner-except')
          end
@@ -1232,7 +1232,7 @@ end
          end
          local obj <close> = setmetatable({}, mt)
          order.push('body')
-         error('test error')
+         raise 'test error'
       except
          order.push('except')
       end
@@ -1255,7 +1255,7 @@ end
 
 @Test(priority=50) function TryTraceCapture()
    try<trace>
-      error("Test error")
+      raise "Test error"
    except e
       assert(e.trace, "Trace should be captured with try<trace>")
       assert(type(e.trace) is "array", "Trace should be array of frames")
@@ -1265,7 +1265,7 @@ end
 
 @Test(priority=51) function TryTraceFrameStructure()
    try<trace>
-      error("Test error")
+      raise "Test error"
    except e
       assert(e.trace, "Trace should be captured")
       frame = e.trace[0]
@@ -1276,7 +1276,7 @@ end
 
 @Test(priority=52) function TryTraceStackTraceString()
    try<trace>
-      error("Test error")
+      raise "Test error"
    except e
       str = e.stackTrace
       assert(type(str) is "string", "stackTrace should return string")
@@ -1286,7 +1286,7 @@ end
 
 @Test(priority=53) function TryWithoutTraceIsNil()
    try
-      error("Test error")
+      raise "Test error"
    except e
       assert(e.trace is nil, "Regular try should not capture trace")
       assert(e.stackTrace is nil, "Regular try should not have stackTrace")
@@ -1295,7 +1295,7 @@ end
 
 @Test(priority=54) function TryTraceNestedFunction()
    function innerFunc()
-      error("Inner error")
+      raise "Inner error"
    end
 
    function outerFunc()
@@ -1334,11 +1334,11 @@ end
 
    try<trace>
       try<trace>
-         error("Inner error")
+         raise "Inner error"
       except e
          inner_trace = e.trace
       end
-      error("Outer error")
+      raise "Outer error"
    except e
       outer_trace = e.trace
    end
@@ -1352,11 +1352,11 @@ end
 
    try<trace>
       try
-         error("Inner error - no trace")
+         raise "Inner error - no trace"
       except e
          -- Inner try has no trace
          assert(e.trace is nil, "Inner try should not have trace")
-         error("Rethrow")
+         raise "Rethrow"
       end
    except e
       trace_captured = e.trace
@@ -1375,7 +1375,7 @@ end
       assert(e.code is ERR_Failed, "raise should set error code")
       return
    end
-   error("raise did not throw an exception")
+   assert(false, "raise did not throw an exception")
 end
 
 @Test(priority=61) function RaiseWithMessage()
@@ -1388,7 +1388,7 @@ end
       assert(e.line > 0, "raise should set line, got " .. tostring(e.line))
       return
    end
-   error("raise with message did not throw an exception")
+   assert(false, "raise with message did not throw an exception")
 end
 
 @Test(priority=62) function RaiseWithDefaultCodeMessage()
@@ -1399,7 +1399,7 @@ end
       assert(e.message is "Default code message", "raise should use the first string expression as the message")
       return
    end
-   error("raise with default code message did not throw an exception")
+   assert(false, "raise with default code message did not throw an exception")
 end
 
 @Test(priority=63) function RaiseWithDefaultCodeMessageVariable()
@@ -1412,7 +1412,7 @@ end
       assert(e.message is "Variable default code message", "raise should use the first string variable as the message")
       return
    end
-   error("raise with default code message variable did not throw an exception")
+   assert(false, "raise with default code message variable did not throw an exception")
 end
 
 @Test(priority=64) function CheckBelowThreshold()
@@ -1428,7 +1428,7 @@ end
       assert(e.code is ERR_Failed, "check should raise for codes >= threshold, got " .. e.code)
       return
    end
-   error("check should have raised an exception for ERR_Failed")
+   assert(false, "check should have raised an exception for ERR_Failed")
 end
 
 @Test(priority=66) function CheckWithExpression()
@@ -1441,7 +1441,7 @@ end
    except e when ERR_Args
       return  -- Expected
    end
-   error("check with expression should have thrown")
+   assert(false, "check with expression should have thrown")
 end
 
 @Test(priority=66) function CheckExpressionFallsThroughResults()
@@ -1476,7 +1476,7 @@ end
    except e when ERR_FileNotFound
       assert(e.message.find('AnalysePath()'), "checked native expression should retain the call diagnostic")
    success
-      error("checked native expression should promote a failing first result")
+      assert(false, "checked native expression should promote a failing first result")
    end
 
    try
@@ -1484,7 +1484,7 @@ end
    except e when ERR_Args
       return
    end
-   error("check expression assignment should promote a failing first result")
+   assert(false, "check expression assignment should promote a failing first result")
 end
 
 @Test(priority=0.5,hotpath=false) function CheckIncludesLocationAndTraceback()
@@ -1503,7 +1503,7 @@ end
       return
    end
 
-   error("check should have raised an exception with a traceback")
+   assert(false, "check should have raised an exception with a traceback")
 end
 
 @Test(priority=67) function RaiseWithVariable()
@@ -1528,7 +1528,7 @@ end
    try
       truthy_value ?! raise ERR_Failed
    except e
-      error("Truthy value should not trigger raise")
+      assert(false, "Truthy value should not trigger raise")
    end
 
    caught = false
@@ -1548,7 +1548,7 @@ end
    try
       truthy_value ?! check ERR_Failed  -- Would fail if executed, but shouldn't execute
    except e
-      error("Truthy value should not trigger check")
+      assert(false, "Truthy value should not trigger check")
    end
 
    caught = false
@@ -1574,7 +1574,7 @@ end
       return
    end
 
-   error("AnalysePath() should have raised an exception")
+   assert(false, "AnalysePath() should have raised an exception")
 end
 
 @Test(priority=69) function CheckedObjectActionUsesCallErrorMessage()
@@ -1591,7 +1591,7 @@ end
       return
    end
 
-   error("Time.DataFeed() should have raised an exception")
+   assert(false, "Time.DataFeed() should have raised an exception")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -1608,7 +1608,7 @@ end
          assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
          return
       end
-      error(Name .. ": no exception was raised")
+      assert(false, Name .. ": no exception was raised")
    end
 
    expect(ERR_OutOfBounds, "array index out of bounds", function()
@@ -1650,14 +1650,14 @@ end
       local a = array<int> { 1, 2, 3 }
       a.remove(99)
    except e when ERR_Args
-      error("array bounds fault must not be caught by an ERR_Args filter")
+      assert(false, "array bounds fault must not be caught by an ERR_Args filter")
    except e when ERR_TypeMismatch
-      error("array bounds fault must not be caught by an ERR_TypeMismatch filter")
+      assert(false, "array bounds fault must not be caught by an ERR_TypeMismatch filter")
    except e when ERR_OutOfBounds
       matched = true
       assert(e.code is ERR_OutOfBounds, "expected ERR_OutOfBounds, got " .. tostring(e.code))
    except e
-      error("array bounds fault fell through to the catch-all, code " .. tostring(e.code))
+      raise "array bounds fault fell through to the catch-all, code " .. tostring(e.code)
    end
 
    assert(matched, "array bounds fault did not match the ERR_OutOfBounds filter")
@@ -1675,7 +1675,7 @@ end
          assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
          return
       end
-      error(Name .. ": no exception was raised")
+      assert(false, Name .. ": no exception was raised")
    end
 
    -- Environment mutation policy (env_check_contract, table_clear).  Computed keys are used so that the store is
@@ -1724,7 +1724,7 @@ end
          assert(e.code is Code, Name .. ": expected code " .. tostring(Code) .. ", got " .. tostring(e.code))
          return
       end
-      error(Name .. ": no exception was raised")
+      assert(false, Name .. ": no exception was raised")
    end
 
    expect(ERR_TypeMismatch, "iterate over a number", function()
@@ -1818,30 +1818,6 @@ end
    assert(caught, 'Outer rethrow did not reach its filtered handler')
 end
 
-@Test function LegacyRethrowPreservesTracedException()
-   local original = nil
-   local caught = false
-   try<trace>
-      try<trace>
-         try<trace>
-            raise ERR_Args, 'legacy rethrow'
-         except e
-            original = e
-            assert(e.trace != nil, 'Expected trace before legacy rethrow')
-            error(e)
-         end
-      except e when ERR_Args
-         assert(e is original, 'Legacy rethrow reconstructed the exception')
-         raise
-      end
-   except e when ERR_Args
-      caught = true
-      assert(e is original, 'Mixed rethrows must preserve the same exception')
-      assert(e.trace != nil and e.stackTrace != nil, 'Legacy rethrow lost the trace')
-   end
-   assert(caught, 'Legacy rethrow lost the original code')
-end
-
 @Test function RethrowPreservesAbsentTrace()
    local caught = false
    try<trace>
@@ -1890,46 +1866,6 @@ end
    end
    assert(caught, 'Cleanup changed the rethrow error code')
    assert(order is 'close,defer', 'Rethrow changed cleanup order: ' .. order)
-end
-
-@Test function OrdinaryTablesCannotImpersonateExceptions()
-   local fake = setmetatable({ code=ERR_Args, message='forged exception' }, { __metatable='exception' })
-   local caught = false
-   try
-      error(fake)
-   except e when ERR_Args
-      assert(false, 'A script-created metatable must not grant exception identity')
-   except e
-      caught = true
-      assert(e != fake, 'An ordinary table must not be reused as an exception')
-   end
-   assert(caught, 'Expected a generic exception for the ordinary table')
-end
-
-@Test(hotpath=false) function UnhandledRethrowRetainsScriptError()
-   for mode in {0 to 2} do
-      local statement = [[try
-   try
-      raise ERR_Args, 'unhandled original'
-   except e
-      ]] .. (mode is 1 ? 'error(e)' : 'raise') .. [[
-   end
-except
-   defer
-      try
-         raise 'caught cleanup error'
-      except
-         processing.collect('full')
-      end
-   end
-   raise
-end]]
-      local script = obj.new('tiri', { statement=statement })
-      script.acActivate()
-      assert(script.error is ERR_Args, 'Unhandled rethrow must retain the original Script error code')
-      assert(script.errorMessage.find('unhandled original') != nil, 'Unhandled rethrow lost its message')
-      assert(script.errorMessage.find(':3:') != nil, 'Unhandled rethrow must report the original line')
-   end
 end
 
 @Test function RethrowAfterBytecodeRoundTrip()
@@ -2139,4 +2075,82 @@ except e
 end]])
    assert(exception.code is ERR_Args and exception.message is 'multiline payload')
    assert(exception.line is 2, 'Raise location must identify the keyword, not the final payload line')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Deprecated error() compatibility: the only runtime fixture retaining the legacy built-in.
+-- Keep this section until phase 7 removes error() from the public environment.
+
+@Test function DeprecatedErrorStillExecutes()
+   try
+      exec("error('compatibility')")
+   except e
+      assert(e.message.find('compatibility'), 'Deprecated error() must retain its runtime behaviour.')
+   success
+      assert(false, 'Deprecated error() should still throw.')
+   end
+end
+
+@Test function LegacyRethrowPreservesTracedException()
+   local original = nil
+   local caught = false
+   try<trace>
+      try<trace>
+         try<trace>
+            raise ERR_Args, 'legacy rethrow'
+         except e
+            original = e
+            assert(e.trace != nil, 'Expected trace before legacy rethrow')
+            error(e)
+         end
+      except e when ERR_Args
+         assert(e is original, 'Legacy rethrow reconstructed the exception')
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is original, 'Mixed rethrows must preserve the same exception')
+      assert(e.trace != nil and e.stackTrace != nil, 'Legacy rethrow lost the trace')
+   end
+   assert(caught, 'Legacy rethrow lost the original code')
+end
+
+@Test function OrdinaryTablesCannotImpersonateExceptions()
+   local fake = setmetatable({ code=ERR_Args, message='forged exception' }, { __metatable='exception' })
+   local caught = false
+   try
+      error(fake)
+   except e when ERR_Args
+      assert(false, 'A script-created metatable must not grant exception identity')
+   except e
+      caught = true
+      assert(e != fake, 'An ordinary table must not be reused as an exception')
+   end
+   assert(caught, 'Expected a generic exception for the ordinary table')
+end
+
+@Test(hotpath=false) function UnhandledRethrowRetainsScriptError()
+   for mode in {0 to 2} do
+      local statement = [[try
+   try
+      raise ERR_Args, 'unhandled original'
+   except e
+      ]] .. (mode is 1 ? 'error(e)' : 'raise') .. [[
+   end
+except
+   defer
+      try
+         raise 'caught cleanup error'
+      except
+         processing.collect('full')
+      end
+   end
+   raise
+end]]
+      local script = obj.new('tiri', { statement=statement })
+      script.acActivate()
+      assert(script.error is ERR_Args, 'Unhandled rethrow must retain the original Script error code')
+      assert(script.errorMessage.find('unhandled original') != nil, 'Unhandled rethrow lost its message')
+      assert(script.errorMessage.find(':3:') != nil, 'Unhandled rethrow must report the original line')
+   end
 end

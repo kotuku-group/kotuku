@@ -139,7 +139,7 @@ global function module(Options:table, Function:func)
       priority('#pragma once')
       priority()
    else
-      error('No "name" field specified in module() call.')
+      raise 'No "name" field specified in module() call.'
    end
 
    priority(f'// Name:      {glModule.name.lower()}.h')
@@ -198,9 +198,10 @@ global function module(Options:table, Function:func)
          name, glModule.comment, glModule.description = rx_module_header.extract(mod_desc)
 
          if not name then
-            error(f'The -MODULE- header for {glModule.name} is incorrectly defined.')
+            raise f'The -MODULE- header for {glModule.name} is incorrectly defined.'
          elseif (name.lower() != glModule.name.lower()) then
-            error(f"The name specified in the -MODULE- header '{name}' does not match the name specified in the module() call '{glModule.name}'")
+            raise f"The name specified in the -MODULE- header '{name}' does not match the name specified " ..
+               f"in the module() call '{glModule.name}'"
          end
       end
    end
@@ -331,7 +332,7 @@ global function flags(Prefix, Options:table, ...)
             lookup[flag_name] = { name=flag_name, value=val, comment=comment }
          end
       else
-         error(f"Invalid flag type for '{Prefix}', expected string, got '{type(flags[a])}'")
+         raise f"Invalid flag type for '{Prefix}', expected string, got '{type(flags[a])}'"
       end
 
       f++
@@ -522,7 +523,7 @@ global function constants(Prefix:str, Options:table, ...)
             list.insert({ name=v.name, value=val, comment=comment })
          end
       else
-         error(f'Invalid const type for "{Prefix}", expected string, got "{type(va)}"')
+         raise f'Invalid const type for "{Prefix}", expected string, got "{type(va)}"'
       end
    end
 
@@ -607,7 +608,7 @@ global function enums(Prefix:str, Options:table, ...)
             list.insert({ name=name, value=client_val })
          end
       else
-         error('Invalid enum type for "' .. Prefix .. '", expected string, got "' .. type(va) .. '"')
+         raise 'Invalid enum type for "' .. Prefix .. '", expected string, got "' .. type(va) .. '"'
       end
    end
 
@@ -661,7 +662,7 @@ global function platform(Platform:str, Function:func)
    --   define = '__APPLE__'
    --   Function()
    else
-      error('Unrecognised platform "' .. Platform .. '"')
+      raise 'Unrecognised platform "' .. Platform .. '"'
    end
 
    platformHeader = glHeader
@@ -791,7 +792,7 @@ global function structdef(Name:str, Options:table, Def:str, Append:str)
       }
    except ex
       glCurrentStructure = prevStruct
-      error(ex.message)
+      raise ex.message
    end
 
    glCurrentStructure = prevStruct
@@ -1251,7 +1252,7 @@ global function functionNames(Prefix:str, ...)
    global glFunctionPrefix = Prefix ?? ''
    for fname in values({...}) do
       if rx_non_word.test(fname) then
-         error(f'Invalid function name "{fname}"')
+         raise f'Invalid function name "{fname}"'
       end
 
       func = {

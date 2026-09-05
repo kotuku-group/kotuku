@@ -216,7 +216,7 @@ gui.menu = function(Options)
                   parent.absX   = parentInfo.absX
                   parent.absY   = parentInfo.absY
                else
-                  error('Failed to analyse parent surface: ' .. mSys.GetErrorMsg(err))
+                  raise 'Failed to analyse parent surface: ' .. mSys.GetErrorMsg(err)
                end
             else
                err, scrInfo = mGfx.GetDisplayInfo(0)

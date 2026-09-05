@@ -130,7 +130,7 @@ end
                events.insert('defer:' .. &name)
             end
             local resource <close> = setmetatable({ name = 'resource' }, mt)
-            error('block failure')
+            raise 'block failure'
          end
       except e
          assert(&name is 'outer', 'The handler should resume in the surviving outer context')
@@ -149,7 +149,7 @@ end
    local mt = {
       __close = function()
          closes++
-         error('close failure')
+         raise 'close failure'
       end
    }
 

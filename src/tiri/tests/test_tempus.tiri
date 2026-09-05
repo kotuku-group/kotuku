@@ -11,7 +11,7 @@ function expect_error(MessagePart:str, Callback:func)
       return
    end
 
-   error('Expected callback to fail')
+   assert(false, 'Expected callback to fail')
 end
 
 function core_current_instant():table

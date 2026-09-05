@@ -209,7 +209,8 @@ end
          orig_byte = string.byte(original_data, i)
          saved_byte = string.byte(saved_data, i)
          if orig_byte != saved_byte then
-            error('Byte mismatch at offset ' .. (bytes_compared + i - 1) .. ': original=' .. orig_byte .. ', saved=' .. saved_byte)
+            raise 'Byte mismatch at offset ' .. (bytes_compared + i - 1) .. ': original=' .. orig_byte ..
+               ', saved=' .. saved_byte
          end
       end
 

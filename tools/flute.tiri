@@ -117,7 +117,7 @@ function checkAvailable(Requirement:str, Expectation:bool):bool
    elseif Requirement is 'linux_platform' then
       return glLinuxPlatform is Expectation
    else
-      error('Invalid requirement: ' .. Requirement)
+      raise 'Invalid requirement: ' .. Requirement
    end
 end
 

@@ -1431,7 +1431,7 @@ proxylib.start = function(Options:table!)
       local upstream_proxy, upstream_error = parseProxyAddress(self.upstreamProxy)
       if not upstream_proxy then
          reportProxyError(self, 'invalid_upstream_proxy', upstream_error, nil, nil)
-         error(upstream_error)
+         raise upstream_error
       end
       self._upstreamProxy = upstream_proxy
    end
@@ -1444,7 +1444,7 @@ proxylib.start = function(Options:table!)
    -- Load MITM certificates if enabled
    if self.enableMITM and self.caCert then
       if not self._certManager.loadRootCA(self.caCert, self.caKey, self.caPassword) then
-         error('Failed to load MITM certificates')
+         raise 'Failed to load MITM certificates'
       end
    end
 
@@ -1482,13 +1482,13 @@ proxylib.start = function(Options:table!)
 
    if not self._socket then
       reportProxyError(self, 'server_socket_create_failed', 'Failed to create proxy server socket', nil, nil)
-      error('Failed to create proxy server socket')
+      raise 'Failed to create proxy server socket'
    end
 
    if not startProxyTimeoutTimer(self) then
       self._socket.free()
       self._socket = nil
-      error('Failed to start proxy timeout timer')
+      raise 'Failed to start proxy timeout timer'
    end
 
    -- Public API methods

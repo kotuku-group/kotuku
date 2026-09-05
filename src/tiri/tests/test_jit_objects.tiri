@@ -502,7 +502,7 @@ end
       assert(error_value.code is ERR_OutOfRange,
          f'Expected a hot finite float overflow to raise ERR_OutOfRange, got {error_value.code}')
    success
-      error('A hot finite float overflow should fail')
+      assert(false, 'A hot finite float overflow should fail')
    end
    assert(value.Single is 2.5, 'A rejected hot float overflow should preserve the field')
    traced_phase_five_float_write(value, math.huge, 10)
@@ -590,7 +590,7 @@ end
       assert(error_value.code is ERR_OutOfRange,
          f"Expected a hot int8 overflow to raise ERR_OutOfRange, got {error_value.code}")
    success
-      error('A hot int8 overflow should fail')
+      assert(false, 'A hot int8 overflow should fail')
    end
    assert(value.Signed is 127, 'A rejected hot overflow should preserve the signed field')
 
@@ -600,7 +600,7 @@ end
       assert(error_value.code is ERR_OutOfRange,
          f"Expected a huge hot int8 store to raise ERR_OutOfRange, got {error_value.code}")
    success
-      error('A huge hot int8 store should fail')
+      assert(false, 'A huge hot int8 store should fail')
    end
 
    try
@@ -609,7 +609,7 @@ end
       assert(error_value.code is ERR_OutOfRange,
          f"Expected a hot non-finite store to raise ERR_OutOfRange, got {error_value.code}")
    success
-      error('A hot non-finite int8 store should fail')
+      assert(false, 'A hot non-finite int8 store should fail')
    end
    assert(value.Signed is 127, 'A rejected hot non-finite store should preserve the signed field')
 
@@ -619,7 +619,7 @@ end
       assert(error_value.code is ERR_OutOfRange,
          f"Expected a uint8 overflow to raise ERR_OutOfRange, got {error_value.code}")
    success
-      error('A uint8 overflow should fail')
+      assert(false, 'A uint8 overflow should fail')
    end
    value.Unsigned = 300 & 0xff
    assert(value.Unsigned is 44, 'A client should be able to wrap explicitly before a uint8 store')
@@ -630,7 +630,7 @@ end
       assert(error_value.code is ERR_InvalidType,
          f"Expected a specialised bool store to raise ERR_InvalidType, got {error_value.code}")
    success
-      error('A numeric bool store should fail')
+      assert(false, 'A numeric bool store should fail')
    end
    assert(value.Flag is true, 'A rejected specialised bool store should preserve the boolean field')
 
@@ -642,7 +642,7 @@ end
       assert(error_value.code is ERR_OutOfRange,
          f'Expected a hot NaN integer store to raise ERR_OutOfRange, got {error_value.code}')
    success
-      error('A hot NaN int8 store should fail')
+      assert(false, 'A hot NaN int8 store should fail')
    end
    assert(value.Signed is 27, 'A rejected hot NaN store should preserve the signed field')
 end
@@ -1169,7 +1169,7 @@ end
       assert(tostring(err.message).find('__len metamethod must return a number'),
          'A traced string __len result should report the numeric result requirement')
    success
-      error('A traced string __len result should fail')
+      assert(false, 'A traced string __len result should fail')
    end
 
    jit.on()
@@ -1235,7 +1235,7 @@ function defer_cleanup_error_workload(FailAt:num):<str, str>
          end(iteration)
          defer(Value, ShouldFail)
             events.insert('first-' .. tostring(Value))
-            if ShouldFail then error('traced cleanup failure') end
+            if ShouldFail then raise 'traced cleanup failure' end
          end(iteration, iteration is FailAt)
       end
    except e
@@ -1248,7 +1248,7 @@ end
 function defer_throwing_once(Value:num, State:table)
    defer(Captured)
       State.calls++
-      error('defer body failure ' .. tostring(Captured))
+      raise 'defer body failure ' .. tostring(Captured)
    end(Value)
 end
 

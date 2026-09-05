@@ -92,7 +92,7 @@ ErrorCallback: Optional callback invoked when the value cannot be encoded
 string: JSON text
 ]])
 json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
-   ErrorCallback ?= error
+   ErrorCallback ?= function(Message:str) raise Message end
    if Value is <array> then
       s = array<str>
       if AsKey then

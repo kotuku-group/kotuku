@@ -157,7 +157,7 @@ end
          rejected = "built-in method 'insert'" in message and
             "['insert']" in message
       success
-         error(Description .. ' should be rejected')
+         assert(false, Description .. ' should be rejected')
       end
       assert(rejected, Description .. ' should recommend computed-key syntax')
    end
@@ -279,7 +279,7 @@ end
       dynamic_parent._state()
    except error_value when ERR_NoFieldAccess
    success
-      error('The removed _state method should fail instead of retaining an alias')
+      assert(false, 'The removed _state method should fail instead of retaining an alias')
    end
 end
 
@@ -308,7 +308,7 @@ end
       read_missing(parent)
    except error_value when ERR_NoFieldAccess
    success
-      error('An unknown field read through an any receiver should raise NoFieldAccess')
+      assert(false, 'An unknown field read through an any receiver should raise NoFieldAccess')
    end
 
    local function read_member(Value:any, Key:str):any
@@ -319,7 +319,7 @@ end
       read_member(task_obj, 'args')
    except error_value when ERR_NoFieldAccess
    success
-      error('A computed read of an unreadable field should raise NoFieldAccess')
+      assert(false, 'A computed read of an unreadable field should raise NoFieldAccess')
    end
 end
 

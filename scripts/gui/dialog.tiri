@@ -243,7 +243,7 @@ gui.dialog.message = function(Options)
          end
          dlg_width = 120 + (longest * FONT_HEIGHT)
       else
-         error('Dialog requires a message string.')
+         raise 'Dialog requires a message string.'
       end
 
       dlg_width = math.clamp(dlg_width, MIN_WIDTH, MAX_WIDTH)

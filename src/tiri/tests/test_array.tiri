@@ -123,13 +123,13 @@ end
 
    result = byte_array.concat('', '%c')
    if result != 'ABCD' then
-      error("Byte array concat failed, expected 'ABCD', got '" .. result .. "'")
+      raise "Byte array concat failed, expected 'ABCD', got '" .. result .. "'"
    end
 
    -- Test with separator
    result2 = byte_array.concat('-', '%d')
    if result2 != '65-66-67-68' then
-      error("Byte array numeric concat failed, expected '65-66-67-68', got '" .. result2 .. "'")
+      raise "Byte array numeric concat failed, expected '65-66-67-68', got '" .. result2 .. "'"
    end
 end
 
@@ -181,21 +181,21 @@ end
    try
       int_array.concat(', ', '%d %s')
    success
-      error("Multiple format specifiers should be rejected")
+      assert(false, "Multiple format specifiers should be rejected")
    end
 
    -- Test no format specifier is rejected
    try
       int_array.concat(', ', 'no format')
    success
-      error("No format specifier should be rejected")
+      assert(false, "No format specifier should be rejected")
    end
 
    -- Test incomplete format specifier is rejected
    try
       int_array.concat(', ', 'incomplete %')
    success
-      error("Incomplete format specifier should be rejected")
+      assert(false, "Incomplete format specifier should be rejected")
    end
 
    -- Test escaped %% works
@@ -230,14 +230,14 @@ end
    try
       t = arr[-1]
    success
-      error('Should reject negative array index')
+      assert(false, 'Should reject negative array index')
    end
 
    -- Test invalid high index
    try
       t = arr[10]
    success
-      error('Should reject index beyond array size')
+      assert(false, 'Should reject index beyond array size')
    end
 end
 
@@ -248,7 +248,7 @@ end
    try
       t = array.new('int', -5)
    success
-      error('Should reject negative array size')
+      assert(false, 'Should reject negative array size')
    end
 end
 -----------------------------------------------------------------------------------------------------------------------
@@ -272,21 +272,21 @@ end
    try
       t = arr.getString(-1, 5)
    success
-      error('Should reject negative start index')
+      assert(false, 'Should reject negative start index')
    end
 
    -- Test invalid length (would exceed array bounds)
    try
       t = arr.getString(5, 100)
    success
-      error('Should reject length that exceeds array bounds')
+      assert(false, 'Should reject length that exceeds array bounds')
    end
 
    -- Test negative length
    try
       t = arr.getString(0, -5)
    success
-      error('Should reject negative length')
+      assert(false, 'Should reject negative length')
    end
 end
 
@@ -306,7 +306,7 @@ end
    try
       arr.setString('!', -1)
    success
-      error('setString should reject negative start indexes')
+      assert(false, 'setString should reject negative start indexes')
    end
 end
 
@@ -324,26 +324,26 @@ end
    try
       dest.copy(source, 8) -- Target index 8, copy 5 chars = positions 8-12 (exceeds size 10)
    success
-      error('Should reject copy that would exceed array bounds')
+      assert(false, 'Should reject copy that would exceed array bounds')
    end
 
    try
       dest.copy(source, -1)
    success
-      error('Should reject invalid destination index')
+      assert(false, 'Should reject invalid destination index')
    end
 
    -- Test destination index beyond array size
    try
       dest.copy(source, 15) -- Beyond array size 10
    success
-      error('Should reject destination index beyond array size')
+      assert(false, 'Should reject destination index beyond array size')
    end
 
    try
       dest.copy(source, 0, 0, -1)
    success
-      error('Should reject negative string copy count')
+      assert(false, 'Should reject negative string copy count')
    end
 end
 
@@ -357,19 +357,19 @@ end
    try
       dest.copy(source, -1, 0, 1)
    success
-      error('Should reject negative destination index before array copy')
+      assert(false, 'Should reject negative destination index before array copy')
    end
 
    try
       dest.copy(source, 0, -1, 1)
    success
-      error('Should reject negative source index before array copy')
+      assert(false, 'Should reject negative source index before array copy')
    end
 
    try
       dest.copy(source, 0, 0, -1)
    success
-      error('Should reject negative count before array copy')
+      assert(false, 'Should reject negative count before array copy')
    end
 end
 
@@ -428,13 +428,13 @@ end
    try
       arr[6] = 100
    success
-      error('Should reject write beyond array bounds')
+      assert(false, 'Should reject write beyond array bounds')
    end
 
    try
       arr[-1] = 100
    success
-      error('Should reject write at invalid index')
+      assert(false, 'Should reject write at invalid index')
    end
 end
 
@@ -613,26 +613,26 @@ end
    try
       arr.copy(table_data, 0)  -- Invalid index (0)
    success
-      error('Should reject invalid destination index')
+      assert(false, 'Should reject invalid destination index')
    end
 
    -- Test copying beyond array bounds
    try
       arr.copy(table_data, 2)  -- Start at 2, table has 4 elements, would exceed array size 3
    success
-      error('Should reject copy that would exceed array bounds')
+      assert(false, 'Should reject copy that would exceed array bounds')
    end
 
    try
       arr.copy(table_data, 0, -1, 1)
    success
-      error('Should reject negative table source index')
+      assert(false, 'Should reject negative table source index')
    end
 
    try
       arr.copy(table_data, 0, 0, -1)
    success
-      error('Should reject negative table copy count')
+      assert(false, 'Should reject negative table copy count')
    end
 
    -- Test with empty table
@@ -640,7 +640,7 @@ end
    try
       arr.copy(empty_table)
    success
-      error('Should reject empty table')
+      assert(false, 'Should reject empty table')
    end
 end
 
@@ -713,13 +713,13 @@ end
    try
       bad_result = int_array .. 'x'
    success
-      error('Integer array left-hand concat should fail')
+      assert(false, 'Integer array left-hand concat should fail')
    end
 
    try
       bad_result = 'x' .. int_array
    success
-      error('Integer array right-hand concat should fail')
+      assert(false, 'Integer array right-hand concat should fail')
    end
 end
 
@@ -768,7 +768,7 @@ end
    try
       unsupported_equal = table_a is table_b
    success
-      error('Table array equality should fail until non-primitive equality is supported')
+      assert(false, 'Table array equality should fail until non-primitive equality is supported')
    end
 
    obj_one.free()
@@ -1336,7 +1336,7 @@ end
    try
       arr.concat(', ', '%s')
    success
-      error("Concat should be rejected for table arrays")
+      assert(false, "Concat should be rejected for table arrays")
    end
 end
 
@@ -1347,13 +1347,13 @@ end
    try
       arr[0] = 42
    success
-      error("Storing number in table array should fail")
+      assert(false, "Storing number in table array should fail")
    end
 
    try
       arr[0] = "string"
    success
-      error("Storing string in table array should fail")
+      assert(false, "Storing string in table array should fail")
    end
 end
 
@@ -1544,7 +1544,7 @@ end
    try
       array_of('int')
    success
-      error("array.of() with no values should fail")
+      assert(false, "array.of() with no values should fail")
    end
 end
 
@@ -1552,7 +1552,7 @@ end
    try
       exec('t = array<invalid> { 1, 2, 3 }')
    success
-      error("array.of() with invalid type should fail")
+      assert(false, "array.of() with invalid type should fail")
    end
 end
 
@@ -1560,7 +1560,7 @@ end
    try
       exec('t = array<pointer> { 1, 2, 3 }')
    success
-      error("array.of() with pointer type should be rejected")
+      assert(false, "array.of() with pointer type should be rejected")
    end
 end
 
@@ -1568,7 +1568,7 @@ end
    try
       exec('t = array<struct> { 1, 2, 3 }')
    success
-      error("array.of() with struct type should be rejected")
+      assert(false, "array.of() with struct type should be rejected")
    end
 end
 
@@ -1598,7 +1598,7 @@ end
    try
       t = array<str> { 'hello', {}, 'world' }
    success
-      error("array.of('str') with table value should fail")
+      assert(false, "array.of('str') with table value should fail")
    end
 end
 
@@ -1606,7 +1606,7 @@ end
    try
       t = array<int> { 1, 'not a number', 3 }
    success
-      error("array.of('int') with non-number value should fail")
+      assert(false, "array.of('int') with non-number value should fail")
    end
 end
 
@@ -1865,13 +1865,13 @@ end
    try
       arr.concat(',', nil, -1, 1)
    success
-      error('concat should reject negative Start indexes')
+      assert(false, 'concat should reject negative Start indexes')
    end
 
    try
       arr.concat(',', nil, 0, -1)
    success
-      error('concat should reject negative End indexes')
+      assert(false, 'concat should reject negative End indexes')
    end
 
    assert(arr.concat(',', nil, 3, 3) is '', 'an empty span at the array end should be valid')
@@ -1948,7 +1948,7 @@ end
    try
       arr.join(',')
    success
-      error("array.join() should no longer be available")
+      assert(false, "array.join() should no longer be available")
    end
 end
 

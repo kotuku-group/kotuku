@@ -811,15 +811,6 @@ local query = 'fn:error()'
    assert(keyword and keyword.type is 0, 'Bare raise must retain keyword highlighting.')
 end
 
-@Test function DeprecatedErrorStillExecutes()
-   try
-      exec("error('compatibility')")
-   except e
-      assert(e.message.find('compatibility'), 'Deprecated error() must retain its runtime behaviour.')
-   success
-      assert(false, 'Deprecated error() should still throw.')
-   end
-end
 
 @Test function DeprecationWarningsDoNotHideErrors()
    local source = ''

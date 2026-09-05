@@ -304,7 +304,7 @@ struct RetiredTableSyntax Value: int end
 local value = RetiredTableSyntax { Value=1 }
 ]])
    success
-      error('The retired Name { fields } construction syntax should fail to compile')
+      assert(false, 'The retired Name { fields } construction syntax should fail to compile')
    end
 
    try
@@ -313,13 +313,13 @@ struct RetiredCallSyntax Value: int end
 local value = RetiredCallSyntax()
 ]])
    success
-      error('The retired Name() construction syntax should fail to compile')
+      assert(false, 'The retired Name() construction syntax should fail to compile')
    end
 
    try
       exec([[local value = struct<NotARegisteredStruct> { }]])
    success
-      error('Constructing an unknown struct name should fail to compile')
+      assert(false, 'Constructing an unknown struct name should fail to compile')
    end
 
    exec([[
@@ -345,7 +345,7 @@ end
    try
       holder.Clock = obj.new('tiri', { statement='return 1' })
    success
-      error('obj<Class> fields should reject objects of another class')
+      assert(false, 'obj<Class> fields should reject objects of another class')
    end
 end
 
@@ -366,7 +366,7 @@ end
    try
       holder.Markup = obj.new('time', { })
    success
-      error('obj<Class> fields should still reject unrelated classes')
+      assert(false, 'obj<Class> fields should still reject unrelated classes')
    end
 end
 
@@ -501,7 +501,7 @@ end
       try
          exec(statement)
       success
-         error('Invalid vector field declaration should fail: ' .. statement)
+         assert(false, 'Invalid vector field declaration should fail: ' .. statement)
       end
    end
 
@@ -510,7 +510,7 @@ end
    try
       struct.new('LegacyBadOwnedElementVector').values = array<table> { { name='unsafe' } }
    success
-      error('Legacy non-trivial struct vectors should reject type-erased assignment')
+      assert(false, 'Legacy non-trivial struct vectors should reject type-erased assignment')
    end
 end
 
@@ -520,7 +520,7 @@ end
    try
       local values = array<struct<DeclaredVectorOwner>, 1>
    success
-      error('Owned struct arrays should reject element layouts containing vectors')
+      assert(false, 'Owned struct arrays should reject element layouts containing vectors')
    end
 end
 
@@ -530,19 +530,19 @@ end
    try
       exec([[struct RetiredBraceDeclaration { Value: int }]])
    success
-      error("Brace-delimited struct declarations should fail to compile")
+      assert(false, "Brace-delimited struct declarations should fail to compile")
    end
 
    try
       MAKESTRUCT('Bad_Name', 'lValue')
    success
-      error('MAKESTRUCT should reject names containing non-alphanumeric characters')
+      assert(false, 'MAKESTRUCT should reject names containing non-alphanumeric characters')
    end
 
    try
       exec([[struct Bad_Name Value: int end]])
    success
-      error('Struct declarations should reject names containing non-alphanumeric characters')
+      assert(false, 'Struct declarations should reject names containing non-alphanumeric characters')
    end
 
    exec([[
@@ -555,67 +555,67 @@ assert(value.Value is 12)
    try
       exec([[struct BadUnknownType Value: mystery end]])
    success
-      error('Unknown declaration field types should fail')
+      assert(false, 'Unknown declaration field types should fail')
    end
 
    try
       exec([[struct RetiredInt32 Value: int32 end]])
    success
-      error('Struct declarations should reject the retired int32 alias')
+      assert(false, 'Struct declarations should reject the retired int32 alias')
    end
 
    try
       exec([[struct RetiredUInt32 Value: uint32 end]])
    success
-      error('Struct declarations should reject the retired uint32 alias')
+      assert(false, 'Struct declarations should reject the retired uint32 alias')
    end
 
    try
       exec([[struct RetiredInt32Array Values: array<int32> end]])
    success
-      error('Struct array fields should reject the retired int32 alias')
+      assert(false, 'Struct array fields should reject the retired int32 alias')
    end
 
    try
       exec([[struct RetiredUInt32Array Values: array<uint32> end]])
    success
-      error('Struct array fields should reject the retired uint32 alias')
+      assert(false, 'Struct array fields should reject the retired uint32 alias')
    end
 
    try
       exec([[struct RetiredInt32Pointer Value: ptr<int32> end]])
    success
-      error('Struct pointer fields should reject the retired int32 alias')
+      assert(false, 'Struct pointer fields should reject the retired int32 alias')
    end
 
    try
       exec([[struct RetiredUInt32Pointer Value: ptr<uint32> end]])
    success
-      error('Struct pointer fields should reject the retired uint32 alias')
+      assert(false, 'Struct pointer fields should reject the retired uint32 alias')
    end
 
    try
       exec([[struct BadForwardReference Value: struct<NotDeclaredYet> end]])
    success
-      error('Forward struct references should fail')
+      assert(false, 'Forward struct references should fail')
    end
 
    try
       exec([[struct BadCaseCollision Value: int, value: int end]])
    success
-      error('Case-insensitive field-name collisions should fail')
+      assert(false, 'Case-insensitive field-name collisions should fail')
    end
 
    try
       exec([[struct BadArrayDimensionRange Values: int[4294967296] end]])
    success
-      error('Array dimensions that exceed the parser integer range should fail')
+      assert(false, 'Array dimensions that exceed the parser integer range should fail')
    end
 
    try
       exec([[struct BadArrayStorageRange Values: int[20000] end]])
    success
-      error('Array layouts that exceed the native struct offset range should fail')
+      assert(false, 'Array layouts that exceed the native struct offset range should fail')
    end
 
    try
@@ -624,7 +624,7 @@ struct ConflictingLayout Value: int end
 struct ConflictingLayout Value: double end
 ]])
    success
-      error('Conflicting declarations should fail')
+      assert(false, 'Conflicting declarations should fail')
    end
    exec([[
 struct ConflictingLayout Value: double end
@@ -750,7 +750,7 @@ end
    try
       container.value = dead_value
    success
-      error('Assigning a detached object wrapper should fail')
+      assert(false, 'Assigning a detached object wrapper should fail')
    end
    container.value = nil
 end
@@ -769,7 +769,7 @@ end
    try
       container.borrowed = 'unsupported'
    success
-      error('Assigning a raw C string field should fail')
+      assert(false, 'Assigning a raw C string field should fail')
    end
 end
 
@@ -782,7 +782,7 @@ end
    try
       container.callback = nil
    success
-      error('Assigning an unsupported field type should fail')
+      assert(false, 'Assigning an unsupported field type should fail')
    end
 end
 
@@ -860,13 +860,13 @@ end
    try
       value.fixed = array<int> { 1, 2, 3, 4 }
    success
-      error('Fixed array overflow should fail')
+      assert(false, 'Fixed array overflow should fail')
    end
 
    try
       value.fixed = array<double> { 1, 2 }
    success
-      error('Array element type mismatch should fail')
+      assert(false, 'Array element type mismatch should fail')
    end
 end
 
@@ -896,7 +896,7 @@ end
    try
       struct.copy(struct.new('CopyMismatch'), source)
    success
-      error('Copying mismatched struct definitions should fail')
+      assert(false, 'Copying mismatched struct definitions should fail')
    end
 end
 
@@ -977,7 +977,7 @@ end
       assert(error_value.line is expected_read_line,
          f'Fast struct reads should retain access line {expected_read_line}, got {error_value.line}')
    success
-      error('Unknown struct field access should raise through STGETF')
+      assert(false, 'Unknown struct field access should raise through STGETF')
    end
 
    local expected_write_line = @SourceLine + 3
@@ -990,7 +990,7 @@ end
       assert(error_value.line is expected_write_line,
          f'Fast struct writes should retain assignment line {expected_write_line}, got {error_value.line}')
    success
-      error('Unknown struct field assignment should raise through STSETF')
+      assert(false, 'Unknown struct field assignment should raise through STSETF')
    end
 
    local expected_line = @SourceLine + 3
@@ -1003,7 +1003,7 @@ end
       assert(error_value.line is expected_line,
          f'Fast struct field errors should retain assignment line {expected_line}, got {error_value.line}')
    success
-      error('Invalid struct field assignment should raise through STSETF')
+      assert(false, 'Invalid struct field assignment should raise through STSETF')
    end
 
    assert(#value is 1, 'Struct length should remain the number of declared fields')

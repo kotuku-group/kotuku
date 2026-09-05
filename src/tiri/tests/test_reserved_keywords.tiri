@@ -28,7 +28,7 @@ primary_forms = array<str> {
       try
          exec('local ' .. keyword .. ' = 1')
       success
-         error(keyword .. ' should be reserved and rejected as a local declaration name')
+         assert(false, keyword .. ' should be reserved and rejected as a local declaration name')
       end
    end
 end
@@ -39,7 +39,7 @@ end
          try
             exec(keyword .. ' ' .. op .. ' 1')
          success
-            error(keyword .. ' should be reserved and rejected as an inferred local assignment with ' .. op)
+            assert(false, keyword .. ' should be reserved and rejected as an inferred local assignment with ' .. op)
          end
       end
    end
@@ -51,7 +51,7 @@ end
          try
             exec(keyword .. suffix)
          success
-            error(keyword .. suffix .. ' should be reserved and rejected as a bare primary expression')
+            assert(false, keyword .. suffix .. ' should be reserved and rejected as a bare primary expression')
          end
       end
    end
@@ -62,7 +62,7 @@ end
       try
          exec('if ' .. keyword .. ' then return 1 end')
       success
-         error(keyword .. ' should be reserved and rejected as a bare condition expression')
+         assert(false, keyword .. ' should be reserved and rejected as a bare condition expression')
       end
    end
 end

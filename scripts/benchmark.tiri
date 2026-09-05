@@ -169,7 +169,7 @@ bmark.run = function(Options:table, Feedback:func, Callback:func!):table
    end
 
    if results.warmupCount < Options.warmupCalls then
-      error('Failed to complete warmup phase within the allotted duration.')
+      raise 'Failed to complete warmup phase within the allotted duration.'
    end
 
    if Options.warmupCalls > 0 and Options.showProgress then

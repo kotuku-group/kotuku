@@ -9,7 +9,7 @@
       assert(e.message.find('required argument 1 is missing') != nil,
          'processing.halt() should publish its required seconds argument')
    success
-      error('processing.halt() should be rejected without a seconds argument')
+      assert(false, 'processing.halt() should be rejected without a seconds argument')
    end
 end
 
@@ -100,7 +100,7 @@ end
    try
       processing.collect('invalid_mode')
    success
-      error('collect() with invalid mode should throw an error')
+      assert(false, 'collect() with invalid mode should throw an error')
    end
 end
 

@@ -40,7 +40,7 @@ glPort = 8089
             check err
             logOutput('Converted back to: ' .. result_str)
          else
-            error('Failed to parse ' .. addr_str .. ': ' .. mSys.GetErrorMsg(err))
+            raise 'Failed to parse ' .. addr_str .. ': ' .. mSys.GetErrorMsg(err)
          end
       else
          logOutput('Skipping link-local with interface identifier')
@@ -183,7 +183,7 @@ end
          err, converted = mNet.AddressToStr(addr)
          check err
       else
-         error('Incorrect type identification')
+         raise 'Incorrect type identification'
       end
    end
 end

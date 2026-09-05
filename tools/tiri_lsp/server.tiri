@@ -41,7 +41,7 @@ function resolveSDKPath(Path:str)
          msg ..= path .. '\n'
       end
       print('Unable to find CMakeLists.txt after searching the following paths:\n' .. msg)
-      error('A path to the Kotuku SDK could not be determined.')
+      raise 'A path to the Kotuku SDK could not be determined.'
    end
 
    mSys.SetVolume('sdk', sdk_path)
@@ -51,7 +51,7 @@ end
 
 function validatePort(Parser:table, ArgName:str, Value:any, Param:table)
    if Value < 0 or Value > 65535 then
-      error(f"Parameter '{ArgName}' must be between 0 and 65535.")
+      raise f"Parameter '{ArgName}' must be between 0 and 65535."
    end
 end
 

@@ -43,7 +43,7 @@ function rawHttpRequestWithHeaders(Method:str, Path:str, Headers:table):<num, st
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Raw HTTP read failed: ' .. mSys.GetErrorMsg(err))
+            raise 'Raw HTTP read failed: ' .. mSys.GetErrorMsg(err)
          end
       end
    })

@@ -1176,7 +1176,7 @@ global function docFunction(Function)
    if Function.description?? then
       out ..= f'    <description>\n{extractParagraph(Function.description, Function, Function.references)}\n    </description>\n'
    else
-      error(f'{Function.name}() has no description.')
+      raise f'{Function.name}() has no description.'
    end
 
    -- Results
@@ -1224,7 +1224,7 @@ global function docTypes(References:table)
       typeName = choose ct.grouping from
          'constants' -> 'const'
          'flags' -> 'flag'
-         else -> error("Unknown grouping for custom type, '" .. ct.grouping .. "'")
+         else -> raise("Unknown grouping for custom type, '" .. ct.grouping .. "'")
       end
 
       if not References or (not References['TYPE:' .. ct.prefix]) then

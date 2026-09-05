@@ -324,7 +324,7 @@ end
       assert(result is "base", f"Expected the built-in clear method after metatable mutation, got '{result}'")
    except e
       debug.setMetatable(arr, nil)
-      error(e)
+      raise
    end
 
    debug.setMetatable(arr, nil)
@@ -357,7 +357,7 @@ end
       assert(result is "base", f"Expected the built-in clear method after base-slot mutation, got '{result}'")
    except e
       base_mt['clear'] = original_clear
-      error(e)
+      raise
    end
 
    base_mt['clear'] = original_clear
@@ -703,7 +703,7 @@ end
    except error_value
       assert(error_value != nil, 'A traced structure-array mismatch should provide an error value')
    success
-      error('A traced structure-array mismatch should fail')
+      assert(false, 'A traced structure-array mismatch should fail')
    end
 
    try
@@ -711,7 +711,7 @@ end
    except error_value
       assert(error_value != nil, 'A traced float-array overflow should provide an error value')
    success
-      error('A traced float-array overflow should fail')
+      assert(false, 'A traced float-array overflow should fail')
    end
 
    try
@@ -721,7 +721,7 @@ end
       assert(error_value.source != nil and error_value.line > 0,
          'A traced getString range error should retain its source location')
    success
-      error('A traced getString range error should fail')
+      assert(false, 'A traced getString range error should fail')
    end
 
    assert(traced_struct_array_get(structs, 0).Value is 7,
@@ -748,7 +748,7 @@ end
    except error_value
       first_line = error_value.line
    success
-      error('The first traced array branch should fail')
+      assert(false, 'The first traced array branch should fail')
    end
 
    local second_line = 0
@@ -757,7 +757,7 @@ end
    except error_value
       second_line = error_value.line
    success
-      error('The second traced array branch should fail')
+      assert(false, 'The second traced array branch should fail')
    end
 
    assert(first_line > 0 and second_line > 0, 'Both traced array branches should retain source lines')

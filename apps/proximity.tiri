@@ -8,7 +8,7 @@
 
 function validatePort(Parser:table, ArgName:str!, Value:any!, Param:table)
    if Value < 1 or Value > 65535 then
-      error(f"Parameter '{ArgName}' must be between 1 and 65535.")
+      raise f"Parameter '{ArgName}' must be between 1 and 65535."
    end
 end
 
@@ -51,7 +51,7 @@ Examples:
            comment = 'Request timeout in seconds.',
            exec = function(Parser:table, ArgName:str!, Value:any!, Param:table)
               if Value < 1 or Value > 300 then
-                 error(f"Parameter '{ArgName}' must be between 1 and 300 seconds.")
+                 raise f"Parameter '{ArgName}' must be between 1 and 300 seconds."
               end
            end
          },
@@ -72,7 +72,7 @@ Examples:
            group = 'Recording', comment = 'Maximum number of flows to keep in memory.',
            exec = function(Parser:table, ArgName:str!, Value:any!, Param:table)
               if Value < 1 then
-                 error(f"Parameter '{ArgName}' must be greater than zero.")
+                 raise f"Parameter '{ArgName}' must be greater than zero."
               end
            end
          },

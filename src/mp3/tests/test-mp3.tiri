@@ -5,9 +5,9 @@
 @BeforeAll function setup(State:table)
    global glFolder = State.folder
    global glAudio = obj.new('audio', { name='SystemAudio' })
-   if not glAudio then error('Failed to create audio object.') end
+   if not glAudio then raise 'Failed to create audio object.' end
    if glAudio.acActivate() != ERR_Okay then
-      error('Failed to initialise audio server.')
+      raise 'Failed to initialise audio server.'
    end
    global glLag = glAudio.mixerLag
    print('Audio mixer lag time measured as ' .. string.format('%.2fs', glLag))

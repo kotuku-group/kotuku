@@ -281,7 +281,7 @@ end
          events.insert('defer')
       end
       events.insert('body')
-      error('body failure')
+      raise 'body failure'
    end
 
    try
@@ -289,7 +289,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the body error to propagate')
+      assert(false, 'Expected the body error to propagate')
    end
 
    assert(join(events) is 'body,defer',
@@ -306,7 +306,7 @@ end
       defer events.insert('second') end
       defer events.insert('third') end
       events.insert('body')
-      error('body failure')
+      raise 'body failure'
    end
 
    try
@@ -314,7 +314,7 @@ end
    except e
       assert(e.message.find('body failure') != nil, 'The body error should survive successful cleanup')
    success
-      error('Expected the body error to propagate')
+      assert(false, 'Expected the body error to propagate')
    end
 
    assert(join(events) is 'body,third,second,first',
@@ -329,7 +329,7 @@ end
       do
          defer events.insert('inner-block') end
          events.insert('body')
-         error('nested failure')
+         raise 'nested failure'
       end
    end
 
@@ -343,7 +343,7 @@ end
    except e
       assert(e.message.find('nested failure') != nil, 'The nested body error should propagate')
    success
-      error('Expected the nested body error to propagate')
+      assert(false, 'Expected the nested body error to propagate')
    end
 
    assert(join(events) is 'body,inner-block,inner-function,outer-function',
@@ -362,7 +362,7 @@ end
 
       value = 15
       events.insert('body-' .. tostring(value))
-      error('snapshot failure')
+      raise 'snapshot failure'
    end
 
    try
@@ -370,7 +370,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the snapshot body error to propagate')
+      assert(false, 'Expected the snapshot body error to propagate')
    end
 
    assert(join(events) is 'body-15,defer-5',
@@ -399,7 +399,7 @@ end
          defer events.insert('inner-defer') end
          local inner_close <close> = close_handler('inner-close')
          events.insert('body')
-         error('ordered cleanup failure')
+         raise 'ordered cleanup failure'
       end
    end
 
@@ -408,7 +408,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the ordered cleanup body error to propagate')
+      assert(false, 'Expected the ordered cleanup body error to propagate')
    end
 
    assert(join(events) is 'body,inner-close,inner-defer,outer-close,outer-defer',
@@ -425,10 +425,10 @@ end
       defer events.insert('outer') end
       defer
          events.insert('throwing')
-         error('cleanup failure')
+         raise 'cleanup failure'
       end
       defer events.insert('inner') end
-      error('body failure')
+      raise 'body failure'
    end
 
    try
@@ -450,17 +450,17 @@ end
    function subject()
       defer
          events.insert('first')
-         error('first cleanup failure')
+         raise 'first cleanup failure'
       end
       defer
          events.insert('second')
-         error('second cleanup failure')
+         raise 'second cleanup failure'
       end
       defer
          events.insert('third')
-         error('third cleanup failure')
+         raise 'third cleanup failure'
       end
-      error('body failure')
+      raise 'body failure'
    end
 
    try
@@ -482,7 +482,7 @@ end
    function subject()
       defer
          calls++
-         error('normal cleanup failure')
+         raise 'normal cleanup failure'
       end
    end
 
@@ -491,7 +491,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the defer handler to fail')
+      assert(false, 'Expected the defer handler to fail')
    end
 
    assert(calls is 1, 'A defer that throws during normal cleanup must not run again during unwind')
@@ -509,7 +509,7 @@ end
 
    function fail_argument():str
       events.insert('evaluate-failing')
-      error('argument failure')
+      raise 'argument failure'
       return 'unreachable'
    end
 
@@ -524,7 +524,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected deferred argument evaluation to fail')
+      assert(false, 'Expected deferred argument evaluation to fail')
    end
 
    assert(join(events) is 'evaluate-first,evaluate-failing',
@@ -600,7 +600,7 @@ end
       for i in {0 to 4} do
          defer events.insert('loop-defer-' .. tostring(i)) end
          events.insert('loop-body-' .. tostring(i))
-         if i is 2 then error('loop failure') end
+         if i is 2 then raise 'loop failure' end
       end
    end
 
@@ -609,7 +609,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the loop body error to propagate')
+      assert(false, 'Expected the loop body error to propagate')
    end
 
    assert(join(events) is
@@ -626,7 +626,7 @@ end
       if Depth > 0 then
          recursive_subject(Depth - 1)
       else
-         error('recursive failure')
+         raise 'recursive failure'
       end
    end
 
@@ -635,7 +635,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the recursive body error to propagate')
+      assert(false, 'Expected the recursive body error to propagate')
    end
 
    assert(join(events) is
@@ -661,7 +661,7 @@ end
    except e when ERR_Args
       caught_code = e.code
    success
-      error('Expected checkall to promote ERR_Args')
+      assert(false, 'Expected checkall to promote ERR_Args')
    end
 
    assert(caught_code is ERR_Args, 'The promoted native error should reach the filtered handler')
@@ -681,7 +681,7 @@ end
                _G['glDeferProtectedEvents'].insert('defer')
             end
             _G['glDeferProtectedEvents'].insert('body')
-            error('protected failure')
+            raise('protected failure')
          end
          protected_subject()
       ]])
@@ -703,7 +703,7 @@ end
    function grow_stack(Depth:num):any
       if Depth > 0 then return grow_stack(Depth - 1) end
       processing.collect('full')
-      error('relocated failure')
+      raise 'relocated failure'
    end
 
    function subject()
@@ -719,7 +719,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the relocated body error to propagate')
+      assert(false, 'Expected the relocated body error to propagate')
    end
 
    assert(join(events) is 'defer-snapshot',
@@ -733,7 +733,7 @@ end
 
    function abandoned()
       defer events.insert('abandoned') end
-      error('abandon frame')
+      raise 'abandon frame'
    end
 
    function survivor()
@@ -746,7 +746,7 @@ end
    except e
       caught_message = e.message
    success
-      error('Expected the abandoned frame error to propagate')
+      assert(false, 'Expected the abandoned frame error to propagate')
    end
    survivor()
 
@@ -758,7 +758,7 @@ end
 function repeated_flat_stack_iteration(Index:num, ShouldThrow:bool, Events:table)
    defer(Captured) Events.insert('cleanup-' .. tostring(Captured)) end(Index)
    Events.insert('body-' .. tostring(Index))
-   if ShouldThrow then error('iteration failure ' .. tostring(Index)) end
+   if ShouldThrow then raise 'iteration failure ' .. tostring(Index) end
 end
 
 @Test function RepeatedNormalAndThrowingIterationsLeaveNoRegistrations()

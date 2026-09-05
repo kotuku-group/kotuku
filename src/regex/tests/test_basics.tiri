@@ -26,7 +26,7 @@ end
    except ex
       assert(ex.message.find("Regex compilation failed"), "Error message should mention compilation failure, got: " .. ex.message)
    success
-      error("Invalid pattern should raise an exception")
+      assert(false, "Invalid pattern should raise an exception")
    end
 end
 
