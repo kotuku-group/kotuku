@@ -357,7 +357,7 @@ end
             handler = function(Req, Res)
                glPostBody = Req.body ?? ''
                Res.json({
-                  receivedSize = string.len(glPostBody),
+                  receivedSize = #glPostBody,
                   body = glPostBody
                })
             end

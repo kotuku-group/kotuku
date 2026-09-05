@@ -71,17 +71,6 @@ static tiri_range * get_range_from_tvalue(lua_State *L, cTValue *tv)
 
 #define LJLIB_MODULE_string
 
-LJLIB_CF(string_len)
-{
-   GCstr *s = lj_lib_checkstr(L, 1);
-   int32_t len = (int32_t)s->len;
-   setintV(L->top - 1, len);
-   return 1;
-}
-
-//********************************************************************************************************************
-// NOTE: ASM version exists
-
 LJLIB_ASM(string_byte)      LJLIB_REC(string_range 0)
 {
    GCstr *s = lj_lib_checkstr(L, 1);
@@ -898,8 +887,6 @@ extern int luaopen_string(lua_State *L)
       { TiriType::Str }, { TiriType::Str }, FProtoFlags::Variadic, FProtoArity::required(1));
    reg_iface_method(L, "string", "hash", TiriType::Str, builtin_callable_id(FastFunc::string_hash),
       { TiriType::Num }, { TiriType::Str, TiriType::Bool }, FProtoFlags::None, FProtoArity::required(1));
-   reg_iface_method(L, "string", "len", TiriType::Str, builtin_callable_id(FastFunc::string_len),
-      { TiriType::Num }, { TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "lower", TiriType::Str, builtin_callable_id(FastFunc::string_lower),
       { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "pop", TiriType::Str, builtin_callable_id(FastFunc::string_pop),

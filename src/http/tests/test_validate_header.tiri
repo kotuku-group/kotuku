@@ -238,7 +238,7 @@ end
       flags       = HTF_NO_HEAD | HTF_NO_DIALOG,
       contentType = 'application/xml',
       inputFile   = 'string:' .. xml_data,
-      size        = xml_data.len(),
+      size        = #xml_data,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
             HTTP.acSignal()

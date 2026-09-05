@@ -1005,7 +1005,7 @@ gui.fileview = function(Options)
       end
 
       if self.limitPath then -- Limit browsing to the limitPath folder and its sub-folders.
-         if not self.path or (self.path.sub(0, self.limitPath.len()) != self.limitPath) then
+         if not self.path or (self.path.sub(0, #self.limitPath) != self.limitPath) then
             self.path = self.limitPath
          end
       end
@@ -1482,7 +1482,7 @@ gui.fileview = function(Options)
                   Bar.addGroup(11, 'Actions', 4)
 
                   Bar.addItem(TBID.BOOKMARK, 'Bookmark', 'Create Bookmark', 'items/new_bookmark', function()
-                     if not self.path or (string.len(self.path) < 3) then return end
+                     if not self.path or (#self.path < 3) then return end
 
                      current_path = self.path
 
@@ -1498,7 +1498,7 @@ gui.fileview = function(Options)
                            { id=1, text='Create Volume', icon='items/checkmark' }
                         },
                         feedback = function(Dialog, Response, State)
-                           if Response and Response.id is 1 and string.len(State.input) > 0 then
+                           if Response and Response.id is 1 and #State.input > 0 then
                               mSys.SetVolume(State.input, current_path, 'items/bookmark', nil, nil, VOLUME_REPLACE)
                            end
                         end

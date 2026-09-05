@@ -42,7 +42,7 @@ SERVER_PORT <const> = 18945
             handler = function(req, res)
                res.json({
                   message = 'Received chunked data',
-                  bodyLength = req.body and req.body.len() or 0
+                  bodyLength = req.body and #req.body or 0
                })
             end
          },
@@ -61,7 +61,7 @@ SERVER_PORT <const> = 18945
             handler = function(req, res)
                res.json({
                   message = 'Upload received',
-                  bodyLength = req.body and req.body.len() or 0
+                  bodyLength = req.body and #req.body or 0
                })
             end
          },
@@ -79,7 +79,7 @@ SERVER_PORT <const> = 18945
             handler = function(req, res)
                res.json({
                   message = 'Empty request handled',
-                  bodyLength = req.body and req.body.len() or 0,
+                  bodyLength = req.body and #req.body or 0,
                   hasBody = req.body != nil
                })
             end
@@ -227,7 +227,7 @@ end
    -- Server sends less data than Content-Length indicates.  The client should complete or terminate without hanging.
    assert((http.status is 200) or (http.currentState is HGS_TERMINATED), 'Content mismatch should complete gracefully')
 
-   print('Content-Length mismatch test passed: received ' .. content.len() .. ' bytes')
+   print('Content-Length mismatch test passed: received ' .. #content .. ' bytes')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -244,7 +244,7 @@ end
       contentType = 'text/plain',
       flags = HTF_NO_HEAD,
       inputFile = 'string:' .. oversizedBody,
-      size = oversizedBody.len(),
+      size = #oversizedBody,
       incoming = function(HTTP, Buffer)
          content ..= Buffer.getString()
       end,

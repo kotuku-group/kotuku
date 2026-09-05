@@ -32,10 +32,10 @@ io.search = function(Path:str!, Options:table!)
          buf = string.alloc(bytes)
          err, totalRead = fl.acRead(buf)
 
-         while (err is ERR_Okay) and (totalRead >= lOptions.contentFilter.len()) do
+         while (err is ERR_Okay) and (totalRead >= #lOptions.contentFilter) do
             if buf.find(lOptions.contentFilter) then return true end
             if fl.position is fl.size then return false end
-            fl.acSeek(-lOptions.contentFilter.len(), SEEK_CURRENT) -- Sliding window
+            fl.acSeek(-#lOptions.contentFilter, SEEK_CURRENT) -- Sliding window
             err, totalRead = fl.acRead(buf)
          end
       end

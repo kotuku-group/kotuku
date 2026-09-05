@@ -26,6 +26,13 @@ function expect_split(Source:str, Separator:str, Expected:array<str>, Descriptio
    end
 end
 
+@Test function LengthOperatorReplacesLen()
+   assert(#'' is 0 and #'abc' is 3 and #'abc\0def' is 7,
+      'The length operator should report string byte lengths, including embedded NUL bytes')
+   assert(string['len'] is nil, 'string.len() should not be exposed by the string namespace')
+   assert('abc'['len'] is nil, 'string.len() should not be exposed as a string method')
+end
+
 @Test function Alloc()
    local sizes = array<int> { 0, 1, 2, 3, 4, 5, 7, 8, 9, 1000 }
    for _, size in sizes do

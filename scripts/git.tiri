@@ -76,7 +76,7 @@ git.query = function(Path:str!):table
             end
          else
             -- HEAD might contain a commit hash directly (detached HEAD)
-            if string.len(head_content) is 40 then
+            if #head_content is 40 then
                git_info.commit = head_content
                git_info.branch = 'detached HEAD'
             end

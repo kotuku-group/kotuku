@@ -701,7 +701,7 @@ end
    s = "hello"
    assert(s.upper() is "HELLO", "string.upper should still work")
    assert(s.sub(0, 3) is "hel", "string.sub should still work")
-   assert(s.len() is 5, "string.len should still work")
+   assert(#s is 5, "The string length operator should still work")
    assert(s.reverse() is "olleh", "string.reverse should still work")
 end
 

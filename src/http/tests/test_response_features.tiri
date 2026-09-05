@@ -142,7 +142,7 @@ end
                res.json({
                   message = 'Compression test response',
                   data = largeMessage,
-                  size = largeMessage.len()
+                  size = #largeMessage
                })
             end
          },

@@ -192,7 +192,7 @@ end
       contentType = 'text/plain',
       flags      = HTF_NO_HEAD,
       inputFile  = 'string:' .. outgoing_body,
-      size       = outgoing_body.len(),
+      size       = #outgoing_body,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
             HTTP.acSignal()

@@ -554,7 +554,7 @@ global function saveOutput()
             e ..= f'{const.name}="{const.value}"'
          else
             hexval = string.format('%x', const.value)
-            if hexval.len() is 16 then hexval = hexval.sub(-8) end
+            if #hexval is 16 then hexval = hexval.sub(-8) end
             e ..= f'{const.name}=0x{hexval}'
          end
       end
@@ -568,7 +568,7 @@ global function saveOutput()
 
    out = glHead
    if glFormat is 'c' then
-      if s.len() + c.len() >= 16 * 1024 then -- MSVC doesn't like defined strings > 16Kb, so we need this alternative
+      if #s + #c >= 16 * 1024 then -- MSVC doesn't like defined strings > 16Kb, so we need this alternative
          out ..= 'char glIDL[] = { '
          out ..= str_to_bytes((s ?? '') .. (c ?? ''))
          out ..= ',0 };\n'
