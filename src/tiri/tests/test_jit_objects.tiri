@@ -1406,7 +1406,7 @@ end
    jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
 
    local chunks = {}
-   local buffer = array.new('multi-result payload', 'byte')
+   local buffer = string.toArray('multi-result payload')
 
    function append_chunk(Source)
       chunks.insert(Source.getString())

@@ -6992,10 +6992,10 @@ static bool test_builtin_method_registry(kt::Log &Log)
       "indexOf", "map", "mapSame", "findIndex", "filter", "reduce", "any", "all", "insert", "remove",
       "clone"
    };
-   constexpr std::array<std::string_view, 22> string_methods = {
+   constexpr std::array<std::string_view, 23> string_methods = {
       "byte", "cap", "count", "decap", "endsWith", "escXML", "find", "format", "hash", "len",
       "lower", "pop", "rep", "replace", "reverse", "rtrim", "split", "startsWith", "sub", "trim",
-      "unescapeXML", "upper"
+      "toArray", "unescapeXML", "upper"
    };
    constexpr std::array<std::string_view, 12> table_methods = {
       "insert", "remove", "move", "concat", "sort", "empty", "kind", "size", "clear", "slice", "sortByKeys",
@@ -7840,7 +7840,7 @@ static bool test_canonical_core_syntax_bytecode_emission(kt::Log &Log)
 
    error.clear();
    auto explicit_calls = compile_snapshot(L,
-      "local values = array.new(2, 'int')\n"
+      "local values = array.new('int', 2)\n"
       "array.resize(values, 3)\n"
       "return range(0, 2), range.slice({}, {0 to 1}), bit.band(1, 1)\n", true, error);
    if (not explicit_calls or count_opcode_tree(*explicit_calls, BC_GGET) IS 0 or

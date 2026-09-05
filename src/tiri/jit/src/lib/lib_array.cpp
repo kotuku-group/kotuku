@@ -317,47 +317,28 @@ static bool is_unsigned_format(CSTRING Format, bool Wide)
 }
 
 //********************************************************************************************************************
-// Usage: array.new(size, type) or array.new('str')
+// Usage: array.new(type, size)
 //
-// Creates a new array of the specified size and element type.
-//
-//   size: number of elements (must be non-negative)
-//   type: element type string ("char", "int16", "int", "int64", "float", "double", "str", "StructName")
+// Creates a new array of the specified element type and non-negative size.
 
 LJLIB_CF(array_new)      LJLIB_REC(.)
 {
-   GCarray *arr;
+   auto size = lj_lib_checkint(L, 2);
+   if (size < 0) lj_err_argv(L, 2, ErrMsg::NUMRNG, "non-negative", "negative");
+   auto descriptor = parse_elemtype(L, 1);
 
-   auto type = lua_type(L, 1);
-   if (type IS LUA_TSTRING) {
-      TValue *o = L->base;
-      GCstr *s = strV(o);
-      auto elem_type = AET::BYTE;
-      arr = lj_array_new(L, s->len, elem_type);
-
-      kt::copymem(strdata(s), arr->get<CSTRING>(), s->len);
-   }
-   else {
-      auto size = lj_lib_checkint(L, 1);
-      if (size < 0) lj_err_argv(L, 1, ErrMsg::NUMRNG, "non-negative", "negative");
-      auto descriptor = parse_elemtype(L, 2);
-
-      if (descriptor.storage IS AET::PTR) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only
-      else if (descriptor.storage IS AET::STRUCT) {
-         auto struct_name = array_struct_name(L, 2);
-         if (struct_name.empty()) lj_err_argv(L, 2, ErrMsg::ARRTYPE);
-         auto struct_def = find_struct(L, struct_name);
-         if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
-            lj_err_argv(L, 2, ErrMsg::ARRTYPE);
-         }
-         descriptor.struct_def = struct_def;
-         arr = lj_array_new(L, uint32_t(size), descriptor);
+   if (descriptor.storage IS AET::PTR) lj_err_argv(L, 1, ErrMsg::ARRTYPE); // For Kotuku functions only
+   else if (descriptor.storage IS AET::STRUCT) {
+      auto struct_name = array_struct_name(L, 1);
+      if (struct_name.empty()) lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      auto struct_def = find_struct(L, struct_name);
+      if ((not struct_def) or (not lj_array_struct_is_trivial(*struct_def))) {
+         lj_err_argv(L, 1, ErrMsg::ARRTYPE);
       }
-      else arr = lj_array_new(L, uint32_t(size), descriptor);
+      descriptor.struct_def = struct_def;
    }
 
-   // Per-instance metatable is null - base metatable will be used automatically
-
+   GCarray *arr = lj_array_new(L, uint32_t(size), descriptor);
    setarrayV(L, L->top++, arr);
    return 1;
 }
@@ -2959,8 +2940,8 @@ extern "C" int luaopen_array(lua_State *L)
    setgcref(basemt_it(g, LJ_TARRAY), obj2gco(lib));
 
    // Register array interface prototypes for compile-time type inference
-   reg_iface_prototype("array", "new", { TiriType::Array }, { TiriType::Any, TiriType::Str }, FProtoFlags::None,
-      FProtoArity::required(1));
+   reg_iface_prototype("array", "new", { TiriType::Array }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str, TiriType::Any }, FProtoFlags::Variadic,
       FProtoArity::required(2));
    // Methods

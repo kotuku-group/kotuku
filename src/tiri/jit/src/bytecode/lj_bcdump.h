@@ -56,7 +56,9 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // Version 0x9d removes math.pow from that ordering.  Older chunks are rejected rather than retaining compatibility
 // shims.  Version 0x9e renames the canonical object._state callable to object.state.
 
-constexpr uint8_t BCDUMP_VERSION = 0x9e;
+// Version 0x9f reorders array.new arguments and adds the string.toArray callable.
+
+constexpr uint8_t BCDUMP_VERSION = 0x9f;
 
 // Compatibility flags.
 

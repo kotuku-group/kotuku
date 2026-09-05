@@ -199,6 +199,17 @@ static CSTRING find_separator(CSTRING Pos, CSTRING End, CSTRING Sep, MSize SepLe
 
 //********************************************************************************************************************
 
+LJLIB_CF(string_toArray)
+{
+   GCstr *source = lj_lib_checkstr(L, 1);
+   GCarray *array = lj_array_new(L, source->len, AET::BYTE);
+   kt::copymem(strdata(source), array->get<CSTRING>(), source->len);
+   setarrayV(L, L->top++, array);
+   return 1;
+}
+
+//********************************************************************************************************************
+
 LJLIB_CF(string_split)
 {
    GCstr *s = lj_lib_checkstr(L, 1);
@@ -914,6 +925,8 @@ extern int luaopen_string(lua_State *L)
    reg_iface_method(L, "string", "substr", TiriType::Str, builtin_callable_id(FastFunc::string_sub),
       { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num }, FProtoFlags::None,
       FProtoArity::required(2), true);
+   reg_iface_method(L, "string", "toArray", TiriType::Str, builtin_callable_id(FastFunc::string_toArray),
+      { TiriType::Array }, { TiriType::Str });
    reg_iface_method(L, "string", "trim", TiriType::Str, builtin_callable_id(FastFunc::string_trim),
       { TiriType::Str }, { TiriType::Str }, FProtoFlags::ContextIndependent);
    reg_iface_method(L, "string", "unescapeXML", TiriType::Str,

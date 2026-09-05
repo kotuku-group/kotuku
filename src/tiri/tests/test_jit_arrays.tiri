@@ -113,7 +113,7 @@ function count_trace_calls(TraceNo, Info)
 end
 
 function array_method_clear_workload(Count):str
-   local result = array.new("")
+   local result = string.toArray("")
 
    for i in {1 into Count} do
       result.clear()
@@ -124,7 +124,7 @@ function array_method_clear_workload(Count):str
 end
 
 function array_method_resize_workload(Count):str
-   local result = array.new("abcdef")
+   local result = string.toArray("abcdef")
 
    for i in {1 into Count} do
       result.resize(0)
@@ -135,7 +135,7 @@ function array_method_resize_workload(Count):str
 end
 
 function array_method_push_workload(Count):str
-   local result = array.new("")
+   local result = string.toArray("")
 
    for i in {1 into Count} do
       result.push("push")
@@ -261,7 +261,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   local arr = array.new("")
+   local arr = string.toArray("")
    local result = ""
 
    for i in {0 to 80} do
@@ -297,7 +297,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   local arr = array.new("")
+   local arr = string.toArray("")
    local mt = {
       ['clear'] = function(Self)
          array.resize(Self, 0)
@@ -335,7 +335,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   local arr = array.new("")
+   local arr = string.toArray("")
    local base_mt = debug.getMetatable(arr)
    local original_clear = base_mt.clear
    local result = ""
@@ -371,7 +371,7 @@ end
    function traced_array_new(Count)
       local total = 0
       for i in {1 into Count} do
-         local arr = array.new(i % 5, "int")
+         local arr = array.new("int", i % 5)
          total += #arr
       end
       return total
@@ -393,7 +393,7 @@ end
       end
    end
 
-   assert(trace_found is true, "Expected array.new(size, literal_type) to produce a JIT trace")
+   assert(trace_found is true, "Expected array.new(literal_type, size) to produce a JIT trace")
 end
 
 @Test(hotpath=80) function SignedInt8ArrayAccessTraces()
@@ -613,7 +613,7 @@ end
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
    function traced_array_get_string(Count)
-      local arr = array.new("abcdef")
+      local arr = string.toArray("abcdef")
       local total = 0
 
       for i in {1 into Count} do
@@ -686,7 +686,7 @@ end
    local structs = array<struct<JITArrayContractAlpha>> { alpha }
    local floats = array<float>
    local integers = array<int> { 1 }
-   local bytes = array.new("abc")
+   local bytes = string.toArray("abc")
 
    for i in {1 into 200} do
       assert(traced_struct_array_get(structs, 0).Value is 7,
@@ -736,7 +736,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   local bytes = array.new("abc")
+   local bytes = string.toArray("abc")
    for i in {1 into 80} do
       assert(traced_array_branch_error(bytes, true, 0) is 'a')
       assert(traced_array_branch_error(bytes, false, 0) is 'a')
@@ -770,7 +770,7 @@ end
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
    function traced_array_push(Count)
-      local arr = array.new("")
+      local arr = string.toArray("")
       local total = 0
       local result = 0
 

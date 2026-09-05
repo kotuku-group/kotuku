@@ -246,7 +246,7 @@ end
 
 @Test function ArraySizeValidation()
    try
-      t = array.new(-5, 'int')
+      t = array.new('int', -5)
    success
       error('Should reject negative array size')
    end
@@ -256,7 +256,7 @@ end
 
 @Test function GetStringBounds()
    str = 'Hello World'
-   arr = array.new(str, 'byte')
+   arr = string.toArray(str)
 
    -- Test valid substring extraction
    result = arr.getString(0, 5)
@@ -667,7 +667,7 @@ end
 end
 
 @Test function ToString()
-   str_array = array.new('hello')
+   str_array = string.toArray('hello')
    assert(tostring(str_array) is 'hello', "String array tostring() failed, got '" .. tostring(str_array) .. "'")
    assert(#str_array is 5, "String array length failed, expected 5, got " .. tostring(#str_array))
 
@@ -1149,7 +1149,7 @@ end
 
 @Test function ArrayFromString()
    str = 'Hello'
-   arr = array.new(str)
+   arr = string.toArray(str)
 
    assert(#arr is 5, "array from string should have correct length")
    assert(arr.type() is 'byte', "array from string should be byte type")

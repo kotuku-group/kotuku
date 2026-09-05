@@ -479,7 +479,7 @@ end
 end
 
 @Test function ArrayConcatAssignmentOverflowSnapshotsSelfOperand()
-   result = array.new('xy')
+   result = string.toArray('xy')
 
    result ..= 'a' .. 'b' .. 'c' .. 'd' .. 'e' .. 'f' .. 'g' .. 'h' .. 'i' .. 'j' .. 'k' .. 'l' .. 'm' ..
       'n' .. 'o' .. 'p' .. result .. 'q'
@@ -528,7 +528,7 @@ end
 end
 
 @Test function ArrayConcatAssignmentSelfAppendUsesOriginalBytes()
-   result = array.new('ab')
+   result = string.toArray('ab')
 
    result ..= result
 

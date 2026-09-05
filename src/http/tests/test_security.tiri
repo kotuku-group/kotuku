@@ -136,7 +136,8 @@ end
    check http.acActivate()
    check proc.sleep()
 
-   assert(http.error is ERR_Okay, 'Path traversal HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.error is ERR_HTTPStatus, 'Path traversal should report HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
 
    -- Server should reject with 400 Bad Request
    assert(http.status is 400, 'Expected 400 Bad Request for path traversal, got: ' .. http.status)

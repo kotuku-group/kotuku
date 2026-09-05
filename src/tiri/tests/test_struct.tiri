@@ -915,7 +915,7 @@ end
    value.word     = 2345
    value.uword    = 32767
    value.byte     = 231
-   value.text     = array.new('fast')
+   value.text     = string.toArray('fast')
    value.pointer  = nil
 
    assert(value.float is 1.25, 'FD_FLOAT should round-trip through STSETF/STGETF')
