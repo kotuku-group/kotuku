@@ -439,6 +439,7 @@ static const FieldDef clStatus[] = {
 //********************************************************************************************************************
 
 static ERR  check_incoming_end(extHTTP *);
+static void set_http_status_error(extHTTP *);
 static ERR  parse_file(extHTTP *, std::string &);
 static void parse_file(extHTTP *, std::ostringstream &);
 static ERR  parse_response(extHTTP *, std::string_view);

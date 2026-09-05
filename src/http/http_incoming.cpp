@@ -292,6 +292,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 
          if ((Self->ContentLength IS 0) and (!Self->Chunked)) {
             log.msg("Response header received, no content imminent.");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -423,18 +424,13 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 
          Self->Response.clear(); // Buffer no longer required, response key-values are in the Args table.
 
-         // Note that status check comes after processing of content, as it is legal for content to be attached
-         // with bad status codes (e.g. SOAP does this).
+         if (Self->CurrentState != HGS::READING_CONTENT) return ERR::Terminate;
+
+         // A status failure is recorded when the response body completes, as it is legal for content to be attached
+         // to a bad status code (for example, SOAP responses).
 
          if ((int(Self->Status) < 200) or (int(Self->Status) >= 300)) {
-            if (Self->CurrentState != HGS::READING_CONTENT) {
-               if (Self->Status IS HTS::UNAUTHORISED) log.warning("Exhausted maximum number of retries.");
-               else log.warning("Status code %d != 2xx", int(Self->Status));
-
-               Self->Error = ERR::HTTPStatus;
-               return ERR::Terminate;
-            }
-            else log.warning("Status code %d != 2xx.  Receiving content...", int(Self->Status));
+            log.warning("Status code %d != 2xx.  Receiving content...", int(Self->Status));
          }
 
          return ERR::Okay; // Response header has been read, process any remaining data
@@ -503,6 +499,7 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
 
          if (Self->Error IS ERR::Disconnected) {
             log.detail("Received all chunked content (disconnected by peer).");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -551,12 +548,14 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
                      // interpretation.
 
                      log.detail("End of chunks reached, optional data follows.");
+                     set_http_status_error(Self);
                      Self->setCurrentState(HGS::COMPLETED);
                      return ERR::Terminate;
                   }
                   else {
                      // We have reached the terminating line (CRLF on an empty line)
                      log.trace("Received all chunked content.");
+                     set_http_status_error(Self);
                      Self->setCurrentState(HGS::COMPLETED);
                      return ERR::Terminate;
                   }
@@ -664,6 +663,7 @@ static ERR read_incoming_content(extHTTP *Self, objNetSocket *Socket)
 
          if ((Self->Error IS ERR::Disconnected) and (Self->ContentLength IS -1)) {
             log.trace("Received all streamed content (disconnected by peer).");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
