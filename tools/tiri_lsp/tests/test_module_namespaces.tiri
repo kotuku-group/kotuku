@@ -183,6 +183,16 @@ end
    assert(not findCompletion(items, 'error'), 'A local error function must not receive built-in completion.')
    items = resolveBuiltinCompletion(makeDoc('local api = {}\napi.err'), { line=1, character=7 })
    assert(not findCompletion(items, 'error'), 'Members must not receive built-in completion.')
-   items = resolveBuiltinCompletion(makeDoc('-- err'), { line=0, character=6 })
-   assert(not findCompletion(items, 'error'), 'Comments must not receive built-in completion.')
+end
+
+@Test function CompletesBuiltinsOnlyInExecutableCode()
+   local items:array<table> = resolveBuiltinCompletion(makeDoc('pri'), { line=0, character=3 })
+   assert(findCompletion(items, 'print'), 'Executable identifiers should receive built-in completion.')
+
+   items = resolveBuiltinCompletion(makeDoc('-- pri'), { line=0, character=6 })
+   assert(not findCompletion(items, 'print'), 'Line comments must not receive built-in completion.')
+   items = resolveBuiltinCompletion(makeDoc("'pri"), { line=0, character=4 })
+   assert(not findCompletion(items, 'print'), 'Strings must not receive built-in completion.')
+   items = resolveBuiltinCompletion(makeDoc('--[[\npri'), { line=1, character=3 })
+   assert(not findCompletion(items, 'print'), 'Block comments must not receive built-in completion.')
 end

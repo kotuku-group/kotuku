@@ -110,6 +110,13 @@ global function resolveBuiltinCompletion(Doc:table, Position:table):array<table>
    local items = array<table>
    if prefix is '' or line_text.sub(0, start).rtrim().endsWith('.') then return items end
 
+   local line_code
+   local in_block_comment = false
+   for line_no in {0 into Position.line} do
+      line_code, in_block_comment = maskNonCode(getLine(Doc, line_no), in_block_comment)
+   end
+   if line_code.sub(start, byte_col) != prefix then return items end
+
    for name, builtin in pairs(glDefs?.builtins or {}) do
       if not name.startsWith(prefix) or name.find('.') then continue end
       if builtin.deprecated then
