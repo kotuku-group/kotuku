@@ -116,6 +116,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
          if (Self->ContentLength IS -1) {
             if (Socket->Error <= ERR::ExceptionThreshold) {
                log.msg("Orderly shutdown while streaming data.");
+               set_http_status_error(Self);
                Self->setCurrentState(HGS::COMPLETED);
             }
             else {
@@ -130,6 +131,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
          }
          else {
             log.trace("Orderly shutdown, received %" PRId64 " of the expected %" PRId64 " bytes.", Self->Index, Self->ContentLength);
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
          }
       }
@@ -513,6 +515,21 @@ static ERR http_timeout(extHTTP *Self, int64_t Elapsed, int64_t CurrentTime)
 }
 
 //********************************************************************************************************************
+// Records an unsuccessful HTTP status after the response body has been received.
+
+static void set_http_status_error(extHTTP *Self)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((int(Self->Status) < 200) or (int(Self->Status) >= 300)) {
+      if (Self->Status IS HTS::UNAUTHORISED) log.warning("Exhausted maximum number of retries.");
+      else log.warning("Status code %d != 2xx", int(Self->Status));
+
+      Self->Error = ERR::HTTPStatus;
+   }
+}
+
+//********************************************************************************************************************
 // Returns ERR::True if the transmission is complete and also sets status to HGS::COMPLETED, otherwise ERR::False.
 
 static ERR check_incoming_end(extHTTP *Self)
@@ -525,6 +542,7 @@ static ERR check_incoming_end(extHTTP *Self)
    if ((Self->ContentLength != -1) and (Self->Index >= Self->ContentLength)) {
       log.trace("Transmission over.");
       if (Self->Index > Self->ContentLength) log.warning("Warning: received too much content.");
+      set_http_status_error(Self);
       Self->setCurrentState(HGS::COMPLETED);
       return ERR::True;
    }

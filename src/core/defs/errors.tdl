@@ -18,7 +18,7 @@ function declareErrors()
     -- Names listed above are non-fatal, those below throw exceptions
     "Terminate|ExceptionThreshold",  -- Operation processed, but do not call again with these parameters
     "NoMemory",                      -- Not enough memory available
-    "DEPRECATED11",                  -- Deprecated: was NoPointer
+    "TestFailed",                    -- One or more unit tests reported a failure
     "InUse",                         -- Resource is in use
     "Failed",                        -- General failure
     "File",                          -- File error, e.g. file not found
@@ -32,42 +32,42 @@ function declareErrors()
     "Read",                          -- Error reading data
     "Write",                         -- Error writing data
     "LockFailed|Lock",               -- Failed to lock a required resource
-    "DEPRECATED25",                  -- Deprecated: was ExamineFailed
+    "HTTPStatus",                    -- The server returned an HTTP status code outside the 2xx range
     "LostClass",                     -- The object has lost its class reference
     "NoAction",                      -- The object does not support this operation
     "NoSupport",                     -- Operation not supported
     "Memory",                        -- General memory error
     "Timeout|TimeOut",               -- Function timed-out before successful completion
-    "DEPRECATED31",                  -- Deprecated: was NoStats
+    "Decryption",                    -- Unspecified failure during decryption of a data stream
     "LowCapacity",                   -- Array is at low capacity
     "Init",                          -- Error in Init()ialising an object
     "NoPermission|Permissions|PermissionDenied", -- General security violation
     "SystemCorrupt",                 -- System corruption detected
-    "DEPRECATED36",                  -- Deprecated: was NeedOwner
-    "DEPRECATED37",                  -- Deprecated: was OwnerNeedsBitmap
+    "Encryption",                    -- Unspecified failure during encryption of a data stream
+    "Handshake",                     -- A secure connection handshake failed
     "CoreVersion",                   -- A newer version of the Core is required
-    "DEPRECATED39",                  -- Deprecated: was NeedWidthHeight
+    "LoadCertificate",               -- A TLS certificate, private key or trust store could not be loaded
     "ModuleValidation",              -- Module validation has failed
     "ProcessCreation",               -- Process creation has failed
     "MissingClassName",              -- Class name not provided
     "OutOfRange",                    -- A value is outside of the valid range
-    "DEPRECATED44",                  -- Deprecated: was ObtainMethod
+    "ResourceRegistration",          -- Failed to register a resource with the system
     "ArrayFull",                     -- Array has reached capacity and cannot be expanded
     "Query",                         -- Attempt to Query() failed
-    "DEPRECATED47",                  -- Deprecated: was LostOwner
+    "DEPRECATED47",                  -- Deprecated
     "DoNotExpunge",                  -- Do not expunge yet
-    "DEPRECATED49",                  -- Deprecated: was MemoryCorrupt
+    "DEPRECATED49",                  -- Deprecated
     "FieldNotFound",                 -- Requested field not found
     "InvalidPath",                   -- Invalid file or folder path detected
     "SetField",                      -- An unspecific error occurred during a SetField() operation
     "MarkedForDeletion",             -- A resource cannot be accessed as it is marked for deletion
-    "DEPRECATED54",                  -- Deprecated: was IllegalMethodID
-    "DEPRECATED55",                  -- Deprecated: was IllegalActionID
+    "DEPRECATED54",                  -- Deprecated
+    "DEPRECATED55",                  -- Deprecated
     "ModuleOpenFailed",              -- Module failed in its Open routine
     "DuplicateValue",                -- Duplicate value not permitted
-    "DEPRECATED58",                  -- Deprecated: was EntryMissingHeader
+    "DEPRECATED58",                  -- Deprecated
     "ModuleMissingInit",             -- Module has not defined support for Init()
-    "DEPRECATED60",                  -- Deprecated: was ModuleInitFailed
+    "DEPRECATED60",                  -- Deprecated
     "AudioMix",                      -- Audio mixing failed
     "DeadLock",                      -- Dead-lock detected - procedure aborted
     "SystemLocked",                  -- Part of the system is unreachable due to a persistent lock
@@ -79,14 +79,14 @@ function declareErrors()
     "MissingClass",                  -- The class could not be found in the system
     "FileReadFlag",                  -- The File flag FL_READ was not set on initialisation
     "FileWriteFlag",                 -- The File flag FL_WRITE was not set on initialisation
-    "DEPRECATED72",                  -- Deprecated: was Draw
+    "DEPRECATED72",                  -- Deprecated
     "NoMethods",                     -- The class does not export any methods
     "NoMatchingObject",              -- Unable to find object
     "ImmutableField",                -- Cannot modify an immutable field value
     "MissingPath",                   -- The object is missing a path reference
     "ResourceNotLocked",             -- A lock was expected but not found
     "NoSearchResult",                -- The search yielded no results
-    "DEPRECATED79",                  -- Deprecated: was StatementUnsatisfied
+    "DEPRECATED79",                  -- Deprecated
     "ObjectCorrupt",                 -- The object structure is corrupt or has not been initialised
     "OwnerPassThrough",              -- Container pass through notification
     "UnsupportedOwner",              -- The owner is not supported by this object
@@ -104,25 +104,25 @@ function declareErrors()
     "Mismatch",                      -- A mis-match has been detected that prevents further processing
     "OutOfBounds",                   -- Out-of-bounds access denied
     "Seek",                          -- Seek failure
-    "DEPRECATED97",                  -- Deprecated: was ReallocMemory
+    "DEPRECATED97",                  -- Deprecated
     "Loop",                          -- Recursion error
     "FileExists",
     "ResolvePath",                   -- ResolvePath() failed
     "CreateObject",                  -- CreateObject() failed
-    "DEPRECATED102",                 -- Deprecated: reserved slot
+    "DEPRECATED102",                 -- Deprecated
     "NotInitialised",                -- Object or resource is not initialised
     "ResourceExists",                -- A new resource could not be created because a matching resource exists
-    "DEPRECATED105",                 -- Deprecated: was Refresh
-    "DEPRECATED106",                 -- Deprecated: was ListChildren
+    "DEPRECATED105",                 -- Deprecated
+    "DEPRECATED106",                 -- Deprecated
     "SystemCall",                    -- A system call has failed
-    "DEPRECATED108",                 -- Deprecated: was SmallMask
+    "DEPRECATED108",                 -- Deprecated
     "EmptyString",                   -- A required string is empty (null termination at the first character)
     "ObjectExists",                  -- Object exists
     "ExpectedFile",                  -- The operation expected a path to a file
     "Resize",                        -- Resize failure
     "Redimension",                   -- Redimension failure
     "SemaphoreOperation",            -- A semaphore operation has failed
-    "DEPRECATED115",                 -- Deprecated: was FieldValidation
+    "DEPRECATED115",                 -- Deprecated
     "CreateFile",                    -- Failed to create a new file
     "DeleteFile",                    -- Deletion of dir/file failed (e.g. permissions, read-only media)
     "OpenFile",                      -- File could not be opened
@@ -130,7 +130,7 @@ function declareErrors()
     "DoesNotExist",                  -- Resource/Object/File does not exist
     "IdenticalPaths",                -- The destination path is the same as the source path
     "Exists",                        -- Resource exists
-    "DEPRECATED123",                 -- Deprecated: reserved slot
+    "DEPRECATED123",                 -- Deprecated
     "OutOfSpace",                    -- Run out of space, no room to complete request
     "GetSurfaceInfo",                -- GetSurfaceInfo() failed
     "Finished",                      -- Operation or process loop finished
@@ -160,15 +160,15 @@ function declareErrors()
     "InvalidHandle",           -- A required handle is invalid
     "Security",                -- A non-specific security violation has occurred
     "InvalidValue",            -- A value has not passed validation
-    "DEPRECATED153",           -- Deprecated: was ServiceUnavailable
-    "DEPRECATED154",           -- Deprecated: was Deactivated
-    "DEPRECATED155",           -- Deprecated: was LockRequired
+    "DEPRECATED153",           -- Deprecated
+    "DEPRECATED154",           -- Deprecated
+    "DEPRECATED155",           -- Deprecated
     "AlreadyLocked|Locked",    -- Object or resource has already been locked
-    "DEPRECATED157",           -- Deprecated: was NoMediaInserted
-    "DEPRECATED158",           -- Deprecated: was CardReaderUnavailable
+    "DEPRECATED157",           -- Deprecated
+    "DEPRECATED158",           -- Deprecated
     "ProxySSLTunnel",          -- Failed to establish an SSL connection with the proxy server
     "InvalidHTTPResponse",     -- A valid HTTP response was not received from the server
-    "DEPRECATED161",           -- Deprecated: was InvalidReference
+    "DEPRECATED161",           -- Deprecated
     "Exception",               -- An exception was caught
     "ThreadAlreadyActive",     -- Cannot execute a thread that is already running
     "OpenGL",                  -- Failure has been reported from OpenGL
@@ -190,7 +190,7 @@ function declareErrors()
     "Function",                -- A function call failed
     "AlreadyDefined",          -- Attempted to change a value that cannot be redefined
     "SetValueNotNumeric",      -- Attempted to set a numeric field with an incompatible value
-    "DEPRECATED183",           -- Deprecated: was SetValueNotString
+    "DEPRECATED183",           -- Deprecated
     "SetValueNotObject",       -- Attempted to set an object field with an incompatible value
     "SetValueNotFunction",     -- Attempted to set a function field with an incompatible value
     "SetValueNotPointer",      -- Attempted to set a pointer field with an incompatible value
@@ -207,7 +207,6 @@ function declareErrors()
     "ParameterRequired",       -- Missing required parameter
     "ParameterUnknown",        -- Unknown parameter name
     "SetValueNotStruct",       -- Attempted to set a struct field with an incompatible value
-    "ResourceRegistration",    -- Failed to register a resource with the system
     "END",
     { Notified = 0x40000000 }
   ) -- NB: Any new error messages need to be added to data_errors.c manually
