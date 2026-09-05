@@ -953,6 +953,10 @@ ERR X11Driver::unlockBitmap(extBitmap *) { return ERR::Okay; }
 ERR X11Driver::bitmapRoutines(extBitmap *Bitmap)
 {
    if ((not Bitmap) or (not x11_bitmap(Bitmap))) return ERR::NoSupport;
+   // Video bitmaps receive their drawable after initialisation, when the display creates its window.
+   // Shared images are driver-owned RAM and must retain the generic memory pixel routines.
+
+   if ((Bitmap->prvAFlags & BF_WINVIDEO) IS 0) return ERR::NoSupport;
    x11_install_bitmap_routines(Bitmap);
    return ERR::Okay;
 }

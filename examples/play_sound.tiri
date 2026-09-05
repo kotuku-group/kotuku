@@ -6,14 +6,14 @@
 
 function id_file(Path)
    try
-      err, cl = mSys.IdentifyFile(Path, 'Open', IDF_IGNORE_HOST)
+      err, cl = mSys.IdentifyFile(Path)
 
-      if (cl is string.hash('Sound')) then
+      if cl is string.hash('Sound') then
          return obj.new('sound', { path=Path })
-      elseif (cl is string.hash('Music')) then
+      elseif cl is string.hash('Music') then
          return obj.new('music', { path=Path })
       else
-         error('Unrecognised file type')
+         raise 'Unrecognised file type'
       end
    except ex
       msg(f'Error identifying {Path}: {ex.message}')
@@ -60,7 +60,7 @@ end
 
    -- Play the sound and wait for it to finish
 
-   if (player.acActivate() is ERR_Okay) then
+   if player.acActivate() is ERR_Okay then
       print('Press CTRL-C to exit or wait for sound sample to finish.  Duration: ' .. string.format('%.2fs', player.duration))
 
       proc.sleep() -- This will wake on receipt of a signal.
