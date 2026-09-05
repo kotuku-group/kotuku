@@ -94,7 +94,7 @@ static ERR resolve_name_receiver(APTR Custom, int MsgID, MSGID MsgType, std::spa
          nl->Info = cached;
          resolve_callback(*nl, ERR::Okay, nl->Info.HostName, nl->Info.Addresses);
       }
-      else resolve_callback(*nl, ERR::HostNotFound, "");
+      else resolve_callback(*nl, r.Error, "");
    }
    return ERR::Okay;
 }
@@ -126,7 +126,7 @@ static ERR resolve_addr_receiver(APTR Custom, int MsgID, MSGID MsgType, std::spa
          nl->Info = cached;
          resolve_callback(*nl, ERR::Okay, nl->Info.HostName, nl->Info.Addresses);
       }
-      else resolve_callback(*nl, ERR::HostNotFound, "");
+      else resolve_callback(*nl, r.Error, "");
    }
    return ERR::Okay;
 }
