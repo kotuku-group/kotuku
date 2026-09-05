@@ -1957,7 +1957,11 @@ static ERR calc_pixel_routines(extBitmap *Self)
    }
 
    if ((glDriver) and (Self->prvAFlags & (BF_WINVIDEO|BF_DRIVER_DATA))) {
-      return glDriver ? glDriver->bitmapRoutines(Self) : ERR::NoSupport;
+      // Driver-owned storage can still be ordinary RAM, such as an X11 shared image.
+      // Use the memory routines when the driver has no specialised pixel access for it.
+
+      if (auto error = glDriver->bitmapRoutines(Self); error != ERR::NoSupport) return error;
+      if (Self->prvAFlags & BF_WINVIDEO) return ERR::NoSupport;
    }
 
 

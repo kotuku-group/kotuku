@@ -80,6 +80,8 @@ target_link_libraries (${MOD} PUBLIC unicode)
 target_link_libraries (${MOD} PUBLIC linear_rgb)
 target_link_libraries (${MOD} PRIVATE ${MATH_LINK})
 
+flute_test(display_bitmap_pixels "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bitmap_pixels.tiri")
+
 if (UNIT_TESTS)
    add_executable (test_display_headless "tests/test_headless_driver.cpp" ${DISPLAY_DRIVERS})
    set_target_properties (test_display_headless PROPERTIES CXX_STANDARD 20)
