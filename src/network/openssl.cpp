@@ -234,7 +234,7 @@ static ERR loadPEMCertificate(const std::string &certPath, std::optional<const s
 
    if (SSL_CTX_use_certificate(ctx, cert) != 1) {
       X509_free(cert);
-      return log.warning(ERR::Failed);
+      return log.warning(ERR::LoadCertificate);
    }
 
    X509_free(cert);
@@ -252,7 +252,7 @@ static ERR loadPEMCertificate(const std::string &certPath, std::optional<const s
 
    if (SSL_CTX_use_PrivateKey(ctx, pkey) != 1) {
       EVP_PKEY_free(pkey);
-      return log.warning(ERR::Failed);
+      return log.warning(ERR::LoadCertificate);
    }
 
    EVP_PKEY_free(pkey);
@@ -300,11 +300,11 @@ static ERR loadPKCS12Certificate(const std::string &p12Path, std::optional<const
 
    if (SSL_CTX_use_certificate(ctx, cert) != 1) {
       log.warning("Failed to use certificate from PKCS#12 file: %s", p12Path.c_str());
-      result = ERR::Failed;
+      result = ERR::LoadCertificate;
    }
    else if (SSL_CTX_use_PrivateKey(ctx, pkey) != 1) {
       log.warning("Failed to use private key from PKCS#12 file: %s", p12Path.c_str());
-      result = ERR::Failed;
+      result = ERR::LoadCertificate;
    }
    else if (SSL_CTX_check_private_key(ctx) != 1) {
       log.warning("Certificate and private key do not match in PKCS#12 file: %s", p12Path.c_str());
@@ -521,7 +521,7 @@ static ERR tls_setup_client(extNetSocket *Self)
          else {
             SSL_CTX_free(glClientSSL);
             glClientSSL = nullptr;
-            return ERR::Failed;
+            return ERR::LoadCertificate;
          }
       }
    }
@@ -670,9 +670,9 @@ static ERR tls_connect(extNetSocket *Self)
          case SSL_ERROR_WANT_CONNECT:     Self->Error = ERR::WouldBlock; break;
          case SSL_ERROR_WANT_ACCEPT:      Self->Error = ERR::WouldBlock; break;
          case SSL_ERROR_WANT_X509_LOOKUP: Self->Error = ERR::Retry; break;
-         case SSL_ERROR_SYSCALL:          Self->Error = ERR::InputOutput; break;
+         case SSL_ERROR_SYSCALL:          Self->Error = ERR::Handshake; break;
 
-         case SSL_ERROR_SSL:              Self->Error = ERR::SystemCall;
+         case SSL_ERROR_SSL:              Self->Error = ERR::Handshake;
                                           ssl_log_error_queue(log, "SSL_connect");
                                           break;
 

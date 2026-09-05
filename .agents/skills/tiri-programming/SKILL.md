@@ -114,11 +114,10 @@ search tools, and mixed editor environments.
 
 ## Strings And Regex
 
-- Use `string.substr()` instead of `string.sub()`.
 - Use the `regex.*` API instead of obsolete Lua pattern helpers such as `string.gsub()`, `string.match()`, and
   `string.gmatch()`.
 - Useful string helpers include `alloc`, `cap`, `count`, `decap`, `escXML`, `hash`, `join`, `pop`, `replace`,
-  `trim`, `rtrim`, `split`, `startsWith`, `substr`, `endsWith`, and `unescapeXML`.
+  `trim`, `rtrim`, `split`, `startsWith`, `sub`, `endsWith`, and `unescapeXML`.
 - Use f-strings for readable formatting. Add `??` fallbacks when interpolating externally sourced values.
 
 Regex uses compiled PCRE-compatible objects. Compile once and reuse; wrap untrusted patterns in `try`.

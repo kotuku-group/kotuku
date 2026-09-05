@@ -422,6 +422,29 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function ErrorStatusWithoutContent()
+   http = obj.new('http', {
+      src      = 'http://127.0.0.1:' .. SERVER_PORT .. '/error/test',
+      method   = 'GET',
+      flags    = HTF_NO_HEAD,
+      stateChanged = function(HTTP, State)
+         if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(http.status is 500, 'Error response should return 500, got: ' .. http.status)
+   assert(http.error is ERR_HTTPStatus, 'Non-streamed error response should return HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function LargeResponse()
    content = ''
    total_bytes = 0

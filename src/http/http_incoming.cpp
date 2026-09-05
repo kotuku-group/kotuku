@@ -431,7 +431,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                if (Self->Status IS HTS::UNAUTHORISED) log.warning("Exhausted maximum number of retries.");
                else log.warning("Status code %d != 2xx", int(Self->Status));
 
-               Self->Error = ERR::Failed;
+               Self->Error = ERR::HTTPStatus;
                return ERR::Terminate;
             }
             else log.warning("Status code %d != 2xx.  Receiving content...", int(Self->Status));

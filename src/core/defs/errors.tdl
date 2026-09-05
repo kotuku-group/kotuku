@@ -18,7 +18,7 @@ function declareErrors()
     -- Names listed above are non-fatal, those below throw exceptions
     "Terminate|ExceptionThreshold",  -- Operation processed, but do not call again with these parameters
     "NoMemory",                      -- Not enough memory available
-    "DEPRECATED11",                  -- Deprecated: was NoPointer
+    "TestFailed",                    -- One or more unit tests reported a failure
     "InUse",                         -- Resource is in use
     "Failed",                        -- General failure
     "File",                          -- File error, e.g. file not found
@@ -32,26 +32,26 @@ function declareErrors()
     "Read",                          -- Error reading data
     "Write",                         -- Error writing data
     "LockFailed|Lock",               -- Failed to lock a required resource
-    "DEPRECATED25",                  -- Deprecated: was ExamineFailed
+    "HTTPStatus",                    -- The server returned an HTTP status code outside the 2xx range
     "LostClass",                     -- The object has lost its class reference
     "NoAction",                      -- The object does not support this operation
     "NoSupport",                     -- Operation not supported
     "Memory",                        -- General memory error
     "Timeout|TimeOut",               -- Function timed-out before successful completion
-    "DEPRECATED31",                  -- Deprecated: was NoStats
+    "Decryption",                    -- Unspecified failure during decryption of a data stream
     "LowCapacity",                   -- Array is at low capacity
     "Init",                          -- Error in Init()ialising an object
     "NoPermission|Permissions|PermissionDenied", -- General security violation
     "SystemCorrupt",                 -- System corruption detected
-    "DEPRECATED36",                  -- Deprecated: was NeedOwner
-    "DEPRECATED37",                  -- Deprecated: was OwnerNeedsBitmap
+    "Encryption",                    -- Unspecified failure during encryption of a data stream
+    "Handshake",                     -- A secure connection handshake failed
     "CoreVersion",                   -- A newer version of the Core is required
-    "DEPRECATED39",                  -- Deprecated: was NeedWidthHeight
+    "LoadCertificate",               -- A TLS certificate, private key or trust store could not be loaded
     "ModuleValidation",              -- Module validation has failed
     "ProcessCreation",               -- Process creation has failed
     "MissingClassName",              -- Class name not provided
     "OutOfRange",                    -- A value is outside of the valid range
-    "DEPRECATED44",                  -- Deprecated: was ObtainMethod
+    "ResourceRegistration",          -- Failed to register a resource with the system
     "ArrayFull",                     -- Array has reached capacity and cannot be expanded
     "Query",                         -- Attempt to Query() failed
     "DEPRECATED47",                  -- Deprecated: was LostOwner
@@ -207,7 +207,6 @@ function declareErrors()
     "ParameterRequired",       -- Missing required parameter
     "ParameterUnknown",        -- Unknown parameter name
     "SetValueNotStruct",       -- Attempted to set a struct field with an incompatible value
-    "ResourceRegistration",    -- Failed to register a resource with the system
     "END",
     { Notified = 0x40000000 }
   ) -- NB: Any new error messages need to be added to data_errors.c manually

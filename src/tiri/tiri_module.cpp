@@ -1040,7 +1040,7 @@ static int module_test(lua_State *Lua)
       lua_pushinteger(Lua, total);
       return 2;
    }
-   luaL_error(Lua, ERR::Failed, "Module test failed.");
+   luaL_error(Lua, ERR::TestFailed, "Module test failed.");
    return 0;
 }
 
