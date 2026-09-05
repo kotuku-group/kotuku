@@ -701,7 +701,7 @@ function runStdioServer(Self:table)
    disconnected = false
 
    client = {
-      _state = function()
+      state = function()
          return stdio_state
       end,
       acWrite = function(Data)

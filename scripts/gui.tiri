@@ -618,7 +618,7 @@ gui.getTheme = function(Object:obj):table
       error(f'Provided object class {Object.class()} is unsupported.')
    end
 
-   state = scene._state()
+   state = scene.state()
    themeName = state.theme -- Get pre-defined theme
    if not themeName then -- Theme undefined, apply the default
       state.theme = gui.theme
@@ -648,7 +648,7 @@ gui.setTheme = function(Object:obj, Theme:str!):table
          error(f'Provided object class {Object.class()} is unsupported.')
       end
 
-      state = scene._state()
+      state = scene.state()
    end
 
    if not gui.themes[Theme] then

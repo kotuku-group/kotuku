@@ -6959,7 +6959,7 @@ static bool test_builtin_method_registry(kt::Log &Log)
    const fprototype *struct_clone = get_method_prototype(TiriType::Struct, "clone");
    const fprototype *object_exists = get_method_prototype(TiriType::Object, "exists");
    const fprototype *object_new = get_method_prototype(TiriType::Object, "new");
-   const fprototype *object_state = get_method_prototype(TiriType::Object, "_state");
+   const fprototype *object_state = get_method_prototype(TiriType::Object, "state");
    const fprototype *namespace_new = get_prototype("obj", "new");
    lua_getglobal(L, "obj");
    lua_getfield(L, -1, "new");
@@ -6971,12 +6971,12 @@ static bool test_builtin_method_registry(kt::Log &Log)
        struct_clone->builtin_callable_id != builtin_callable_id(FastFunc::struct_clone) or
        object_exists->builtin_callable_id != builtin_callable_id(FastFunc::object_exists) or
        object_new->builtin_callable_id != builtin_callable_id(FastFunc::object_new) or
-       object_state->builtin_callable_id != builtin_callable_id(FastFunc::object__state) or
+       object_state->builtin_callable_id != builtin_callable_id(FastFunc::object_state) or
        object_new IS namespace_new or object_new->param_count != 3 or
        object_new->param_types()[0] != TiriType::Object or object_new->param_types()[1] != TiriType::Any or
        object_new->param_types()[2] != TiriType::Table or object_state->param_count != 1 or
        object_state->param_types()[0] != TiriType::Object or namespace_new->is_method() or
-       namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "_state") or
+       namespace_new->builtin_callable_id != BuiltinCallableID::Invalid or get_prototype("obj", "state") or
        public_create != lj_builtin_callable(L, builtin_callable_id(FastFunc::object_create)) or
        array_insert IS table_insert or get_method_prototype(TiriType::Array, "contains") or
        get_method_prototype(TiriType::Range, "contains") or get_method_prototype(TiriType::Str, "contains") or
@@ -7602,21 +7602,21 @@ static bool test_builtin_method_bytecode_emission(kt::Log &Log)
 
    error.clear();
    auto object_methods = compile_snapshot(L,
-      "local parent = obj.new('time')\nlocal child = parent.new('time')\nreturn parent._state()\n", true, error);
+      "local parent = obj.new('time')\nlocal child = parent.new('time')\nreturn parent.state()\n", true, error);
    if (not object_methods or not find_builtin_callable_opcode(*object_methods,
          builtin_callable_id(FastFunc::object_new)) or not find_builtin_callable_opcode(*object_methods,
-         builtin_callable_id(FastFunc::object__state)) or count_opcode(*object_methods, BC_BFUNC) != 2 or
+         builtin_callable_id(FastFunc::object_state)) or count_opcode(*object_methods, BC_BFUNC) != 2 or
        count_opcode(*object_methods, BC_TGETS) != 1 or count_opcode(*object_methods, BC_TGETV) != 0) {
-      Log.error("proved Object new and _state calls did not use canonical lookup-free emission: %s", error.c_str());
+      Log.error("proved Object new and state calls did not use canonical lookup-free emission: %s", error.c_str());
       return false;
    }
 
    error.clear();
    auto dynamic_object_methods = compile_snapshot(L,
-      "local function use(Parent:any):any\nParent.new('time')\nreturn Parent._state()\nend\nreturn use\n", true, error);
+      "local function use(Parent:any):any\nParent.new('time')\nreturn Parent.state()\nend\nreturn use\n", true, error);
    if (not dynamic_object_methods or count_opcode_tree(*dynamic_object_methods, BC_BMETH) != 2 or
        count_opcode_tree(*dynamic_object_methods, BC_BFUNC) != 0) {
-      Log.error("runtime Object new and _state calls did not retain BC_BMETH dispatch: %s", error.c_str());
+      Log.error("runtime Object new and state calls did not retain BC_BMETH dispatch: %s", error.c_str());
       return false;
    }
 

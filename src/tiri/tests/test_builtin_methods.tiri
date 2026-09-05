@@ -228,22 +228,59 @@ end
    local child = parent.new('time')
    assert(child.owner.id is parent.id, 'Parent.new should preserve the receiving object as the child owner')
 
-   local state = parent._state()
+   local state = parent.state()
    state.marker = 11
-   assert(parent._state().marker is 11, '_state should return the same per-object table')
+   assert(parent.state().marker is 11, 'state should return the same per-object table')
 
    local dynamic_parent:any = parent
    local dynamic_child = dynamic_parent.new('time')
    assert(dynamic_child.owner.id is parent.id, 'An any receiver should select canonical Parent.new at runtime')
-   assert(dynamic_parent._state().marker is 11, 'An any receiver should select canonical _state at runtime')
+   assert(dynamic_parent.state().marker is 11, 'An any receiver should select canonical state at runtime')
 end
 
 @Test function ObjectNewAndStateSafeCalls()
    local maybe:any = nil
    local evaluated = false
    maybe?.new(function():str evaluated = true; return 'time' end())
-   maybe?._state()
+   maybe?.state()
    assert(not evaluated, 'Nil safe Object methods should skip written arguments')
+end
+
+@Test @Requires(network=true)
+function ObjectStateFieldAndMethod()
+   include 'network'
+   local socket <close> = obj.new('netsocket')
+   local original = socket.state
+   local state = socket.state()
+   state.marker = 23
+
+   assert(type(original) is 'number', 'The native state field should remain numeric')
+   assert(socket.state is original and socket['state'] is original,
+      'Dot and computed reads should return the native state field')
+   socket.state = NTC_RESOLVING
+   assert(socket.state is NTC_RESOLVING, 'Dot assignment should update the native state field')
+   socket['state'] = original
+   assert(socket.state is original, 'Computed assignment should update the native state field')
+   assert(socket.state().marker is 23, 'Native field writes should preserve the attached state table')
+
+   local dynamic_socket:any = socket
+   assert(dynamic_socket.state is original and dynamic_socket['state'] is original,
+      'An any receiver should read the native state field')
+   dynamic_socket.state = NTC_CONNECTING
+   assert(dynamic_socket.state is NTC_CONNECTING, 'An any receiver should write the native state field')
+   assert(dynamic_socket.state().marker is 23, 'An any receiver should call the state method')
+   assert(dynamic_socket?.state().marker is 23, 'Safe calls should select the state method')
+end
+
+@Test function ObjectOldStateMethodRemoved()
+   local parent <close> = obj.new('time')
+   local dynamic_parent:any = parent
+   try
+      dynamic_parent._state()
+   except error_value when ERR_NoFieldAccess
+   success
+      error('The removed _state method should fail instead of retaining an alias')
+   end
 end
 
 @Test function ObjectNewNamespaceRebindingAndEscapes()
@@ -254,11 +291,11 @@ end
    local child = parent.new('time')
    obj.new = original
    assert(child.owner.id is parent.id, 'Parent.new should ignore obj.new namespace rebinding')
-   assert(obj._state is nil, 'The hidden Object _state callable must not be published on obj')
+   assert(obj.state is nil, 'The hidden Object state callable must not be published on obj')
    local function read_member(Value:any, Key:str):any
       return Value[Key]
    end
-   assert(read_member(parent, 'new') is nil and read_member(parent, '_state') is nil,
+   assert(read_member(parent, 'new') is nil and read_member(parent, 'state') is nil,
       'Computed Object method reads should remain ordinary fields instead of bound closures')
 end
 

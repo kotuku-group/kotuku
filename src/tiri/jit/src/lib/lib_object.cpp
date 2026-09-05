@@ -469,8 +469,10 @@ extern int object_newindex(lua_State *Lua)
 
    // Escaped intrinsic methods must not manufacture bound closures.  Other failed field reads retain the usual
    // NoFieldAccess error, including accesses through an any receiver or a computed key.
-   const std::string_view key(strdata(keystr), keystr->len);
-   if ((key IS "new") or (key IS "_state")) return 0;
+
+   constexpr auto hash_new = kt::strhash("new");
+   constexpr auto hash_state = kt::strhash("state");
+   if ((keystr->hash IS hash_new) or (keystr->hash IS hash_state)) return 0;
 
    luaL_error(Lua, ERR::NoFieldAccess, "Field does not exist or is unreadable: %s.%s",
       def->classptr ? def->classptr->ClassName.c_str() : "?", strdata(keystr));
@@ -691,7 +693,7 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 //********************************************************************************************************************
 // Object instance methods. State is maintained globally, so other object variables reference the same state table.
 
-LJLIB_INTRINSIC LJLIB_CF(object__state)
+LJLIB_INTRINSIC LJLIB_CF(object_state)
 {
    auto def = lj_get_object_fast(L, 1);
 
@@ -1118,7 +1120,7 @@ extern "C" int luaopen_object(lua_State *L)
    reg_intrinsic_method(L, "obj", "new", TiriType::Object, builtin_callable_id(FastFunc::object_new),
       { TiriType::Object }, { TiriType::Object, TiriType::Any, TiriType::Table }, FProtoFlags::None,
       FProtoArity::required(2));
-   reg_intrinsic_method(L, "obj", "_state", TiriType::Object, builtin_callable_id(FastFunc::object__state),
+   reg_intrinsic_method(L, "obj", "state", TiriType::Object, builtin_callable_id(FastFunc::object_state),
       { TiriType::Table }, { TiriType::Object });
    reg_iface_method(L, "obj", "class", TiriType::Object, builtin_callable_id(FastFunc::object_class),
       { TiriType::Object }, { TiriType::Object });

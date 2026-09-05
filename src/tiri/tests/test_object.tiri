@@ -274,33 +274,33 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test obj._state() for per-object state storage
+-- Test obj.state() for per-object state storage
 
 @Test(hotpath=true) function ObjState()
    f = obj.new('file')
 
-   state = f._state()
-   assert(type(state) is 'table', "Expected _state() to return a table")
+   state = f.state()
+   assert(type(state) is 'table', "Expected state() to return a table")
 
    -- Store something in state
    state.myvalue = 42
 
    -- Retrieve state again and verify
-   state2 = f._state()
+   state2 = f.state()
    assert(state2.myvalue is 42, "Expected state to persist value")
 
    f.free()
    caught = false
    try
-      f._state()
+      f.state()
    except e
       caught = true
    end
-   assert(caught, 'Expected _state() to reject a dead object')
+   assert(caught, 'Expected state() to reject a dead object')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Registered obj.* methods, including new and _state, are dispatched as canonical built-in methods with the object
+-- Registered obj.* methods, including new and state, are dispatched as canonical built-in methods with the object
 -- supplied as an explicit receiver.
 
 @Test(hotpath=true) @Requires(display=true)
@@ -316,9 +316,9 @@ function RegisteredMethodsUseExplicitReceiver()
    assert(err is ERR_Okay, "set() should update a field through the explicit receiver")
    assert(math.abs(vp.get('opacity') - 0.5) < 0.0001, "set() should have persisted the field value")
 
-   state = f._state()
+   state = f.state()
    state.marker = 7
-   assert(f._state().marker is 7, "_state() should use the explicit receiver and persist state")
+   assert(f.state().marker is 7, "state() should use the explicit receiver and persist state")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -326,9 +326,9 @@ end
 @Test function ObjectMethodEscapePaths()
    parent = obj.new('time')
    assert(parent.new is nil, 'Bare new access should not manufacture a bound closure')
-   assert(parent._state is nil, 'Bare _state access should not manufacture a bound closure')
+   assert(parent.state is nil, 'Bare state access should not manufacture a bound closure')
    assert(parent['new'] is nil, 'Computed new access should not manufacture a bound closure')
-   assert(parent['_state'] is nil, 'Computed _state access should not manufacture a bound closure')
+   assert(parent['state'] is nil, 'Computed state access should not manufacture a bound closure')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
