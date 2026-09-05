@@ -767,3 +767,83 @@ end
    assertOperatorToken(tokens, 5, 11, '>', 'A relational choose range should retain its greater-than token.')
    assertNoToken(tokens, 5, 5, 'lower', 'A relational arm ending in an arrow must not become a type pattern.')
 end
+
+@Test function ErrorDeprecationDiagnostics()
+   local doc = makeDoc("local callback = error\nerror('message', 2)\ntry except e\n   error(e)\nend")
+   local result = computeDiagnostics(doc)
+   local warnings = 0
+   local lines = array<int> { 0, 1, 3 }
+   local columns = array<int> { 17, 0, 3 }
+   for diagnostic in values(result.diagnostics) do
+      if diagnostic.code != 'DeprecatedApi' then continue end
+      local i = warnings
+      warnings++
+      assert(diagnostic.code is 'DeprecatedApi', 'The warning must retain its parser code.')
+      assert(diagnostic.severity is 2, 'Deprecated error() must remain a non-fatal warning.')
+      assert(diagnostic.message is 'error() is replaced with raise()', 'Use the concise replacement message.')
+      assert(diagnostic.tags and diagnostic.tags[0] is 2, 'LSP diagnostics must carry the deprecated tag.')
+      assert(diagnostic.range.start.line is lines[i], 'The warning must identify the reference line.')
+      assert(diagnostic.range.start.character is columns[i], 'The warning must start at the identifier.')
+      assert(diagnostic.range['end'].character is columns[i] + 5, 'The warning must span the whole identifier.')
+   end
+   assert(warnings is 3, 'Each resolved built-in reference should warn exactly once.')
+end
+
+@Test function ErrorDeprecationIgnoresUnrelatedNames()
+   local source = [[
+local error = function(Message) end
+error('local')
+local api = { error=function() end }
+api.error()
+local text = "error('string')"
+-- error('comment')
+local query = 'fn:error()'
+]]
+   local result = computeDiagnostics(makeDoc(source))
+   for diagnostic in values(result.diagnostics) do
+      assert(diagnostic.code != 'DeprecatedApi', 'Local names, members, keys, strings and comments must not warn.')
+   end
+
+   local tokens = tokenizeTiri("raise('message')\ntry except\nraise\nend")
+   local keyword = findToken(tokens, 0, 0, 'raise')
+   assert(keyword and keyword.type is 0, 'Expression raise must retain keyword highlighting.')
+   keyword = findToken(tokens, 2, 0, 'raise')
+   assert(keyword and keyword.type is 0, 'Bare raise must retain keyword highlighting.')
+end
+
+@Test function DeprecatedErrorStillExecutes()
+   try
+      exec("error('compatibility')")
+   except e
+      assert(e.message.find('compatibility'), 'Deprecated error() must retain its runtime behaviour.')
+   success
+      assert(false, 'Deprecated error() should still throw.')
+   end
+end
+
+@Test function DeprecationWarningsDoNotHideErrors()
+   local source = ''
+   for i in {0 to 12} do source ..= f'local callback{i} = error\n' end
+   source ..= 'local value:num = "invalid"'
+   local result = computeDiagnostics(makeDoc(source))
+   local warnings = 0
+   local errors = 0
+   for diagnostic in values(result.diagnostics) do
+      if diagnostic.code is 'DeprecatedApi' then warnings++ end
+      if diagnostic.severity is 1 then errors++ end
+   end
+   assert(warnings is 12, 'Every resolved error reference must warn, even beyond the recovery limit.')
+   assert(errors > 0, 'Deprecation warnings must not suppress a subsequent compilation error.')
+end
+
+@Test function ErrorDeprecationRangeAfterUnicode()
+   local result = computeDiagnostics(makeDoc("local text = '😀'; error('message')"))
+   local found = false
+   for diagnostic in values(result.diagnostics) do
+      if diagnostic.code != 'DeprecatedApi' then continue end
+      found = true
+      assert(diagnostic.range.start.character is 19, 'Diagnostic start must use UTF-16 columns.')
+      assert(diagnostic.range['end'].character is 24, 'Diagnostic end must span error in UTF-16 columns.')
+   end
+   assert(found, 'The built-in reference after Unicode text should warn.')
+end

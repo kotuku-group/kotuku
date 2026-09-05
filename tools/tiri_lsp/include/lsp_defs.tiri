@@ -17,7 +17,8 @@ glBuiltins = {
       prototype = 'msg(...)'
    },
    ['error'] = {
-      comment = 'Raises an error with the given message.',
+      comment = 'error() is replaced with raise().',
+      deprecated = true,
       prototype = 'error(message, [level])'
    },
    ['assert'] = {

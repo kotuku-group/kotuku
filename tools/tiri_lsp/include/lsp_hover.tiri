@@ -245,6 +245,7 @@ function formatBuiltinHover(FuncName, BuiltinDoc):str
    if BuiltinDoc.prototype?? then
       md ..= '```lua\n' .. BuiltinDoc.prototype .. '\n```\n\n'
    end
+   if BuiltinDoc.deprecated then md ..= '**Deprecated**\n\n' end
    md ..= BuiltinDoc.comment
    return md
 end
@@ -484,7 +485,8 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
    end
 
    -- Check for built-in functions
-   if glDefs?.builtins?[token] then
+   if glDefs?.builtins?[token] and (not glDefs.builtins[token].deprecated or
+         deprecatedReferenceAt(Doc, TokenInfo.line, TokenInfo.startCol)) then
       return formatBuiltinHover(token, glDefs.builtins[token])
    end
 

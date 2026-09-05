@@ -14,6 +14,7 @@
 #include "../../../defs.h"
 #include "../runtime/lj_proto_registry.h"
 #include "../runtime/lj_tab.h"
+#include "../debug/lj_ff.h"
 
 namespace {
 
@@ -240,7 +241,17 @@ private:
       StaticBindingID id = this->resolve(Reference.identifier.symbol);
       Reference.binding_id = id;
       Reference.identifier.binding_id = id;
-      if (not id) return;
+      if (not id) {
+         // Match the registered callable, not its spelling: hosts may replace the environment entry.
+         cTValue *value = lj_tab_getstr(tabref(this->context_.lua().env), Reference.identifier.symbol);
+         GCfunc *canonical = lj_builtin_callable(&this->context_.lua(), builtin_callable_id(FastFunc::error));
+         if (value and tvisfunc(value) and canonical and funcV(value) IS canonical) {
+            this->context_.emit_warning(ParserErrorCode::DeprecatedApi,
+               Token::from_span(Reference.identifier.span, TokenKind::Identifier),
+               "error() is replaced with raise()", Reference.identifier.symbol->len);
+         }
+         return;
+      }
 
       auto &binding = this->catalogue_.binding(id);
       if (binding.function_depth < this->function_depth_) binding.captured = true;

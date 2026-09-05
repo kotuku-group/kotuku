@@ -544,6 +544,22 @@ global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
    return Column, Column + 1
 end
 
+-- Resolve deprecation through the parser so spelling alone never marks a shadowed name or member.
+global function deprecatedReferenceAt(Doc:table, Line:num, Character:num):bool
+   if not Doc or Line is nil or Character is nil then return false end
+   local path = lspUriToPath(Doc.uri)
+   local result = debug.validate(Doc.content, { path=path })
+   for diag in values(result.diagnostics or array<table>) do
+      if diag.code != 'DeprecatedApi' or (diag.file and diag.file != path) then continue end
+      local source_line = validationPositionToLsp(diag.line)
+      local source_column = validationPositionToLsp(diag.column)
+      if source_line is Line and byteColToUtf16Col(getLine(Doc, Line), source_column) is Character then
+         return true
+      end
+   end
+   return false
+end
+
 @Doc(text="Compute diagnostics for a document using debug.validate()")
 global function computeDiagnostics(Doc:table)
    -- Pass the document's file path so relative imports ('./lib') resolve against its directory rather than the
@@ -586,6 +602,7 @@ global function computeDiagnostics(Doc:table)
             severity = lsp_severity,
             source = 'tiri',
             code = diag.code,
+            tags = diag.code is 'DeprecatedApi' and array<int> { 2 } or nil,
             message = diag.message
          })
       end

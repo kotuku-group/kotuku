@@ -1289,7 +1289,7 @@ LJLIB_CF(debug_validate)
          int column = source_position(span.column);
          settabsi(L, "line", line);
          settabsi(L, "column", column);
-         settabsi(L, "endColumn", column > 0 ? column + 1 : 0);
+         settabsi(L, "endColumn", column > 0 ? column + int(entry.length ? entry.length : 1) : 0);
          settabsi(L, "severity", int(entry.severity));
          settabss(L, "code", diagnostic_code_name(entry.code));
          settabss(L, "message", entry.message.empty() ? "Syntax error" : entry.message.c_str());

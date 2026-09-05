@@ -307,14 +307,15 @@ void ParserContext::rollback_before_error()
 //********************************************************************************************************************
 // Emit a warning diagnostic (non-fatal)
 
-void ParserContext::emit_warning(ParserErrorCode code, const Token &Token, std::string_view Message)
+void ParserContext::emit_warning(ParserErrorCode Code, const Token &Token, std::string_view Message, size_t Length)
 {
    ParserDiagnostic diagnostic;
    diagnostic.severity   = ParserDiagnosticSeverity::Warning;
-   diagnostic.code       = code;
+   diagnostic.code       = Code;
    diagnostic.file_index = this->lex_state->current_file_index;
    diagnostic.message.assign(Message.begin(), Message.end());
    diagnostic.token      = Token;
+   diagnostic.length = Length;
    this->diag.report(diagnostic);
 
    this->log_trace(ParserChannel::Warning, Token, Message);

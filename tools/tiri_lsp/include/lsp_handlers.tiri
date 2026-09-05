@@ -95,6 +95,50 @@ global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
    return result, InBlockComment
 end
 
+-- Complete unqualified built-ins.  Deprecated candidates are resolved in a parser probe at the cursor.
+global function resolveBuiltinCompletion(Doc:table, Position:table):array<table>
+   local line_text = getLine(Doc, Position.line)
+   local byte_col = utf16ColToByteCol(line_text, Position.character)
+   local start = byte_col
+   while start > 0 do
+      local char = line_text.sub(start - 1, start)
+      if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+            (char >= '0' and char <= '9') or char is '_') then break end
+      start -= 1
+   end
+   local prefix = line_text.sub(start, byte_col)
+   local items = array<table>
+   if prefix is '' or line_text.sub(0, start).rtrim().endsWith('.') then return items end
+
+   for name, builtin in pairs(glDefs?.builtins or {}) do
+      if not name.startsWith(prefix) or name.find('.') then continue end
+      if builtin.deprecated then
+         local offset = lspPositionToOffset(Doc.content, Position.line, byteColToUtf16Col(line_text, start))
+         local stop = lspPositionToOffset(Doc.content, Position.line, Position.character)
+         while stop < #Doc.content do
+            local char = Doc.content.sub(stop, stop + 1)
+            if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+                  (char >= '0' and char <= '9') or char is '_') then break end
+            stop++
+         end
+         local suffix = Doc.content.sub(stop)
+         local candidate = name .. (suffix.trim().startsWith('(') and '' or '()')
+         local probe = { uri=Doc.uri, content=Doc.content.sub(0, offset) .. candidate .. suffix }
+         if not deprecatedReferenceAt(probe, Position.line, byteColToUtf16Col(line_text, start)) then continue end
+      end
+      items.push({
+         label = name,
+         kind = 3,
+         detail = builtin.prototype,
+         documentation = { kind='markdown', value=builtin.comment },
+         tags = builtin.deprecated and array<int> { 1 } or nil,
+         deprecated = builtin.deprecated or false,
+         insertText = name
+      })
+   end
+   return items
+end
+
 -- Module namespace handlers
 
 global function resolveModuleCompletion(Doc:table, Position:table):array<table>
@@ -353,6 +397,7 @@ global function registerCoreHandlers(Self)
       uri = Msg.params.textDocument.uri
       doc = glDocuments[uri]
       items = doc and resolveModuleCompletion(doc, Msg.params.position) or array<table>
+      if doc and #items is 0 then items = resolveBuiltinCompletion(doc, Msg.params.position) end
       return { jsonrpc='2.0', id=Msg.id, result={ isIncomplete=false, items=items } }
    end
 

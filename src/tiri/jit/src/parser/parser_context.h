@@ -185,7 +185,7 @@ public:
 
    void emit_error(ParserErrorCode code, const Token &, std::string_view);
    void emit_error(const ParserError &);   // Preserves the error's own file_index (e.g. errors from imported files)
-   void emit_warning(ParserErrorCode code, const Token &, std::string_view);
+   void emit_warning(ParserErrorCode Code, const Token &, std::string_view, size_t Length = 0);
    ParserError make_error(ParserErrorCode, const Token &, std::string_view);  // Stamps the lexer's current file_index
    void set_error_rollback_callback(ErrorRollbackCallback, void *);
    void clear_error_rollback_callback(void *);

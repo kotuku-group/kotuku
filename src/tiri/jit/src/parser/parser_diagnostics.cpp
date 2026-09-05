@@ -114,14 +114,15 @@ void ParserDiagnostics::set_limit(uint32_t NewLimit)
 }
 
 //********************************************************************************************************************
-// Records a diagnostic entry. Error and Warning severities count against the configured limit;
-// Info-level diagnostics are always accepted. Once the limit is reached, additional errors
-// and warnings are silently discarded to prevent overwhelming output during error recovery.
+// Records a diagnostic entry. Errors and ordinary warnings count against the configured recovery limit.
+// Deprecation warnings are always accepted so each reference is reported without hiding subsequent errors.
+// Info-level diagnostics are also always accepted.
 
 void ParserDiagnostics::report(const ParserDiagnostic &Diagnostic)
 {
    bool counts_against_limit = Diagnostic.severity IS ParserDiagnosticSeverity::Error
-      or Diagnostic.severity IS ParserDiagnosticSeverity::Warning;
+      or (Diagnostic.severity IS ParserDiagnosticSeverity::Warning and
+          Diagnostic.code != ParserErrorCode::DeprecatedApi);
 
    if (counts_against_limit and this->counted_entries >= this->limit) return;
    this->storage.push_back(Diagnostic);

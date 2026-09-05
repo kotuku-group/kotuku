@@ -1,6 +1,6 @@
 global glModuleNamespaceLspUri = nil
 extern lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, modulePrefixesForDocument,
-   resolveModuleCompletion, resolveModuleRename, registerCoreHandlers
+   resolveModuleCompletion, resolveModuleRename, registerCoreHandlers, resolveBuiltinCompletion
 
 @BeforeAll function SetupModuleNamespaceLspTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -173,4 +173,24 @@ end
 
    assert(init.result.capabilities.completionProvider, 'Server should advertise module completion.')
    assert(init.result.capabilities.renameProvider is true, 'Server should advertise namespace rename.')
+end
+
+@Test function CompletesDeprecatedErrorBuiltin()
+   local items:array<table> = resolveBuiltinCompletion(makeDoc('err'), { line=0, character=3 })
+   local item = findCompletion(items, 'error')
+   assert(item and item.deprecated, 'Built-in error completion must be marked deprecated.')
+   assert(item.tags and item.tags[0] is 1, 'Completion must use the standard deprecated completion tag.')
+   assert(item.documentation.value is 'error() is replaced with raise().', 'Completion must name the replacement.')
+
+   items = resolveBuiltinCompletion(makeDoc('local error = function() end\nerr'), { line=1, character=3 })
+   assert(not findCompletion(items, 'error'), 'A shadowed error must not receive the deprecated built-in completion.')
+   items = resolveBuiltinCompletion(makeDoc('local api = {}\napi.err'), { line=1, character=7 })
+   assert(not findCompletion(items, 'error'), 'Members must not receive the deprecated built-in completion.')
+   items = resolveBuiltinCompletion(makeDoc('-- err'), { line=0, character=6 })
+   assert(not findCompletion(items, 'error'), 'Comments must not receive the deprecated built-in completion.')
+end
+
+@Test function DeprecatedCompletionInsideIdentifier()
+   local items:array<table> = resolveBuiltinCompletion(makeDoc('error("message")'), { line=0, character=3 })
+   assert(findCompletion(items, 'error'), 'Completion should resolve an error reference with the cursor inside it.')
 end
