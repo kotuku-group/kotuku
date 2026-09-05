@@ -81,16 +81,16 @@ gui.icon = function(Options)
          else -> 10
       end
 
-      err, font = mVec.getFontHandle(gui.fonts.icon.face, "Regular", 0, lFontSize)
+      err, font = mVec.GetFontHandle(gui.fonts.icon.face, "Regular", 0, lFontSize)
       metrics = struct.new('FontMetrics')
-      err = mVec.getFontMetrics(font, metrics)
+      err = mVec.GetFontMetrics(font, metrics)
       lLineHeight = metrics.lineSpacing
 
       -- Extract each word's pixel width
 
       widest_word = 0
       for word in values(lText) do
-         width = mVec.stringWidth(font, word, -1)
+         width = mVec.StringWidth(font, word, -1)
          if width > widest_word then widest_word = width end
          lWords.push({ word=word, width=width })
       end
@@ -108,7 +108,7 @@ gui.icon = function(Options)
             current_line = word.word
          else
             new_line = current_line .. ' ' .. word.word
-            width = mVec.stringWidth(font, new_line, -1)
+            width = mVec.StringWidth(font, new_line, -1)
             if width + (MARGIN * 2) < lIconWidth then
                current_line = new_line
             else

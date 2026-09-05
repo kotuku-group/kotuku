@@ -22,7 +22,7 @@ end
 
    local time, time_taken
    wake = function(Sound)
-      time_taken = (mSys.preciseTime() - time) / 1000000
+      time_taken = (mSys.PreciseTime() - time) / 1000000
       proc.signal()
    end
 
@@ -36,7 +36,7 @@ end
    assert(snd.acSeek(0.5, SEEK_RELATIVE) is ERR_Okay, 'Failed to pre-seek MP3 sample.')
    assert(snd.acActivate() is ERR_Okay, 'Failed to playback MP3 sample.')
    duration = snd.duration / 2
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
 
    wait_error = proc.sleep(duration + glLag + 1.0)
    assert(wait_error is ERR_Okay, 'Timed out waiting for pre-seek playback to finish.')
@@ -55,7 +55,7 @@ end
    assert(snd.acActivate() is ERR_Okay, 'Failed to playback MP3 sample.')
    assert(snd.acSeek(target, SEEK_RELATIVE) is ERR_Okay, 'Failed to seek active MP3 sample.')
    duration = snd.duration * (1.0 - target)
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
 
    wait_error = proc.sleep(duration + glLag + 1.0)
    assert(wait_error is ERR_Okay, 'Timed out waiting for post-seek playback to finish.')

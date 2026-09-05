@@ -203,7 +203,7 @@ gui.menu = function(Options)
       &reverseX = Options.reverseX ?? false
 
       if &popup then
-         err, cursor_x, cursor_y = mGfx.getCursorPos()
+         err, cursor_x, cursor_y = mGfx.GetCursorPos()
          if err is ERR_Okay then
             parent = { }
 
@@ -410,7 +410,7 @@ gui.menu = function(Options)
 
       &surface.subscribe('hide', function(Surface:obj!, Args:table!)
          &visible = false
-         &timeHide = mSys.preciseTime()
+         &timeHide = mSys.PreciseTime()
       end)
 
       &surface.subscribe('show', function(Surface:obj!, Args:table!)
@@ -418,7 +418,7 @@ gui.menu = function(Options)
             &surface.acFocus()
          end
          &visible = true
-         &timeShow = mSys.preciseTime()
+         &timeShow = mSys.PreciseTime()
 
          -- Keyboard support requires a client reference to grab input from.
 

@@ -13,9 +13,9 @@ local glViewport, glWindow, glTextY
 function setFont(Face, Size)
    if glText then glText.free() end
 
-   local err, font = mVec.getFontHandle(Face, "Regular", 0, Size)
+   local err, font = mVec.GetFontHandle(Face, "Regular", 0, Size)
    metrics = struct.new('FontMetrics')
-   err = mVec.getFontMetrics(font, metrics)
+   err = mVec.GetFontMetrics(font, metrics)
 
    if not glInitialised then
       -- CAP-HEIGHT: YELLOW
@@ -76,7 +76,7 @@ function setFont(Face, Size)
    processing.collect()
 end
 
-   --mFont.refreshFonts()
+   --mFont.RefreshFonts()
 
    glWindow = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
    glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })

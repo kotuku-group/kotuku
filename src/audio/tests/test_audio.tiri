@@ -28,7 +28,7 @@ end
 
    local time, time_taken
    snd.onStop = function(Sound:obj)
-      time_taken = (mSys.preciseTime() - time) / 1000000
+      time_taken = (mSys.PreciseTime() - time) / 1000000
       Sound.acSignal()
    end
 
@@ -37,7 +37,7 @@ end
 
    proc = processing.new({ signals = array<obj> { snd } })
    check snd.acActivate()
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
 
    proc.sleep()
 
@@ -50,7 +50,7 @@ end
    assert(snd, 'Failed to process high-tone wav file.')
 
    snd.onStop = function(Sound:obj)
-      time_taken = (mSys.preciseTime() - time) / 1000000
+      time_taken = (mSys.PreciseTime() - time) / 1000000
       Sound.acSignal()
    end
 
@@ -58,7 +58,7 @@ end
 
    duration = snd.duration
    check snd.acActivate()
-   time = mSys.preciseTime()
+   time = mSys.PreciseTime()
 
    proc.sleep()
 

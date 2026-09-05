@@ -6,11 +6,11 @@
 
 function id_file(Path)
    try
-      err, class = mSys.IdentifyFile(Path, 'Open', IDF_IGNORE_HOST)
+      err, cl = mSys.IdentifyFile(Path, 'Open', IDF_IGNORE_HOST)
 
-      if (class is string.hash('Sound')) then
+      if (cl is string.hash('Sound')) then
          return obj.new('sound', { path=Path })
-      elseif (class is string.hash('Music')) then
+      elseif (cl is string.hash('Music')) then
          return obj.new('music', { path=Path })
       else
          error('Unrecognised file type')
@@ -30,7 +30,7 @@ end
       return
    end
 
-   seek = arg('seek')
+   seek = tonumber(arg('seek'))
 
    player = id_file(src)
    if not player then
@@ -50,9 +50,8 @@ end
 
    -- User can request seeking to a position expressed as 0.0 - 1.0
 
-   if (seek) then
-      seek = tonumber(seek)
-      if (seek >= 0) and (seek <= 1.0) then
+   if seek then
+      if (seek > 0) and (seek <= 1.0) then
          player.acSeek(seek, SEEK_RELATIVE)
       else
          print('Seek must be expressed as a value from 0.0 to 1.0')
