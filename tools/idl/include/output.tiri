@@ -82,7 +82,7 @@ function outputActionStubs(Class:table)
    if not Class.sortedActions.empty() then
       for action in values(Class.sortedActions) do
          if glActionStubs[action.name] then
-            if glActionStubs[action.name].len() != 0 then
+            if #glActionStubs[action.name] != 0 then
                output(actionStub(glActionStubs[action.name]))
             end
          else

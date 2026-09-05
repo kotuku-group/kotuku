@@ -50,7 +50,7 @@ end
                  message = 'JSON test response',
                  contentType = req.headers['content-type'],
                  parsedData = parsedData,
-                 bodyLength = req.body and req.body.len() or 0
+                 bodyLength = req.body and #req.body or 0
               })
            end
          },
@@ -60,7 +60,7 @@ end
               res.json({
                  message = 'XML test response',
                  contentType = req.headers['content-type'],
-                 bodyLength = req.body and req.body.len() or 0,
+                 bodyLength = req.body and #req.body or 0,
                  bodyPreview = req.body and req.body.sub(0, 100) or ''
               })
            end
@@ -71,7 +71,7 @@ end
               isBinary = false
               if req.body then
                  -- Check for binary data (non-printable characters)
-                 for i in {0 to math.min(req.body.len(), 100)} do
+                 for i in {0 to math.min(#req.body, 100)} do
                     byte = req.body.byte(i)
                     if byte < 32 and byte != 9 and byte != 10 and byte != 13 then
                        isBinary = true
@@ -83,7 +83,7 @@ end
               res.json({
                  message = 'Binary upload received',
                  contentType = req.headers['content-type'],
-                 bodyLength = req.body and req.body.len() or 0,
+                 bodyLength = req.body and #req.body or 0,
                  isBinary = isBinary
               })
            end
@@ -106,7 +106,7 @@ end
                  message = 'Form test response',
                  contentType = req.headers['content-type'],
                  parsedForm = parsedForm,
-                 bodyLength = req.body and req.body.len() or 0
+                 bodyLength = req.body and #req.body or 0
               })
            end
          },
@@ -120,7 +120,7 @@ end
                  message = 'Text test response',
                  contentType = contentType,
                  charset = charset or 'unknown',
-                 bodyLength = req.body and req.body.len() or 0
+                 bodyLength = req.body and #req.body or 0
               })
            end
          },
@@ -198,7 +198,7 @@ end
       contentType = 'application/json',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. jsonData,
-      size        = jsonData.len(),
+      size        = #jsonData,
       incoming = function(HTTP, Buffer)
          content ..= Buffer.getString()
       end,
@@ -245,7 +245,7 @@ end
       contentType = 'application/xml',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. xmlData,
-      size        = xmlData.len(),
+      size        = #xmlData,
       incoming = function(HTTP, Buffer)
          content ..= Buffer.getString()
       end,
@@ -265,7 +265,7 @@ end
 
    response = json.decode(content)
    assert(response.contentType is 'application/xml', 'XML content type not detected')
-   assert(response.bodyLength is xmlData.len(), 'XML body length mismatch')
+   assert(response.bodyLength is #xmlData, 'XML body length mismatch')
    assert(response.bodyPreview.find('<user>'), 'XML content not preserved')
 end
 
@@ -311,7 +311,7 @@ end
 
    response = json.decode(content)
    assert(response.contentType is 'image/png', 'Binary content type not detected')
-   assert(response.bodyLength is binaryData.len(), 'Binary data length mismatch')
+   assert(response.bodyLength is #binaryData, 'Binary data length mismatch')
    assert(response.isBinary is true, 'Binary data not detected as binary')
 end
 
@@ -328,7 +328,7 @@ end
       contentType = 'application/x-www-form-urlencoded',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. formData,
-      size        = formData.len(),
+      size        = #formData,
       incoming = function(HTTP, Buffer)
          content ..= Buffer.getString()
       end,
@@ -392,7 +392,7 @@ end
    response = json.decode(content)
    assert(response.contentType.find('text/plain'), 'Text content type not detected')
    assert(response.charset is 'utf-8', 'Charset not parsed correctly')
-   assert(response.bodyLength is textData.len(), 'Text data length mismatch')
+   assert(response.bodyLength is #textData, 'Text data length mismatch')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

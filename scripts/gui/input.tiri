@@ -19,7 +19,7 @@ end
 function validateInput(self)
    if self.inputMask then
       userInput = self.text.string ?? ''
-      if string.len(userInput) > 0 then
+      if #userInput > 0 then
          if not self.inputMask.test(userInput) then
             self.text.string = self._lastGoodInput
             self.viewport.acDraw()

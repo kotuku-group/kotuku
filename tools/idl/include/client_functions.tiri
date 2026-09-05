@@ -730,16 +730,16 @@ global function structdef(Name:str, Options:table, Def:str, Append:str)
       type_max = 0
       for f in values(fields) do
          field_name = cName(f, true)
-         if field_name.len() > name_len then name_len = field_name.len() end
+         if #field_name > name_len then name_len = #field_name end
 
-         if f.type.len() > type_len then
-            if f.type.len() < 10 then
-               type_len = f.type.len()
+         if #f.type > type_len then
+            if #f.type < 10 then
+               type_len = #f.type
             end
          end
 
-         if f.type.len() + field_name.len() > type_max then
-            type_max = f.type.len() + 2 + field_name.len()
+         if #f.type + #field_name > type_max then
+            type_max = #f.type + 2 + #field_name
          end
       end
 

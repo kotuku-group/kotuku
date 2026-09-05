@@ -189,7 +189,7 @@ end
    -- Test serialization of various node types
    err, serialized = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
    assert(err is ERR_Okay, "Serialization should succeed")
-   assert(string.len(serialized) > 0, "Serialized string should not be empty")
+   assert(#serialized > 0, "Serialized string should not be empty")
 
    -- Test partial serialization
    childId = xml.tags[1].children[1].id

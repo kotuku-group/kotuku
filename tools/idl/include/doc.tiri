@@ -598,7 +598,7 @@ global function extractParagraph(Input:str, Context:table, References:table)
 
    -- Handle <field>, <method> and <action> references
 
-   if output?? and output.len() > 12 then
+   if output?? and #output > 12 then
       if Context and Context.meta then
          output = substituteReferences(output, Context)
       else

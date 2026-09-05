@@ -24,7 +24,7 @@ SERVER_PORT <const> = 18943
             handler = function(req, res)
                res.json({
                   message = 'Incomplete request handled',
-                  bodyLength = req.body and req.body.len() or 0,
+                  bodyLength = req.body and #req.body or 0,
                   hasBody = req.body != nil
                })
             end

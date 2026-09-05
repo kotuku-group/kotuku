@@ -401,9 +401,9 @@ Sort = 3
 Styles = Bold,Bold Italic,Italic,Regular
 ]]
 
-   assert(buf.len() is expected_output.len(), 'Wrote ' .. file.size .. ' bytes, expected ' .. expected_output.len())
+   assert(#buf is #expected_output, 'Wrote ' .. file.size .. ' bytes, expected ' .. #expected_output)
 
-   for i in {0 to buf.len()} do
+   for i in {0 to #buf} do
       if buf.byte(i) != expected_output.byte(i) then
          raise 'Written output is invalid:\n---\n' .. buf .. '---\n' .. expected_output .. '---\n'
       end

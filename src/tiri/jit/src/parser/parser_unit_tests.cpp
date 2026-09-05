@@ -7087,6 +7087,7 @@ static bool test_builtin_method_registry(kt::Log &Log)
        public_create != lj_builtin_callable(L, builtin_callable_id(FastFunc::object_create)) or
        array_insert IS table_insert or get_method_prototype(TiriType::Array, "contains") or
        get_method_prototype(TiriType::Range, "contains") or get_method_prototype(TiriType::Str, "contains") or
+       get_method_prototype(TiriType::Str, "len") or
        get_method_prototype(TiriType::Table, "push") or
        get_method_prototype(TiriType::Table, "new")) {
       Log.error("complete method lookup lost receiver separation, callable identity or constructor exclusion");
@@ -7099,8 +7100,8 @@ static bool test_builtin_method_registry(kt::Log &Log)
       "indexOf", "map", "mapSame", "findIndex", "filter", "reduce", "any", "all", "insert", "remove",
       "clone"
    };
-   constexpr std::array<std::string_view, 23> string_methods = {
-      "byte", "cap", "count", "decap", "endsWith", "escXML", "find", "format", "hash", "len",
+   constexpr std::array<std::string_view, 22> string_methods = {
+      "byte", "cap", "count", "decap", "endsWith", "escXML", "find", "format", "hash",
       "lower", "pop", "rep", "replace", "reverse", "rtrim", "split", "startsWith", "sub", "trim",
       "toArray", "unescapeXML", "upper"
    };

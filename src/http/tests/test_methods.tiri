@@ -29,7 +29,7 @@ function rawHttpRequest(Method:str, Path:str, Body:any, Headers:any):<num, str>
    end
 
    if Body then
-      request ..= 'Content-Length: ' .. Body.len() .. "\r\n"
+      request ..= 'Content-Length: ' .. #Body .. "\r\n"
    end
 
    request ..= "\r\n"
@@ -152,7 +152,7 @@ end
       contentType = 'application/json',
       flags       = HTF_NO_HEAD,
       inputFile   = 'string:' .. testBody,
-      size        = testBody.len(),
+      size        = #testBody,
       incoming = function(HTTP:obj, Buffer)
          content ..= Buffer.getString()
       end,
