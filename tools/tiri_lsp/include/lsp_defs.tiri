@@ -120,7 +120,7 @@ glBuiltins = {
    -- Memory management
    ['processing.collect'] = {
       comment = 'Runs the garbage collection process manually.',
-      prototype = 'collectgarbage([opt], [arg])'
+      prototype = 'processing.collect([mode], [options])'
    },
 
    -- Script parameters

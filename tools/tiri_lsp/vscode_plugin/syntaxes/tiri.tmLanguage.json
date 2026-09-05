@@ -329,7 +329,7 @@
             },
             {
                "name": "support.function.builtin.tiri",
-               "match": "\\b(pcall|xpcall|print|msg|type|resolve|tonumber|tostring|pairs|ipairs|next|select|unpack|setmetatable|getmetatable|rawget|rawset|collectgarbage)\\b"
+               "match": "\\b(pcall|xpcall|print|msg|type|resolve|tonumber|tostring|pairs|ipairs|next|unpack|setmetatable|getmetatable|rawget|rawset)\\b"
             },
             {
                "name": "constant.other.error.tiri",

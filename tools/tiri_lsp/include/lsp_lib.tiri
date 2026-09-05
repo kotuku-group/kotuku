@@ -325,7 +325,7 @@ global FLUID_BUILTINS = {
    ['rawget'] = true, ['rawset'] = true, ['rawequal'] = true,
 
    -- Script/module loading
-   ['collectgarbage'] = true, ['require'] = true, ['include'] = true,
+   ['require'] = true, ['include'] = true,
    ['loadFile'] = true, ['load'] = true, ['exec'] = true,
 
    -- Script parameters
