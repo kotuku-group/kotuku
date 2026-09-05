@@ -75,6 +75,7 @@ static int token_starts_expression(LexToken tok)
       case TK_false:
       case TK_dots:
       case TK_function:
+      case TK_raise:
       case TK_name:
       case '{':
       case '(':

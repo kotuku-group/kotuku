@@ -10772,6 +10772,43 @@ static bool test_checkall_syntax_and_bytecode(kt::Log &Log)
 // Defer error-unwind registration is intentionally test-first.  Resolve the planned opcodes by name so this test
 // remains compileable until the bytecode definitions land, while still failing clearly when either opcode is absent.
 
+static bool test_expression_raise_bytecode(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   std::string error;
+   auto raised = compile_snapshot(lua, "return raise('failure')", true, error);
+   if (not raised or count_opcode_tree(*raised, BC_RAISE) != 1 or
+       count_opcode_tree(*raised, BC_KPRI) != 0 or count_opcode_tree(*raised, BC_KNIL) != 0 or
+       count_opcode_tree(*raised, BC_RET1) != 0) {
+      Log.error("expression raise fabricated a return value: %s", error.c_str());
+      return false;
+   }
+   auto discarded = compile_snapshot(lua,
+      "return true ? 42 : raise('discarded'), false ? raise('discarded') : 24", true, error);
+   if (not discarded or count_opcode_tree(*discarded, BC_RAISE) != 0) {
+      Log.error("constant-folded branches emitted a discarded raise: %s", error.c_str());
+      return false;
+   }
+   auto branches = compile_snapshot(lua,
+      "local function pick(C) return C ? raise('true') : raise('false') end", true, error);
+   if (not branches or branches->children.size() != 1 or
+       count_opcode_tree(branches->children[0], BC_RAISE) != 2 or
+       count_opcode_tree(branches->children[0], BC_KPRI) != 0 or
+       count_opcode_tree(branches->children[0], BC_RET1) != 0) {
+      Log.error("non-returning ternary branches acquired a result join: %s", error.c_str());
+      return false;
+   }
+   auto arguments = compile_snapshot(lua,
+      "local function target(A, B) end\nreturn target(raise('argument'), 99)", true, error);
+   if (not arguments or count_opcode_tree(*arguments, BC_CALL) != 0 or
+       count_opcode_tree(*arguments, BC_CALLT) != 0 or count_opcode_tree(*arguments, BC_KSHORT) != 0) {
+      Log.error("argument raise emitted its enclosing call or later argument: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
 static bool test_rethrow_dump_validation(kt::Log &Log)
 {
    LuaStateHolder holder;
@@ -11053,9 +11090,10 @@ static bool test_defer_runtime_registration_state(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 102> tests = { {
+   constexpr std::array<TestCase, 103> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
+      { "expression_raise_bytecode", test_expression_raise_bytecode },
       { "rethrow_dump_validation", test_rethrow_dump_validation },
       { "raise_payload_and_context", test_raise_payload_and_context },
       { "assignment_target_resolution_ast", test_assignment_target_resolution_ast },

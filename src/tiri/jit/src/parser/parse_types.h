@@ -46,7 +46,8 @@ enum class ExpKind : uint8_t {
    Relocable,  // info = instruction PC
    NonReloc,   // info = result register
    Call,       // info = instruction PC, aux = base
-   Void
+   Void,
+   Unreachable // No fallthrough value; any remaining jumps belong to reachable short-circuit paths.
 };
 
 [[nodiscard]] static constexpr bool expkind_is_primitive(ExpKind Kind) noexcept
@@ -266,6 +267,7 @@ struct ExpDesc {
    }
 
    // Member methods for expression queries and manipulation
+   [[nodiscard]] inline bool is_unreachable() const { return this->k IS ExpKind::Unreachable and not has_jump(); }
    [[nodiscard]] inline bool has_jump() const { return this->t != this->f; }
    [[nodiscard]] inline bool is_constant() const { return expkind_is_constant(this->k); }
    [[nodiscard]] inline bool is_constant_nojump() const { return this->is_constant() and not this->has_jump(); }

@@ -2345,6 +2345,11 @@ private:
          if (not statement) continue;
          if (statement->kind IS AstNodeKind::ReturnStmt) {
             auto &payload = std::get<ReturnStmtPayload>(statement->data);
+            bool returns = true;
+            for (const auto &value : payload.values) {
+               if (value and expression_never_returns(*value)) returns = false;
+            }
+            if (not returns) continue;
             StaticResultSet current;
             current.declared_count = uint16_t(payload.values.size());
             current.stored_count = uint8_t(std::min<size_t>(payload.values.size(), MAX_RETURN_TYPES));

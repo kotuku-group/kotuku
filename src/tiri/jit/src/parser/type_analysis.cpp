@@ -3762,6 +3762,10 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
    FunctionContext* ctx = this->current_function();
    if (not ctx) return;  // Not inside a function (shouldn't happen in valid code)
 
+   for (const auto &value : Return.values) {
+      if (value and expression_never_returns(*value)) return;
+   }
+
    size_t return_count = Return.values.size();
    size_t fixed_count = return_count;
    const ExprNode *tail_expression = nullptr;
@@ -3941,7 +3945,13 @@ bool TypeAnalyser::body_has_return_values(const BlockStmt& Block) const
       switch (stmt->kind) {
          case AstNodeKind::ReturnStmt: {
             auto *payload = std::get_if<ReturnStmtPayload>(&stmt->data);
-            if (payload and not payload->values.empty()) return true;  // Found a return with values
+            if (payload and not payload->values.empty()) {
+               bool returns = true;
+               for (const auto &value : payload->values) {
+                  if (value and expression_never_returns(*value)) returns = false;
+               }
+               if (returns) return true;
+            }
             break;
          }
          case AstNodeKind::IfStmt: {

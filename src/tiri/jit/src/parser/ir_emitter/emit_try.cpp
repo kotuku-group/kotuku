@@ -244,9 +244,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
 // Bytecode structure:
 //   BC_RAISE  A=error_reg, D=msg_reg
 
-ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payload, const SourceSpan &Span)
+ParserResult<IrEmitUnit> IrEmitter::emit_raise_payload(const RaisePayload &Payload, const SourceSpan &Span)
 {
    FuncState *fs = &this->func_state;
+   RegisterGuard register_guard(fs);
 
    if (Payload.rethrow) {
       if (this->handler_exceptions.empty()) {
@@ -266,7 +267,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payl
    if (not code_result.ok()) return ParserResult<IrEmitUnit>::failure(code_result.error_ref());
 
    ExpDesc code_expr = code_result.value_ref();
-   expr_toanyreg(fs, &code_expr);
+   if (code_expr.is_unreachable()) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   // Snapshot a local code before evaluating a message that may mutate that local.
+   if (Payload.message) expr_tonextreg(fs, &code_expr);
+   else expr_toanyreg(fs, &code_expr);
    auto error_reg = BCReg(code_expr.u.s.info);
    BCReg msg_reg = BCReg(0);
    bool release_msg_reg = false;
@@ -281,15 +285,20 @@ ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payl
          return ParserResult<IrEmitUnit>::failure(msg_result.error_ref());
       }
       ExpDesc msg_expr = msg_result.value_ref();
+      if (msg_expr.is_unreachable()) return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
       expr_toanyreg(fs, &msg_expr);
       msg_reg = BCReg(msg_expr.u.s.info);
       expr_free(fs, &msg_expr);
    }
    else {
-      msg_reg = BCReg(fs->freereg++);
+      msg_reg = BCReg(fs->freereg);
+      bcreg_reserve(fs, 1);
       release_msg_reg = true;
       bcemit_AD(fs, BC_MOV, msg_reg, error_reg);
    }
+
+   // Payload evaluation must not replace the source location of the raise.
+   this->lex_state.lastline = Span.line;
 
    // Emit BC_RAISE: A=error_reg, D=msg_reg
    bcemit_AD(fs, BC_RAISE, error_reg, msg_reg);

@@ -69,6 +69,7 @@ static CSTRING get_expkind_name(ExpKind k)
 {
    switch (k) {
       case ExpKind::Void: return "void";
+      case ExpKind::Unreachable: return "unreachable";
       case ExpKind::Nil: return "nil";
       case ExpKind::True: return "true";
       case ExpKind::False: return "false";

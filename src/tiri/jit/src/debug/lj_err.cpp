@@ -668,7 +668,10 @@ extern "C" void setup_try_handler(lua_State *L)
    }
 
    saved_top = restorestack(L, try_frame->saved_top);
-   lj_func_closeuv(L, saved_top); // Close upvalues and restore stack state
+   // VM dispatch may save top at the frame base.  Only bindings created inside this try are abandoned;
+   // enclosing captured locals must stay attached to their live slots across repeated catches.
+   saved_base = restorestack(L, try_frame->frame_base);
+   lj_func_closeuv(L, saved_base + try_frame->saved_nactvar);
 
    L->base = restorestack(L, try_frame->frame_base);
    L->top = restorestack(L, try_frame->saved_top);

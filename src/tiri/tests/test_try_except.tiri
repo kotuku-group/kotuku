@@ -1977,3 +1977,166 @@ end
    end
    assert(caught and cleaned, 'Rethrow must run cleanup and reach the outer handler')
 end
+
+@Test function ExpressionRaiseEvaluationOrder()
+   local events = ''
+   local function first():num
+      events ..= 'first;'
+      return 7
+   end
+   local function message():str
+      events ..= 'message;'
+      return 'argument failure'
+   end
+   local function last():num
+      events ..= 'last;'
+      return 9
+   end
+   local function target(A:any, B:any, C:any)
+      events ..= 'called;'
+   end
+   try<trace>
+      defer events ..= 'defer;' end
+      target(first(), (raise(ERR_Args, message())), last())
+   except e when ERR_Args
+      assert(e.message is 'argument failure')
+      assert(type(e.trace) is 'array' and type(e.stackTrace) is 'string')
+   success
+      assert(false, 'Argument raise must interrupt the call')
+   end
+   assert(events is 'first;message;defer;', 'Arguments and cleanup must run in order')
+end
+
+@Test function ExpressionRaiseNestedPositions()
+   local expressions = {
+      "(raise('nested'))",
+      "1 + raise('nested')",
+      "raise('nested') + 1",
+      "not raise('nested')",
+      "f\"before {raise('nested')} after\"",
+      "{ 1, raise('nested'), 3 }",
+      "{ [raise('nested')] = 3 }",
+      "(raise('nested')).field",
+      "({})[raise('nested')]",
+      "raise(raise('nested'))",
+      "raise(ERR_Args, raise('nested'))",
+      "true ? raise('nested') : raise('wrong')",
+      "choose 1 from 1 -> raise('nested') else -> raise('wrong') end",
+      "1 & raise('nested')",
+      "raise('nested') is num"
+   }
+   for _, expression in expressions do
+      try
+         exec('local value = ' .. expression)
+      except e
+         assert(e.code is ERR_Exception and e.message.endsWith('nested'), expression .. ': ' .. e.message)
+      success
+         assert(false, 'Nested raise must throw: ' .. expression)
+      end
+   end
+end
+
+@Test function ExpressionRaiseBytecodeRoundTrip()
+   local function subject()
+      local function pick(Value:bool):num
+         return Value ? 42 : raise(ERR_Args, 'dump expression')
+      end
+      assert(pick(true) is 42)
+      try
+         local result = pick(false)
+      except e when ERR_Args
+         return e.message
+      end
+      return 'missing exception'
+   end
+   for mode in {0 to 2} do
+      assert(exec(string.dump(subject, mode is 1)) is 'dump expression')
+   end
+end
+
+@Test function ExpressionRaiseScopesAndPayloadSnapshot()
+   local receiver = { expression_marker='active' }
+   local order = ''
+   local code = ERR_Args
+   local function message():str
+      code = ERR_Failed
+      return 'original code'
+   end
+   try
+      checkall
+         using receiver do
+            defer
+               assert(&expression_marker is 'active')
+               order ..= 'defer'
+            end
+            local resource <close> = setmetatable({}, {
+               __close = function(Error)
+                  order ..= 'close,'
+               end
+            })
+            local result = raise(code, message())
+         end
+      end
+   except e when ERR_Args
+      assert(e.message is 'original code' and code is ERR_Failed)
+      assert(&expression_marker is nil, 'Expression raise must restore the calling context')
+      local err = mSys.AllocResource(-1024, 0)
+      assert(err is ERR_Args, 'Expression raise must leave checkall')
+   success
+      assert(false, 'Expression raise must use the code evaluated before the message')
+   end
+   assert(order is 'close,defer', 'Expression raise must retain cleanup order')
+end
+
+@Test function ExpressionRaiseSafeEvaluation()
+   local skipped = {
+      "local receiver:any = nil; return receiver?[raise('wrong')]",
+      "local receiver:any = nil; return receiver?.find(raise('wrong'))",
+      "local receiver:any = {}; return receiver?.find(raise('wrong'))",
+      "local receiver:any = nil; return receiver?.custom(raise('wrong'))",
+      "local value = 0; return choose value from _ when false -> raise('wrong') end",
+      "return 3 < 2 < raise('wrong')",
+      "local receiver:any = nil; return receiver?[raise('wrong')]()",
+      "local receiver:any = nil; return raise('wrong') |> receiver?.custom()",
+      "return choose false from {key=raise('wrong')} -> 42 else -> nil end"
+   }
+   for _, source in skipped do
+      local result = exec(source)
+      assert(result is nil or result is false, 'Safe expression should skip the raise: ' .. source)
+   end
+   local selected = {
+      "local receiver:any = 'abc'; return receiver.find(raise('selected'))",
+      "local receiver:any = 'abc'; return receiver?.find(raise('selected'))",
+      "local receiver:any = {}; return receiver?[raise('selected')]",
+      "return 1 < 2 < raise('selected')",
+      "return choose 1 from 1 when raise('selected') -> 42 else -> 0 end",
+      "return choose 1 from _ when raise('selected') -> 42 end",
+      "return {0 to raise('selected')}",
+      "return choose {key=1} from {key=raise('selected')} -> 42 else -> nil end",
+      "local receiver:any = {}; return receiver?[raise('selected')]()",
+      "local function target(Value:any) end return raise('selected') |> target()",
+      "local receiver:any = 'abc'; return raise('selected') |> receiver.find()",
+      "return (raise('selected'))??"
+   }
+   for _, source in selected do
+      try
+         exec(source)
+      except e
+         assert(e.code is ERR_Exception and e.message.endsWith('selected'), source .. ': ' .. e.message)
+      success
+         assert(false, 'Selected expression should throw: ' .. source)
+      end
+   end
+end
+
+@Test function ExpressionRaiseMultilineLocation()
+   local exception = exec([[try
+   local value = raise(
+      ERR_Args,
+      'multiline payload')
+except e
+   return e
+end]])
+   assert(exception.code is ERR_Args and exception.message is 'multiline payload')
+   assert(exception.line is 2, 'Raise location must identify the keyword, not the final payload line')
+end
