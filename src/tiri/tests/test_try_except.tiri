@@ -1754,3 +1754,226 @@ end
       loadFile("sdk:src/tiri/tests/loadfile_runtime_error_fixture.tiri")
    end)
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Bare and legacy rethrows preserve the original object, metadata and nearest lexical handler.
+
+@Test function BareRethrowPreservesTracedException()
+   local original = nil
+   local metadata = nil
+   local caught = false
+   try<trace>
+      try<trace>
+         try<trace>
+            raise ERR_Args, 'original rethrow payload'
+         except e when ERR_Args
+            original = e
+            metadata = { e.code, e.message, e.source, e.line, e.trace, e.stackTrace }
+            assert(e.trace != nil and e.stackTrace != nil, 'Expected an original trace')
+            e = {}
+            processing.collect('full')
+            raise
+         end
+      except when ERR_Args
+         processing.collect('full')
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is original, 'Two rethrows must reuse the original exception object')
+      assert(e.code is metadata[0] and e.message is metadata[1], 'Rethrow changed code or message')
+      assert(e.source is metadata[2] and e.line is metadata[3], 'Rethrow changed the origin')
+      assert(e.trace is metadata[4] and e.stackTrace is metadata[5], 'Rethrow changed the trace')
+   end
+   assert(caught, 'Both rethrows must match the original filter')
+end
+
+@Test function BareRethrowUsesNearestHandler()
+   local outer = nil
+   local inner = nil
+   local caught = false
+   try
+      try
+         raise ERR_Args, 'outer'
+      except e
+         outer = e
+         try
+            try
+               raise ERR_Failed, 'inner'
+            except e
+               inner = e
+               raise
+            end
+         except e when ERR_Failed
+            assert(e is inner, 'Nested rethrow must use the nearest handler')
+         except e
+            assert(false, 'Nested rethrow selected the wrong sibling handler')
+         end
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is outer, 'Leaving a nested handler must restore the outer exception')
+   end
+   assert(caught, 'Outer rethrow did not reach its filtered handler')
+end
+
+@Test function LegacyRethrowPreservesTracedException()
+   local original = nil
+   local caught = false
+   try<trace>
+      try<trace>
+         try<trace>
+            raise ERR_Args, 'legacy rethrow'
+         except e
+            original = e
+            assert(e.trace != nil, 'Expected trace before legacy rethrow')
+            error(e)
+         end
+      except e when ERR_Args
+         assert(e is original, 'Legacy rethrow reconstructed the exception')
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is original, 'Mixed rethrows must preserve the same exception')
+      assert(e.trace != nil and e.stackTrace != nil, 'Legacy rethrow lost the trace')
+   end
+   assert(caught, 'Legacy rethrow lost the original code')
+end
+
+@Test function RethrowPreservesAbsentTrace()
+   local caught = false
+   try<trace>
+      try
+         raise 'untraced original'
+      except
+         raise
+      end
+   except e
+      caught = true
+      assert(e.trace is nil and e.stackTrace is nil, 'Rethrow must not capture a new trace')
+      assert(e.message is 'untraced original', 'Rethrow changed the message')
+   end
+   assert(caught, 'Expected the untraced exception')
+end
+
+@Test function RethrowSurvivesCleanupAndCollection()
+   local original = nil
+   local order = ''
+   local caught = false
+   try
+      try<trace>
+         raise ERR_Args, 'cleanup rethrow'
+      except e
+         original = e
+         defer
+            order ..= 'defer'
+            try
+               raise 'caught inside defer'
+            except
+               processing.collect('full')
+            end
+         end
+         local resource <close> = setmetatable({}, {
+            __close = function(Error)
+               order ..= 'close,'
+               processing.collect('full')
+            end
+         })
+         raise
+      end
+   except e when ERR_Args
+      caught = true
+      assert(e is original, 'Cleanup lost the rooted original exception')
+      assert(e.message is 'cleanup rethrow' and e.trace != nil, 'Cleanup replaced the original metadata')
+   end
+   assert(caught, 'Cleanup changed the rethrow error code')
+   assert(order is 'close,defer', 'Rethrow changed cleanup order: ' .. order)
+end
+
+@Test function OrdinaryTablesCannotImpersonateExceptions()
+   local fake = setmetatable({ code=ERR_Args, message='forged exception' }, { __metatable='exception' })
+   local caught = false
+   try
+      error(fake)
+   except e when ERR_Args
+      assert(false, 'A script-created metatable must not grant exception identity')
+   except e
+      caught = true
+      assert(e != fake, 'An ordinary table must not be reused as an exception')
+   end
+   assert(caught, 'Expected a generic exception for the ordinary table')
+end
+
+@Test(hotpath=false) function UnhandledRethrowRetainsScriptError()
+   for mode in {0 to 2} do
+      local statement = [[try
+   try
+      raise ERR_Args, 'unhandled original'
+   except e
+      ]] .. (mode is 1 ? 'error(e)' : 'raise') .. [[
+   end
+except
+   defer
+      try
+         raise 'caught cleanup error'
+      except
+         processing.collect('full')
+      end
+   end
+   raise
+end]]
+      local script = obj.new('tiri', { statement=statement })
+      script.acActivate()
+      assert(script.error is ERR_Args, 'Unhandled rethrow must retain the original Script error code')
+      assert(script.errorMessage.find('unhandled original') != nil, 'Unhandled rethrow lost its message')
+      assert(script.errorMessage.find(':3:') != nil, 'Unhandled rethrow must report the original line')
+   end
+end
+
+@Test function RethrowAfterBytecodeRoundTrip()
+   local subject = function()
+      try
+         try
+            raise ERR_Args, 'round trip'
+         except
+            raise
+         end
+      except e when ERR_Args
+         return e.message
+      end
+      return 'not caught'
+   end
+   for mode in {0 to 2} do
+      local result = exec(string.dump(subject, mode is 1))
+      assert(result is 'round trip', 'Dump/load must preserve hidden rethrow registers and handlers')
+   end
+end
+
+@Test function RethrowRestoresContextAndCheckallScopes()
+   local receiver = { rethrow_marker='active' }
+   local cleaned = false
+   local caught = false
+   try
+      try
+         raise ERR_Args, 'scope rethrow'
+      except
+         checkall
+            using receiver do
+               defer
+                  assert(&rethrow_marker is 'active', 'Rethrow cleanup must retain its active context')
+                  cleaned = true
+               end
+               raise
+            end
+         end
+      end
+   except e when ERR_Args
+      caught = true
+      assert(&rethrow_marker is nil, 'Rethrow must restore the caller context before the handler')
+      local err = mSys.AllocResource(-1024, 0)
+      assert(err is ERR_Args, 'The unwound checkall must not promote later returned errors')
+   end
+   assert(caught and cleaned, 'Rethrow must run cleanup and reach the outer handler')
+end

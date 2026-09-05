@@ -102,6 +102,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
       "try runtime scope stack is unbalanced");
    fs->runtime_scopes.pop_back();
 
+   fs->try_depth = saved_try_depth;
+
    // Emit success block (if present) - runs after defers, before jump over handlers
    if (Payload.success_block) {
       auto success_result = this->emit_block(*Payload.success_block, FuncScopeFlag::None);
@@ -128,6 +130,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
    // Emit handlers inline and record metadata
 
    std::vector<ControlFlowEdge> handler_exits;
+   // Reserve a contiguous descriptor range before nested handler bodies append their own handlers.
+   fs->try_handlers.resize(first_handler_index + Payload.except_clauses.size());
+   size_t handler_index = first_handler_index;
 
    for (const auto &clause : Payload.except_clauses) {
       // Pack filter codes inline (up to 4 16-bit error codes into 64-bit integer)
@@ -163,62 +168,40 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
          }
       }
 
-      // Determine exception register
-
-      BCREG exception_reg = 0xFF;  // No exception variable by default
+      BCREG saved_nactvar = fs->varmap.size();
       BCReg saved_freereg = BCReg(fs->freereg);
-      BCPOS handler_pc = fs->pc;  // Record handler entry PC BEFORE emitting any handler code
+      BCPOS handler_pc = fs->pc;
+      BCREG exception_reg = saved_nactvar;
+      bcreg_reserve(fs, BCReg(1));
+      this->lex_state.var_new_fixed(BCReg(0), VARNAME_EXCEPTION);
+      this->lex_state.var_add(BCReg(1));
+      this->handler_exceptions.push_back(BCReg(exception_reg));
 
-      // If there's an exception variable, allocate a register for it.
-      // The runtime will place the exception table in this register
-
+      LocalBindingScope binding_scope(this->binding_table);
       if (clause.exception_var.has_value() and clause.exception_var->symbol) {
-         BCREG saved_nactvar = fs->varmap.size();  // Save varmap.size() before adding the exception variable
-
-         // Reserve register space first, then create the variable var_new takes an offset from varmap.size(), not an
-         // absolute register.
-
-         fs->freereg++;
-         this->lex_state.var_new(BCReg(0), clause.exception_var->symbol, clause.exception_var->span.line, clause.exception_var->span.column);
+         BCReg visible_reg = BCReg(fs->varmap.size());
+         bcreg_reserve(fs, BCReg(1));
+         this->lex_state.var_new(BCReg(0), clause.exception_var->symbol,
+            clause.exception_var->span.line, clause.exception_var->span.column);
          this->lex_state.var_add(BCReg(1));
-
-         exception_reg = saved_nactvar; // The exception register is the slot we just added
-         fs->var_get(exception_reg).binding_id = clause.exception_var->binding_id;
-
-         // Update local binding so the variable can be referenced
-         this->update_local_binding(clause.exception_var->symbol, BCReg(exception_reg));
-
-         // Emit handler body
-         if (clause.block) {
-            auto handler_result = this->emit_block(*clause.block, FuncScopeFlag::None);
-            if (not handler_result.ok()) {
-               fs->try_depth = saved_try_depth;
-               return handler_result;
-            }
-         }
-
-         // Clean up: remove the exception variable and restore freereg
-         this->lex_state.var_remove(saved_nactvar);
-         fs->freereg = saved_freereg.raw();
-      }
-      else {
-         // No exception variable - emit handler body without variable binding
-         if (clause.block) {
-            auto handler_result = this->emit_block(*clause.block, FuncScopeFlag::None);
-            if (not handler_result.ok()) {
-               fs->try_depth = saved_try_depth;
-               return handler_result;
-            }
-         }
-         fs->freereg = saved_freereg.raw();
+         fs->var_get(visible_reg).binding_id = clause.exception_var->binding_id;
+         this->update_local_binding(clause.exception_var->symbol, visible_reg);
+         bcemit_AD(fs, BC_MOV, visible_reg, BCReg(exception_reg));
       }
 
-      // Record handler metadata
-      fs->try_handlers.push_back(TryHandlerDesc{
-         packed_filter,
-         handler_pc,
-         exception_reg
-      });
+      if (clause.block) {
+         auto handler_result = this->emit_block(*clause.block, FuncScopeFlag::None);
+         if (not handler_result.ok()) {
+            this->handler_exceptions.pop_back();
+            fs->try_depth = saved_try_depth;
+            return handler_result;
+         }
+      }
+      this->handler_exceptions.pop_back();
+      this->lex_state.var_remove(saved_nactvar);
+      fs->freereg = saved_freereg.raw();
+
+      fs->try_handlers[handler_index++] = TryHandlerDesc{ packed_filter, handler_pc, exception_reg };
 
       // Jump to exit after handler
       handler_exits.push_back(this->control_flow.make_unconditional(BCPos(bcemit_jmp(fs))));
@@ -264,6 +247,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
 ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payload, const SourceSpan &Span)
 {
    FuncState *fs = &this->func_state;
+
+   if (Payload.rethrow) {
+      if (this->handler_exceptions.empty()) {
+         return ParserResult<IrEmitUnit>::failure(this->make_error(
+            ParserErrorCode::InternalInvariant, "rethrow has no active handler register", Span));
+      }
+      bcemit_AD(fs, BC_RETHROW, this->handler_exceptions.back(), BCReg(0));
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   }
 
    if (not Payload.error_code) {
       return ParserResult<IrEmitUnit>::failure(this->make_error(

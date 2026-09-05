@@ -351,7 +351,7 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
             bcread_error(State, ErrMsg::BCBAD);
          }
       }
-      else if (op IS BC_DEFERCONSUME) {
+      else if (op IS BC_DEFERCONSUME or op IS BC_RETHROW) {
          if (bc_a(bc[i]) >= pt->framesize) bcread_error(State, ErrMsg::BCBAD);
       }
       else if (op IS BC_VIEW) {
@@ -883,6 +883,59 @@ static void bcread_install_dependencies(lua_State *L, GCproto *Proto, void *Buff
 //********************************************************************************************************************
 // Read a prototype.
 
+// Exception metadata follows the optional debug block. Read bounded integers and validate every register and PC
+// before any loaded TRYENTER can reach the runtime.
+
+static void bcread_exceptions(LexState *State, GCproto *Proto)
+{
+   auto cursor = (const uint8_t *)State->p;
+   auto end = (const uint8_t *)State->pe;
+   auto read = [&]() -> uint32_t {
+      uint32_t value = 0;
+      if (not bcread_signature_uleb(cursor, end, value)) bcread_error(State, ErrMsg::BCBAD);
+      return value;
+   };
+   uint32_t blocks = read();
+   uint32_t handlers = read();
+   if (blocks > 0xffff or handlers > 0xffff) bcread_error(State, ErrMsg::BCBAD);
+   if (blocks) {
+      Proto->try_blocks = (TryBlockDesc *)lj_mem_new(State->L, blocks * sizeof(TryBlockDesc));
+      Proto->try_block_count = uint16_t(blocks);
+   }
+   if (handlers) {
+      Proto->try_handlers = (TryHandlerDesc *)lj_mem_new(State->L, handlers * sizeof(TryHandlerDesc));
+      Proto->try_handler_count = uint16_t(handlers);
+   }
+   for (uint32_t i = 0; i < blocks; ++i) {
+      uint32_t first = read();
+      uint32_t count = read();
+      uint32_t slots = read();
+      uint32_t flags = read();
+      if (first > handlers or count > 0xff or count > handlers - first or
+          slots > Proto->framesize or flags > TRY_FLAG_TRACE) bcread_error(State, ErrMsg::BCBAD);
+      Proto->try_blocks[i] = TryBlockDesc{ uint16_t(first), uint8_t(count), uint8_t(slots), uint8_t(flags) };
+   }
+   for (uint32_t i = 0; i < handlers; ++i) {
+      uint64_t filter = read();
+      filter |= uint64_t(read()) << 32;
+      uint32_t pc = read();
+      uint32_t slot = read();
+      if (pc IS 0 or pc >= Proto->sizebc or (slot != 0xff and slot >= Proto->framesize)) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      Proto->try_handlers[i] = TryHandlerDesc{ filter, pc, slot };
+   }
+   for (BCPOS pc = 1; pc < Proto->sizebc; ++pc) {
+      BCIns ins = proto_bc(Proto)[pc];
+      if (bc_op(ins) IS BC_TRYENTER) {
+         if (bc_d(ins) >= blocks or bc_a(ins) != Proto->try_blocks[bc_d(ins)].entry_slots) {
+            bcread_error(State, ErrMsg::BCBAD);
+         }
+      }
+   }
+   State->p = (const char *)cursor;
+}
+
 GCproto *lj_bcread_proto(LexState *State)
 {
    GCproto *pt;
@@ -993,6 +1046,7 @@ GCproto *lj_bcread_proto(LexState *State)
       setmref(pt->uvinfo, nullptr);
       setmref(pt->varinfo, nullptr);
    }
+   bcread_exceptions(State, pt);
    lj_contract_build_cache(State->L, pt);
    return pt;
 }

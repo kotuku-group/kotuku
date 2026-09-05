@@ -303,6 +303,7 @@ static void gc_mark(global_State *g, GCobj* o)
 
 static void gc_mark_gcroot(global_State *g)
 {
+   if (g->exception_metatable) gc_markobj(g, g->exception_metatable);
    for (size_t builtin_index = 0; builtin_index < BUILTIN_CALLABLE_CAPACITY; builtin_index++) {
       if (gcref(G2GG(g)->builtin_callables[builtin_index]) != nullptr) {
          gc_markobj(g, gcref(G2GG(g)->builtin_callables[builtin_index]));
@@ -704,6 +705,8 @@ static void gc_traverse_thread(global_State *g, lua_State* th)
          if (cf->funcname) gc_markobj(g, cf->funcname);
       }
    }
+   if (th->pending_exception) gc_markobj(g, th->pending_exception);
+   for (GCtab *exception : th->exception_unwind_roots) gc_markobj(g, exception);
    if (th->pending_exception_message) gc_markobj(g, th->pending_exception_message);
    if (th->pending_exception_source) gc_markobj(g, th->pending_exception_source);
    for (const auto &saved_frame : th->saved_multres) {
@@ -968,6 +971,7 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    ptrdiff_t saved_top = savestack(L, L->top);
    const BCIns *saved_try_handler = L->try_handler_pc;
    CapturedStackTrace *saved_pending_trace = L->pending_trace;
+   GCtab *saved_exception = L->pending_exception;
    GCstr *saved_exception_message = L->pending_exception_message;
    GCstr *saved_exception_source = L->pending_exception_source;
    int saved_exception_line = L->pending_exception_line;
@@ -1030,6 +1034,7 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    }
 
    L->pending_trace = saved_pending_trace;
+   L->pending_exception = saved_exception;
    L->pending_exception_message = saved_exception_message;
    L->pending_exception_source = saved_exception_source;
    L->pending_exception_line = saved_exception_line;

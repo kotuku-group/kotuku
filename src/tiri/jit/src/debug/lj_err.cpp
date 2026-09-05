@@ -96,6 +96,7 @@ LJ_DATADEF CSTRING lj_err_allmsg =
 
 static void err_clear_pending_exception(lua_State *L)
 {
+   L->pending_exception = nullptr;
    L->pending_exception_message = nullptr;
    L->pending_exception_source  = nullptr;
    L->pending_exception_line    = 0;
@@ -225,7 +226,13 @@ static TValue* unwind_close_range(
       // Only close if: slot is within valid stack range and not already nil/false
 
       if (o >= base and o < L->top and !tvisnil(o) and !tvisfalse(o)) {
+         GCtab *rethrow = L->pending_exception;
+         if (rethrow) L->exception_unwind_roots.push_back(rethrow);
          int errcode = lj_meta_close(L, o, current_err);
+         if (rethrow) {
+            if (errcode IS 0) lj_err_prepare_rethrow(L, rethrow);
+            L->exception_unwind_roots.pop_back();
+         }
          if (errcode != 0) {
             has_current_err = true;
             current_err_offset = savestack(L, L->top - 1);
@@ -258,7 +265,13 @@ static TValue * unwind_defer_scope(lua_State *L, TValue *Frame, TValue *ErrorObj
    TValue *owner_base = restorestack(L, frame_offset) + 1;
    while (lj_defer_peek_scope(L, owner_base, MinimumSlotIndex, MaximumSlotIndex, ScopeBase, &registration)) {
       owner_base = restorestack(L, frame_offset) + 1;
+      GCtab *rethrow = L->pending_exception;
+      if (rethrow) L->exception_unwind_roots.push_back(rethrow);
       int errcode = lj_meta_defer(L, owner_base, registration);
+      if (rethrow) {
+         if (errcode IS 0) lj_err_prepare_rethrow(L, rethrow);
+         L->exception_unwind_roots.pop_back();
+      }
       if (errcode != 0) {
          has_current_err = true;
          current_err_offset = savestack(L, L->top - 1);
@@ -513,7 +526,7 @@ static bool check_try_handler(lua_State *L, int errcode)
       lj_assertL(handler_pc != nullptr, "check_try_handler: handler found but handler_pc is null");
 
       if (try_frame->flags & TRY_FLAG_TRACE) { // Capture stack trace
-         if (!L->pending_trace) L->pending_trace = lj_debug_capture_trace(L, 0);
+         if (not L->pending_trace and not L->pending_exception) L->pending_trace = lj_debug_capture_trace(L, 0);
       }
 
       L->try_handler_pc = handler_pc; // Just record that a handler exists - don't modify state yet

@@ -190,6 +190,7 @@ private:
    ControlFlowGraph  control_flow;
    OperatorEmitter   operator_emitter;
    LocalBindingTable binding_table;
+   std::vector<BCReg> handler_exceptions; // Hidden registers in this lexical function
    ConstantEvaluator constant_evaluator;
    StaticCallableHandle current_callable{};
    bool is_root_chunk = true;

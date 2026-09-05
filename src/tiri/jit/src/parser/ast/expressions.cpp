@@ -472,6 +472,18 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
    Token current = this->ctx.tokens().current();
    ExprNodePtr node;
    switch (current.kind()) {
+      case TokenKind::RaiseToken: {
+         this->ctx.tokens().advance();
+         if (not this->ctx.check(TokenKind::LeftParen)) {
+            return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, current,
+               "raise in an expression requires parentheses");
+         }
+         auto payload = this->parse_raise_payload(true);
+         if (not payload.ok()) return ParserResult<ExprNodePtr>::failure(payload.error_ref());
+         node = std::make_unique<ExprNode>(AstNodeKind::RaiseExpr, current.span());
+         node->data = std::move(payload.value_ref());
+         return ParserResult<ExprNodePtr>::success(std::move(node));
+      }
       case TokenKind::Number:
       case TokenKind::String:
       case TokenKind::Nil:

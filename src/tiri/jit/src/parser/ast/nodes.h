@@ -707,6 +707,21 @@ struct ChooseExprPayload {
    ~ChooseExprPayload();
 };
 
+// Shared raise payload. A single value is classified as code or message at runtime.
+struct RaisePayload {
+   RaisePayload() = default;
+   RaisePayload(const RaisePayload&) = delete;
+   RaisePayload& operator=(const RaisePayload&) = delete;
+   RaisePayload(RaisePayload&&) noexcept = default;
+   RaisePayload& operator=(RaisePayload&&) noexcept = default;
+
+   bool rethrow = false;
+   ExprNodePtr error_code;   // Code or message value; absent only for rethrow
+   ExprNodePtr message;      // Optional: explicit custom error message
+
+   ~RaisePayload();
+};
+
 struct ExprNode {
    AstNodeKind kind = AstNodeKind::LiteralExpr;
    SourceSpan span{};
@@ -719,12 +734,14 @@ struct ExprNode {
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,
       IndexExprPayload, SafeMemberExprPayload, SafeIndexExprPayload,
       ResultFilterPayload, TableExprPayload, FunctionExprPayload, DeferredExprPayload,
-      RangeExprPayload, ChooseExprPayload, ModuleFunctionExprPayload>
+      RangeExprPayload, ChooseExprPayload, ModuleFunctionExprPayload, RaisePayload>
       data;
 
    ExprNode() = default;
    ExprNode(AstNodeKind Kind, SourceSpan Span) : kind(Kind), span(Span) {}
 };
+
+[[nodiscard]] bool expression_never_returns(const ExprNode &Expression);
 
 struct IfClause {
    IfClause() = default;
@@ -1007,19 +1024,7 @@ struct CheckallStmtPayload {
    ~CheckallStmtPayload();
 };
 
-// Raise statement payload: raise error_code [, message] or raise message
-struct RaiseStmtPayload {
-   RaiseStmtPayload() = default;
-   RaiseStmtPayload(const RaiseStmtPayload&) = delete;
-   RaiseStmtPayload& operator=(const RaiseStmtPayload&) = delete;
-   RaiseStmtPayload(RaiseStmtPayload&&) noexcept = default;
-   RaiseStmtPayload& operator=(RaiseStmtPayload&&) noexcept = default;
-
-   ExprNodePtr error_code;   // Required: expression evaluating to error code, or message when no explicit code is used
-   ExprNodePtr message;      // Optional: explicit custom error message
-
-   ~RaiseStmtPayload();
-};
+using RaiseStmtPayload = RaisePayload;
 
 // Check statement payload: check expression
 struct CheckStmtPayload {

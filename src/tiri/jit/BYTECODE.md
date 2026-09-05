@@ -347,6 +347,7 @@ targets `FORL`, while a `break` targets `loop_exit`.  This keeps range preparati
 | `TRYLEAVE` | A D | Pop exception frame (A=base, D=0) |
 | `CHECK` | A D | Check error code in R(A), raise if >= threshold |
 | `RAISE` | A D | Raise exception with error code R(A) and message R(D) |
+| `RETHROW` | A | Rethrow the caught exception in hidden handler register R(A) |
 
 #### Type Test Op
 | Opcode | Format | Description |
@@ -678,10 +679,17 @@ exit_label:
 - `BC_TRYENTER A, D`: Pushes an exception frame onto the exception handler stack. `A` is the base register, `D` is the try block index referencing metadata in `GCproto.try_blocks[]`.
 - `BC_TRYLEAVE A, D`: Pops the exception frame (normal exit path). `A` is the base register, `D` is always 0.
 - `BC_CHECK A, D`: Checks if the error code in `R(A)` is >= the error threshold. If so, raises an exception. Used for error code checking without explicit `raise` statements.
-- `BC_RAISE A, D`: Raises an exception with error code in `R(A)` and optional message in `R(D)`. If `D` is 0xFF, no message is provided.
+- `BC_RAISE A, D`: Raises an exception with error code in `R(A)` and message in `R(D)`. A non-numeric code defaults to `ERR_Exception`; a non-string message uses the standard error text. Both operands name valid registers.
+- `BC_RETHROW A`: Rethrows the runtime-created exception table in `R(A)`. The compiler reserves a hidden handler register and copies it to the optional source variable. Reassigning that variable cannot change the bare-rethrow target. The runtime roots and reuses the original table, preserves all six public fields, restores its error code before filter selection, and does not capture a new trace. The JIT recorder exits to the interpreter at this instruction.
 - `BC_CHECKALLENTER A, D`: Pushes a checkall frame for the current Lua activation. `A` is the first free register and `D`
   is unused.
 - `BC_CHECKALLLEAVE A, D`: Pops the innermost checkall frame. `D` is unused.
+
+The private dump format `0xa0` adds `RETHROW` and stores exception descriptors after each prototype's optional debug
+block, including in stripped dumps. The trailer uses ULEB128 integers: block and handler counts, then each block's
+`first_handler`, `handler_count`, `entry_slots` and `flags`, followed by each handler's low/high 32-bit filter halves,
+`handler_pc` and `exception_reg`. The loader validates counts, register bounds, handler PCs and `TRYENTER` references.
+Older dump versions are rejected.
 
 **Handler metadata:**
 Handler metadata is stored in `GCproto.try_blocks[]` and `GCproto.try_handlers[]`. Each `TryBlockDesc` contains:

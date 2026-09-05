@@ -405,6 +405,26 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
       ctx->sb.w = p;
    }
 
+   // Exception descriptors are semantic metadata and survive stripped dumps.
+   p = lj_buf_more(&ctx->sb, 10 + MSize(pt->try_block_count) * 25 + MSize(pt->try_handler_count) * 30);
+   p = lj_strfmt_wuleb128(p, pt->try_block_count);
+   p = lj_strfmt_wuleb128(p, pt->try_handler_count);
+   for (uint16_t i = 0; i < pt->try_block_count; ++i) {
+      const TryBlockDesc &block = pt->try_blocks[i];
+      p = lj_strfmt_wuleb128(p, block.first_handler);
+      p = lj_strfmt_wuleb128(p, block.handler_count);
+      p = lj_strfmt_wuleb128(p, block.entry_slots);
+      p = lj_strfmt_wuleb128(p, block.flags);
+   }
+   for (uint16_t i = 0; i < pt->try_handler_count; ++i) {
+      const TryHandlerDesc &handler = pt->try_handlers[i];
+      p = lj_strfmt_wuleb128(p, uint32_t(handler.filter_packed));
+      p = lj_strfmt_wuleb128(p, uint32_t(handler.filter_packed >> 32));
+      p = lj_strfmt_wuleb128(p, handler.handler_pc);
+      p = lj_strfmt_wuleb128(p, handler.exception_reg);
+   }
+   ctx->sb.w = p;
+
    // Pass buffer to writer function.
    if (ctx->status IS 0) {
       MSize n = sbuflen(&ctx->sb) - 5;

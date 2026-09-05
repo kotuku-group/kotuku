@@ -291,6 +291,12 @@ private:
             }
             break;
          }
+         case AstNodeKind::RaiseExpr: {
+            auto &payload = std::get<RaisePayload>(Expression.data);
+            if (payload.error_code) this->discover_expression(*payload.error_code);
+            if (payload.message) this->discover_expression(*payload.message);
+            break;
+         }
          case AstNodeKind::TernaryExpr: {
             auto &payload = std::get<TernaryExprPayload>(Expression.data);
             if (payload.condition) this->discover_expression(*payload.condition);
@@ -2153,7 +2159,9 @@ private:
          case AstNodeKind::TernaryExpr: {
             auto &payload = std::get<TernaryExprPayload>(Expression.data);
             if (payload.if_true and payload.if_false) {
-               value = join_static_descriptors(
+               if (expression_never_returns(*payload.if_true)) value = this->descriptor_of(*payload.if_false);
+               else if (expression_never_returns(*payload.if_false)) value = this->descriptor_of(*payload.if_true);
+               else value = join_static_descriptors(
                   this->descriptor_of(*payload.if_true), this->descriptor_of(*payload.if_false));
             }
             break;
@@ -2161,7 +2169,7 @@ private:
          case AstNodeKind::ChooseExpr: {
             bool have_value = false;
             for (auto &choice : std::get<ChooseExprPayload>(Expression.data).cases) {
-               if (not choice.result) continue;
+               if (not choice.result or expression_never_returns(*choice.result)) continue;
                if (not have_value) {
                   value = this->descriptor_of(*choice.result);
                   have_value = true;
@@ -2560,6 +2568,9 @@ private:
    {
       auto visit = [&](ExprNodePtr &Node) { if (Node) Visit(*Node); };
       switch (Expression.kind) {
+         case AstNodeKind::RaiseExpr: {
+            auto &p = std::get<RaisePayload>(Expression.data); visit(p.error_code); visit(p.message); break;
+         }
          case AstNodeKind::UnaryExpr: visit(std::get<UnaryExprPayload>(Expression.data).operand); break;
          case AstNodeKind::UpdateExpr: visit(std::get<UpdateExprPayload>(Expression.data).target); break;
          case AstNodeKind::TypeTestExpr: visit(std::get<TypeTestExprPayload>(Expression.data).value); break;

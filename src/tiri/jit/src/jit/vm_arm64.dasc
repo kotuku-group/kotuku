@@ -4729,6 +4729,17 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_RETHROW:
+    |  ins_AD
+    |  ldr L, SAVE_L
+    |  str BASE, L->base
+    |  str BASE, L->top
+    |  str PC, SAVE_PC
+    |  add CARG2, BASE, RA, lsl #3
+    |  mov CARG1, L
+    |  bl extern lj_rethrow
+    break;
+
   case BC_RAISE:
     // BC_RAISE A, D: Raise exception with error code in RA, optional message in RD
     // A = error code register, D = message register

@@ -852,57 +852,17 @@ LJLIB_CF(error)
    int32_t level = lj_lib_optint(L, 2, 1);
    lua_settop(L, 1);
 
+   L->pending_exception = nullptr;
    L->pending_exception_message = nullptr;
    L->pending_exception_source  = nullptr;
    L->pending_exception_line    = 0;
    L->pending_exception_valid   = false;
 
-   // Handle exception tables (as received by 'except' keyword) by extracting the message field
-   // The error code will remain in the lua_State, so does not require management.
-   // TODO: There is room for improvement (e.g. retaining stack traces if a stack trace is present) but this will do for
-   // now - a rewrite of exception management is probably in order later.
-
-   bool rethrow_metadata = false;
-   if (lua_istable(L, 1)) {
-      GCstr *message = nullptr;
-      GCstr *source = nullptr;
-      int line = 0;
-      ERR error_code = ERR::Okay;
-      bool has_error_code = false;
-
-      lua_getfield(L, 1, "message");
-      if (tvisstr(L->top - 1)) message = strV(L->top - 1);
-
-      lua_getfield(L, 1, "source");
-      if (tvisstr(L->top - 1)) source = strV(L->top - 1);
-      lua_pop(L, 1);
-
-      lua_getfield(L, 1, "line");
-      if (tvisnum(L->top - 1)) line = int(numV(L->top - 1));
-      lua_pop(L, 1);
-
-      lua_getfield(L, 1, "code");
-      if (tvisnum(L->top - 1)) {
-         error_code = ERR(numberVint(L->top - 1));
-         has_error_code = true;
-      }
-      lua_pop(L, 1);
-
-      if (message) {
-         L->pending_exception_message = message;
-         L->pending_exception_source  = source;
-         L->pending_exception_line    = line;
-         L->pending_exception_valid   = true;
-         if (has_error_code) L->CaughtError = error_code;
-         rethrow_metadata = true;
-         lua_replace(L, 1);  // Replace the table with the message string
-      }
-      else lua_pop(L, 1);  // Pop the nil/non-string message value, keep original table
-   }
+   if (lj_is_exception_table(L, L->base)) lj_rethrow(L, L->base);
 
    // Handle regular string errors.
    if (lua_isstring(L, 1)) {
-      if (not rethrow_metadata and tvisstr(L->base)) {
+      if (tvisstr(L->base)) {
          L->pending_exception_message = strV(L->base);
          L->pending_exception_source  = nullptr;
          L->pending_exception_line    = 0;

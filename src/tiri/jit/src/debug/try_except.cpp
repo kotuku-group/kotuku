@@ -29,15 +29,10 @@
 //********************************************************************************************************************
 // Exception table metatable.
 
-static bool is_exception_table(lua_State *L, cTValue *Value)
+extern "C" bool lj_is_exception_table(lua_State *L, cTValue *Value)
 {
-   if (not tvistab(Value)) return false;
-
-   GCtab *mt = tabref(tabV(Value)->metatable);
-   if (not mt) return false;
-
-   cTValue *name = lj_tab_getstr(mt, lj_str_newlit(L, "__metatable"));
-   return name and tvisstr(name) and strV(name) IS lj_str_newlit(L, "exception");
+   return tvistab(Value) and G(L)->exception_metatable and
+      tabref(tabV(Value)->metatable) IS G(L)->exception_metatable;
 }
 
 static void push_exception_string(lua_State *L, GCtab *exception)
@@ -57,7 +52,7 @@ static void push_exception_string(lua_State *L, GCtab *exception)
 
 static void push_concat_value_string(lua_State *L, cTValue *Value)
 {
-   if (is_exception_table(L, Value)) {
+   if (lj_is_exception_table(L, Value)) {
       cTValue *msg_tv = lj_tab_getstr(tabV(Value), lj_str_newlit(L, "message"));
       GCstr *message = (msg_tv and tvisstr(msg_tv)) ? strV(msg_tv) : lj_str_newlit(L, "<No message>");
       setstrV(L, L->top++, message);
@@ -70,7 +65,7 @@ static int exception_tostring(lua_State *L)
    GCtab *exception = lj_context_current(L);
    TValue value;
    settabV(L, &value, exception);
-   if (is_exception_table(L, &value)) push_exception_string(L, exception);
+   if (lj_is_exception_table(L, &value)) push_exception_string(L, exception);
    else setstrV(L, L->top++, lj_str_newlit(L, "exception"));
 
    return 1;
@@ -90,7 +85,13 @@ static int exception_concat(lua_State *L)
 
 static void attach_exception_metatable(lua_State *L, GCtab *Table)
 {
+   if (G(L)->exception_metatable) {
+      setgcref(Table->metatable, obj2gco(G(L)->exception_metatable));
+      lj_gc_objbarriert(L, Table, G(L)->exception_metatable);
+      return;
+   }
    GCtab *mt = lj_tab_new(L, 0, 4);
+   G(L)->exception_metatable = mt;
    lj_assertL(mt != nullptr, "attach_exception_metatable: metatable allocation failed");
    // Internal exception metatables are built here and never define __gc.
    setgcref(Table->metatable, obj2gco(mt));
@@ -116,6 +117,40 @@ static void attach_exception_metatable(lua_State *L, GCtab *Table)
 }
 
 //********************************************************************************************************************
+// Rethrow keeps the original object rooted independently of registers that cleanup may discard.
+
+extern "C" void lj_err_prepare_rethrow(lua_State *L, GCtab *Exception)
+{
+   GCtab *exception = Exception;
+   L->pending_exception = exception;
+   cTValue *code = lj_tab_getstr(exception, lj_str_newlit(L, "code"));
+   L->CaughtError = (code and tvisnum(code)) ? ERR(numberVint(code)) : ERR::Exception;
+   cTValue *message = lj_tab_getstr(exception, lj_str_newlit(L, "message"));
+   cTValue *source = lj_tab_getstr(exception, lj_str_newlit(L, "source"));
+   cTValue *line = lj_tab_getstr(exception, lj_str_newlit(L, "line"));
+   L->pending_exception_message = (message and tvisstr(message)) ? strV(message) : nullptr;
+   L->pending_exception_source = (source and tvisstr(source)) ? strV(source) : nullptr;
+   L->pending_exception_line = (line and tvisnum(line)) ? int(numberVint(line)) : 0;
+   L->pending_exception_valid = true;
+}
+
+extern "C" LJ_NORET void lj_rethrow(lua_State *L, TValue *Exception)
+{
+   if (not lj_is_exception_table(L, Exception)) {
+      lj_err_currentmsg(L, ERR::Exception, "rethrow requires a caught exception");
+   }
+   GCtab *exception = tabV(Exception);
+   lj_err_prepare_rethrow(L, exception);
+
+   // VM helpers have no C frame and synchronise top to base. Preserve every live register while formatting.
+   GCfunc *func = frame_func(L->base - 1);
+   if (isluafunc(func)) L->top = L->base + funcproto(func)->framesize;
+   lj_state_checkstack(L, 1);
+   push_exception_string(L, exception);
+   lj_err_run(L);
+}
+
+//********************************************************************************************************************
 // Native bytecode helpers for BC_CHECK and BC_RAISE opcodes.
 // These are called from VM assembly after type checking and L->CaughtError is already set.
 // Both functions are noreturn - they always throw an exception.
@@ -123,11 +158,16 @@ static void attach_exception_metatable(lua_State *L, GCtab *Table)
 LJ_NORET static void lj_raise_recorded(lua_State *L, ERR ErrorCode, GCstr *Message)
 {
    L->CaughtError = ErrorCode;
+   L->pending_exception = nullptr;
 
    L->pending_exception_message = Message;
    L->pending_exception_source  = nullptr;
    L->pending_exception_line    = 0;
    L->pending_exception_valid   = true;
+
+   GCfunc *func = frame_func(L->base - 1);
+   if (isluafunc(func)) L->top = L->base + funcproto(func)->framesize;
+   lj_state_checkstack(L, 1);
 
    DebugLocation location;
    if (lj_debug_getloc(L, L->base - 1, nullptr, &location)) {
@@ -379,6 +419,11 @@ extern "C" bool lj_try_find_handler(lua_State *L, const TryFrame *Frame, ERR Err
 
 extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, GCstr *Message, GCstr *Source, int Line, BCREG ExceptionReg, CapturedStackTrace *Trace)
 {
+   if (L->pending_exception) {
+      if (ExceptionReg != 0xff) settabV(L, L->base + ExceptionReg, L->pending_exception);
+      if (Trace) lj_debug_free_trace(L, Trace);
+      return;
+   }
    if (ExceptionReg IS 0xff) { // No exception variable - just free the trace and return
       if (Trace) lj_debug_free_trace(L, Trace);
       return;
@@ -433,6 +478,9 @@ extern "C" void lj_try_build_exception_table(lua_State *L, ERR ErrorCode, GCstr 
       // Build native array of frame tables: [{source, line, func}, ...]
       // The array is rooted in the exception table t (at the "trace" field) after creation.
       GCarray *frames = lj_array_new(L, Trace->frame_count, AET::TABLE);
+      slot = lj_tab_setstr(L, t, lj_str_newlit(L, "trace"));
+      setarrayV(L, slot, frames);
+      lj_gc_anybarriert(L, t);
       GCRef *frame_refs = (GCRef *)frames->arraydata();
 
       // Build formatted traceback string at the same time
