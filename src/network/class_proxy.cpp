@@ -107,7 +107,7 @@ database on the success of this function.
 
 -ERRORS-
 Okay: Proxy deleted.
-Failed
+FieldNotSet: The proxy has no group name or record reference.
 CreateObject
 
 -TAGS-
@@ -120,7 +120,7 @@ static ERR PROXY_DeleteRecord(extProxy *Self)
 {
    kt::Log log;
 
-   if ((Self->GroupName.empty()) or (not Self->Record)) return log.error(ERR::Failed);
+   if ((Self->GroupName.empty()) or (not Self->Record)) return log.error(ERR::FieldNotSet);
 
    log.branch();
 

@@ -174,7 +174,7 @@
 <tr><th class="col-md-1">SetField</th><td>An error occurred while updating the <a data-bs-toggle="tooltip" title="Specifies the location of a file or folder." href="#tf-Path">Path</a> field.</td></tr>
 <tr><th class="col-md-1">MissingPath</th><td>The object is missing a path reference</td></tr>
 <tr><th class="col-md-1">VirtualVolume</th><td>ResolvePath() failed to resolve the path because it is a virtual reference</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">ExpectedFile</th><td>The operation expected a path to a file</td></tr>
 <tr><th class="col-md-1">CreateFile</th><td>A new file could not be created</td></tr>
 <tr><th class="col-md-1">UseDerived</th><td>Requested to use a registered derived class (not an error)</td></tr>
@@ -239,7 +239,7 @@
 <tr><th class="col-md-1">Write</th><td>Data could not be written to the destination path.</td></tr>
 <tr><th class="col-md-1">FieldNotSet</th><td>The <a data-bs-toggle="tooltip" title="Specifies the location of a file or folder." href="#tf-Path">Path</a> field has not been set in the file object.</td></tr>
 <tr><th class="col-md-1">Loop</th><td>Performing the copy would cause infinite recursion.</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-Delete" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Delete</th><td id="tm-Delete">Deletes a file from its source location.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Delete" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR fl::Delete(OBJECTPTR Object, FUNCTION Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>Optional callback for receiving feedback during the operation.</td></tr>
@@ -252,7 +252,7 @@
 <tr><th class="col-md-1">NoPermission</th><td>The user does not have the necessary permissions to delete the file.</td></tr>
 <tr><th class="col-md-1">MissingPath</th><td>The object is missing a path reference</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>The file path string is too long.</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
 <tr><th class="col-md-1">DeleteFile</th><td>Deletion of a folder or file failed (e.g. permissions, read-only media)</td></tr>
 <tr><th class="col-md-1">ReadOnly</th><td>The file is on a read-only filesystem.</td></tr>
@@ -318,7 +318,7 @@
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>The platform does not support file date setting.</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>

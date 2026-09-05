@@ -194,7 +194,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
          // will append to WriteBuffer.
          if (sc::Call(Self->Outgoing, std::to_array<ScriptArg>({
                { "HTTP", Self, FD_OBJECTPTR },
-            }), error) != ERR::Okay) error = ERR::Failed;
+            }), error) != ERR::Okay) error = ERR::Function;
          if (error > ERR::ExceptionThreshold) {
             log.warning("Procedure %u failed, aborting HTTP call.", Self->Outgoing.procedureID());
          }

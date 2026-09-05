@@ -48,7 +48,7 @@ static ERR tls_setup_client(extNetSocket *Self)
 
    bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
    if (Self->TLS.Handle = ssl_create_context(validate_cert, false); !Self->TLS.Handle) {
-      return ERR::Failed;
+      return ERR::CreateResource;
    }
 
    return ERR::Okay;
@@ -66,7 +66,7 @@ static ERR tls_setup_server(extNetServer *Self)
 
    bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
    if (Self->TLS.Handle = ssl_create_context(validate_cert, true); !Self->TLS.Handle) {
-      return ERR::Failed;
+      return ERR::CreateResource;
    }
 
    if (not Self->SSLCertificate.empty()) {
@@ -187,7 +187,7 @@ template <class T> ERR tls_receive_encrypted(T *Self)
             "Failed to queue encrypted SSL input: %d (incoming=%d, queued=%d, limit=%d)",
             ssl_error, int(bytes_received), int(ssl_encrypted_input_size(Self->TLS.Handle)),
             int(ssl_encrypted_input_limit(Self->TLS.Handle)));
-         return ERR::Failed;
+         return ERR::Write;
       }
 
       auto prepare_error = ssl_prepare_read(Self->TLS.Handle);

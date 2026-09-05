@@ -116,7 +116,7 @@ Z: Close Path
 <tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>A buffer overflow has occurred</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-<tr><th class="col-md-1">InvalidValue</th><td>A required value was not within expected constraints</td></tr>
+<tr><th class="col-md-1">InvalidValue</th><td>A value has not passed validation</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="GenerateRectangle"><h2>GenerateRectangle()</h2><p class="lead">Generates a rectangular path resource.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR vec::GenerateRectangle(DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height, APTR * Path)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>X</td><td>The horizontal position of the rectangle.</td></tr>
 <tr><td>Y</td><td>The vertical position of the rectangle.</td></tr>
@@ -144,7 +144,7 @@ Z: Close Path
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Attempting to lock an object failed</td></tr>
 <tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
-<tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
+<tr><th class="col-md-1">ResolvePath</th><td>A call to ResolvePath() failed</td></tr>
 <tr><th class="col-md-1">CreateObject</th><td>A call to CreateObject() failed</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="GetFontMetrics"><h2>GetFontMetrics()</h2><p class="lead">Returns display metrics for a font handle.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR vec::GetFontMetrics(APTR Handle, struct FontMetrics * Info)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Handle</td><td>A font handle obtained from <a href="?page=GetFontHandle">GetFontHandle()</a>.</td></tr>

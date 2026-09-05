@@ -51,11 +51,11 @@
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The IP address was resolved successfully.</td></tr>
 <tr><th class="col-md-1">Retry</th><td>Retry the operation (could not succeed at this time)</td></tr>
-<tr><th class="col-md-1">Failed</th><td>The address could not be resolved.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">Memory</th><td>General memory error</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>A buffer overflow has occurred</td></tr>
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
+<tr><th class="col-md-1">HostNotFound</th><td>The address could not be resolved.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-BlockingResolveName" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">BlockingResolveName</th><td id="tm-BlockingResolveName">Resolves a domain name to an official host name and a list of IP addresses.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-BlockingResolveName" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR nl::BlockingResolveName(OBJECTPTR Object, STRVIEW HostName)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>HostName</td><td>The host name to be resolved.</td></tr>
@@ -65,10 +65,10 @@
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Retry</th><td>Retry the operation (could not succeed at this time)</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
 <tr><th class="col-md-1">Memory</th><td>General memory error</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>A buffer overflow has occurred</td></tr>
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
+<tr><th class="col-md-1">HostNotFound</th><td>The host name could not be resolved.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-ResolveAddress" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ResolveAddress</th><td id="tm-ResolveAddress">Resolves an IP address to a host name.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ResolveAddress" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR nl::ResolveAddress(OBJECTPTR Object, STRVIEW Address)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Address</td><td>IP address to be resolved, e.g. "123.111.94.82".</td></tr>
@@ -77,8 +77,8 @@
 <p>If synchronous (blocking) operation is desired then use the <a data-bs-toggle="tooltip" title="Resolves an IP address to a host name." href="#tm-BlockingResolveAddress">BlockingResolveAddress()</a> method.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The IP address was resolved successfully.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>The address could not be resolved</td></tr>
 <tr><th class="col-md-1">FieldNotSet</th><td>A required field value is undefined</td></tr>
+<tr><th class="col-md-1">Syntax</th><td>The address is not a valid IP address literal.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-ResolveName" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ResolveName</th><td id="tm-ResolveName">Resolves a domain name to an official host name and a list of IP addresses.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ResolveName" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR nl::ResolveName(OBJECTPTR Object, STRVIEW HostName)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>HostName</td><td>The host name to be resolved.</td></tr>

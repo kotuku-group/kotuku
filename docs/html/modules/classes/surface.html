@@ -340,11 +340,11 @@ the surface area first).</li>
 <p>Errors returned while copying individual child surfaces can be propagated from <a href="?page=CopySurface">CopySurface()</a>.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>The intermediate image object could not be initialised or saved.</td></tr>
 <tr><th class="col-md-1">Search</th><td>A search routine in this function failed</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Attempting to lock an object failed</td></tr>
 <tr><th class="col-md-1">NewObject</th><td>The intermediate image object could not be created.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
+<tr><th class="col-md-1">CreateResource</th><td>The intermediate image object could not be initialised or saved.</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Show" style="scroll-margin:3em;" id="ta-Show" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Show</th><td>Shows a surface object on the display.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Show" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acShow(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Show() makes the surface visible.  For top-level surfaces it shows the hosted display window; for child surfaces it sets the visible flag, redraws the surface and exposes the affected area.  If the surface is modal, it becomes the active modal surface until it is hidden.</p>
@@ -405,7 +405,9 @@ the surface area first).</li>
 <p>Redraw schedules do not collapse in nested surfaces.  If both a surface and one of its children are scheduled, two redraw operations may be triggered where one would otherwise suffice.  Target the top-level surface only in such instances.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>General failure</td></tr>
+<tr><th class="col-md-1">Args</th><td>An invalid refresh rate was calculated for the timer subscription.</td></tr>
+<tr><th class="col-md-1">SystemLocked</th><td>The timer subsystem could not be locked.</td></tr>
+<tr><th class="col-md-1">InvalidState</th><td>The surface is marked for termination.</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-SetDisplay" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SetDisplay</th><td id="tm-SetDisplay">Changes the screen resolution (applies to top-level surface objects only).</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SetDisplay" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR drw::SetDisplay(OBJECTPTR Object, INT X, INT Y, INT Width, INT Height, INT InsideWidth, INT InsideHeight, INT BitsPerPixel, DOUBLE RefreshRate, INT Flags)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>X</td><td>The horizontal coordinate/offset for the display.</td></tr>
 <tr><td>Y</td><td>The vertical coordinate/offset for the display.</td></tr>

@@ -455,7 +455,7 @@ tags Variable: A variable that matches the indicated `Type`.
 -ERRORS-
 Okay: The variable was defined successfully.
 Args:
-Failed: A Lua allocation or other runtime error prevented the store.
+SetField: A Lua allocation or other runtime error prevented the store.
 FieldTypeMismatch: A valid field type was not specified, or the value conflicts with a sticky global type contract.
 InvalidState: The script does not have an active Tiri state, or is currently executing.
 ObjectCorrupt: Privately maintained memory has become inaccessible.
@@ -512,7 +512,7 @@ static ERR set_variable_error(std::string_view Message)
       return ERR::ReadOnly;
    }
    if (Message.find("type contract failed") != std::string_view::npos) return ERR::FieldTypeMismatch;
-   return ERR::Failed;
+   return ERR::SetField;
 }
 
 } // namespace

@@ -772,7 +772,7 @@ static ERR SURFACE_Focus(extSurface *Self)
          // during the free process.
 
          glLastFocusTime = PreciseTime();
-         return ERR::Failed|ERR::Notified;
+         return ERR::Search|ERR::Notified;
       }
 
       // Build the new focus chain in a local focus list.  Also also reset the HAS_FOCUS flag.  Surfaces that have
@@ -967,7 +967,7 @@ static ERR SURFACE_Hide(extSurface *Self)
       UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
 
       kt::ScopedObjectLock display(Self->DisplayID);
-      if (display.granted()) if (acHide(*display) != ERR::Okay) return ERR::Failed;
+      if (display.granted()) if (auto error = acHide(*display); error != ERR::Okay) return error;
    }
    else {
       // Mark this surface object as invisible, then invalidate the region it was covering in order to have the background redrawn.
@@ -1412,7 +1412,7 @@ static ERR SURFACE_Init(extSurface *Self)
 
    // Track the surface object
 
-   if (track_layer(Self) != ERR::Okay) return ERR::Failed;
+   if (auto error = track_layer(Self); error != ERR::Okay) return error;
 
    // The PopOver reference can only be managed once track_layer() has been called if this is a surface with a parent.
 
@@ -1556,7 +1556,7 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
       }
    }
 
-   if ((Self->Flags & RNF::STICKY) != RNF::NIL) return ERR::Failed|ERR::Notified;
+   if ((Self->Flags & RNF::STICKY) != RNF::NIL) return ERR::Immutable|ERR::Notified;
 
    if ((Self->Flags & RNF::NO_HORIZONTAL) != RNF::NIL) move.DeltaX = 0;
    else move.DeltaX = Args->DeltaX;
@@ -1569,7 +1569,7 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
    // If there isn't any movement, return immediately
 
    if ((move.DeltaX < 1) and (move.DeltaX > -1) and (move.DeltaY < 1) and (move.DeltaY > -1)) {
-      return ERR::Failed|ERR::Notified;
+      return ERR::NothingDone|ERR::Notified;
    }
 
    move_layer(Self, Self->FixedX + move.DeltaX, Self->FixedY + move.DeltaY);
@@ -1932,7 +1932,9 @@ int RefreshRate: Optional refresh rate in frames per second.  If not specified, 
 
 -ERRORS-
 Okay
-Failed
+Args: An invalid refresh rate was calculated for the timer subscription.
+InvalidState: The surface is marked for termination.
+SystemLocked: The timer subsystem could not be locked.
 
 -TAGS-
 non-blocking, mutates-object
@@ -1977,12 +1979,12 @@ static ERR SURFACE_ScheduleRedraw(extSurface *Self, struct drw::ScheduleRedraw *
       return ERR::Okay;
    }
 
-   if (!SubscribeTimer(1.0 / double(refresh_rate), C_FUNCTION(redraw_timer), &Self->RedrawTimer)) {
+   if (auto error = SubscribeTimer(1.0 / double(refresh_rate), C_FUNCTION(redraw_timer), &Self->RedrawTimer); !error) {
       Self->RedrawScheduled = true;
       Self->RedrawRate = refresh_rate;
       return ERR::Okay;
    }
-   else return ERR::Failed;
+   else return error;
 }
 
 /*********************************************************************************************************************
@@ -2003,7 +2005,7 @@ Errors returned while copying individual child surfaces can be propagated from ~
 Okay
 NullArgs
 NewObject: The intermediate image object could not be created.
-Failed: The intermediate image object could not be initialised or saved.
+CreateResource: The intermediate image object could not be initialised or saved.
 Search
 AccessObject
 -END-
@@ -2078,7 +2080,7 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
       }
 
       FreeResource(img);
-      return log.warning(ERR::Failed);
+      return log.warning(ERR::CreateResource);
    }
    else return log.warning(ERR::NewObject);
 }
@@ -2159,11 +2161,11 @@ static ERR SURFACE_Show(extSurface *Self)
 
    if (!Self->ParentID) {
       kt::ScopedObjectLock display(Self->DisplayID);
-      if (!acShow(*display)) {
+      if (auto error = acShow(*display); !error) {
          Self->Flags |= RNF::VISIBLE;
          if (Self->hasFocus()) acFocus(*display);
       }
-      else return log.warning(ERR::Failed);
+      else return log.warning(error);
    }
    else Self->Flags |= RNF::VISIBLE;
 

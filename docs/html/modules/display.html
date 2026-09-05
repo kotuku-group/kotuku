@@ -355,7 +355,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <p>The <code>Owner</code> parameter is used as a locking mechanism to prevent the cursor from being changed whilst it is locked.  We recommend that it is set to an object ID such as the program's task ID.  As the owner, the cursor remains under your program's control until <a href="?page=RestoreCursor">RestoreCursor()</a> is called.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">True</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">NothingDone</th><td>There is nothing to process</td></tr>
+<tr><th class="col-md-1">NothingDone</th><td>Nothing to do for the requested operation</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource</td></tr>
 <tr><th class="col-md-1">OutOfRange</th><td>The cursor ID is outside of acceptable range.</td></tr>
@@ -394,7 +394,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 }
 </pre>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">NothingDone</th><td>There is nothing to process</td></tr>
+<tr><th class="col-md-1">NothingDone</th><td>Nothing to do for the requested operation</td></tr>
 <tr><th class="col-md-1">LockFailed</th><td>Failed to lock a required resource</td></tr>
 <tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Failed to access the internally maintained image object.</td></tr>

@@ -890,7 +890,7 @@ class Create {
 
       // Create a scoped object that is fully initialised.
 
-      Create(const std::initializer_list<FieldValue> Fields, NF Flags = NF::NIL) : obj(nullptr), error(ERR::Failed) {
+      Create(const std::initializer_list<FieldValue> Fields, NF Flags = NF::NIL) : obj(nullptr), error(ERR::NewObject) {
          kt::Log log("CreateObject");
          log.branch(T::CLASS_NAME);
 

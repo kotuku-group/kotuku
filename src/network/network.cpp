@@ -580,13 +580,13 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    auto recv_function = C_FUNCTION(resolve_name_receiver);
    recv_function.Context = CurrentTask();
-   if (AddMsgHandler(glResolveNameMsgID, &recv_function, &glResolveNameHandler) != ERR::Okay) {
-      return ERR::Failed;
+   if (auto error = AddMsgHandler(glResolveNameMsgID, &recv_function, &glResolveNameHandler); error != ERR::Okay) {
+      return error;
    }
 
    recv_function.Routine = (APTR)resolve_addr_receiver;
-   if (AddMsgHandler(glResolveAddrMsgID, &recv_function, &glResolveAddrHandler) != ERR::Okay) {
-      return ERR::Failed;
+   if (auto error = AddMsgHandler(glResolveAddrMsgID, &recv_function, &glResolveAddrHandler); error != ERR::Okay) {
+      return error;
    }
 
    ResolvePath("system:config/ssl/", RSF::NO_FILE_CHECK, &glCertPath);
@@ -721,7 +721,7 @@ struct(IPAddress) Address: Must point to an !IPAddress structure that will be fi
 -ERRORS-
 Okay:    The `Address` was converted successfully.
 NullArgs
-Failed:  The `String` was not a valid IP Address.
+Syntax:  The `String` was not a valid IP Address.
 
 -TAGS-
 mutates-input
@@ -758,7 +758,7 @@ ERR StrToAddress(const std::string_view &Str, IPAddress *Address)
       }
    }
 
-   return ERR::Failed;
+   return ERR::Syntax;
 }
 
 /*********************************************************************************************************************

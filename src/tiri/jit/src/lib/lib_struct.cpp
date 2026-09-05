@@ -723,7 +723,7 @@ static int struct_get(lua_State *L)
 
    lj_struct_check_lifecycle(L, value, field_name);
    if (not value->data) {
-      luaL_error(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
+      luaL_error(L, ERR::NotInitialised, "Cannot reference field '%s' because struct address is NULL.", field_name);
    }
 
    if (auto field_opt = find_field(value, field_name)) {
@@ -761,7 +761,7 @@ static void copy_struct_payload(lua_State *L, GCstruct *Dest, GCstruct *Source)
    if (Dest->def != Source->def) luaL_error(L, ERR::Mismatch, "Struct definitions must match for copying.");
    lj_struct_check_lifecycle(L, Dest, "copy destination");
    lj_struct_check_lifecycle(L, Source, "copy source");
-   if ((not Dest->data) or (not Source->data)) luaL_error(L, ERR::Failed, "Cannot copy a null struct payload.");
+   if ((not Dest->data) or (not Source->data)) luaL_error(L, ERR::NotInitialised, "Cannot copy a null struct payload.");
    if (Dest->data IS Source->data) return;
    if (struct_has_unsupported_cpp_arrays(L, *Dest->def)) {
       luaL_error(L, ERR::NoSupport, "Struct copy encountered an unsupported C++ array field type.");

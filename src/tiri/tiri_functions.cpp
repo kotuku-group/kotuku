@@ -350,7 +350,7 @@ int fcmd_loadfile(lua_State *Lua)
             if (tbc_ts != src_ts) {
                log.msg("Timestamp mismatch, will recompile the cached version.");
                recompile = true;
-               error = ERR::Failed;
+               error = ERR::Mismatch;
             }
             else src = tbcpath;
          }

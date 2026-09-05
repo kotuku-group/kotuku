@@ -22,8 +22,8 @@
 <p>The SetVariable() function provides a method for setting global variables in a Tiri script prior to execution of that script.  If the script is cached, the variable settings will be available on the next activation.</p>
 <p>Before the first activation, no script policy is attached to the global environment, so host-provided variables are unconstrained and may be overwritten by declarations in the script source.  After the first activation, variable stores are subject to the script's sticky global type contracts, const bindings and protected built-ins.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The variable was defined successfully.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>A Lua allocation or other runtime error prevented the store.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
+<tr><th class="col-md-1">SetField</th><td>A Lua allocation or other runtime error prevented the store.</td></tr>
 <tr><th class="col-md-1">ObjectCorrupt</th><td>Privately maintained memory has become inaccessible.</td></tr>
 <tr><th class="col-md-1">FieldTypeMismatch</th><td>A valid field type was not specified, or the value conflicts with a sticky global type contract.</td></tr>
 <tr><th class="col-md-1">ReadOnly</th><td>The requested name is a protected built-in or an initialised const global.</td></tr>

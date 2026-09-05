@@ -768,7 +768,7 @@ static ERR HTTP_Activate(extHTTP *Self)
       }
       else {
          log.warning("HTTP method no. %d not understood.", int(Self->Method));
-         Self->Error = ERR::Failed;
+         Self->Error = ERR::NoSupport;
          return Self->Error;
       }
 

@@ -37,7 +37,7 @@ static ERR gradient_defaults(extSVG *Self, objGradient *Gradient, uint32_t Attri
          return ERR::Okay;
    }
 
-   return ERR::Failed;
+   return ERR::NoSupport;
 }
 
 //********************************************************************************************************************

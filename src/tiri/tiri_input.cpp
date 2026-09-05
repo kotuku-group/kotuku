@@ -274,7 +274,7 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
             }
 
             src.unlock();
-            luaL_error(Lua, ERR::Failed, "Failed to request item %d from source #%d: %s", item, source_id,
+            luaL_error(Lua, error, "Failed to request item %d from source #%d: %s", item, source_id,
                GetErrorMsg(error));
          }
       }

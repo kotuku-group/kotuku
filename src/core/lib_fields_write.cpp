@@ -565,7 +565,7 @@ static ERR set_or_write_array(OBJECTPTR Object, const Field *Field, int Flags, C
    else if (Flags & FD_STRING) { // Incoming CSV string - DEPRECATED
       kt::Log(__FUNCTION__).warning("CSV support for arrays is deprecated.");
       std::abort();
-      return ERR::Failed;
+      return ERR::Obsolete;
    }
    else return kt::Log(__FUNCTION__).warning(ERR::SetValueNotArray);
 }

@@ -189,9 +189,9 @@ initially fill the internal write buffer, thereafter it will be called whenever 
 <p>The socket must be bound to a local address before joining a multicast group.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Successfully joined the multicast group.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>Failed to join multicast group.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid multicast address.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Socket is not configured for UDP mode.</td></tr>
+<tr><th class="col-md-1">SystemCall</th><td>The socket option to join the multicast group was rejected.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-LeaveMulticastGroup" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">LeaveMulticastGroup</th><td id="tm-LeaveMulticastGroup">Leave a multicast group (UDP only).</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-LeaveMulticastGroup" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR ns::LeaveMulticastGroup(OBJECTPTR Object, STRVIEW Group)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Group</td><td>The multicast group address to leave.</td></tr>
@@ -199,9 +199,9 @@ initially fill the internal write buffer, thereafter it will be called whenever 
 <p>This method leaves a previously joined multicast group, stopping the reception of packets sent to the specified multicast address.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Successfully left the multicast group.</td></tr>
-<tr><th class="col-md-1">Failed</th><td>Failed to leave multicast group.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid multicast address.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Socket is not configured for UDP mode.</td></tr>
+<tr><th class="col-md-1">SystemCall</th><td>The socket option to leave the multicast group was rejected.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-RecvFrom" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">RecvFrom</th><td id="tm-RecvFrom">Receive a datagram packet from any address (UDP only).</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-RecvFrom" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR ns::RecvFrom(OBJECTPTR Object, struct IPAddress * Source, std::span&lt;int8_t&gt; Buffer, INT * BytesRead)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Source</td><td>Source IP address of the received packet.</td></tr>

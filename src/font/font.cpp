@@ -396,7 +396,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       if (not ((!glConfig->getGroups(groups)) and (not groups->empty()))) {
          log.error("Failed to build a database of valid fonts.");
          cleanup();
-         return ERR::Failed;
+         return ERR::NoData;
       }
 
       // Merge tailored font options into the machine-generated database
@@ -406,7 +406,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    else {
       log.error("Failed to load or prepare the font configuration file.");
       cleanup();
-      return ERR::Failed;
+      return ERR::CreateObject;
    }
 
    if (auto error = add_font_class(); error != ERR::Okay) {
@@ -1065,7 +1065,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
       std::vector<winFont> fonts;
       if (auto error = read_winfont_entries(*file, fonts); error IS ERR::NoData) {
          log.warning("There are no fonts in file \"%.*s\"", int(Path.size()), Path.data());
-         return ERR::Failed;
+         return ERR::NoData;
       }
       else if (error != ERR::Okay) return error;
 

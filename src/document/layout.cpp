@@ -1137,7 +1137,7 @@ void layout::lay_paragraph()
    if (!m_font) {
       kt::Log log;
       DLAYOUT("Failed to lookup font for %s:%d", para.font.face.c_str(), para.font.pixel_size);
-      Self->Error = ERR::Failed;
+      Self->Error = ERR::Search;
       return;
    }
 
