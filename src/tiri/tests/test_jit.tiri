@@ -1666,6 +1666,105 @@ end
    assert(total is 2000, "JIT variable table hash lookup returned " .. tostring(total))
 end
 
+@Test function JITNumericHashBitPatterns()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local keys = { 0.5, -0.5, 1.0000000000000002, -1.0000000000000002,
+      1.7976931348623157e308, -1.7976931348623157e308, 5e-324, -5e-324, math.huge, -math.huge }
+   local lookup = {}
+   for i in {0 to 10} do lookup[keys[i]] = i + 1 end
+   local total = 0
+   for i in {0 to 1000} do
+      local key = keys[i % 10]
+      total += lookup[key]
+   end
+   assert(total is 5500, 'Numeric hash preparation must preserve low bits, sign pairs and extreme exponents')
+   assert(jit.util.traceInfo(1) != nil, 'Numeric hash lookup must compile a trace')
+   jit.opt.start()
+end
+
+@Test function JITTaggedReferenceStores()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', '-sink')
+   local first = { name='first' }
+   local second = { name='second' }
+   local values = { first, second }
+   local output = { item=first, text='first' }
+   local captured = first
+   function Store(Value:table)
+      captured = Value
+   end
+   local total = 0
+   for i in {0 to 200} do
+      local value = values[i % 2]
+      output[i % 8] = value
+      output.item = value
+      output.text = value.name
+      Store(value)
+      assert(output[i % 8] is value and output.item is value and captured is value,
+         'Array, hash and upvalue stores must preserve reference identity')
+      total += #output.text
+   end
+   assert(total is 1100, 'Tagged string stores must preserve the string payload')
+   assert(jit.util.traceInfo(1) != nil, 'Reference stores must compile a trace')
+   assert(output.item is second and captured is second, 'References must survive restoration at loop exit')
+   for i in {0 to 8} do
+      assert(output[i] is values[i % 2], 'Stored references must remain intact after leaving the trace')
+   end
+   jit.opt.start()
+end
+
+@Test function JITScaledMultiplyWrapping()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local values = { 0, 1, -1, 2147483647, -2147483648 }
+   local triples = { 0, 3, -3, 2147483645, -2147483648 }
+   local quintuples = { 0, 5, -5, 2147483643, -2147483648 }
+   local nonuples = { 0, 9, -9, 2147483639, -2147483648 }
+   for i in {0 to 1000} do
+      local index = i % 5
+      local value = values[index]
+      assert(((value * 3) | 0) is triples[index], 'Multiply by 3 must preserve 32-bit wrapping')
+      assert(((value * 5) | 0) is quintuples[index], 'Multiply by 5 must preserve 32-bit wrapping')
+      assert(((value * 9) | 0) is nonuples[index], 'Multiply by 9 must preserve 32-bit wrapping')
+   end
+   assert(jit.util.traceInfo(1) != nil, 'Scaled multiplication must compile a trace')
+   jit.opt.start()
+end
+
+@Test function JITConstantHashMissThenHit()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local object_key <const> = {}
+   function LookupNumber(Values:table):any return rawget(Values, 0.5) end
+   function LookupString(Values:table):any return rawget(Values, 'needle') end
+   function LookupObject(Values:table):any return rawget(Values, object_key) end
+   local missing = {}
+   for i in {0 to 32} do
+      missing[i + 1.5] = i
+      missing['other' .. i] = i
+   end
+   -- Recording absent constant keys takes the general HREF path instead of the fixed-slot HREFK shortcut.
+   for i in {0 to 200} do
+      missing[1.5] = i
+      assert(LookupNumber(missing) is nil and LookupString(missing) is nil and LookupObject(missing) is nil,
+         'Constant hash lookup must reject different payloads and type tags')
+   end
+   assert(jit.util.traceInfo(1) != nil, 'Constant hash misses must compile a trace')
+   missing[0.5] = 37
+   missing.needle = 41
+   missing[object_key] = 43
+   for _ in {0 to 200} do
+      assert(LookupNumber(missing) is 37 and LookupString(missing) is 41 and LookupObject(missing) is 43,
+         'A traced constant-key miss must side-exit correctly when the key becomes present')
+   end
+   jit.opt.start()
+end
+
 @Test function EngineModeToggles()
    jit.on()
    enabled_on = jit.status()

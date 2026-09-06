@@ -190,10 +190,10 @@
 ** the IR opcode + type or one of the following special opcodes:
 */
 enum {
-   NARROW_REF,      //  Push ref.
-   NARROW_CONV,      //  Push conversion of ref.
-   NARROW_SEXT,      //  Push sign-extension of ref.
-   NARROW_INT      //  Push KINT ref. The next code holds an int32_t.
+   NARROW_REF,     // Push ref.
+   NARROW_CONV,    // Push conversion of ref.
+   NARROW_SEXT,    // Push sign-extension of ref.
+   NARROW_INT      // Push KINT ref. The next code holds an int32_t.
 };
 
 typedef uint32_t NarrowIns;
@@ -204,11 +204,11 @@ typedef uint32_t NarrowIns;
 
 // Context used for narrowing of type conversions.
 typedef struct NarrowConv {
-   jit_State* J;      //  JIT compiler state.
-   NarrowIns* sp;   //  Current stack pointer.
-   NarrowIns* maxsp;   //  Maximum stack pointer minus redzone.
-   IRRef mode;      //  Conversion mode (IRCONV_*).
-   IRType t;      //  Destination type: IRT_INT or IRT_I64.
+   jit_State* J;      // JIT compiler state.
+   NarrowIns* sp;     // Current stack pointer.
+   NarrowIns* maxsp;  // Maximum stack pointer minus redzone.
+   IRRef mode;        // Conversion mode (IRCONV_*).
+   IRType t;          // Destination type: IRT_INT or IRT_I64.
    NarrowIns stack[NARROW_MAX_STACK];  //  Stack holding stack-machine code.
 } NarrowConv;
 

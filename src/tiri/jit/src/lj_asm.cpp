@@ -2486,3 +2486,7 @@ void lj_asm_trace(jit_State* J, GCtrace* T)
 }
 
 #undef IR
+
+#if defined(UNIT_TESTS) and LJ_TARGET_X64
+#include "unit_test_asm_x86.h"
+#endif

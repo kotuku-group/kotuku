@@ -13,6 +13,7 @@
 #include "lj_obj.h"
 #include "lj_vm.h"
 #include "lj_arch.h"
+#include "lj_asm.h"
 
 #include "../../defs.h"
 
@@ -1830,6 +1831,16 @@ static bool test_asm_string_sub_start_underflow(kt::Log& Log)
    return false;
 }
 
+#if LJ_TARGET_X64
+static bool test_x64_ir_assembler(kt::Log& Log)
+{
+   const char* failure = lj_asm_test_x64();
+   if (!failure) return true;
+   Log.error("%s", failure);
+   return false;
+}
+#endif
+
 }  // namespace
 
 //********************************************************************************************************************
@@ -1838,7 +1849,7 @@ static bool test_asm_string_sub_start_underflow(kt::Log& Log)
 extern void vm_asm_unit_tests(int &Passed, int &Total)
 {
 #if LJ_TARGET_X86ORX64
-   constexpr std::array<TestCase, 23 + LJ_TARGET_X64> Tests = { {
+   constexpr std::array<TestCase, 23 + 2 * LJ_TARGET_X64> Tests = { {
       // lj_vm_floor tests
       { "floor_positive_fraction", test_floor_positive_fraction },
       { "floor_negative_fraction", test_floor_negative_fraction },
@@ -1870,6 +1881,7 @@ extern void vm_asm_unit_tests(int &Passed, int &Total)
 #if LJ_TARGET_X64
       // lj_vm_fmod tests
       { "fmod_reference_corpus", test_fmod_reference_corpus },
+      { "x64_ir_assembler", test_x64_ir_assembler },
 #endif
 
       // lj_vm_cpuid tests
