@@ -49,6 +49,12 @@ null terminated arrays, use [0].
 #include "lib.h"
 #include "lj_obj.h"
 #include "defs.h"
+#include "protected_call.h"
+
+#ifdef UNIT_TESTS
+static thread_local int glStructLiveReferences = 0;
+int test_struct_live_references() { return glStructLiveReferences; }
+#endif
 
 static constexpr int MAX_STRUCT_DEF = 2048; // Struct definitions are typically 100 - 400 bytes.
 
@@ -211,9 +217,15 @@ void destroy_struct_cpp_strings(lua_State *Lua, const struct_record &StructDef, 
 {
    // NB: Custom comparator will stop if a colon is encountered in StructName
    if (auto def = find_struct(Lua, StructName)) {
-      std::vector<lua_ref> ref;
-      auto error = struct_to_table(Lua, ref, *def, Address);
-      unref_struct_references(Lua, ref);
+      ERR error = ERR::Okay;
+      int status;
+      {
+         std::vector<lua_ref> ref;
+         auto convert = [&]() { error = struct_to_table(Lua, ref, *def, Address); };
+         status = protected_tiri_call(Lua, convert);
+         unref_struct_references(Lua, ref);
+      }
+      if (status) lj_err_throw(Lua, status);
       return error;
    }
    else if (StructName.starts_with("KeyValue")) {
@@ -234,7 +246,12 @@ void destroy_struct_cpp_strings(lua_State *Lua, const struct_record &StructDef, 
 void unref_struct_references(lua_State *Lua, std::vector<lua_ref> &References)
 {
    for (auto &rec : References) {
-      if ((rec.Ref != LUA_NOREF) and (rec.Ref != LUA_REFNIL)) luaL_unref(Lua, LUA_REGISTRYINDEX, rec.Ref);
+      if ((rec.Ref != LUA_NOREF) and (rec.Ref != LUA_REFNIL)) {
+         luaL_unref(Lua, LUA_REGISTRYINDEX, rec.Ref);
+#ifdef UNIT_TESTS
+         --glStructLiveReferences;
+#endif
+      }
    }
 
    References.clear();
@@ -496,6 +513,9 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, const struct_fiel
 
    int table_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
    References.push_back({ Address, &StructDef, table_ref });
+#ifdef UNIT_TESTS
+   ++glStructLiveReferences;
+#endif
    lua_rawgeti(Lua, LUA_REGISTRYINDEX, table_ref); // Retrieve the struct table
 
    for (auto &field : StructDef.Fields) {

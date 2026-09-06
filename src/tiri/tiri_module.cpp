@@ -13,6 +13,7 @@
 #include "lj_str.h"
 #include "lj_struct.h"
 #include "lj_tab.h"
+#include "protected_call.h"
 
 #include "defs.h"
 #include "lj_proto_registry.h"
@@ -75,6 +76,19 @@ constexpr int MAX_MODULE_ARGS = 16;
 constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
+
+// Every front slot and tail result starts on an eight-byte boundary.  At most sixteen pairs of eight-byte
+// slots fit the existing 256-byte limit, including mixed int/pointer/double signatures.
+constexpr size_t MODULE_SLOT_SIZE = 8;
+static_assert(sizeof(int) IS 4 and alignof(int) <= MODULE_SLOT_SIZE);
+static_assert(sizeof(APTR) <= MODULE_SLOT_SIZE and alignof(APTR) <= MODULE_SLOT_SIZE);
+static_assert(sizeof(double) <= MODULE_SLOT_SIZE and alignof(double) <= MODULE_SLOT_SIZE);
+static_assert(sizeof(int64_t) <= MODULE_SLOT_SIZE and alignof(int64_t) <= MODULE_SLOT_SIZE);
+
+static constexpr size_t align_module_slot(size_t Offset)
+{
+   return (Offset + MODULE_SLOT_SIZE - 1) & ~(MODULE_SLOT_SIZE - 1);
+}
 
 struct ModuleBinding;
 
@@ -154,6 +168,11 @@ struct ModuleCallable {
 // emplace() returns null when the store is full.  Preparation rejects any signature that could reach that point, so a
 // null return indicates a profile/marshaller disagreement rather than an expected condition.
 
+#ifdef UNIT_TESTS
+static thread_local int glModuleLiveTemporaries = 0;
+int test_module_live_temporaries() { return glModuleLiveTemporaries; }
+#endif
+
 template <class T, size_t Capacity> class bounded_store {
    alignas(T) uint8_t Storage[Capacity * sizeof(T)];
    size_t Count = 0;
@@ -166,13 +185,21 @@ template <class T, size_t Capacity> class bounded_store {
    bounded_store & operator=(const bounded_store &) = delete;
 
    ~bounded_store() {
-      while (Count) slot(--Count)->~T();
+      while (Count) {
+         slot(--Count)->~T();
+#ifdef UNIT_TESTS
+         --glModuleLiveTemporaries;
+#endif
+      }
    }
 
    template <class... Args> [[nodiscard]] T * emplace(Args &&...Arguments) {
       if (Count >= Capacity) return nullptr;
       auto element = new (slot(Count)) T(std::forward<Args>(Arguments)...);
       Count++;
+#ifdef UNIT_TESTS
+      ++glModuleLiveTemporaries;
+#endif
       return element;
    }
 
@@ -335,7 +362,7 @@ static int module_call(lua_State *);
 #ifdef UNIT_TESTS
 static lua_CFunction module_call_entry();
 #endif
-static ERR module_call_inner(lua_State *, std::string &, int &);
+static ERR module_call_inner(lua_State *, std::string &, int &, int &);
 static int process_results(extTiri *, APTR, const FunctionField *);
 
 static std::unique_ptr<const static_module_signature> make_module_signature(
@@ -737,6 +764,8 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
          // an argument slot at call time.  The front slot is sized as the marshaller sizes it; the back allocation
          // applies only to the result kinds that write into buffer-tail storage.
 
+         front_bytes = align_module_slot(front_bytes);
+         back_bytes = align_module_slot(back_bytes);
          const int argtype = args[arg].Type;
          if ((argtype & FDF_SPAN) IS FDF_SPAN) front_bytes += sizeof(APTR);
          else if (argtype & FD_RESULT) {
@@ -744,7 +773,7 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
             if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) { }
             else if ((argtype & FD_STR) and (argtype & FD_CPP)) { }
             else if (argtype & (FD_STR|FD_PTR)) back_bytes += sizeof(APTR);
-            else if (argtype & FD_INT) back_bytes += sizeof(int);
+            else if (argtype & FD_INT) back_bytes += MODULE_SLOT_SIZE;
             else if (argtype & (FD_DOUBLE|FD_INT64)) back_bytes += sizeof(int64_t);
          }
          else if (argtype & FD_FUNCTION) front_bytes += sizeof(FUNCTION *);
@@ -1429,11 +1458,10 @@ extern "C" void tiri_module_activate(lua_State *Lua, uint32_t Dependency)
 //
 // RESULT|STR        = CSTRING *.  Function writes a non-allocated C string pointer; returned to Tiri as a string.
 // RESULT|STR|ALLOC  = CSTRING *.  Function writes an allocated C string pointer; returned to Tiri then freed.
-// RESULT|STR|CPP    = std::string *.  Tiri provides a temporary std::string; returned to Tiri as a string.
+// RESULT|STR|CPP    = std::string_view *.  With MUTABLE, std::string *; both copy their full length.
 //
 // RESULT|PTR        = APTR *.  Function writes a pointer; returned to Tiri as light userdata unless specialised.
-// RESULT|PTR|ALLOC  = APTR *.  Function writes an allocated block; returned as a byte array when BUFSIZE is
-//                     available, then freed.
+// RESULT|PTR|ALLOC  = APTR *.  No byte-array protocol is supported; pushes nil and frees the block.
 // RESULT|PTR|STRUCT = Struct **.  Function writes a struct pointer; returned as a Tiri table, or as a managed
 //                     struct when RESOURCE is set.
 // RESULT|ARRAY      = Unsupported.  Raw pointer-array marshalling has been removed.
@@ -1465,14 +1493,18 @@ static lua_CFunction module_call_entry()
 
 static int module_call(lua_State *Lua)
 {
-   std::string error_msg;
    int results = 0;
-
-   auto err = module_call_inner(Lua, error_msg, results);
-   if (err != ERR::Okay) {
-      if (error_msg.empty()) error_msg = GetErrorMsg(err);
-      luaL_error(Lua, err, std::move(error_msg));
+   int runtime_error = 0;
+   {
+      std::string error_msg;
+      auto err = module_call_inner(Lua, error_msg, results, runtime_error);
+      if (not runtime_error and (err != ERR::Okay)) {
+         if (error_msg.empty()) error_msg = GetErrorMsg(err);
+         luaL_error(Lua, err, std::move(error_msg));
+      }
    }
+   // All invocation-owned native storage has been released before resuming Lua's nonlocal error handling.
+   if (runtime_error) lj_err_throw(Lua, runtime_error);
    return results;
 }
 
@@ -1552,7 +1584,7 @@ static ERR call_simple_module(lua_State *Lua, const ModuleCallable &Callable, st
    return push_module_scalar(Lua, Callable, result, ErrorMsg);
 }
 
-static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results)
+static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results, int &RuntimeError)
 {
    kt::Log log("module_call");
 
@@ -1607,7 +1639,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       return call_simple_module(Lua, *callable, ErrorMsg, Results);
    }
 
-   uint8_t buffer[BUFFER_SIZE]; // 16 bytes per argument accommodates output metadata such as sizes.
+   alignas(MODULE_SLOT_SIZE) uint8_t buffer[BUFFER_SIZE];
    int i;
 
    struct mutable_cpp_string_ref {
@@ -1664,178 +1696,212 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    } func_guard{ Lua, func };
 
    module_scalar_result rc = { };
-   void * arg_values[MAX_MODULE_ARGS];
+   void * arg_values[MAX_MODULE_ARGS] = { };
    int in = 0;
 
-   int j = 0;
+   // This owner lives outside the protected C frame.  Result pointers are cleared after copying/freeing or
+   // successful transfer.  An early error therefore releases only values still owned by this invocation.
+   struct output_owner {
+      const FunctionField *Fields;
+      module_scalar_result &Return;
+      void **Arguments;
+      bool Called = false;
 
-   for (i=1; args[i].Name; i++) {
-      int argtype = args[i].Type;
-
-      if ((argtype & FDF_SPAN) IS FDF_SPAN) {
-         if (span_count >= span_args.size()) {
-            ErrorMsg = "Too many span arguments.";
-            return ERR::Args;
+      ~output_owner() {
+         if (not Called) return;
+         auto type = Fields[0].Type;
+         if ((type & FD_ALLOC) and (type & (FD_STR|FD_PTR|FD_OBJECT)) and Return.Arg) {
+            FreeResource((APTR)Return.Arg);
          }
-
-         if (argtype & (FD_RESULT|FD_ALLOC)) {
-            ErrorMsg = std::format("Function '{}' uses an unsupported span result.", callable->Name);
-            return ERR::NoSupport;
+         for (int index = 1; Fields[index].Name; ++index) {
+            type = Fields[index].Type;
+            if ((type & FD_RESULT) and (type & FD_ALLOC) and (type & (FD_STR|FD_PTR)) and
+                not (type & FD_CPP) and ((type & FDF_VECTOR) != FDF_VECTOR)) {
+               auto slot = *(APTR **)Arguments[index - 1];
+               if (slot and *slot) FreeResource(*slot);
+            }
          }
-
-         bool mutable_span = argtype & FD_MUTABLE;
-
-         AET element_type;
-         size_t element_size;
-         struct_record *struct_def;
-         if (auto error = module_span_element_metadata(Lua, args[i], &element_type, &element_size, &struct_def);
-             error != ERR::Okay) {
-            ErrorMsg = (error IS ERR::Search) ?
-               std::format("Function '{}' references an unknown span structure.", callable->Name) :
-               std::format("Function '{}' uses invalid span element metadata.", callable->Name);
-            return error;
-         }
-
-         CPTR data = nullptr;
-         size_t extent = 0;
-         auto &span_arg = span_args[span_count++];
-         auto value_type = lua_type(Lua, i);
-
-         if (value_type IS LUA_TARRAY) {
-            auto array = arrayV(Lua, i);
-            if (mutable_span and array->is_readonly()) {
-               ErrorMsg = std::format("Arg #{} ({}) requires a writable array.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-
-            if ((array->elemtype != element_type) or (size_t(array->elemsize) != element_size)) {
-               ErrorMsg = std::format("Arg #{} ({}) array element type does not match the span.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-            if ((element_type IS AET::STRUCT) and (array->struct_definition() != struct_def)) {
-               ErrorMsg = std::format("Arg #{} ({}) structure array type does not match the span.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-            data = array->arraydata();
-            extent = array->len;
-         }
-         else if (value_type IS LUA_TSTRING) {
-            if (element_type != AET::BYTE) {
-               ErrorMsg = std::format("Arg #{} ({}) only accepts string storage for a byte span.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-
-            auto string = string_arg(Lua, i);
-            if (mutable_span and not lj_str_ismutable(string)) {
-               ErrorMsg = std::format("Arg #{} ({}) requires a mutable string buffer.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-            data = mutable_span ? CPTR(strdatawr(string)) : CPTR(strdata(string));
-            extent = string->len;
-         }
-         else if ((value_type IS LUA_TNIL) or (value_type IS LUA_TNONE)) {
-            // The canonical empty span is constructed below.
-         }
-         else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
-            if (element_type != AET::STRUCT) {
-               ErrorMsg = std::format("Arg #{} ({}) requires matching array storage.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-            if (lj_struct_stale(native_struct)) {
-               ErrorMsg = std::format("Arg #{} ({}) structure storage is stale.", i, args[i].Name);
-               return ERR::DoesNotExist;
-            }
-            if ((native_struct->def != struct_def) or (size_t(native_struct->structsize) != element_size)) {
-               ErrorMsg = std::format("Arg #{} ({}) structure type does not match the span.", i, args[i].Name);
-               return ERR::InvalidType;
-            }
-            if (not native_struct->data) {
-               ErrorMsg = std::format("Arg #{} ({}) structure storage is unavailable.", i, args[i].Name);
-               return ERR::InvalidData;
-            }
-            data = native_struct->data;
-            extent = 1;
-         }
-         else {
-            ErrorMsg = std::format("Arg #{} ({}) expected an array, string, structure or nil for a span, got {}.", i,
-               args[i].Name, lua_typename(Lua, value_type));
-            return ERR::InvalidType;
-         }
-
-         if (extent and not data) {
-            ErrorMsg = std::format("Arg #{} ({}) span storage is unavailable.", i, args[i].Name);
-            return ERR::InvalidData;
-         }
-
-         auto span_address = span_arg.set(data, extent);
-         ((APTR *)(buffer + j))[0] = span_address;
-         arg_values[in] = buffer + j;
-         in++;
-         j += sizeof(APTR);
       }
-      else if (argtype & FD_RESULT) {
-         // Result arguments are stored in the buffer with a pointer to an empty variable space (stored at the end of
-         // the buffer)
+   } outputs{ args, rc, arg_values };
 
-         RMSG("Result for arg %d stored at %p", i, end);
+   auto invoke = [&]() -> ERR {
+      int j = 0;
 
-         if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) {
-            // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
-            // We set this up here, then convert the resulting values to a Tiri array when the function returns.
-            cpp_array_result result_ref = { };
-            if ((argtype & FD_STRUCT) and (!(argtype & FD_PTR))) {
-               // TODO: args[i].Name will include the name of the struct that we need to use to build the array, e.g. "FontList:Result"
-               // where FontList is the struct name.  The kt::vector<T> data() will contain a serialised list of structs and the total
-               // count.  For this to work, the STRUCT type would need to host a kt::vector<> and the call site would need to
-               // make a TrackResource() call that associates its destruction process with the kt::vector<> address.
-               ErrorMsg = "C++ struct arrays are not supported.";
+      for (i=1; args[i].Name; i++) {
+         int argtype = args[i].Type;
+         j = int(align_module_slot(j));
+         end = buffer + (size_t(end - buffer) & ~(MODULE_SLOT_SIZE - 1));
+
+         if ((argtype & FDF_SPAN) IS FDF_SPAN) {
+            if (span_count >= span_args.size()) {
+               ErrorMsg = "Too many span arguments.";
+               return ERR::Args;
+            }
+
+            if (argtype & (FD_RESULT|FD_ALLOC)) {
+               ErrorMsg = std::format("Function '{}' uses an unsupported span result.", callable->Name);
                return ERR::NoSupport;
             }
-            else if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
-               ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
-               if (not cpp_arrays.emplace(std::move(result_ref))) {
-                  ErrorMsg = std::format("Function '{}' exceeded its C++ array result storage.", callable->Name);
-                  return ERR::BufferOverflow;
-               }
-               arg_values[in]  = buffer + j;
-               in++;
-               j += sizeof(APTR);
-            }
-            else {
-               ErrorMsg = std::format("Function '{}' uses an unsupported C++ array result type.", callable->Name);
+
+            bool mutable_span = argtype & FD_MUTABLE;
+
+            AET element_type;
+            size_t element_size;
+            struct_record *struct_def;
+            if (auto error = module_span_element_metadata(Lua, args[i], &element_type, &element_size, &struct_def);
+                error != ERR::Okay) {
+               ErrorMsg = (error IS ERR::Search) ?
+                  std::format("Function '{}' references an unknown span structure.", callable->Name) :
+                  std::format("Function '{}' uses invalid span element metadata.", callable->Name);
                return error;
             }
-         }
-         else if (argtype & FD_STR) { // FD_RESULT
-            if (argtype & FD_CPP) {
-               if (argtype & FD_MUTABLE) {
-                  // Use of MUTABLE enables support for std::string buffering.  We provide our own std::string that will be used as
-                  // the buffer, it gets converted to a Tiri string when the function returns.
 
-                  auto slot = strings.emplace();
-                  if (not slot) {
-                     ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
+            CPTR data = nullptr;
+            size_t extent = 0;
+            auto &span_arg = span_args[span_count++];
+            auto value_type = lua_type(Lua, i);
+
+            if (value_type IS LUA_TARRAY) {
+               auto array = arrayV(Lua, i);
+               if (mutable_span and array->is_readonly()) {
+                  ErrorMsg = std::format("Arg #{} ({}) requires a writable array.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+
+               if ((array->elemtype != element_type) or (size_t(array->elemsize) != element_size)) {
+                  ErrorMsg = std::format("Arg #{} ({}) array element type does not match the span.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+               if ((element_type IS AET::STRUCT) and (array->struct_definition() != struct_def)) {
+                  ErrorMsg = std::format("Arg #{} ({}) structure array type does not match the span.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+               data = array->arraydata();
+               extent = array->len;
+            }
+            else if (value_type IS LUA_TSTRING) {
+               if (element_type != AET::BYTE) {
+                  ErrorMsg = std::format("Arg #{} ({}) only accepts string storage for a byte span.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+
+               auto string = string_arg(Lua, i);
+               if (mutable_span and not lj_str_ismutable(string)) {
+                  ErrorMsg = std::format("Arg #{} ({}) requires a mutable string buffer.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+               data = mutable_span ? CPTR(strdatawr(string)) : CPTR(strdata(string));
+               extent = string->len;
+            }
+            else if ((value_type IS LUA_TNIL) or (value_type IS LUA_TNONE)) {
+               // The canonical empty span is constructed below.
+            }
+            else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+               if (element_type != AET::STRUCT) {
+                  ErrorMsg = std::format("Arg #{} ({}) requires matching array storage.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+               if (lj_struct_stale(native_struct)) {
+                  ErrorMsg = std::format("Arg #{} ({}) structure storage is stale.", i, args[i].Name);
+                  return ERR::DoesNotExist;
+               }
+               if ((native_struct->def != struct_def) or (size_t(native_struct->structsize) != element_size)) {
+                  ErrorMsg = std::format("Arg #{} ({}) structure type does not match the span.", i, args[i].Name);
+                  return ERR::InvalidType;
+               }
+               if (not native_struct->data) {
+                  ErrorMsg = std::format("Arg #{} ({}) structure storage is unavailable.", i, args[i].Name);
+                  return ERR::InvalidData;
+               }
+               data = native_struct->data;
+               extent = 1;
+            }
+            else {
+               ErrorMsg = std::format("Arg #{} ({}) expected an array, string, structure or nil for a span, got {}.", i,
+                  args[i].Name, lua_typename(Lua, value_type));
+               return ERR::InvalidType;
+            }
+
+            if (extent and not data) {
+               ErrorMsg = std::format("Arg #{} ({}) span storage is unavailable.", i, args[i].Name);
+               return ERR::InvalidData;
+            }
+
+            auto span_address = span_arg.set(data, extent);
+            ((APTR *)(buffer + j))[0] = span_address;
+            arg_values[in] = buffer + j;
+            in++;
+            j += sizeof(APTR);
+         }
+         else if (argtype & FD_RESULT) {
+            // Result arguments are stored in the buffer with a pointer to an empty variable space (stored at the end of
+            // the buffer)
+
+            RMSG("Result for arg %d stored at %p", i, end);
+
+            if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) {
+               // RESULT|MUTABLE supplies an empty kt::vector<> to the native function.
+               // We set this up here, then convert the resulting values to a Tiri array when the function returns.
+               cpp_array_result result_ref = { };
+               if ((argtype & FD_STRUCT) and (!(argtype & FD_PTR))) {
+                  // Serialised structure vectors need a declared element layout and a resource owner that destroys
+                  // the exact vector type.  Pointer-to-structure vectors use the existing copied-table path.
+                  ErrorMsg = "C++ struct arrays are not supported.";
+                  return ERR::NoSupport;
+               }
+               else if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
+                  ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
+                  if (not cpp_arrays.emplace(std::move(result_ref))) {
+                     ErrorMsg = std::format("Function '{}' exceeded its C++ array result storage.", callable->Name);
                      return ERR::BufferOverflow;
                   }
-                  ((std::string **)(buffer + j))[0] = slot;
                   arg_values[in]  = buffer + j;
                   in++;
                   j += sizeof(APTR);
                }
                else {
-                  // Non-mutable string reference, supported as a std::string_view
-                  auto slot = string_views.emplace();
-                  if (not slot) {
-                     ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
-                     return ERR::BufferOverflow;
+                  ErrorMsg = std::format("Function '{}' uses an unsupported C++ array result type.", callable->Name);
+                  return error;
+               }
+            }
+            else if (argtype & FD_STR) { // FD_RESULT
+               if (argtype & FD_CPP) {
+                  if (argtype & FD_MUTABLE) {
+                     // MUTABLE requests an owned std::string buffer, copied to a Tiri string after the call.
+
+                     auto slot = strings.emplace();
+                     if (not slot) {
+                        ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
+                        return ERR::BufferOverflow;
+                     }
+                     ((std::string **)(buffer + j))[0] = slot;
+                     arg_values[in]  = buffer + j;
+                     in++;
+                     j += sizeof(APTR);
                   }
-                  ((std::string_view **)(buffer + j))[0] = slot;
+                  else {
+                     // Non-mutable string reference, supported as a std::string_view
+                     auto slot = string_views.emplace();
+                     if (not slot) {
+                        ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
+                        return ERR::BufferOverflow;
+                     }
+                     ((std::string_view **)(buffer + j))[0] = slot;
+                     arg_values[in]  = buffer + j;
+                     in++;
+                     j += sizeof(APTR);
+                  }
+               }
+               else { // C-style string reference, this parameter style is being deprecated.
+                  end -= sizeof(APTR);
+                  ((APTR *)(buffer + j))[0] = end;
+                  ((APTR *)end)[0] = nullptr;
                   arg_values[in]  = buffer + j;
                   in++;
                   j += sizeof(APTR);
                }
             }
-            else { // C-style string reference, this parameter style is being deprecated.
+            else if (argtype & FD_PTR) { // FD_RESULT
                end -= sizeof(APTR);
                ((APTR *)(buffer + j))[0] = end;
                ((APTR *)end)[0] = nullptr;
@@ -1843,335 +1909,342 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                in++;
                j += sizeof(APTR);
             }
-         }
-         else if (argtype & FD_PTR) { // FD_RESULT
-            end -= sizeof(APTR);
-            ((APTR *)(buffer + j))[0] = end;
-            ((APTR *)end)[0] = nullptr;
-            arg_values[in]  = buffer + j;
-            in++;
-            j += sizeof(APTR);
-         }
-         else if (argtype & FD_INT) { // FD_RESULT
-            end -= sizeof(int);
-            ((APTR *)(buffer + j))[0] = end;
-            ((int *)end)[0] = 0;
-            arg_values[in]  = buffer + j;
-            in++;
-            j += sizeof(APTR);
-         }
-         else if (argtype & (FD_DOUBLE|FD_INT64)) { // FD_RESULT
-            end -= sizeof(int64_t);
-            ((APTR *)(buffer + j))[0] = end;
-            ((int64_t *)end)[0] = 0;
-            arg_values[in]  = buffer + j;
-            in++;
-            j += sizeof(APTR);
-         }
-         else {
-            ErrorMsg = std::format("Unrecognised arg {} type {}", i, argtype);
-            return ERR::InvalidType;
-         }
-      }
-      else if (argtype & FD_FUNCTION) {
-         if (func.defined()) { // Is the function reserve already used?
-            ErrorMsg = "Multiple function arguments are not supported.";
-            return ERR::Args;
-         }
-
-         // NOTE: The client is responsible for calling DerefProcedure() on the function reference when it is no longer needed,
-         // or it can mark the function as consumed.
-
-         switch(lua_type(Lua, i)) {
-            case LUA_TSTRING:
-            case LUA_TFUNCTION: {
-               if (auto error = capture_tiri_function(Lua, i, func); error != ERR::Okay) {
-                  ErrorMsg = std::format("Function argument #{} ({}) must resolve to a function.", i, args[i].Name);
-                  return error;
-               }
-               ((FUNCTION **)(buffer + j))[0] = &func;
-               break;
+            else if (argtype & FD_INT) { // FD_RESULT
+               end -= MODULE_SLOT_SIZE;
+               ((APTR *)(buffer + j))[0] = end;
+               ((int *)end)[0] = 0;
+               arg_values[in]  = buffer + j;
+               in++;
+               j += sizeof(APTR);
             }
-
-            case LUA_TNIL:
-            case LUA_TNONE:
-               ((FUNCTION **)(buffer + j))[0] = nullptr;
-               break;
-
-            default:
-               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected function, got {} '{}'.", i, args[i].Name,
-                  lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
-               return ERR::InvalidType;
-         }
-
-         arg_values[in]  = buffer + j;
-         in++;
-         j += sizeof(FUNCTION *);
-      }
-      else if (argtype & FD_STR) {
-         // Resolve thunks before reading the type so a thunk that yields a string is marshalled by its resolved
-         // value rather than rejected as its unresolved userdata container.
-         resolve_index(Lua, i);
-         auto type = lua_type(Lua, i);
-         int type_size = sizeof(APTR);
-
-         if (argtype & FD_MUTABLE) {
-            // The client is expected to provide a mutable string with preallocated size, which can be acquired from string.alloc()
-            if (type != LUA_TSTRING) {
-               ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
-               return ERR::InvalidType;
-            }
-
-            GCstr *string = string_arg(Lua, i);
-            if (not lj_str_ismutable(string)) {
-               ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
-               return ERR::InvalidType;
-            }
-
-            if (argtype & FD_CPP) { // Function expects a pointer to std::string that it can mutate
-               size_t len;
-               auto str = lua_tolstring(Lua, i, &len);
-               auto cppstr = str ? strings.emplace(str, len) : strings.emplace();
-               if (not cppstr) {
-                  ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
-                  return ERR::BufferOverflow;
-               }
-               if (not mutable_cpp_strings.emplace(cppstr, string, i)) {
-                  ErrorMsg = std::format("Function '{}' exceeded its mutable string storage.", callable->Name);
-                  return ERR::BufferOverflow;
-               }
-               ((std::string **)(buffer + j))[0] = cppstr;
-            }
-            else ((CSTRING *)(buffer + j))[0] = strdatawr(string);
-         }
-         else if (argtype & FD_CPP) { // Read-only std::string_view; nil has null data and zero length.
-            if ((type != LUA_TSTRING) and (type != LUA_TNIL) and (type != LUA_TNONE)) {
-               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected string, got {} '{}'.", i, args[i].Name,
-                  lua_typename(Lua, type), value_string(Lua, i));
-               return ERR::InvalidType;
-            }
-            size_t len;
-            auto str = lua_tolstring(Lua, i, &len);
-            auto view = str ? string_views.emplace(str, len) : string_views.emplace();
-            if (not view) {
-               ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
-               return ERR::BufferOverflow;
-            }
-            ((std::string_view **)(buffer + j))[0] = view;
-         }
-         else if (type IS LUA_TSTRING) {
-            ((CSTRING *)(buffer + j))[0] = lua_tostring(Lua, i);
-         }
-         else if (type <= 0) {
-            ((CSTRING *)(buffer + j))[0] = nullptr;
-         }
-         else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
-            ErrorMsg = std::format("Arg #{} ({}) requires a string and not untyped pointer.", i, args[i].Name);
-            return ERR::InvalidType;
-         }
-         else {
-            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected string, got {} '{}'.", i, args[i].Name,
-               lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
-            return ERR::InvalidType;
-         }
-
-         arg_values[in] = buffer + j;
-         in++;
-         j += type_size;
-      }
-      else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
-         ErrorMsg = "C++ array inputs are not supported.";
-         return ERR::NoSupport;
-      }
-      else if (argtype & FD_PTR) {
-         resolve_index(Lua, i); // Resolve thunks so the resolved value is marshalled, not the thunk userdata.
-         auto arg_type = lua_type(Lua, i);
-         if (arg_type IS LUA_TSTRING) {
-            // Lua strings need to be converted to C strings
-            auto string = string_arg(Lua, i);
-            if ((argtype & FD_MUTABLE) and (not lj_str_ismutable(string))) {
-               ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
-               return ERR::InvalidType;
-            }
-
-            ((CSTRING *)(buffer + j))[0] = (argtype & FD_MUTABLE) ? strdatawr(string) : strdata(string);
-            arg_values[in] = buffer + j;
-            in++;
-            j += sizeof(CSTRING);
-         }
-         else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
-            // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
-            if (lj_struct_stale(native_struct)) {
-               ErrorMsg = "A struct argument's providing object has been destroyed.";
-               return ERR::DoesNotExist;
-            }
-            ((APTR *)(buffer + j))[0] = native_struct->data;
-            arg_values[in] = buffer + j;
-            in++;
-            j += sizeof(APTR);
-
-            log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
-         }
-         else if (arg_type IS LUA_TOBJECT) {
-            auto obj = lua_toobject(Lua, i);
-            if (auto direct = direct_object_ptr(obj)) {
-               ((OBJECTPTR *)(buffer + j))[0] = direct;
+            else if (argtype & (FD_DOUBLE|FD_INT64)) { // FD_RESULT
+               end -= sizeof(int64_t);
+               ((APTR *)(buffer + j))[0] = end;
+               ((int64_t *)end)[0] = 0;
+               arg_values[in]  = buffer + j;
+               in++;
+               j += sizeof(APTR);
             }
             else {
-               OBJECTPTR ptr_obj;
-               if (auto error = access_object(obj, ptr_obj); error IS ERR::Okay) {
-                  ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
-                  release_object(obj);
+               ErrorMsg = std::format("Unrecognised arg {} type {}", i, argtype);
+               return ERR::InvalidType;
+            }
+         }
+         else if (argtype & FD_FUNCTION) {
+            if (func.defined()) { // Is the function reserve already used?
+               ErrorMsg = "Multiple function arguments are not supported.";
+               return ERR::Args;
+            }
+
+            // The client must call DerefProcedure() when it no longer needs the function reference,
+            // or it can mark the function as consumed.
+
+            switch(lua_type(Lua, i)) {
+               case LUA_TSTRING:
+               case LUA_TFUNCTION: {
+                  if (auto error = capture_tiri_function(Lua, i, func); error != ERR::Okay) {
+                     ErrorMsg = std::format("Function argument #{} ({}) must resolve to a function.", i, args[i].Name);
+                     return error;
+                  }
+                  ((FUNCTION **)(buffer + j))[0] = &func;
+                  break;
+               }
+
+               case LUA_TNIL:
+               case LUA_TNONE:
+                  ((FUNCTION **)(buffer + j))[0] = nullptr;
+                  break;
+
+               default:
+                  ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected function, got {} '{}'.", i, args[i].Name,
+                     lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+                  return ERR::InvalidType;
+            }
+
+            arg_values[in]  = buffer + j;
+            in++;
+            j += sizeof(FUNCTION *);
+         }
+         else if (argtype & FD_STR) {
+            // Resolve thunks before reading the type so a thunk that yields a string is marshalled by its resolved
+            // value rather than rejected as its unresolved userdata container.
+            resolve_index(Lua, i);
+            auto type = lua_type(Lua, i);
+            int type_size = sizeof(APTR);
+
+            if (argtype & FD_MUTABLE) {
+               // The client supplies preallocated mutable storage, normally from string.alloc().
+               if (type != LUA_TSTRING) {
+                  ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
+                  return ERR::InvalidType;
+               }
+
+               GCstr *string = string_arg(Lua, i);
+               if (not lj_str_ismutable(string)) {
+                  ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
+                  return ERR::InvalidType;
+               }
+
+               if (argtype & FD_CPP) { // Function expects a pointer to std::string that it can mutate
+                  size_t len;
+                  auto str = lua_tolstring(Lua, i, &len);
+                  auto cppstr = str ? strings.emplace(str, len) : strings.emplace();
+                  if (not cppstr) {
+                     ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
+                  if (not mutable_cpp_strings.emplace(cppstr, string, i)) {
+                     ErrorMsg = std::format("Function '{}' exceeded its mutable string storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
+                  ((std::string **)(buffer + j))[0] = cppstr;
+               }
+               else ((CSTRING *)(buffer + j))[0] = strdatawr(string);
+            }
+            else if (argtype & FD_CPP) { // Read-only std::string_view; nil has null data and zero length.
+               if ((type != LUA_TSTRING) and (type != LUA_TNIL) and (type != LUA_TNONE)) {
+                  ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected string, got {} '{}'.", i, args[i].Name,
+                     lua_typename(Lua, type), value_string(Lua, i));
+                  return ERR::InvalidType;
+               }
+               size_t len;
+               auto str = lua_tolstring(Lua, i, &len);
+               auto view = str ? string_views.emplace(str, len) : string_views.emplace();
+               if (not view) {
+                  ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
+                  return ERR::BufferOverflow;
+               }
+               ((std::string_view **)(buffer + j))[0] = view;
+            }
+            else if (type IS LUA_TSTRING) {
+               ((CSTRING *)(buffer + j))[0] = lua_tostring(Lua, i);
+            }
+            else if (type <= 0) {
+               ((CSTRING *)(buffer + j))[0] = nullptr;
+            }
+            else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
+               ErrorMsg = std::format("Arg #{} ({}) requires a string and not untyped pointer.", i, args[i].Name);
+               return ERR::InvalidType;
+            }
+            else {
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected string, got {} '{}'.", i, args[i].Name,
+                  lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+               return ERR::InvalidType;
+            }
+
+            arg_values[in] = buffer + j;
+            in++;
+            j += type_size;
+         }
+         else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
+            ErrorMsg = "C++ array inputs are not supported.";
+            return ERR::NoSupport;
+         }
+         else if (argtype & FD_PTR) {
+            resolve_index(Lua, i); // Resolve thunks so the resolved value is marshalled, not the thunk userdata.
+            auto arg_type = lua_type(Lua, i);
+            if (arg_type IS LUA_TSTRING) {
+               // Lua strings need to be converted to C strings
+               auto string = string_arg(Lua, i);
+               if ((argtype & FD_MUTABLE) and (not lj_str_ismutable(string))) {
+                  ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
+                  return ERR::InvalidType;
+               }
+
+               ((CSTRING *)(buffer + j))[0] = (argtype & FD_MUTABLE) ? strdatawr(string) : strdata(string);
+               arg_values[in] = buffer + j;
+               in++;
+               j += sizeof(CSTRING);
+            }
+            else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+               // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
+               if (lj_struct_stale(native_struct)) {
+                  ErrorMsg = "A struct argument's providing object has been destroyed.";
+                  return ERR::DoesNotExist;
+               }
+               ((APTR *)(buffer + j))[0] = native_struct->data;
+               arg_values[in] = buffer + j;
+               in++;
+               j += sizeof(APTR);
+
+               log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
+            }
+            else if (arg_type IS LUA_TOBJECT) {
+               auto obj = lua_toobject(Lua, i);
+               if (auto direct = direct_object_ptr(obj)) {
+                  ((OBJECTPTR *)(buffer + j))[0] = direct;
                }
                else {
-                  // Referenced object probably does not exist
-                  ErrorMsg = std::format("Unable to resolve object #{}: {}", obj->uid, GetErrorMsg(error));
-                  return error;
-               }
-            }
-
-            arg_values[in] = buffer + j;
-            in++;
-            j += sizeof(APTR);
-         }
-         else if (arg_type IS LUA_TARRAY) {
-            GCarray *array = lua_toarray(Lua, i);
-
-            ((APTR *)(buffer + j))[0] = array->arraydata();
-            arg_values[in] = buffer + j;
-            in++;
-            j += sizeof(APTR);
-         }
-         else if ((arg_type IS LUA_TUSERDATA) or (arg_type IS LUA_TLIGHTUSERDATA) or (arg_type IS LUA_TNIL) or
-                  (arg_type IS LUA_TNONE)) {
-            ((APTR *)(buffer + j))[0] = lua_touserdata(Lua, i); //lua_topointer?
-            arg_values[in] = buffer + j;
-            in++;
-            j += sizeof(APTR);
-         }
-         else {
-            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected pointer-compatible storage, got {} '{}'.", i,
-               args[i].Name, lua_typename(Lua, arg_type), value_string(Lua, i));
-            return ERR::InvalidType;
-         }
-      }
-      else if ((argtype & FD_INT) and (argtype & FD_OBJECT)) {
-         auto tv = resolve_index(Lua, i);
-         if (tvisobject(tv)) ((int *)(buffer + j))[0] = objectV(tv)->uid;
-         else if (lua_type(Lua, i) <= LUA_TNIL) ((int *)(buffer + j))[0] = 0;
-         else if (lua_type(Lua, i) IS LUA_TNUMBER) ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
-         else {
-            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected object or number, got {} '{}'.", i,
-               args[i].Name, lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
-            return ERR::InvalidType;
-         }
-         arg_values[in++] = buffer + j;
-         j += sizeof(int);
-      }
-      else if (argtype & (FD_INT|FD_DOUBLE|FD_INT64)) {
-         module_scalar_input value;
-         if (auto error = read_module_number(Lua, i, args[i], value, ErrorMsg); error != ERR::Okay) return error;
-         size_t size;
-         if (argtype & FD_INT) {
-            size = sizeof(int);
-            if (argtype & FD_UNSIGNED) copymem(&value.Unsigned, buffer + j, size);
-            else copymem(&value.Int, buffer + j, size);
-         }
-         else if (argtype & FD_DOUBLE) {
-            size = sizeof(double);
-            copymem(&value.Double, buffer + j, size);
-         }
-         else {
-            size = sizeof(int64_t);
-            copymem(&value.Int64, buffer + j, size);
-         }
-         arg_values[in++] = buffer + j;
-         j += size;
-      }
-      else if (argtype & (FD_TAGS|FD_VARTAGS)) {
-         ErrorMsg = "Functions using tags are not supported.";
-         return ERR::NoSupport;
-      }
-      else {
-         ErrorMsg = std::format("{}() unsupported arg '{}', flags ${:08x}.", callable->Name, args[i].Name, argtype);
-         return ERR::NoSupport;
-      }
-   }
-
-   // Call the function.  The call interface and return type were prepared when the module was resolved, so the hot
-   // path only has to verify that the marshaller produced the argument count the interface was built for.
-
-   int restype = args->Type;
-   int result = (callable->Cif.rtype IS &ffi_type_void) ? 0 : 1;
-
-   // The buffer is allocated from both ends: argument slots grow forwards from 'buffer' and result storage grows
-   // backwards from 'end'.  Preparation proves the two cannot meet for an accepted signature, so this check confirms
-   // the marshaller honoured the sizes preparation measured rather than guarding an expected condition.
-
-   if (buffer + j > end) {
-      ErrorMsg = std::format("Function '{}' overran its call buffer.", callable->Name);
-      return ERR::BufferOverflow;
-   }
-
-   if (in != int(callable->Cif.nargs)) {
-      ErrorMsg = std::format("Function '{}' marshalled {} args but its call interface expects {}.",
-         callable->Name, in, callable->Cif.nargs);
-      return ERR::Mismatch;
-   }
-
-   {
-      func_guard.OwnsReference = false;
-      ffi_call(&callable->Cif, (void (*)())function, &rc, arg_values);
-      copy_mutable_cpp_strings();
-      if (not ErrorMsg.empty()) return ERR::BufferOverflow;
-
-      // Process the result based on the return type
-      if (restype & FD_STR) {
-         lua_pushstring(Lua, (CSTRING)rc.Arg);
-         if ((restype & FD_ALLOC) and ((CSTRING)rc.Arg)) FreeResource((APTR)rc.Arg);
-      }
-      else if (restype & FD_OBJECT) {
-         if ((OBJECTPTR)rc.Arg) {
-            push_object(Lua, (OBJECTPTR)rc.Arg,  (restype & FD_ALLOC) ? false : true);
-         }
-         else lua_pushnil(Lua);
-      }
-      else if (restype & FD_PTR) {
-         if (restype & FD_STRUCT) {
-            if (auto structptr = (APTR)rc.Arg) {
-               ERR error;
-               // A structure marked as a resource will be returned as an accessible struct pointer.  This is typically
-               // needed when a struct's use is beyond informational and can be passed to other functions.
-               //
-               // Otherwise, the default behaviour is to convert the struct's content to a regular Lua table.
-               if (restype & FD_RESOURCE) push_struct(Lua->script, structptr, args->Name, (restype & FD_ALLOC) ? TRUE : FALSE, TRUE);
-               else if ((error = named_struct_to_table(Lua, args->Name, structptr)) != ERR::Okay) {
-                  if (error IS ERR::Search) {
-                     // Unknown structs are returned as pointers - this is mainly to indicate that there is a value
-                     // and not a nil.
-                     lua_pushlightuserdata(Lua, (APTR)structptr);
+                  OBJECTPTR ptr_obj;
+                  if (auto error = access_object(obj, ptr_obj); error IS ERR::Okay) {
+                     ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
+                     release_object(obj);
                   }
                   else {
-                     ErrorMsg = std::format("Failed to resolve struct {}, error: {}", args->Name, GetErrorMsg(error));
-                     return ERR::Search;
+                     // Referenced object probably does not exist
+                     ErrorMsg = std::format("Unable to resolve object #{}: {}", obj->uid, GetErrorMsg(error));
+                     return error;
                   }
                }
+
+               arg_values[in] = buffer + j;
+               in++;
+               j += sizeof(APTR);
+            }
+            else if (arg_type IS LUA_TARRAY) {
+               GCarray *array = lua_toarray(Lua, i);
+
+               ((APTR *)(buffer + j))[0] = array->arraydata();
+               arg_values[in] = buffer + j;
+               in++;
+               j += sizeof(APTR);
+            }
+            else if ((arg_type IS LUA_TUSERDATA) or (arg_type IS LUA_TLIGHTUSERDATA) or (arg_type IS LUA_TNIL) or
+                     (arg_type IS LUA_TNONE)) {
+               ((APTR *)(buffer + j))[0] = lua_touserdata(Lua, i); //lua_topointer?
+               arg_values[in] = buffer + j;
+               in++;
+               j += sizeof(APTR);
+            }
+            else {
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected pointer-compatible storage, got {} '{}'.",
+                  i,
+                  args[i].Name, lua_typename(Lua, arg_type), value_string(Lua, i));
+               return ERR::InvalidType;
+            }
+         }
+         else if ((argtype & FD_INT) and (argtype & FD_OBJECT)) {
+            auto tv = resolve_index(Lua, i);
+            if (tvisobject(tv)) ((int *)(buffer + j))[0] = objectV(tv)->uid;
+            else if (lua_type(Lua, i) <= LUA_TNIL) ((int *)(buffer + j))[0] = 0;
+            else if (lua_type(Lua, i) IS LUA_TNUMBER) ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
+            else {
+               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected object or number, got {} '{}'.", i,
+                  args[i].Name, lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+               return ERR::InvalidType;
+            }
+            arg_values[in++] = buffer + j;
+            j += sizeof(int);
+         }
+         else if (argtype & (FD_INT|FD_DOUBLE|FD_INT64)) {
+            module_scalar_input value;
+            if (auto error = read_module_number(Lua, i, args[i], value, ErrorMsg); error != ERR::Okay) return error;
+            size_t size;
+            if (argtype & FD_INT) {
+               size = sizeof(int);
+               if (argtype & FD_UNSIGNED) copymem(&value.Unsigned, buffer + j, size);
+               else copymem(&value.Int, buffer + j, size);
+            }
+            else if (argtype & FD_DOUBLE) {
+               size = sizeof(double);
+               copymem(&value.Double, buffer + j, size);
+            }
+            else {
+               size = sizeof(int64_t);
+               copymem(&value.Int64, buffer + j, size);
+            }
+            arg_values[in++] = buffer + j;
+            j += size;
+         }
+         else if (argtype & (FD_TAGS|FD_VARTAGS)) {
+            ErrorMsg = "Functions using tags are not supported.";
+            return ERR::NoSupport;
+         }
+         else {
+            ErrorMsg = std::format("{}() unsupported arg '{}', flags ${:08x}.", callable->Name, args[i].Name, argtype);
+            return ERR::NoSupport;
+         }
+      }
+
+      // Call the function.  The call interface and return type were prepared when the module was resolved, so the hot
+      // path only has to verify that the marshaller produced the argument count the interface was built for.
+
+      int restype = args->Type;
+      int result = (callable->Cif.rtype IS &ffi_type_void) ? 0 : 1;
+
+      // The buffer is allocated from both ends: argument slots grow forwards from 'buffer' and result storage grows
+      // backwards from 'end'.  Preparation proves the two cannot meet for an accepted signature, so this check confirms
+      // the marshaller honoured the sizes preparation measured rather than guarding an expected condition.
+
+      if (buffer + j > end) {
+         ErrorMsg = std::format("Function '{}' overran its call buffer.", callable->Name);
+         return ERR::BufferOverflow;
+      }
+
+      if (in != int(callable->Cif.nargs)) {
+         ErrorMsg = std::format("Function '{}' marshalled {} args but its call interface expects {}.",
+            callable->Name, in, callable->Cif.nargs);
+         return ERR::Mismatch;
+      }
+
+      {
+         func_guard.OwnsReference = false;
+         outputs.Called = true;
+         ffi_call(&callable->Cif, (void (*)())function, &rc, arg_values);
+         copy_mutable_cpp_strings();
+         if (not ErrorMsg.empty()) return ERR::BufferOverflow;
+
+         // Process the result based on the return type
+         if (restype & FD_STR) {
+            lua_pushstring(Lua, (CSTRING)rc.Arg);
+            if ((restype & FD_ALLOC) and rc.Arg) { FreeResource((APTR)rc.Arg); rc.Arg = 0; }
+         }
+         else if (restype & FD_OBJECT) {
+            if ((OBJECTPTR)rc.Arg) {
+               auto object = push_object(Lua, (OBJECTPTR)rc.Arg, true);
+               if (restype & FD_ALLOC) { object->flags &= ~GCOBJ_DETACHED; rc.Arg = 0; }
             }
             else lua_pushnil(Lua);
          }
-         else {
-            if ((APTR)rc.Arg) lua_pushlightuserdata(Lua, (APTR)rc.Arg);
-            else lua_pushnil(Lua);
+         else if (restype & FD_PTR) {
+            if (restype & FD_STRUCT) {
+               if (auto structptr = (APTR)rc.Arg) {
+                  ERR error;
+                  // A resource structure is returned as an accessible struct pointer, typically
+                  // needed when a struct's use is beyond informational and can be passed to other functions.
+                  //
+                  // Otherwise, the default behaviour is to convert the struct's content to a regular Lua table.
+                  if (restype & FD_RESOURCE) {
+                     auto structure = push_struct(Lua->script, structptr, args->Name, false, true);
+                     if (restype & FD_ALLOC) { structure->flags |= STRUCT_DEALLOCATE; rc.Arg = 0; }
+                  }
+                  else if ((error = named_struct_to_table(Lua, args->Name, structptr)) != ERR::Okay) {
+                     if (error IS ERR::Search) {
+                        // Unknown structs are returned as pointers - this is mainly to indicate that there is a value
+                        // and not a nil.
+                        lua_pushlightuserdata(Lua, (APTR)structptr);
+                        rc.Arg = 0; // Legacy raw-pointer ownership passes to the caller.
+                     }
+                     else {
+                        ErrorMsg = std::format("Failed to resolve struct {}, error: {}",
+                           args->Name, GetErrorMsg(error));
+                        return ERR::Search;
+                     }
+                  }
+                  if ((restype & FD_ALLOC) and rc.Arg) { FreeResource((APTR)rc.Arg); rc.Arg = 0; }
+               }
+               else lua_pushnil(Lua);
+            }
+            else {
+               if ((APTR)rc.Arg) lua_pushlightuserdata(Lua, (APTR)rc.Arg);
+               else lua_pushnil(Lua);
+               rc.Arg = 0; // Plain pointer returns retain their existing caller-owned representation.
+            }
          }
+         else if (auto error = push_module_scalar(Lua, *callable, rc, ErrorMsg); error != ERR::Okay) {
+            return error;
+         }
+         // Void functions don't push anything to the stack
       }
-      else if (auto error = push_module_scalar(Lua, *callable, rc, ErrorMsg); error != ERR::Okay) {
-         return error;
-      }
-      // Void functions don't push anything to the stack
-   }
 
-   Results = process_results(tiri, buffer, args) + result;
-   return ERR::Okay;
+      Results = process_results(tiri, buffer, args) + result;
+      return ERR::Okay;
+   };
+
+   ERR error = ERR::Okay;
+   auto run = [&]() { error = invoke(); };
+   RuntimeError = protected_tiri_call(Lua, run);
+   return error;
 }
 
 //********************************************************************************************************************
@@ -2187,6 +2260,7 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
    int results = 0;
    for (int i=1; args[i].Name; i++) {
       const auto argtype = args[i].Type;
+      scan = (uint8_t *)resultsidx + align_module_slot(size_t(scan - (uint8_t *)resultsidx));
 
       if ((argtype & FDF_SPAN) IS FDF_SPAN) {
          scan += sizeof(APTR);
@@ -2220,7 +2294,10 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                }
                else {
                   lua_pushstring(lua, ((STRING *)var)[0]);
-                  if ((argtype & FD_ALLOC) and (((STRING *)var)[0])) FreeResource(((STRING *)var)[0]);
+                  if ((argtype & FD_ALLOC) and (((STRING *)var)[0])) {
+                     FreeResource(((STRING *)var)[0]);
+                     ((APTR *)var)[0] = nullptr;
+                  }
                }
             }
             else lua_pushnil(lua);
@@ -2235,7 +2312,11 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
             if (var) {
                if (argtype & FD_OBJECT) {
                   if (((APTR *)var)[0]) {
-                     push_object(lua, ((OBJECTPTR *)var)[0], (argtype & FD_ALLOC) ? false : true);
+                     auto object = push_object(lua, ((OBJECTPTR *)var)[0], true);
+                     if (argtype & FD_ALLOC) {
+                        object->flags &= ~GCOBJ_DETACHED;
+                        ((APTR *)var)[0] = nullptr;
+                     }
                   }
                   else lua_pushnil(lua);
                }
@@ -2243,11 +2324,18 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                   if (((APTR *)var)[0]) {
                      if (argtype & FD_RESOURCE) {
                         // Resource structures are managed with direct data addresses.
-                        push_struct(Tiri, ((APTR *)var)[0], args[i].Name, (argtype & FD_ALLOC) ? TRUE : FALSE, TRUE);
+                        auto structure = push_struct(Tiri, ((APTR *)var)[0], args[i].Name, false, true);
+                        if (argtype & FD_ALLOC) {
+                           structure->flags |= STRUCT_DEALLOCATE;
+                           ((APTR *)var)[0] = nullptr;
+                        }
                      }
                      else {
                         if (named_struct_to_table(lua, args[i].Name, ((APTR *)var)[0]) != ERR::Okay) lua_pushnil(lua);
-                        if (argtype & FD_ALLOC) FreeResource(((APTR *)var)[0]);
+                        if (argtype & FD_ALLOC) {
+                           FreeResource(((APTR *)var)[0]);
+                           ((APTR *)var)[0] = nullptr;
+                        }
                      }
                   }
                   else lua_pushnil(lua);
@@ -2255,7 +2343,10 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                else if (argtype & FD_ALLOC) {
                   // Misconfigured or unsupported parameter
                   lua_pushnil(lua);
-                  if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
+                  if (((APTR *)var)[0]) {
+                     FreeResource(((APTR *)var)[0]);
+                     ((APTR *)var)[0] = nullptr;
+                  }
                }
                else lua_pushlightuserdata(lua, ((APTR *)var)[0]);
             }
@@ -2377,7 +2468,7 @@ std::string test_module_string_view_call(lua_State *Lua, APTR Address, std::span
 
 // A stack-owned synthetic record lives until the script finishes; no published callable is mutated.
 
-static std::string run_synthetic_scalar(lua_State *Lua, ModuleCallable &Callable, CSTRING Source)
+static std::string run_synthetic_scalar(lua_State *Lua, ModuleCallable &Callable, CSTRING Source, bool Probe = true)
 {
    int base = lua_gettop(Lua);
    lua_pushlightuserdata(Lua, &Callable);
@@ -2388,12 +2479,16 @@ static std::string run_synthetic_scalar(lua_State *Lua, ModuleCallable &Callable
       failure = lua_tostring(Lua, -1) ? lua_tostring(Lua, -1) : "Unknown synthetic call failure.";
    }
    lua_settop(Lua, base);
-   if (failure.empty()) {
+   if (failure.empty() and Probe) {
       // Inspect the actual C closure result count, so a void call returning one nil cannot pass unnoticed.
       lua_getglobal(Lua, "syntheticZero");
       if (lua_pcall(Lua, 0, LUA_MULTRET, 0)) failure = "Result arity probe failed.";
-      else if (lua_gettop(Lua) - base != ((Callable.Cif.rtype IS &ffi_type_void) ? 0 : 1)) {
-         failure = "Incorrect scalar result arity.";
+      else if (lua_gettop(Lua) - base != ([&]() {
+         int count = (Callable.Cif.rtype IS &ffi_type_void) ? 0 : 1;
+         for (auto field = Callable.Fields + 1; field->Name; ++field) if (field->Type & FD_RESULT) ++count;
+         return count;
+      })()) {
+         failure = "Incorrect native result arity.";
       }
       lua_settop(Lua, base);
    }
@@ -2418,7 +2513,7 @@ std::string test_module_zero_call(lua_State *Lua, APTR Address, uint32_t Type, b
 }
 
 std::string test_module_simple_call(lua_State *Lua, APTR Address, uint32_t Type,
-   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source)
+   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source, bool Probe)
 {
    if (Inputs.size() > MAX_MODULE_ARGS) return "Synthetic signature exceeds the argument limit.";
    std::vector<FunctionField> fields;
@@ -2443,7 +2538,7 @@ std::string test_module_simple_call(lua_State *Lua, APTR Address, uint32_t Type,
    auto specialised = classify_simple_call(callable);
    if (bool(specialised) != Eligible) return "Incorrect simple signature eligibility.";
    if (not ForceBridge) callable.SimpleCall = specialised;
-   return run_synthetic_scalar(Lua, callable, Source);
+   return run_synthetic_scalar(Lua, callable, Source, Probe);
 }
 
 std::string test_module_zero_eligibility()

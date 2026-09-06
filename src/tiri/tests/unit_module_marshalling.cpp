@@ -17,8 +17,11 @@ Unit tests for module call marshalling.
 #include <cstdlib>
 
 #include "../defs.h"
+#include "lua.h"
 
 #ifdef UNIT_TESTS
+
+extern int test_struct_live_references();
 
 namespace {
 
@@ -195,6 +198,485 @@ static bool test_complex_inputs(kt::Log &Log)
             }
          }
       }
+   }
+   return true;
+}
+
+// Independent expected values also preserve the legacy signed conversion of unsigned output slots.
+static thread_local int glOutputCalls = 0;
+static thread_local bool glOutputAligned = true;
+
+static ERR synthetic_outputs(int Input, int *First, int64_t *Wide, double *Real, APTR *Pointer, int Tail)
+{
+   ++glOutputCalls;
+   glOutputAligned = glOutputAligned and (uintptr_t(First) % alignof(int) IS 0) and
+      (uintptr_t(Wide) % alignof(int64_t) IS 0) and (uintptr_t(Real) % alignof(double) IS 0) and
+      (uintptr_t(Pointer) % alignof(APTR) IS 0);
+   if ((*First != 0) or (*Wide != 0) or (*Real != 0) or (*Pointer != nullptr)) glOutputAligned = false;
+   *First = Input + Tail - 2147483647;
+   *Wide = (Input IS 99) ? 9007199254740993LL : -9007199254740991LL;
+   *Real = -1234.125;
+   return ERR::Okay;
+}
+
+static bool test_output_slots(kt::Log &Log)
+{
+   ModuleMarshallingTestScript holder;
+   if (not holder.initialise(Log)) return false;
+   holder.get()->setStatement("local ready = true");
+   if (Action(AC::Query, holder.get(), nullptr) != ERR::Okay) return false;
+   const std::array<uint32_t, 6> types = {
+      FD_INT, FD_INT|FD_RESULT|FD_UNSIGNED, FD_INT64|FD_RESULT, FD_DOUBLE|FD_RESULT, FD_PTR|FD_RESULT, FD_INT
+   };
+   for (bool bridge : { false, true }) {
+      for (bool jit : { false, true }) {
+         glOutputCalls = 0;
+         glOutputAligned = true;
+         auto source = std::format(R"(
+            jit.{}()
+            local call = syntheticZero
+            processing.collect()
+            for _ in {{0 to 100}} do
+               local err, first, wide, real, pointer, extra = call(4, nil, nil, nil, nil, 6, 'ignored')
+               assert(err is ERR_Okay and first is -2147483637, 'Interleaved inputs preserve positions')
+               assert(wide is -9007199254740991 and real is -1234.125, 'Exact numeric outputs')
+               assert(pointer != nil and type(pointer) is 'userdata', 'Null output is light userdata')
+               assert(extra is nil, 'Output arity')
+            end
+            local _, _, rounded = call(99)
+            assert(rounded is 9007199254740992, 'Int64 outputs use double precision above 2^53')
+            local err, first = call()
+            assert(err is ERR_Okay and first is -2147483647, 'Missing defaults')
+            try
+               call(1, nil, nil, nil, nil, false)
+            except e when ERR_InvalidType
+               assert(e.message.find('arg #6'), 'Output slots must not compact later input indices')
+            success
+               assert(false, 'Bad later input must fail')
+            end
+         )", jit ? "on" : "off");
+         auto failure = test_module_simple_call(holder.get()->Lua, (APTR)synthetic_outputs, FD_ERROR,
+            types, bridge, false, source.c_str());
+         if ((not failure.empty()) or (not glOutputAligned) or (glOutputCalls != 103)) {
+            Log.error("Output slots: %s, aligned %d, calls %d", failure.c_str(), int(glOutputAligned), glOutputCalls);
+            return false;
+         }
+      }
+   }
+   return true;
+}
+
+struct ownership_observation {
+   int Calls = 0;
+   int Allocations = 0;
+   int Releases = 0;
+   int FailAfter = -1;
+   int PendingFailure = -1;
+   int Failures = 0;
+   lua_Alloc Allocator = nullptr;
+   void *AllocatorData = nullptr;
+};
+
+static thread_local ownership_observation glOwnership;
+static thread_local uint64_t glOutputSerial = 0;
+
+static ERR synthetic_release(ResourceRecord &, APTR)
+{
+   ++glOwnership.Releases;
+   return ERR::Terminate; // Let Core free its AllocResource block after recording destruction.
+}
+
+static ResourceManager glOutputResourceManager{ "Module output fixture", synthetic_release, false };
+
+static STRING synthetic_allocate()
+{
+   APTR result = nullptr;
+   if (AllocResource(256, MEM::NIL, &result, &glOutputResourceManager) != ERR::Okay) return nullptr;
+   ++glOwnership.Allocations;
+   std::memset(result, 'x', 255);
+   auto serial = ++glOutputSerial;
+   for (int index = 0; index < 16; ++index) ((STRING)result)[index] = char('a' + ((serial >> (index * 4)) & 15));
+   return (STRING)result;
+}
+
+static void * synthetic_allocator(void *Data, void *Pointer, size_t OldSize, size_t NewSize)
+{
+   auto &state = *(ownership_observation *)Data;
+   if ((NewSize > OldSize) and (state.PendingFailure >= 0)) {
+      if (state.PendingFailure-- IS 0) {
+         ++state.Failures;
+         return nullptr;
+      }
+   }
+   return state.Allocator(state.AllocatorData, Pointer, OldSize, NewSize);
+}
+
+static ERR synthetic_owned_outputs(int Mode, STRING *First, STRING *Last, std::string *Text)
+{
+   ++glOwnership.Calls;
+   *First = synthetic_allocate();
+   *Last = synthetic_allocate();
+   Text->assign("full\0length", 11);
+   glOwnership.PendingFailure = glOwnership.FailAfter;
+   return Mode ? ERR::Args : ERR::Okay;
+}
+
+static STRING synthetic_owned_return(STRING *Output)
+{
+   ++glOwnership.Calls;
+   *Output = synthetic_allocate();
+   auto result = synthetic_allocate();
+   glOwnership.PendingFailure = glOwnership.FailAfter;
+   return result;
+}
+
+static ERR synthetic_mutable_boundaries(std::string *Text, int Mode, STRING *Output)
+{
+   ++glOwnership.Calls;
+   *Output = synthetic_allocate();
+   if (Mode IS 0) Text->clear();
+   else if (Mode IS 1) Text->assign(Text->size(), 'q');
+   else if (Mode IS 2) *Text = "abc";
+   else {
+      if (*Text != "abc") return ERR::InvalidData;
+      Text->clear();
+   }
+   return ERR::Args;
+}
+
+static ERR synthetic_deferred_input(std::string *, int)
+{
+   ++glOwnership.Calls;
+   return ERR::Okay;
+}
+
+static void synthetic_cpp_outputs(std::string *Text, std::string_view *View)
+{
+   ++glOwnership.Calls;
+   Text->assign("full\0length", 11);
+   *View = std::string_view("a\0b", 3);
+}
+
+static ERR synthetic_mutable_output(std::string *Text, STRING *Output)
+{
+   ++glOwnership.Calls;
+   *Output = synthetic_allocate();
+   Text->append("suffix");
+   return ERR::Args;
+}
+
+static ERR synthetic_vector_output(kt::vector<int> *Values, int Tail)
+{
+   ++glOwnership.Calls;
+   Values->push_back(-2147483647);
+   Values->push_back(Tail);
+   glOwnership.PendingFailure = glOwnership.FailAfter;
+   return ERR::Okay;
+}
+
+static ERR synthetic_struct_vector(kt::vector<APTR> *Values, int)
+{
+   static thread_local int value = -123;
+   ++glOwnership.Calls;
+   Values->push_back(&value);
+   glOwnership.PendingFailure = glOwnership.FailAfter;
+   return ERR::Okay;
+}
+
+static bool test_owned_outputs(kt::Log &Log)
+{
+   ModuleMarshallingTestScript holder;
+   if (not holder.initialise(Log)) return false;
+   auto lua = holder.get()->Lua;
+   holder.get()->setStatement("local ready = true");
+   if (Action(AC::Query, holder.get(), nullptr) != ERR::Okay) return false;
+   const std::array<uint32_t, 4> types = {
+      FD_INT, FD_STR|FD_RESULT|FD_ALLOC, FD_STR|FD_RESULT|FD_ALLOC, FDF_CPPSTRING|FD_RESULT|FD_MUTABLE
+   };
+   for (bool bridge : { false, true }) {
+      for (bool jit : { false, true }) {
+         glOwnership = { };
+         auto source = std::format(R"(
+            jit.{}()
+            local call = syntheticZero
+            local err:num, first:str, last:str, text:str, extra = call(0)
+            assert(err is ERR_Okay and #first is 255 and #last is 255 and #text is 11 and extra is nil)
+            err, first, last, text = call(1)
+            assert(err is ERR_Args and #first is 255 and #last is 255 and #text is 11)
+            try
+               checkall call(1) end
+            except e when ERR_Args
+               assert(e.message.find('SyntheticZero'), 'Native error diagnostic')
+            success
+               assert(false, 'checkall must promote native error')
+            end
+            try
+               check call(1)
+            except e when ERR_Args
+            success
+               assert(false, 'check must promote native error')
+            end
+            try
+               call(false)
+            except e when ERR_InvalidType
+            success
+               assert(false, 'Input failure must precede native execution')
+            end
+            function unchecked():num
+               local code = call(1)
+               return code
+            end
+            checkall assert(unchecked() is ERR_Args, 'checkall is immediate-scope only') end
+         )", jit ? "on" : "off");
+         auto failure = test_module_simple_call(lua, (APTR)synthetic_owned_outputs, FD_ERROR,
+            types, bridge, false, source.c_str(), false);
+         if ((not failure.empty()) or (glOwnership.Calls != 5) or (glOwnership.Allocations != 10) or
+             (glOwnership.Releases != 10) or test_module_live_temporaries()) {
+            Log.error("Owned outputs: %s, calls %d, allocations %d, releases %d, temporaries %d", failure.c_str(),
+               glOwnership.Calls, glOwnership.Allocations, glOwnership.Releases, test_module_live_temporaries());
+            return false;
+         }
+      }
+   }
+
+   // Real Lua allocator failure after native execution, including failure while pushing a later result.
+   for (int allocation = 0; allocation < 2; ++allocation) {
+      glOwnership = { };
+      glOwnership.FailAfter = allocation;
+      glOwnership.Allocator = lua_getallocf(lua, &glOwnership.AllocatorData);
+      lua_setallocf(lua, synthetic_allocator, &glOwnership);
+      auto failure = test_module_simple_call(lua, (APTR)synthetic_owned_outputs, FD_ERROR, types, true, false, R"(
+         local caught = false
+         try
+            syntheticZero(0)
+         except e when ERR_NoMemory
+            caught = true
+         end
+         assert(caught, 'Injected Lua allocation failure must raise')
+         processing.collect()
+      )", false);
+      lua_setallocf(lua, glOwnership.Allocator, glOwnership.AllocatorData);
+      if ((not failure.empty()) or (glOwnership.Calls != 1) or (glOwnership.Failures != 1) or
+          (glOwnership.Allocations != glOwnership.Releases) or
+          test_module_live_temporaries()) {
+         Log.error("Allocation failure %d: %s, allocations %d, releases %d, temporaries %d", allocation,
+            failure.c_str(), glOwnership.Allocations, glOwnership.Releases, test_module_live_temporaries());
+         return false;
+      }
+   }
+
+   const std::array<uint32_t, 1> return_types = { FD_STR|FD_RESULT|FD_ALLOC };
+   for (int allocation : { -1, 0, 1 }) {
+      glOwnership = { };
+      glOwnership.FailAfter = allocation;
+      glOwnership.Allocator = lua_getallocf(lua, &glOwnership.AllocatorData);
+      lua_setallocf(lua, synthetic_allocator, &glOwnership);
+      auto failure = test_module_simple_call(lua, (APTR)synthetic_owned_return, FD_STR|FD_ALLOC,
+         return_types, true, false, R"(
+         try
+            local first, last, extra = syntheticZero()
+            assert(#first is 255 and #last is 255 and extra is nil, 'Native return precedes output parameter')
+         except e when ERR_NoMemory
+         end
+      )", false);
+      glOwnership.PendingFailure = -1;
+      lua_setallocf(lua, glOwnership.Allocator, glOwnership.AllocatorData);
+      if ((not failure.empty()) or (glOwnership.Calls != 1) or (glOwnership.Allocations != 2) or
+          (glOwnership.Releases != 2)) {
+         Log.error("Native allocated return failure %d: %s", allocation, failure.c_str());
+         return false;
+      }
+   }
+
+   // Resource transfer commits only after the wrapper is pushed.  Later failures must keep the transferred
+   // wrapper alive while releasing the remaining native allocation, then let GC release the transferred value.
+   for (int allocation : { -1, 0, 1, 2 }) {
+      glOwnership = { };
+      glOwnership.FailAfter = allocation;
+      glOwnership.Allocator = lua_getallocf(lua, &glOwnership.AllocatorData);
+      lua_setallocf(lua, synthetic_allocator, &glOwnership);
+      auto resource_types = types;
+      resource_types[1] = FD_PTR|FD_STRUCT|FD_RESOURCE|FD_RESULT|FD_ALLOC;
+      auto failure = test_module_simple_call(lua, (APTR)synthetic_owned_outputs, FD_ERROR,
+         resource_types, true, false, R"(
+         try
+            local err, resource, text = syntheticZero(0)
+            assert(err is ERR_Okay and resource != nil and #text is 255)
+         except e when ERR_NoMemory
+         end
+         processing.collect()
+      )", false);
+      glOwnership.PendingFailure = -1;
+      lua_setallocf(lua, glOwnership.Allocator, glOwnership.AllocatorData);
+      lua_gc(lua, LUA_GCCOLLECT, 0);
+      if ((not failure.empty()) or (glOwnership.Allocations != glOwnership.Releases) or
+          test_module_live_temporaries()) {
+         Log.error("Resource transfer failure %d: %s, allocations %d, releases %d", allocation, failure.c_str(),
+            glOwnership.Allocations, glOwnership.Releases);
+         return false;
+      }
+   }
+
+   const std::array<uint32_t, 2> vector_types = { FDF_VECTOR|FD_MUTABLE|FD_RESULT|FD_INT, FD_INT };
+   for (int allocation : { -1, 0 }) {
+      glOwnership = { };
+      glOwnership.FailAfter = allocation;
+      glOwnership.Allocator = lua_getallocf(lua, &glOwnership.AllocatorData);
+      lua_setallocf(lua, synthetic_allocator, &glOwnership);
+      auto failure = test_module_simple_call(lua, (APTR)synthetic_vector_output, FD_ERROR,
+         vector_types, true, false, R"(
+         try
+            local err, values = syntheticZero(nil, 7)
+            assert(err is ERR_Okay and #values is 2 and values[0] is -2147483647 and values[1] is 7)
+         except e when ERR_NoMemory
+         end
+      )", false);
+      glOwnership.PendingFailure = -1;
+      lua_setallocf(lua, glOwnership.Allocator, glOwnership.AllocatorData);
+      if ((not failure.empty()) or (glOwnership.Calls != 1) or test_module_live_temporaries()) {
+         Log.error("Container failure %d: %s", allocation, failure.c_str());
+         return false;
+      }
+   }
+
+   if (make_struct(lua, "Arg1", "lValue") != ERR::Okay) return false;
+   const std::array<uint32_t, 2> structure_vector_types = {
+      FDF_VECTOR|FD_MUTABLE|FD_RESULT|FD_PTR|FD_STRUCT|FD_ALLOC, FD_INT
+   };
+   for (int allocation : { -1, 0, 1, 2, 3 }) {
+      glOwnership = { };
+      glOwnership.FailAfter = allocation;
+      glOwnership.Allocator = lua_getallocf(lua, &glOwnership.AllocatorData);
+      lua_setallocf(lua, synthetic_allocator, &glOwnership);
+      auto failure = test_module_simple_call(lua, (APTR)synthetic_struct_vector, FD_ERROR,
+         structure_vector_types, true, false, R"(
+         try
+            local err, values = syntheticZero(nil, 7)
+            assert(err is ERR_Okay and #values is 1 and values[0].value is -123)
+         except e when ERR_NoMemory
+         end
+      )", false);
+      glOwnership.PendingFailure = -1;
+      lua_setallocf(lua, glOwnership.Allocator, glOwnership.AllocatorData);
+      if ((not failure.empty()) or (glOwnership.Calls != 1) or test_module_live_temporaries() or
+          test_struct_live_references()) {
+         Log.error("Structure container failure %d: %s", allocation, failure.c_str());
+         return false;
+      }
+   }
+
+   // A registered output structure creates registry references while it is copied.  Fail after reference capture,
+   // while another owned result is still pending, and verify both the reference graph and native allocations.
+   if (make_struct(lua, "Arg2", "lValue") != ERR::Okay) return false;
+   for (int allocation : { -1, 0, 1, 2, 3 }) {
+      glOwnership = { };
+      glOwnership.FailAfter = allocation;
+      glOwnership.Allocator = lua_getallocf(lua, &glOwnership.AllocatorData);
+      lua_setallocf(lua, synthetic_allocator, &glOwnership);
+      auto copied_types = types;
+      copied_types[1] = FD_PTR|FD_STRUCT|FD_RESULT|FD_ALLOC;
+      auto failure = test_module_simple_call(lua, (APTR)synthetic_owned_outputs, FD_ERROR,
+         copied_types, true, false, R"(
+         try
+            local err, value, text = syntheticZero(0)
+            assert(err is ERR_Okay and type(value) is 'table' and #text is 255)
+         except e when ERR_NoMemory
+         end
+      )", false);
+      glOwnership.PendingFailure = -1;
+      lua_setallocf(lua, glOwnership.Allocator, glOwnership.AllocatorData);
+      if ((not failure.empty()) or (glOwnership.Allocations != glOwnership.Releases) or
+          test_module_live_temporaries() or test_struct_live_references()) {
+         Log.error("Copied structure failure %d: %s, references %d", allocation, failure.c_str(),
+            test_struct_live_references());
+         return false;
+      }
+   }
+
+   glOwnership = { };
+   const std::array<uint32_t, 2> mutable_types = { FDF_CPPSTRING|FD_MUTABLE, FD_STR|FD_RESULT|FD_ALLOC };
+   auto failure = test_module_simple_call(lua, (APTR)synthetic_mutable_output, FD_ERROR, mutable_types, true, false, R"(
+      local text = string.alloc(3)
+      try
+         checkall syntheticZero(text) end
+      except e when ERR_BufferOverflow
+         assert(e.message is 'Mutable buffer too small.', 'Copy-back failure takes precedence')
+      success
+         assert(false, 'Oversized copy-back must fail')
+      end
+   )", false);
+   if ((not failure.empty()) or (glOwnership.Calls != 1) or (glOwnership.Releases != 1) or
+       test_module_live_temporaries()) {
+      Log.error("Copy-back cleanup: %s, releases %d", failure.c_str(), glOwnership.Releases);
+      return false;
+   }
+   glOwnership = { };
+   const std::array<uint32_t, 3> boundary_types = { FDF_CPPSTRING|FD_MUTABLE, FD_INT, FD_STR|FD_RESULT|FD_ALLOC };
+   failure = test_module_simple_call(lua, (APTR)synthetic_mutable_boundaries, FD_ERROR,
+      boundary_types, true, false, R"(
+      local empty = string.alloc(0)
+      assert(syntheticZero(empty, 0) is ERR_Args and #empty is 0, 'Zero-capacity copy-back')
+      local exact = string.alloc(3)
+      assert(syntheticZero(exact, 2) is ERR_Args and exact.byte(0) is 97 and exact.byte(2) is 99,
+         'Exact capacity on native error')
+      assert(syntheticZero(exact, 3) is ERR_Args, 'Initial mutable contents are supplied to native code')
+      assert(exact.byte(0) is 0 and exact.byte(2) is 0, 'Shortened output zero-fills capacity')
+      local larger = string.alloc(8)
+      assert(syntheticZero(larger, 2) is ERR_Args and larger.byte(0) is 97 and
+         larger.byte(3) is 0 and larger.byte(7) is 0,
+         'Short copy-back')
+      try
+         syntheticZero(empty, 2)
+      except e when ERR_BufferOverflow
+      success
+         assert(false, 'Nonempty output cannot fit zero capacity')
+      end
+      try
+         syntheticZero('abc', 0)
+      except e when ERR_InvalidType
+      success
+         assert(false, 'Read-only string must be rejected before native execution')
+      end
+   )", false);
+   if ((not failure.empty()) or (glOwnership.Calls != 5) or (glOwnership.Releases != 5) or
+       test_module_live_temporaries()) {
+      Log.error("Mutable capacity contracts: %s, calls %d, releases %d", failure.c_str(), glOwnership.Calls,
+         glOwnership.Releases);
+      return false;
+   }
+
+   glOwnership = { };
+   const std::array<uint32_t, 2> cpp_types = { FDF_CPPSTRING|FD_RESULT|FD_MUTABLE, FDF_CPPSTRING|FD_RESULT };
+   failure = test_module_simple_call(lua, (APTR)synthetic_cpp_outputs, FD_VOID, cpp_types, true, false, R"(
+      local text, view, extra = syntheticZero()
+      assert(#text is 11 and text is 'full\0length', 'C++ string output copies embedded NUL')
+      assert(#view is 3 and view is 'a\0b' and extra is nil, 'C++ view output uses reference ABI and full length')
+   )");
+   if ((not failure.empty()) or (glOwnership.Calls != 2) or test_module_live_temporaries()) {
+      Log.error("C++ output copies: %s", failure.c_str());
+      return false;
+   }
+
+   glOwnership = { };
+   const std::array<uint32_t, 2> deferred_types = { FDF_CPPSTRING|FD_MUTABLE, FD_INT };
+   failure = test_module_simple_call(lua, (APTR)synthetic_deferred_input, FD_ERROR, deferred_types, true, false, R"(
+      local text = string.alloc(8)
+      thunk later():num
+         processing.collect()
+         raise ERR_Args, 'Deferred conversion failed'
+      end
+      try
+         syntheticZero(text, later())
+      except e when ERR_Args
+         assert(e.message is 'Deferred conversion failed', 'Deferred error is preserved')
+      success
+         assert(false, 'Deferred input must fail')
+      end
+   )", false);
+   if ((not failure.empty()) or glOwnership.Calls or test_module_live_temporaries()) {
+      Log.error("Deferred input cleanup: %s, calls %d, temporaries %d", failure.c_str(), glOwnership.Calls,
+         test_module_live_temporaries());
+      return false;
    }
    return true;
 }
@@ -611,6 +1093,20 @@ static bool test_simple_calls(kt::Log &Log)
 void module_marshalling_unit_tests(int &Passed, int &Total)
 {
    kt::Log log("ModuleMarshallingTests");
+   Total++;
+   if (test_output_slots(log)) {
+      Passed++;
+      log.msg("aligned output contracts passed");
+   }
+   else log.error("aligned output contracts failed");
+
+   Total++;
+   if (test_owned_outputs(log)) {
+      Passed++;
+      log.msg("owned output cleanup passed");
+   }
+   else log.error("owned output cleanup failed");
+
    log.branch("Running maximum string-view signature test");
    Total++;
    if (test_max_string_view_signature(log)) {

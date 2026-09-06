@@ -11,6 +11,12 @@
 
 module core as mCore
 module display as mDisplay
+@if(exists='modules:network')
+   include 'network'
+   module network as mNet
+   local bench_address = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', bench_address)
+@end
 
 local ITERATIONS <const> = tonumber(arg('iterations', '100000'))
 local REPEATS <const> = tonumber(arg('repeats', '9'))
@@ -156,6 +162,37 @@ function bench_cpp_string_result(Iterations: num): num
    return total
 end
 
+function bench_extracted_results(Iterations: num): num
+   local analyse = mCore.AnalysePath
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, kind = analyse('temp:')
+      total += err + kind
+   end
+   return total
+end
+
+@if(exists='modules:network')
+function bench_address_output(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, text = mNet.AddressToStr(bench_address)
+      total += err + #text
+   end
+   return total
+end
+
+function bench_extracted_address(Iterations: num): num
+   local format = mNet.AddressToStr
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, text = format(bench_address)
+      total += err + #text
+   end
+   return total
+end
+@end
+
 --********************************************************************************************************************
 -- Activation workloads.  These measure the cost of descriptor activation rather than the call itself.
 
@@ -243,6 +280,11 @@ measure('  extracted pointer CRC', ITERATIONS, bench_extracted_crc)
 measure('  C-string result', ITERATIONS, bench_string_result)
 measure('  extracted callable', ITERATIONS, bench_extracted)
 measure('  multiple results', math.floor(ITERATIONS / 10), bench_multiple_results)
+measure('  extracted multiple results', math.floor(ITERATIONS / 10), bench_extracted_results)
+@if(exists='modules:network')
+   measure('  address output', ITERATIONS, bench_address_output)
+   measure('  extracted address output', ITERATIONS, bench_extracted_address)
+@end
 measure('  mutable C++ string result', math.floor(ITERATIONS / 10), bench_cpp_string_result)
 
 print('')

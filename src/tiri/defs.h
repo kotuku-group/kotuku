@@ -439,7 +439,8 @@ ERR load_module_defs(std::string_view);
 [[nodiscard]] std::string test_module_zero_call(lua_State *, APTR, uint32_t Type, bool ForceBridge, CSTRING Source);
 [[nodiscard]] std::string test_module_zero_eligibility();
 [[nodiscard]] std::string test_module_simple_call(lua_State *, APTR, uint32_t Type,
-   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source);
+   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source, bool Probe = true);
+[[nodiscard]] int test_module_live_temporaries();
 [[nodiscard]] std::string test_module_string_view_call(lua_State *, APTR,
    std::span<const std::string> Inputs);
 
