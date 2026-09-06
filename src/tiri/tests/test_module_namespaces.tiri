@@ -58,7 +58,7 @@ end
    assert(mCore.GetResource(1) != nil, 'scalar argument')
    assert(#mCore.GetErrorMsg(0) > 0, 'C-string result')
    assert(mCore.ResolveClassName('Tiri') > 0, 'C++ string-view argument')
-   assert(mCore.GetThreadID() >= 0, 'unsigned scalar result')
+   assert(mCore.GetThreadID() >= 0, 'signed scalar result')
    assert(mCore.CurrentTask() != nil, 'object result')
    assert(mCore.ActionList() != nil, 'C++ array result')
 
@@ -88,7 +88,12 @@ end
       scripts.push(obj.new('tiri', { statement = [[
          module core as mConcurrent
          local total = 0
-         for _ in {0 to 500} do total += mConcurrent.PreciseTime() end
+         local resource = mConcurrent.GetResource
+         processing.collect()
+         for _ in {0 to 500} do
+            total += mConcurrent.PreciseTime()
+            assert(type(resource(1)) is 'number', 'Concurrent scalar input call lost its binding')
+         end
          assert(total > 0, 'concurrent module calls produced no result')
       ]] }))
    end

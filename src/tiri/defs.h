@@ -436,6 +436,10 @@ ERR load_module_defs(std::string_view);
 [[nodiscard]] std::string_view static_module_function_name(StaticModuleHandle, std::string_view) noexcept;
 [[nodiscard]] APTR proto_dependency_callable(struct GCproto *, uint32_t);
 #ifdef UNIT_TESTS
+[[nodiscard]] std::string test_module_zero_call(lua_State *, APTR, uint32_t Type, bool ForceBridge, CSTRING Source);
+[[nodiscard]] std::string test_module_zero_eligibility();
+[[nodiscard]] std::string test_module_simple_call(lua_State *, APTR, uint32_t Type,
+   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source);
 [[nodiscard]] std::string test_module_string_view_call(lua_State *, APTR,
    std::span<const std::string> Inputs);
 

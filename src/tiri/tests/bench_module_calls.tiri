@@ -1,6 +1,6 @@
--- Module call benchmark for docs/plans/2-tiri-module-interface-efficiency-plan.md
+-- Module call benchmark for docs/plans/tiri/2-tiri-module-calls.md
 --
--- Measures steady-state module call cost across the signature families named in the plan's Phase 0 exit criteria, plus
+-- Measures steady-state module call cost across scalar and fallback signature families, plus
 -- dependency activation cost.  Run with the JIT enabled and disabled to record both modes:
 --
 --    build/agents-install/origo src/tiri/tests/bench_module_calls.tiri
@@ -10,6 +10,7 @@
 -- Accumulators are deliberately dependent on the call result so that dead-code elimination cannot remove the loop body.
 
 module core as mCore
+module display as mDisplay
 
 local ITERATIONS <const> = tonumber(arg('iterations', '100000'))
 local REPEATS <const> = tonumber(arg('repeats', '5'))
@@ -39,9 +40,16 @@ function measure(Name: str, Iterations: num, Workload: func)
       samples.push(mCore.PreciseTime() - start)
    end
 
+   local low, high = samples[0], samples[0]
+   for index in {0 to #samples} do
+      low = math.min(low, samples[index])
+      high = math.max(high, samples[index])
+   end
    local elapsed = median(samples)
    print(string.format('%-34s %10.0f us total  %8.4f us/call  sink=%s',
       Name, elapsed, elapsed / Iterations, tostring(sink != nil)))
+   print(string.format('  sample range: %.4f .. %.4f us/call',
+      low / Iterations, high / Iterations))
 end
 
 --********************************************************************************************************************
@@ -54,10 +62,32 @@ function bench_zero_arg(Iterations: num): num
    return total
 end
 
+-- Zero-argument signed 32-bit result.
+function bench_zero_int(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.GetThreadID() end
+   return total
+end
+
 -- Scalar input, scalar result.
 function bench_scalar_arg(Iterations: num): num
    local total = 0
    for i in {0 to Iterations} do total += mCore.GetResource(i & 7) end
+   return total
+end
+
+-- Extracted scalar-input call.
+function bench_extracted_scalar(Iterations: num): num
+   local get_resource = mCore.GetResource
+   local total = 0
+   for i in {0 to Iterations} do total += get_resource(i & 7) end
+   return total
+end
+
+-- Double input and result.
+function bench_double_arg(Iterations: num): num
+   local total = 0
+   for i in {0 to Iterations} do total += mDisplay.ScaleToDPI(i + 0.5) end
    return total
 end
 
@@ -160,9 +190,15 @@ function measure_activation(Name: str, Source: str)
       samples.push(mCore.PreciseTime() - start)
    end
 
+   local low, high = samples[0], samples[0]
+   for index in {0 to #samples} do
+      low = math.min(low, samples[index])
+      high = math.max(high, samples[index])
+   end
    local elapsed = median(samples)
    print(string.format('%-34s %10.0f us total  %8.4f us/activation',
       Name, elapsed, elapsed / ACTIVATIONS))
+   print(string.format('  sample range: %.4f .. %.4f us/activation', low / ACTIVATIONS, high / ACTIVATIONS))
 end
 
 --********************************************************************************************************************
@@ -172,7 +208,10 @@ print('-'.rep(96))
 
 print('Steady state:')
 measure('  zero-arg scalar result', ITERATIONS, bench_zero_arg)
+measure('  zero-arg signed int', ITERATIONS, bench_zero_int)
 measure('  scalar arg', ITERATIONS, bench_scalar_arg)
+measure('  extracted scalar arg', ITERATIONS, bench_extracted_scalar)
+measure('  double arg', ITERATIONS, bench_double_arg)
 measure('  C++ string-view arg', ITERATIONS, bench_string_view)
 measure('  C-string result', ITERATIONS, bench_string_result)
 measure('  extracted callable', ITERATIONS, bench_extracted)

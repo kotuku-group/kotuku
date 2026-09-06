@@ -18,7 +18,9 @@
 #include "lj_proto_registry.h"
 
 #include <ffi.h>
+#include <cstdlib>
 #include <utility>
+#include <type_traits>
 #include <unordered_map>
 #include <algorithm>
 #include <mutex>
@@ -101,6 +103,23 @@ struct marshalling_profile {
 // Every field is written once during preparation and is immutable afterwards, so concurrent calls from independent
 // Tiri states can share one record without synchronisation.
 
+enum class zero_arg_call { Bridge, Void, Int, Unsigned, Error, Int64, Double };
+
+union module_scalar_result {
+   ffi_arg Arg;
+   double Double;
+   int64_t Int64;
+};
+
+union module_scalar_input {
+   int Int;
+   uint32_t Unsigned;
+   int64_t Int64;
+   double Double;
+};
+
+using simple_module_call = void (*)(APTR, module_scalar_result &, const module_scalar_input *);
+
 struct ModuleCallable {
    CSTRING Name = nullptr;               // Canonical name, owned by the binding's immutable signature
    APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
@@ -108,6 +127,8 @@ struct ModuleCallable {
 
    marshalling_profile Profile;          // Upper bounds on the bridge-owned temporaries this signature can require
 
+   zero_arg_call ZeroArg = zero_arg_call::Bridge;
+   simple_module_call SimpleCall = nullptr;
    ffi_cif Cif = { };
    ffi_type *ArgTypes[MAX_MODULE_ARGS] = { };
 
@@ -482,6 +503,109 @@ static ffi_type * callable_return_type(int ResultType)
    return &ffi_type_void;
 }
 
+// Exact descriptors only: ownership, pointer and C++ modifiers must retain the bridge.
+
+static zero_arg_call classify_scalar_return(uint32_t Type)
+{
+   switch (Type) {
+      case FD_VOID: return zero_arg_call::Void;
+      case FD_INT: return zero_arg_call::Int;
+      case FD_INT|FD_UNSIGNED: return zero_arg_call::Unsigned;
+      case FD_ERROR: return zero_arg_call::Error;
+      case FD_INT64: return zero_arg_call::Int64;
+      case FD_DOUBLE: return zero_arg_call::Double;
+      default: return zero_arg_call::Bridge;
+   }
+}
+
+static zero_arg_call classify_zero_arg(const ModuleCallable &Callable)
+{
+   if ((not Callable.Fields) or Callable.Cif.nargs or Callable.Fields[1].Name) return zero_arg_call::Bridge;
+   return classify_scalar_return(Callable.Fields[0].Type);
+}
+
+// C++ emits the platform ABI for each finite signature.  Selection happens before publication; invocation performs
+// no recursive type dispatch and never allocates executable memory.
+
+template<class T> static T scalar_input_value(const module_scalar_input &Input)
+{
+   if constexpr (std::is_same_v<T, int>) return Input.Int;
+   else if constexpr (std::is_same_v<T, int64_t>) return Input.Int64;
+   else return Input.Double;
+}
+
+template<class R, class... Args, size_t... Index>
+static void invoke_simple_module(APTR Address, module_scalar_result &Result, const module_scalar_input *Inputs,
+   std::index_sequence<Index...>)
+{
+   auto function = (R (*)(Args...))Address;
+   if constexpr (std::is_void_v<R>) function(scalar_input_value<Args>(Inputs[Index])...);
+   else {
+      auto value = function(scalar_input_value<Args>(Inputs[Index])...);
+      if constexpr (std::is_same_v<R, double>) Result.Double = value;
+      else if constexpr (std::is_same_v<R, int64_t>) Result.Int64 = value;
+      else Result.Arg = ffi_arg(value);
+   }
+}
+
+template<class R, class... Args>
+static void simple_module_wrapper(APTR Address, module_scalar_result &Result, const module_scalar_input *Inputs)
+{
+   invoke_simple_module<R, Args...>(Address, Result, Inputs, std::index_sequence_for<Args...>{ });
+}
+
+template<class... Args> static simple_module_call select_simple_module(const ModuleCallable &Callable)
+{
+   if (sizeof...(Args) IS Callable.Cif.nargs) {
+      switch (classify_scalar_return(Callable.Fields[0].Type)) {
+         case zero_arg_call::Void: return simple_module_wrapper<void, Args...>;
+         case zero_arg_call::Int: return simple_module_wrapper<int, Args...>;
+         case zero_arg_call::Unsigned: return simple_module_wrapper<uint32_t, Args...>;
+         case zero_arg_call::Error: return simple_module_wrapper<ERR, Args...>;
+         case zero_arg_call::Int64: return simple_module_wrapper<int64_t, Args...>;
+         case zero_arg_call::Double: return simple_module_wrapper<double, Args...>;
+         default: return nullptr;
+      }
+   }
+   if constexpr (sizeof...(Args) < 4) {
+      switch (Callable.Fields[sizeof...(Args) + 1].Type) {
+         case FD_INT: return select_simple_module<Args..., int>(Callable);
+         case FD_INT64: return select_simple_module<Args..., int64_t>(Callable);
+         case FD_DOUBLE: return select_simple_module<Args..., double>(Callable);
+         default: return nullptr;
+      }
+   }
+   return nullptr;
+}
+
+static simple_module_call classify_simple_call(const ModuleCallable &Callable)
+{
+   if ((not Callable.Fields) or (Callable.Cif.nargs < 1) or (Callable.Cif.nargs > 4)) return nullptr;
+   if (classify_scalar_return(Callable.Fields[0].Type) IS zero_arg_call::Bridge) return nullptr;
+   // Check the complete input list before selecting a wrapper.  Unsupported modifiers never imply an ABI type.
+   for (unsigned index = 1; index <= Callable.Cif.nargs; ++index) {
+      if (not Callable.Fields[index].Name) return nullptr;
+      auto type = Callable.Fields[index].Type;
+      if ((type != FD_INT) and (type != FD_INT64) and (type != FD_DOUBLE)) return nullptr;
+   }
+   if (Callable.Fields[Callable.Cif.nargs + 1].Name) return nullptr;
+   return select_simple_module<>(Callable);
+}
+
+static void prepare_scalar_calls(ModuleCallable &Callable)
+{
+#ifdef UNIT_TESTS
+   // Read once, outside invocation and before publication.  Differential runs use a fresh process.
+   static const bool force_bridge = []() {
+      auto value = std::getenv("TIRI_MODULE_FORCE_CIF");
+      return value and (std::string_view(value) IS "1");
+   }();
+   if (force_bridge) return;
+#endif
+   Callable.ZeroArg = classify_zero_arg(Callable);
+   Callable.SimpleCall = classify_simple_call(Callable);
+}
+
 //********************************************************************************************************************
 // Build the process-wide callable records for a module.  Called once, while the module is being resolved and before
 // it is published to the registry, so no other thread can observe a partially prepared record.
@@ -590,6 +714,7 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
             callable->invalidate();
             log.msg("Failed to prepare the call interface for '%s'.", callable->Name);
          }
+         else prepare_scalar_calls(*callable);
       }
 
       Module->Callables.push_back(std::move(callable));
@@ -1256,9 +1381,136 @@ static int module_call(lua_State *Lua)
    return results;
 }
 
+// Both dispatch paths use the same scalar conversion and immediate-scope error promotion.
+
+static ERR push_module_scalar(lua_State *Lua, const ModuleCallable &Callable, const module_scalar_result &Result,
+   std::string &ErrorMsg)
+{
+   int restype = Callable.Fields[0].Type;
+   if (restype & (FD_INT|FD_ERROR)) {
+      if (restype & FD_UNSIGNED) lua_pushnumber(Lua, (uint32_t)Result.Arg);
+      else {
+         lua_pushinteger(Lua, (int)Result.Arg);
+         if ((restype & FD_ERROR) and (Result.Arg >= int(ERR::ExceptionThreshold)) and
+             in_checkall_immediate_scope(Lua)) {
+            auto error = ERR(Result.Arg);
+            ErrorMsg = std::format("{}() failed: {}", Callable.Name, GetErrorMsg(error));
+            return error;
+         }
+      }
+   }
+   else if (restype & FD_DOUBLE) lua_pushnumber(Lua, Result.Double);
+   else if (restype & FD_INT64) lua_pushnumber(Lua, Result.Int64);
+   return ERR::Okay;
+}
+
+static ERR call_zero_arg(lua_State *Lua, const ModuleCallable &Callable, std::string &ErrorMsg, int &Results)
+{
+   module_scalar_result result = { };
+   switch (Callable.ZeroArg) {
+      case zero_arg_call::Void: ((void (*)())Callable.Address)(); break;
+      case zero_arg_call::Int: result.Arg = ((int (*)())Callable.Address)(); break;
+      case zero_arg_call::Unsigned: result.Arg = ((uint32_t (*)())Callable.Address)(); break;
+      case zero_arg_call::Error: result.Arg = ffi_arg(((ERR (*)())Callable.Address)()); break;
+      case zero_arg_call::Int64: result.Int64 = ((int64_t (*)())Callable.Address)(); break;
+      case zero_arg_call::Double: result.Double = ((double (*)())Callable.Address)(); break;
+      case zero_arg_call::Bridge: return ERR::InvalidState; // No retry after native invocation.
+   }
+   Results = (Callable.ZeroArg IS zero_arg_call::Void) ? 0 : 1;
+   return push_module_scalar(Lua, Callable, result, ErrorMsg);
+}
+
+// Resolve and convert one number at a time, in signature order.  A deferred value may relocate the Lua stack;
+// only copied native scalars survive the next resolution.  The bridge and direct path share errors and defaults.
+
+static ERR read_module_number(lua_State *Lua, int Index, const FunctionField &Field, module_scalar_input &Result,
+   std::string &ErrorMsg)
+{
+   resolve_index(Lua, Index);
+   auto type = lua_type(Lua, Index);
+   if ((type > LUA_TNIL) and (type != LUA_TNUMBER)) {
+      auto string = lua_tostring(Lua, Index);
+      ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", Index, Field.Name,
+         lua_typename(Lua, type), string ? string : "");
+      return ERR::InvalidType;
+   }
+   if (Field.Type & FD_INT) {
+      auto value = (type <= LUA_TNIL) ? 0 : lua_tointeger(Lua, Index);
+      if (Field.Type & FD_UNSIGNED) Result.Unsigned = uint32_t(value);
+      else Result.Int = int(value);
+   }
+   else if (Field.Type & FD_DOUBLE) Result.Double = (type <= LUA_TNIL) ? 0.0 : lua_tonumber(Lua, Index);
+   else Result.Int64 = (type <= LUA_TNIL) ? 0 : lua_tointeger(Lua, Index);
+   return ERR::Okay;
+}
+
+static ERR call_simple_module(lua_State *Lua, const ModuleCallable &Callable, std::string &ErrorMsg, int &Results)
+{
+   module_scalar_input inputs[4];
+   for (unsigned index = 0; index < Callable.Cif.nargs; ++index) {
+      if (auto error = read_module_number(Lua, int(index + 1), Callable.Fields[index + 1], inputs[index], ErrorMsg);
+          error != ERR::Okay) return error;
+   }
+   module_scalar_result result = { };
+   Callable.SimpleCall(Callable.Address, result, inputs);
+   Results = (Callable.Cif.rtype IS &ffi_type_void) ? 0 : 1;
+   return push_module_scalar(Lua, Callable, result, ErrorMsg);
+}
+
 static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results)
 {
    kt::Log log("module_call");
+
+   auto tiri = Lua->script;
+   if (not tiri) return ERR::ObjectCorrupt;
+
+   auto value_string = [](lua_State *Lua, int Index) -> CSTRING {
+      if (auto string = lua_tostring(Lua, Index)) return string;
+      else return "";
+   };
+
+   // One light-userdata upvalue holds the process-wide callable record, which carries the native address, the argument
+   // metadata and the libffi call interface that was prepared when the module was resolved.
+
+   auto callable = (ModuleCallable *)lua_touserdata(Lua, lua_upvalueindex(1));
+   if (not callable) {
+      ErrorMsg = "module_call() expected a callable record in its upvalue.";
+      return ERR::Args;
+   }
+
+   // Signature problems are detected during preparation and reported here, so that an unsupported function fails
+   // consistently whether it is called directly or through an extracted callable.
+   if (not callable->valid()) {
+      ErrorMsg = "Function not compatible with Tiri";
+      return ERR::NoSupport;
+   }
+
+   // The script and native argument limits are one contract: the marshaller reads script index i for signature
+   // argument i, so a value beyond MAX_MODULE_ARGS could never be marshalled.  Previously this clamped a local that
+   // nothing else consumed, which silently discarded the diagnostic; the surplus is now rejected outright.
+
+   int nargs = lua_gettop(Lua);
+   if (nargs > MAX_MODULE_ARGS) {
+      ErrorMsg = std::format("Function '{}' received {} arguments, exceeding the limit of {}.",
+         callable->Name, nargs, MAX_MODULE_ARGS);
+      return ERR::Args;
+   }
+
+   log.trace("%s() Args: %d", callable->Name, nargs);
+
+   if (callable->trivial()) {
+      auto function = (void (*)(void))callable->Address;
+      function();
+      return ERR::Okay;
+   }
+
+   if (callable->ZeroArg != zero_arg_call::Bridge) {
+      return call_zero_arg(Lua, *callable, ErrorMsg, Results);
+   }
+
+   if (callable->SimpleCall) {
+      return call_simple_module(Lua, *callable, ErrorMsg, Results);
+   }
 
    uint8_t buffer[BUFFER_SIZE]; // 16 bytes per argument accommodates output metadata such as sizes.
    int i;
@@ -1297,50 +1549,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
    };
 
-   auto tiri = Lua->script;
-   if (not tiri) return ERR::ObjectCorrupt;
-
-   auto value_string = [](lua_State *Lua, int Index) -> CSTRING {
-      if (auto string = lua_tostring(Lua, Index)) return string;
-      else return "";
-   };
-
-   // One light-userdata upvalue holds the process-wide callable record, which carries the native address, the argument
-   // metadata and the libffi call interface that was prepared when the module was resolved.
-
-   auto callable = (ModuleCallable *)lua_touserdata(Lua, lua_upvalueindex(1));
-   if (not callable) {
-      ErrorMsg = "module_call() expected a callable record in its upvalue.";
-      return ERR::Args;
-   }
-
-   // Signature problems are detected during preparation and reported here, so that an unsupported function fails
-   // consistently whether it is called directly or through an extracted callable.
-   if (not callable->valid()) {
-      ErrorMsg = "Function not compatible with Tiri";
-      return ERR::NoSupport;
-   }
-
-   // The script and native argument limits are one contract: the marshaller reads script index i for signature
-   // argument i, so a value beyond MAX_MODULE_ARGS could never be marshalled.  Previously this clamped a local that
-   // nothing else consumed, which silently discarded the diagnostic; the surplus is now rejected outright.
-
-   int nargs = lua_gettop(Lua);
-   if (nargs > MAX_MODULE_ARGS) {
-      ErrorMsg = std::format("Function '{}' received {} arguments, exceeding the limit of {}.",
-         callable->Name, nargs, MAX_MODULE_ARGS);
-      return ERR::Args;
-   }
-
    uint8_t *end = buffer + sizeof(buffer);
-
-   log.trace("%s() Args: %d", callable->Name, nargs);
-
-   if (callable->trivial()) {
-      auto function = (void (*)(void))callable->Address;
-      function();
-      return ERR::Okay;
-   }
 
    const FunctionField *args = callable->Fields;
    APTR function = callable->Address;
@@ -1359,11 +1568,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
    } func_guard{ Lua, func };
 
-   union {
-      ffi_arg Arg;
-      double  Double;
-      int64_t Int64;
-   } rc = { };
+   module_scalar_result rc = { };
    void * arg_values[MAX_MODULE_ARGS];
    int in = 0;
 
@@ -1755,60 +1960,38 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             return ERR::InvalidType;
          }
       }
-      else if (argtype & FD_INT) {
+      else if ((argtype & FD_INT) and (argtype & FD_OBJECT)) {
          auto tv = resolve_index(Lua, i);
-
-         if (argtype & FD_OBJECT) {
-            if (tvisobject(tv)) ((int *)(buffer + j))[0] = objectV(tv)->uid;
-            else if (lua_type(Lua, i) <= LUA_TNIL) ((int *)(buffer + j))[0] = 0;
-            else if (lua_type(Lua, i) IS LUA_TNUMBER) ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
-            else {
-               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected object or number, got {} '{}'.", i,
-                  args[i].Name, lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
-               return ERR::InvalidType;
-            }
-         }
+         if (tvisobject(tv)) ((int *)(buffer + j))[0] = objectV(tv)->uid;
+         else if (lua_type(Lua, i) <= LUA_TNIL) ((int *)(buffer + j))[0] = 0;
+         else if (lua_type(Lua, i) IS LUA_TNUMBER) ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
          else {
-            if (lua_type(Lua, i) <= LUA_TNIL) {
-               ((int *)(buffer + j))[0] = 0;
-            }
-            else if (lua_type(Lua, i) != LUA_TNUMBER) {
-               ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
-                  lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
-               return ERR::InvalidType;
-            }
-            else if (argtype & FD_UNSIGNED) ((uint32_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
-            else ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
+            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected object or number, got {} '{}'.", i,
+               args[i].Name, lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
+            return ERR::InvalidType;
          }
-         arg_values[in] = buffer + j;
-         in++;
+         arg_values[in++] = buffer + j;
          j += sizeof(int);
       }
-      else if (argtype & FD_DOUBLE) {
-         resolve_index(Lua, i); // Resolve thunks so a number-yielding thunk is accepted by the strict check.
-         if (lua_type(Lua, i) <= LUA_TNIL) ((double *)(buffer + j))[0] = 0.0;
-         else if (lua_type(Lua, i) != LUA_TNUMBER) {
-            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
-               lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
-            return ERR::InvalidType;
+      else if (argtype & (FD_INT|FD_DOUBLE|FD_INT64)) {
+         module_scalar_input value;
+         if (auto error = read_module_number(Lua, i, args[i], value, ErrorMsg); error != ERR::Okay) return error;
+         size_t size;
+         if (argtype & FD_INT) {
+            size = sizeof(int);
+            if (argtype & FD_UNSIGNED) copymem(&value.Unsigned, buffer + j, size);
+            else copymem(&value.Int, buffer + j, size);
          }
-         else ((double *)(buffer + j))[0] = lua_tonumber(Lua, i);
-         arg_values[in] = buffer + j;
-         in++;
-         j += sizeof(double);
-      }
-      else if (argtype & FD_INT64) {
-         resolve_index(Lua, i); // Resolve thunks so a number-yielding thunk is accepted by the strict check.
-         if (lua_type(Lua, i) <= LUA_TNIL) ((int64_t *)(buffer + j))[0] = 0;
-         else if (lua_type(Lua, i) != LUA_TNUMBER) {
-            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected number, got {} '{}'.", i, args[i].Name,
-               lua_typename(Lua, lua_type(Lua, i)), value_string(Lua, i));
-            return ERR::InvalidType;
+         else if (argtype & FD_DOUBLE) {
+            size = sizeof(double);
+            copymem(&value.Double, buffer + j, size);
          }
-         else ((int64_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
-         arg_values[in] = buffer + j;
-         in++;
-         j += sizeof(int64_t);
+         else {
+            size = sizeof(int64_t);
+            copymem(&value.Int64, buffer + j, size);
+         }
+         arg_values[in++] = buffer + j;
+         j += size;
       }
       else if (argtype & (FD_TAGS|FD_VARTAGS)) {
          ErrorMsg = "Functions using tags are not supported.";
@@ -1886,26 +2069,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             else lua_pushnil(Lua);
          }
       }
-      else if (restype & (FD_INT|FD_ERROR)) {
-         if (restype & FD_UNSIGNED) {
-            lua_pushnumber(Lua, (uint32_t)rc.Arg);
-         }
-         else {
-            lua_pushinteger(Lua, (int)rc.Arg);
-            if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and
-                in_checkall_immediate_scope(Lua)) {
-               // Scope isolation: Only throw exceptions for direct calls within the try block.
-               auto error = ERR(rc.Arg);
-               ErrorMsg = std::format("{}() failed: {}", callable->Name, GetErrorMsg(error));
-               return error;
-            }
-         }
-      }
-      else if (restype & FD_DOUBLE) {
-         lua_pushnumber(Lua, rc.Double);
-      }
-      else if (restype & FD_INT64) {
-         lua_pushnumber(Lua, rc.Int64);
+      else if (auto error = push_module_scalar(Lua, *callable, rc, ErrorMsg); error != ERR::Okay) {
+         return error;
       }
       // Void functions don't push anything to the stack
    }
@@ -2112,6 +2277,119 @@ std::string test_module_string_view_call(lua_State *Lua, APTR Address, std::span
       return std::format("Synthetic call of arity {} failed: {}", count, message);
    }
    lua_settop(Lua, base);
+   return { };
+}
+
+// A stack-owned synthetic record lives until the script finishes; no published callable is mutated.
+
+static std::string run_synthetic_scalar(lua_State *Lua, ModuleCallable &Callable, CSTRING Source)
+{
+   int base = lua_gettop(Lua);
+   lua_pushlightuserdata(Lua, &Callable);
+   lua_pushcclosure(Lua, module_call, 1);
+   lua_setglobal(Lua, "syntheticZero");
+   std::string failure;
+   if (lua_load(Lua, std::string_view(Source), "synthetic_zero") or lua_pcall(Lua, 0, 0, 0)) {
+      failure = lua_tostring(Lua, -1) ? lua_tostring(Lua, -1) : "Unknown synthetic call failure.";
+   }
+   lua_settop(Lua, base);
+   if (failure.empty()) {
+      // Inspect the actual C closure result count, so a void call returning one nil cannot pass unnoticed.
+      lua_getglobal(Lua, "syntheticZero");
+      if (lua_pcall(Lua, 0, LUA_MULTRET, 0)) failure = "Result arity probe failed.";
+      else if (lua_gettop(Lua) - base != ((Callable.Cif.rtype IS &ffi_type_void) ? 0 : 1)) {
+         failure = "Incorrect scalar result arity.";
+      }
+      lua_settop(Lua, base);
+   }
+   lua_pushnil(Lua);
+   lua_setglobal(Lua, "syntheticZero");
+   return failure;
+}
+
+std::string test_module_zero_call(lua_State *Lua, APTR Address, uint32_t Type, bool ForceBridge, CSTRING Source)
+{
+   FunctionField fields[] = { { "Result", Type }, { nullptr, 0 } };
+   ModuleCallable callable;
+   callable.Name = "SyntheticZero";
+   callable.Address = Address;
+   callable.Fields = fields;
+   if (ffi_prep_cif(&callable.Cif, FFI_DEFAULT_ABI, 0, callable_return_type(Type), callable.ArgTypes) != FFI_OK) {
+      return "Failed to prepare the synthetic zero-argument CIF.";
+   }
+   if (not ForceBridge) callable.ZeroArg = classify_zero_arg(callable);
+
+   return run_synthetic_scalar(Lua, callable, Source);
+}
+
+std::string test_module_simple_call(lua_State *Lua, APTR Address, uint32_t Type,
+   std::span<const uint32_t> Inputs, bool ForceBridge, bool Eligible, CSTRING Source)
+{
+   if (Inputs.size() > MAX_MODULE_ARGS) return "Synthetic signature exceeds the argument limit.";
+   std::vector<FunctionField> fields;
+   std::vector<std::string> names;
+   names.reserve(Inputs.size());
+   fields.push_back({ "Result", Type });
+   for (size_t index = 0; index < Inputs.size(); ++index) {
+      names.push_back(std::format("Arg{}", index + 1));
+      fields.push_back({ names.back().c_str(), Inputs[index] });
+   }
+   fields.push_back({ nullptr, 0 });
+   ModuleCallable callable;
+   callable.Name = "SyntheticZero";
+   callable.Address = Address;
+   callable.Fields = fields.data();
+   for (size_t index = 0; index < Inputs.size(); ++index) {
+      std::string error;
+      if (callable_arg_type(fields[index + 1], callable.ArgTypes[index], error) != ERR::Okay) return error;
+   }
+   if (ffi_prep_cif(&callable.Cif, FFI_DEFAULT_ABI, unsigned(Inputs.size()), callable_return_type(Type),
+       callable.ArgTypes) != FFI_OK) return "Failed to prepare synthetic numeric CIF.";
+   auto specialised = classify_simple_call(callable);
+   if (bool(specialised) != Eligible) return "Incorrect simple signature eligibility.";
+   if (not ForceBridge) callable.SimpleCall = specialised;
+   return run_synthetic_scalar(Lua, callable, Source);
+}
+
+std::string test_module_zero_eligibility()
+{
+   FunctionField fields[] = { { "Result", FD_INT }, { nullptr, 0 } };
+   ModuleCallable callable;
+   callable.Fields = fields;
+   // Every bit outside each exact allowlist must fall back, even if the bridge interprets it as a scalar.
+   const uint32_t allowed[] = { FD_VOID, FD_INT, FD_INT|FD_UNSIGNED, FD_ERROR, FD_INT64, FD_DOUBLE };
+   for (uint32_t type : allowed) {
+      fields[0].Type = type;
+      if (classify_zero_arg(callable) IS zero_arg_call::Bridge) return "Eligible scalar was rejected.";
+      for (unsigned bit = 0; bit < 32; ++bit) {
+         uint32_t modified = type | (uint32_t(1) << bit);
+         if (std::find(std::begin(allowed), std::end(allowed), modified) != std::end(allowed)) continue;
+         fields[0].Type = modified;
+         if (classify_zero_arg(callable) != zero_arg_call::Bridge) return "Unsupported modifier was specialised.";
+      }
+   }
+   fields[0].Type = FD_INT;
+   callable.Cif.nargs = 1;
+   if (classify_zero_arg(callable) != zero_arg_call::Bridge) return "Native input was specialised.";
+   callable.Cif.nargs = 0;
+   fields[1].Name = "Input";
+   if (classify_zero_arg(callable) != zero_arg_call::Bridge) return "Metadata input was specialised.";
+   callable.Fields = nullptr;
+   if (classify_zero_arg(callable) != zero_arg_call::Bridge) return "Null metadata lost its separate path.";
+
+   FunctionField numeric[] = { { "Result", FD_DOUBLE }, { "Arg1", FD_INT }, { nullptr, 0 } };
+   callable.Fields = numeric;
+   callable.Cif.nargs = 1;
+   for (uint32_t type : { uint32_t(FD_INT), uint32_t(FD_INT64), uint32_t(FD_DOUBLE) }) {
+      numeric[1].Type = type;
+      if (not classify_simple_call(callable)) return "Simple numeric input was rejected.";
+      for (unsigned bit = 0; bit < 32; ++bit) {
+         uint32_t modified = type | (uint32_t(1) << bit);
+         if (modified IS type) continue;
+         numeric[1].Type = modified;
+         if (classify_simple_call(callable)) return "Modified numeric input was specialised.";
+      }
+   }
    return { };
 }
 
