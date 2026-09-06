@@ -93,9 +93,6 @@ LJ_ASMF double lj_vm_log2(double);
 #define lj_vm_log2   cmath_log2
 #endif
 LJ_ASMF int32_t lj_vm_modi(int32_t, int32_t);
-#if LJ_TARGET_X64
-LJ_ASMF double lj_vm_fmod(double, double);
-#endif
 
 #if LJ_HASJIT
 #if LJ_TARGET_X86ORX64

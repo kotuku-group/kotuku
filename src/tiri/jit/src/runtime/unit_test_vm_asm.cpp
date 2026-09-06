@@ -763,48 +763,6 @@ static bool test_trunc_register_preservation(kt::Log& Log)
 #endif // LJ_HASJIT
 
 //********************************************************************************************************************
-// lj_vm_fmod tests (x64 internal floating-point remainder helper)
-
-#if LJ_TARGET_X64
-
-static bool test_fmod_reference_corpus(kt::Log& Log)
-{
-   struct RemainderCase {
-      double dividend;
-      double divisor;
-   };
-
-   const double denormal = (std::numeric_limits<double>::denorm_min)();
-   const double infinity = (std::numeric_limits<double>::infinity)();
-   const double nan = (std::numeric_limits<double>::quiet_NaN)();
-   const std::array<RemainderCase, 21> cases = { {
-      { 17.0, 5.0 }, { -17.0, 5.0 }, { 17.0, -5.0 }, { -17.0, -5.0 },
-      { 5.5, 2.0 }, { -5.5, 2.0 }, { 4.5, 1.5 }, { -4.5, 1.5 },
-      { 0.0, 3.0 }, { -0.0, 3.0 }, { 1.0, infinity }, { -1.0, infinity },
-      { infinity, 1.0 }, { 1.0, 0.0 }, { nan, 1.0 }, { denormal * 3.0, denormal * 2.0 },
-      { (std::numeric_limits<double>::max)(), 3.0 },
-      { (std::numeric_limits<double>::min)(), denormal },
-      { std::nextafter(6.0, infinity), 3.0 }, { std::nextafter(6.0, 0.0), 3.0 },
-      { -(std::numeric_limits<double>::max)(), 7.0 },
-   } };
-
-   for (const auto &remainder_case : cases) {
-      double expected = std::fmod(remainder_case.dividend, remainder_case.divisor);
-      double result = lj_vm_fmod(remainder_case.dividend, remainder_case.divisor);
-      if (!doubles_equal(result, expected)) {
-         char result_text[32], expected_text[32];
-         Log.error("fmod(%.17g, %.17g) = %s, expected %s", remainder_case.dividend, remainder_case.divisor,
-            format_double(result, result_text, sizeof(result_text)),
-            format_double(expected, expected_text, sizeof(expected_text)));
-         return false;
-      }
-   }
-   return true;
-}
-
-#endif // LJ_TARGET_X64
-
-//********************************************************************************************************************
 // lj_vm_modi tests (integer remainder with truncation towards zero)
 
 #if LJ_HASJIT && !(LJ_TARGET_ARM || LJ_TARGET_ARM64 || LJ_TARGET_PPC)
@@ -1838,7 +1796,7 @@ static bool test_asm_string_sub_start_underflow(kt::Log& Log)
 extern void vm_asm_unit_tests(int &Passed, int &Total)
 {
 #if LJ_TARGET_X86ORX64
-   constexpr std::array<TestCase, 23 + LJ_TARGET_X64> Tests = { {
+   constexpr std::array<TestCase, 23> Tests = { {
       // lj_vm_floor tests
       { "floor_positive_fraction", test_floor_positive_fraction },
       { "floor_negative_fraction", test_floor_negative_fraction },
@@ -1865,11 +1823,6 @@ extern void vm_asm_unit_tests(int &Passed, int &Total)
       { "trunc_negative_fraction", test_trunc_negative_fraction },
       { "trunc_negative_zero", test_trunc_negative_zero },
       { "trunc_register_preservation", test_trunc_register_preservation },
-#endif
-
-#if LJ_TARGET_X64
-      // lj_vm_fmod tests
-      { "fmod_reference_corpus", test_fmod_reference_corpus },
 #endif
 
       // lj_vm_cpuid tests

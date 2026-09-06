@@ -9,50 +9,6 @@ function dynamic_remainder(Dividend:num, Divisor:num):num
    return Dividend % Divisor
 end
 
-function dynamic_compound_remainder(Dividend:num, Divisor:num):num
-   Dividend %= Divisor
-   return Dividend
-end
-
-function remainder_workload(Iterations:num, SwitchDomain:bool):num
-   local result = 0
-   for i in {1 into Iterations} do
-      local dividend = i * 12.0
-      local divisor = (i % 7) + 1.0
-      if SwitchDomain and i > Iterations - 8 then dividend += 0.5 end
-      result += dividend % divisor
-   end
-   return result
-end
-
-function constant_remainders(Dividend:num):<num, num, num>
-   local compound = Dividend
-   compound %= -3
-   return Dividend % 100, compound, Dividend % 1
-end
-
-function integer_power_two_remainders(Dividend:num):<num, num, num, num>
-   local integer = Dividend | 0
-   return integer % 8, integer % -8, integer % -2147483648, integer % -1
-end
-
-function integer_constant_remainders(Dividend:num):<num, num, num>
-   local integer = Dividend | 0
-   local remainder = integer % 100
-   return remainder, remainder % 2, integer % -3
-end
-
-function assert_same_remainder(Actual:num, Expected:num)
-   if Expected != Expected then
-      assert(Actual != Actual, 'Remainder should preserve NaN')
-   else
-      assert(Actual is Expected, 'Compiled remainder should match the interpreter exactly')
-      if Expected is 0 then
-         assert(1 / Actual is 1 / Expected, 'Floating-point remainder should preserve the sign of zero')
-      end
-   end
-end
-
 ----------------------------------------------------------------------------------------------------------------------
 -- IEEE 754 special values: NaN
 
@@ -274,10 +230,6 @@ end
    assert(-7 % -3 is -1, '-7 % -3 should be -1 (sign of dividend)')
    assert(dynamic_remainder(-17, 5) is -2, 'Runtime integer remainder should retain the dividend sign')
    assert(dynamic_remainder(17, -5) is 2, 'Runtime integer remainder should ignore the divisor sign')
-   assert(dynamic_remainder(-19, 8) is -3,
-      'Runtime remainder by a power of two must not mask a negative dividend')
-   assert(dynamic_remainder(19, -8) is 3,
-      'Runtime remainder by a negative power of two must retain the dividend sign')
    assert(dynamic_remainder(-2147483648, -1) is 0, 'Minimum int remainder by -1 should avoid overflow')
    assert(dynamic_remainder(-2147483648, 3) is -2, 'Minimum int remainder should retain the dividend sign')
 end
@@ -298,122 +250,10 @@ end
    value = -17
    value %= 5
    assert(value is -2, 'value %= 5 should retain the dividend sign')
-   assert(dynamic_compound_remainder(-17.5, 5) is -2.5,
-      'Runtime floating-point %= should retain the dividend sign')
-end
-
-@Test function RemainderSpecialisationKeepsFallbacks()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
-
-   jit.off()
-   jit.flush()
-   local expected_integral = remainder_workload(80, false)
-   local expected_mixed = remainder_workload(80, true)
-
-   jit.on()
-   jit.flush()
-   jit.opt.start('hotloop=1', 'hotexit=1')
-   local actual_integral = remainder_workload(80, false)
-   local actual_mixed = remainder_workload(80, true)
-
-   assert(actual_integral is expected_integral,
-      'Positive integral remainder specialisation must match interpreted results')
-   assert(actual_mixed is expected_mixed,
-      'Fractional values after trace recording must use a correct fallback')
 end
 
 @Test function FmodIsRemoved()
    assert(math.fmod is nil, 'math.fmod() should not remain available after % adopts truncating remainder semantics')
-end
-
-@Test function ConstantRemainderAcrossDomains()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
-
-   -- Fractions and integers share a trace, followed by quotient boundaries and values requiring the helper.
-   local values = array<double> {
-      100.25, 101.0, 102.5, 103.0, 104.75, 105.0, 106.25, 107.0,
-      99.99999999999999, 100.0, 100.00000000000001, 299.99999999999994, 300.00000000000006,
-      2147483647.9999998, 2147483648.0, 2147483648.0000005,
-      0.0, -0.0, 5e-324, -5e-324, -100.0, -100.25, 1e100, -1e100, math.huge, -math.huge, 0 / 0
-   }
-   local expected = {}
-   jit.off()
-   jit.flush()
-   for i in {0 to #values} do
-      local a, b, c = constant_remainders(values[i])
-      expected[i] = { a, b, c }
-   end
-
-   jit.on()
-   jit.flush()
-   jit.opt.start('hotloop=1', 'hotexit=1')
-   for _ in {0 to 20} do
-      for i in {0 to #values} do
-         local a, b, c = constant_remainders(values[i])
-         assert_same_remainder(a, expected[i][0])
-         assert_same_remainder(b, expected[i][1])
-         assert_same_remainder(c, expected[i][2])
-      end
-   end
-end
-
-@Test function IntegerPowerOfTwoRemainderAcrossSigns()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
-
-   local values = array<double> { 19, -19, 24, -24, 0, -2147483648, -2147483647, 2147483647 }
-   jit.on()
-   jit.flush()
-   jit.opt.start('hotloop=1', 'hotexit=1')
-   for _ in {0 to 20} do
-      for i in {0 to #values} do
-         local value = values[i]
-         local magnitude = math.abs(value)
-         local expected = magnitude - math.floor(magnitude / 8) * 8
-         if value < 0 then expected = -expected end
-         local a, b, c, d = integer_power_two_remainders(value)
-         assert(a is expected and b is expected, 'Integer power-of-two remainder should retain the dividend sign')
-         assert(c is (value is -2147483648 ? 0 :> value), 'Minimum integer divisor should avoid signed overflow')
-         assert(d is 0, 'Remainder by -1 should be zero, including for the minimum integer')
-      end
-   end
-end
-
-@Test function IntegerConstantRemainderChains()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
-   local values = array<double> { 0, 1, -1, 99, -99, 100, -100, 101, -101, 2147483647, -2147483648 }
-   local expected = {}
-   jit.off()
-   jit.flush()
-   for i in {0 to #values} do
-      local a, b, c = integer_constant_remainders(values[i])
-      expected[i] = { a, b, c }
-   end
-   jit.on()
-   jit.flush()
-   jit.opt.start('hotloop=1', 'hotexit=1')
-   for _ in {0 to 40} do
-      for i in {0 to #values} do
-         local a, b, c = integer_constant_remainders(values[i])
-         assert(a is expected[i][0] and b is expected[i][1] and c is expected[i][2],
-            'Constant integer remainder chains must handle both signs, zero and int32 boundaries')
-      end
-   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

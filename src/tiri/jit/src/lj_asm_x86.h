@@ -572,13 +572,6 @@ static void asm_setupresult(ASMState* as, IRIns* ir, const CCallInfo* ci)
    int hiop = ((ir + 1)->o == IR_HIOP and !irt_isnil((ir + 1)->t));
    if ((ci->flags & CCI_NOFPRCLOBBER))
       drop &= ~RSET_FPR;
-#if LJ_TARGET_X64
-   else if (ci IS &lj_ir_callinfo[IRCALL_lj_vm_fmod]) {
-      // The internal helper preserves all FPRs except its xmm0/xmm1 argument and result registers.
-      drop &= ~RSET_FPR;
-      drop |= RID2RSET(RID_XMM0) | RID2RSET(RID_XMM1);
-   }
-#endif
    if (ra_hasreg(ir->r))
       rset_clear(drop, ir->r);  /* Dest reg handled below. */
    if (hiop and ra_hasreg((ir + 1)->r))
