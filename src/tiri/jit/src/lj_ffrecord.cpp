@@ -1284,19 +1284,23 @@ static void recff_math_call(jit_State* J, RecordFFData* rd)
 static void recff_math_minmax(jit_State* J, RecordFFData* rd)
 {
    TRef tr = lj_ir_tonumber(J, J->base[0]);
+   bool accumulator_non_nan = tref_isinteger(tr);
    uint32_t op = rd->data;
    BCREG i;
    for (i = 1; J->base[i] != 0; i++) {
       TRef tr2 = lj_ir_tonumber(J, J->base[i]);
+      bool operand_non_nan = tref_isinteger(tr2);
       IRType t = IRT_INT;
       if (!(tref_isinteger(tr) and tref_isinteger(tr2))) {
          if (tref_isinteger(tr)) tr = emitir(IRTN(IR_CONV), tr, IRCONV_NUM_INT);
          if (tref_isinteger(tr2)) tr2 = emitir(IRTN(IR_CONV), tr2, IRCONV_NUM_INT);
          t = IRT_NUM;
-         emitir(IRTG(IR_EQ, IRT_NUM), tr, tr);
-         emitir(IRTG(IR_EQ, IRT_NUM), tr2, tr2);
+         if (!accumulator_non_nan) emitir(IRTG(IR_EQ, IRT_NUM), tr, tr);
+         if (!operand_non_nan) emitir(IRTG(IR_EQ, IRT_NUM), tr2, tr2);
       }
       tr = emitir(IRT(op, t), tr, tr2);
+      // Selecting either of two non-NaN operands cannot introduce NaN.  Do not guard each intermediate reduction.
+      accumulator_non_nan = true;
    }
    J->base[0] = tr;
 }

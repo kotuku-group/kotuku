@@ -2751,6 +2751,25 @@ static void build_subroutines(BuildCtx *ctx)
   |  vm_round vm_ceil,  1, JIT
   |  vm_round vm_trunc, 2, JIT
   |
+  |// Floating-point truncating remainder.  Called by BC_MOD* and JIT traces.
+  |// Args in xmm0/xmm1, return value in xmm0. Caveat: eax modified; x87 stack balanced.
+  |->vm_fmod:
+  |  sub rsp, 16
+  |  movsd qword [rsp], xmm1
+  |  fld qword [rsp]
+  |  movsd qword [rsp+8], xmm0
+  |  fld qword [rsp+8]
+  |1:
+  |  fprem
+  |  fnstsw ax
+  |  test ah, 4               // C2 is set while FPREM has only produced a partial remainder.
+  |  jnz <1
+  |  fstp qword [rsp]
+  |  fpop
+  |  movsd xmm0, qword [rsp]
+  |  add rsp, 16
+  |  ret
+  |
   |//-----------------------------------------------------------------------
   |//-- Miscellaneous functions --------------------------------------------
   |//-----------------------------------------------------------------------
@@ -3669,10 +3688,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_MODVN:
     |  ins_arithpre movsd, xmm1
     |->BC_MODVN_Z:
-    |  mov RB, BASE
-    |  call extern fmod
-    |  mov BASE, RB
-    |  movzx RAd, PC_RA
+    |  call ->vm_fmod
     |  ins_arithpost
     |  ins_next
     break;

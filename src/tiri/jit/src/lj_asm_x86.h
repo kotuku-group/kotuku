@@ -572,6 +572,13 @@ static void asm_setupresult(ASMState* as, IRIns* ir, const CCallInfo* ci)
    int hiop = ((ir + 1)->o == IR_HIOP and !irt_isnil((ir + 1)->t));
    if ((ci->flags & CCI_NOFPRCLOBBER))
       drop &= ~RSET_FPR;
+#if LJ_TARGET_X64
+   else if (ci IS &lj_ir_callinfo[IRCALL_lj_vm_fmod]) {
+      // The internal helper preserves all FPRs except its xmm0/xmm1 argument and result registers.
+      drop &= ~RSET_FPR;
+      drop |= RID2RSET(RID_XMM0) | RID2RSET(RID_XMM1);
+   }
+#endif
    if (ra_hasreg(ir->r))
       rset_clear(drop, ir->r);  /* Dest reg handled below. */
    if (hiop and ra_hasreg((ir + 1)->r))
@@ -1744,9 +1751,40 @@ static void asm_intmin_max(ASMState* as, IRIns* ir, int cc)
    ra_left(as, dest, lref);
 }
 
+// ABS cannot produce negative zero.  SSE selects its right operand on equal inputs, so put ABS on the right
+// for MAX and on the left for MIN.  NaN guards are emitted by the recorder as for the general extrema path.
+static bool asm_minmax_abs(ASMState* As, IRIns* Ir, x86Op Op)
+{
+   IRRef left_ref = Ir->op1, right_ref = Ir->op2;
+   // A pre-loop PHI reference may receive another value on the backedge.  An ABS inside the loop is freshly
+   // evaluated, even when marked as the PHI's incoming value, and retains the required sign property.
+   bool left_abs = As->ir[left_ref].o IS IR_ABS and
+      (!irt_isphi(As->ir[left_ref].t) or (As->loopref and left_ref > As->loopref));
+   bool right_abs = As->ir[right_ref].o IS IR_ABS and
+      (!irt_isphi(As->ir[right_ref].t) or (As->loopref and right_ref > As->loopref));
+   if (!left_abs and !right_abs) return false;
+   if ((Op IS XO_MINSD and !left_abs) or (Op IS XO_MAXSD and !right_abs)) {
+      IRRef saved = left_ref;
+      left_ref = right_ref;
+      right_ref = saved;
+   }
+   RegSet allow = RSET_FPR;
+   Reg right = As->ir[right_ref].r;
+   if (ra_hasreg(right)) {
+      rset_clear(allow, right);
+      ra_noweak(As, right);
+   }
+   Reg dest = ra_dest(As, Ir, allow);
+   right = ra_alloc1(As, right_ref, rset_exclude(RSET_FPR, dest));
+   emit_rr(As, Op, dest, right);
+   ra_left(As, dest, left_ref);
+   return true;
+}
+
 static void asm_min(ASMState* as, IRIns* ir)
 {
    if (irt_isnum(ir->t)) {
+      if (asm_minmax_abs(as, ir, XO_MINSD)) return;
       RegSet allow = RSET_FPR;
       Reg right = IR(ir->op2)->r;
       if (ra_hasreg(right)) {
@@ -1768,6 +1806,7 @@ static void asm_min(ASMState* as, IRIns* ir)
 static void asm_max(ASMState* as, IRIns* ir)
 {
    if (irt_isnum(ir->t)) {
+      if (asm_minmax_abs(as, ir, XO_MAXSD)) return;
       RegSet allow = RSET_FPR;
       Reg right = IR(ir->op2)->r;
       if (ra_hasreg(right)) {
@@ -1918,7 +1957,10 @@ static void asm_comp(ASMState* as, IRIns* ir)
 
       left = ra_alloc1(as, lref, RSET_FPR);
       l_around = emit_label(as);
-      asm_guardcc(as, cc >> 4);
+      // A self-comparison only detects NaN.  UCOMISD leaves ZF set for equal and for unordered operands alike, so the
+      // equality branch can never be taken and the parity branch alone implements the guard.
+      bool nan_check = ir->o IS IR_EQ and lref IS rref;
+      if (!nan_check) asm_guardcc(as, cc >> 4);
       if (cc & VCC_P) {  // Extra CC_P branch required?
          if (!(cc & VCC_U)) {
             asm_guardcc(as, CC_P);  /* Branch to exit for ordered comparisons. */

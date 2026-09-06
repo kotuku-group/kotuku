@@ -2191,9 +2191,20 @@ static void asm_setup_regsp(ASMState* as)
       case IR_CALLN: case IR_CALLA: case IR_CALLS: {
          const CCallInfo* ci = &lj_ir_callinfo[ir->op2];
          ir->prev = asm_setup_call_slots(as, ir, ci);
-         if (inloop)
-            as->modset |= (ci->flags & CCI_NOFPRCLOBBER) ?
-            (RSET_SCRATCH & ~RSET_FPR) : RSET_SCRATCH;
+         if (inloop) {
+            if (ci->flags & CCI_NOFPRCLOBBER) {
+               as->modset |= RSET_SCRATCH & ~RSET_FPR;
+            }
+#if LJ_TARGET_X64
+            else if (ir->op2 IS IRCALL_lj_vm_fmod) {
+               as->modset |= (RSET_SCRATCH & ~RSET_FPR) |
+                  RID2RSET(RID_XMM0) | RID2RSET(RID_XMM1);
+            }
+#endif
+            else {
+               as->modset |= RSET_SCRATCH;
+            }
+         }
          continue;
       }
       case IR_HIOP:
