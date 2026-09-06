@@ -57,6 +57,12 @@ typedef struct CCallInfo {
 // Helpers for conditional function definitions.
 #define IRCALLCOND_ANY(x)      x
 
+#if LJ_TARGET_X64
+#define IRCALLCOND_X64(x)      x
+#else
+#define IRCALLCOND_X64(x)      NULL
+#endif
+
 #if LJ_TARGET_X86ORX64
 #define IRCALLCOND_FPMATH(x)      NULL
 #else
@@ -162,6 +168,7 @@ typedef struct CCallInfo {
   _(ANY,    lj_mem_newgco,         2,  FA, PGC, CCI_L|CCI_T) \
   _(ANY,    lj_prng_u64d,          1,  FS, NUM, CCI_CASTU64) \
   _(ANY,    lj_vm_modi,            2,  FN, INT, 0) \
+  _(X64,    lj_vm_fmod,            2,   N, NUM, XA2_FP) \
   _(ANY,    lj_vm_min,             2,   N, NUM, XA2_FP) \
   _(ANY,    lj_vm_max,             2,   N, NUM, XA2_FP) \
   _(ANY,    cmath_log10,           1,   N, NUM, XA_FP) \
