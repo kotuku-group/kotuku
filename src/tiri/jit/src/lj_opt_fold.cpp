@@ -217,6 +217,9 @@ LJFOLDF(kfold_fpcall1)
 
 LJFOLD(CALLN CARG IRCALL_cmath_atan2)
 LJFOLD(CALLN CARG IRCALL_cmath_fmod)
+#if LJ_TARGET_X64
+LJFOLD(CALLN CARG IRCALL_lj_vm_fmod)
+#endif
 LJFOLDF(kfold_fpcall2)
 {
    if (irref_isk(fleft->op1) and irref_isk(fleft->op2)) {
@@ -1388,14 +1391,42 @@ LJFOLDF(simplify_intmul_k64)
 LJFOLD(MOD any KINT)
 LJFOLDF(simplify_intmod_k)
 {
-   int32_t k = fright->i;
-   lj_assertJ(k != 0, "integer mod 0");
-   if (k > 0 and (k & (k - 1)) == 0) {  // i % (2^k) ==> i & (2^k-1)
-      fins->o = IR_BAND;
-      fins->op2 = lj_ir_kint(J, k - 1);
-      return RETRYFOLD;
+   if (!irt_isint(fins->t)) return NEXTFOLD;
+   int32_t divisor = fright->i;
+   lj_assertJ(divisor != 0, "integer mod 0");
+   uint32_t magnitude = divisor < 0 ? 0u - uint32_t(divisor) : uint32_t(divisor);
+   if (magnitude IS 1) return INTFOLD(0);
+   if ((magnitude & (magnitude - 1)) IS 0) {
+      IRRef dividend = fins->op1;
+      int32_t mask_value = int32_t(magnitude - 1);
+      IRRef lower_bound = J->scev.dir ? J->scev.start : J->scev.stop;
+      bool non_negative = dividend IS J->scev.idx and irt_isint(J->scev.t) and lower_bound and
+         IR(lower_bound)->o IS IR_KINT and IR(lower_bound)->i >= 0;
+      TRef mask = lj_ir_kint(J, mask_value);
+      if (non_negative) return emitir(IRTI(IR_BAND), dividend, mask);
+
+      // Bias negative dividends before masking, then remove the bias.  Integer IR wraps, including at INT32_MIN.
+      // Unlike an unconditional mask, this retains the dividend's sign without a helper call or a sign guard.
+      TRef sign = emitir(IRTI(IR_BSAR), dividend, lj_ir_kint(J, 31));
+      TRef bias = emitir(IRTI(IR_BAND), sign, mask);
+      TRef adjusted = emitir(IRTI(IR_ADD), dividend, bias);
+      TRef masked = emitir(IRTI(IR_BAND), adjusted, mask);
+      return emitir(IRTI(IR_SUB), masked, bias);
    }
+#if LJ_TARGET_X64
+   // A correctly rounded binary64 division of int32 operands cannot cross a non-integral quotient's integer
+   // boundary: its error is far smaller than 1 / magnitude.  Exact multiples divide exactly.  Magnitudes 1 and
+   // powers of two were handled above, so the truncated quotient fits int32 even for an INT32_MIN dividend.
+   // Keep the final result in integer IR so chained remainders and bit operations retain their cheap lowering.
+   IRRef dividend = fins->op1;
+   TRef number = emitir(IRTN(IR_CONV), dividend, IRCONV_NUM_INT);
+   TRef quotient = emitir(IRTN(IR_DIV), number, lj_ir_knum(J, lua_Number(magnitude)));
+   TRef truncated = emitir(IRTI(IR_CONV), quotient, IRCONV_INT_NUM | IRCONV_ANY);
+   TRef product = emitir(IRTI(IR_MUL), truncated, lj_ir_kint(J, int32_t(magnitude)));
+   return emitir(IRTI(IR_SUB), dividend, product);
+#else
    return NEXTFOLD;
+#endif
 }
 
 LJFOLD(MOD KINT any)

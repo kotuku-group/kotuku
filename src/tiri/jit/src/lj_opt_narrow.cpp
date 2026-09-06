@@ -561,21 +561,63 @@ TRef lj_opt_narrow_unm(jit_State* J, TRef rc, TValue* vc)
    return emitir(IRTN(IR_NEG), rc, lj_ir_ksimd(J, LJ_KSIMD_NEG));
 }
 
+#if LJ_TARGET_X64
+// Inline remainder for a constant integer divisor and a bounded positive dividend, including fractional dividends.
+static TRef narrow_mod_const(jit_State* J, TRef Dividend, TRef Divisor, lua_Number Value, lua_Number Modulus)
+{
+   if (!(J->flags & JIT_F_OPT_NARROW) or !(J->flags & JIT_F_SSE4_1) or !tref_isk(Divisor) or
+         !numisint(Modulus) or Modulus IS 0 or !(Value > 0 and Value <= 0x1p31)) return 0;
+
+   lua_Number modulus = Modulus < 0 ? -Modulus : Modulus;
+   lua_Number reciprocal = 1.0 / modulus;
+   lua_Number quotient = lj_vm_floor(Value * reciprocal);
+   lua_Number observed_remainder = Value - quotient * modulus;
+   if (!(observed_remainder >= 0 and observed_remainder < modulus)) return 0;
+
+   // With Value <= 2^31 and an integer modulus <= 2^31, the truncated reciprocal product is an integer whose
+   // product with the modulus is below 2^32 and therefore exact in binary64.  The result guards reject a quotient
+   // rounded across a multiple.  On the accepted interval, subtraction is exact by Sterbenz's lemma when the
+   // product is non-zero; subtracting zero is exact too.  Positivity excludes negative zero and retains its fallback.
+   TRef dividend = lj_ir_tonum(J, Dividend);
+   TRef divisor = lj_ir_knum(J, modulus);
+   TRef zero = lj_ir_knum_zero(J);
+   emitir(IRTG(IR_GT, IRT_NUM), dividend, zero);
+   emitir(IRTG(IR_LE, IRT_NUM), dividend, lj_ir_knum(J, 0x1p31));
+   TRef scaled = emitir(IRTN(IR_MUL), dividend, lj_ir_knum(J, reciprocal));
+   TRef truncated = emitir(IRTN(IR_FPMATH), scaled, IRFPM_TRUNC);
+   TRef product = emitir(IRTN(IR_MUL), truncated, divisor);
+   TRef remainder = emitir(IRTN(IR_SUB), dividend, product);
+   emitir(IRTG(IR_GE, IRT_NUM), remainder, zero);
+   emitir(IRTG(IR_LT, IRT_NUM), remainder, divisor);
+   return remainder;
+}
+#endif
+
 // Narrowing of remainder operator.
 TRef lj_opt_narrow_mod(jit_State* J, TRef rb, TRef rc, TValue* vb, TValue* vc)
 {
    rb = conv_str_tonum(J, rb, vb);
    rc = conv_str_tonum(J, rc, vc);
-   if ((LJ_DUALNUM or (J->flags & JIT_F_OPT_NARROW)) &&
-      tref_isinteger(rb) and tref_isinteger(rc) &&
+   if ((LJ_DUALNUM or (J->flags & JIT_F_OPT_NARROW)) and
+      tref_isinteger(rb) and tref_isinteger(rc) and
       (tvisint(vc) ? intV(vc) != 0 : !tviszero(vc))) {
       emitir(IRTGI(IR_NE), rc, lj_ir_kint(J, 0));
       return emitir(IRTI(IR_MOD), rb, rc);
    }
+
+#if LJ_TARGET_X64
+   TRef remainder = narrow_mod_const(J, rb, rc, numberVnum(vb), numberVnum(vc));
+   if (remainder) return remainder;
+#endif
+
    // Floating-point remainder follows fmod(): b - trunc(b/c)*c, with the sign of b.
    rb = lj_ir_tonum(J, rb);
    rc = lj_ir_tonum(J, rc);
+#if LJ_TARGET_X64
+   return lj_ir_call(J, IRCALL_lj_vm_fmod, rb, rc);
+#else
    return lj_ir_call(J, IRCALL_cmath_fmod, rb, rc);
+#endif
 }
 
 // Narrowing of power operator.
