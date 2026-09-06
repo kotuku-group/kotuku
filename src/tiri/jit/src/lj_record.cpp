@@ -1918,10 +1918,10 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       contextual_caller = caller_op IS BC_CTXCALL or caller_op IS BC_CTXCALLM;
    }
 
-   // A return-root trace has no CTXENTER metadata for a contextual caller below its root. Let the interpreter perform
-   // that return so it can restore the caller activation and compact the result slots before tracing resumes.
+   // A return-root trace has no entry metadata for a contextual activation below its root. Let the interpreter
+   // perform that return, including physical metamethod contexts entered through an ordinary CALL instruction.
    if (FRC::at_root_depth(J) and J->pt and bc_isret(bc_op(*J->pc)) and
-      (not frame_islua(frame) or contextual_caller or
+      (not frame_islua(frame) or contextual_caller or lj_context_has_call_jit(J->L, J->L->base) or
        (J->parent IS 0 and J->exitno IS 0 and !bc_isret(bc_op(J->cur.startins))))) {
       // NYI: specialise to frame type and return directly, not via RET*.
       slots.clear_range(0, rbase);  //  Purge dead slots.
@@ -1980,6 +1980,10 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
          IRBuilder ir(J);
          TRef trpt = lj_ir_kgc(J, obj2gco(pt), IRT_PROTO);
          TRef trpc = ir.kptr((void*)frame_pc(frame));
+         // The same return site can be reached by an ordinary function or by a table's __call handler. Guard
+         // traces recorded without a physical activation so reuse cannot bypass the interpreter's context leave.
+         TRef has_context = lj_ir_call(J, IRCALL_lj_context_has_call_jit, REF_BASE);
+         ir.guard_eq_int(has_context, ir.kint(0));
          ir.guard(IR_RETF, IRT_PGC, trpt, trpc);
          J->retdepth++;
          J->needsnap = 1;

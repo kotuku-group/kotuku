@@ -95,7 +95,7 @@ struct ModuleBinding;
 // Precomputed counts of the bridge-owned temporaries one signature can require.  Deriving these once per callable lets
 // the call bridge construct only the elements a signature actually uses, and lets preparation reject a signature whose
 // demands would exceed a bounded store instead of discovering the overflow mid-call.
-//
+
 struct marshalling_profile {
    uint8_t Strings = 0;         // Mutable std::string temporaries (FD_STR|FD_CPP with FD_MUTABLE or FD_RESULT)
    uint8_t StringViews = 0;     // std::string_view temporaries (FD_STR|FD_CPP, read-only)

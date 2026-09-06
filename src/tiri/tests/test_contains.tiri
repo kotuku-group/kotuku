@@ -43,7 +43,8 @@ function numeric_membership_call_address(Values:array<any>, Candidate:num):any
    local address:any
    for trace_no in {1 into 40} do
       local info = jit.util.traceInfo(trace_no)
-      if info is nil then continue end
+      -- Inspect the membership loop, excluding helper calls in return and exit traces.
+      if info is nil or info.linktype != 'loop' then continue end
 
       for instruction in {1 into info.nins} do
          local _, ir_ot, _, call_id = jit.util.traceIR(trace_no, instruction)
