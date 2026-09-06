@@ -69,6 +69,20 @@ end
    assert(resolved_err is ERR_Okay and #resolved > 0, 'mutable C++ string result')
 end
 
+-- Independent published CRC vector verifies borrowed pointer representations and unsigned results.
+@Test function ComplexBridgeInputsPreserveLengthsAndPointerValues()
+   local crc = mCore.GenCRC32
+   assert(crc(0, '123456789', 9) is 3421780262, 'IEEE CRC-32 known vector')
+   local bytes = array<byte> { 49, 50, 51, 52, 53, 54, 55, 56, 57 }
+   assert(crc(0, bytes, 9) is 3421780262, 'Native array pointer must match string storage')
+   assert(crc(0, nil, 0) is 0, 'Null empty pointer input')
+   local resolve = mCore.ResolveClassName
+   assert(resolve('Tiri') > 0, 'Known class must resolve')
+   assert(resolve('Tiri\0suffix') is 0, 'String view must preserve embedded NUL and suffix')
+   processing.collect()
+   assert(crc(0, bytes, 9) is 3421780262, 'Extracted pointer call survives collection')
+end
+
 -- A callback argument holds a Lua registry reference that the bridge hands to the module.  Preparing the call
 -- interface in advance must not disturb that ownership transfer.
 

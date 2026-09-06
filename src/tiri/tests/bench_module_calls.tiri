@@ -13,7 +13,7 @@ module core as mCore
 module display as mDisplay
 
 local ITERATIONS <const> = tonumber(arg('iterations', '100000'))
-local REPEATS <const> = tonumber(arg('repeats', '5'))
+local REPEATS <const> = tonumber(arg('repeats', '9'))
 local ACTIVATIONS <const> = tonumber(arg('activations', '200'))
 
 -- Report the median of a set of samples.  Medians are used throughout because they resist the occasional outlier
@@ -34,6 +34,7 @@ function measure(Name: str, Iterations: num, Workload: func)
    local samples = array<double>
    local sink = 0
 
+   sink += Workload(math.min(Iterations, 1000)) -- Untimed warm-up, with the result consumed.
    for _ in {0 to REPEATS} do
       local start = mCore.PreciseTime()
       sink += Workload(Iterations)
@@ -95,6 +96,28 @@ end
 function bench_string_view(Iterations: num): num
    local total = 0
    for _ in {0 to Iterations} do total += mCore.ResolveClassName('Tiri') end
+   return total
+end
+
+-- Extracted string view separates namespace access from bridge conversion.
+function bench_extracted_view(Iterations: num): num
+   local resolve = mCore.ResolveClassName
+   local total = 0
+   for _ in {0 to Iterations} do total += resolve('Tiri') end
+   return total
+end
+
+-- Borrowed pointer input from a string, with unsigned scalar inputs and result.
+function bench_crc_pointer(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.GenCRC32(0, '123456789', 9) end
+   return total
+end
+
+function bench_extracted_crc(Iterations: num): num
+   local crc = mCore.GenCRC32
+   local total = 0
+   for _ in {0 to Iterations} do total += crc(0, '123456789', 9) end
    return total
 end
 
@@ -184,6 +207,7 @@ local MULTI_SOURCE <const> = [[
 
 function measure_activation(Name: str, Source: str)
    local samples = array<double>
+   exec(Source) -- Untimed activation warm-up.
    for _ in {0 to REPEATS} do
       local start = mCore.PreciseTime()
       for _ in {0 to ACTIVATIONS} do exec(Source) end
@@ -213,6 +237,9 @@ measure('  scalar arg', ITERATIONS, bench_scalar_arg)
 measure('  extracted scalar arg', ITERATIONS, bench_extracted_scalar)
 measure('  double arg', ITERATIONS, bench_double_arg)
 measure('  C++ string-view arg', ITERATIONS, bench_string_view)
+measure('  extracted string-view arg', ITERATIONS, bench_extracted_view)
+measure('  unsigned/pointer CRC', ITERATIONS, bench_crc_pointer)
+measure('  extracted pointer CRC', ITERATIONS, bench_extracted_crc)
 measure('  C-string result', ITERATIONS, bench_string_result)
 measure('  extracted callable', ITERATIONS, bench_extracted)
 measure('  multiple results', math.floor(ITERATIONS / 10), bench_multiple_results)

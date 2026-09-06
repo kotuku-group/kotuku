@@ -121,6 +121,9 @@ union module_scalar_input {
 using simple_module_call = void (*)(APTR, module_scalar_result &, const module_scalar_input *);
 
 struct ModuleCallable {
+#ifdef UNIT_TESTS
+   CSTRING InspectionModule = "synthetic"; // Binding-owned name, used only by explicit observation runs
+#endif
    CSTRING Name = nullptr;               // Canonical name, owned by the binding's immutable signature
    APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
    const FunctionField *Fields = nullptr; // Argument metadata, owned by the binding's immutable signature
@@ -329,6 +332,9 @@ struct definition_batch {
 [[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view, definition_batch &);
 
 static int module_call(lua_State *);
+#ifdef UNIT_TESTS
+static lua_CFunction module_call_entry();
+#endif
 static ERR module_call_inner(lua_State *, std::string &, int &);
 static int process_results(extTiri *, APTR, const FunctionField *);
 
@@ -618,6 +624,62 @@ static void prepare_scalar_calls(ModuleCallable &Callable)
 // A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
 // signature must not prevent the rest of the module from being used.
 
+#ifdef UNIT_TESTS
+// Emit complete copied descriptors, including rejected signatures.  One stdio operation per row avoids interleaving
+// concurrent preparation candidates; consumers sort and deduplicate identical rows.  No native addresses are exposed.
+static void inspect_module_callable(const ModuleCallable &Callable, size_t Front, size_t Back)
+{
+   auto enabled = std::getenv("TIRI_MODULE_INSPECT");
+   if ((not enabled) or (std::string_view(enabled) != "1")) return;
+   std::string descriptors;
+   std::string reason;
+   unsigned arity = 0;
+   marshalling_profile profile;
+   if (Callable.Fields) {
+      for (auto field = Callable.Fields; field->Name; ++field) {
+         if (not descriptors.empty()) descriptors += ";";
+         descriptors += std::format("{}:0x{:08x}", field->Name, uint32_t(field->Type));
+         if (field IS Callable.Fields) continue;
+         ++arity;
+         profile_arg(*field, profile);
+         ffi_type *type = nullptr;
+         std::string error;
+         if ((callable_arg_type(*field, type, error) != ERR::Okay) and reason.empty()) reason = error;
+      }
+   }
+   if (arity > MAX_MODULE_ARGS) reason = "Native argument limit exceeded";
+   if (Front + Back > BUFFER_SIZE) reason = "Call buffer limit exceeded";
+   if ((not Callable.Address) and reason.empty()) reason = "Missing address or preparation failure";
+   CSTRING dispatch = not Callable.Address ? "unsupported" : not Callable.Fields ? "trivial" :
+      Callable.ZeroArg != zero_arg_call::Bridge ? "zero" : Callable.SimpleCall ? "numeric" : "cif";
+   if (reason.empty()) {
+      if (std::string_view(dispatch) != "cif") reason = "Exact specialised descriptor";
+      else if ((classify_zero_arg(Callable) != zero_arg_call::Bridge) or classify_simple_call(Callable)) {
+         reason = "Forced CIF";
+      }
+      else {
+         if (classify_scalar_return(Callable.Fields[0].Type) IS zero_arg_call::Bridge) {
+            reason = std::format("Return descriptor 0x{:08x} outside scalar allowlist", Callable.Fields[0].Type);
+         }
+         if (arity > 4) {
+            if (not reason.empty()) reason += "; ";
+            reason += "More than four native inputs";
+         }
+         for (unsigned index = 1; index <= arity; ++index) {
+            auto type = Callable.Fields[index].Type;
+            if ((type IS FD_INT) or (type IS FD_INT64) or (type IS FD_DOUBLE)) continue;
+            if (not reason.empty()) reason += "; ";
+            reason += std::format("Input {} descriptor 0x{:08x} outside numeric allowlist", index, type);
+         }
+      }
+   }
+   auto row = std::format("MODULE_INVENTORY\t{}\t{}\t{}\t{}\t{}\t{},{},{},{},{}\t{},{}\t{}\n",
+      Callable.InspectionModule, Callable.Name, descriptors, arity, dispatch, profile.Strings, profile.StringViews,
+      profile.MutableStrings, profile.Arrays, profile.Spans, Front, Back, reason);
+   std::fputs(row.c_str(), stderr);
+}
+#endif
+
 static void prepare_module_callables(ModuleBinding *Module, const Function *Functions)
 {
    kt::Log log(__FUNCTION__);
@@ -632,12 +694,18 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
       const auto &signature = signatures[index];
       auto callable = std::make_unique<ModuleCallable>();
 
+#ifdef UNIT_TESTS
+      callable->InspectionModule = Module->Name.c_str();
+#endif
       callable->Name    = signature.Name.c_str();
       callable->Address = function.Address;
       callable->Fields  = function.Args ? signature.Fields.data() : nullptr;
 
       if (not function.Args) {
          // A function with no argument list takes no parameters and returns nothing, so libffi is unnecessary.
+#ifdef UNIT_TESTS
+         inspect_module_callable(*callable, 0, 0);
+#endif
          Module->Callables.push_back(std::move(callable));
          continue;
       }
@@ -717,6 +785,9 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
          else prepare_scalar_calls(*callable);
       }
 
+#ifdef UNIT_TESTS
+      inspect_module_callable(*callable, front_bytes, back_bytes);
+#endif
       Module->Callables.push_back(std::move(callable));
    }
 }
@@ -1315,7 +1386,11 @@ extern "C" void tiri_module_activate(lua_State *Lua, uint32_t Dependency)
          luaL_error(Lua, ERR::InvalidData, "Module dependency %u has an unresolved callable slot.", Dependency);
       }
       lua_pushlightuserdata(Lua, callable);
+#ifdef UNIT_TESTS
+      lua_pushcclosure(Lua, module_call_entry(), 1);
+#else
       lua_pushcclosure(Lua, module_call, 1);
+#endif
    }
 }
 
@@ -1367,6 +1442,26 @@ extern "C" void tiri_module_activate(lua_State *Lua, uint32_t Dependency)
 //
 // MUTABLE|RESULT|CPP = An empty C++ buffer is supplied as input (e.g. std::string or kt::vector<>) and it will be
 //                      used to store the result.
+
+#ifdef UNIT_TESTS
+// Select observation when creating a closure, keeping its disabled cost out of native call timing.
+static int observed_module_call(lua_State *Lua)
+{
+   auto callable = (ModuleCallable *)lua_touserdata(Lua, lua_upvalueindex(1));
+   if (callable) std::fprintf(stderr, "MODULE_CALL\t%s\t%s\n", callable->InspectionModule, callable->Name);
+   return module_call(Lua);
+}
+
+static lua_CFunction module_call_entry()
+{
+   static const bool observe = []() {
+      auto value = std::getenv("TIRI_MODULE_OBSERVE");
+      return value and (std::string_view(value) IS "1");
+   }();
+   if (observe) return observed_module_call;
+   return module_call;
+}
+#endif
 
 static int module_call(lua_State *Lua)
 {
@@ -2268,7 +2363,7 @@ std::string test_module_string_view_call(lua_State *Lua, APTR Address, std::span
 
    int base = lua_gettop(Lua);
    lua_pushlightuserdata(Lua, &synthetic->Callable);
-   lua_pushcclosure(Lua, module_call, 1);
+   lua_pushcclosure(Lua, module_call_entry(), 1);
    for (const auto &input : Inputs) lua_pushstring(Lua, input);
 
    if (lua_pcall(Lua, count, LUA_MULTRET, 0) != 0) {
@@ -2286,7 +2381,7 @@ static std::string run_synthetic_scalar(lua_State *Lua, ModuleCallable &Callable
 {
    int base = lua_gettop(Lua);
    lua_pushlightuserdata(Lua, &Callable);
-   lua_pushcclosure(Lua, module_call, 1);
+   lua_pushcclosure(Lua, module_call_entry(), 1);
    lua_setglobal(Lua, "syntheticZero");
    std::string failure;
    if (lua_load(Lua, std::string_view(Source), "synthetic_zero") or lua_pcall(Lua, 0, 0, 0)) {
@@ -2353,6 +2448,25 @@ std::string test_module_simple_call(lua_State *Lua, APTR Address, uint32_t Type,
 
 std::string test_module_zero_eligibility()
 {
+   // Preparation must keep rejected families distinct from supported CIF inputs with the same pointer ABI.
+   struct descriptor_case { uint32_t Type; bool Supported; };
+   const descriptor_case complex[] = {
+      { FD_STR, true }, { FDF_CPPSTRING, true }, { FD_PTR, true }, { FD_FUNCTIONPTR, true },
+      { FDF_SPAN|FD_BYTE, true }, { FDF_VECTOR|FD_MUTABLE|FD_RESULT|FD_INT, true },
+      { FD_TAGS, false }, { FD_VARTAGS, false }, { FD_ARRAY|FD_BYTE, false },
+      { FDF_VECTOR|FD_INT, false }, { FDF_SPAN|FD_RESULT|FD_BYTE, false },
+      { FDF_SPAN|FD_ALLOC|FD_BYTE, false }
+   };
+   for (const auto &entry : complex) {
+      FunctionField field = { "Input", entry.Type };
+      ffi_type *type = nullptr;
+      std::string message;
+      bool supported = callable_arg_type(field, type, message) IS ERR::Okay;
+      if (supported != entry.Supported) return "Complex descriptor ABI classification differs.";
+      if (supported and (type != &ffi_type_pointer)) return "Complex descriptor lost its pointer ABI.";
+      if ((not supported) and message.empty()) return "Rejected descriptor lost its diagnostic.";
+   }
+
    FunctionField fields[] = { { "Result", FD_INT }, { nullptr, 0 } };
    ModuleCallable callable;
    callable.Fields = fields;

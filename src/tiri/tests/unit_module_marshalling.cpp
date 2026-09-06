@@ -122,6 +122,83 @@ static bool test_max_string_view_signature(kt::Log &Log)
    return true;
 }
 
+// Complex input contracts remain on CIF.  Separate native targets verify the actual reference ABI and distinguish
+// NUL-terminated strings from length-bearing views, with collection during resolution of a later argument.
+static thread_local int glComplexCalls = 0;
+
+static int synthetic_c_string(CSTRING Value, int Tail)
+{
+   ++glComplexCalls;
+   return (Value ? int(std::strlen(Value)) : -1) + Tail;
+}
+
+static int synthetic_string_view(const std::string_view &Value, int Tail)
+{
+   ++glComplexCalls;
+   return (Value.data() ? int(Value.size()) : -1) + Tail;
+}
+
+static bool test_complex_inputs(kt::Log &Log)
+{
+   ModuleMarshallingTestScript holder;
+   if (not holder.initialise(Log)) return false;
+   holder.get()->setStatement("local ready = true");
+   if (Action(AC::Query, holder.get(), nullptr) != ERR::Okay) return false;
+   for (bool cpp : { false, true }) {
+      const uint32_t types[] = { uint32_t(cpp ? FD_STR|FD_CPP : FD_STR), FD_INT };
+      for (bool bridge : { false, true }) {
+         for (bool jit : { false, true }) {
+            auto source = std::format(R"(
+               jit.{}()
+               local call = syntheticZero
+               local value, extra = call('abc', 4)
+               assert(value is 7 and extra is nil, 'String result contract')
+               assert(call(nil, 0) is -1, 'Nil must pass null storage')
+               assert(call() is -1, 'Missing must pass null storage')
+               assert(call('', 0) is 0, 'Empty string differs from nil')
+               assert(call('a\0b', 0) is {}, 'Embedded NUL contract')
+               local resolutions = 0
+               thunk later():num
+                  resolutions++
+                  local garbage = {{}}
+                  for i in {{0 to 500}} do garbage[i] = tostring(i) .. 'allocation' end
+                  processing.collect()
+                  return 2
+               end
+               thunk text():str
+                  return 'rooted-' .. tostring(12345)
+               end
+               assert(call(text(), later()) is 14, 'Earlier string must remain rooted')
+               try
+                  call(false, later())
+               except e when ERR_InvalidType
+                  assert(resolutions is 1, 'Early failure must not resolve later input')
+               success
+                  assert(false, 'Boolean string input must fail')
+               end
+               try
+                  call(text(), false)
+               except e when ERR_InvalidType
+                  assert(e.message.find('arg #2 (Arg2)'), 'Later conversion diagnostic')
+               success
+                  assert(false, 'Later conversion must fail before native invocation')
+               end
+            )", jit ? "on" : "off", cpp ? 3 : 1);
+            glComplexCalls = 0;
+            auto failure = test_module_simple_call(holder.get()->Lua,
+               cpp ? (APTR)synthetic_string_view : (APTR)synthetic_c_string, FD_INT, types,
+               bridge, false, source.c_str());
+            if ((not failure.empty()) or (glComplexCalls != 7)) {
+               Log.error("Complex input cpp %d, bridge %d, JIT %d: %s (calls %d)", int(cpp), int(bridge),
+                  int(jit), failure.c_str(), glComplexCalls);
+               return false;
+            }
+         }
+      }
+   }
+   return true;
+}
+
 static thread_local int glZeroCalls = 0;
 
 static void synthetic_void() { ++glZeroCalls; }
@@ -548,6 +625,13 @@ void module_marshalling_unit_tests(int &Passed, int &Total)
       log.msg("zero-argument differential calls passed");
    }
    else log.error("zero-argument differential calls failed");
+
+   Total++;
+   if (test_complex_inputs(log)) {
+      Passed++;
+      log.msg("complex input bridge contracts passed");
+   }
+   else log.error("complex input bridge contracts failed");
 
    Total++;
    if (test_simple_calls(log)) {
