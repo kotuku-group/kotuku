@@ -261,6 +261,7 @@ constexpr int IRBUFHDR_WRITE = 2;    // Write to string buffer.
 constexpr int IRCONV_SRCMASK = 0x001f;   // Source IRType.
 constexpr int IRCONV_DSTMASK = 0x03e0;   // Dest. IRType (also in ir->t).
 constexpr int IRCONV_DSH = 5;
+constexpr int IRCONV_BITCAST = 0x0400;   // x64 NUM to U64 bit reinterpretation, without numeric conversion.
 constexpr int IRCONV_SEXT = 0x0800;      // Sign-extend integer to integer.
 constexpr int IRCONV_MODEMASK = 0x0fff;
 constexpr int IRCONV_CONVMASK = 0xf000;

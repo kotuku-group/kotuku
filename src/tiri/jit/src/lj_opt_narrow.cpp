@@ -8,6 +8,7 @@
 #define LUA_CORE
 
 #include "lj_obj.h"
+#include <cmath>
 
 #if LJ_HASJIT
 
@@ -562,38 +563,30 @@ TRef lj_opt_narrow_unm(jit_State* J, TRef rc, TValue* vc)
 }
 
 #if LJ_TARGET_X64
-// Inline remainder for a constant integer divisor and a bounded non-zero dividend, including fractional dividends.
+// Inline remainder for a constant integer divisor and a bounded dividend, including fractional dividends.
 static TRef narrow_mod_const(jit_State* J, TRef Dividend, TRef Divisor, lua_Number Value, lua_Number Modulus)
 {
    if (!(J->flags & JIT_F_OPT_NARROW) or !(J->flags & JIT_F_SSE4_1) or !tref_isk(Divisor) or
          !numisint(Modulus) or Modulus IS 0 or !(Value >= -0x1p52 and Value <= 0x1p52)) return 0;
 
-   bool negative = Value < 0;
+   bool negative = std::signbit(Value);
    lua_Number modulus = Modulus < 0 ? -Modulus : Modulus;
 
-   // A correctly rounded quotient cannot round across a multiple of an integer modulus, so truncating it always
-   // yields fmod()'s quotient and no result guard is needed.  With a magnitude of at most 2^52 the product of the
-   // truncated quotient and the modulus never exceeds the dividend, so it stays an exact integer, and the final
-   // subtraction is exact because both terms are multiples of the dividend's ulp.  The guarded dividend is never
-   // negative here, so discarding the truncated quotient's sign only rewrites the negative zero produced by an
-   // opposite-signed zero dividend.  That keeps fmod()'s signed zero on exact multiples, which in turn lets the sign
-   // guards admit a zero dividend instead of exiting the trace on it.
+   // Non-negative IEEE doubles are ordered by their unsigned bit patterns.  A single unsigned bound check
+   // therefore excludes negative values (including -0), infinities and NaNs.  Normalise negative traces first;
+   // opposite-signed zeros use a side trace, while +0 stays on the ordinary positive trace.
    TRef dividend = lj_ir_tonum(J, Dividend);
    TRef divisor = lj_ir_knum(J, modulus);
-   TRef zero = lj_ir_knum_zero(J);
-   if (negative) {
-      emitir(IRTG(IR_LE, IRT_NUM), dividend, zero);
-      emitir(IRTG(IR_GE, IRT_NUM), dividend, lj_ir_knum(J, -0x1p52));
-      dividend = emitir(IRTN(IR_NEG), dividend, lj_ir_ksimd(J, LJ_KSIMD_NEG));
-   }
-   else {
-      emitir(IRTG(IR_GE, IRT_NUM), dividend, zero);
-      emitir(IRTG(IR_LE, IRT_NUM), dividend, lj_ir_knum(J, 0x1p52));
-   }
+   if (negative) dividend = emitir(IRTN(IR_NEG), dividend, lj_ir_ksimd(J, LJ_KSIMD_NEG));
+   TRef bits = emitir(IRT(IR_CONV, IRT_U64), dividend, (IRT_U64 << IRCONV_DSH) | IRT_NUM | IRCONV_BITCAST);
+   emitir(IRTG(IR_ULE, IRT_U64), bits, lj_ir_kint64(J, UINT64_C(0x4330000000000000)));
+
+   // The existing bounded integer-divisor identity is unchanged: division cannot round across an integer
+   // multiple, the truncated quotient times the modulus is an exact integer <= 2^52, and subtraction is exact.
+   // The bit guard also proves that the quotient has a positive sign, so no ABS is needed before multiplication.
    TRef quotient = emitir(IRTN(IR_DIV), dividend, divisor);
    TRef truncated = emitir(IRTN(IR_FPMATH), quotient, IRFPM_TRUNC);
-   TRef magnitude = emitir(IRTN(IR_ABS), truncated, lj_ir_ksimd(J, LJ_KSIMD_ABS));
-   TRef product = emitir(IRTN(IR_MUL), magnitude, divisor);
+   TRef product = emitir(IRTN(IR_MUL), truncated, divisor);
    TRef remainder = emitir(IRTN(IR_SUB), dividend, product);
    return negative ? emitir(IRTN(IR_NEG), remainder, lj_ir_ksimd(J, LJ_KSIMD_NEG)) : remainder;
 }

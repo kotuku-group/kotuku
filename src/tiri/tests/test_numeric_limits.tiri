@@ -342,6 +342,8 @@ end
       100.25, 101.0, 102.5, 103.0, 104.75, 105.0, 106.25, 107.0,
       99.99999999999999, 100.0, 100.00000000000001, 299.99999999999994, 300.00000000000006,
       2147483647.9999998, 2147483648.0, 2147483648.0000005,
+      4503599627370495.5, 4503599627370496.0, 4503599627370497.0,
+      -4503599627370495.5, -4503599627370496.0, -4503599627370497.0,
       0.0, -0.0, 5e-324, -5e-324, -100.0, -100.25, 1e100, -1e100, math.huge, -math.huge, 0 / 0
    }
    local expected = {}
@@ -729,4 +731,34 @@ end
       raised = true
    end
    assert(raised, 'JIT bitwise on a string must raise a type error, not coerce')
+end
+
+@Test function ConstantRemainderNegativeTraceZeros()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+
+   -- Record the negative trace first, then exercise both zero signs and sign-changing side traces.
+   local values = array<double> { -100.25, -200.0, -0.0, 0.0, 100.25, 200.0, -5e-324, 5e-324 }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b, c = constant_remainders(values[i])
+      expected[i] = { a, b, c }
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for i in {0 to #values} do
+      for _ in {0 to 80} do
+         local a, b, c = constant_remainders(values[i])
+         assert_same_remainder(a, expected[i][0])
+         assert_same_remainder(b, expected[i][1])
+         assert_same_remainder(c, expected[i][2])
+      end
+   end
 end

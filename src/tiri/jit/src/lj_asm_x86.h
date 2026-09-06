@@ -698,6 +698,13 @@ static void asm_conv(ASMState* as, IRIns* ir)
    int stfp = (st == IRT_NUM or st == IRT_FLOAT);
    IRRef lref = ir->op1;
    lj_assertA(irt_type(ir->t) != st, "inconsistent types for CONV");
+   if (ir->op2 & IRCONV_BITCAST) {
+      lj_assertA(LJ_TARGET_X64 and st IS IRT_NUM and irt_isu64(ir->t), "bad bitcast types");
+      Reg dest = ra_dest(as, ir, RSET_GPR);
+      Reg source = ra_alloc1(as, lref, RSET_FPR);
+      emit_rr(as, XO_MOVDto, source | REX_64, dest);
+      return;
+   }
    if (irt_isfp(ir->t)) {
       Reg dest = ra_dest(as, ir, RSET_FPR);
       if (stfp) {  // FP to FP conversion.
