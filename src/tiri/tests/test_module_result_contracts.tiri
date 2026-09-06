@@ -1,5 +1,75 @@
 -- Runtime contracts for statically described module results.
 
+include 'core'
+module core as mCore
+
+@if(exists='modules:network')
+   include 'network'
+   module network as mNet
+@end
+
+local test_path = 'temp:tiri_module_output_contract.txt'
+
+@AfterAll function CleanupOutputFile()
+   mCore.DeleteFile(test_path)
+end
+
+@Test function ScalarOutputsAndSpanMutation()
+   do
+      local file <close> = obj.new('File', { path=test_path, flags=FL_NEW|FL_WRITE })
+      check file.acWrite('hello')
+   end
+   local buffer = array<byte, 8>
+   buffer.fill(42)
+   local err, count, extra = mCore.ReadFileToBuffer(test_path, buffer)
+   assert(err is ERR_Okay and count is 5 and extra is nil, 'Read count and result arity')
+   assert(buffer[0] is 104 and buffer[4] is 111 and buffer[5] is 42, 'Native span mutation is visible')
+   local empty_err, empty_count = mCore.ReadFileToBuffer(test_path, nil)
+   assert(empty_err is ERR_Args and empty_count is 0, 'Untouched output after empty-span error')
+   local path_err, path_type = mCore.AnalysePath(test_path)
+   assert(path_err is ERR_Okay and path_type is LOC_FILE, 'Independent path-type expectation')
+   local resolve = mCore.ResolvePath
+   processing.collect()
+   local resolve_err, resolved, surplus = resolve(test_path, 0)
+   assert(resolve_err is ERR_Okay and resolved.endsWith('tiri_module_output_contract.txt') and surplus is nil)
+end
+
+@Test function CopiedContainersAndResourceResultsSurviveCollection()
+   local actions = mCore.ActionList()
+   local err, classes = mCore.ClassDatabase()
+   assert(err is ERR_Okay and #actions > 0 and #classes > 0, 'Supported structure-pointer vectors')
+   local state = mCore.GetSystemState()
+   assert(type(state) is 'table', 'System state is copied to a table')
+   do
+      local directory_err, directory = mCore.OpenDir('temp:', 0)
+      assert(directory_err is ERR_Okay and directory != nil, 'Directory result transfers ownership')
+   end
+   processing.collect()
+   assert(#actions > 0 and #classes > 0 and type(state) is 'table', 'Results outlive conversion temporaries')
+end
+
+@if(exists='modules:network')
+@Test; @Requires(network=true)
+function AddressOutputCopiesAndErrors()
+   local address = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', address)
+   local format = mNet.AddressToStr
+   processing.collect()
+   for _ in {0 to 100} do
+      local err, text, extra = format(address)
+      assert(err is ERR_Okay and text is '127.0.0.1' and extra is nil, 'Address output copy and arity')
+   end
+   local err, text = format(nil)
+   assert(err is ERR_NullArgs and text is '', 'Native error preserves empty initial C++ output')
+   try
+      checkall format(nil) end
+   except e when ERR_NullArgs
+   success
+      assert(false, 'Address error must promote inside checkall')
+   end
+end
+@end
+
 @if(exists='modules:display')
    module display as mGfx
 @end

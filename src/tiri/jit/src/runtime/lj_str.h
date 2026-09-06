@@ -40,13 +40,14 @@ LJ_FUNC void lj_str_free(global_State* g, GCstr* s);
 LJ_FUNC void lj_str_init(lua_State* L);
 
 // Intern a null-terminated C string.
-[[nodiscard]] inline GCstr* lj_str_newz(lua_State* L, const char* s) noexcept {
-   return lj_str_new(L, s, strlen(s));
+// Interning can raise a Lua allocation error through the platform unwinder.
+[[nodiscard]] inline GCstr* lj_str_newz(lua_State *Lua, const char *String) {
+   return lj_str_new(Lua, String, strlen(String));
 }
 
 // Intern a string from std::string_view.
-[[nodiscard]] inline GCstr* lj_str_newsv(lua_State* L, std::string_view sv) noexcept {
-   return lj_str_new(L, sv.data(), sv.size());
+[[nodiscard]] inline GCstr* lj_str_newsv(lua_State *Lua, std::string_view String) {
+   return lj_str_new(Lua, String.data(), String.size());
 }
 
 [[nodiscard]] inline bool lj_str_ismutable(const GCstr *s) noexcept {

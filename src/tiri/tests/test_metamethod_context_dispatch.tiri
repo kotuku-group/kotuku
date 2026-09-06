@@ -158,6 +158,37 @@ end
    end
 end
 
+@Test(hotpath=1) function MetamethodReturnRootsRestoreContextBeforeTryEntry()
+   jit.flush()
+
+   function exercise_return()
+      local caller = { name = 'caller' }
+      local receiver = setmetatable({ name = 'receiver' }, {
+         __call = function(Fail:bool):str
+            if Fail then raise 'return root failure' end
+            return &name
+         end
+      })
+      using caller do
+         assert(receiver(false) is 'receiver')
+         assert(&name is 'caller', 'A compiled return must remove its receiver before entering try')
+         local caught = false
+         try
+            receiver(true)
+         except e
+            caught = true
+            assert(e.message.find('return root failure') != nil)
+            assert(&name is 'caller', 'The exception handler should retain the enclosing caller context')
+         end
+         assert(caught, 'The metamethod error should reach the handler')
+         assert(&name is 'caller', 'Exception cleanup should preserve the context saved at try entry')
+      end
+   end
+
+   for _ in {0 to 200} do exercise_return() end
+   jit.flush()
+end
+
 @Test function MetamethodCleanupRunsBeforeItsContextIsRestored()
    local events = {}
    local caller = { name = 'caller' }

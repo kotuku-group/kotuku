@@ -308,6 +308,13 @@ extern "C" void lj_context_enter_jit(lua_State *L, GCtab *Table, TValue *OwnerBa
    lj_context_push(L, Table, OwnerBase);
 }
 
+extern "C" uint32_t lj_context_has_call_jit(lua_State *L, TValue *OwnerBase) noexcept
+{
+   return not L->context_stack.empty() and
+      L->context_stack.back().owner_kind IS lua_State::ContextFrame::OwnerKind::Call and
+      L->context_stack.back().owner_base IS savestack(L, OwnerBase);
+}
+
 extern "C" void lj_context_leave_jit(lua_State *L, TValue *OwnerBase) noexcept
 {
 #ifdef LUA_USE_ASSERT

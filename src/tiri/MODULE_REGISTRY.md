@@ -87,3 +87,20 @@ This boundary is deliberate:
 
 Serialised bytecode format `0x87` carries names and `BC_MODACT` operands, never native pointers or export-list indices.
 Older formats are rejected rather than retaining the removed compiler-private dependency binder.
+
+## Invocation storage and output ownership
+
+Published callable metadata still contains no invocation storage.  The cached-CIF bridge uses aligned eight-byte
+argument/result slots inside its existing 256-byte buffer, plus exact-type bounded stores for C++ temporaries.
+Preparation and result traversal use the same padding rules.
+
+The bridge holds native owners outside `protected_tiri_call()`, which uses a protected runtime C frame without adding
+another Lua call frame or changing the closure upvalue.  Caller try handlers are saved and suspended while the bridge
+runs; checkall's immediate-scope identity remains intact.  On an error, the runtime returns to this boundary before
+native storage is released, then the original error is rethrown.  Ownership is cleared after a copied allocation is
+freed or a GC wrapper successfully adopts it.  The same protection releases structure conversion's temporary registry
+references.  This does not depend on platform-specific C++ destructor unwinding.
+
+See the [output contract audit](../../docs/plans/tiri/tiri_module_calls_phase_4_contracts.md) for result order, legacy
+null/unsigned representations, native-error behaviour and resource transfer rules.  Supported output signatures remain
+on cached CIF; Phase 4 adds no new production dispatch or state pointer to a callable.
