@@ -423,13 +423,26 @@ LJFOLD(ULE KINT64 KINT64)
 LJFOLD(UGT KINT64 KINT64)
 LJFOLDF(kfold_int64comp)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   uint64_t left = ir_k64(fleft)->u64;
+   uint64_t right = ir_k64(fright)->u64;
+   switch (fins->o) {
+      case IR_LT:  return CONDFOLD(int64_t(left) < int64_t(right));
+      case IR_GE:  return CONDFOLD(int64_t(left) >= int64_t(right));
+      case IR_LE:  return CONDFOLD(int64_t(left) <= int64_t(right));
+      case IR_GT:  return CONDFOLD(int64_t(left) > int64_t(right));
+      case IR_ULT: return CONDFOLD(left < right);
+      case IR_UGE: return CONDFOLD(left >= right);
+      case IR_ULE: return CONDFOLD(left <= right);
+      case IR_UGT: return CONDFOLD(left > right);
+      default: lj_assertJ(0, "bad 64-bit comparison %d", fins->o); return FAILFOLD;
+   }
 }
 
 LJFOLD(UGE any KINT64)
 LJFOLDF(kfold_int64comp0)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   if (ir_k64(fright)->u64 IS 0) return DROPFOLD;
+   return NEXTFOLD;
 }
 
 // -- Constant folding for strings ----------------------------------------
@@ -834,6 +847,7 @@ LJFOLDF(kfold_conv_knum_i64_num)
 LJFOLD(CONV KNUM IRCONV_U64_NUM)
 LJFOLDF(kfold_conv_knum_u64_num)
 {
+   if (fins->op2 & IRCONV_BITCAST) return INT64FOLD(ir_knum(fleft)->u64);
    return INT64FOLD(lj_num2u64(knumleft));
 }
 
@@ -1098,6 +1112,7 @@ LJFOLD(CONV CONV IRCONV_I64_NUM)  //  _INT or _U32
 LJFOLD(CONV CONV IRCONV_U64_NUM)  //  _INT or _U32
 LJFOLDF(simplify_conv_i64_num)
 {
+   if (fins->op2 & IRCONV_BITCAST) return NEXTFOLD;
    PHIBARRIER(fleft);
    if ((fleft->op2 & IRCONV_SRCMASK) == IRT_INT) {
       // Reduce to a sign-extension.
