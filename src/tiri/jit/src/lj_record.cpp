@@ -1392,7 +1392,8 @@ static bool rec_is_fresh_function(jit_State *J, TRef Ref)
    if (tref_isk(Ref)) return false;
    const IRIns *allocation = IR(tref_ref(Ref));
    return allocation->o IS IR_CALLA and
-      (allocation->op2 IS IRCALL_lj_func_newL_zero or allocation->op2 IS IRCALL_lj_func_newL_inherited);
+      (allocation->op2 IS IRCALL_lj_func_newL_zero or allocation->op2 IS IRCALL_lj_func_newL_inherited or
+       allocation->op2 IS IRCALL_lj_func_newL_local);
 }
 
 // Specialise to the runtime value of the called function or its prototype.
@@ -1826,6 +1827,7 @@ void lj_record_metamethod_tailcall(jit_State *J, BCREG Func, ptrdiff_t ArgumentC
    }
    J->base[Func + 1] = TREF_FRAME;
    rec_tailcall_compact(J, Func);
+   if (tref_istab(Receiver)) J->context_tail_call[J->baseslot] = true;
 }
 
 static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t ArgumentCount)
@@ -1863,6 +1865,7 @@ static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t Argumen
 
    J->base[CallBase + 1] = TREF_FRAME;
    rec_tailcall_compact(J, CallBase);
+   if (tref_istab(receiver) and contextual_receiver) J->context_tail_call[J->baseslot] = true;
 }
 
 //********************************************************************************************************************
@@ -1901,11 +1904,22 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
 
    rec_context_leave_metamethod(J);
 
-   if (not J->L->context_stack.empty() and J->L->context_stack.back().tail_transfer and
-         J->L->context_stack.back().owner_base IS savestack(J->L, J->L->base)) {
+   // Tail transfers may be created by a helper earlier in this very recording step (notably fast calls), or by
+   // another entry to the same prototype.  Test the executing activation rather than the recording-time stack.
+   int32_t context_baseslot = int32_t(J->baseslot);
+   TValue *context_base = J->L->base;
+   if (frame_isvarg(frame)) {
+      context_baseslot -= int32_t(frame_delta(frame));
+      context_base -= frame_delta(frame);
+   }
+   // An owner below the trace root is left to the interpreter's return path.
+   if (context_baseslot >= int32_t(FRC::MIN_BASESLOT) and (J->context_tail_call[context_baseslot] or
+       (not J->L->context_stack.empty() and J->L->context_stack.back().tail_transfer and
+        J->L->context_stack.back().owner_base IS savestack(J->L, context_base)))) {
       IRBuilder ir(J);
-      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
-      lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(context_baseslot));
+      lj_ir_call(J, IRCALL_lj_context_leave_tail_jit, owner_base);
+      J->context_tail_call[context_baseslot] = false;
    }
 
    for (i = 0; i < gotresults; i++) (void)getslot(J, rbase + i);  //  Ensure all results have a reference.
@@ -5572,11 +5586,15 @@ void lj_record_ins(jit_State *J)
       break;
 
    case BC_FNEW: {
+      IRBuilder ir(J);
       GCproto *prototype = gco_to_proto(proto_kgc(J->pt, ~(ptrdiff_t)rc));
+      bool local_captures = false;
       for (MSize index = 0; index < prototype->sizeuv; ++index) {
          if (proto_uv(prototype)[index] & PROTO_UV_LOCAL) {
-            setintV(&J->errinfo, (int32_t)op);
-            lj_trace_err_info(J, LJ_TRERR_NYIBC);
+            local_captures = true;
+            BCREG slot = proto_uv(prototype)[index] & 0xff;
+            getslot(J, slot);
+            if (J->maxslot <= slot) J->maxslot = slot + 1;
          }
       }
       // Root the prototype in the trace and inherit the logical current frame's environment, including inlining.
@@ -5584,7 +5602,21 @@ void lj_record_ins(jit_State *J)
       TRef parent = getcurrf(J);
       TRef environment = prototype->sizeuv ? 0 : emitir(IRT(IR_FLOAD, IRT_TAB), parent, IRFL_FUNC_ENV);
       lj_snap_add(J);
-      rc = prototype->sizeuv ? lj_ir_call(J, IRCALL_lj_func_newL_inherited, proto_ref, parent) :
+      if (local_captures) {
+         // Publish all captured values after type guards, before exposing their addresses to the open-cell list.
+         for (MSize index = 0; index < prototype->sizeuv; ++index) {
+            uint32_t capture = proto_uv(prototype)[index];
+            if (capture & PROTO_UV_LOCAL) {
+               BCREG slot = capture & 0xff;
+               rec_emit_tvalue_store(J, rec_stack_slot_addr(J, ir, J->baseslot + slot), J->base[slot]);
+            }
+         }
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+         TRef frame = rec_stack_slot_addr(J, ir, J->baseslot);
+         rc = lj_ir_call(J, IRCALL_lj_func_newL_local, proto_ref, parent, frame);
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+      }
+      else rc = prototype->sizeuv ? lj_ir_call(J, IRCALL_lj_func_newL_inherited, proto_ref, parent) :
          lj_ir_call(J, IRCALL_lj_func_newL_zero, proto_ref, environment);
       // CALLA has a weak allocation guard.  Keep even unused closures for allocation-counter and failure semantics.
       emitir(IRT(IR_USE, IRT_FUNC), rc, 0);
@@ -5722,6 +5754,7 @@ void lj_record_setup(jit_State *J)
    memset(J->context_call_receiver, 0, sizeof(J->context_call_receiver));
    memset(J->context_call_result, 0, sizeof(J->context_call_result));
    memset(J->context_call_state, 0, sizeof(J->context_call_state));
+   memset(J->context_tail_call, 0, sizeof(J->context_tail_call));
    J->context_call_activation_count = 0;
    J->context_virtual_slot = -1;
    memset(J->trymat, 0, sizeof(J->trymat));

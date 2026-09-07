@@ -283,6 +283,8 @@ typedef struct CCallInfo {
   _(ANY,        lj_context_has_call_jit,    2, FS, INT, CCI_L) \
   /* Non-allocating upvalue close; bracketed by lifetime XBARs. */ \
   _(ANY,        lj_func_closeuv,            2, S, NIL, CCI_L) \
+  _(ANY,        lj_func_newL_local,         4, A, FUNC, CCI_L|CCI_T) \
+  _(ANY,        lj_context_leave_tail_jit,  2, S, NIL, CCI_L) \
   \
   // End of list.
 

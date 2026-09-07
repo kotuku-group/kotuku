@@ -823,6 +823,33 @@ end
    assert(c is 3, "third from varargs should be 3")
 end
 
+@Test function DynamicReturnContractsPreserveExpandedResults()
+   local script = obj.new('tiri', { statement=[=[
+jit.opt.start('hotloop=1', 'hotexit=1')
+local aborts = 0
+function trace_event(Event, Trace, Func, Pc, Reason)
+   if Event is 'abort' then aborts++ end
+end
+jit.attach(trace_event, 'trace')
+function firstAndRest(...):<num, any, ...>
+   return ...
+end
+for i in {0 to 100} do
+   local a, b, c, d = firstAndRest(1, 2, 'third', nil)
+   assert(a is 1 and b is 2 and c is 'third' and d is nil,
+      f'Expanded results must survive trace abortion: {a}, {b}, {c}, {d}')
+end
+jit.attach(trace_event)
+assert(aborts > 0, 'The dynamic contract must exercise trace abortion')
+jit.off()
+local deferred = <{ 1 }>
+local a, b, c = firstAndRest(deferred, 2, 3)
+assert(a is 1 and b is 2 and c is 3, 'Thunk resolution must preserve the other expanded results')
+]=] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- ERROR MESSAGE QUALITY
 

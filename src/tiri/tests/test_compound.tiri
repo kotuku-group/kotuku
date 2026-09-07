@@ -527,6 +527,27 @@ end
    assert(result.getString() is 'prefix_data', 'byte array concat assignment should preserve RHS __concat semantics')
 end
 
+@Test function GetStringOmittedLengthAfterOtherCalls()
+   local script = obj.new('tiri', { statement=[=[
+jit.opt.start('hotloop=1', 'hotexit=1')
+function workload()
+   local mt = {
+      __concat = function(Other, Lhs)
+         if Lhs then return &val .. Other end
+         return Other .. &val
+      end
+   }
+   local value = setmetatable({ val='data' }, mt)
+   local result = array<byte>
+   result ..= 'prefix_' .. value
+   assert(result.getString() is 'prefix_data', 'Omitted length must not read previous call arguments')
+end
+for _ in {0 to 1000} do workload() end
+]=] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
 @Test function ArrayConcatAssignmentSelfAppendUsesOriginalBytes()
    result = string.toArray('ab')
 

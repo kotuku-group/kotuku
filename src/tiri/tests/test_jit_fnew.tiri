@@ -165,7 +165,7 @@ assert(driver(1000) is 500500)
    assert(script.error is 0, script.errorMessage)
 end
 
-@Test function LocalCapturesStillFallBack()
+@Test function LocalAndMixedCaptures()
    local script = obj.new('tiri', { statement=[[
 global glAborts = 0
 global function events(Event, Trace, Func, Pc, Reason, Info)
@@ -185,7 +185,7 @@ jit.opt.start('hotloop=1')
 jit.attach(events, 'trace')
 local saved = driver()
 jit.attach(events)
-assert(glAborts > 0, 'Local captures must retain conservative FNEW fallback')
+assert(glAborts is 0, 'Local captures must record FNEW')
 processing.collect()
 for index in {0 to 100} do assert(saved[index]() is index) end
 global function owner(Inherited:num):func
@@ -201,7 +201,7 @@ glAborts = 0
 jit.attach(events, 'trace')
 for index in {0 to 100} do saved[index] = parent(index) end
 jit.attach(events)
-assert(glAborts > 0, 'Mixed inherited/local descriptors must retain FNEW fallback')
+assert(glAborts is 0, 'Mixed inherited/local descriptors must record FNEW')
 processing.collect()
 for index in {0 to 100} do assert(saved[index]() is index + 100) end
 ]] })
@@ -528,6 +528,301 @@ processing.collect()
 for index in {0 to 2000} do assert(saved[index]().value is 1999) end
 assert(peek().value is 1999)
 ]=] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+function run_local_case(Optimisation)
+   local source = [=[
+global glTraces = {}
+global glAborts = 0
+global glExits = 0
+global glTarget = 0
+global glSaved = table.new(10000, 0)
+global function events(Event, Trace, Func, Pc, Reason, Info)
+   if Event is 'start' then glTraces[Trace] = { func=Func }
+   elseif Event is 'stop' then glTraces[Trace].done = true
+   elseif Event is 'abort' and Reason is 7 and (Info is 52 or Info is 51) then glAborts++ end
+end
+global function exits(Trace)
+   if Trace is glTarget then glExits++ end
+end
+global function factory(Value:num):<func, func>
+   local value = Value
+   local function read():num return value end
+   local function write(New:num) value = New end
+   value += 1
+   write(value + 2)
+   assert(read() is Value + 3, 'Sibling writes must update the owning SSA slot')
+   value += 4
+   return read, write
+end
+global function driver(Count:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      local read, write = factory(index)
+      glSaved[index] = { read=read, write=write }
+      total += read()
+      index++
+   end
+   return total
+end
+jit.off()
+local expected = driver(1000)
+assert(expected is 506500)
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=1', 'hotexit=1000')
+if glOptimisation then jit.opt.start(glOptimisation) end
+jit.attach(events, 'trace')
+assert(driver(1000) is expected)
+jit.attach(events)
+assert(glAborts is 0, 'Local allocation and actual closing must record')
+jit.off()
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver then
+      local info = jit.util.traceInfo(trace)
+      if info.linktype is 'loop' then
+         local in_loop = false
+         local allocations = 0
+         local calls = {}
+         local allocation_call = 0
+         for index in {1 into info.nins} do
+            local _, ot, _, operand = jit.util.traceIR(trace, index)
+            if (ot >> 8) is 17 then in_loop = true end
+            if in_loop and (ot >> 8) is 96 and (ot & 31) is 8 then
+               allocations++
+               allocation_call = operand
+            end
+            if in_loop and (ot >> 8) is 98 then calls[operand] = true end
+         end
+         assert(allocations is 2, f'Both sibling allocations must execute inside the loop: {allocations} {glOptimisation} trace={trace}')
+         -- The appended local allocator immediately follows closeuv in IRCALLDEF.
+         assert(calls[allocation_call - 1], 'Actual closing must remain in the allocating loop')
+         glTarget = trace
+      end
+   end
+end
+assert(glTarget > 0, 'The local-capture allocating loop must compile')
+jit.on()
+jit.attach(exits, 'texit')
+assert(driver(10000) is 50065000)
+jit.attach(exits)
+assert(glExits < 30, f'Local closures must remain on trace: {glExits}')
+processing.collect()
+for index in {0 to 10000} do
+   assert(glSaved[index].read() is index + 7, 'Iteration cells must stay distinct after close and GC')
+   glSaved[index].write(index + 100)
+   assert(glSaved[index].read() is index + 100, 'Closed siblings must share their cell')
+   if index > 0 then assert(glSaved[index].read != glSaved[index - 1].read) end
+end
+]=]
+   if Optimisation then source = f'global glOptimisation = "{Optimisation}"\n' .. source end
+   local script = obj.new('tiri', { statement=source })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function LocalSiblingMutationAndIntegratedClosing()
+   run_local_case()
+end
+
+@Test function LocalCaptureOptimisationVariants()
+   for _, option in ipairs({ '-sink', '-cse', '-fold' }) do run_local_case(option) end
+end
+
+@Test function LocalGcValuesDescendantsAndRecovery()
+   local script = obj.new('tiri', { statement=[[
+global function observer(Read:func):num
+   processing.collect()
+   return Read().value
+end
+jit.off(observer)
+global function grow(Depth:num):num
+   if Depth is 0 then return 0 end
+   return 1 + grow(Depth - 1)
+end
+jit.off(grow)
+global function owner(Offset:num):func
+   local function factory(Index:num, Cold:bool):<func, func>
+      local value = { value=Index }
+      local function parent():func
+         local function read():table return value end
+         return read
+      end
+      local read = parent()
+      local function write(New:table) value = New end
+      value = { value=Index + Offset }
+      if Cold then
+         assert(grow(200) is 200)
+         assert(observer(read) is Index + Offset, 'Exit must restore reassigned captured GC values')
+      end
+      assert(read().value is Index + Offset)
+      return read, write
+   end
+   return factory
+end
+global function driver(Factory:func, Count:num, Cold:bool):table
+   local saved = {}
+   for index in {0 to Count} do
+      local read, write = Factory(index, Cold and index is 27)
+      saved[index] = { read=read, write=write }
+   end
+   return saved
+end
+local first = owner(100)
+local second = owner(200)
+for index in {0 to 10} do owner(index) end
+jit.off()
+local baseline = driver(first, 100, true)
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=1', 'hotexit=1')
+local warm = driver(first, 1000, false)
+for iteration in {0 to 6} do
+   local saved = driver(second, 100, true)
+   processing.collect()
+   for index in {0 to 100} do
+      assert(baseline[index].read().value is index + 100)
+      assert(warm[index].read().value is index + 100)
+      assert(saved[index].read().value is index + 200)
+      saved[index].write({ value=index + 300 })
+      assert(saved[index].read().value is index + 300, 'Descendants share the local cell after closing')
+   end
+end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function CapturingDeferCleanupAndExceptions()
+   local script = obj.new('tiri', { statement=[[
+global glTraces = {}
+global function events(Event, Trace, Func)
+   if Event is 'start' then glTraces[Trace] = { func=Func }
+   elseif Event is 'stop' then glTraces[Trace].done = true end
+end
+global function worker(Index:num, Mode:num, Order:table):num
+   local value = Index
+   defer Order.insert(value + 10000) end
+   defer Order.insert(value) end
+   value += 1
+   if Mode is 1 then return value end
+   if Mode is 2 then raise 'expected cleanup' end
+   return value
+end
+global function driver(Count:num):table
+   local order = {}
+   for index in {0 to Count} do
+      worker(index, index % 2, order)
+   end
+   return order
+end
+jit.off()
+local baseline = driver(1000)
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=1', 'hotexit=1')
+jit.attach(events, 'trace')
+local actual = driver(1000)
+jit.attach(events)
+jit.off()
+local allocated = false
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver then
+      local info = jit.util.traceInfo(trace)
+      local count = 0
+      for index in {1 into info.nins} do
+         local _, ot = jit.util.traceIR(trace, index)
+         if (ot >> 8) is 96 and (ot & 31) is 8 then count++ end
+      end
+      if count >= 2 then allocated = true end
+   end
+end
+assert(allocated, 'The driver trace must allocate both capturing defer blocks')
+jit.on()
+assert(#actual is 2000, 'Each capturing defer executes exactly once')
+for index in {0 to #actual} do assert(actual[index] is baseline[index]) end
+local failed = {}
+try
+   worker(42, 2, failed)
+except e
+   assert(#failed is 2 and failed[0] is 43 and failed[1] is 10043, 'Exception cleanup preserves LIFO order')
+success
+   assert(false, 'Expected worker exception')
+end
+local loop_order = {}
+for index in {0 to 100} do
+   local value = index
+   defer loop_order.insert(value) end
+   value += 1
+   if index < 50 then continue end
+   break
+end
+assert(#loop_order is 51)
+for index in {0 to 51} do assert(loop_order[index] is index + 1) end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function FreshFactoriesPreserveTailContexts()
+   local script = obj.new('tiri', { statement=[[
+global function driver(Count:num):num
+   local total = 0
+   for index in {0 to Count} do
+      local calls = 0
+      local target = { value=index }
+      setmetatable(target, {
+         __clear = function(...)
+            assert(&& is target)
+            assert(#{...} is 0)
+            calls++
+         end,
+         __pairs = function(...):<func, table, nil>
+            assert(&& is target)
+            assert(#{...} is 0)
+            return next, { value=index }, nil
+         end
+      })
+      target.clear()
+      assert(calls is 1)
+      for _, value in pairs(target) do total += value end
+   end
+   return total
+end
+jit.opt.start('hotloop=1', 'hotexit=1')
+jit.util.contextStats(true)
+assert(driver(2000) is 1999000)
+local stats = jit.util.contextStats()
+if stats and stats.enabled then
+   assert(stats.physicalContextEntries is stats.physicalContextLeaves,
+      'Fresh local factories must balance contexts transferred by fast-function tail calls')
+end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function VarargOwnersBelowTheTraceRoot()
+   local script = obj.new('tiri', { statement=[[
+global function worker(Count:num, ...):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      local value = index
+      local read = () => value
+      total += read()
+      index++
+   end
+   return total
+end
+jit.opt.start('hotloop=1', 'hotexit=1')
+for iteration in {0 to 100} do
+   assert(worker(100, 11, 22, 33, 44) is 4950, 'Loop-root returns must preserve the outer vararg owner')
+end
+]] })
    check script.acActivate()
    assert(script.error is 0, script.errorMessage)
 end
