@@ -137,11 +137,13 @@ set (JIT_TIRI_HEADER_DEPENDENCIES
 # The non-MSVC JIT build compiles each source with a hand-written custom command, so CMake cannot infer header
 # dependencies the way it does for ordinary targets.  Compiler-generated depfiles restore that tracking; without them
 # an edit to a JIT header such as lj_asm_x86.h does not rebuild the objects that include it.  Makefile generators
-# gained depfile support in CMake 3.20, so older versions fall back to a glob of every JIT header.  The explicit
-# dependency lists above are still required either way, because they order the first build against headers that are
-# themselves generated.
+# gained depfile support in CMake 3.20 and Xcode in 3.21; unsupported combinations fall back to a glob of every JIT
+# header.  The explicit dependency lists above are still required either way, because they order the first build
+# against headers that are themselves generated.
 
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.20 OR CMAKE_GENERATOR MATCHES "Ninja")
+if (CMAKE_GENERATOR MATCHES "Ninja"
+    OR (CMAKE_GENERATOR MATCHES "Makefiles" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
+    OR (CMAKE_GENERATOR STREQUAL "Xcode" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.21))
    set (JIT_USE_DEPFILES TRUE)
    set (JIT_HEADER_DEPENDENCIES "")
 else ()
