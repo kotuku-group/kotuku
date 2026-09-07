@@ -152,6 +152,30 @@ static GCfunc* func_newL(lua_State *L, GCproto *pt, GCtab *env)
    return fn;
 }
 
+// Trace allocation must not collect or inspect the interpreter frame.  CALLA supplies GC checks and snapshots.
+
+GCfunc *lj_func_newL_zero(lua_State *L, GCproto *Proto, GCtab *Environment)
+{
+   lj_assertL(Proto->sizeuv IS 0, "trace closure allocation with captures");
+   return func_newL(L, Proto, Environment);
+}
+
+// Share existing cells without collecting, creating open cells or inspecting the interpreter frame.
+
+GCfunc *lj_func_newL_inherited(lua_State *L, GCproto *Proto, GCfuncL *Parent)
+{
+   GCfunc *function = func_newL(L, Proto, tabref(Parent->env));
+   for (MSize index = 0; index < Proto->sizeuv; ++index) {
+      uint32_t capture = proto_uv(Proto)[index];
+      lj_assertL(not (capture & PROTO_UV_LOCAL), "trace closure allocation with local capture");
+      lj_assertL(capture < Parent->nupvalues, "invalid inherited capture index");
+      // NOBARRIER: The function is new and white; preserve the cell's immutable flag and disambiguation hash.
+      setgcrefr(function->l.uvptr[index], Parent->uvptr[capture]);
+   }
+   function->l.nupvalues = uint8_t(Proto->sizeuv);
+   return function;
+}
+
 // Create a new Lua function with empty upvalues.
 
 GCfunc * lj_func_newL_empty(lua_State *L, GCproto *pt, GCtab *env)

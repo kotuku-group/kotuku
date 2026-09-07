@@ -1385,6 +1385,16 @@ static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
    return false;
 }
 
+// Identify closures whose identity necessarily changes on each allocation.
+
+static bool rec_is_fresh_function(jit_State *J, TRef Ref)
+{
+   if (tref_isk(Ref)) return false;
+   const IRIns *allocation = IR(tref_ref(Ref));
+   return allocation->o IS IR_CALLA and
+      (allocation->op2 IS IRCALL_lj_func_newL_zero or allocation->op2 IS IRCALL_lj_func_newL_inherited);
+}
+
 // Specialise to the runtime value of the called function or its prototype.
 
 static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool PrototypeSpecialisation)
@@ -1393,6 +1403,8 @@ static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool P
    TRef kfunc;
    if (isluafunc(Function)) {
       GCproto* pt = funcproto(Function);
+      // Fresh allocations cannot specialise on the recording-time closure identity, even before CLC_POLY.
+      if (rec_is_fresh_function(J, Ref)) PrototypeSpecialisation = true;
       // Too many closures created? Probably not a monomorphic function.
       if (PrototypeSpecialisation or rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
          TRef trpt = ir.fload_ptr(Ref, IRFL_FUNC_PC);
@@ -2943,7 +2955,7 @@ static TRef rec_upvalue(jit_State *J, uint32_t uv, TRef val)
       TRef tr, kfunc;
       lj_assertJ(val IS 0, "bad usage");
       if (not tref_isk(fn)) {  // Late specialisation of current function.
-         if (rec_proto_specialise_by_prototype(J->pt)) goto noconstify;
+         if (rec_is_fresh_function(J, fn) or rec_proto_specialise_by_prototype(J->pt)) goto noconstify;
          kfunc = ir.kfunc(J->fn);
          ir.guard_eq(fn, kfunc, IRT_FUNC);
          J->base[-2] = kfunc;
@@ -3163,6 +3175,8 @@ static void rec_func_jit(jit_State *J, TraceNo lnk)
       return;
    }
    J->instunroll = 0;  //  Cannot continue across a compiled function.
+   // The target trace reads the physical context stack; it cannot inherit this trace's virtual activations.
+   rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
    if (J->pc IS J->startpc and FRC::at_trace_root(J)) {
       lj_record_stop(J, TraceLink::TAILREC, J->cur.traceno);  //  Extra tail-rec.
    }
@@ -5557,13 +5571,34 @@ void lj_record_ins(jit_State *J)
       lj_trace_err(J, LJ_TRERR_CJITOFF);
       break;
 
+   case BC_FNEW: {
+      GCproto *prototype = gco_to_proto(proto_kgc(J->pt, ~(ptrdiff_t)rc));
+      for (MSize index = 0; index < prototype->sizeuv; ++index) {
+         if (proto_uv(prototype)[index] & PROTO_UV_LOCAL) {
+            setintV(&J->errinfo, (int32_t)op);
+            lj_trace_err_info(J, LJ_TRERR_NYIBC);
+         }
+      }
+      // Root the prototype in the trace and inherit the logical current frame's environment, including inlining.
+      TRef proto_ref = lj_ir_kgc(J, obj2gco(prototype), IRT_PROTO);
+      TRef parent = getcurrf(J);
+      TRef environment = prototype->sizeuv ? 0 : emitir(IRT(IR_FLOAD, IRT_TAB), parent, IRFL_FUNC_ENV);
+      lj_snap_add(J);
+      rc = prototype->sizeuv ? lj_ir_call(J, IRCALL_lj_func_newL_inherited, proto_ref, parent) :
+         lj_ir_call(J, IRCALL_lj_func_newL_zero, proto_ref, environment);
+      // CALLA has a weak allocation guard.  Keep even unused closures for allocation-counter and failure semantics.
+      emitir(IRT(IR_USE, IRT_FUNC), rc, 0);
+      // Publish through the normal destination-slot path below before taking the next bytecode's snapshot.
+      J->needsnap = 1;
+      J->mergesnap = 0;
+      break;
+   }
+
    default:
       if (op >= BC__MAX) {
          lj_ffrecord_func(J);
          break;
       }
-      [[fallthrough]];
-   case BC_FNEW:
       setintV(&J->errinfo, (int32_t)op);
       lj_trace_err_info(J, LJ_TRERR_NYIBC);
       break;
@@ -5574,7 +5609,8 @@ void lj_record_ins(jit_State *J)
       SlotView slots(J);
       slots[ra] = rc;
       if (ra >= slots.maxslot()) {
-         if (ra > slots.maxslot()) slots.clear(ra - 1);
+         // A call may leave stale scratch references above maxslot.  A later high destination must not revive them.
+         if (ra > slots.maxslot()) slots.clear_range(slots.maxslot(), ra - slots.maxslot());
          slots.set_maxslot(ra + 1);
       }
    }

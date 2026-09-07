@@ -1,0 +1,533 @@
+-- Isolated states allow trace assertions without Flute's own callbacks and captures.
+local harness = [=[
+global glTraces = {}
+global glFnewAborts = 0
+global glExits = 0
+global glRecordedFnew = false
+global glRecordedUclo = false
+global function trace_event(Event, Trace, Func, Pc, Reason, Info)
+   if Event is 'start' then glTraces[Trace] = { func=Func, pc=Pc }
+   elseif Event is 'stop' then glTraces[Trace].done = true
+   elseif Event is 'abort' and Reason is 7 and Info is 52 then glFnewAborts++ end
+end
+global function record_event(Trace, Func, Pc)
+   local ins = jit.util.funcBC(Func, Pc)
+   if (ins & 255) is 52 then glRecordedFnew = true end
+   if (ins & 255) is 51 then glRecordedUclo = true end
+end
+global function exit_event(Trace, Exit)
+   if Trace is glTargetTrace then glExits++ end
+end
+jit.off()
+assert(driver(1000) is 500500, 'Interpreter closure baseline')
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=1', 'hotexit=1000')
+if glOptimisation then jit.opt.start(glOptimisation) end
+jit.attach(trace_event, 'trace')
+jit.attach(record_event, 'record')
+assert(driver(1000) is 500500, 'Compiled closure calls must match the interpreter')
+jit.attach(record_event)
+jit.attach(trace_event)
+assert(glRecordedFnew, 'Record the allocating bytecode')
+assert(glRecordedUclo, 'The inlined factory must record its UCLO exit')
+assert(glFnewAborts is 0, 'Zero-upvalue FNEW must not abort')
+jit.off()
+global glTargetTrace = 0
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver then
+      local info = jit.util.traceInfo(trace)
+      if info.linktype is 'loop' then
+         local in_loop = false
+         local allocations = 0
+         for index in {1 into info.nins} do
+            local _, ot = jit.util.traceIR(trace, index)
+            if (ot >> 8) is 17 then in_loop = true end
+            if in_loop and (ot >> 8) is 96 then
+               assert((ot & 31) is 8, 'Closure allocation must have function IR type')
+               allocations++
+            end
+         end
+         assert(allocations > 0, 'Fresh allocation must remain in the intended loop body')
+         glTargetTrace = trace
+      end
+   end
+end
+assert(glTargetTrace > 0, 'The allocating driver loop must compile')
+jit.on()
+jit.attach(exit_event, 'texit')
+assert(driver(10000) is 50005000)
+jit.attach(exit_event)
+assert(glExits < 20, f'Fresh identities must not cause iteration exits: {glExits}')
+processing.collect()
+for index in {0 to 10000} do
+   assert(glSaved[index](index) is index + 1, 'Escaping closure survives GC')
+   assert(glKeys[glSaved[index]] is index, 'Functions remain distinct table keys')
+   if index > 0 then assert(glSaved[index] != glSaved[index - 1]) end
+end
+]=]
+
+function run_case(Factory, Optimisation)
+   local source = [[
+global glSaved = {}
+global glKeys = {}
+]] .. Factory .. [[
+global function driver(Count:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      local callback = factory()
+      glSaved[index] = callback
+      glKeys[callback] = index
+      total += callback(index)
+      index++
+   end
+   return total
+end
+]] .. harness
+   if Optimisation then source = f'global glOptimisation = "{Optimisation}"\n' .. source end
+   local script = obj.new('tiri', { statement=source })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function FreshOrdinaryFunctions()
+   run_case([[
+global function factory():func
+   local function callback(Value:num):num return Value + 1 end
+   return callback
+end
+]])
+end
+
+@Test function FreshArrowFunctions()
+   run_case([[
+global function factory():func
+   return Value => Value + 1
+end
+]])
+end
+
+@Test function FreshImmediateCallsAndUnusedAllocations()
+   local script = obj.new('tiri', { statement=[[
+global glTraces = {}
+global glExits = 0
+global function events(Event, Trace, Func)
+   if Event is 'start' then glTraces[Trace] = { func=Func }
+   elseif Event is 'stop' then glTraces[Trace].done = true end
+end
+global function exits(Trace)
+   if Trace is glTarget then glExits++ end
+end
+global function driver(Count:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      local function callback(Value:num):num return Value + 1 end
+      local unused = () => 99
+      total += callback(index)
+      index++
+   end
+   return total
+end
+jit.opt.start('hotloop=1', 'hotexit=1000')
+jit.attach(events, 'trace')
+assert(driver(1000) is 500500)
+jit.attach(events)
+jit.off()
+global glTarget = 0
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver then
+      local info = jit.util.traceInfo(trace)
+      if info.linktype is 'loop' then
+         local in_loop = false
+         local allocations = 0
+         for index in {1 into info.nins} do
+            local _, ot = jit.util.traceIR(trace, index)
+            if (ot >> 8) is 17 then in_loop = true end
+            if in_loop and (ot >> 8) is 96 then allocations++ end
+         end
+         assert(allocations is 2, f'DCE must preserve both allocations and their counters: {allocations}')
+         glTarget = trace
+      end
+   end
+end
+assert(glTarget > 0, 'First fresh calls must compile before the closure counter saturates')
+jit.on()
+jit.attach(exits, 'texit')
+assert(driver(10000) is 50005000)
+jit.attach(exits)
+assert(glExits < 20, 'Immediate fresh calls must remain on trace')
+jit.off()
+assert(driver(1000) is 500500)
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function LocalCapturesStillFallBack()
+   local script = obj.new('tiri', { statement=[[
+global glAborts = 0
+global function events(Event, Trace, Func, Pc, Reason, Info)
+   if Event is 'abort' and Reason is 7 and Info is 52 then glAborts++ end
+end
+global function driver():table
+   local saved = {}
+   local index = 0
+   while index < 100 do
+      local value = index
+      saved[index] = () => value
+      index++
+   end
+   return saved
+end
+jit.opt.start('hotloop=1')
+jit.attach(events, 'trace')
+local saved = driver()
+jit.attach(events)
+assert(glAborts > 0, 'Local captures must retain conservative FNEW fallback')
+processing.collect()
+for index in {0 to 100} do assert(saved[index]() is index) end
+global function owner(Inherited:num):func
+   local function parent(Value:num):func
+      local function read():num return Inherited + Value end
+      return read
+   end
+   return parent
+end
+local parent = owner(100)
+jit.flush()
+glAborts = 0
+jit.attach(events, 'trace')
+for index in {0 to 100} do saved[index] = parent(index) end
+jit.attach(events)
+assert(glAborts > 0, 'Mixed inherited/local descriptors must retain FNEW fallback')
+processing.collect()
+for index in {0 to 100} do assert(saved[index]() is index + 100) end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+function environment_recovery(Inherited)
+   local source = [=[
+global glOffset = 0
+global glCaught:func
+global glPick = -1
+global glAllocatingTrace = 0
+global glPostAllocationExit = false
+global glTraces = {}
+global function events(Event, Trace, Func, Pc, Parent)
+   if Event is 'start' then
+      glTraces[Trace] = { func=Func }
+      if Parent is glAllocatingTrace and Parent > 0 then
+         -- The comparison immediately following FNEW must resume without replaying allocation.
+         local previous = jit.util.funcBC(Func, Pc - 1)
+         if previous and (previous & 255) is 52 then glPostAllocationExit = true end
+      end
+   elseif Event is 'stop' then glTraces[Trace].done = true end
+end
+global function make_parent():func
+   local function parent(Value:num):func
+      local function callback(Value:num):num return Value + glOffset end
+      if Value is glPick then glCaught = callback end
+      return callback
+   end
+   return parent
+end
+global function driver(Parent:func, Count:num):table
+   local saved = {}
+   local index = 0
+   while index < Count do
+      local callback = Parent(index)
+      saved[index] = callback
+      index++
+   end
+   return saved
+end
+local first = make_parent()
+local second = make_parent()
+-- Saturate parent specialisation without sharing the actual function environments.
+for index in {0 to 10} do make_parent() end
+local first_env = { glOffset=17, glPick=-1 }
+local second_env = { glOffset=29, glPick=700 }
+debug.setEnv(first, first_env)
+debug.setEnv(second, second_env)
+jit.opt.start('hotloop=1', 'hotexit=1')
+jit.attach(events, 'trace')
+local initial = driver(first, 1000)
+jit.off()
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver and jit.util.traceInfo(trace).linktype is 'loop' then
+      glAllocatingTrace = trace
+   end
+end
+assert(glAllocatingTrace > 0, 'Environment and recovery driver must compile')
+jit.on()
+local changed = driver(second, 1000)
+assert(second_env.glCaught is changed[700], 'Exit after allocation must preserve the returned identity')
+first_env.glPick = 300
+local reentered = driver(first, 1000)
+jit.attach(events)
+assert(glPostAllocationExit, 'A side exit must resume immediately after FNEW')
+assert(first_env.glCaught is reentered[300], 'Side traces and re-entry must preserve allocation identity')
+processing.collect()
+for index in {0 to 1000} do
+   assert(initial[index](index) is index + 17, 'Initial parent environment')
+   assert(changed[index](index) is index + 29, 'Different parent instance environment')
+   assert(reentered[index](index) is index + 17, 'Original environment after re-entry')
+   assert(debug.getEnv(initial[index]) is first_env, 'Child inherits the logical parent environment')
+   assert(debug.getEnv(changed[index]) is second_env)
+end
+]=]
+   if Inherited then
+      source = source.replace('global function make_parent():func', 'global function make_parent(Captured:num):func')
+      source = source.replace('return Value + glOffset end', 'return Value + glOffset + Captured end')
+      source = source.replace('local first = make_parent()', 'local first = make_parent(3)')
+      source = source.replace('local second = make_parent()', 'local second = make_parent(5)')
+      source = source.replace('do make_parent() end', 'do make_parent(0) end')
+      source = source.replace('index + 17', 'index + 20').replace('index + 29', 'index + 34')
+   end
+   local script = obj.new('tiri', { statement=source })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function InlinedParentEnvironmentsAndRecovery()
+   environment_recovery(false)
+end
+
+@Test function InheritedEnvironmentsAndRecovery()
+   environment_recovery(true)
+end
+
+@Test function FreshFunctionsWithoutSinkingOrCse()
+   for _, optimisation in ipairs({ '-sink', '-cse', '-fold' }) do
+      run_case([[
+global function factory():func
+   local function callback(Value:num):num return Value + 1 end
+   return callback
+end
+]], optimisation)
+   end
+end
+
+-- The owner creates local cells in the interpreter; only its descendants allocate on the driver trace.
+local inherited_harness = [=[
+global glTraces = {}
+global glAborts = 0
+global glTarget = 0
+global glExits = 0
+global glUclo = false
+global function events(Event, Trace, Func, Pc, Reason, Info)
+   if Event is 'start' then glTraces[Trace] = { func=Func }
+   elseif Event is 'stop' then glTraces[Trace].done = true
+   elseif Event is 'abort' and Reason is 7 and Info is 52 then glAborts++ end
+end
+global function recording(Trace, Func, Pc)
+   if not jit.util.funcInfo(Func).proto then return end
+   if (jit.util.funcBC(Func, Pc) & 255) is 51 then glUclo = true end
+end
+global function exits(Trace)
+   if Trace is glTarget then glExits++ end
+end
+global function driver(Parent:func, Label:num, Count:num):table
+   local saved = table.new(Count, 0)
+   local index = 0
+   while index < Count do
+      local read, write = Parent()
+      write(index)
+      assert(read() is index + Label, 'Sibling closures must share the mutable cell')
+      saved[index] = { read=read, write=write }
+      index++
+   end
+   return saved
+end
+global function owner(Label:num, Open:bool):<func, table>
+   local shared = 0
+   local function parent():<func, func>
+      local function read():num return shared + Label end
+      local function write(Value:num) shared = Value end
+      return read, write
+   end
+   local saved = {}
+   if Open then
+      saved = driver(parent, Label, 2000)
+      jit.off()
+      for trace, entry in pairs(glTraces) do
+         if entry.done and entry.func is driver and jit.util.traceInfo(trace).linktype is 'loop' then
+            glTarget = trace
+         end
+      end
+      assert(glTarget > 0, 'The cold inherited loop must compile')
+      jit.on()
+      jit.attach(exits, 'texit')
+      saved = driver(parent, Label, 2000)
+      jit.attach(exits)
+      assert(glExits < 20, 'Immutable upvalues must not introduce per-instance identity guards')
+      assert(shared is 1999, 'An inherited write must reach the still-open owner slot')
+      shared = 7000
+      assert(saved[0].read() is 7000 + Label, 'Owner mutation must reach all descendants')
+   end
+   return parent, saved
+end
+global function check_saved(Saved:table, Label:num)
+   Saved[0].write(8000)
+   processing.collect()
+   for index in {0 to 2000} do
+      assert(Saved[index].read() is 8000 + Label, 'Shared cells survive GC and owner return')
+      if index > 0 then
+         assert(Saved[index].read != Saved[index - 1].read, 'Inherited closures keep fresh identity')
+      end
+   end
+end
+]=]
+
+function run_inherited_case(Body)
+   local script = obj.new('tiri', { statement=inherited_harness .. Body })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function InheritedClosedCellsAndDifferentParents()
+   run_inherited_case([[
+local first = owner(17, false)
+local second = owner(29, false)
+-- Permit prototype specialisation of the parent while keeping distinct cells and labels.
+for index in {0 to 10} do owner(index, false) end
+jit.off()
+local baseline = driver(first, 17, 2000)
+check_saved(baseline, 17)
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=1', 'hotexit=1000')
+jit.attach(events, 'trace')
+jit.attach(recording, 'record')
+local initial = driver(first, 17, 2000)
+jit.attach(recording)
+jit.attach(events)
+assert(glAborts is 0, 'Inherited FNEW must not abort')
+assert(glUclo, 'The inherited factory must record UCLO')
+jit.off()
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver then
+      local info = jit.util.traceInfo(trace)
+      if info.linktype is 'loop' then
+         local in_loop = false
+         local allocations = 0
+         for index in {1 into info.nins} do
+            local _, ot = jit.util.traceIR(trace, index)
+            if (ot >> 8) is 17 then in_loop = true end
+            if in_loop and (ot >> 8) is 96 and (ot & 31) is 8 then allocations++ end
+         end
+         assert(allocations is 2, 'Both inherited allocations must remain inside the driver loop')
+         glTarget = trace
+      end
+   end
+end
+assert(glTarget > 0, 'The inherited allocating driver must compile')
+jit.on()
+jit.attach(exits, 'texit')
+local changed = driver(second, 29, 2000)
+jit.attach(exits)
+assert(glExits < 20, f'Parent variation must not cause per-instance exits: {glExits}')
+check_saved(initial, 17)
+check_saved(changed, 29)
+assert(initial[0].read() is 8017, 'Different parents must retain independent mutable cells')
+]])
+end
+
+@Test function InheritedOpenCellsAndClosing()
+   run_inherited_case([[
+jit.opt.start('hotloop=1', 'hotexit=1')
+jit.attach(events, 'trace')
+jit.attach(recording, 'record')
+local parent, saved = owner(37, true)
+jit.attach(recording)
+jit.attach(events)
+assert(glAborts is 0, 'Inherited FNEW over open cells must not abort')
+assert(glUclo, 'Open inherited cells must permit the factory UCLO range guard')
+jit.off()
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver and jit.util.traceInfo(trace).linktype is 'loop' then glTarget = trace end
+end
+assert(glTarget > 0, 'The allocating loop must compile while inherited cells are open')
+jit.on()
+check_saved(saved, 37)
+-- Re-enter the open-cell trace after the owner closed its cells; guards must recover safely.
+local closed = driver(parent, 37, 2000)
+check_saved(closed, 37)
+assert(saved[0].read() is 8037, 'Closures created before and after closing must share the cell')
+]])
+end
+
+@Test function FreshImmutableInheritedCalls()
+   run_case([[
+global function owner(Offset:num):func
+   local function parent():func
+      local function read(Value:num):num return Value + Offset end
+      return read
+   end
+   return parent
+end
+global factory = owner(1)
+]])
+end
+
+@Test function InheritedAllocationThroughFreshInlinedParents()
+   for _, optimisation in ipairs({ '3', '-sink', '-cse', '-fold' }) do
+      run_case([[
+global function owner(Offset:num):func
+   local function parent():func
+      local function intermediate():func
+         local function read(Value:num):num return Value + Offset end
+         return read
+      end
+      return intermediate()
+   end
+   return parent
+end
+global factory = owner(1)
+]], optimisation)
+   end
+end
+
+@Test function InheritedGcValuesAndSiblingAliasing()
+   local script = obj.new('tiri', { statement=[=[
+global function owner():<func, func>
+   local shared = { value=0 }
+   local function parent():<func, func>
+      local function read():table return shared end
+      local function write(Value:table) shared = Value end
+      return read, write
+   end
+   local function peek():table return shared end
+   return parent, peek
+end
+global function driver(Parent:func, Peek:func):table
+   local saved = table.new(2000, 0)
+   local index = 0
+   while index < 2000 do
+      local read, write = Parent()
+      local before = Peek()
+      local replacement = { value=index }
+      write(replacement)
+      assert(read() is replacement, 'Sibling read must observe a new GC value')
+      assert(Peek() is replacement, 'Pre-existing closure must observe the aliased store')
+      assert(before != replacement, 'The store must not forward the earlier load')
+      saved[index] = read
+      index++
+   end
+   return saved
+end
+local parent, peek = owner()
+jit.opt.start('hotloop=1')
+local saved = driver(parent, peek)
+parent = nil
+processing.collect()
+for index in {0 to 2000} do assert(saved[index]().value is 1999) end
+assert(peek().value is 1999)
+]=] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
