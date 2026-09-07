@@ -875,9 +875,11 @@ LJFOLDF(kfold_strto)
 
 // -- Constant folding of equality checks ---------------------------------
 
-// Don't constant-fold away FLOAD checks against KNULL.
+// Field and external loads may contain null pointers; retain their runtime checks.
 LJFOLD(EQ FLOAD KNULL)
 LJFOLD(NE FLOAD KNULL)
+LJFOLD(EQ XLOAD KNULL)
+LJFOLD(NE XLOAD KNULL)
 LJFOLDX(lj_opt_cse)
 
 // But fold all other KNULL compares, since only KNULL is equal to KNULL.
@@ -2086,7 +2088,7 @@ LJFOLD(ALEN any any)
 LJFOLDX(lj_opt_fwd_alen)
 
 /* Upvalue refs are really loads, but there are no corresponding stores.
-** So CSE is ok for them, except for UREFO across a GC step (see below).
+** CSE is limited by XBAR lifetime boundaries, and for UREFO by GC steps (see below).
 ** If the referenced function is const, its upvalue addresses are const, too.
 ** This can be used to improve CSE by looking for the same address,
 ** even if the upvalues originate from a different function.
@@ -2099,7 +2101,7 @@ LJFOLDF(cse_uref)
       IRRef ref = J->chain[fins->o];
       GCfunc* fn = ir_kfunc(fleft);
       GCupval* uv = gco_to_upval(gcref(fn->l.uvptr[(fins->op2 >> 8)]));
-      while (ref > 0) {
+      while (ref > J->chain[IR_XBAR]) {
          IRIns* ir = IR(ref);
          if (irref_isk(ir->op1)) {
             GCfunc* fn2 = ir_kfunc(IR(ir->op1));
@@ -2300,10 +2302,12 @@ LJFOLDF(fold_base)
 LJFOLD(TBAR any)
 LJFOLD(OBAR any any)
 LJFOLD(UREFO any any)
+LJFOLD(UREFC any any)
 LJFOLDF(barrier_tab)
 {
    TRef tr = lj_opt_cse(J);
-   if (gcstep_barrier(J, tref_ref(tr)))  //  CSE across GC step?
+   // References and barriers cannot be reused across a lifetime transition or GC step.
+   if (tref_ref(tr) <= J->chain[IR_XBAR] or gcstep_barrier(J, tref_ref(tr)))
       return EMITFOLD;  //  Raw emit. Assumes fins is left intact by CSE.
    return tr;
 }
