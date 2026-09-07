@@ -21,109 +21,108 @@
 #include "lj_strscan.h"
 #include "lj_strfmt.h"
 
-/* Here's a short description how the FOLD engine processes instructions:
-**
-** The FOLD engine receives a single instruction stored in fins (J->fold.ins).
-** The instruction and its operands are used to select matching fold rules.
-** These are applied iteratively until a fixed point is reached.
-**
-** The 7 bit opcode of the instruction, the 7 bit opcode referenced by its
-** left operand and a 10 bit right operand field form a 24 bit key
-** 'ins left right'. The right field holds an opcode or the low 10 bits of a
-** literal; unused operands are zero.
-**
-** This key is used for partial matching against the fold rules. The
-** left/right operand fields of the key are successively masked with
-** the 'any' wildcard, from most specific to least specific:
-**
-**   ins left right
-**   ins any  right
-**   ins left any
-**   ins any  any
-**
-** The masked key is used to lookup a matching fold rule in a semi-perfect
-** hash table. If a matching rule is found, the related fold function is run.
-** Multiple rules can share the same fold function. A fold rule may return
-** one of several special values:
-**
-** - NEXTFOLD means no folding was applied, because an additional test
-**   inside the fold function failed. Matching continues against less
-**   specific fold rules. Finally the instruction is passed on to CSE.
-**
-** - RETRYFOLD means the instruction was modified in-place. Folding is
-**   retried as if this instruction had just been received.
-**
-** All other return values are terminal actions -- no further folding is
-** applied:
-**
-** - INTFOLD(i) returns a reference to the integer constant i.
-**
-** - LEFTFOLD and RIGHTFOLD return the left/right operand reference
-**   without emitting an instruction.
-**
-** - CSEFOLD and EMITFOLD pass the instruction directly to CSE or emit
-**   it without passing through any further optimisations.
-**
-** - FAILFOLD, DROPFOLD and CONDFOLD only apply to instructions which have
-**   no result (e.g. guarded assertions): FAILFOLD means the guard would
-**   always fail, i.e. the current trace is pointless. DROPFOLD means
-**   the guard is always true and has been eliminated. CONDFOLD is a
-**   shortcut for FAILFOLD + cond (i.e. drop if true, otherwise fail).
-**
-** - Any other return value is interpreted as an IRRef or TRef. This
-**   can be a reference to an existing or a newly created instruction.
-**   Only the least-significant 16 bits (IRRef1) are used to form a TRef
-**   which is finally returned to the caller.
-**
-** The FOLD engine receives instructions both from the trace recorder and
-** substituted instructions from LOOP unrolling. This means all types
-** of instructions may end up here, even though the recorder bypasses
-** FOLD in some cases. Thus all loads, stores and allocations must have
-** an any/any rule to avoid being passed on to CSE.
-**
-** Carefully read the following requirements before adding or modifying
-** any fold rules:
-**
-** Requirement #1: All fold rules must preserve their destination type.
-**
-** Consistently use INTFOLD() (KINT result) or lj_ir_knum() (KNUM result).
-** Never use lj_ir_knumint() which can have either a KINT or KNUM result.
-**
-** Requirement #2: Fold rules should not create *new* instructions which
-** reference operands *across* PHIs.
-**
-** E.g. a RETRYFOLD with 'fins->op1 = fleft->op1' is invalid if the
-** left operand is a PHI. Then fleft->op1 would point across the PHI
-** frontier to an invariant instruction. Adding a PHI for this instruction
-** would be counterproductive. The solution is to add a barrier which
-** prevents folding across PHIs, i.e. 'PHIBARRIER(fleft)' in this case.
-** The only exception is for recurrences with high latencies like
-** repeated int->num->int conversions.
-**
-** One could relax this condition a bit if the referenced instruction is
-** a PHI, too. But this often leads to worse code due to excessive
-** register shuffling.
-**
-** Note: returning *existing* instructions (e.g. LEFTFOLD) is ok, though.
-** Even returning fleft->op1 would be ok, because a new PHI will added,
-** if needed. But again, this leads to excessive register shuffling and
-** should be avoided.
-**
-** Requirement #3: The set of all fold rules must be monotonic to guarantee
-** termination.
-**
-** The goal is optimisation, so one primarily wants to add strength-reducing
-** rules. This means eliminating an instruction or replacing an instruction
-** with one or more simpler instructions. Don't add fold rules which point
-** into the other direction.
-**
-** Some rules (like commutativity) do not directly reduce the strength of
-** an instruction, but enable other fold rules (e.g. by moving constants
-** to the right operand). These rules must be made unidirectional to avoid
-** cycles.
-**
-** Rule of thumb: the trace recorder expands the IR and FOLD shrinks it.
-*/
+// Here's a short description how the FOLD engine processes instructions:
+//
+// The FOLD engine receives a single instruction stored in fins (J->fold.ins).
+// The instruction and its operands are used to select matching fold rules.
+// These are applied iteratively until a fixed point is reached.
+//
+// The 7 bit opcode of the instruction, the 7 bit opcode referenced by its
+// left operand and a 10 bit right operand field form a 24 bit key
+// 'ins left right'. The right field holds an opcode or the low 10 bits of a
+// literal; unused operands are zero.
+//
+// This key is used for partial matching against the fold rules. The
+// left/right operand fields of the key are successively masked with
+// the 'any' wildcard, from most specific to least specific:
+//
+//   ins left right
+//   ins any  right
+//   ins left any
+//   ins any  any
+//
+// The masked key is used to lookup a matching fold rule in a semi-perfect
+// hash table. If a matching rule is found, the related fold function is run.
+// Multiple rules can share the same fold function. A fold rule may return
+// one of several special values:
+//
+// - NEXTFOLD means no folding was applied, because an additional test
+//   inside the fold function failed. Matching continues against less
+//   specific fold rules. Finally the instruction is passed on to CSE.
+//
+// - RETRYFOLD means the instruction was modified in-place. Folding is
+//   retried as if this instruction had just been received.
+//
+// All other return values are terminal actions -- no further folding is
+// applied:
+//
+// - INTFOLD(i) returns a reference to the integer constant i.
+//
+// - LEFTFOLD and RIGHTFOLD return the left/right operand reference
+//   without emitting an instruction.
+//
+// - CSEFOLD and EMITFOLD pass the instruction directly to CSE or emit
+//   it without passing through any further optimisations.
+//
+// - FAILFOLD, DROPFOLD and CONDFOLD only apply to instructions which have
+//   no result (e.g. guarded assertions): FAILFOLD means the guard would
+//   always fail, i.e. the current trace is pointless. DROPFOLD means
+//   the guard is always true and has been eliminated. CONDFOLD is a
+//   shortcut for FAILFOLD + cond (i.e. drop if true, otherwise fail).
+//
+// - Any other return value is interpreted as an IRRef or TRef. This
+//   can be a reference to an existing or a newly created instruction.
+//   Only the least-significant 16 bits (IRRef1) are used to form a TRef
+//   which is finally returned to the caller.
+//
+// The FOLD engine receives instructions both from the trace recorder and
+// substituted instructions from LOOP unrolling. This means all types
+// of instructions may end up here, even though the recorder bypasses
+// FOLD in some cases. Thus all loads, stores and allocations must have
+// an any/any rule to avoid being passed on to CSE.
+//
+// Carefully read the following requirements before adding or modifying
+// any fold rules:
+//
+// Requirement #1: All fold rules must preserve their destination type.
+//
+// Consistently use INTFOLD() (KINT result) or lj_ir_knum() (KNUM result).
+// Never use lj_ir_knumint() which can have either a KINT or KNUM result.
+//
+// Requirement #2: Fold rules should not create *new* instructions which
+// reference operands *across* PHIs.
+//
+// E.g. a RETRYFOLD with 'fins->op1 = fleft->op1' is invalid if the
+// left operand is a PHI. Then fleft->op1 would point across the PHI
+// frontier to an invariant instruction. Adding a PHI for this instruction
+// would be counterproductive. The solution is to add a barrier which
+// prevents folding across PHIs, i.e. 'PHIBARRIER(fleft)' in this case.
+// The only exception is for recurrences with high latencies like
+// repeated int->num->int conversions.
+//
+// One could relax this condition a bit if the referenced instruction is
+// a PHI, too. But this often leads to worse code due to excessive
+// register shuffling.
+//
+// Note: returning *existing* instructions (e.g. LEFTFOLD) is ok, though.
+// Even returning fleft->op1 would be ok, because a new PHI will added,
+// if needed. But again, this leads to excessive register shuffling and
+// should be avoided.
+//
+// Requirement #3: The set of all fold rules must be monotonic to guarantee
+// termination.
+//
+// The goal is optimisation, so one primarily wants to add strength-reducing
+// rules. This means eliminating an instruction or replacing an instruction
+// with one or more simpler instructions. Don't add fold rules which point
+// into the other direction.
+//
+// Some rules (like commutativity) do not directly reduce the strength of
+// an instruction, but enable other fold rules (e.g. by moving constants
+// to the right operand). These rules must be made unidirectional to avoid
+// cycles.
+//
+// Rule of thumb: the trace recorder expands the IR and FOLD shrinks it.
 
 // Some local macros to save typing. Undef'd at the end.
 
@@ -261,9 +260,11 @@ LJFOLDF(kfold_numcomp)
    return CONDFOLD(lj_ir_numcmp(knumleft, knumright, (IROp)fins->o));
 }
 
-// -- Constant folding for 32 bit integers --------------------------------
+//********************************************************************************************************************
+// Constant folding for 32 bit integers
 
 // Use modulo 2^32 arithmetic for wrapping IR. BSAR deliberately retains signed right-shift semantics.
+
 static int32_t kfold_intop(int32_t K1, int32_t K2, IROp Op)
 {
    switch (Op) {
@@ -372,7 +373,8 @@ LJFOLDF(kfold_intcomp0)
    return NEXTFOLD;
 }
 
-// -- Constant folding for 64 bit integers --------------------------------
+//********************************************************************************************************************
+// Constant folding for 64 bit integers
 
 LJFOLD(ADD KINT64 KINT64)
 LJFOLD(SUB KINT64 KINT64)
@@ -447,7 +449,8 @@ LJFOLDF(kfold_int64comp0)
    return NEXTFOLD;
 }
 
-// -- Constant folding for strings ----------------------------------------
+//********************************************************************************************************************
+// Constant folding for strings
 
 LJFOLD(SNEW KKPTR KINT)
 LJFOLDF(kfold_snew_kptr)
@@ -506,26 +509,20 @@ LJFOLDF(kfold_strcmp)
    return NEXTFOLD;
 }
 
-// -- Constant folding and forwarding for buffers -------------------------
-
-/*
-** Buffer ops perform stores, but their effect is limited to the buffer
-** itself. Also, buffer ops are chained: a use of an op implies a use of
-** all other ops up the chain. Conversely, if an op is unused, all ops
-** up the chain can go unused. This largely eliminates the need to treat
-** them as stores.
-**
-** Alas, treating them as normal (IRM_N) ops doesn't work, because they
-** cannot be CSEd in isolation. CSE for IRM_N is implicitly done in LOOP
-** or if FOLD is disabled.
-**
-** The compromise is to declare them as loads, emit them like stores and
-** CSE whole chains manually when the BUFSTR is to be emitted. Any chain
-** fragments left over from CSE are eliminated by DCE.
-**
-** The string buffer methods emit a USE instead of a BUFSTR to keep the
-** chain alive.
-*/
+//********************************************************************************************************************
+// Constant folding and forwarding for buffers
+//
+// Buffer ops perform stores, but their effect is limited to the buffer itself. Also, buffer ops are chained: a use of
+// an op implies a use of all other ops up the chain. Conversely, if an op is unused, all ops up the chain can go
+// unused. This largely eliminates the need to treat them as stores.
+//
+// Alas, treating them as normal (IRM_N) ops doesn't work, because they cannot be CSEd in isolation. CSE for IRM_N is
+// implicitly done in LOOP or if FOLD is disabled.
+//
+// The compromise is to declare them as loads, emit them like stores and CSE whole chains manually when the BUFSTR is
+// to be emitted. Any chain fragments left over from CSE are eliminated by DCE.
+//
+// The string buffer methods emit a USE instead of a BUFSTR to keep the chain alive.
 
 LJFOLD(BUFHDR any any)
 LJFOLDF(bufhdr_merge)
@@ -2294,15 +2291,12 @@ LJFOLDF(fold_base)
    return lj_opt_cselim(J, J->chain[IR_RETF]);
 }
 
-// -- Write barriers ------------------------------------------------------
+//********************************************************************************************************************
+// Write barriers are amenable to CSE, but not across any incremental GC steps.
+//
+// The same logic applies to open upvalue references, because a stack may be resized during a GC step (not the
+// current stack, but maybe that of a coroutine).
 
-/* Write barriers are amenable to CSE, but not across any incremental
-** GC steps.
-**
-** The same logic applies to open upvalue references, because a stack
-** may be resized during a GC step (not the current stack, but maybe that
-** of a coroutine).
-*/
 LJFOLD(TBAR any)
 LJFOLD(OBAR any any)
 LJFOLD(UREFO any any)
@@ -2370,17 +2364,15 @@ LJFOLD(CNEW any any)
 LJFOLD(XSNEW any any)
 LJFOLDX(lj_ir_emit)
 
-// ------------------------------------------------------------------------
-
-/* Every entry in the generated hash table is a 32 bit pattern:
-**
-** xxxxxxxx iiiiiii lllllll rrrrrrrrrr
-**
-**   xxxxxxxx = 8 bit index into fold function table
-**    iiiiiii = 7 bit folded instruction opcode
-**    lllllll = 7 bit left instruction opcode
-** rrrrrrrrrr = 7 bit right instruction opcode or 10 bits from literal field
-*/
+//********************************************************************************************************************
+// Every entry in the generated hash table is a 32 bit pattern:
+//
+// xxxxxxxx iiiiiii lllllll rrrrrrrrrr
+//
+//   xxxxxxxx = 8 bit index into fold function table
+//    iiiiiii = 7 bit folded instruction opcode
+//    lllllll = 7 bit left instruction opcode
+// rrrrrrrrrr = 7 bit right instruction opcode or 10 bits from literal field
 
 #include "lj_folddef.h"
 
@@ -2485,6 +2477,7 @@ TRef lj_opt_cse(jit_State* J)
 }
 
 // CSE with explicit search limit.
+
 TRef lj_opt_cselim(jit_State* J, IRRef Lim)
 {
    IRRef ref = J->chain[fins->o];
@@ -2496,11 +2489,7 @@ TRef lj_opt_cselim(jit_State* J, IRRef Lim)
    return lj_ir_emit(J);
 }
 
-// ------------------------------------------------------------------------
-
-#ifdef UNIT_TESTS
-#include "../../tests/jit_fold_fixture.h"
-#endif
+//********************************************************************************************************************
 
 #undef IR
 #undef fins
