@@ -3,3 +3,6 @@
 	url = https://github.com/kotuku-group/kotuku.wiki.git
 	branch = master
 	update = merge
+[submodule "docs/tiri"]
+	path = docs/tiri
+	url = https://github.com/kotuku-group/tiri-docs.git
