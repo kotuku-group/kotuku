@@ -134,6 +134,32 @@ set (JIT_TIRI_HEADER_DEPENDENCIES
    "${JIT_SRC}/runtime/lj_contract.h"
 )
 
+# The non-MSVC JIT build compiles each source with a hand-written custom command, so CMake cannot infer header
+# dependencies the way it does for ordinary targets.  Compiler-generated depfiles restore that tracking; without them
+# an edit to a JIT header such as lj_asm_x86.h does not rebuild the objects that include it.  Makefile generators
+# gained depfile support in CMake 3.20 and Xcode in 3.21; unsupported combinations fall back to a glob of every JIT
+# header.  The explicit dependency lists above are still required either way, because they order the first build
+# against headers that are themselves generated.
+
+if (CMAKE_GENERATOR MATCHES "Ninja"
+    OR (CMAKE_GENERATOR MATCHES "Makefiles" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
+    OR (CMAKE_GENERATOR STREQUAL "Xcode" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.21))
+   set (JIT_USE_DEPFILES TRUE)
+   set (JIT_HEADER_DEPENDENCIES "")
+else ()
+   set (JIT_USE_DEPFILES FALSE)
+   file (GLOB JIT_HEADER_DEPENDENCIES CONFIGURE_DEPENDS
+      "${JIT_SRC}/*.h"
+      "${JIT_SRC}/bytecode/*.h"
+      "${JIT_SRC}/debug/*.h"
+      "${JIT_SRC}/host/*.h"
+      "${JIT_SRC}/jit/*.h"
+      "${JIT_SRC}/lib/*.h"
+      "${JIT_SRC}/parser/*.h"
+      "${JIT_SRC}/runtime/*.h"
+   )
+endif ()
+
 option(KOTUKU_PARSER_TRACE "Emit parser token and expectation traces" OFF)
 option(INCLUDE_TIPS "Include the parser tips system for code analysis" ON)
 
@@ -558,14 +584,24 @@ else ()
          list (APPEND BUILDVM_SOURCE_DEPENDENCIES "${JIT_SRC}/lj_ircall.h")
       endif ()
 
+      set (BUILDVM_DEPFILE_FLAGS "")
+      set (BUILDVM_DEPFILE_ARGS "")
+      if (JIT_USE_DEPFILES)
+         set (BUILDVM_DEPFILE_FLAGS -MD -MP -MF "${BUILDVM_OBJECT}.d")
+         set (BUILDVM_DEPFILE_ARGS DEPFILE "${BUILDVM_OBJECT}.d")
+      endif ()
+
       add_custom_command(
          OUTPUT ${BUILDVM_OBJECT}
          COMMAND ${CMAKE_CXX_COMPILER} ${JIT_COMMON_CXXFLAGS}
             ${JIT_NON_MSVC_DEFS}
             ${JIT_INCLUDE_DIRS}
+            ${BUILDVM_DEPFILE_FLAGS}
             -c ${BUILDVM_SOURCE} -o ${BUILDVM_OBJECT}
          DEPENDS ${BUILDVM_SOURCE} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
             ${BUILDVM_SOURCE_DEPENDENCIES} ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+            ${JIT_HEADER_DEPENDENCIES}
+         ${BUILDVM_DEPFILE_ARGS}
          COMMENT "Compiling host/${BUILDVM_FILENAME}.cpp"
          VERBATIM
       )
@@ -683,6 +719,15 @@ else ()
          list(APPEND JIT_SOURCE_CXXFLAGS -mavx2)
       endif ()
 
+      # Emit a depfile alongside the object so that edits to any included header rebuild it.  -MP adds phony targets
+      # for each header, which keeps the build working after a header is renamed or deleted.
+      set (JIT_SOURCE_DEPFILE_FLAGS "")
+      set (JIT_SOURCE_DEPFILE_ARGS "")
+      if (JIT_USE_DEPFILES)
+         set (JIT_SOURCE_DEPFILE_FLAGS -MD -MP -MF "${OBJECT_FILE}.d")
+         set (JIT_SOURCE_DEPFILE_ARGS DEPFILE "${OBJECT_FILE}.d")
+      endif ()
+
       # Create custom command to compile each source file with explicit flags
       add_custom_command(
          OUTPUT ${OBJECT_FILE}
@@ -693,9 +738,12 @@ else ()
             -DLUA_ROOT=\"${CMAKE_INSTALL_PREFIX}\"
             ${JIT_INCLUDE_DIRS}
             -Wno-trigraphs
+            ${JIT_SOURCE_DEPFILE_FLAGS}
             -c ${SOURCE_FILE} -o ${OBJECT_FILE}
          DEPENDS ${SOURCE_FILE} ${JIT_GENERATED_HEADERS} "${JIT_SRC}/lj_ircall.h"
             ${JIT_KOTUKU_HEADER_DEPENDENCIES} ${JIT_TIRI_HEADER_DEPENDENCIES}
+            ${JIT_HEADER_DEPENDENCIES}
+         ${JIT_SOURCE_DEPFILE_ARGS}
          COMMENT "Compiling ${FILENAME}.cpp"
          VERBATIM
       )
