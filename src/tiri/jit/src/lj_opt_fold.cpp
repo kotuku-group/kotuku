@@ -263,18 +263,19 @@ LJFOLDF(kfold_numcomp)
 
 // -- Constant folding for 32 bit integers --------------------------------
 
+// Use modulo 2^32 arithmetic for wrapping IR. BSAR deliberately retains signed right-shift semantics.
 static int32_t kfold_intop(int32_t K1, int32_t K2, IROp Op)
 {
    switch (Op) {
-   case IR_ADD: K1 += K2; break;
-   case IR_SUB: K1 -= K2; break;
-   case IR_MUL: K1 *= K2; break;
+   case IR_ADD: K1 = int32_t(uint32_t(K1) + uint32_t(K2)); break;
+   case IR_SUB: K1 = int32_t(uint32_t(K1) - uint32_t(K2)); break;
+   case IR_MUL: K1 = int32_t(uint32_t(K1) * uint32_t(K2)); break;
    case IR_MOD: K1 = lj_vm_modi(K1, K2); break;
-   case IR_NEG: K1 = -K1; break;
+   case IR_NEG: K1 = int32_t(0u - uint32_t(K1)); break;
    case IR_BAND: K1 &= K2; break;
    case IR_BOR: K1 |= K2; break;
    case IR_BXOR: K1 ^= K2; break;
-   case IR_BSHL: K1 <<= (K2 & 31); break;
+   case IR_BSHL: K1 = int32_t(uint32_t(K1) << (K2 & 31)); break;
    case IR_BSHR: K1 = (int32_t)((uint32_t)K1 >> (K2 & 31)); break;
    case IR_BSAR: K1 >>= (K2 & 31); break;
    case IR_BROL: K1 = (int32_t)lj_rol((uint32_t)K1, (K2 & 31)); break;
@@ -311,12 +312,18 @@ LJFOLD(SUBOV KINT KINT)
 LJFOLD(MULOV KINT KINT)
 LJFOLDF(kfold_intovarith)
 {
-   lua_Number n = lj_vm_foldarith((lua_Number)fleft->i, (lua_Number)fright->i,
-      fins->o - IR_ADDOV);
-   int32_t k = lj_num2int(n);
-   if (n != (lua_Number)k)
+   // Every product of two signed 32-bit operands fits in signed 64 bits.
+   int64_t a = fleft->i, b = fright->i;
+   int64_t result;
+   switch ((IROp)fins->o) {
+   case IR_ADDOV: result = a + b; break;
+   case IR_SUBOV: result = a - b; break;
+   case IR_MULOV: result = a * b; break;
+   default: return FAILFOLD;
+   }
+   if (result < INT32_MIN or result > INT32_MAX)
       return FAILFOLD;
-   return INTFOLD(k);
+   return INTFOLD(int32_t(result));
 }
 
 LJFOLD(BNOT KINT)
@@ -367,13 +374,6 @@ LJFOLDF(kfold_intcomp0)
 
 // -- Constant folding for 64 bit integers --------------------------------
 
-static uint64_t kfold_int64arith(jit_State* J, uint64_t K1, uint64_t K2,
-   IROp Op)
-{
-   lj_assertJ(0, "FFI IR op without FFI");
-   return K1;
-}
-
 LJFOLD(ADD KINT64 KINT64)
 LJFOLD(SUB KINT64 KINT64)
 LJFOLD(MUL KINT64 KINT64)
@@ -382,8 +382,7 @@ LJFOLD(BOR KINT64 KINT64)
 LJFOLD(BXOR KINT64 KINT64)
 LJFOLDF(kfold_int64arith)
 {
-   return INT64FOLD(kfold_int64arith(J, ir_k64(fleft)->u64,
-      ir_k64(fright)->u64, (IROp)fins->o));
+   return FAILFOLD;  // Unsupported without FFI; never intern a placeholder result.
 }
 
 LJFOLD(DIV KINT64 KINT64)
@@ -391,7 +390,7 @@ LJFOLD(MOD KINT64 KINT64)
 LJFOLD(POW KINT64 KINT64)
 LJFOLDF(kfold_int64arith2)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   return FAILFOLD;  // Unsupported without FFI.
 }
 
 LJFOLD(BSHL KINT64 KINT)
@@ -401,19 +400,19 @@ LJFOLD(BROL KINT64 KINT)
 LJFOLD(BROR KINT64 KINT)
 LJFOLDF(kfold_int64shift)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   return FAILFOLD;  // Unsupported without FFI.
 }
 
 LJFOLD(BNOT KINT64)
 LJFOLDF(kfold_bnot64)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   return FAILFOLD;  // Unsupported without FFI.
 }
 
 LJFOLD(BSWAP KINT64)
 LJFOLDF(kfold_bswap64)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   return FAILFOLD;  // Unsupported without FFI.
 }
 
 LJFOLD(LT KINT64 KINT64)
@@ -1054,7 +1053,7 @@ LJFOLDF(simplify_numpow_xkint)
       return lj_ir_knum_one(J);  //  Result must be a number, not an int.
    if (k IS 1)  //  x ^ 1 ==> x
       return LEFTFOLD;
-   if ((uint32_t)(k + 65536) > 2 * 65536u)  //  Limit code explosion.
+   if ((uint32_t(k) + 65536u) > 2 * 65536u)  //  Limit code explosion.
       return NEXTFOLD;
    if (k < 0) {  // x ^ (-k) ==> (1/x) ^ k.
       ref = emitir(IRTN(IR_DIV), lj_ir_knum_one(J), ref);
@@ -1334,7 +1333,7 @@ LJFOLDF(simplify_intsub_k)
    if (fright->i IS 0)  //  i - 0 ==> i
       return LEFTFOLD;
    fins->o = IR_ADD;  //  i - k ==> i + (-k)
-   fins->op2 = (IRRef1)lj_ir_kint(J, -fright->i);  //  Overflow for -2^31 ok.
+   fins->op2 = (IRRef1)lj_ir_kint(J, int32_t(0u - uint32_t(fright->i)));
    return RETRYFOLD;
 }
 
@@ -1365,7 +1364,7 @@ LJFOLDF(simplify_intsub_k64)
    if (k IS 0)  //  i - 0 ==> i
       return LEFTFOLD;
    fins->o = IR_ADD;  //  i - k ==> i + (-k)
-   fins->op2 = (IRRef1)lj_ir_kint64(J, (uint64_t)-(int64_t)k);
+   fins->op2 = (IRRef1)lj_ir_kint64(J, uint64_t(0) - k);
    return RETRYFOLD;
 }
 
@@ -1381,7 +1380,7 @@ static TRef simplify_intmul_k(jit_State* J, int32_t K)
    else if (K IS 1) {  // i * 1 ==> i
       return LEFTFOLD;
    }
-   else if ((K & (K - 1)) IS 0) {  // i * 2^k ==> i << k
+   else if ((uint32_t(K) & (uint32_t(K) - 1u)) IS 0) {  // i * 2^k ==> i << k
       fins->o = IR_BSHL;
       fins->op2 = lj_ir_kint(J, lj_fls((uint32_t)K));
       return RETRYFOLD;
@@ -1400,7 +1399,7 @@ LJFOLDF(simplify_intmul_k32)
 LJFOLD(MUL any KINT64)
 LJFOLDF(simplify_intmul_k64)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   return FAILFOLD;  // Unsupported without FFI.
 }
 
 LJFOLD(MOD any KINT)
@@ -1686,14 +1685,7 @@ LJFOLDF(simplify_shiftk_andk)
       return RETRYFOLD;
    }
    else if (irk->o IS IR_KINT64) {
-      uint64_t k = kfold_int64arith(J, ir_k64(irk)->u64, fright->i,
-         (IROp)fins->o);
-      IROpT ot = fleft->ot;
-      fins->op1 = fleft->op1;
-      fins->op1 = (IRRef1)lj_opt_fold(J);
-      fins->op2 = (IRRef1)lj_ir_kint64(J, k);
-      fins->ot = ot;
-      return RETRYFOLD;
+      return FAILFOLD;  // Reject before changing the instruction or interning a constant.
    }
    return NEXTFOLD;
 }
@@ -1731,7 +1723,7 @@ LJFOLD(BAND BOR KINT64)
 LJFOLD(BOR BAND KINT64)
 LJFOLDF(simplify_andor_k64)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   return FAILFOLD;  // Unsupported without FFI.
 }
 
 // -- Reassociation -------------------------------------------------------
@@ -1765,7 +1757,7 @@ LJFOLD(BOR BOR KINT64)
 LJFOLD(BXOR BXOR KINT64)
 LJFOLDF(reassoc_intarith_k64)
 {
-   lj_assertJ(0, "FFI IR op without FFI"); return FAILFOLD;
+   return FAILFOLD;  // Unsupported without FFI.
 }
 
 LJFOLD(BAND BAND any)
@@ -1837,7 +1829,7 @@ LJFOLDF(abc_fwd)
       if (irref_isk(fright->op2)) {
          IRIns* add2 = IR(fright->op1);
          if (add2->o IS IR_ADD and irref_isk(add2->op2) and
-            IR(fright->op2)->i IS -IR(add2->op2)->i) {
+            uint32_t(IR(fright->op2)->i) IS 0u - uint32_t(IR(add2->op2)->i)) {
             IRRef ref = J->chain[IR_ABC];
             IRRef lim = add2->op1;
             if (fins->op1 > lim) lim = fins->op1;
@@ -1989,13 +1981,21 @@ static TRef kfold_xload(jit_State* J, IRIns* Ir, const void* P)
 {
    int32_t k;
    switch (irt_type(Ir->t)) {
-   case IRT_NUM: return lj_ir_knum_u64(J, *(uint64_t*)P);
+   case IRT_NUM: {
+      uint64_t bits;
+      memcpy(&bits, P, sizeof(bits));
+      return lj_ir_knum_u64(J, bits);
+   }
    case IRT_I8: k = (int32_t) * (int8_t*)P; break;
    case IRT_U8: k = (int32_t) * (uint8_t*)P; break;
    case IRT_I16: k = (int32_t)(int16_t)lj_getu16(P); break;
    case IRT_U16: k = (int32_t)(uint16_t)lj_getu16(P); break;
    case IRT_INT: case IRT_U32: k = (int32_t)lj_getu32(P); break;
-   case IRT_I64: case IRT_U64: return lj_ir_kint64(J, *(uint64_t*)P);
+   case IRT_I64: case IRT_U64: {
+      uint64_t bits;
+      memcpy(&bits, P, sizeof(bits));
+      return lj_ir_kint64(J, bits);
+   }
    default: return 0;
    }
    return lj_ir_kint(J, k);
@@ -2162,7 +2162,7 @@ LJFOLD(FLOAD TNEW IRFL_TAB_HMASK)
 LJFOLDF(fload_tab_tnew_hmask)
 {
    if (LJ_LIKELY(J->flags & JIT_F_OPT_FOLD) and lj_opt_fwd_tptr(J, fins->op1))
-      return INTFOLD((1 << fleft->op2) - 1);
+      return INTFOLD(int32_t((1u << fleft->op2) - 1u));
    return NEXTFOLD;
 }
 
@@ -2497,6 +2497,10 @@ TRef lj_opt_cselim(jit_State* J, IRRef Lim)
 }
 
 // ------------------------------------------------------------------------
+
+#ifdef UNIT_TESTS
+#include "../../tests/jit_fold_fixture.h"
+#endif
 
 #undef IR
 #undef fins
