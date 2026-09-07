@@ -1112,7 +1112,9 @@ add_subdirectory (src/regex)
 
 add_subdirectory (src/origo)
 
-add_subdirectory (docs/tiri)
+if (EXISTS "${PROJECT_SOURCE_DIR}/docs/tiri/CMakeLists.txt")
+   add_subdirectory (docs/tiri)
+endif ()
 
 add_subdirectory (apps)
 add_subdirectory (tools/tiri_lsp)

@@ -105,7 +105,7 @@
       <xsl:when test="@module">
         <xsl:variable name="mod_name"><xsl:value-of select="@module"/></xsl:variable>
         <xsl:variable name="mod_lower" select="translate($mod_name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"/>
-        <a><xsl:attribute name="href"><xsl:value-of select="$mod_lower"/>.html?page=<xsl:value-of select="."/></xsl:attribute><xsl:value-of select="."/>()</a>
+        <a><xsl:attribute name="href">../<xsl:value-of select="$mod_lower"/>.html?page=<xsl:value-of select="."/></xsl:attribute><xsl:value-of select="."/>()</a>
       </xsl:when>
       <xsl:otherwise>
         <a><xsl:attribute name="href">?page=<xsl:value-of select="."/></xsl:attribute><xsl:value-of select="."/>()</a>
@@ -321,7 +321,6 @@
                     <div class="collapse" id="ext-collapse">
                       <ul class="btn-toggle-nav list-unstyled pb-1">
                         <li class="api-ref"><a class="rounded" href="scintilla.html">Scintilla</a></li>
-                        <li class="api-ref"><a class="rounded" href="scintillasearch.html">ScintillaSearch</a></li>
                       </ul>
                     </div>
                   </li>

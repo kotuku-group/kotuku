@@ -340,7 +340,6 @@
           <div class="collapse" id="ext-collapse">
             <ul class="btn-toggle-nav list-unstyled pb-1">
               <li><a class="rounded" href="classes/scintilla.html">Scintilla</a></li>
-              <li><a class="rounded" href="classes/scintillasearch.html">ScintillaSearch</a></li>
             </ul>
           </div>
         </li>
@@ -443,11 +442,10 @@
          <div class="collapse" id="fg-collapse">
             <ul class="btn-toggle-nav list-unstyled pb-1">
             <li class="api-ref"><a class="rounded" href="../wiki/Tiri-Reference-Manual.html">Tiri Reference Manual</a></li>
-            <li class="api-ref"><a class="rounded" href="../wiki/Tiri-FileSearch-API.html">FileSearch API</a></li>
             <li class="api-ref"><a class="rounded" href="../wiki/Tiri-GUI-API.html">GUI API</a></li>
             <li class="api-ref"><a class="rounded" href="../wiki/Tiri-JSON-API.html">JSON API</a></li>
             <li class="api-ref"><a class="rounded" href="../wiki/Tiri-VFX-API.html">VFX API</a></li>
-            <li class="api-ref"><a class="rounded" href="../wiki/Widgets.html">Widgets</a></li>
+            <li class="api-ref"><a class="rounded" href="../wiki/Tiri-Widgets.html">Widgets</a></li>
            </ul>
          </div></li>
 

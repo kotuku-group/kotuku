@@ -7,8 +7,7 @@ This guide describes the comprehensive documentation available in the `docs/` di
 Kōtuku maintains four parallel documentation systems in the `docs/` directory:
 
 - **`docs/wiki/`** - Community-oriented guides and tutorials (Markdown source)
-- **`docs/manuals/`** - Long-form AsciiDoc manuals and their generated PDFs
-- **`docs/html/`** - Complete website with API references and galleries (HTML output)
+- **`docs/tiri/`** - Tiri manuals
 - **`docs/xml/`** - Machine-generated API documentation from source code (XML format)
 
 ## 📚 docs/wiki/ - Community Guides and Tutorials
@@ -85,40 +84,6 @@ specifications and contracts rather than tutorials.
 - PDF generation uses `asciidoctor-pdf`; see the manual's own `AGENTS.md` for the exact invocation.
 - These manuals are authored by hand.  They are *not* regenerated from source code, so changes here will not be
   overwritten by the documentation pipeline.
-
-## 🌐 docs/html/ - Complete Website Documentation
-
-**Location:** `docs/html/` (complete self-contained website)
-
-The HTML documentation provides a fully browsable website experience:
-
-### Main Sections
-- **`index.html`** - Kōtuku homepage and overview
-- **`gallery.html`** - Visual showcase of Kōtuku capabilities
-- **`modules/api.html`** - API documentation landing page
-
-### API Documentation Structure
-- **`modules/`** - Module-level documentation
-  - `core.html`, `vector.html`, `display.html`, `network.html`, etc.
-- **`modules/classes/`** - Individual class documentation
-  - `vector.html`, `surface.html`, `file.html`, `bitmap.html`, etc.
-  - Each class page includes methods, fields, actions, and examples
-- **`wiki/`** - Rendered HTML of the `docs/wiki/` Markdown sources
-- **`manuals/`** - Published PDF manuals
-
-### Gallery Assets
-- **`gallery/`** - Screenshots and demonstrations
-
-### Web Infrastructure
-- **`css/`** - Bootstrap-based styling
-- **`js/`** - Interactive functionality
-- **`images/`** - Logos and icons
-
-**Key Usage Notes:**
-- Complete offline browsable documentation
-- Generated from XML source via XSLT transforms
-- Includes visual examples and galleries
-- Cross-referenced with hyperlinks between classes and modules
 
 ## 📄 docs/xml/ - Machine-Generated API Documentation
 
