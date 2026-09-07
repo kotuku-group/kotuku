@@ -138,6 +138,8 @@ void lj_trace_err(jit_State *J, TraceError e)
 
    // Prefer the interpreter's view of the current frame to avoid clobbering live locals.
    TValue *safe_top = curr_top(J->L);
+   // MULTRES may extend past the fixed frame size; never overwrite those live results with the abort error.
+   if (safe_top < J->L->top) safe_top = J->L->top;
    if (safe_top < J->L->base) safe_top = J->L->base;
    trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;
@@ -162,6 +164,8 @@ void lj_trace_err_info(jit_State *J, TraceError e)
    // Ensure L->top is valid before pushing error
    // Prefer the interpreter's view of the current frame to avoid clobbering live locals.
    TValue *safe_top = curr_top(J->L);
+   // MULTRES may extend past the fixed frame size; never overwrite those live results with the abort error.
+   if (safe_top < J->L->top) safe_top = J->L->top;
    if (safe_top < J->L->base) safe_top = J->L->base;
    trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;

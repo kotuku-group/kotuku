@@ -1,0 +1,197 @@
+-- Isolated states keep Flute's own open captures out of the empty-list tests.
+local harness = [[
+global glTraces = {}
+global glAborts = 0
+global glExits = 0
+global glResumeUclo = false
+global glNonemptyAborts = 0
+global glZeroJump = false
+global glNonzeroJump = false
+global function record_event(Trace, Func, Pc)
+   if Func is worker then
+      local ins = jit.util.funcBC(Func, Pc)
+      if (ins & 255) is 51 then -- BC_UCLO.
+         if ((ins >> 16) - 32768) is 0 then glZeroJump = true else glNonzeroJump = true end
+      end
+   end
+end
+global function trace_event(Event, Trace, Func, Pc, ParentOrReason, ExitOrInfo)
+   if Event is 'start' then
+      glTraces[Trace] = { func=Func, pc=Pc }
+      if ParentOrReason is glTargetTrace and ExitOrInfo is glGuardExit then
+         local ins = jit.util.funcBC(Func, Pc)
+         glResumeUclo = Func is worker and (ins & 255) is 51
+      end
+   elseif Event is 'stop' then glTraces[Trace].done = true
+   elseif Event is 'abort' then
+      glAborts++
+      if Func is worker and ParentOrReason is 7 and ExitOrInfo is 51 then
+         glNonemptyAborts++ -- NYIBC, BC_UCLO.
+      end
+   end
+end
+global function exit_event(Trace, Exit)
+   if Trace is glTargetTrace and Exit is glGuardExit then glExits++ end
+end
+global function driver(Count:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      total += worker(index, false)
+      index++
+   end
+   return total
+end
+jit.off()
+local expected = driver(1000)
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=3', 'hotexit=1000')
+jit.attach(trace_event, 'trace')
+jit.attach(record_event, 'record')
+assert(driver(1000) is expected, 'Empty UCLO must match the interpreter')
+jit.attach(trace_event)
+jit.attach(record_event)
+assert(glZeroJump or glNonzeroJump, 'The worker must reach UCLO while recording')
+assert(glNonzeroJump is glExpectJump, 'The worker must exercise the requested UCLO jump shape')
+assert(glAborts is 0, f'Empty UCLO aborted {glAborts} recordings')
+global glTargetTrace = 0
+global glGuardExit = -1
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver then
+      local info = jit.util.traceInfo(trace)
+      if info.linktype is 'loop' then
+         local loop = 0
+         local loads = 0
+         local body_loads = 0
+         local first_load = 0
+         for index in {1 into info.nins} do
+            local _, ot, _, flags = jit.util.traceIR(trace, index)
+            if (ot >> 8) is 17 then loop = index end
+            if (ot >> 8) is 70 and flags is 2 then
+               loads++
+               if first_load is 0 then first_load = index end
+               if loop > 0 then body_loads++ end
+            end
+         end
+         assert(loads >= 2 and body_loads >= 1, 'Volatile UCLO load must remain inside the loop')
+         glTargetTrace = trace
+         for exit in {0 to info.nexit} do
+            local snap = jit.util.traceSnap(trace, exit)
+            if snap[0] <= first_load then glGuardExit = exit end
+         end
+      end
+   end
+end
+assert(glTargetTrace > 0, 'The intended caller loop must compile')
+assert(glGuardExit >= 0, 'UCLO must have a pre-instruction snapshot')
+-- The same trace is entered with an unrelated caller capture below the close level.
+-- A hot guard exposes the restored PC when side recording specialises for an unrelated capture.
+global function captured_call():num
+   local value = { number=19 }
+   local function read():num return value.number end
+   local result = driver(1000)
+   value.number = 23
+   assert(read() is 23, 'Caller capture must remain open across callee UCLO')
+   return result
+end
+jit.opt.start('hotexit=1')
+jit.attach(trace_event, 'trace')
+jit.attach(exit_event, 'texit')
+assert(captured_call() is expected, 'Nonempty-list guard exit must preserve the result')
+jit.attach(exit_event)
+jit.attach(trace_event)
+assert(glExits > 0, 'The UCLO guard on the original empty-list trace must exit')
+assert(glResumeUclo, 'The guard snapshot must restart at the worker UCLO')
+assert(glNonemptyAborts is 0, 'Unrelated caller captures must allow UCLO recording')
+-- Record directly with a nonempty list to identify the specialised caller loop.
+jit.flush()
+jit.opt.start('hotloop=3', 'hotexit=1000')
+glTraces = {}
+glAborts = 0
+jit.attach(trace_event, 'trace')
+assert(captured_call() is expected)
+jit.attach(trace_event)
+assert(glAborts is 0, 'A capture below the closing level must not abort recording')
+local range_trace = 0
+for trace, entry in pairs(glTraces) do
+   if entry.done and entry.func is driver then
+      local info = jit.util.traceInfo(trace)
+      if info.linktype is 'loop' then
+         local in_loop = false
+         local loads = 0
+         local comparisons = 0
+         for index in {1 into info.nins} do
+            local _, ot, _, flags = jit.util.traceIR(trace, index)
+            if (ot >> 8) is 17 then in_loop = true end
+            if in_loop then
+               if (ot >> 8) is 70 and flags is 2 then loads++ end
+               if (ot >> 8) is 4 or (ot >> 8) is 7 then comparisons++ end -- IR_ULT or swapped IR_UGT.
+            end
+         end
+         assert(loads >= 3 and comparisons >= 1, 'Range guard must reload head, slot and base inside the loop')
+         range_trace = trace
+      end
+   end
+end
+assert(range_trace > 0, 'The caller loop must compile with an unrelated capture')
+-- Re-enter with no head; the nonnull guard must exit before dereferencing it.
+assert(driver(1000) is expected, 'The nonempty specialisation must safely handle an empty list')
+]]
+
+function run_case(Worker, NonzeroJump)
+   local source = Worker .. "\nglobal glExpectJump = " .. tostring(NonzeroJump) .. "\n" .. harness
+   local script = obj.new('tiri', { statement=source })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function EmptyCloseReturn()
+   run_case([[
+global function worker(Value:num, Capture:bool):num
+   if Capture then
+      local function read():num return Value end
+      return read()
+   end
+   return Value + 1
+end
+]], false)
+end
+
+@Test function EmptyCloseJump()
+   -- A return emitted before the first child prototype is fixed up to UCLO plus a forward jump.
+   run_case([[
+global function worker(Value:num, Capture:bool):num
+   if not Capture then return Value + 1 end
+   local function read():num return Value end
+   return read()
+end
+]], true)
+end
+
+@Test function ExistingClosuresCrossScopeExit()
+   local script = obj.new('tiri', { statement=[[
+global function escape(Value:num):<func, func>
+   local shared = { number=Value }
+   local function read():num return shared.number end
+   local function write(New:num) shared.number = New end
+   shared.number += 1
+   return read, write
+end
+for enabled in {0 to 2} do
+   jit.flush()
+   if enabled is 0 then jit.off() else jit.on() end
+   for index in {0 to 200} do
+      local read, write = escape(index)
+      local reused = { number=-1 }
+      assert(read() is index + 1, 'Close must preserve the latest captured value')
+      write(index + 10)
+      processing.collect()
+      assert(read() is index + 10, 'Closed closures must share the cell across GC and slot reuse')
+      assert(reused.number is -1)
+   end
+end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
