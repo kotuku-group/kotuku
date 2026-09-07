@@ -726,12 +726,6 @@ else ()
          set (JIT_SOURCE_DEPFILE_ARGS DEPFILE "${OBJECT_FILE}.d")
       endif ()
 
-      # The fold fixture lives outside the JIT header glob used by generators without depfile support.
-      set (JIT_FOLD_TEST_DEPENDENCY "")
-      if (UNIT_TESTS AND FILENAME STREQUAL "lj_opt_fold")
-         set (JIT_FOLD_TEST_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit_fold_fixture.h")
-      endif ()
-
       # Create custom command to compile each source file with explicit flags
       add_custom_command(
          OUTPUT ${OBJECT_FILE}
@@ -746,7 +740,7 @@ else ()
             -c ${SOURCE_FILE} -o ${OBJECT_FILE}
          DEPENDS ${SOURCE_FILE} ${JIT_GENERATED_HEADERS} "${JIT_SRC}/lj_ircall.h"
             ${JIT_KOTUKU_HEADER_DEPENDENCIES} ${JIT_TIRI_HEADER_DEPENDENCIES}
-            ${JIT_HEADER_DEPENDENCIES} ${JIT_FOLD_TEST_DEPENDENCY}
+            ${JIT_HEADER_DEPENDENCIES}
          ${JIT_SOURCE_DEPFILE_ARGS}
          COMMENT "Compiling ${FILENAME}.cpp"
          VERBATIM
