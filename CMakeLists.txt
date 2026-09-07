@@ -1112,6 +1112,8 @@ add_subdirectory (src/regex)
 
 add_subdirectory (src/origo)
 
+add_subdirectory (docs/tiri)
+
 add_subdirectory (apps)
 add_subdirectory (tools/tiri_lsp)
 
