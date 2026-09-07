@@ -55,6 +55,7 @@ extern "C" LJ_FUNC void lj_context_load(lua_State *L, TValue *Destination) noexc
 extern "C" LJ_FUNC GCtab * lj_context_current_jit(lua_State *L) noexcept;
 extern "C" LJ_FUNC void lj_context_enter_jit(lua_State *L, GCtab *Table, TValue *OwnerBase);
 extern "C" LJ_FUNC void lj_context_leave_jit(lua_State *L, TValue *OwnerBase) noexcept;
+extern "C" LJ_FUNC void lj_context_leave_tail_jit(lua_State *L, TValue *OwnerBase) noexcept;
 extern "C" LJ_FUNC uint32_t lj_context_has_call_jit(lua_State *L, TValue *OwnerBase) noexcept;
 extern "C" LJ_FUNC void lj_context_tail_jit(
    lua_State *L, GCtab *Table, TValue *PreparedOwner, TValue *OutgoingOwner);

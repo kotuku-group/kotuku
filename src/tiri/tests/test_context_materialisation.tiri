@@ -111,7 +111,7 @@ end
       'Explicitly context-independent built-ins should not materialise their inherited context')
 end
 
-@Test function ArbitraryNativeReentryRemainsConservative()
+function run_native_reentry_case(Preheat:bool)
    if not reset_context_counters() then return end
    local worker = entity {
       name = 'worker',
@@ -128,10 +128,31 @@ end
       return result
    end
 
+   if Preheat then
+      assert(worker.read() is 'worker')
+      assert(worker.read() is 'worker')
+   end
+
    assert(workload() is 'worker', 'A native re-entry should observe the materialised receiver context')
    local counters = jit.util.contextStats()
-   assert(counters.materialisations.nativeCall >= 1 and counters.jitEnterCalls > 0,
-      'An unclassified native callable should conservatively materialise a virtual context')
+   -- A callee compiled before its caller requires materialisation at the trace link, before the native call.
+   local boundaries = counters.materialisations.nativeCall + counters.materialisations.unsupportedBoundary
+   assert(boundaries >= 1 and counters.jitEnterCalls > 0,
+      'Native re-entry must execute with a context materialised at the native call or the compiled callee boundary')
+   assert(counters.physicalContextEntries is counters.physicalContextLeaves,
+      'Native re-entry must leave physical context ownership balanced')
+   if Preheat then
+      assert(counters.materialisations.unsupportedBoundary >= 1,
+         'Entering a precompiled contextual callee must materialise the caller context')
+   end
+end
+
+@Test function ArbitraryNativeReentryRemainsConservative()
+   run_native_reentry_case(false)
+end
+
+@Test function PrecompiledNativeReentryRemainsConservative()
+   run_native_reentry_case(true)
 end
 
 @Test function SideExitsReconstructEveryVirtualReceiver()

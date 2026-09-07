@@ -794,8 +794,9 @@ static void recff_array_getString(jit_State* J, RecordFFData* rd)
    TRef elem_type_ref = emitir(IRT(IR_FLOAD, IRT_U8), array_ref, IRFL_ARRAY_ELEMTYPE);
    emitir(IRTGI(IR_EQ), elem_type_ref, lj_ir_kint(J, int32_t(AET::BYTE)));
 
+   // Only the first slot beyond the arguments is cleared; later slots can retain refs from previous calls.
    TRef start_ref = lj_ir_kint(J, 0);
-   if (J->base[1] and not tref_isnil(J->base[1])) {
+   if (J->maxslot > 1 and not tref_isnil(J->base[1])) {
       if (not tvisnumber(&rd->argv[1])) {
          recff_nyi(J, rd);
          return;
@@ -804,7 +805,7 @@ static void recff_array_getString(jit_State* J, RecordFFData* rd)
    }
 
    TRef len_ref = lj_ir_kint(J, -1);
-   if (J->base[2] and not tref_isnil(J->base[2])) {
+   if (J->maxslot > 2 and not tref_isnil(J->base[2])) {
       if (not tvisnumber(&rd->argv[2])) {
          recff_nyi(J, rd);
          return;

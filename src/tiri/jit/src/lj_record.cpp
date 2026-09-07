@@ -1385,6 +1385,17 @@ static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
    return false;
 }
 
+// Identify closures whose identity necessarily changes on each allocation.
+
+static bool rec_is_fresh_function(jit_State *J, TRef Ref)
+{
+   if (tref_isk(Ref)) return false;
+   const IRIns *allocation = IR(tref_ref(Ref));
+   return allocation->o IS IR_CALLA and
+      (allocation->op2 IS IRCALL_lj_func_newL_zero or allocation->op2 IS IRCALL_lj_func_newL_inherited or
+       allocation->op2 IS IRCALL_lj_func_newL_local);
+}
+
 // Specialise to the runtime value of the called function or its prototype.
 
 static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool PrototypeSpecialisation)
@@ -1393,6 +1404,8 @@ static TRef rec_call_specialise(jit_State *J, GCfunc *Function, TRef Ref, bool P
    TRef kfunc;
    if (isluafunc(Function)) {
       GCproto* pt = funcproto(Function);
+      // Fresh allocations cannot specialise on the recording-time closure identity, even before CLC_POLY.
+      if (rec_is_fresh_function(J, Ref)) PrototypeSpecialisation = true;
       // Too many closures created? Probably not a monomorphic function.
       if (PrototypeSpecialisation or rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
          TRef trpt = ir.fload_ptr(Ref, IRFL_FUNC_PC);
@@ -1814,6 +1827,7 @@ void lj_record_metamethod_tailcall(jit_State *J, BCREG Func, ptrdiff_t ArgumentC
    }
    J->base[Func + 1] = TREF_FRAME;
    rec_tailcall_compact(J, Func);
+   if (tref_istab(Receiver)) J->context_tail_call[J->baseslot] = true;
 }
 
 static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t ArgumentCount)
@@ -1851,6 +1865,7 @@ static void rec_context_tailcall(jit_State *J, BCREG CallBase, ptrdiff_t Argumen
 
    J->base[CallBase + 1] = TREF_FRAME;
    rec_tailcall_compact(J, CallBase);
+   if (tref_istab(receiver) and contextual_receiver) J->context_tail_call[J->baseslot] = true;
 }
 
 //********************************************************************************************************************
@@ -1889,11 +1904,22 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
 
    rec_context_leave_metamethod(J);
 
-   if (not J->L->context_stack.empty() and J->L->context_stack.back().tail_transfer and
-         J->L->context_stack.back().owner_base IS savestack(J->L, J->L->base)) {
+   // Tail transfers may be created by a helper earlier in this very recording step (notably fast calls), or by
+   // another entry to the same prototype.  Test the executing activation rather than the recording-time stack.
+   int32_t context_baseslot = int32_t(J->baseslot);
+   TValue *context_base = J->L->base;
+   if (frame_isvarg(frame)) {
+      context_baseslot -= int32_t(frame_delta(frame));
+      context_base -= frame_delta(frame);
+   }
+   // An owner below the trace root is left to the interpreter's return path.
+   if (context_baseslot >= int32_t(FRC::MIN_BASESLOT) and (J->context_tail_call[context_baseslot] or
+       (not J->L->context_stack.empty() and J->L->context_stack.back().tail_transfer and
+        J->L->context_stack.back().owner_base IS savestack(J->L, context_base)))) {
       IRBuilder ir(J);
-      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(J->baseslot));
-      lj_ir_call(J, IRCALL_lj_context_leave_jit, owner_base);
+      TRef owner_base = rec_stack_slot_addr(J, ir, int32_t(context_baseslot));
+      lj_ir_call(J, IRCALL_lj_context_leave_tail_jit, owner_base);
+      J->context_tail_call[context_baseslot] = false;
    }
 
    for (i = 0; i < gotresults; i++) (void)getslot(J, rbase + i);  //  Ensure all results have a reference.
@@ -2943,7 +2969,7 @@ static TRef rec_upvalue(jit_State *J, uint32_t uv, TRef val)
       TRef tr, kfunc;
       lj_assertJ(val IS 0, "bad usage");
       if (not tref_isk(fn)) {  // Late specialisation of current function.
-         if (rec_proto_specialise_by_prototype(J->pt)) goto noconstify;
+         if (rec_is_fresh_function(J, fn) or rec_proto_specialise_by_prototype(J->pt)) goto noconstify;
          kfunc = ir.kfunc(J->fn);
          ir.guard_eq(fn, kfunc, IRT_FUNC);
          J->base[-2] = kfunc;
@@ -2995,6 +3021,69 @@ noconstify:
       J->needsnap = 1;
       return 0;
    }
+}
+
+// Record a close with a guarded list shape.  Cell identities may differ on each trace entry.
+static void rec_close_upvalues(jit_State *J, BCREG Level)
+{
+   IRBuilder ir(J);
+   TRef values[LJ_MAX_JSLOTS];
+   TRef addresses[LJ_MAX_JSLOTS];
+   unsigned count = 0;
+   // Extend snapshot coverage before adding the pre-effect snapshot.  snap_usedef() and snap_useuv()
+   // already preserve captured SSA slots, even when ordinary bytecode liveness would discard them.
+   for (GCobj* cell = gcref(J->L->openupval); cell; cell = gcref(cell->gch.nextgc)) {
+      ptrdiff_t slot = uvval(gco_to_upval(cell)) - J->L->base;
+      if (slot < Level) break;
+      if (slot >= J->pt->framesize or int32_t(J->baseslot) + slot >= LJ_MAX_JSLOTS) {
+         setintV(&J->errinfo, int32_t(BC_UCLO));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      if (J->maxslot <= slot) J->maxslot = BCREG(slot + 1);
+   }
+   lj_snap_add(J);
+   TRef state_ref = ir.emit(IRT(IR_LREF, IRT_PTR), 0, 0);
+   TRef list_addr = ir.emit(IRT(IR_ADD, IRT_PTR), state_ref, lj_ir_kintp(J, offsetof(lua_State, openupval)));
+   TRef head = ir.emit(IRT(IR_XLOAD, IRT_PTR), list_addr, IRXLOAD_VOLATILE);
+   TRef trace_base = ir.emit(IRT(IR_XLOAD, IRT_PTR), ir.kptr(&J2G(J)->jit_base), IRXLOAD_VOLATILE);
+   int32_t frame_offset = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT);
+   TRef close_level = ir.emit(IRT(IR_ADD, IRT_PTR), trace_base,
+      lj_ir_kintp(J, (frame_offset + int32_t(Level)) * sizeof(TValue)));
+   GCobj* cell = gcref(J->L->openupval);
+   while (cell and uvval(gco_to_upval(cell)) >= J->L->base + Level) {
+      GCupval* uv = gco_to_upval(cell);
+      ptrdiff_t slot = uvval(uv) - J->L->base;
+      if (slot < 0 or slot >= J->pt->framesize or count >= LJ_MAX_JSLOTS) {
+         setintV(&J->errinfo, int32_t(BC_UCLO));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      ir.guard_ne(head, ir.knull(IRT_PTR), IRT_PTR);
+      TRef value_addr = ir.emit(IRT(IR_ADD, IRT_PTR), head, lj_ir_kintp(J, offsetof(GCupval, v)));
+      TRef value_slot = ir.emit(IRT(IR_XLOAD, IRT_PTR), value_addr, IRXLOAD_VOLATILE);
+      addresses[count] = ir.emit(IRT(IR_ADD, IRT_PTR), trace_base,
+         lj_ir_kintp(J, (frame_offset + int32_t(slot)) * sizeof(TValue)));
+      ir.guard_eq(value_slot, addresses[count], IRT_PTR);
+      values[count++] = getslot(J, BCREG(slot));
+      TRef next_addr = ir.emit(IRT(IR_ADD, IRT_PTR), head, lj_ir_kintp(J, offsetof(GCupval, nextgc)));
+      head = ir.emit(IRT(IR_XLOAD, IRT_PTR), next_addr, IRXLOAD_VOLATILE);
+      cell = gcref(uv->nextgc);
+   }
+   if (cell) {
+      ir.guard_ne(head, ir.knull(IRT_PTR), IRT_PTR);
+      TRef value_addr = ir.emit(IRT(IR_ADD, IRT_PTR), head, lj_ir_kintp(J, offsetof(GCupval, v)));
+      TRef value_slot = ir.emit(IRT(IR_XLOAD, IRT_PTR), value_addr, IRXLOAD_VOLATILE);
+      ir.guard(IR_ULT, IRT_PTR, value_slot, close_level);
+   }
+   else ir.guard_eq(head, ir.knull(IRT_PTR), IRT_PTR);
+   // All guards precede publication.  The helper cannot allocate, throw or run script.
+   for (unsigned index = 0; index < count; ++index) {
+      rec_emit_tvalue_store(J, addresses[index], values[index]);
+   }
+   emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+   lj_ir_call(J, IRCALL_lj_func_closeuv, close_level);
+   // Lifetime boundary for UREF CSE, ULOAD forwarding and USTORE elimination, including loop replay.
+   emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+   J->needsnap = 1;
 }
 
 //********************************************************************************************************************
@@ -3100,6 +3189,8 @@ static void rec_func_jit(jit_State *J, TraceNo lnk)
       return;
    }
    J->instunroll = 0;  //  Cannot continue across a compiled function.
+   // The target trace reads the physical context stack; it cannot inherit this trace's virtual activations.
+   rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
    if (J->pc IS J->startpc and FRC::at_trace_root(J)) {
       lj_record_stop(J, TraceLink::TAILREC, J->cur.traceno);  //  Extra tail-rec.
    }
@@ -5293,6 +5384,37 @@ void lj_record_ins(jit_State *J)
       rec_loop_op(J, &ops, pc);
       break;
 
+   case BC_UCLO: {
+      GCobj* head = gcref(J->L->openupval);
+      if (head and uvval(gco_to_upval(head)) >= J->L->base + ra) {
+         rec_close_upvalues(J, ra);
+         break;
+      }
+      // Exit before UCLO so the interpreter closes and follows its jump exactly once.
+      lj_snap_add(J);
+      TRef state_ref = emitir(IRT(IR_LREF, IRT_PTR), 0, 0);
+      TRef list_addr = emitir(IRT(IR_ADD, IRT_PTR), state_ref, lj_ir_kintp(J, offsetof(lua_State, openupval)));
+      // Never fold, forward or hoist this load: FNEW, helpers and GC may change the list.
+      TRef open_list = emitir(IRT(IR_XLOAD, IRT_PTR), list_addr, IRXLOAD_VOLATILE);
+      if (head) {
+         // func_finduv() orders open cells by descending stack address.  If the head is below
+         // the closing level, every cell is below it.  Guard before dereferencing a nullable head.
+         emitir(IRTG(IR_NE, IRT_PTR), open_list, lj_ir_knull(J, IRT_PTR));
+         TRef value_addr = emitir(IRT(IR_ADD, IRT_PTR), open_list, lj_ir_kintp(J, offsetof(GCupval, v)));
+         TRef value_slot = emitir(IRT(IR_XLOAD, IRT_PTR), value_addr, IRXLOAD_VOLATILE);
+         // Reload the live trace base too: relocation updates jit_base and every open cell's v.
+         // The global state belongs to the trace; only its address, never its contents, is constant.
+         TRef trace_base = emitir(IRT(IR_XLOAD, IRT_PTR), lj_ir_kptr(J, &J2G(J)->jit_base), IRXLOAD_VOLATILE);
+         int32_t slot_offset = int32_t(J->baseslot) - int32_t(FRC::MIN_BASESLOT) + int32_t(ra);
+         TRef close_level = emitir(IRT(IR_ADD, IRT_PTR), trace_base, lj_ir_kintp(J, slot_offset * sizeof(TValue)));
+         emitir(IRTG(IR_ULT, IRT_PTR), value_slot, close_level);
+      }
+      else emitir(IRTG(IR_EQ, IRT_PTR), open_list, lj_ir_knull(J, IRT_PTR));
+      // As with JMP, dispatch supplies the jump destination on the next recorder entry.
+      // UCLO's A is a closing level, not JMP's live-slot limit; preserve the SSA slots.
+      break;
+   }
+
    case BC_JMP:
       if (ra < J->maxslot) J->maxslot = ra;  //  Shrink used slots.
       break;
@@ -5463,14 +5585,52 @@ void lj_record_ins(jit_State *J)
       lj_trace_err(J, LJ_TRERR_CJITOFF);
       break;
 
+   case BC_FNEW: {
+      IRBuilder ir(J);
+      GCproto *prototype = gco_to_proto(proto_kgc(J->pt, ~(ptrdiff_t)rc));
+      bool local_captures = false;
+      for (MSize index = 0; index < prototype->sizeuv; ++index) {
+         if (proto_uv(prototype)[index] & PROTO_UV_LOCAL) {
+            local_captures = true;
+            BCREG slot = proto_uv(prototype)[index] & 0xff;
+            getslot(J, slot);
+            if (J->maxslot <= slot) J->maxslot = slot + 1;
+         }
+      }
+      // Root the prototype in the trace and inherit the logical current frame's environment, including inlining.
+      TRef proto_ref = lj_ir_kgc(J, obj2gco(prototype), IRT_PROTO);
+      TRef parent = getcurrf(J);
+      TRef environment = prototype->sizeuv ? 0 : emitir(IRT(IR_FLOAD, IRT_TAB), parent, IRFL_FUNC_ENV);
+      lj_snap_add(J);
+      if (local_captures) {
+         // Publish all captured values after type guards, before exposing their addresses to the open-cell list.
+         for (MSize index = 0; index < prototype->sizeuv; ++index) {
+            uint32_t capture = proto_uv(prototype)[index];
+            if (capture & PROTO_UV_LOCAL) {
+               BCREG slot = capture & 0xff;
+               rec_emit_tvalue_store(J, rec_stack_slot_addr(J, ir, J->baseslot + slot), J->base[slot]);
+            }
+         }
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+         TRef frame = rec_stack_slot_addr(J, ir, J->baseslot);
+         rc = lj_ir_call(J, IRCALL_lj_func_newL_local, proto_ref, parent, frame);
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+      }
+      else rc = prototype->sizeuv ? lj_ir_call(J, IRCALL_lj_func_newL_inherited, proto_ref, parent) :
+         lj_ir_call(J, IRCALL_lj_func_newL_zero, proto_ref, environment);
+      // CALLA has a weak allocation guard.  Keep even unused closures for allocation-counter and failure semantics.
+      emitir(IRT(IR_USE, IRT_FUNC), rc, 0);
+      // Publish through the normal destination-slot path below before taking the next bytecode's snapshot.
+      J->needsnap = 1;
+      J->mergesnap = 0;
+      break;
+   }
+
    default:
       if (op >= BC__MAX) {
          lj_ffrecord_func(J);
          break;
       }
-      [[fallthrough]];
-   case BC_UCLO:
-   case BC_FNEW:
       setintV(&J->errinfo, (int32_t)op);
       lj_trace_err_info(J, LJ_TRERR_NYIBC);
       break;
@@ -5481,7 +5641,8 @@ void lj_record_ins(jit_State *J)
       SlotView slots(J);
       slots[ra] = rc;
       if (ra >= slots.maxslot()) {
-         if (ra > slots.maxslot()) slots.clear(ra - 1);
+         // A call may leave stale scratch references above maxslot.  A later high destination must not revive them.
+         if (ra > slots.maxslot()) slots.clear_range(slots.maxslot(), ra - slots.maxslot());
          slots.set_maxslot(ra + 1);
       }
    }
@@ -5593,6 +5754,7 @@ void lj_record_setup(jit_State *J)
    memset(J->context_call_receiver, 0, sizeof(J->context_call_receiver));
    memset(J->context_call_result, 0, sizeof(J->context_call_result));
    memset(J->context_call_state, 0, sizeof(J->context_call_state));
+   memset(J->context_tail_call, 0, sizeof(J->context_tail_call));
    J->context_call_activation_count = 0;
    J->context_virtual_slot = -1;
    memset(J->trymat, 0, sizeof(J->trymat));
