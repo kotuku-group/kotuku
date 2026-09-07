@@ -329,6 +329,13 @@ extern "C" void lj_context_leave_jit(lua_State *L, TValue *OwnerBase) noexcept
    }
 }
 
+extern "C" void lj_context_leave_tail_jit(lua_State *L, TValue *OwnerBase) noexcept
+{
+   if (not L->context_stack.empty() and L->context_stack.back().tail_transfer) {
+      lj_context_leave_jit(L, OwnerBase);
+   }
+}
+
 extern "C" void lj_context_tail_jit(
    lua_State *L, GCtab *Table, TValue *PreparedOwner, TValue *OutgoingOwner)
 {

@@ -152,6 +152,55 @@ static GCfunc* func_newL(lua_State *L, GCproto *pt, GCtab *env)
    return fn;
 }
 
+// Trace allocation must not collect or inspect the interpreter frame.  CALLA supplies GC checks and snapshots.
+
+GCfunc *lj_func_newL_zero(lua_State *L, GCproto *Proto, GCtab *Environment)
+{
+   lj_assertL(Proto->sizeuv IS 0, "trace closure allocation with captures");
+   return func_newL(L, Proto, Environment);
+}
+
+// Share existing cells without collecting, creating open cells or inspecting the interpreter frame.
+
+GCfunc *lj_func_newL_inherited(lua_State *L, GCproto *Proto, GCfuncL *Parent)
+{
+   GCfunc *function = func_newL(L, Proto, tabref(Parent->env));
+   for (MSize index = 0; index < Proto->sizeuv; ++index) {
+      uint32_t capture = proto_uv(Proto)[index];
+      lj_assertL(not (capture & PROTO_UV_LOCAL), "trace closure allocation with local capture");
+      lj_assertL(capture < Parent->nupvalues, "invalid inherited capture index");
+      // NOBARRIER: The function is new and white; preserve the cell's immutable flag and disambiguation hash.
+      setgcrefr(function->l.uvptr[index], Parent->uvptr[capture]);
+   }
+   function->l.nupvalues = uint8_t(Proto->sizeuv);
+   return function;
+}
+
+// Trace-local captures use the logical frame supplied by the recorder.  Neither allocation path collects or
+// resizes the stack.  Create cells first so allocation failure never leaves a partially sized function in the GC list.
+
+GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue *Base)
+{
+   GCupval *captures[LJ_MAX_UPVAL];
+   for (MSize index = 0; index < Proto->sizeuv; ++index) {
+      uint32_t capture = proto_uv(Proto)[index];
+      if (capture & PROTO_UV_LOCAL) {
+         GCupval *cell = func_finduv(L, Base + (capture & 0xff));
+         cell->immutable = ((capture / PROTO_UV_IMMUTABLE) & 1);
+         cell->dhash = uint32_t(uintptr_t(mref<char>(Parent->pc))) ^ (capture << 24);
+         captures[index] = cell;
+      }
+      else captures[index] = gco_to_upval(gcref(Parent->uvptr[capture]));
+   }
+   GCfunc *function = func_newL(L, Proto, tabref(Parent->env));
+   for (MSize index = 0; index < Proto->sizeuv; ++index) {
+      // NOBARRIER: The function is white, and no allocation or collection intervenes before publication.
+      setgcref(function->l.uvptr[index], obj2gco(captures[index]));
+   }
+   function->l.nupvalues = uint8_t(Proto->sizeuv);
+   return function;
+}
+
 // Create a new Lua function with empty upvalues.
 
 GCfunc * lj_func_newL_empty(lua_State *L, GCproto *pt, GCtab *env)

@@ -15,6 +15,8 @@ LJ_FUNC void lj_func_freeuv(global_State *g, GCupval *uv);
 // Functions (closures).
 LJ_FUNC [[nodiscard]] GCfunc *lj_func_newC(lua_State *L, MSize nelems, GCtab *env);
 LJ_FUNC [[nodiscard]] GCfunc *lj_func_newL_empty(lua_State *L, GCproto *pt, GCtab *env);
+LJ_FUNC [[nodiscard]] GCfunc *lj_func_newL_zero(lua_State *L, GCproto *Proto, GCtab *Environment);
+LJ_FUNC [[nodiscard]] GCfunc *lj_func_newL_inherited(lua_State *L, GCproto *Proto, GCfuncL *Parent);
+LJ_FUNC [[nodiscard]] GCfunc *lj_func_newL_local(lua_State *L, GCproto *Proto, GCfuncL *Parent, TValue *Base);
 LJ_FUNCA [[nodiscard]] GCfunc *lj_func_newL_gc(lua_State *L, GCproto *pt, GCfuncL *parent);
 LJ_FUNC void lj_func_free(global_State *g, GCfunc *c);
-
