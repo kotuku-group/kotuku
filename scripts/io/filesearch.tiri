@@ -3,44 +3,90 @@ The FileSearch interface simplifies the process of searching for files and folde
 Refer to the Tiri I/O Wiki page for documentation.
 --]]
 
-io.search = function(Path:str!, Options:table!)
-   lOptions      = Options
-   ADJUST_LOG    = 0
-   lStop         = false
-   isRegexFilter = false
+io.search = function(Path:any!, Options:table!)
+   l_options       = Options
+   l_stop          = false
+   match_count      = 0
+   is_regex_filter  = false
+   is_exclude_regex = false
+   has_min_date     = l_options.minDate != nil
+   has_max_date     = l_options.maxDate != nil
 
    function normaliseFolderPath(Path:str!):str
-      if Path.endsWith('/') or Path.endsWith('\\') then return Path end
+      if Path.endsWith('/') or Path.endsWith('\\') or Path.endsWith(':') then return Path end
       return Path .. '/'
    end
 
-   function contentMatch(Path:str!):bool
-      lOptions.contentFilter ?! return true
+   function reportError(Path:str!, Error:any)
+      if l_options.errorFeedback then
+         local result:any = l_options.errorFeedback(Path, Error)
+         if result is ERR_Terminate then l_stop = true end
+      end
+   end
 
-      try
-         fl = obj.new('file', { path=Path, flags=FL_READ } )
+   function cancellationRequested():bool
+      if l_stop then return true end
 
-         -- By default, symbolic links are not scanned for content unless the scanLinks option is set.
+      if l_options.cancelToken and l_options.cancelToken.cancelled then
+         l_stop = true
+         return true
+      end
 
-         if (fl.flags has FL_LINK) and (lOptions.scanLinks != true) then
-            fl.free()
-            return false
-         end
-
-         bytes = fl.size
-         if bytes > 4096 then bytes = 4096 end
-         buf = string.alloc(bytes)
-         err, totalRead = fl.acRead(buf)
-
-         while (err is ERR_Okay) and (totalRead >= #lOptions.contentFilter) do
-            if buf.find(lOptions.contentFilter) then return true end
-            if fl.position is fl.size then return false end
-            fl.acSeek(-#lOptions.contentFilter, SEEK_CURRENT) -- Sliding window
-            err, totalRead = fl.acRead(buf)
+      if l_options.cancelCheck then
+         local result:any = l_options.cancelCheck(match_count)
+         if (result is true) or (result is ERR_Terminate) then
+            l_stop = true
+            return true
          end
       end
 
       return false
+   end
+
+   function contentMatch(Path:str!):bool
+      l_options.contentFilter ?! return true
+
+      local filter_size = #l_options.contentFilter
+      if filter_size is 0 then return true end
+
+      local fl <close>:obj
+      try
+         fl = obj.new('file', { path=Path, flags=FL_READ } )
+      except ex
+         reportError(Path, ex)
+         if l_options.strict then raise end
+         return false
+      end
+
+      -- By default, symbolic links are not scanned for content unless the scanLinks option is set.
+
+      if (fl.flags has FL_LINK) and (l_options.scanLinks != true) then return false end
+
+      local buffer_size = 4096
+      if filter_size > buffer_size then buffer_size = filter_size end
+
+      local buffer = string.alloc(buffer_size)
+      local overlap = ''
+
+      while true do
+         if cancellationRequested() then return false end
+
+         local err, total_read = fl.acRead(buffer)
+         if err != ERR_Okay then
+            reportError(Path, err)
+            if l_options.strict then raise err end
+            return false
+         end
+
+         if total_read is 0 then return false end
+
+         local content = overlap .. buffer.sub(0, total_read)
+         if content.find(l_options.contentFilter) then return true end
+
+         local overlap_size = filter_size - 1
+         if overlap_size > #content then overlap_size = #content end
+         overlap = content.sub(#content - overlap_size)
+      end
    end
 
    function dateLessThan(A, B) -- struct DateTime
@@ -66,167 +112,195 @@ io.search = function(Path:str!, Options:table!)
       return false -- Dates are exactly equal
    end
 
-   function scanPath(Path:str, currentDepth:num)
-      currentDepth ?= 0
-      msg(f'scanPath() {Path ?? ':'} (depth: {currentDepth})')
+   function filterMatches(Filter:any!, RegexFilter:bool, FileName:str!):bool
+      local cmp_name = FileName
+      local cmp_filter:any = Filter
+      if not l_options.caseSensitive then
+         cmp_name = string.lower(cmp_name)
+         if not RegexFilter then cmp_filter = string.lower(cmp_filter) end
+      end
 
-      if lStop then return end
+      if RegexFilter then return Filter.test(cmp_name) end
+      return cmp_name is cmp_filter
+   end
 
-      if lOptions.maxDepth and (currentDepth > lOptions.maxDepth) then return end
+   function entryMatches(FileName:str!, File:obj, Depth:num):bool
+      local match = true
 
-      count = 0
-      flags = 0
-      if not lOptions.matchFolders then flags = flags | FL_EXCLUDE_FOLDERS end
-      if lOptions.ignoreFiles then flags = flags | FL_EXCLUDE_FILES end
+      if l_options.minDepth and (Depth < l_options.minDepth) then match = false end
+      if match and l_options.nameFilter then match = filterMatches(l_options.nameFilter, is_regex_filter, FileName) end
+      if match and l_options.excludeFilter then
+         match = not filterMatches(l_options.excludeFilter, is_exclude_regex, FileName)
+      end
+
+      if l_options.minSize?? and (l_options.minSize > 0) and (File.size < l_options.minSize) then match = false end
+      if l_options.maxSize and (l_options.maxSize >= 0) and (File.size > l_options.maxSize) then match = false end
+      if has_min_date and dateLessThan(File.date, l_options.minDate) then match = false end
+      if has_max_date and dateLessThan(l_options.maxDate, File.date) then match = false end
+
+      if match and (File.flags has FL_FILE) then match = contentMatch(File.path) end
+      return match
+   end
+
+   function processEntry(Path:str!, FileName:str!, File:obj, Depth:num)
+      local match = entryMatches(FileName, File, Depth)
+      if cancellationRequested() then return end
+
+      msg(f'Found: {File.path} Match: {match}')
+
+      if match then
+         match_count++
+         if l_options.matchFeedback then
+            local result:any = l_options.matchFeedback(Path, FileName, File)
+            if result is ERR_Terminate then l_stop = true end
+         end
+
+         if l_options.maxResults and (match_count >= l_options.maxResults) then l_stop = true end
+      elseif l_options.ignoreFeedback then
+         local result:any = l_options.ignoreFeedback(Path, FileName, File)
+         if result is ERR_Terminate then l_stop = true end
+      end
+   end
+
+   function scanPath(Path:str, CurrentDepth:num):nil
+      CurrentDepth ?= 0
+      msg(f'scanPath() {Path ?? ':'} (depth: {CurrentDepth})')
+
+      if cancellationRequested() then return end
+      if l_options.maxDepth and (CurrentDepth > l_options.maxDepth) then return end
+
+      local count = 0
+      local flags = 0
+      if not l_options.matchFolders then flags = flags | FL_EXCLUDE_FOLDERS end
+      if l_options.ignoreFiles then flags = flags | FL_EXCLUDE_FILES end
 
       local folder
       try
          folder = obj.new('file', { src=Path, flags=flags })
       except ex
+         reportError(Path, ex)
+         if l_options.strict then raise end
          return
       end
 
-      err, fl = folder.mtNext()
-      while (err is ERR_Okay) and (not lStop) do
+      local err, fl = folder.mtNext()
+      while (err is ERR_Okay) and (not l_stop) do
          count++
          processing.sleep(0)
+         if cancellationRequested() then break end
 
-         fileFolder, file_name = io.splitPath(fl.path)
-
-         -- Ensure that the filename matches our filter
-
-         match = true
-         if lOptions.nameFilter then
-            cmp_name = file_name
-            cmp_filter = lOptions.nameFilter
-            if not lOptions.caseSensitive then
-               cmp_name = string.lower(cmp_name)
-               if not isRegexFilter then cmp_filter = string.lower(cmp_filter) end
-            end
-
-            if isRegexFilter then
-               if not lOptions.nameFilter.test(cmp_name) then
-                  match = false
-               end
-            elseif cmp_name != cmp_filter then -- Exact string match
-               match = false
-            end
-         end
-
-         if lOptions.minSize?? and (lOptions.minSize > 0) and (fl.size < lOptions.minSize) then match = false end
-         if lOptions.maxSize and (lOptions.maxSize >= 0) and (fl.size > lOptions.maxSize) then match = false end
-         if lOptions.minDateSet and dateLessThan(fl.date, lOptions.minDate) then match = false end
-         if lOptions.maxDateSet and dateLessThan(lOptions.maxDate, fl.date) then match = false end
-
-         if match and (fl.flags has FL_FILE) then
-            match = contentMatch(fl.path)
-         end
-
-         msg(f'Found: {fl.path} (count: {count}); Match: {match}')
-
-         if match then
-            if lOptions.matchFeedback then
-               mSys.AdjustLogLevel(-ADJUST_LOG) -- Temporarily revert debug log so that child behaviour can be analysed
-
-                  result = lOptions.matchFeedback(Path, file_name, fl)
-                  if result is ERR_Terminate then lStop = true end
-
-               mSys.AdjustLogLevel(ADJUST_LOG) -- Raise log level again
-            end
-         elseif lOptions.ignoreFeedback then
-            result = lOptions.ignoreFeedback(Path, file_name, fl)
-            if result is ERR_Terminate then lStop = true end
-         end
-
+         local _, file_name = io.splitPath(fl.path)
+         processEntry(Path, file_name, fl, CurrentDepth)
          err, fl = folder.mtNext()
       end
 
-      if lStop then return end
+      if (err != ERR_Okay) and (err != ERR_EndOfSequence) then
+         reportError(Path, err)
+         if l_options.strict then raise err end
+      end
+
+      if l_stop then return end
 
       -- Recursively scan directory content (if we haven't reached max depth)
 
-      if not lOptions.maxDepth or currentDepth < lOptions.maxDepth then
-         can_recurse = true
+      if not l_options.maxDepth or CurrentDepth < l_options.maxDepth then
+         local can_recurse = true
          try
             folder = obj.new('file', { src=Path, flags=FL_EXCLUDE_FILES | FL_FOLDER } )
          except ex
+            reportError(Path, ex)
+            if l_options.strict then raise end
             can_recurse = false
          end
 
          if can_recurse then
             err, fl = folder.mtNext()
-            while (err is ERR_Okay) and (not lStop) do
+            while (err is ERR_Okay) and (not l_stop) do
                count++
+               processing.sleep(0)
+               if cancellationRequested() then break end
+
                if fl.flags has FL_LINK then
-                  -- Do not scan symbolicly linked directories (possible recursion)
+                  -- Do not scan symbolically linked directories (possible recursion)
                else
-                  processing.sleep(0)
-                  scanPath(normaliseFolderPath(fl.path), currentDepth + 1)
+                  local descend = true
+                  if l_options.shouldDescend then
+                     local result:any = l_options.shouldDescend(Path, fl)
+                     if result is ERR_Terminate then
+                        l_stop = true
+                        descend = false
+                     else
+                        descend = result is true
+                     end
+                  end
+
+                  if descend then scanPath(normaliseFolderPath(fl.path), CurrentDepth + 1) end
                end
                err, fl = folder.mtNext()
+            end
+
+            if (err != ERR_Okay) and (err != ERR_EndOfSequence) then
+               reportError(Path, err)
+               if l_options.strict then raise err end
             end
          end
       end
 
-      if count is 0 then processing.sleep(0) end  -- Message check required if the directory was empty
+      if count is 0 then processing.sleep(0) end -- Message check required if the directory was empty
 
       processing.collect()
    end
 
    function processPath(Path:str!)
-      msg(f'Path: {Path}, Filter: {Options.nameFilter}, Regex: {isRegexFilter}, Content: {Options.contentFilter}')
+      if cancellationRequested() then return end
+      msg(f'Path: {Path}, Filter: {Options.nameFilter}, Regex: {is_regex_filter}, Content: {Options.contentFilter}')
 
-      if io.isFolder(Path) then
-         mSys.AdjustLogLevel(ADJUST_LOG)
-            scanPath(Path, 0)
-         mSys.AdjustLogLevel(-ADJUST_LOG)
+      local err, location_type = mSys.AnalysePath(Path)
+      if err != ERR_Okay then
+         reportError(Path, err)
+         if l_options.strict then raise err end
+         return
+      end
+
+      if (location_type is LOC_FOLDER) or (location_type is LOC_VOLUME) then
+         local folder_path = normaliseFolderPath(Path)
+         scanPath(folder_path, 0)
       else
-         -- Single file analysis
+         if l_options.ignoreFiles then return end
 
-         path, file_name = io.splitPath(Path)
-         name_matches = true
+         local path, file_name = io.splitPath(Path)
+         path ?= ''
 
-         if Options.nameFilter then
-            cmp_name = file_name
-            cmp_filter = lOptions.nameFilter
-            if not lOptions.caseSensitive then
-               cmp_name = cmp_name.lower()
-               if not isRegexFilter then cmp_filter = cmp_filter.lower() end
-            end
-
-            if isRegexFilter then
-               name_matches = lOptions.nameFilter.test(cmp_name)
-            else
-               name_matches = cmp_name is cmp_filter
-            end
+         local fl
+         try
+            fl = obj.new('file', { path=Path })
+         except ex
+            reportError(Path, ex)
+            if l_options.strict then raise end
+            return
          end
 
-         if name_matches and contentMatch(Path) then
-            lOptions?.matchFeedback(path, file_name, <{ obj.new('file', { path=Path }) }>)
-         end
+         processEntry(path, file_name, fl, 0)
       end
    end
 
    -- Entry point for the search
 
-   if lOptions.nameFilter and lOptions.nameFilter != <str> then
+   if l_options.nameFilter and l_options.nameFilter != <str> then
       -- Check if it's a regex object by testing for regex methods
-      if lOptions.nameFilter.test and lOptions.nameFilter.match then
-         isRegexFilter = true
-      end
+      if l_options.nameFilter.test and l_options.nameFilter.match then is_regex_filter = true end
    end
 
-   if lOptions.maxDate then
-      lOptions.maxDateSet = true
+   if l_options.excludeFilter and l_options.excludeFilter != <str> then
+      if l_options.excludeFilter.test and l_options.excludeFilter.match then is_exclude_regex = true end
    end
 
-   if lOptions.minDate then
-      lOptions.minDateSet = true
-   end
+   if l_options.maxResults and (l_options.maxResults <= 0) then l_stop = true end
 
    if Path is <table> or Path is <array> then
-      for v in values(Path) do
-         processPath(v)
+      for value in values(Path) do
+         processPath(value)
+         if l_stop then break end
       end
    else
       processPath(Path)

@@ -1,0 +1,280 @@
+-- Flute tests for the optional file-search library.
+
+   import 'io/filesearch'
+
+glSearchFolder = 'temp:filesearch-tests/'
+glSmallFile = glSearchFolder .. 'small.txt'
+glBoundaryFile = glSearchFolder .. 'boundary.txt'
+glNestedFolder = glSearchFolder .. 'nested/'
+glNestedFile = glNestedFolder .. 'inside.txt'
+glPrunedFolder = glSearchFolder .. 'pruned/'
+glPrunedFile = glPrunedFolder .. 'blocked.txt'
+
+@BeforeAll function SetupFileSearchTests()
+   mSys.DeleteFile(glSearchFolder)
+   check mSys.CreateFolder(glSearchFolder, 0)
+   check mSys.CreateFolder(glNestedFolder, 0)
+   check mSys.CreateFolder(glPrunedFolder, 0)
+   io.writeAll(glSmallFile, 'small')
+   io.writeAll(glBoundaryFile, 'a'.rep(4094) .. 'needle' .. 'z'.rep(5000))
+   io.writeAll(glNestedFile, 'nested')
+   io.writeAll(glPrunedFile, 'pruned')
+end
+
+@AfterAll function CleanupFileSearchTests()
+   mSys.DeleteFile(glSearchFolder)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FolderPathWithoutTrailingSeparator()
+   local matches = 0
+   local callback_path
+
+   io.search('temp:filesearch-tests', {
+      maxDepth = 0,
+      nameFilter = 'small.txt',
+      matchFeedback = function(Path, FileName, File)
+         matches++
+         callback_path = Path
+         assert(FileName is 'small.txt', 'Expected the selected file name')
+         assert(File.path is glSmallFile, 'Expected the complete matched path')
+      end
+   })
+
+   assert(matches is 1, 'A folder path without a trailing separator should be searched')
+   assert(callback_path is glSearchFolder, 'Folder callbacks should receive a normalised path')
+end
+
+@Test function DirectFileUsesAllFiltersAndIgnoreFeedback()
+   local matches = 0
+   local ignored = 0
+
+   io.search(glSmallFile, {
+      minSize = 100,
+      matchFeedback = function() matches++ end,
+      ignoreFeedback = function(Path, FileName, File)
+         ignored++
+         assert(Path is glSearchFolder, 'Direct-file callbacks should receive the containing folder')
+         assert(FileName is 'small.txt', 'Direct-file callbacks should receive the file name')
+         assert(File.size is 5, 'Direct-file callbacks should receive file metadata')
+      end
+   })
+
+   assert(matches is 0, 'A direct file below minSize must not match')
+   assert(ignored is 1, 'A rejected direct file should invoke ignoreFeedback')
+
+   local metadata = obj.new('file', { path=glSmallFile })
+   local earlier = metadata.date
+   earlier.year -= 1
+
+   io.search(glSmallFile, {
+      maxDate = earlier,
+      matchFeedback = function() matches++ end,
+      ignoreFeedback = function() ignored++ end
+   })
+
+   assert(matches is 0, 'A direct file later than maxDate must not match')
+   assert(ignored is 2, 'A date-rejected direct file should invoke ignoreFeedback')
+end
+
+@Test function ContentMatchAcrossReadBoundaryAndLongFilter()
+   local boundary_matches = 0
+   io.search(glBoundaryFile, {
+      contentFilter = 'needle',
+      matchFeedback = function() boundary_matches++ end
+   })
+   assert(boundary_matches is 1, 'Content spanning the 4 KiB read boundary should match')
+
+   local long_matches = 0
+   io.search(glBoundaryFile, {
+      contentFilter = 'z'.rep(5000),
+      matchFeedback = function() long_matches++ end
+   })
+   assert(long_matches is 1, 'A content filter longer than 4 KiB should match')
+
+   local exact_boundary_ignored = 0
+   io.search(glBoundaryFile, {
+      contentFilter = 'q'.rep(4096),
+      ignoreFeedback = function() exact_boundary_ignored++ end
+   })
+   assert(exact_boundary_ignored is 1, 'An unmatched 4 KiB filter should terminate without matching')
+end
+
+@Test function SearchOptionsAreNotMutated()
+   local metadata = obj.new('file', { path=glSmallFile })
+   local options = {
+      minDate = metadata.date,
+      maxDate = metadata.date
+   }
+
+   io.search(glSmallFile, options)
+
+   assert(options.minDateSet is nil, 'io.search() must not add minDateSet to the options table')
+   assert(options.maxDateSet is nil, 'io.search() must not add maxDateSet to the options table')
+end
+
+@Test function FileSystemErrorsCanBeReportedOrRaised()
+   local missing_path = glSearchFolder .. 'missing.txt'
+   local reported_path
+   local reported_error
+
+   io.search(missing_path, {
+      errorFeedback = function(Path, Error)
+         reported_path = Path
+         reported_error = Error
+      end
+   })
+
+   assert(reported_path is missing_path, 'errorFeedback should identify the failing path')
+   assert(reported_error is ERR_FileNotFound, 'errorFeedback should receive the filesystem error')
+
+   local raised = false
+   local strict_reported = false
+   try
+      io.search(missing_path, {
+         strict = true,
+         errorFeedback = function() strict_reported = true end
+      })
+   except ex when ERR_FileNotFound
+      raised = true
+   end
+   assert(strict_reported, 'strict searches should call errorFeedback before raising')
+   assert(raised, 'strict searches should raise filesystem errors')
+end
+
+@Test function DirectFileTerminationStopsMultiplePaths()
+   local matches = 0
+
+   io.search(array<str> { glSmallFile, glBoundaryFile }, {
+      matchFeedback = function()
+         matches++
+         return ERR_Terminate
+      end
+   })
+
+   assert(matches is 1, 'ERR_Terminate from a direct-file callback should stop all remaining paths')
+end
+
+@Test function IgnoreFilesExcludesDirectFiles()
+   local callbacks = 0
+
+   io.search(glSmallFile, {
+      ignoreFiles = true,
+      matchFeedback = function() callbacks++ end,
+      ignoreFeedback = function() callbacks++ end
+   })
+
+   assert(callbacks is 0, 'ignoreFiles should exclude a direct file without invoking file callbacks')
+end
+
+@Test function MaximumResultsStopsTraversal()
+   local matches = 0
+
+   io.search(glSearchFolder, {
+      maxDepth = 1,
+      maxResults = 2,
+      matchFeedback = function() matches++ end
+   })
+
+   assert(matches is 2, 'maxResults should stop traversal after the requested number of matches')
+
+   matches = 0
+   io.search(glSmallFile, {
+      maxResults = 0,
+      matchFeedback = function() matches++ end
+   })
+   assert(matches is 0, 'A zero maxResults limit should suppress all matches')
+end
+
+@Test function MinimumDepthFiltersShallowEntries()
+   local matches = array<str>
+
+   io.search(glSearchFolder, {
+      minDepth = 1,
+      maxDepth = 1,
+      nameFilter = regex.new('\\.txt$'),
+      matchFeedback = function(Path, FileName)
+         matches.push(FileName)
+      end
+   })
+
+   assert(#matches is 2, 'minDepth=1 should exclude files in the starting folder')
+   assert(matches.indexOf('inside.txt') != nil, 'minDepth should retain files one level below the starting folder')
+   assert(matches.indexOf('blocked.txt') != nil, 'minDepth should apply consistently to every traversed folder')
+end
+
+@Test function ExcludeFilterRejectsMatchingNames()
+   local matches = array<str>
+   local ignored = 0
+
+   io.search(glSearchFolder, {
+      maxDepth = 0,
+      excludeFilter = 'SMALL.TXT',
+      matchFeedback = function(Path, FileName)
+         matches.push(FileName)
+      end,
+      ignoreFeedback = function(Path, FileName)
+         if FileName is 'small.txt' then ignored++ end
+      end
+   })
+
+   assert(#matches is 1 and matches[0] is 'boundary.txt', 'excludeFilter should remove matching names')
+   assert(ignored is 1, 'Excluded entries should invoke ignoreFeedback')
+end
+
+@Test function ShouldDescendPrunesFolderTrees()
+   local matches = array<str>
+   local folders_checked = 0
+
+   io.search(glSearchFolder, {
+      maxDepth = 1,
+      nameFilter = regex.new('^(inside|blocked)\\.txt$'),
+      shouldDescend = function(Path, Folder)
+         folders_checked++
+         return not Folder.path.find('pruned')
+      end,
+      matchFeedback = function(Path, FileName)
+         matches.push(FileName)
+      end
+   })
+
+   assert(folders_checked is 2, 'shouldDescend should inspect each candidate subfolder')
+   assert(#matches is 1 and matches[0] is 'inside.txt', 'shouldDescend=false should prune the selected folder tree')
+end
+
+@Test function CancellationPredicateAndTokenStopMultiplePaths()
+   local predicate_matches = 0
+   io.search(array<str> { glSmallFile, glBoundaryFile }, {
+      cancelCheck = function(Matches)
+         return Matches >= 1
+      end,
+      matchFeedback = function() predicate_matches++ end
+   })
+   assert(predicate_matches is 1, 'cancelCheck should stop before processing the next path')
+
+   local token = { cancelled=false }
+   local token_matches = 0
+   io.search(array<str> { glSmallFile, glBoundaryFile }, {
+      cancelToken = token,
+      matchFeedback = function()
+         token_matches++
+         token.cancelled = true
+      end
+   })
+   assert(token_matches is 1, 'A cancelled token should stop before processing the next path')
+end
+
+@Test function ShouldDescendCanTerminateAllPaths()
+   local matches = 0
+
+   io.search(array<str> { glSearchFolder, glSmallFile }, {
+      maxDepth = 1,
+      shouldDescend = function()
+         return ERR_Terminate
+      end,
+      matchFeedback = function() matches++ end
+   })
+
+   assert(matches is 2, 'ERR_Terminate from shouldDescend should prevent traversal and remaining input paths')
+end
