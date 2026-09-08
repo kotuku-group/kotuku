@@ -914,7 +914,7 @@ endif ()
 # Register Flute tests
 
 set (TIRI_TESTS
-   defer debuglog io object regex struct async async_actions async_wait xml strings math array array_any array_manip
+   defer debuglog io filesearch object regex struct async async_actions async_wait xml strings math array array_any array_manip
    array_element_validation array_view
    array_functional array_typed_syntax recursive_array_types bitshift bitwise has_operator approx if_empty if_empty_guard
    presence blank ternary table stress unit_tests
