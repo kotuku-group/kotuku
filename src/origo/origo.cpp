@@ -55,7 +55,7 @@ inline void select_window_icon_resource(const std::string_view) { }
 static const std::string glHelp =
    "Origo " KOTUKU_VERSION R"(
 
-Origo launches Tiri scripts and PARC files developed for Kotuku.
+Origo launches Tiri scripts developed for Kotuku.
 
    origo [options] [script.ext] arg1 arg2=value ...
 
@@ -68,7 +68,7 @@ The following options are available:
  --statement     Instead of running a script file, executes a single statement or expression.
  --audio-device  Select the audio output device.
  --jit-options   Development options that control the behaviour of the compiler.
- --version       Prints the version number on line 1 and git commit on line 2.
+ --version       Prints the version, git branch and commit, and build type on separate lines.
 
 Logging options; messages are printed to stderr:
 
@@ -114,7 +114,6 @@ constexpr uint32_t ARG_HELP2        = kt::strhash("help");
 constexpr uint32_t ARG_VERSION      = kt::strhash("--version");
 constexpr uint32_t ARG_VERIFY       = kt::strhash("--verify");
 constexpr uint32_t ARG_SANDBOX      = kt::strhash("--sandbox");
-constexpr uint32_t ARG_TIME         = kt::strhash("--time");
 constexpr uint32_t ARG_DIALOG       = kt::strhash("--dialog");
 constexpr uint32_t ARG_RELAUNCH     = kt::strhash("--relaunch");
 constexpr uint32_t ARG_BACKSTAGE    = kt::strhash("--backstage");
@@ -148,9 +147,6 @@ static ERR process_args(void)
          }
          else if (hash IS ARG_SANDBOX) {
             glSandbox = true;
-         }
-         else if (hash IS ARG_TIME) {
-            glTime = true;
          }
          else if (hash IS ARG_DIALOG) {
             // Display a file dialog for choosing a script manually
@@ -237,6 +233,13 @@ extern "C" int main(int argc, char **argv)
       }
       printf("%s\n", msg);
       return -1;
+   }
+
+   // Note that --time must be read from the raw argument list because the Core consumes it for log timestamping
+   // and does not pass it on to the program's parameter list.
+
+   for (int i=1; i < argc; i++) {
+      if (not strcmp(argv[i], "--time")) { glTime = true; break; }
    }
 
    glTask = CurrentTask();

@@ -7,9 +7,9 @@
 
 ## Introduction
 
-Kōtuku is an open source vector graphics engine and application framework for Windows and Linux.  It features integrated support for SVG with a focus on correctness, and we test against W3C's official SVG compliance tests.
+Kōtuku is an open source vector graphics engine and application framework for Windows and Linux.  It provides integrated SVG support, with correctness validated against the W3C SVG compliance test suite.
 
-Kōtuku is written in C++ and can be built as an external or embedded set of libraries to suit your situation.  Our integrated scripting language, Tiri, is based on Lua and helps to simplify application development without compromising on speed or modern features.  Extensive API documentation is hosted at our website.
+Written in C++, Kōtuku can be linked as a set of libraries or embedded directly into an application.  Applications can also be developed in Tiri, Kōtuku’s integrated 64-bit, JIT-compiled scripting language, with direct access to the framework’s APIs.  Comprehensive API documentation and developer guides are available at [kotuku.dev](https://kotuku.dev).
 
 ### Motivation
 
@@ -38,8 +38,8 @@ Kōtuku's ongoing development is focused on enhancing vector graphics programmin
 This is an example of a simple client application written in Tiri.  It loads an SVG file and displays the content in a window for the user.  Notice that the SVG is parsed in one line of code and all resource cleanup is handled in the background by the garbage collector.  You can find more example programs [here](examples/).
 
 ```Lua
-   import 'gui'
    import 'gui/window'
+   include 'svg'
 
    file = arg('file')
    if not file then
@@ -48,13 +48,13 @@ This is an example of a simple client application written in Tiri.  It loads an 
    end
 
    if mSys.AnalysePath(file) != ERR_Okay then
-      error('Unable to find file ' .. file)
+      raise f'Unable to find file {file}'
    end
 
    glWindow = gui.window({
       center    = true,
-      width     = arg('width', 800),
-      height    = arg('height', 600),
+      width     = tonumber(arg('width', '800')),
+      height    = tonumber(arg('height', '600')),
       title     = 'Image Viewer',
       icon      = 'icons:programs/pictureviewer',
       minHeight = 200,
@@ -62,18 +62,19 @@ This is an example of a simple client application written in Tiri.  It loads an 
    })
 
    glViewport = glWindow.scene.new('VectorViewport', {
-      aspectRatio='MEET', x=glWindow.client.left, y=glWindow.client.top,
-      xOffset=glWindow.client.right, yOffset=glWindow.client.bottom, overflow='hidden'
+      aspectRatio=ARF_MEET, overflow=OVF_HIDDEN,
+      x=glWindow.client.left, y=glWindow.client.top,
+      xOffset=glWindow.client.right, yOffset=glWindow.client.bottom
    })
 
-   if file:endsWith('.svg') then
-      obj.new('svg', { target=glViewport, path=file, flags='ENFORCE_TRACKING' })
+   if file.endsWith('.svg') then
+      obj.new('svg', { target=glViewport, path=file, flags=SVF_ENFORCE_TRACKING })
    else
-      error('Unsupported file type: ' .. file)
+      raise f'Unsupported file type: {file}'
    end
 
-   glWindow:setTitle(file)
-   glWindow:show()
+   glWindow.setTitle(file)
+   glWindow.show()
 
    processing.sleep()
 ```

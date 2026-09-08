@@ -396,7 +396,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          #if defined(__unix__) && !defined(__ANDROID__)
          else if (iequals(arg, "holdpriority")) hold_priority = true;
          #endif
-         else if (startswith("home=", arg)) glHomeFolderName.assign(arg + 7);
+         else if (startswith("home=", arg)) glHomeFolderName.assign(arg + 5);
          else newargs.push_back(Info->Args[i]);
       }
 

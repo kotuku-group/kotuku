@@ -195,3 +195,232 @@ end
    check script.acActivate()
    assert(script.error is 0, script.errorMessage)
 end
+
+-- Locates a completed trace containing a local-capture allocation and the actual-close helper.
+-- lj_func_closeuv immediately precedes lj_func_newL_local in IRCALLDEF, so the allocation's
+-- call id identifies the close without hard-coding either index.
+local trace_scan = [[
+global glTraces = {}
+global glAborts = 0
+global function close_traces(Target:func):num
+   local matches = 0
+   for trace, entry in pairs(glTraces) do
+      if entry.done and (not Target or entry.func is Target) then
+         local info = jit.util.traceInfo(trace)
+         local allocation_call = 0
+         local calls = {}
+         for index in {1 into info.nins} do
+            local _, ot, _, operand = jit.util.traceIR(trace, index)
+            if (ot >> 8) is 96 and (ot & 31) is 8 then allocation_call = operand end -- CALLA returning a function.
+            if (ot >> 8) is 98 then calls[operand] = true end -- CALLS.
+         end
+         if allocation_call > 0 and calls[allocation_call - 1] then matches++ end
+      end
+   end
+   return matches
+end
+global function events(Event, Trace, Func, Pc, Reason, Info)
+   if Event is 'start' then glTraces[Trace] = { func=Func }
+   elseif Event is 'stop' then glTraces[Trace].done = true
+   elseif Event is 'abort' and Reason is 7 and (Info is 51 or Info is 52) then glAborts++ end -- NYIBC UCLO/FNEW.
+end
+]]
+
+@Test function BackwardJumpClose()
+   -- A capturing loop body reached by 'continue' closes through a UCLO with a negative jump offset.
+   local script = obj.new('tiri', { statement=trace_scan .. [[
+global glBackwardJump = false
+global glSaved = table.new(2000, 0)
+global function driver(Count:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      local captured = index
+      local reader = (() => captured)
+      glSaved[index] = reader
+      index++
+      if index % 7 is 0 then continue end
+      total += reader()
+   end
+   return total
+end
+global function records(Trace, Func, Pc)
+   if Func is driver then
+      local ins = jit.util.funcBC(Func, Pc)
+      if (ins & 255) is 51 and ((ins >> 16) - 32768) < 0 then glBackwardJump = true end
+   end
+end
+jit.off()
+local expected = driver(2000)
+jit.on()
+jit.flush()
+jit.opt.start('hotloop=1', 'hotexit=1')
+jit.attach(events, 'trace')
+jit.attach(records, 'record')
+assert(driver(2000) is expected, 'A backward-jumping close must match the interpreter')
+jit.attach(records)
+jit.attach(events)
+assert(glBackwardJump, 'The driver must record a UCLO with a backward jump')
+assert(glAborts is 0, f'Backward-jump closing aborted {glAborts} recordings')
+jit.off()
+assert(close_traces(driver) > 0, 'The allocating loop must compile with the actual close helper')
+jit.on()
+processing.collect()
+for index in {0 to 2000} do
+   assert(glSaved[index]() is index, 'Iteration cells must stay distinct after a backward-jump close')
+end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function ExceptionUnwindsPastOnTraceClose()
+   -- Mode 0 raises while the iteration cell is still open; mode 1 raises after the scope has closed.
+   local script = obj.new('tiri', { statement=trace_scan .. [[
+global glSaved = table.new(1000, 0)
+global function worker(Index:num, Mode:num):num
+   local result = 0
+   do
+      local captured = Index
+      local reader = (() => captured)
+      captured += 1
+      glSaved[Index] = reader
+      if Mode is 0 and Index % 13 is 0 then raise 'open cell unwind' end
+      result = reader()
+   end
+   if Mode is 1 and Index % 13 is 0 then raise 'closed cell unwind' end
+   return result
+end
+global function driver(Count:num, Mode:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      try
+         total += worker(index, Mode)
+      except e
+         total += 1000
+      end
+      index++
+   end
+   return total
+end
+for mode in {0 to 2} do
+   jit.off()
+   glSaved = table.new(1000, 0)
+   local expected = driver(1000, mode)
+   jit.on()
+   jit.flush()
+   glTraces = {}
+   glAborts = 0
+   glSaved = table.new(1000, 0)
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   jit.attach(events, 'trace')
+   assert(driver(1000, mode) is expected, f'Unwinding mode {mode} must match the interpreter')
+   jit.attach(events)
+   assert(glAborts is 0, f'Unwinding mode {mode} aborted {glAborts} recordings')
+   jit.off()
+   -- Only mode 1 completes the close on trace before raising; mode 0 stops recording earlier.
+   if mode is 1 then
+      assert(close_traces(nil) > 0, 'A completed on-trace close must precede the raise')
+   end
+   jit.on()
+   processing.collect()
+   for index in {0 to 1000} do
+      assert(glSaved[index]() is index + 1, f'Cell {index} must survive unwinding in mode {mode}')
+   end
+end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+@Test function RangeGuardShapesFromParserBytecode()
+   -- The natural-bytecode counterpart to the embedded uclo_range_guard fixture, which adjusts a
+   -- verified UCLO operand to place cells around the closing level.  On-trace FNEW now builds the
+   -- same four runtime list shapes from ordinary parser output: Mode selects no inner capture, a
+   -- cell exactly at the inner closing level, a cell above it, or both.  'keep' always holds an
+   -- outer cell below the level, so the Stage 2 range guard stays live in every mode.
+   local script = obj.new('tiri', { statement=trace_scan .. [[
+global glSaved = table.new(1000, 0)
+global function worker(Index:num, Mode:num):num
+   local outer = Index
+   local keep = (() => outer)
+   local result = 0
+   do
+      local at_level = Index + 1
+      local above = Index + 2
+      local inner:func = nil
+      if Mode is 1 then inner = (() => at_level)
+      elseif Mode is 2 then inner = (() => above)
+      elseif Mode is 3 then inner = (() => at_level * 1000 + above)
+      end
+      at_level += 10
+      above += 100
+      result = inner ? inner() : at_level + above
+      glSaved[Index] = inner
+   end
+   outer += 1000
+   assert(keep() is Index + 1000, 'The outer cell below the closing level must remain open')
+   return result
+end
+global function driver(Count:num, Mode:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      total += worker(index, Mode)
+      index++
+   end
+   return total
+end
+-- The inner scope must close above the outer capture, otherwise these modes stop covering the
+-- range guard.  A parser change that elides the inner close has to update this test deliberately.
+local levels = {}
+local pc = 0
+while true do
+   local ins = jit.util.funcBC(worker, pc)
+   if not ins then break end
+   if (ins & 255) is 51 then levels.insert((ins >> 8) & 255) end
+   pc++
+end
+local inner_level = 0
+local outer_level = 0
+for _, level in pairs(levels) do
+   if level > inner_level then inner_level = level end
+end
+for _, level in pairs(levels) do
+   if level > 0 and level < inner_level then outer_level = level end
+end
+assert(inner_level > outer_level and outer_level > 0,
+   f'worker must close an inner scope above an outer capture: inner={inner_level} outer={outer_level}')
+for mode in {0 to 4} do
+   jit.off()
+   glSaved = table.new(1000, 0)
+   local expected = driver(1000, mode)
+   jit.on()
+   jit.flush()
+   glTraces = {}
+   glAborts = 0
+   glSaved = table.new(1000, 0)
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   jit.attach(events, 'trace')
+   assert(driver(1000, mode) is expected, f'Range shape {mode} must match the interpreter')
+   jit.attach(events)
+   assert(glAborts is 0, f'Range shape {mode} aborted {glAborts} recordings')
+   jit.off()
+   assert(close_traces(nil) > 0, f'Range shape {mode} must compile an actual close')
+   jit.on()
+   processing.collect()
+   if mode > 0 then
+      for index in {0 to 1000} do
+         local value = glSaved[index]()
+         if mode is 1 then assert(value is index + 11, 'A cell at the closing level must retain its value')
+         elseif mode is 2 then assert(value is index + 102, 'A cell above the closing level must retain its value')
+         else assert(value is (index + 11) * 1000 + index + 102, 'Both closed cells must retain their values')
+         end
+      end
+   end
+end
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
