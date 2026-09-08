@@ -544,7 +544,7 @@ static zero_arg_call classify_scalar_return(uint32_t Type)
       case FD_VOID: return zero_arg_call::Void;
       case FD_INT: return zero_arg_call::Int;
       case FD_INT|FD_UNSIGNED: return zero_arg_call::Unsigned;
-      case FD_ERROR: return zero_arg_call::Error;
+      case FD_INT|FD_ERROR: return zero_arg_call::Error;
       case FD_INT64: return zero_arg_call::Int64;
       case FD_DOUBLE: return zero_arg_call::Double;
       default: return zero_arg_call::Bridge;
@@ -2566,7 +2566,7 @@ std::string test_module_zero_eligibility()
    ModuleCallable callable;
    callable.Fields = fields;
    // Every bit outside each exact allowlist must fall back, even if the bridge interprets it as a scalar.
-   const uint32_t allowed[] = { FD_VOID, FD_INT, FD_INT|FD_UNSIGNED, FD_ERROR, FD_INT64, FD_DOUBLE };
+   const uint32_t allowed[] = { FD_VOID, FD_INT, FD_INT|FD_UNSIGNED, FD_INT|FD_ERROR, FD_INT64, FD_DOUBLE };
    for (uint32_t type : allowed) {
       fields[0].Type = type;
       if (classify_zero_arg(callable) IS zero_arg_call::Bridge) return "Eligible scalar was rejected.";

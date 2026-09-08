@@ -10,7 +10,9 @@
 -- Accumulators are deliberately dependent on the call result so that dead-code elimination cannot remove the loop body.
 
 module core as mCore
-module display as mDisplay
+@if(exists='modules:display')
+   module display as mDisplay
+@end
 @if(exists='modules:network')
    include 'network'
    module network as mNet
@@ -92,11 +94,13 @@ function bench_extracted_scalar(Iterations: num): num
 end
 
 -- Double input and result.
+@if(exists='modules:display')
 function bench_double_arg(Iterations: num): num
    local total = 0
    for i in {0 to Iterations} do total += mDisplay.ScaleToDPI(i + 0.5) end
    return total
 end
+@end
 
 -- C++ string-view input (FDF_CPPSTRING), scalar result.
 function bench_string_view(Iterations: num): num
@@ -233,11 +237,13 @@ local SUBSET_SOURCE <const> = [[
 ]]
 
 -- Several modules in one compilation unit.
+@if(exists='modules:display')
 local MULTI_SOURCE <const> = [[
    module core as mBenchCore
    module display as mBenchDisplay
    local value = mBenchCore.PreciseTime()
 ]]
+@end
 
 -- exec() compiles and runs the statement, so each sample covers parse plus activation.  A baseline statement that
 -- declares no module is measured separately so that the module-specific share of the cost can be isolated.
@@ -272,7 +278,9 @@ measure('  zero-arg scalar result', ITERATIONS, bench_zero_arg)
 measure('  zero-arg signed int', ITERATIONS, bench_zero_int)
 measure('  scalar arg', ITERATIONS, bench_scalar_arg)
 measure('  extracted scalar arg', ITERATIONS, bench_extracted_scalar)
+@if(exists='modules:display')
 measure('  double arg', ITERATIONS, bench_double_arg)
+@end
 measure('  C++ string-view arg', ITERATIONS, bench_string_view)
 measure('  extracted string-view arg', ITERATIONS, bench_extracted_view)
 measure('  unsigned/pointer CRC', ITERATIONS, bench_crc_pointer)
@@ -294,4 +302,6 @@ measure_activation('  one module, one function', ACTIVATION_SOURCE)
 measure_activation('  one module, no functions', EMPTY_SOURCE)
 measure_activation('  one module, three functions', SUBSET_SOURCE)
 measure_activation('  two aliases, one module', ALIAS_SOURCE)
+@if(exists='modules:display')
 measure_activation('  two modules', MULTI_SOURCE)
+@end

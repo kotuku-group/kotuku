@@ -708,7 +708,7 @@ static bool test_zero_arg_calls(kt::Log &Log)
       { (APTR)synthetic_unsigned, FD_INT|FD_UNSIGNED, "4294967295" },
       { (APTR)synthetic_int64, FD_INT64, "-9007199254740991" },
       { (APTR)synthetic_double, FD_DOUBLE, "-1234.125" },
-      { (APTR)synthetic_okay, FD_ERROR, "ERR_Okay" },
+      { (APTR)synthetic_okay, FD_INT|FD_ERROR, "ERR_Okay" },
       // A modifier outside the allowlist must still work through the bridge.
       { (APTR)synthetic_signed, FD_INT|FD_ALLOC, "-2147483648" }
    };
@@ -752,7 +752,7 @@ static bool test_zero_arg_calls(kt::Log &Log)
                }
             }
             glZeroCalls = 0;
-            auto failure = test_module_zero_call(holder.get()->Lua, (APTR)synthetic_error, FD_ERROR,
+            auto failure = test_module_zero_call(holder.get()->Lua, (APTR)synthetic_error, FD_INT|FD_ERROR,
                force_bridge, R"(
                   assert(syntheticZero() is ERR_Args, 'Plain call returns error')
                   try
@@ -1085,7 +1085,7 @@ static bool test_simple_calls(kt::Log &Log)
       test_simple_result<uint32_t>(script, Log, FD_INT|FD_UNSIGNED, "4294967295") and
       test_simple_result<int64_t>(script, Log, FD_INT64, "-123") and
       test_simple_result<double>(script, Log, FD_DOUBLE, "-123") and
-      test_simple_result<ERR>(script, Log, FD_ERROR, "ERR_Args");
+      test_simple_result<ERR>(script, Log, FD_INT|FD_ERROR, "ERR_Args");
 }
 
 } // namespace
