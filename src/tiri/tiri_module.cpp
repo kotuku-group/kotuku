@@ -2566,7 +2566,7 @@ std::string test_module_zero_eligibility()
    ModuleCallable callable;
    callable.Fields = fields;
    // Every bit outside each exact allowlist must fall back, even if the bridge interprets it as a scalar.
-   const uint32_t allowed[] = { FD_VOID, FD_INT, FD_INT|FD_UNSIGNED, FD_ERROR, FD_INT64, FD_DOUBLE };
+   const uint32_t allowed[] = { FD_VOID, FD_INT, FD_INT|FD_UNSIGNED, FD_INT|FD_ERROR, FD_INT64, FD_DOUBLE };
    for (uint32_t type : allowed) {
       fields[0].Type = type;
       if (classify_zero_arg(callable) IS zero_arg_call::Bridge) return "Eligible scalar was rejected.";
